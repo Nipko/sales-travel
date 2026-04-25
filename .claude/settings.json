@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "tailwind-v4-shadcn@claude-skills": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true,
+    "interface-design@interface-design": true,
+    "design-review@claude-skills": true
+  }
+}
