@@ -1,0 +1,96 @@
+name: sales-travel
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    <<: [*restart, *logging]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      - api
+      - web-b2b
+
+  api:
+    image: ghcr.io/nipko/sales-travel-api:${GIT_SHA:-latest}
+    <<: [*restart, *logging]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      APP_VERSION: ${GIT_SHA:-dev}
+      DATABASE_URL: postgresql://sales_travel:${POSTGRES_PASSWORD}@postgres:5432/sales_travel
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+    networks: [edge, internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web-b2b:
+    image: ghcr.io/nipko/sales-travel-web-b2b:${GIT_SHA:-latest}
+    <<: [*restart, *logging]
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      NEXT_PUBLIC_API_URL: https://api.parallext.cloud
+    networks: [edge]
+
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_USER: sales_travel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sales_travel
+    volumes:
+      - postgres_data:/home/postgres/pgdata/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales_travel -d sales_travel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    <<: [*restart, *logging]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
