@@ -48,4 +48,24 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       return fn(trx);
     });
   }
+
+  /**
+   * Ejecuta `fn` dentro de una transacción seteando los GUC del request
+   * (current_user_id y opcionalmente current_tenant_id). Las policies RLS
+   * filtran en consecuencia.
+   */
+  async withRequestContext<T>(
+    ctx: { userId?: string; tenantId?: string },
+    fn: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute(async (trx) => {
+      if (ctx.userId) {
+        await sql`SELECT set_config('app.current_user_id', ${ctx.userId}, true)`.execute(trx);
+      }
+      if (ctx.tenantId) {
+        await sql`SELECT set_config('app.current_tenant_id', ${ctx.tenantId}, true)`.execute(trx);
+      }
+      return fn(trx);
+    });
+  }
 }

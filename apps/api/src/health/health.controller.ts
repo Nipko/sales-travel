@@ -1,4 +1,5 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 
 interface HealthResponse {
@@ -10,6 +11,7 @@ interface HealthResponse {
   };
 }
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly db: DatabaseService) {}
