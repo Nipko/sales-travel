@@ -29,6 +29,7 @@ jobs:
         app:
           - { name: api,     dockerfile: apps/api/Dockerfile }
           - { name: web-b2b, dockerfile: apps/web-b2b/Dockerfile }
+          - { name: migrate, dockerfile: tools/db-migrate/Dockerfile }
     steps:
       - uses: actions/checkout@v4
 
@@ -71,12 +72,13 @@ jobs:
         run: |
           cat > .env <<EOF
           GIT_SHA=${{ github.sha }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_ADMIN_PASSWORD=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          APP_USER_PASSWORD=${{ secrets.APP_USER_PASSWORD }}
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           EOF
 
-      - name: Sync compose stack
+      - name: Sync compose stack + migrations
         run: |
           rsync -az --delete \
             infrastructure/hostinger/docker-compose.prod.yml \
@@ -84,6 +86,9 @@ jobs:
             infrastructure/hostinger/postgres-init \
             .env \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:/opt/sales-travel/
+          rsync -az --delete \
+            db/migrations \
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:/opt/sales-travel/db/
 
       - name: Pull & restart
         run: |

@@ -71,12 +71,13 @@ SSL/TLS mode: **Full (strict)**. Caddy obtiene cert via Let's Encrypt automátic
 
 | Secret | Contenido |
 |---|---|
-| `HOSTINGER_HOST`     | IP pública del VPS |
-| `HOSTINGER_USER`     | `deploy` |
-| `HOSTINGER_SSH_KEY`  | Clave privada SSH del usuario `deploy` (formato OpenSSH) |
-| `POSTGRES_PASSWORD`  | Password de Postgres (generar con `openssl rand -base64 32`) |
-| `REDIS_PASSWORD`     | Password de Redis (generar con `openssl rand -base64 32`) |
-| `JWT_SECRET`         | Secret para firmas JWT (generar con `openssl rand -base64 64`) |
+| `HOSTINGER_HOST`           | IP pública del VPS |
+| `HOSTINGER_USER`           | `deploy` |
+| `HOSTINGER_SSH_KEY`        | Clave privada SSH del usuario `deploy` (formato OpenSSH) |
+| `POSTGRES_ADMIN_PASSWORD`  | Password del superuser `postgres` — sólo lo usan migraciones (`openssl rand -base64 32`) |
+| `APP_USER_PASSWORD`        | Password del rol `app_user` (no-superuser, respeta RLS) — lo usa `apps/api` (`openssl rand -base64 32`) |
+| `REDIS_PASSWORD`           | Password de Redis (`openssl rand -base64 32`) |
+| `JWT_SECRET`               | Secret para firmas JWT (`openssl rand -base64 64`) |
 
 ---
 
@@ -84,12 +85,13 @@ SSL/TLS mode: **Full (strict)**. Caddy obtiene cert via Let's Encrypt automátic
 
 Push a `main` dispara `.github/workflows/deploy.yml`:
 
-1. Build de imágenes Docker (`api`, `web-b2b`).
-2. Push a `ghcr.io/nipko/sales-travel-{api,web-b2b}` con tag `<sha>` y `latest`.
+1. Build de imágenes Docker (`api`, `web-b2b`, `migrate`).
+2. Push a `ghcr.io/nipko/sales-travel-{api,web-b2b,migrate}` con tag `<sha>` y `latest`.
 3. SSH al VPS:
-   - rsync de `docker-compose.prod.yml` + `Caddyfile` → `/opt/sales-travel/`
+   - rsync de `docker-compose.prod.yml` + `Caddyfile` + `db/migrations` + `postgres-init` → `/opt/sales-travel/`
    - render de `.env` desde GitHub Secrets → `/opt/sales-travel/.env`
    - `docker compose pull && docker compose up -d --remove-orphans`
+   - El servicio `migrate` corre antes que `api` (Compose `service_completed_successfully`) y aplica las migraciones SQL pendientes
    - `docker image prune -f`
 
 Rollback: `docker compose pull` con el tag anterior + `up -d`. Cada SHA queda en GHCR.

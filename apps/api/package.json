@@ -18,6 +18,8 @@
     "@sales-travel/core": "workspace:*",
     "@sales-travel/validation": "workspace:*",
     "helmet": "^8.0.0",
+    "kysely": "^0.27.5",
+    "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -26,6 +28,7 @@
     "@nestjs/schematics": "^10.2.3",
     "@nestjs/testing": "^10.4.15",
     "@types/express": "^5.0.0",
+    "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
     "supertest": "^7.0.0",
     "ts-node": "^10.9.2",
