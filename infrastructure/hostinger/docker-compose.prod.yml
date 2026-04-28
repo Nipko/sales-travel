@@ -70,26 +70,24 @@ services:
       retries: 5
 
   migrate:
-    image: ghcr.io/nipko/sales-travel-migrate:${GIT_SHA:-latest}
+    image: ghcr.io/nipko/sales-travel-migrate:${IMAGE_TAG:-latest}
     <<: *logging
     restart: "no"
     environment:
       DATABASE_URL_ADMIN: postgresql://postgres:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/sales_travel
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
-    volumes:
-      - ../../db/migrations:/migrations:ro
     networks: [internal]
     depends_on:
       postgres:
         condition: service_healthy
 
   api:
-    image: ghcr.io/nipko/sales-travel-api:${GIT_SHA:-latest}
+    image: ghcr.io/nipko/sales-travel-api:${IMAGE_TAG:-latest}
     <<: [*restart, *logging]
     environment:
       NODE_ENV: production
       PORT: "3000"
-      APP_VERSION: ${GIT_SHA:-dev}
+      APP_VERSION: ${IMAGE_TAG:-dev}
       DATABASE_URL: postgresql://app_user:${APP_USER_PASSWORD}@postgres:5432/sales_travel
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET}
@@ -101,10 +99,10 @@ services:
         condition: service_healthy
 
   web-b2b:
-    image: ghcr.io/nipko/sales-travel-web-b2b:${GIT_SHA:-latest}
+    image: ghcr.io/nipko/sales-travel-web-b2b:${IMAGE_TAG:-latest}
     <<: [*restart, *logging]
     environment:
       NODE_ENV: production
       PORT: "3001"
-      NEXT_PUBLIC_API_URL: https://api.parallext.cloud
+      NEXT_PUBLIC_API_URL: https://api.planetour.cloud
     networks: [edge]

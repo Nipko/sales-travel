@@ -19,5 +19,6 @@ ENV MIGRATIONS_DIR=/migrations
 WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && adduser -S app -u 1001 -G nodejs
 COPY --from=builder --chown=app:nodejs /out/migrate .
+COPY --chown=app:nodejs db/migrations /migrations
 USER app
 CMD ["node", "dist/index.js"]

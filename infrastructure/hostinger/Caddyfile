@@ -1,32 +1,66 @@
 {
-	email admin@parallext.cloud
+	email admin@planetour.cloud
 	servers {
 		trusted_proxies static private_ranges
 	}
 }
 
-api.parallext.cloud {
+# ---- Headers de seguridad reutilizables ----
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# ---- API ----
+api.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy api:3000 {
 		header_up X-Real-IP {remote_host}
 	}
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		Referrer-Policy "strict-origin-when-cross-origin"
-	}
+	import security_headers
 }
 
-app.parallext.cloud {
+# ---- Panel agencia (B2B) ----
+app.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy web-b2b:3001 {
 		header_up X-Real-IP {remote_host}
 	}
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		Referrer-Policy "strict-origin-when-cross-origin"
-	}
+	import security_headers
 }
+
+# ---- Sitio público B2C — agregar cuando exista apps/web-b2c ----
+# planetour.cloud, www.planetour.cloud {
+#	encode zstd gzip
+#	reverse_proxy web-b2c:3002 {
+#		header_up X-Real-IP {remote_host}
+#	}
+#	import security_headers
+# }
+
+# ---- Panel superadmin — agregar cuando exista apps/web-admin ----
+# admin.planetour.cloud {
+#	encode zstd gzip
+#	reverse_proxy web-admin:3003 {
+#		header_up X-Real-IP {remote_host}
+#	}
+#	import security_headers
+# }
+
+# ---- White-label (cada tenant con su subdominio propio) — wildcard ----
+# Requiere DNS-01 challenge porque HTTP-01 no soporta wildcards.
+# Activar cuando se implemente el módulo de tenant routing dinámico.
+# *.tenants.planetour.cloud {
+#	encode zstd gzip
+#	# El api inspecciona el Host header y resuelve el tenant_id correspondiente.
+#	reverse_proxy web-b2b:3001 {
+#		header_up X-Real-IP {remote_host}
+#		header_up X-Tenant-Host {host}
+#	}
+#	import security_headers
+# }
