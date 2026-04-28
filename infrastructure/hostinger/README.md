@@ -1,8 +1,8 @@
-# Hostinger VPS · deploy via Portainer
+# Hostinger VPS · provisioning & deploy via GitHub Actions
 
-Deploy gestionado por **Portainer** sobre el VPS Hostinger detrás de Cloudflare.
-GitHub Actions se ocupa sólo de buildear y publicar imágenes a GHCR; Portainer
-las pulla y orquesta el stack.
+Deploy directo de GitHub Actions a un VPS Ubuntu 24.04 vía SSH. La CI buildea
+imágenes, las publica a GHCR, las pulla en el VPS y levanta el stack con
+Docker Compose.
 
 ## Topología
 
@@ -13,9 +13,9 @@ Internet
 Cloudflare  (TLS edge · WAF · DDoS · cache)
    │  (Full strict, sólo IPs Cloudflare permitidas en origen)
    ▼
-Hostinger VPS (Portainer instalado)
+Ubuntu 24.04 VPS  (Docker + Compose)
    │
-   └── Stack "sales-travel" (Portainer)
+   └── /opt/sales-travel/  (compose stack)
        ├── caddy        :80 / :443  (TLS origin · reverse proxy)
        ├── api          :3000       (api.planetour.cloud)
        ├── web-b2b      :3001       (app.planetour.cloud)
@@ -29,48 +29,37 @@ Servicios diferidos hasta que un feature los requiera: `typesense`, `minio`,
 
 ---
 
-## 1. Configurar GHCR como registry en Portainer
+## 1. Provisioning del VPS (one-time)
 
-Las imágenes del proyecto son privadas (`ghcr.io/nipko/sales-travel-*`).
-Portainer necesita credenciales:
+VPS Ubuntu 24.04 LTS recién provisionado. Como root con tu pubkey ya cargada:
 
-1. En GitHub: crear un Personal Access Token (classic) con scope `read:packages`.
-2. Portainer → **Registries → Add registry → Custom**:
-   - URL: `ghcr.io`
-   - Username: tu usuario de GitHub
-   - Password: el PAT
-3. Guardar.
+```bash
+# Subir el script
+scp infrastructure/hostinger/provision.sh root@<IP>:/tmp/
 
----
+# Ejecutarlo (interactivo: pide credenciales GHCR al final)
+ssh root@<IP> "bash /tmp/provision.sh"
+```
 
-## 2. Crear el stack desde GitHub (Repository mode)
+Lo que hace `provision.sh`:
+1. Update sistema + paquetes base.
+2. Instala Docker Engine + Compose plugin.
+3. Crea usuario `deploy` con grupo `docker` y autoriza tu pubkey.
+4. Crea `/opt/sales-travel/`.
+5. SSH hardening: deshabilita password auth, root sólo con clave, max 3 intentos.
+6. UFW: deny incoming por default. Sólo permite `:22` (SSH) y `:80/:443` desde rangos de Cloudflare.
+7. fail2ban + unattended-upgrades + sysctl tuning + journald limits.
+8. `docker login ghcr.io` interactivo como `deploy` (usar PAT con scope `read:packages`).
 
-Portainer → **Stacks → Add stack**:
-
-- **Name:** `sales-travel`
-- **Build method:** *Repository*
-- **Repository URL:** `https://github.com/Nipko/sales-travel`
-- **Repository reference:** `refs/heads/main`
-- **Compose path:** `infrastructure/hostinger/docker-compose.prod.yml`
-- **Authentication:** sólo si el repo es privado (token con `repo` scope).
-- **Automatic updates:** activar **Re-pull image** y **Force redeployment**.
-- **Polling interval:** `5m` o usar **Webhook** (recomendado, ver §4).
-
-### Environment variables (en el panel "Environment variables" del stack)
-
-| Variable | Cómo generarla |
-|---|---|
-| `IMAGE_TAG`              | `latest` (o un SHA específico para pinear versión) |
-| `POSTGRES_ADMIN_PASSWORD`| `openssl rand -base64 32` |
-| `APP_USER_PASSWORD`      | `openssl rand -base64 32` |
-| `REDIS_PASSWORD`         | `openssl rand -base64 32` |
-| `JWT_SECRET`             | `openssl rand -base64 64` (mínimo 32 chars) |
-
-Click **Deploy the stack**.
+Si necesitás otro puerto SSH:
+```bash
+SSH_PORT=2222 ssh root@<IP> "SSH_PORT=2222 bash /tmp/provision.sh"
+```
+Y luego configurar la var `HOSTINGER_SSH_PORT=2222` en GitHub.
 
 ---
 
-## 3. DNS en Cloudflare
+## 2. DNS en Cloudflare
 
 Zona `planetour.cloud`, registros **proxied (orange cloud)**:
 
@@ -87,65 +76,104 @@ Zona `planetour.cloud`, registros **proxied (orange cloud)**:
 |---|---|---|---|
 | A | `@` y `www`  | `apps/web-b2c`     | cuando exista el sitio público B2C |
 | A | `admin`      | `apps/web-admin`   | cuando exista el panel superadmin |
-| A | `*.tenants`  | `apps/web-b2b` (wildcard) | cuando se active routing white-label por tenant |
+| A | `*.tenants`  | `apps/web-b2b` (wildcard) | white-label dinámico |
 
 > Para `*.tenants` se requiere cambiar Caddy a DNS-01 challenge (Cloudflare API token con permiso `Zone:DNS:Edit`); HTTP-01 no soporta wildcards.
 
 SSL/TLS mode: **Full (strict)**. Caddy obtiene certificado vía Let's Encrypt
-automáticamente al primer tráfico. El `Caddyfile` ya tiene los bloques para
-`web-b2c`, `web-admin` y wildcard de tenants comentados — basta descomentar
-cuando llegue el momento.
+automáticamente. El `Caddyfile` ya tiene los bloques para `web-b2c`, `web-admin`
+y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 ---
 
-## 4. Auto-redeploy desde GitHub Actions (recomendado)
+## 3. GitHub Actions — secrets y variables
 
-GitHub Actions buildea las 3 imágenes en cada push a `main` y las publica como
-`ghcr.io/nipko/sales-travel-{api,web-b2b,migrate}:{sha,latest}`. Para que
-Portainer redeploye automáticamente al terminar el build:
+### Repository → Settings → Secrets and variables → Actions
 
-1. En Portainer → Stack `sales-travel` → **Webhooks → Create webhook**. Copiar la URL.
-2. En GitHub → Repo Settings:
-   - **Variables → New repository variable**: `PORTAINER_WEBHOOK_ENABLED = true`
-   - **Secrets → New repository secret**: `PORTAINER_WEBHOOK_URL = <url copiada>`
-3. Próximo push a `main` ejecuta build → push GHCR → hit webhook → Portainer pulla y redeploya.
+#### Secrets (todos requeridos)
 
-Sin webhook: Portainer puede pollear el repo cada N minutos (configurado en §2).
-Con webhook: redeploy en segundos al terminar el build.
+| Secret | Cómo generarlo / qué poner |
+|---|---|
+| `HOSTINGER_HOST`           | IP pública del VPS (ej. `203.0.113.42`) |
+| `HOSTINGER_USER`           | `deploy` |
+| `HOSTINGER_SSH_KEY`        | Clave privada SSH (formato OpenSSH, contenido completo `-----BEGIN…END-----`) cuyo público está en `~deploy/.ssh/authorized_keys` del VPS |
+| `POSTGRES_ADMIN_PASSWORD`  | `openssl rand -base64 32` — superuser, sólo migraciones |
+| `APP_USER_PASSWORD`        | `openssl rand -base64 32` — rol runtime de `apps/api`, respeta RLS |
+| `REDIS_PASSWORD`           | `openssl rand -base64 32` |
+| `JWT_SECRET`               | `openssl rand -base64 64` (mínimo 32 chars; el código lo valida) |
+
+#### Variables (opcionales)
+
+| Variable | Default | Uso |
+|---|---|---|
+| `HOSTINGER_SSH_PORT` | `22` | Si cambiaste el puerto SSH en `provision.sh` |
+
+> El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 
 ---
 
-## 5. Hardening del firewall (opcional pero recomendado)
+## 4. Generar el par de claves SSH del usuario `deploy`
 
-Si el VPS no tiene UFW configurado para limitar 80/443 a IPs de Cloudflare,
-ejecutar `infrastructure/hostinger/provision.sh` como root. Idempotente; sólo
-toca UFW + fail2ban + unattended-upgrades. No instala nada que rompa Portainer.
+En tu máquina local:
 
 ```bash
-scp infrastructure/hostinger/provision.sh root@<IP>:/tmp/
-ssh root@<IP> "bash /tmp/provision.sh"
+# 1. Generar clave dedicada al deploy (sin passphrase, identificable por nombre)
+ssh-keygen -t ed25519 -f ~/.ssh/sales-travel-deploy -C "github-actions@planetour" -N ""
+
+# 2. Subir la pubkey al VPS (entrá como root primero)
+ssh-copy-id -i ~/.ssh/sales-travel-deploy.pub root@<IP>
+# Luego provision.sh la copia al usuario deploy automáticamente.
+
+# 3. Probar conexión como deploy
+ssh -i ~/.ssh/sales-travel-deploy deploy@<IP> "docker ps"
+
+# 4. Pegar el contenido de la PRIVADA en el secret HOSTINGER_SSH_KEY
+cat ~/.ssh/sales-travel-deploy
 ```
 
 ---
 
-## 6. Operaciones comunes (vía Portainer UI)
+## 5. Primer deploy
 
-- **Logs:** Stack → servicio → *Logs*
-- **Restart de un servicio:** Stack → servicio → *Restart*
-- **Redeploy manual:** Stack → *Update the stack* → activar *Re-pull image*
-- **Pinear una versión:** cambiar `IMAGE_TAG` env var al SHA deseado y redeploy
-- **Backup Postgres:** Container `postgres` → *Console* → `pg_dumpall -U postgres > /tmp/backup.sql`, luego *Files* o `docker cp`
+1. Push a `main` (o ejecutá `Deploy` workflow manualmente desde la pestaña Actions).
+2. CI buildea api + web-b2b + migrate, las pushea a `ghcr.io/nipko/sales-travel-*:{sha,latest}`.
+3. CI hace SSH al VPS, sincroniza compose+Caddyfile+postgres-init, render `.env` desde secrets, `docker compose pull && up -d`.
+4. Smoke test: `curl https://api.planetour.cloud/api/health` (5 reintentos cada 10s).
+
+Tiempo total ~6–8 min en frío (build con cache caliente baja a ~3 min).
+
+---
+
+## 6. Operaciones comunes
+
+```bash
+# Logs en vivo
+ssh deploy@<IP> "cd /opt/sales-travel && docker compose logs -f api"
+
+# Restart de un servicio
+ssh deploy@<IP> "cd /opt/sales-travel && docker compose restart api"
+
+# Pinear una versión específica (rollback)
+# Ejecutar Deploy workflow desde Actions → "Run workflow" → eligiendo el SHA deseado.
+# Alternativa rápida: en el VPS, editar .env IMAGE_TAG=<sha> y `docker compose up -d`.
+
+# Backup de Postgres
+ssh deploy@<IP> "docker compose -f /opt/sales-travel/docker-compose.yml exec -T postgres pg_dumpall -U postgres" \
+  > backup-$(date +%F).sql
+
+# Estado del stack
+ssh deploy@<IP> "cd /opt/sales-travel && docker compose ps"
+```
 
 ---
 
 ## 7. Cuándo migrar a AWS
 
-Triggers definidos en `docs/discovery/02-decisiones-segunda-ronda.md`:
+Triggers en `docs/discovery/02-decisiones-segunda-ronda.md`:
 - > 500 reservas/día sostenido
 - SLA contractual > 99.5%
 - NDC/proveedor adicional con requerimiento PCI L1
 - > 100 k USD/mes en pagos procesados
 
-El stack está diseñado portable: las mismas imágenes corren idéntico en
-ECS/Fargate. Postgres → RDS, MinIO → S3, Redis → ElastiCache. Sin cambios
-de código en `apps/`.
+Stack diseñado portable: las mismas imágenes corren en ECS/Fargate. Postgres → RDS,
+MinIO → S3, Redis → ElastiCache. Sin cambios de código en `apps/`.

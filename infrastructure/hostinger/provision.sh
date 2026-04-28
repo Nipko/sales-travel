@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Provisioning one-time del VPS Hostinger para sales-travel.
-# Ejecutar como root en Ubuntu 24.04 LTS recién instalado.
+# Provisiona desde cero un VPS Ubuntu 24.04 LTS para sales-travel.
+# Ejecutar como root. Idempotente — se puede correr varias veces sin romper nada.
 #
-# Idempotente: se puede correr múltiples veces sin romper nada.
+# Variables opcionales:
+#   DEPLOY_USER   (default: deploy)
+#   SSH_PORT      (default: 22) — si lo cambiás, ajustar la var HOSTINGER_SSH_PORT en GH Actions
+#   APP_DIR       (default: /opt/sales-travel)
+#
+# Al final, si está conectado a una TTY, pide credenciales GHCR para hacer
+# `docker login` como el usuario deploy.
 
 set -euo pipefail
 
-APP_DIR="/opt/sales-travel"
-DEPLOY_USER="deploy"
+APP_DIR="${APP_DIR:-/opt/sales-travel}"
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
 SSH_PORT="${SSH_PORT:-22}"
 
-echo "==> 1/7 Actualizando sistema"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Este script debe correr como root." >&2
+  exit 1
+fi
+
+echo "==> 1/8 Actualizando sistema"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get upgrade -y
@@ -18,7 +29,7 @@ apt-get install -y --no-install-recommends \
   ca-certificates curl gnupg ufw fail2ban unattended-upgrades \
   rsync git jq openssl
 
-echo "==> 2/7 Instalando Docker Engine + Compose plugin"
+echo "==> 2/8 Instalando Docker Engine + Compose plugin"
 if ! command -v docker >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -30,11 +41,12 @@ if ! command -v docker >/dev/null 2>&1; then
   systemctl enable --now docker
 fi
 
-echo "==> 3/7 Creando usuario $DEPLOY_USER"
+echo "==> 3/8 Creando usuario $DEPLOY_USER"
 if ! id -u "$DEPLOY_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$DEPLOY_USER"
-  usermod -aG docker "$DEPLOY_USER"
 fi
+usermod -aG docker "$DEPLOY_USER"
+
 mkdir -p "/home/$DEPLOY_USER/.ssh"
 if [ -f /root/.ssh/authorized_keys ] && [ ! -s "/home/$DEPLOY_USER/.ssh/authorized_keys" ]; then
   cp /root/.ssh/authorized_keys "/home/$DEPLOY_USER/.ssh/authorized_keys"
@@ -43,11 +55,24 @@ chown -R "$DEPLOY_USER":"$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
 chmod 700 "/home/$DEPLOY_USER/.ssh"
 chmod 600 "/home/$DEPLOY_USER/.ssh/authorized_keys" 2>/dev/null || true
 
-echo "==> 4/7 Creando $APP_DIR"
-mkdir -p "$APP_DIR"
-chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$APP_DIR"
+echo "==> 4/8 Creando $APP_DIR"
+install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$APP_DIR"
 
-echo "==> 5/7 Configurando UFW (sólo Cloudflare en 80/443, SSH abierto)"
+echo "==> 5/8 SSH hardening en :$SSH_PORT"
+SSHD_CONF="/etc/ssh/sshd_config.d/99-sales-travel.conf"
+cat > "$SSHD_CONF" <<EOF
+Port $SSH_PORT
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+MaxAuthTries 3
+LoginGraceTime 30
+EOF
+systemctl reload ssh || systemctl reload sshd
+
+echo "==> 6/8 UFW (sólo Cloudflare en 80/443, SSH abierto en :$SSH_PORT)"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
@@ -60,11 +85,10 @@ for ip in $(curl -fsSL https://www.cloudflare.com/ips-v6); do
 done
 ufw --force enable
 
-echo "==> 6/7 Activando unattended-upgrades + fail2ban"
+echo "==> 7/8 fail2ban + unattended-upgrades + sysctl + journald"
 systemctl enable --now unattended-upgrades
 systemctl enable --now fail2ban
 
-echo "==> 7/7 Hardening sysctl + journald limits"
 cat >/etc/sysctl.d/99-sales-travel.conf <<'EOF'
 net.ipv4.tcp_syncookies = 1
 net.ipv4.conf.all.rp_filter = 1
@@ -72,6 +96,7 @@ net.ipv4.conf.default.rp_filter = 1
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv6.conf.all.accept_redirects = 0
 fs.file-max = 2097152
+vm.swappiness = 10
 EOF
 sysctl --system >/dev/null
 
@@ -83,12 +108,38 @@ SystemKeepFree=1G
 EOF
 systemctl restart systemd-journald
 
+echo "==> 8/8 Login a GHCR"
+ALREADY_LOGGED=false
+if sudo -u "$DEPLOY_USER" cat "/home/$DEPLOY_USER/.docker/config.json" 2>/dev/null | grep -q ghcr.io; then
+  ALREADY_LOGGED=true
+fi
+
+if [ "$ALREADY_LOGGED" = false ]; then
+  if [ -t 0 ]; then
+    read -r -p "GitHub username (para GHCR): " GHCR_USER
+    read -r -s -p "GHCR PAT (con scope read:packages): " GHCR_PAT
+    echo
+    if [ -n "$GHCR_USER" ] && [ -n "$GHCR_PAT" ]; then
+      sudo -u "$DEPLOY_USER" bash -c "echo '$GHCR_PAT' | docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+    else
+      echo "  (skipped — usuario o PAT vacío)"
+    fi
+  else
+    echo "  (skipped — no hay TTY interactiva. Loguear manualmente:"
+    echo "    sudo -iu $DEPLOY_USER bash -lc 'echo <PAT> | docker login ghcr.io -u <user> --password-stdin')"
+  fi
+else
+  echo "  ✓ ya logueado a ghcr.io"
+fi
+
 echo
-echo "✅ VPS provisionado."
+echo "✅ VPS listo."
 echo
-echo "Próximos pasos manuales:"
-echo "  1. Login a GHCR como usuario $DEPLOY_USER:"
-echo "       sudo -iu $DEPLOY_USER bash -lc 'echo <GHCR_PAT> | docker login ghcr.io -u <user> --password-stdin'"
-echo "  2. Configurar secrets en GitHub Actions (ver infrastructure/hostinger/README.md §3)."
-echo "  3. Apuntar DNS api.planetour.cloud y app.planetour.cloud al IP del VPS (proxied)."
-echo "  4. Push a main → GitHub Actions deploya."
+echo "Verificación rápida:"
+echo "  - sudo -iu $DEPLOY_USER docker pull hello-world"
+echo "  - sudo ufw status verbose"
+echo
+echo "Próximos pasos:"
+echo "  1. Configurar secrets/vars en GitHub Actions (ver infrastructure/hostinger/README.md §3)."
+echo "  2. Apuntar DNS api.planetour.cloud y app.planetour.cloud al IP de este VPS (Cloudflare proxied)."
+echo "  3. Push a main → GitHub Actions deploya."
