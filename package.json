@@ -1,6 +1,6 @@
 {
   "name": "sales-travel",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Plataforma consolidadora de turismo B2B/B2C para LATAM",
   "packageManager": "pnpm@9.15.0",

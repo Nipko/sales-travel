@@ -3,7 +3,13 @@ name: Deploy
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Tag de imagen a desplegar (sha o vX.Y.Z). Vacío = HEAD actual.'
+        required: false
+        type: string
 
 concurrency:
   group: deploy-prod
@@ -22,6 +28,7 @@ env:
 jobs:
   build:
     name: Build & push ${{ matrix.app.name }}
+    if: github.event_name != 'workflow_dispatch' || inputs.image_tag == ''
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -42,27 +49,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute tags
+        id: tags
+        run: |
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.app.name }}"
+          TAGS="$IMG:${{ github.sha }}"$'\n'"$IMG:latest"
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == v* ]]; then
+            TAGS="$TAGS"$'\n'"$IMG:${{ github.ref_name }}"
+          fi
+          {
+            echo 'tags<<EOF'
+            echo "$TAGS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.app.dockerfile }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.app.name }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_PREFIX }}-${{ matrix.app.name }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.app.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app.name }}
 
   deploy:
     name: Deploy to VPS
-    needs: build
+    needs: [build]
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: img
+        run: |
+          if [[ -n "${{ inputs.image_tag }}" ]]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup SSH
         run: |
@@ -75,7 +108,7 @@ jobs:
         run: |
           umask 077
           cat > .env <<EOF
-          IMAGE_TAG=${{ github.sha }}
+          IMAGE_TAG=${{ steps.img.outputs.tag }}
           POSTGRES_ADMIN_PASSWORD=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           APP_USER_PASSWORD=${{ secrets.APP_USER_PASSWORD }}
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
@@ -109,7 +142,7 @@ jobs:
           for i in 1 2 3 4 5 6; do
             if curl -fsS --max-time 10 https://api.planetour.cloud/api/health; then
               echo
-              echo "✓ smoke test passed"
+              echo "✓ smoke test passed (tag=${{ steps.img.outputs.tag }})"
               exit 0
             fi
             echo "waiting for api... ($i/6)"
