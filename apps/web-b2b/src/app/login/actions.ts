@@ -14,9 +14,13 @@ interface AuthResult {
   tenantId?: string;
 }
 
+function asString(value: FormDataEntryValue | null): string {
+  return typeof value === 'string' ? value : '';
+}
+
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = String(formData.get('email') ?? '').trim();
-  const password = String(formData.get('password') ?? '');
+  const email = asString(formData.get('email')).trim();
+  const password = asString(formData.get('password'));
 
   if (!email || !password) {
     return { error: 'Email y contraseña son obligatorios.' };
