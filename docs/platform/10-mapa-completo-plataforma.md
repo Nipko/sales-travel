@@ -223,6 +223,7 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 ### 3.1 M0.1 — Auth
 
 **Métodos de autenticación soportados:**
+
 - Email + password (con políticas de seguridad: 12+ chars, sin dictionary words)
 - **Magic link** (default para B2C: sin contraseña, link al email)
 - **Passkeys/WebAuthn** (Ola 2+, biométrico nativo)
@@ -233,6 +234,7 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - Detección de **anomalías** (login desde nueva geo/dispositivo → email + reto MFA)
 
 **Stack técnico:**
+
 - Fase 1: **BetterAuth** o **Lucia** (PG-backed, code-owned, sin lock-in).
 - Fase 2 opción: migrar a **Clerk** (mejor DX, MFA, organizations) o **Cognito** (más barato a escala, peor DX).
 - JWT firmado con **EdDSA** (Ed25519), rotación de claves trimestral con KID en header.
@@ -261,30 +263,30 @@ ABAC (políticas dinámicas evaluadas en runtime):
 
 ### 3.3 Hardening de Seguridad
 
-| Capa | Medida |
-|---|---|
-| **Red** | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22. SSH key-only (Ed25519), puerto custom, fail2ban. |
-| **Aplicación** | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token. |
-| **Datos** | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload. |
-| **Secretos** | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima. |
-| **Auditoría** | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB. |
-| **Pagos** | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys. |
-| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable. |
-| **Pentesting** | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3. |
-| **Compliance** | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado). |
+| Capa             | Medida                                                                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Red**          | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22. SSH key-only (Ed25519), puerto custom, fail2ban.                                                                                |
+| **Aplicación**   | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token. |
+| **Datos**        | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload.                                                                                                         |
+| **Secretos**     | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima.                                                                                                                                      |
+| **Auditoría**    | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB.                                                                    |
+| **Pagos**        | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys.                                                                                                                    |
+| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable.                                                                                                                                                         |
+| **Pentesting**   | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3.                                                                                                                                    |
+| **Compliance**   | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado).                                                                |
 
 ### 3.4 Threat Model resumido
 
-| Amenaza | Vector | Mitigación |
-|---|---|---|
-| Robo de cuenta | Phishing, credential stuffing | MFA obligatorio admins, magic link B2C, detección anomalías |
-| Filtración cross-tenant | Bug en query | RLS forzada, tests CI con doble tenant, fuzz testing |
-| Fraude de pago | Card testing, BIN attack | 3DS challenge, score Stripe Radar / MP, rate limiting checkout |
-| Compromiso credenciales proveedor (GDS) | Leak en logs/git | Vault sops, NEVER log secrets, scanner pre-commit |
-| Webhook spoofing | Endpoint público sin verificación | Signature verification (Stripe/MP firma HMAC), IP whitelist |
-| Inyección en search | Input malicioso pasado a proveedor | Sanitizer + Zod schema en cada endpoint |
-| Insider threat | Empleado malintencionado | Audit log inmutable, principio mínimo privilegio, revisión accesos trimestral |
-| Ransomware | Compromiso VPS | Backups inmutables Backblaze B2, restore drills mensuales, DR plan |
+| Amenaza                                 | Vector                             | Mitigación                                                                    |
+| --------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
+| Robo de cuenta                          | Phishing, credential stuffing      | MFA obligatorio admins, magic link B2C, detección anomalías                   |
+| Filtración cross-tenant                 | Bug en query                       | RLS forzada, tests CI con doble tenant, fuzz testing                          |
+| Fraude de pago                          | Card testing, BIN attack           | 3DS challenge, score Stripe Radar / MP, rate limiting checkout                |
+| Compromiso credenciales proveedor (GDS) | Leak en logs/git                   | Vault sops, NEVER log secrets, scanner pre-commit                             |
+| Webhook spoofing                        | Endpoint público sin verificación  | Signature verification (Stripe/MP firma HMAC), IP whitelist                   |
+| Inyección en search                     | Input malicioso pasado a proveedor | Sanitizer + Zod schema en cada endpoint                                       |
+| Insider threat                          | Empleado malintencionado           | Audit log inmutable, principio mínimo privilegio, revisión accesos trimestral |
+| Ransomware                              | Compromiso VPS                     | Backups inmutables Backblaze B2, restore drills mensuales, DR plan            |
 
 ---
 
@@ -661,6 +663,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 > REST principal + WebSocket para search/cotización en vivo. GraphQL gateway opcional Ola 2 para B2C.
 
 ### Auth & Identity
+
 ```
 POST   /auth/signup
 POST   /auth/login
@@ -673,6 +676,7 @@ GET    /auth/me
 ```
 
 ### Tenant
+
 ```
 GET    /tenants/me                       -- mi tenant info
 PATCH  /tenants/me/branding
@@ -683,6 +687,7 @@ PATCH  /tenants/me/users/:id/role
 ```
 
 ### Search
+
 ```
 POST   /search/flights                   -- crea search session, devuelve session_id
 POST   /search/hotels
@@ -694,6 +699,7 @@ WS     /search/sessions/:id/stream       -- stream de resultados llegando
 ```
 
 ### Quote (Package Studio)
+
 ```
 POST   /quotes                           -- crea draft
 GET    /quotes/:id
@@ -707,6 +713,7 @@ POST   /quotes/:id/ai/suggest            -- pide sugerencia IA
 ```
 
 ### Booking
+
 ```
 POST   /bookings                         -- crea booking (inicia saga)
 GET    /bookings/:id
@@ -718,6 +725,7 @@ GET    /bookings/:id/audit               -- timeline de eventos
 ```
 
 ### Payment
+
 ```
 POST   /payments/intents                 -- crea payment intent
 GET    /payments/intents/:id
@@ -731,6 +739,7 @@ GET    /payments/wallet/transactions
 ```
 
 ### Pricing
+
 ```
 GET    /pricing/rules
 POST   /pricing/rules
@@ -741,6 +750,7 @@ GET    /pricing/preview                  -- aplica reglas a una oferta
 ```
 
 ### Conversation (IA)
+
 ```
 POST   /webhooks/whatsapp                -- inbound de Meta Cloud API
 POST   /webhooks/instagram
@@ -754,6 +764,7 @@ POST   /conversations/:id/escalate
 ```
 
 ### Reporting / BI
+
 ```
 GET    /reports/dashboards/:slug         -- dashboard pre-armado
 POST   /reports/queries                  -- query ad-hoc (con guardrails)
@@ -762,6 +773,7 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ```
 
 ### Admin (superadmin)
+
 ```
 GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
@@ -819,6 +831,7 @@ sequenceDiagram
 ```
 
 **Latencias objetivo:**
+
 - Search: p95 < 4s (vuelos), < 6s (hoteles)
 - Quote create: < 500ms
 - Booking saga (hold + payment + confirm): < 90s p95
@@ -877,6 +890,7 @@ sequenceDiagram
 ## 8. Sistema de Diseño (Design System)
 
 ### 8.1 Principios visuales
+
 - **Limpio**: mucho whitespace, jerarquía tipográfica clara, sin decoración innecesaria.
 - **Denso pero respirado**: tablas B2B con info densa, pero bien spaced (8px grid base).
 - **Mobile-first**: todo flujo viable en pantalla 375px.
@@ -884,6 +898,7 @@ sequenceDiagram
 - **Microinteracciones**: feedback inmediato en cada acción (skeleton, optimistic UI, animaciones < 200ms).
 
 ### 8.2 Stack visual recomendado (consolidaré con el agente de skills)
+
 - **Framework**: Next.js 15 (App Router)
 - **Componentes base**: **shadcn/ui** (no es lib instalada, son componentes copiados al repo — control total)
 - **Estilos**: **Tailwind CSS 4** + design tokens (CSS variables por tenant)
@@ -898,11 +913,12 @@ sequenceDiagram
 - **Figma**: source of truth para tokens (sincronizado vía Style Dictionary)
 
 ### 8.3 Design tokens (multi-tenant)
+
 ```json
 {
   "color": {
     "brand-primary": "var(--tenant-primary, #4F46E5)",
-    "brand-accent":  "var(--tenant-accent, #06B6D4)",
+    "brand-accent": "var(--tenant-accent, #06B6D4)",
     "neutral-0..900": "...",
     "semantic-success|warning|danger|info": "..."
   },
@@ -918,6 +934,7 @@ sequenceDiagram
 ```
 
 ### 8.4 Patrones UI clave
+
 - **Comando palette** (Ctrl/Cmd + K) — saltar entre cualquier vista, buscar reservas, abrir cotización
 - **Notificaciones** Toast (radix) + Inbox persistente
 - **Modales** y **drawers** (sheets) para edición sin perder contexto
@@ -930,25 +947,25 @@ sequenceDiagram
 
 ## 9. Matriz Módulo × Ola
 
-| Módulo | Ola 1 (Mes 0-6) | Ola 2 (Mes 6-10) | Ola 3 (Mes 10-14) |
-|---|---|---|---|
-| M0 Identidad/Seguridad | ✅ Auth + RBAC + MFA + Audit + Hardening | ✅ Passkeys + SSO Google | ✅ SAML enterprise + Bug bounty |
-| M1 Búsqueda | ✅ Vuelos GDS + Hoteles HotelDo+Hotelbeds + Asistencia + Mapping Giata | ✅ Actividades + Autos + Perú | ✅ NDC directo + B2C público |
-| M2 Package Studio | ✅ Drag & drop core (vuelo+hotel+asistencia) | ✅ Sumar actividades+autos | ✅ IA sugerencias contextuales |
-| M3 Cotizador | ✅ PDF + link público + IA básica | ✅ IA avanzada + tracking | ✅ Negociación interactiva |
-| M4 Reservas/Emisión | ✅ Saga + compensación | ✅ Modificaciones | ✅ Cancelaciones complejas |
-| M5 Pagos | ✅ Stripe + MP + Wallet B2B + Refund básico | ✅ dLocal + más métodos locales | ✅ Antifraude IA + reembolso anticipado |
-| M6 Pricing | ✅ Motor parametrizable básico | ✅ Reglas avanzadas + simulador | ✅ ML pricing optimization |
-| M7 Multi-tenant | ✅ White-label básico (logo+colores+dominio) | ✅ Email branding + PWA | ✅ DB dedicada para enterprise |
-| M8 Roles | ✅ RBAC core | ✅ ABAC políticas | ✅ Equipos/squads |
-| M9 IA Omnicanal | ✅ WhatsApp cotización | ✅ IG+TG+Voz+Webchat | ✅ Reserva+cobro autónomo |
-| M10 Contabilidad | ✅ Asientos básicos | ✅ Cierre mensual | ✅ Multi-país completo |
-| M11 Facturación | ✅ DIAN + BR via MoR | ✅ SUNAT Perú | ✅ CNPJ propio BR + Pix directo |
-| M12 Reporting | ✅ Dashboards core | ✅ BI embebido + drill-down | ✅ Anomalías IA + embeds |
-| M13 Apps Móviles | (diseño Figma) | ✅ App Vendedor | ✅ App Cliente Final + PWA |
-| M14 Soporte | ✅ Tickets básicos | ✅ BPO N1 + runbooks | ✅ SLA enterprise |
-| M15 Plataforma Integraciones | ✅ Provider Registry + circuit breakers | ✅ Health monitoring | ✅ Failover automático |
-| M16 Plataforma Operacional | ✅ CI/CD + OTel + Sentry + Backups | ✅ Feature flags + Datadog | ✅ Migración AWS productiva |
+| Módulo                       | Ola 1 (Mes 0-6)                                                        | Ola 2 (Mes 6-10)                | Ola 3 (Mes 10-14)                       |
+| ---------------------------- | ---------------------------------------------------------------------- | ------------------------------- | --------------------------------------- |
+| M0 Identidad/Seguridad       | ✅ Auth + RBAC + MFA + Audit + Hardening                               | ✅ Passkeys + SSO Google        | ✅ SAML enterprise + Bug bounty         |
+| M1 Búsqueda                  | ✅ Vuelos GDS + Hoteles HotelDo+Hotelbeds + Asistencia + Mapping Giata | ✅ Actividades + Autos + Perú   | ✅ NDC directo + B2C público            |
+| M2 Package Studio            | ✅ Drag & drop core (vuelo+hotel+asistencia)                           | ✅ Sumar actividades+autos      | ✅ IA sugerencias contextuales          |
+| M3 Cotizador                 | ✅ PDF + link público + IA básica                                      | ✅ IA avanzada + tracking       | ✅ Negociación interactiva              |
+| M4 Reservas/Emisión          | ✅ Saga + compensación                                                 | ✅ Modificaciones               | ✅ Cancelaciones complejas              |
+| M5 Pagos                     | ✅ Stripe + MP + Wallet B2B + Refund básico                            | ✅ dLocal + más métodos locales | ✅ Antifraude IA + reembolso anticipado |
+| M6 Pricing                   | ✅ Motor parametrizable básico                                         | ✅ Reglas avanzadas + simulador | ✅ ML pricing optimization              |
+| M7 Multi-tenant              | ✅ White-label básico (logo+colores+dominio)                           | ✅ Email branding + PWA         | ✅ DB dedicada para enterprise          |
+| M8 Roles                     | ✅ RBAC core                                                           | ✅ ABAC políticas               | ✅ Equipos/squads                       |
+| M9 IA Omnicanal              | ✅ WhatsApp cotización                                                 | ✅ IG+TG+Voz+Webchat            | ✅ Reserva+cobro autónomo               |
+| M10 Contabilidad             | ✅ Asientos básicos                                                    | ✅ Cierre mensual               | ✅ Multi-país completo                  |
+| M11 Facturación              | ✅ DIAN + BR via MoR                                                   | ✅ SUNAT Perú                   | ✅ CNPJ propio BR + Pix directo         |
+| M12 Reporting                | ✅ Dashboards core                                                     | ✅ BI embebido + drill-down     | ✅ Anomalías IA + embeds                |
+| M13 Apps Móviles             | (diseño Figma)                                                         | ✅ App Vendedor                 | ✅ App Cliente Final + PWA              |
+| M14 Soporte                  | ✅ Tickets básicos                                                     | ✅ BPO N1 + runbooks            | ✅ SLA enterprise                       |
+| M15 Plataforma Integraciones | ✅ Provider Registry + circuit breakers                                | ✅ Health monitoring            | ✅ Failover automático                  |
+| M16 Plataforma Operacional   | ✅ CI/CD + OTel + Sentry + Backups                                     | ✅ Feature flags + Datadog      | ✅ Migración AWS productiva             |
 
 ---
 

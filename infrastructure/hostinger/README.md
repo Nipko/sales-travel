@@ -42,6 +42,7 @@ ssh root@<IP> "bash /tmp/provision.sh"
 ```
 
 Lo que hace `provision.sh`:
+
 1. Update sistema + paquetes base.
 2. Instala Docker Engine + Compose plugin.
 3. Crea usuario `deploy` con grupo `docker` y autoriza tu pubkey.
@@ -52,9 +53,11 @@ Lo que hace `provision.sh`:
 8. `docker login ghcr.io` interactivo como `deploy` (usar PAT con scope `read:packages`).
 
 Si necesitás otro puerto SSH:
+
 ```bash
 SSH_PORT=2222 ssh root@<IP> "SSH_PORT=2222 bash /tmp/provision.sh"
 ```
+
 Y luego configurar la var `HOSTINGER_SSH_PORT=2222` en GitHub.
 
 ---
@@ -65,18 +68,18 @@ Zona `planetour.cloud`, registros **proxied (orange cloud)**:
 
 ### Sprint 0 (ahora)
 
-| Tipo | Nombre | Valor | Apunta a |
-|---|---|---|---|
-| A | `api`  | IP del VPS | `apps/api` (NestJS) |
-| A | `app`  | IP del VPS | `apps/web-b2b` (panel agencia) |
+| Tipo | Nombre | Valor      | Apunta a                       |
+| ---- | ------ | ---------- | ------------------------------ |
+| A    | `api`  | IP del VPS | `apps/api` (NestJS)            |
+| A    | `app`  | IP del VPS | `apps/web-b2b` (panel agencia) |
 
 ### Sprint posterior (a medida que se sumen apps)
 
-| Tipo | Nombre | Apunta a | Cuándo |
-|---|---|---|---|
-| A | `@` y `www`  | `apps/web-b2c`     | cuando exista el sitio público B2C |
-| A | `admin`      | `apps/web-admin`   | cuando exista el panel superadmin |
-| A | `*.tenants`  | `apps/web-b2b` (wildcard) | white-label dinámico |
+| Tipo | Nombre      | Apunta a                  | Cuándo                             |
+| ---- | ----------- | ------------------------- | ---------------------------------- |
+| A    | `@` y `www` | `apps/web-b2c`            | cuando exista el sitio público B2C |
+| A    | `admin`     | `apps/web-admin`          | cuando exista el panel superadmin  |
+| A    | `*.tenants` | `apps/web-b2b` (wildcard) | white-label dinámico               |
 
 > Para `*.tenants` se requiere cambiar Caddy a DNS-01 challenge (Cloudflare API token con permiso `Zone:DNS:Edit`); HTTP-01 no soporta wildcards.
 
@@ -92,21 +95,21 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 #### Secrets (todos requeridos)
 
-| Secret | Cómo generarlo / qué poner |
-|---|---|
-| `HOSTINGER_HOST`           | IP pública del VPS (ej. `203.0.113.42`) |
-| `HOSTINGER_USER`           | `deploy` |
-| `HOSTINGER_SSH_KEY`        | Clave privada SSH (formato OpenSSH, contenido completo `-----BEGIN…END-----`) cuyo público está en `~deploy/.ssh/authorized_keys` del VPS |
-| `POSTGRES_ADMIN_PASSWORD`  | `openssl rand -base64 32` — superuser, sólo migraciones |
-| `APP_USER_PASSWORD`        | `openssl rand -base64 32` — rol runtime de `apps/api`, respeta RLS |
-| `REDIS_PASSWORD`           | `openssl rand -base64 32` |
-| `JWT_SECRET`               | `openssl rand -base64 64` (mínimo 32 chars; el código lo valida) |
+| Secret                    | Cómo generarlo / qué poner                                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOSTINGER_HOST`          | IP pública del VPS (ej. `203.0.113.42`)                                                                                                   |
+| `HOSTINGER_USER`          | `deploy`                                                                                                                                  |
+| `HOSTINGER_SSH_KEY`       | Clave privada SSH (formato OpenSSH, contenido completo `-----BEGIN…END-----`) cuyo público está en `~deploy/.ssh/authorized_keys` del VPS |
+| `POSTGRES_ADMIN_PASSWORD` | `openssl rand -base64 32` — superuser, sólo migraciones                                                                                   |
+| `APP_USER_PASSWORD`       | `openssl rand -base64 32` — rol runtime de `apps/api`, respeta RLS                                                                        |
+| `REDIS_PASSWORD`          | `openssl rand -base64 32`                                                                                                                 |
+| `JWT_SECRET`              | `openssl rand -base64 64` (mínimo 32 chars; el código lo valida)                                                                          |
 
 #### Variables (opcionales)
 
-| Variable | Default | Uso |
-|---|---|---|
-| `HOSTINGER_SSH_PORT` | `22` | Si cambiaste el puerto SSH en `provision.sh` |
+| Variable             | Default | Uso                                          |
+| -------------------- | ------- | -------------------------------------------- |
+| `HOSTINGER_SSH_PORT` | `22`    | Si cambiaste el puerto SSH en `provision.sh` |
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 
@@ -200,6 +203,7 @@ Re-correrlo con el mismo email **rota la contraseña** (idempotente).
 ## 8. Cuándo migrar a AWS
 
 Triggers en `docs/discovery/02-decisiones-segunda-ronda.md`:
+
 - > 500 reservas/día sostenido
 - SLA contractual > 99.5%
 - NDC/proveedor adicional con requerimiento PCI L1

@@ -11,7 +11,9 @@ COPY pnpm-lock.yaml* ./
 COPY packages packages
 COPY apps/api apps/api
 RUN pnpm install --filter @sales-travel/api... --no-frozen-lockfile
-RUN pnpm --filter @sales-travel/api build
+RUN pnpm --filter @sales-travel/validation run build
+RUN pnpm --filter @sales-travel/core run build
+RUN pnpm --filter @sales-travel/api run build
 RUN pnpm --filter @sales-travel/api deploy --prod /out/api
 
 FROM node:${NODE_VERSION} AS runner

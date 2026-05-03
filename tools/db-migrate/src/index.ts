@@ -41,9 +41,7 @@ async function ensureMigrationsTable(client: pg.Client): Promise<void> {
 }
 
 async function listApplied(client: pg.Client): Promise<Set<string>> {
-  const { rows } = await client.query<{ version: string }>(
-    'SELECT version FROM schema_migrations',
-  );
+  const { rows } = await client.query<{ version: string }>('SELECT version FROM schema_migrations');
   return new Set(rows.map((r) => r.version));
 }
 

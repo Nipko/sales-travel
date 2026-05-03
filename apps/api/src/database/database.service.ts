@@ -38,10 +38,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
    * Ejecuta `fn` dentro de una transacción con `app.current_tenant_id` seteado.
    * Las queries dentro de `fn` ven sólo filas del tenant indicado (RLS forzada).
    */
-  async withTenant<T>(
-    tenantId: string,
-    fn: (trx: Transaction<DB>) => Promise<T>,
-  ): Promise<T> {
+  async withTenant<T>(tenantId: string, fn: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
       await sql`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`.execute(trx);
       return fn(trx);

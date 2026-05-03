@@ -15,28 +15,28 @@ Toda la documentación de discovery, research y diseño de plataforma está en `
 
 ### Discovery (decisiones del founder y planificación)
 
-| Documento | Propósito |
-|---|---|
-| [`01-preguntas.md`](./docs/discovery/01-preguntas.md) | 28 preguntas de discovery con respuestas del founder |
-| [`02-decisiones.md`](./docs/discovery/02-decisiones.md) | Decisiones cerradas en segunda ronda + defaults aceptados |
-| [`06-documento-maestro.md`](./docs/discovery/06-documento-maestro.md) | Visión, misión, módulos, modelo de datos macro, riesgos |
-| [`07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md) | Roadmap mes a mes en 3 olas (Mes 6 / 10 / 14) con DoD |
-| [`08-organizacion-equipo.md`](./docs/discovery/08-organizacion-equipo.md) | Perfiles, salarios LATAM, plan de contratación, cultura |
+| Documento                                                                 | Propósito                                                 |
+| ------------------------------------------------------------------------- | --------------------------------------------------------- |
+| [`01-preguntas.md`](./docs/discovery/01-preguntas.md)                     | 28 preguntas de discovery con respuestas del founder      |
+| [`02-decisiones.md`](./docs/discovery/02-decisiones.md)                   | Decisiones cerradas en segunda ronda + defaults aceptados |
+| [`06-documento-maestro.md`](./docs/discovery/06-documento-maestro.md)     | Visión, misión, módulos, modelo de datos macro, riesgos   |
+| [`07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md)               | Roadmap mes a mes en 3 olas (Mes 6 / 10 / 14) con DoD     |
+| [`08-organizacion-equipo.md`](./docs/discovery/08-organizacion-equipo.md) | Perfiles, salarios LATAM, plan de contratación, cultura   |
 
 ### Research (investigaciones técnicas y de mercado)
 
-| Documento | Propósito |
-|---|---|
-| [`03-integraciones-ecosistema.md`](./docs/research/03-integraciones-ecosistema.md) | Mapa de proveedores: GDS, NDC, hoteles, actividades, asistencias, autos, pagos |
-| [`04-regulacion-fiscal-latam.md`](./docs/research/04-regulacion-fiscal-latam.md) | Regulación, fiscal y protección de datos en CO/BR/PE |
-| [`05-arquitectura-referencia.md`](./docs/research/05-arquitectura-referencia.md) | Arquitectura de referencia (fase Hostinger → AWS), 15 abstracciones cloud-ready |
-| [`06-competencia-latam.md`](./docs/research/06-competencia-latam.md) | Análisis competitivo: Ideas Fractal, Wooba, Sakura + tier-1 internacionales |
-| [`07-skills-uiux-claude-code.md`](./docs/research/07-skills-uiux-claude-code.md) | Stack frontend + skills Claude Code recomendados |
+| Documento                                                                          | Propósito                                                                       |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [`03-integraciones-ecosistema.md`](./docs/research/03-integraciones-ecosistema.md) | Mapa de proveedores: GDS, NDC, hoteles, actividades, asistencias, autos, pagos  |
+| [`04-regulacion-fiscal-latam.md`](./docs/research/04-regulacion-fiscal-latam.md)   | Regulación, fiscal y protección de datos en CO/BR/PE                            |
+| [`05-arquitectura-referencia.md`](./docs/research/05-arquitectura-referencia.md)   | Arquitectura de referencia (fase Hostinger → AWS), 15 abstracciones cloud-ready |
+| [`06-competencia-latam.md`](./docs/research/06-competencia-latam.md)               | Análisis competitivo: Ideas Fractal, Wooba, Sakura + tier-1 internacionales     |
+| [`07-skills-uiux-claude-code.md`](./docs/research/07-skills-uiux-claude-code.md)   | Stack frontend + skills Claude Code recomendados                                |
 
 ### Plataforma (mapa técnico exhaustivo)
 
-| Documento | Propósito |
-|---|---|
+| Documento                                                                          | Propósito                                                                                                                                  |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) | **Fuente de verdad técnica.** 17 módulos, modelo de datos, sitemap UI, endpoints API, flujos críticos, design system, estructura del repo. |
 
 ---
@@ -46,6 +46,7 @@ Toda la documentación de discovery, research y diseño de plataforma está en `
 **"El primer consolidador conversacional de LATAM."**
 
 Tres ángulos diferenciadores:
+
 - **Conversacional first**: WhatsApp Business como canal de venta de primera clase, no add-on.
 - **Package Studio**: constructor visual drag-and-drop de paquetes dinámicos.
 - **Multi-país andino-brasileño**: única plataforma diseñada para CO + PE + BR desde día 1.
@@ -74,11 +75,11 @@ Detalle completo en [`docs/research/05-arquitectura-referencia.md`](./docs/resea
 
 ## 🗺️ Roadmap por olas (resumen)
 
-| Ola | Mes | Foco |
-|---|---|---|
-| **Ola 1** | 0–6 | B2B Colombia + Brasil. Aéreo (Travelport+Amadeus+LATAM NDC), hoteles (HotelDo+Hotelbeds), asistencia. WhatsApp cotización con IA. White-label básico. |
-| **Ola 2** | 6–10 | Actividades, autos, Perú. App vendedor móvil. IA omnicanal (IG+TG+webchat+voz). Dry-run AWS. |
-| **Ola 3** | 10–14 | B2C completo. App cliente final. IA con reserva+cobro autónomo. Migración productiva AWS. CNPJ propio BR. |
+| Ola       | Mes   | Foco                                                                                                                                                  |
+| --------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ola 1** | 0–6   | B2B Colombia + Brasil. Aéreo (Travelport+Amadeus+LATAM NDC), hoteles (HotelDo+Hotelbeds), asistencia. WhatsApp cotización con IA. White-label básico. |
+| **Ola 2** | 6–10  | Actividades, autos, Perú. App vendedor móvil. IA omnicanal (IG+TG+webchat+voz). Dry-run AWS.                                                          |
+| **Ola 3** | 10–14 | B2C completo. App cliente final. IA con reserva+cobro autónomo. Migración productiva AWS. CNPJ propio BR.                                             |
 
 Detalle en [`docs/discovery/07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md).
 
@@ -87,6 +88,7 @@ Detalle en [`docs/discovery/07-roadmap-olas.md`](./docs/discovery/07-roadmap-ola
 ## 👥 Equipo
 
 Headcount objetivo:
+
 - **Mes 0:** founder + CTO + PM + UX (4)
 - **Mes 6:** 12 personas (cierre Ola 1)
 - **Mes 10:** 20 personas (cierre Ola 2)

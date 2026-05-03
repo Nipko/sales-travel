@@ -14,14 +14,14 @@ Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenci
 
 ## 📚 Antes de cualquier cambio: leer la fuente de verdad
 
-| Pregunta | Documento |
-|---|---|
+| Pregunta                                                | Documento                                      |
+| ------------------------------------------------------- | ---------------------------------------------- |
 | ¿Qué módulos existen? ¿Qué endpoints? ¿Modelo de datos? | `docs/platform/10-mapa-completo-plataforma.md` |
-| ¿Por qué decidimos X arquitectura/proveedor? | `docs/research/05-arquitectura-referencia.md` |
-| ¿Qué proveedor de hoteles/GDS/pagos usamos? | `docs/research/03-integraciones-ecosistema.md` |
-| ¿Qué exige DIAN/SUNAT/NF-e? | `docs/research/04-regulacion-fiscal-latam.md` |
-| ¿Quién es la competencia? ¿Cuáles son los gaps? | `docs/research/06-competencia-latam.md` |
-| ¿Cuándo se construye qué? | `docs/discovery/07-roadmap-olas.md` |
+| ¿Por qué decidimos X arquitectura/proveedor?            | `docs/research/05-arquitectura-referencia.md`  |
+| ¿Qué proveedor de hoteles/GDS/pagos usamos?             | `docs/research/03-integraciones-ecosistema.md` |
+| ¿Qué exige DIAN/SUNAT/NF-e?                             | `docs/research/04-regulacion-fiscal-latam.md`  |
+| ¿Quién es la competencia? ¿Cuáles son los gaps?         | `docs/research/06-competencia-latam.md`        |
+| ¿Cuándo se construye qué?                               | `docs/discovery/07-roadmap-olas.md`            |
 
 **Regla:** si vas a tomar una decisión técnica significativa, primero verifica que no esté ya decidida en estos docs.
 
@@ -165,6 +165,7 @@ Detalle en `docs/platform/10-mapa-completo-plataforma.md` §3.
 ## 📞 Para preguntas no cubiertas aquí
 
 Antes de inventar respuesta, leer en este orden:
+
 1. `docs/platform/10-mapa-completo-plataforma.md` (mapa técnico)
 2. `docs/research/05-arquitectura-referencia.md` (decisiones arquitectónicas)
 3. `docs/discovery/06-documento-maestro.md` (visión y scope)

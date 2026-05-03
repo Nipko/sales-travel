@@ -11,8 +11,14 @@ export const RegisterSchema = z.object({
       .max(50)
       .regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
     name: z.string().min(2).max(120),
-    countryCode: z.string().length(2).regex(/^[A-Z]{2}$/),
-    defaultCurrency: z.string().length(3).regex(/^[A-Z]{3}$/),
+    countryCode: z
+      .string()
+      .length(2)
+      .regex(/^[A-Z]{2}$/),
+    defaultCurrency: z
+      .string()
+      .length(3)
+      .regex(/^[A-Z]{3}$/),
     defaultLanguage: z.enum(['es', 'pt', 'en']).default('es'),
   }),
 });

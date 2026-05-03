@@ -5,8 +5,14 @@ export { z };
 // Identificadores comunes
 export const TenantIdSchema = z.string().uuid();
 export const UserIdSchema = z.string().uuid();
-export const CurrencyCodeSchema = z.string().length(3).regex(/^[A-Z]{3}$/);
-export const CountryCodeSchema = z.string().length(2).regex(/^[A-Z]{2}$/);
+export const CurrencyCodeSchema = z
+  .string()
+  .length(3)
+  .regex(/^[A-Z]{3}$/);
+export const CountryCodeSchema = z
+  .string()
+  .length(2)
+  .regex(/^[A-Z]{2}$/);
 export const LanguageCodeSchema = z.enum(['es', 'pt', 'en']);
 
 // Paginación

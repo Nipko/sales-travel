@@ -20,7 +20,7 @@ Diseñar para Hostinger VPS hoy y AWS mañana exige una sola disciplina: **escri
 
 ### 1.1 Patrones probados en consolidadores reales
 
-Los consolidadores serios (Hotelbeds, Travelfusion, Travix, Despegar internamente) convergen en una arquitectura **event-driven con bounded contexts** alrededor del *itinerary lifecycle*: `Search → Quote → Hold → Book → Ticket/Voucher → PostSale → Refund/Void`. Cada estado emite eventos de dominio (`OfferSelected`, `BookingConfirmed`, `TicketIssued`, `RefundRequested`) que alimentan proyecciones (analítica, contabilidad, notificaciones) sin acoplamientos sincrónicos.
+Los consolidadores serios (Hotelbeds, Travelfusion, Travix, Despegar internamente) convergen en una arquitectura **event-driven con bounded contexts** alrededor del _itinerary lifecycle_: `Search → Quote → Hold → Book → Ticket/Voucher → PostSale → Refund/Void`. Cada estado emite eventos de dominio (`OfferSelected`, `BookingConfirmed`, `TicketIssued`, `RefundRequested`) que alimentan proyecciones (analítica, contabilidad, notificaciones) sin acoplamientos sincrónicos.
 
 **Recomendación arquitectónica:** **Modular Monolith hexagonal** (a la Shopify, GitHub, Basecamp) con **event bus interno** (in-process + outbox a Redis Streams). Razones:
 
@@ -36,24 +36,24 @@ Cada proveedor (Amadeus, Sabre, Travelport, LATAM NDC, HotelDo, Mevuelo, etc.) h
 Cliente → SearchOrchestrator → [N x ProviderAdapter (ACL)] → CanonicalOffer → Aggregator → Cache → UI
 ```
 
-- **Canonical Domain Model** propio: `Offer`, `Itinerary`, `Segment`, `Fare`, `Pax`, `AncillaryRule`. *Nunca* exponer estructuras de proveedor al dominio.
+- **Canonical Domain Model** propio: `Offer`, `Itinerary`, `Segment`, `Fare`, `Pax`, `AncillaryRule`. _Nunca_ exponer estructuras de proveedor al dominio.
 - **ProviderAdapter** por proveedor implementa `ISearchProvider`, `IBookingProvider`, `IPostSaleProvider`. Traduce SOAP/XML/REST/GraphQL → modelo canónico.
-- **Scatter-Gather** paralelo con `Promise.allSettled` y *deadline budget* (e.g. 4s para vuelos, 6s para hoteles). Lo que no llega en tiempo se descarta o se sirve "stale" desde cache.
+- **Scatter-Gather** paralelo con `Promise.allSettled` y _deadline budget_ (e.g. 4s para vuelos, 6s para hoteles). Lo que no llega en tiempo se descarta o se sirve "stale" desde cache.
 - **Normalización fiscal y de fees** en el agregador (no en el adapter), para que los markups multi-tenant se apliquen consistentemente.
 
 ### 1.3 Cache Strategy
 
 Búsquedas turísticas son volátiles pero costosas. TTL granular por categoría:
 
-| Recurso | TTL | Key strategy |
-|---|---|---|
-| Búsqueda vuelos por OD+fecha | 2-5 min | `search:flights:{tenant}:{origin}:{dest}:{date}:{pax_hash}` |
-| Búsqueda hoteles | 10-15 min | `search:hotels:{tenant}:{city}:{checkin}:{checkout}:{rooms_hash}` |
-| Catálogo destinos/imágenes | 24h | `catalog:dest:{id}` |
-| Tarifas de cambio | 1h | `fx:{base}:{quote}` |
-| Disponibilidad puntual (post-click) | 30s o no-cache | `avail:{provider}:{offer_id}` |
+| Recurso                             | TTL            | Key strategy                                                      |
+| ----------------------------------- | -------------- | ----------------------------------------------------------------- |
+| Búsqueda vuelos por OD+fecha        | 2-5 min        | `search:flights:{tenant}:{origin}:{dest}:{date}:{pax_hash}`       |
+| Búsqueda hoteles                    | 10-15 min      | `search:hotels:{tenant}:{city}:{checkin}:{checkout}:{rooms_hash}` |
+| Catálogo destinos/imágenes          | 24h            | `catalog:dest:{id}`                                               |
+| Tarifas de cambio                   | 1h             | `fx:{base}:{quote}`                                               |
+| Disponibilidad puntual (post-click) | 30s o no-cache | `avail:{provider}:{offer_id}`                                     |
 
-**Patrón:** Redis con `SETEX` + *cache stampede protection* (`single-flight` lock por key) + *stale-while-revalidate* para UX. Revalidación en background con BullMQ.
+**Patrón:** Redis con `SETEX` + _cache stampede protection_ (`single-flight` lock por key) + _stale-while-revalidate_ para UX. Revalidación en background con BullMQ.
 
 ### 1.4 Anti-Corruption Layer
 
@@ -76,12 +76,12 @@ El dominio **nunca** importa de `providers/*`. La inyección se hace por configu
 
 ### 2.1 Backend
 
-| Opción | Pros travel-tech | Contras |
-|---|---|---|
-| **NestJS (Node 20+)** | Ecosistema integrationes (npm), DX excelente, TypeScript end-to-end, ideal para I/O-bound (que es el 95% de travel) | CPU-bound (parsing XML masivo) menos eficiente que Go/Java |
-| **FastAPI (Python)** | IA/ML nativo, libs maduras de NDC y GDS en Python | Async menos maduro que Node, GIL limita CPU |
-| **Go** | Performance, baja memoria, perfecto para adapters de alto QPS | Ecosistema travel pobre, menos devs LATAM, DX más verboso |
-| **Spring Boot (Java)** | Maduro en travel enterprise (Amadeus SDK oficial Java), tooling sólido | Mayor footprint, ciclo de desarrollo más lento, hostinger-unfriendly |
+| Opción                 | Pros travel-tech                                                                                                    | Contras                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **NestJS (Node 20+)**  | Ecosistema integrationes (npm), DX excelente, TypeScript end-to-end, ideal para I/O-bound (que es el 95% de travel) | CPU-bound (parsing XML masivo) menos eficiente que Go/Java           |
+| **FastAPI (Python)**   | IA/ML nativo, libs maduras de NDC y GDS en Python                                                                   | Async menos maduro que Node, GIL limita CPU                          |
+| **Go**                 | Performance, baja memoria, perfecto para adapters de alto QPS                                                       | Ecosistema travel pobre, menos devs LATAM, DX más verboso            |
+| **Spring Boot (Java)** | Maduro en travel enterprise (Amadeus SDK oficial Java), tooling sólido                                              | Mayor footprint, ciclo de desarrollo más lento, hostinger-unfriendly |
 
 **Recomendación:** **NestJS como núcleo** + **FastAPI como sidecar de IA** (embeddings, orquestación de agentes, batch ML). Justificación: 80% del trabajo es I/O orquestando APIs externas, donde Node con `worker_threads` para parsing XML pesado es óptimo. NestJS aporta DI, módulos, decoradores y testing que mapean naturalmente al modular monolith hexagonal.
 
@@ -92,6 +92,7 @@ El dominio **nunca** importa de `providers/*`. La inyección se hace por configu
 ### 2.3 Móvil
 
 **React Native + Expo (con prebuild)**. Justificación:
+
 - **Code sharing** con web (modelos, validaciones zod, lógica de cotización).
 - Offline-first viable con WatermelonDB o RxDB + sync.
 - Vendedores en ruta necesitan compartir lógica de negocio idéntica a web.
@@ -110,7 +111,7 @@ El dominio **nunca** importa de `providers/*`. La inyección se hace por configu
 - **BullMQ** (Redis) para jobs cortos: emails, webhooks, sync de cache, reintentos de notificación.
 - **Temporal.io self-hosted** (Docker en VPS, ~1GB RAM) para **flujos largos críticos**: reserva multi-proveedor con compensación (saga), conciliación de pagos, tickets pendientes de emisión, reembolsos asíncronos.
 
-Temporal es no-negociable para travel: una reserva puede tardar minutos en confirmar (NDC), requerir compensación si pago falla tras hold, y necesitar retries con visibilidad. BullMQ no resuelve sagas; RabbitMQ/Kafka requieren que tú implementes la máquina de estados. Temporal te da *durable execution* gratis.
+Temporal es no-negociable para travel: una reserva puede tardar minutos en confirmar (NDC), requerir compensación si pago falla tras hold, y necesitar retries con visibilidad. BullMQ no resuelve sagas; RabbitMQ/Kafka requieren que tú implementes la máquina de estados. Temporal te da _durable execution_ gratis.
 
 ### 2.6 Resumen del Stack
 
@@ -136,11 +137,11 @@ Observabilidad:      OpenTelemetry → Grafana stack → Datadog (fase 2)
 
 ### 3.1 Estrategia de aislamiento de datos
 
-| Estrategia | Aislamiento | Costo | Complejidad migración | Recomendación |
-|---|---|---|---|---|
-| Shared DB + `tenant_id` + RLS | Lógico (Postgres Row-Level Security) | Bajo | Trivial | **Fase 1 default** |
-| Schema-per-tenant | Medio | Medio (cada migración × N) | Compleja | Solo si tenant exige por contrato |
-| DB-per-tenant | Físico | Alto | Cara | Tenants enterprise top-tier |
+| Estrategia                    | Aislamiento                          | Costo                      | Complejidad migración | Recomendación                     |
+| ----------------------------- | ------------------------------------ | -------------------------- | --------------------- | --------------------------------- |
+| Shared DB + `tenant_id` + RLS | Lógico (Postgres Row-Level Security) | Bajo                       | Trivial               | **Fase 1 default**                |
+| Schema-per-tenant             | Medio                                | Medio (cada migración × N) | Compleja              | Solo si tenant exige por contrato |
+| DB-per-tenant                 | Físico                               | Alto                       | Cara                  | Tenants enterprise top-tier       |
 
 **Recomendación:** Modelo **híbrido**: shared DB con `tenant_id` + **PostgreSQL RLS forzada** (`FORCE ROW LEVEL SECURITY`) + `SET app.current_tenant` por request en un middleware. Para tenants enterprise (>1000 reservas/mes) ofrecer plan premium con DB dedicada. Esto se logra abstrayendo el `DataSourceResolver(tenant)` desde día 1.
 
@@ -159,17 +160,17 @@ Observabilidad:      OpenTelemetry → Grafana stack → Datadog (fase 2)
 
 Cada una vive como interface en `core/ports/` con dos implementaciones:
 
-| Port | Hostinger (fase 1) | AWS (fase 2) |
-|---|---|---|
-| `IObjectStorage` | MinIO (S3 SDK) | S3 |
-| `IQueue` | Redis Streams + BullMQ | SQS / EventBridge |
-| `ISecretStore` | `.env` cifrado + sealed-secrets en repo | Secrets Manager / Parameter Store |
-| `IEmail` | Resend / Postmark | SES (o seguir Resend) |
-| `IPushNotifications` | Expo Push | SNS + Expo |
-| `ICache` | Redis local | ElastiCache |
-| `IAuth` | BetterAuth/Lucia (PG-backed) | Cognito / Clerk |
-| `IObservability` | OpenTelemetry → Grafana stack | OTel → Datadog o ADOT |
-| `IFeatureFlags` | Unleash self-hosted | Unleash o LaunchDarkly |
+| Port                 | Hostinger (fase 1)                      | AWS (fase 2)                      |
+| -------------------- | --------------------------------------- | --------------------------------- |
+| `IObjectStorage`     | MinIO (S3 SDK)                          | S3                                |
+| `IQueue`             | Redis Streams + BullMQ                  | SQS / EventBridge                 |
+| `ISecretStore`       | `.env` cifrado + sealed-secrets en repo | Secrets Manager / Parameter Store |
+| `IEmail`             | Resend / Postmark                       | SES (o seguir Resend)             |
+| `IPushNotifications` | Expo Push                               | SNS + Expo                        |
+| `ICache`             | Redis local                             | ElastiCache                       |
+| `IAuth`              | BetterAuth/Lucia (PG-backed)            | Cognito / Clerk                   |
+| `IObservability`     | OpenTelemetry → Grafana stack           | OTel → Datadog o ADOT             |
+| `IFeatureFlags`      | Unleash self-hosted                     | Unleash o LaunchDarkly            |
 
 **Regla de oro:** ningún módulo de dominio importa AWS-SDK ni Redis directamente. Solo `core/ports/*`.
 
@@ -204,13 +205,13 @@ flowchart LR
 
 Router por intención + costo + latencia:
 
-| Tarea | Modelo | Razón |
-|---|---|---|
-| Clasificación de intención, extracción de entidades | GPT-4o-mini / Haiku 4.5 | Latencia <300ms, $0.15/1M tokens |
-| Conversación general, multi-turno | Claude Sonnet 4.5 | Mejor instrucción + tool-use |
-| Razonamiento complejo (cotizaciones multi-tramo, políticas tarifarias) | Claude Opus 4.7 | Mejor planificación |
-| Voz tiempo real | OpenAI Realtime / Gemini Live | Streaming bidireccional |
-| Embeddings | `text-embedding-3-small` o `voyage-3` | Semantic search de catálogo |
+| Tarea                                                                  | Modelo                                | Razón                            |
+| ---------------------------------------------------------------------- | ------------------------------------- | -------------------------------- |
+| Clasificación de intención, extracción de entidades                    | GPT-4o-mini / Haiku 4.5               | Latencia <300ms, $0.15/1M tokens |
+| Conversación general, multi-turno                                      | Claude Sonnet 4.5                     | Mejor instrucción + tool-use     |
+| Razonamiento complejo (cotizaciones multi-tramo, políticas tarifarias) | Claude Opus 4.7                       | Mejor planificación              |
+| Voz tiempo real                                                        | OpenAI Realtime / Gemini Live         | Streaming bidireccional          |
+| Embeddings                                                             | `text-embedding-3-small` o `voyage-3` | Semantic search de catálogo      |
 
 Implementar como `ILLMProvider` con fallback chain (`primary → secondary → cached_response`). Usar **LiteLLM** o gateway propio para abstracción.
 
@@ -252,6 +253,7 @@ PaymentIntent (interno)
 ### 6.2 Conciliación
 
 Job nocturno con Temporal:
+
 1. Descarga payouts/settlements de Stripe (Reports API) y MP (Payments API + Releases).
 2. Match con `payment_intents` internos por `psp_intent_id`.
 3. Calcula deltas (fees reales vs estimados, FX, retenciones).
@@ -261,7 +263,8 @@ Job nocturno con Temporal:
 ### 6.3 Reembolso "anticipado" (cliente vs proveedor)
 
 Patrón de **doble libro**:
-- Crédito al cliente desde tu *balance* (refund inmediato).
+
+- Crédito al cliente desde tu _balance_ (refund inmediato).
 - `RefundReceivable` registrado contra el proveedor (aerolínea).
 - Saga Temporal monitorea hasta cobrar al proveedor (puede tardar 60-120 días en aerolíneas).
 - Política de riesgo por tenant: solo reembolso anticipado si `chargeback_risk < threshold` y `provider_refund_history > 0.9`.
@@ -284,6 +287,7 @@ SAQ-A aplica si **nunca tocas datos de tarjeta** (Stripe Hosted Checkout y MP Ch
 ### 7.2 Cifrado en Postgres Hostinger
 
 Hostinger VPS no provee TDE nativo. Mitigaciones:
+
 - **At-rest:** cifrado a nivel de columna para PII sensible (documentos, fecha nacimiento, teléfono) usando `pgcrypto` con clave en vault (no en DB). Backups cifrados con `gpg` antes de subir a MinIO/B2.
 - **In-transit:** Postgres con `ssl=on` y `sslmode=verify-full`, cert propio o Let's Encrypt.
 - En AWS: RDS con KMS (transparente) + IAM auth.
@@ -295,6 +299,7 @@ Hostinger VPS no provee TDE nativo. Mitigaciones:
 ### 7.4 Hardening VPS
 
 Checklist obligatorio:
+
 - UFW: solo 22 (rate-limited), 80, 443.
 - SSH: deshabilitar root login, solo claves Ed25519, puerto custom, fail2ban (bantime 1h, maxretry 3).
 - Usuario non-root con sudo, `auditd` activo.
@@ -311,20 +316,20 @@ Checklist obligatorio:
 
 ### 8.1 Servicios target
 
-| Componente | Servicio AWS | Justificación |
-|---|---|---|
-| Compute | **ECS Fargate** | Sin EKS overhead; tu monolito modular + sidecars caben perfecto. EKS solo si llegas a >50 servicios. |
-| DB primaria | **Aurora PostgreSQL Serverless v2** | Auto-scale, Multi-AZ, replicas cross-region. |
-| Cache | **ElastiCache Redis (cluster mode)** | Compatible con Redis 7. |
-| Streams | **MSK Serverless** o **Kinesis** | MSK si ya usas Kafka; Kinesis para volumen menor. |
-| Object | **S3** + **CloudFront** | Trivial desde MinIO. |
-| Auth | **Cognito** o seguir con **Clerk** | Cognito barato; Clerk mejor DX. |
-| API edge | **CloudFront + ALB** (skip API Gateway) | API Gateway caro a alto QPS. |
-| Eventos | **EventBridge** | Reemplazo natural de Redis Streams cross-service. |
-| Workflows | **Step Functions** o seguir con Temporal | Temporal Cloud es más portable. |
-| Search | **OpenSearch Serverless** | Si Typesense no escala. |
-| Secrets | **Secrets Manager** + **Parameter Store** | Rotación automática. |
-| Observabilidad | **Managed Grafana + Prometheus** o Datadog | OTel ya está en código. |
+| Componente     | Servicio AWS                               | Justificación                                                                                        |
+| -------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Compute        | **ECS Fargate**                            | Sin EKS overhead; tu monolito modular + sidecars caben perfecto. EKS solo si llegas a >50 servicios. |
+| DB primaria    | **Aurora PostgreSQL Serverless v2**        | Auto-scale, Multi-AZ, replicas cross-region.                                                         |
+| Cache          | **ElastiCache Redis (cluster mode)**       | Compatible con Redis 7.                                                                              |
+| Streams        | **MSK Serverless** o **Kinesis**           | MSK si ya usas Kafka; Kinesis para volumen menor.                                                    |
+| Object         | **S3** + **CloudFront**                    | Trivial desde MinIO.                                                                                 |
+| Auth           | **Cognito** o seguir con **Clerk**         | Cognito barato; Clerk mejor DX.                                                                      |
+| API edge       | **CloudFront + ALB** (skip API Gateway)    | API Gateway caro a alto QPS.                                                                         |
+| Eventos        | **EventBridge**                            | Reemplazo natural de Redis Streams cross-service.                                                    |
+| Workflows      | **Step Functions** o seguir con Temporal   | Temporal Cloud es más portable.                                                                      |
+| Search         | **OpenSearch Serverless**                  | Si Typesense no escala.                                                                              |
+| Secrets        | **Secrets Manager** + **Parameter Store**  | Rotación automática.                                                                                 |
+| Observabilidad | **Managed Grafana + Prometheus** o Datadog | OTel ya está en código.                                                                              |
 
 ### 8.2 Estrategia: Re-platform incremental
 
@@ -347,56 +352,56 @@ Tiempo total: 6-8 semanas con 2 ingenieros DevOps. Costo de migración (consulto
 
 **Escenario A — 500 reservas/día (~año 1):**
 
-| Servicio | Configuración | USD/mes |
-|---|---|---|
-| ECS Fargate | 4 tasks × 2vCPU/4GB, 24/7 | 175 |
-| Aurora Serverless v2 | 0.5–4 ACU + storage 100GB | 280 |
-| ElastiCache Redis | cache.t4g.medium × 2 | 110 |
-| S3 + CloudFront | 500GB + 2TB egress | 200 |
-| OpenSearch Serverless | 2 OCU baseline | 360 |
-| EventBridge + Step Functions | Volumen moderado | 50 |
-| Cognito | 50k MAU | 275 |
-| Secrets Manager + KMS | 50 secrets | 30 |
-| Managed Grafana + Prometheus | base | 120 |
-| Data transfer + NAT GW | promedio | 200 |
-| Backups + snapshots | retención 30d | 80 |
-| **Total estimado** | | **~USD 1,880/mes** |
+| Servicio                     | Configuración             | USD/mes            |
+| ---------------------------- | ------------------------- | ------------------ |
+| ECS Fargate                  | 4 tasks × 2vCPU/4GB, 24/7 | 175                |
+| Aurora Serverless v2         | 0.5–4 ACU + storage 100GB | 280                |
+| ElastiCache Redis            | cache.t4g.medium × 2      | 110                |
+| S3 + CloudFront              | 500GB + 2TB egress        | 200                |
+| OpenSearch Serverless        | 2 OCU baseline            | 360                |
+| EventBridge + Step Functions | Volumen moderado          | 50                 |
+| Cognito                      | 50k MAU                   | 275                |
+| Secrets Manager + KMS        | 50 secrets                | 30                 |
+| Managed Grafana + Prometheus | base                      | 120                |
+| Data transfer + NAT GW       | promedio                  | 200                |
+| Backups + snapshots          | retención 30d             | 80                 |
+| **Total estimado**           |                           | **~USD 1,880/mes** |
 
 **Escenario B — 5000 reservas/día (~año 2):**
 
-| Servicio | Configuración | USD/mes |
-|---|---|---|
-| ECS Fargate | 12 tasks × 4vCPU/8GB + autoscale | 1,400 |
-| Aurora Serverless v2 + replicas | 2–16 ACU, 1 reader | 1,800 |
-| ElastiCache Cluster | r7g.large × 3 | 700 |
-| S3 + CloudFront | 5TB + 20TB egress | 1,900 |
-| OpenSearch | 6 OCU + storage | 1,100 |
-| EventBridge + Step Functions | 10× volumen | 400 |
-| Cognito | 250k MAU | 1,200 |
-| Multi-región (Aurora Global, CF) | replica `us-east-1` | 1,500 |
-| Observability (Datadog full) | 30 hosts + APM | 1,200 |
-| Data transfer + NAT GW | inter-AZ + cross-region | 900 |
-| WAF + Shield Advanced (opcional) | | 300 |
-| Backups | | 250 |
-| **Total estimado** | | **~USD 12,650/mes** |
+| Servicio                         | Configuración                    | USD/mes             |
+| -------------------------------- | -------------------------------- | ------------------- |
+| ECS Fargate                      | 12 tasks × 4vCPU/8GB + autoscale | 1,400               |
+| Aurora Serverless v2 + replicas  | 2–16 ACU, 1 reader               | 1,800               |
+| ElastiCache Cluster              | r7g.large × 3                    | 700                 |
+| S3 + CloudFront                  | 5TB + 20TB egress                | 1,900               |
+| OpenSearch                       | 6 OCU + storage                  | 1,100               |
+| EventBridge + Step Functions     | 10× volumen                      | 400                 |
+| Cognito                          | 250k MAU                         | 1,200               |
+| Multi-región (Aurora Global, CF) | replica `us-east-1`              | 1,500               |
+| Observability (Datadog full)     | 30 hosts + APM                   | 1,200               |
+| Data transfer + NAT GW           | inter-AZ + cross-region          | 900                 |
+| WAF + Shield Advanced (opcional) |                                  | 300                 |
+| Backups                          |                                  | 250                 |
+| **Total estimado**               |                                  | **~USD 12,650/mes** |
 
 Optimizaciones aplicables: Savings Plans (-25%), Graviton (-20% en compute), reserved capacity OpenSearch (-30%). Realista post-optimización: **~USD 9,500/mes** en escenario B.
 
 ### 8.5 Estimación Hostinger Fase 1
 
-| Componente | Configuración | USD/mes |
-|---|---|---|
-| Hostinger KVM 8 (app principal) | 8vCPU/32GB/400GB NVMe | 30 |
-| Hostinger KVM 4 (DB + Redis) | 4vCPU/16GB/200GB | 18 |
-| Hostinger KVM 2 (observability + workers) | 2vCPU/8GB | 10 |
-| Cloudflare Pro | WAF + analytics | 25 |
-| Backblaze B2 (backups) | 500GB | 3 |
-| Resend / Postmark | 50k emails | 20 |
-| Twilio (voz + WhatsApp) | uso bajo | 100 |
-| Dominio + certificados | (Let's Encrypt gratis) | 5 |
-| Sentry / OTel cloud (opcional) | tier dev | 30 |
-| ASV scan PCI | trimestral prorrateado | 20 |
-| **Total estimado** | | **~USD 260/mes** |
+| Componente                                | Configuración          | USD/mes          |
+| ----------------------------------------- | ---------------------- | ---------------- |
+| Hostinger KVM 8 (app principal)           | 8vCPU/32GB/400GB NVMe  | 30               |
+| Hostinger KVM 4 (DB + Redis)              | 4vCPU/16GB/200GB       | 18               |
+| Hostinger KVM 2 (observability + workers) | 2vCPU/8GB              | 10               |
+| Cloudflare Pro                            | WAF + analytics        | 25               |
+| Backblaze B2 (backups)                    | 500GB                  | 3                |
+| Resend / Postmark                         | 50k emails             | 20               |
+| Twilio (voz + WhatsApp)                   | uso bajo               | 100              |
+| Dominio + certificados                    | (Let's Encrypt gratis) | 5                |
+| Sentry / OTel cloud (opcional)            | tier dev               | 30               |
+| ASV scan PCI                              | trimestral prorrateado | 20               |
+| **Total estimado**                        |                        | **~USD 260/mes** |
 
 ---
 
@@ -517,18 +522,18 @@ flowchart TB
 
 ## 11. Riesgos Arquitectónicos y Mitigaciones
 
-| # | Riesgo | Probabilidad | Impacto | Mitigación |
-|---|---|---|---|---|
-| 1 | Caída de un GDS durante pico (Amadeus/Sabre) | Alta | Alto | Multi-provider con failover automático, circuit breaker (opossum), cache stale-while-revalidate, kill-switch por feature flag |
-| 2 | Stripe/MP webhooks duplicados o perdidos | Media | Alto | Idempotency keys, outbox pattern, conciliación nocturna independiente, alertas de drift |
-| 3 | Escalado de Hostinger antes de migrar | Alta | Alto | Plan claro de gates: >70% CPU sostenido o >300 reservas/día acelera migración. Dry-run de Aurora desde mes 4 |
-| 4 | Filtración de datos cross-tenant | Baja | Crítico | RLS forzada, tests de aislamiento en CI, fuzz testing con tenant rotation |
-| 5 | Deuda en ACL (acoplamiento a un proveedor) | Media | Alto | Code review específico para `providers/*`, tests de contrato canónico, ningún tipo de proveedor en `core/` |
-| 6 | LLM cost runaway (loops infinitos de tool-calling) | Media | Medio | Hard limits por conversación (max tokens, max steps), budget por tenant, observabilidad de cost por convo |
-| 7 | Compliance fiscal multi-país (e-invoicing CO/BR/PE) | Alta | Alto | Adapter por país (DIAN, NF-e, SUNAT), partner local de e-invoicing (Sovos, Edicom), no construir in-house |
-| 8 | Onboarding de proveedor lento (semanas de SOAP) | Alta | Medio | Plantilla scaffold para nuevo provider, sandbox antes de prod, contratos de prueba con cada proveedor |
-| 9 | Soporte 24/7 desde día 1 | Alta | Alto | PagerDuty/Opsgenie + runbooks por incidente, partner BPO LATAM nivel 1, equipo interno solo nivel 2/3 |
-| 10 | Vendor lock con Cloudflare/Hostinger | Baja | Medio | DNS portable, código sin dependencias propietarias, IaC con Terraform desde día 1 |
+| #   | Riesgo                                              | Probabilidad | Impacto | Mitigación                                                                                                                    |
+| --- | --------------------------------------------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Caída de un GDS durante pico (Amadeus/Sabre)        | Alta         | Alto    | Multi-provider con failover automático, circuit breaker (opossum), cache stale-while-revalidate, kill-switch por feature flag |
+| 2   | Stripe/MP webhooks duplicados o perdidos            | Media        | Alto    | Idempotency keys, outbox pattern, conciliación nocturna independiente, alertas de drift                                       |
+| 3   | Escalado de Hostinger antes de migrar               | Alta         | Alto    | Plan claro de gates: >70% CPU sostenido o >300 reservas/día acelera migración. Dry-run de Aurora desde mes 4                  |
+| 4   | Filtración de datos cross-tenant                    | Baja         | Crítico | RLS forzada, tests de aislamiento en CI, fuzz testing con tenant rotation                                                     |
+| 5   | Deuda en ACL (acoplamiento a un proveedor)          | Media        | Alto    | Code review específico para `providers/*`, tests de contrato canónico, ningún tipo de proveedor en `core/`                    |
+| 6   | LLM cost runaway (loops infinitos de tool-calling)  | Media        | Medio   | Hard limits por conversación (max tokens, max steps), budget por tenant, observabilidad de cost por convo                     |
+| 7   | Compliance fiscal multi-país (e-invoicing CO/BR/PE) | Alta         | Alto    | Adapter por país (DIAN, NF-e, SUNAT), partner local de e-invoicing (Sovos, Edicom), no construir in-house                     |
+| 8   | Onboarding de proveedor lento (semanas de SOAP)     | Alta         | Medio   | Plantilla scaffold para nuevo provider, sandbox antes de prod, contratos de prueba con cada proveedor                         |
+| 9   | Soporte 24/7 desde día 1                            | Alta         | Alto    | PagerDuty/Opsgenie + runbooks por incidente, partner BPO LATAM nivel 1, equipo interno solo nivel 2/3                         |
+| 10  | Vendor lock con Cloudflare/Hostinger                | Baja         | Medio   | DNS portable, código sin dependencias propietarias, IaC con Terraform desde día 1                                             |
 
 ---
 
@@ -557,11 +562,13 @@ flowchart TB
 La diferencia entre una plataforma turística que sobrevive 5000 reservas/día y una que colapsa no es el cloud, sino las **fronteras de dominio bien dibujadas y las abstracciones de infra disciplinadas**. Si arrancas en Hostinger respetando las 15 abstracciones listadas, escribes hexagonal con ACL por proveedor, usas Temporal para sagas y eventos para auditoría, la migración a AWS será un ejercicio de DevOps de 6-8 semanas, no una reescritura.
 
 **Costos consolidados:**
+
 - **Fase 1 (Hostinger + Cloudflare + SaaS mínimos):** ~USD 260/mes infra + ~USD 100-300/mes uso variable (Twilio/LLM/email).
 - **Fase 2 año 1 (AWS, 500 res/día):** ~USD 1,880/mes optimizado.
 - **Fase 2 año 2 (AWS, 5000 res/día):** ~USD 9,500-12,650/mes según optimizaciones.
 
 **Próximos pasos recomendados (semanas 1-4):**
+
 1. Setup repo monorepo (Turborepo), módulos `core`, `providers`, `apps/api`, `apps/web`, `apps/mobile`.
 2. Definir `core/ports` con las 15 interfaces.
 3. Implementar 1 provider GDS end-to-end (e.g. Amadeus self-service) para validar ACL.

@@ -35,10 +35,10 @@ jobs:
       fail-fast: true
       matrix:
         app:
-          - { name: api,              dockerfile: apps/api/Dockerfile }
-          - { name: web-b2b,          dockerfile: apps/web-b2b/Dockerfile }
-          - { name: migrate,          dockerfile: tools/db-migrate/Dockerfile }
-          - { name: seed-superadmin,  dockerfile: tools/seed-superadmin/Dockerfile }
+          - { name: api, dockerfile: apps/api/Dockerfile }
+          - { name: web-b2b, dockerfile: apps/web-b2b/Dockerfile }
+          - { name: migrate, dockerfile: tools/db-migrate/Dockerfile }
+          - { name: seed-superadmin, dockerfile: tools/seed-superadmin/Dockerfile }
     steps:
       - uses: actions/checkout@v4
 

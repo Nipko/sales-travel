@@ -30,7 +30,10 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-neutral-500">Panel de agencia</p>
         </div>
 
-        <form action={formAction} className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+        <form
+          action={formAction}
+          className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+        >
           <div className="space-y-1.5">
             <label htmlFor="email" className="block text-xs font-medium text-neutral-700">
               Email
