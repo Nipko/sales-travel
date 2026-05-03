@@ -167,7 +167,33 @@ ssh deploy@<IP> "cd /opt/sales-travel && docker compose ps"
 
 ---
 
-## 7. Cuándo migrar a AWS
+## 7. Crear el primer superadmin
+
+Después del primer deploy verde, crear tu cuenta superadmin con la imagen
+`seed-superadmin` (one-shot, idempotente). Como `deploy` en el VPS:
+
+```bash
+cd /opt/sales-travel
+source .env  # exporta POSTGRES_ADMIN_PASSWORD
+
+docker run --rm --network sales-travel_internal \
+  -e DATABASE_URL_ADMIN="postgresql://postgres:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/sales_travel" \
+  -e SUPERADMIN_EMAIL="nirlevin89@gmail.com" \
+  -e SUPERADMIN_PASSWORD="<una-contraseña-fuerte>" \
+  -e SUPERADMIN_NAME="Nir Levin" \
+  ghcr.io/nipko/sales-travel-seed-superadmin:latest
+```
+
+Output esperado: `{"ok":true,"action":"created","userId":"...","tenantId":"...","tenantSlug":"platform","email":"..."}`.
+
+Vars opcionales (defaults): `SUPERADMIN_TENANT_SLUG=platform`, `SUPERADMIN_TENANT_NAME=Platform`,
+`SUPERADMIN_TENANT_COUNTRY=CO`, `SUPERADMIN_TENANT_CURRENCY=USD`.
+
+Re-correrlo con el mismo email **rota la contraseña** (idempotente).
+
+---
+
+## 8. Cuándo migrar a AWS
 
 Triggers en `docs/discovery/02-decisiones-segunda-ronda.md`:
 - > 500 reservas/día sostenido
