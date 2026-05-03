@@ -2,7 +2,6 @@ import bcrypt from 'bcrypt';
 import { Client } from 'pg';
 
 interface Config {
-  databaseUrl: string;
   email: string;
   password: string;
   name: string;
@@ -21,8 +20,13 @@ function readConfig(): Config {
     return v.trim();
   };
 
+  // pg lee PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE del entorno.
+  // Validamos los críticos acá para fallar temprano con un error claro.
+  required('PGHOST');
+  required('PGUSER');
+  required('PGPASSWORD');
+
   return {
-    databaseUrl: required('DATABASE_URL_ADMIN'),
     email: required('SUPERADMIN_EMAIL').toLowerCase(),
     password: required('SUPERADMIN_PASSWORD'),
     name: required('SUPERADMIN_NAME'),
@@ -38,7 +42,7 @@ async function run(cfg: Config): Promise<void> {
     throw new Error('SUPERADMIN_PASSWORD debe tener al menos 12 caracteres');
   }
 
-  const client = new Client({ connectionString: cfg.databaseUrl });
+  const client = new Client();
   await client.connect();
 
   try {

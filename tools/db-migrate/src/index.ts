@@ -3,11 +3,10 @@ import { join } from 'node:path';
 import pg from 'pg';
 
 const MIGRATIONS_DIR = process.env['MIGRATIONS_DIR'] ?? '/migrations';
-const DATABASE_URL = process.env['DATABASE_URL_ADMIN'];
 const APP_USER_PASSWORD = process.env['APP_USER_PASSWORD'];
 
-if (!DATABASE_URL) {
-  console.error('FATAL: DATABASE_URL_ADMIN is required');
+if (!process.env['PGHOST'] || !process.env['PGUSER'] || !process.env['PGPASSWORD']) {
+  console.error('FATAL: PGHOST, PGUSER, PGPASSWORD are required');
   process.exit(1);
 }
 
@@ -72,7 +71,7 @@ async function applyMigration(client: pg.Client, file: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const client = new pg.Client({ connectionString: DATABASE_URL });
+  const client = new pg.Client();
   await client.connect();
 
   try {

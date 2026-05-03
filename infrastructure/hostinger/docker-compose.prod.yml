@@ -74,7 +74,11 @@ services:
     <<: *logging
     restart: "no"
     environment:
-      DATABASE_URL_ADMIN: postgresql://postgres:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/sales_travel
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      PGDATABASE: sales_travel
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
     networks: [internal]
     depends_on:
@@ -88,8 +92,11 @@ services:
       NODE_ENV: production
       PORT: "3000"
       APP_VERSION: ${IMAGE_TAG:-dev}
-      DATABASE_URL: postgresql://app_user:${APP_USER_PASSWORD}@postgres:5432/sales_travel
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: app_user
+      PGPASSWORD: ${APP_USER_PASSWORD}
+      PGDATABASE: sales_travel
       JWT_SECRET: ${JWT_SECRET}
     networks: [edge, internal]
     depends_on:

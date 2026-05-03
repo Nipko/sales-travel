@@ -174,10 +174,14 @@ Después del primer deploy verde, crear tu cuenta superadmin con la imagen
 
 ```bash
 cd /opt/sales-travel
-source .env  # exporta POSTGRES_ADMIN_PASSWORD
+set -a; source .env; set +a   # exporta POSTGRES_ADMIN_PASSWORD al entorno
 
 docker run --rm --network sales-travel_internal \
-  -e DATABASE_URL_ADMIN="postgresql://postgres:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/sales_travel" \
+  -e PGHOST=postgres \
+  -e PGPORT=5432 \
+  -e PGUSER=postgres \
+  -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" \
+  -e PGDATABASE=sales_travel \
   -e SUPERADMIN_EMAIL="nirlevin89@gmail.com" \
   -e SUPERADMIN_PASSWORD="<una-contraseña-fuerte>" \
   -e SUPERADMIN_NAME="Nir Levin" \

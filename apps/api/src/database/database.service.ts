@@ -9,13 +9,12 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   public db!: Kysely<DB>;
 
   onModuleInit(): void {
-    const connectionString = process.env['DATABASE_URL'];
-    if (!connectionString) {
-      throw new Error('DATABASE_URL is not set');
+    if (!process.env['PGHOST'] || !process.env['PGUSER'] || !process.env['PGPASSWORD']) {
+      throw new Error('PGHOST, PGUSER, PGPASSWORD must be set');
     }
 
+    // pg lee PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE del entorno.
     this.pool = new pg.Pool({
-      connectionString,
       max: Number(process.env['DATABASE_POOL_MAX'] ?? 10),
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
