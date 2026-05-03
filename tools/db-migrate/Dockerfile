@@ -2,7 +2,7 @@ ARG NODE_VERSION=20.18-alpine
 ARG PNPM_VERSION=9.15.0
 
 FROM node:${NODE_VERSION} AS base
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g pnpm@${PNPM_VERSION}
 WORKDIR /repo
 
 FROM base AS builder
