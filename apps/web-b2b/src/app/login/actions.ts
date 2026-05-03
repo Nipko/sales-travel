@@ -1,8 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { api } from '../../lib/api.js';
-import { clearSession, setSession } from '../../lib/session.js';
+import { api } from '../../lib/api';
+import { clearSession, setSession } from '../../lib/session';
 
 export interface LoginState {
   error?: string;

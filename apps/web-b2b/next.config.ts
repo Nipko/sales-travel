@@ -6,9 +6,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   output: 'standalone',
   outputFileTracingRoot: path.join(import.meta.dirname, '../../'),
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
 };
 
 export default config;

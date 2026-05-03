@@ -1,5 +1,5 @@
-import { api } from '../lib/api.js';
-import { logoutAction } from './login/actions.js';
+import { api } from '../lib/api';
+import { logoutAction } from './login/actions';
 
 interface Membership {
   id: string;

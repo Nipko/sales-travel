@@ -1,4 +1,4 @@
-import { getSession } from './session.js';
+import { getSession } from './session';
 
 const BASE = process.env.INTERNAL_API_URL ?? 'http://api:3000';
 
