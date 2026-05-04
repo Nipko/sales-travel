@@ -1,14 +1,67 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New';
+
+  --color-bg: oklch(0.99 0.002 264);
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.975 0.003 264);
+  --color-border: oklch(0.92 0.005 264);
+  --color-border-strong: oklch(0.85 0.008 264);
+
+  --color-fg: oklch(0.21 0.012 264);
+  --color-fg-muted: oklch(0.46 0.013 264);
+  --color-fg-subtle: oklch(0.62 0.011 264);
+
+  --color-primary: oklch(0.46 0.16 250);
+  --color-primary-fg: oklch(0.99 0 0);
+  --color-primary-hover: oklch(0.41 0.165 250);
+
+  --color-accent: oklch(0.74 0.15 60);
+  --color-accent-fg: oklch(0.21 0.012 264);
+
+  --color-success: oklch(0.62 0.13 150);
+  --color-warning: oklch(0.78 0.14 80);
+  --color-danger: oklch(0.6 0.21 25);
+  --color-danger-fg: oklch(0.99 0 0);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-xs: 0 1px 2px oklch(0.21 0.012 264 / 0.04);
+  --shadow-sm: 0 1px 3px oklch(0.21 0.012 264 / 0.06), 0 1px 2px oklch(0.21 0.012 264 / 0.04);
+  --shadow-md: 0 4px 8px oklch(0.21 0.012 264 / 0.06), 0 2px 4px oklch(0.21 0.012 264 / 0.04);
+  --shadow-lg: 0 12px 24px oklch(0.21 0.012 264 / 0.08), 0 4px 8px oklch(0.21 0.012 264 / 0.04);
 }
 
-html, body {
+html,
+body {
   height: 100%;
 }
 
 body {
+  background: var(--color-bg);
+  color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Focus ring estándar para todos los elementos interactivos */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbar fina, estilo Linear/Stripe */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
 }
