@@ -130,7 +130,7 @@ export default function CotizacionesPage() {
         </p>
       </header>
 
-      <Card className="mb-6 overflow-hidden">
+      <Card className="mb-6">
         <CardContent className="p-0">
           <form action={formAction} onSubmit={handleSubmit} className="space-y-5 p-5">
             {/* Trip type toggle */}

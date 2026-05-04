@@ -140,10 +140,19 @@ export async function searchFlightsAction(
   };
   if (isRoundtrip) body.returnDate = returnDate;
 
-  const res = await api<{ offers: Offer[] }>('/search/flights', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  let res: Awaited<ReturnType<typeof api<{ offers: Offer[] }>>>;
+  try {
+    res = await api<{ offers: Offer[] }>('/search/flights', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return {
+      ok: false,
+      offers: [],
+      error: 'No se pudo conectar al servicio de búsqueda. Verificá que el API esté corriendo.',
+    };
+  }
 
   if (!res.ok) {
     return { ok: false, offers: [], error: res.error.message };
