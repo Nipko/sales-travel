@@ -3,7 +3,7 @@
 > Plataforma consolidadora de turismo B2B/B2C para LATAM (Colombia, Brasil, Perú).
 > Multi-tenant white-label con IA omnicanal (WhatsApp, web, voz) y constructor visual de paquetes (drag-and-drop).
 
-**Estado:** Discovery + planificación completados. Sprint 0 técnico pendiente.
+**Estado:** Sprint 0 cerrado. Ola 1 en progreso — búsqueda de vuelos LATAM NDC funcionando en producción.
 **Repositorio:** privado.
 **Stack confirmado:** ver `docs/platform/10-mapa-completo-plataforma.md`.
 
@@ -100,42 +100,62 @@ Detalle en [`docs/discovery/08-organizacion-equipo.md`](./docs/discovery/08-orga
 
 ---
 
-## 🔧 Próximos pasos
+## 🚀 Estado actual (mayo 2026)
 
-1. **Sprint 0 técnico (pendiente):** scaffolding del repo Turborepo, packages base, los 15 ports cloud-ready, primer adapter Amadeus end-to-end, Docker Compose local, CI/CD.
-2. **Manual operativo (pendiente):** consolidación de lo no-técnico (legal, fiscal, comercial, soporte) en un documento separado para no contaminar el foco constructivo.
+### Completado
+
+- **Sprint 0** — Monorepo, auth, DB multi-tenant, CI/CD, deploy a VPS con Docker
+- **LATAM NDC** — Integración AirShopping v192 conectada y respondiendo con ofertas reales
+- **Modelo canónico** — `packages/canonical` con schemas Offer, Itinerary, Segment, Money + campos fareFamily, baggage, policies
+- **Búsqueda de vuelos** (`app.planetour.cloud/cotizaciones`) — UI premium con:
+  - Formulario de búsqueda (ida/vuelta, pasajeros, cabina, moneda)
+  - Airport autocomplete (8.803 aeropuertos, lazy-loaded)
+  - Resultados agrupados por vuelo con fare families expandibles (BASIC/LIGHT/FULL/PREMIUM)
+  - Comparación visual de equipaje, cambios y reembolso por tarifa
+  - Soporte round-trip (ida + vuelta en la misma card)
+  - Logos de aerolíneas (CDN con fallback)
+  - Ordenamiento por precio/duración/salida/mejor
+  - Skeleton loading animado
+  - Responsive (mobile + desktop)
+
+### En progreso
+
+- Flujo "Cotizar" — guardar selección como cotización, generar PDF, compartir
+- Más endpoints LATAM NDC — OfferPrice, SeatAvailability, ServiceList, OrderCreate
+- Multi-proveedor — Amadeus, Travelport, Sabre
+
+### Pendiente
+
+- Tenant CRUD desde superadmin
+- Package Studio (drag-and-drop)
+- WhatsApp IA — cotización conversacional
+- Manual operativo (legal, fiscal, comercial)
 
 ---
 
-## 📁 Estructura del repo (esperada al cierre de Sprint 0)
+## 📁 Estructura del repo
 
 ```
 sales-travel/
 ├── README.md
 ├── CLAUDE.md                  # instrucciones permanentes para Claude Code
-├── docs/                      # documentación viva (este directorio)
+├── docs/                      # documentación viva
 ├── .claude/                   # config Claude Code (skills/plugins)
-├── packages/                  # código compartido
-│   ├── core/ports/            # 15 abstracciones de infra
-│   ├── domain/                # entidades + lógica de negocio
-│   ├── canonical/             # modelo canónico (Offer, Itinerary, …)
-│   ├── ui/                    # design system shadcn-based
-│   ├── validation/            # schemas Zod
-│   ├── i18n/                  # ES/PT/EN
-│   └── sdk/                   # SDK cliente
-├── providers/                 # ACL por proveedor (amadeus, hoteldo, stripe, …)
+├── packages/
+│   ├── core/                  # ports + errores tipados (CJS)
+│   ├── canonical/             # modelo canónico Zod (Offer, Itinerary, Segment, Money)
+│   └── validation/            # schemas Zod compartidos
+├── providers/
+│   └── latam-ndc/             # ACL LATAM NDC v192 (AirShopping, auth OAuth2)
 ├── apps/
-│   ├── api/                   # NestJS modular monolith
-│   ├── ai-sidecar/            # FastAPI + LangGraph
-│   ├── temporal-worker/       # workers de sagas
-│   ├── web-b2b/               # Next.js panel agencia
-│   ├── web-b2c/               # Next.js sitio público
-│   ├── web-admin/             # Next.js superadmin
-│   └── mobile/                # React Native + Expo
-└── infrastructure/            # Terraform (Hostinger DNS + Cloudflare → AWS Ola 3)
+│   ├── api/                   # NestJS modular monolith (auth, search, tenants)
+│   └── web-b2b/               # Next.js 15 panel agencia (cotizaciones, dashboard)
+├── infrastructure/
+│   └── hostinger/             # provision.sh, Caddyfile, docker-compose
+└── tools/                     # seed-superadmin, migrations
 ```
 
-Estructura completa en [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) §10.
+Detalle en [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) §10. Providers y apps adicionales se irán agregando conforme avance Ola 1.
 
 ---
 
