@@ -562,7 +562,8 @@ function extractText(val: unknown): string | undefined {
   if (val && typeof val === 'object') {
     const obj = val as Record<string, unknown>;
     const text = obj['#text'] ?? obj[''];
-    if (text !== undefined && text !== null) return String(text);
+    if (typeof text === 'string') return text;
+    if (typeof text === 'number' || typeof text === 'boolean') return String(text);
   }
   return undefined;
 }
