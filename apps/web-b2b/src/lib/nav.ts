@@ -8,13 +8,13 @@ export interface NavItem {
 }
 
 export const mainNav: NavItem[] = [
-  { label: 'Inicio', href: '/' as Route, icon: Home },
-  { label: 'Cotizaciones', href: '/cotizaciones' as Route, icon: Ticket },
-  { label: 'Reservas', href: '/reservas' as Route, icon: Calendar },
-  { label: 'Clientes', href: '/clientes' as Route, icon: Users },
-  { label: 'Reportes', href: '/reportes' as Route, icon: BarChart3 },
+  { label: 'Inicio', href: '/', icon: Home },
+  { label: 'Cotizaciones', href: '/cotizaciones', icon: Ticket },
+  { label: 'Reservas', href: '/reservas', icon: Calendar },
+  { label: 'Clientes', href: '/clientes', icon: Users },
+  { label: 'Reportes', href: '/reportes', icon: BarChart3 },
 ];
 
 export const settingsNav: NavItem[] = [
-  { label: 'Configuración', href: '/configuracion' as Route, icon: Settings },
+  { label: 'Configuración', href: '/configuracion', icon: Settings },
 ];
