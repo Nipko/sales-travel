@@ -121,6 +121,14 @@ export async function searchFlightsAction(
       error: 'No puede haber más infantes que adultos (uno por adulto).',
     };
   }
+  const totalPax = adults + children + infants;
+  if (totalPax > 9) {
+    return {
+      ok: false,
+      offers: [],
+      error: 'Máximo 9 pasajeros por reserva (límite GDS).',
+    };
+  }
 
   const body: Record<string, unknown> = {
     origin,
