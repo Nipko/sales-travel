@@ -7,7 +7,7 @@ import type {
   Offer,
   Segment,
 } from '@sales-travel/canonical';
-import type { FlightSearchCriteria } from '@sales-travel/domain/ports';
+import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -65,7 +65,7 @@ export function mapAirShoppingResponse(
   for (const node of offerNodes) {
     try {
       const offer = mapOneOffer({
-        node,
+        node: node as OfferNode,
         flightMap,
         criteria,
         tenantId,

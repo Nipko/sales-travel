@@ -3,7 +3,7 @@ import type {
   FlightSearchCriteria,
   FlightSearchPort,
   SearchContext,
-} from '@sales-travel/domain/ports';
+} from '@sales-travel/domain';
 import { buildAirShoppingRequest } from './airshopping/request.builder';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';

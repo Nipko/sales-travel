@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { FLIGHT_SEARCH_PORT } from '@sales-travel/domain/ports';
+import { FLIGHT_SEARCH_PORT } from '@sales-travel/domain';
 import { LatamNdcFlightSearchAdapter } from '@sales-travel/latam-ndc';
 import { SearchController } from './search.controller.js';
 import { SearchService } from './search.service.js';

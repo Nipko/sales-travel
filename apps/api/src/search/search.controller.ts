@@ -1,6 +1,9 @@
 import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
-import { FlightSearchCriteriaSchema } from '@sales-travel/domain/ports';
+import {
+  FlightSearchCriteriaSchema,
+  type FlightSearchCriteria,
+} from '@sales-travel/domain';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -17,7 +20,7 @@ export class SearchController {
   async flights(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(FlightSearchCriteriaSchema))
-    criteria: import('@sales-travel/domain/ports').FlightSearchCriteria,
+    criteria: FlightSearchCriteria,
   ): Promise<{ offers: Offer[] }> {
     if (!userId) throw new ForbiddenException();
 

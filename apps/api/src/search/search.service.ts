@@ -4,7 +4,7 @@ import {
   FLIGHT_SEARCH_PORT,
   type FlightSearchCriteria,
   type FlightSearchPort,
-} from '@sales-travel/domain/ports';
+} from '@sales-travel/domain';
 
 @Injectable()
 export class SearchService {

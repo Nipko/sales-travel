@@ -1,4 +1,4 @@
-import type { FlightSearchCriteria } from '@sales-travel/domain/ports';
+import type { FlightSearchCriteria } from '@sales-travel/domain';
 import type { LatamNdcConfig } from '../config';
 
 /**

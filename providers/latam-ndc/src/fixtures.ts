@@ -1,5 +1,5 @@
 import type { Offer, Segment } from '@sales-travel/canonical';
-import type { FlightSearchCriteria } from '@sales-travel/domain/ports';
+import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 
 /**
