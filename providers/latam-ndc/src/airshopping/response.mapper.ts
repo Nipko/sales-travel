@@ -110,7 +110,8 @@ function extractMoney(amountNode: unknown, currencyHint?: string): Money | null 
     const obj = amountNode as Record<string, unknown>;
     const text = obj['#text'] ?? obj[''];
     value = Number(text);
-    currency = String(obj['@_CurCode'] ?? obj['@_Code'] ?? currencyHint ?? 'USD');
+    const raw = obj['@_CurCode'] ?? obj['@_Code'] ?? currencyHint ?? 'USD';
+    currency = typeof raw === 'string' ? raw : 'USD';
   } else {
     value = Number(amountNode);
     currency = currencyHint ?? 'USD';

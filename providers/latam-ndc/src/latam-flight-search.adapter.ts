@@ -22,7 +22,6 @@ export class LatamNdcFlightSearchAdapter implements FlightSearchPort {
     this.http = new LatamHttpClient(cfg, this.tokens);
     const mode = isMockMode(cfg) ? 'mock' : 'real';
     const missing = isMockMode(cfg) ? listMissingFields(cfg) : [];
-    // eslint-disable-next-line no-console
     console.warn(
       `[latam-ndc] adapter initialized in ${mode} mode${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`,
     );
