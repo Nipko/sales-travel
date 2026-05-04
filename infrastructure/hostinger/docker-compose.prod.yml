@@ -98,6 +98,15 @@ services:
       PGPASSWORD: ${APP_USER_PASSWORD}
       PGDATABASE: sales_travel
       JWT_SECRET: ${JWT_SECRET}
+      LATAM_API_URL: ${LATAM_API_URL:-https://sandbox.api.latam.com}
+      LATAM_API_KEY: ${LATAM_API_KEY:-}
+      LATAM_API_SECRET: ${LATAM_API_SECRET:-}
+      LATAM_AGENCY_ID: ${LATAM_AGENCY_ID:-}
+      LATAM_AGENCY_IATA: ${LATAM_AGENCY_IATA:-}
+      LATAM_AGENCY_NAME: ${LATAM_AGENCY_NAME:-}
+      LATAM_TRAVEL_AGENT_ID: ${LATAM_TRAVEL_AGENT_ID:-}
+      LATAM_COUNTRY: ${LATAM_COUNTRY:-}
+      LATAM_FORCE_MOCK: ${LATAM_FORCE_MOCK:-false}
     networks: [edge, internal]
     depends_on:
       migrate:

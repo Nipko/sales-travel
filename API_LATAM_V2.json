@@ -1,0 +1,1939 @@
+{
+	"info": {
+		"_postman_id": "dc19ad29-1dcd-4e68-a6b9-089e6c923023",
+		"name": "#Collection-Example API LATAM V2",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "14867211"
+	},
+	"item": [
+		{
+			"name": "Token",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();\r",
+							"pm.environment.set(\"authBear\", jsonData.access_token);"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{
+							"key": "password",
+							"value": "{{Secret}}",
+							"type": "string"
+						},
+						{
+							"key": "username",
+							"value": "{{ApiKey}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "x-api-key",
+						"value": "{{ApiKey}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "grant_type",
+							"value": "client_credentials",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/oauth/cc/token",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"oauth",
+						"cc",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "AirShopping OW",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "Frwccet24u7WaN2XeDYbUf8APkzK",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<IATA_AirShoppingRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_AirShoppingRQ\">\n    <MessageDoc>\n        <RefVersionNumber>1.0</RefVersionNumber>\n    </MessageDoc>\n    <Party>\n        <Sender>\n             <TravelAgency>\n             <AgencyID>{{AgencyID}}</AgencyID>\n                <IATA_Number>{{IATA}}</IATA_Number>\n                <Name>{{AgencyName}}</Name>\n               <TravelAgent>\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\n                </TravelAgent>\n            </TravelAgency>\n        </Sender>\n    </Party>\n    <POS>\n        <Country>\n            <CountryCode>{{Country}}</CountryCode>\n        </Country>\n        <RequestTime>{{TimeStamp}}</RequestTime>\n    </POS>\n    <Request>\n      <FlightCriteria>\n            <OriginDestCriteria>\n               <DestArrivalCriteria>\n                  <IATA_LocationCode>{{Destination}}</IATA_LocationCode>\n               </DestArrivalCriteria>\n               <OriginDepCriteria>\n                  <Date>{{TripDate}}</Date>\n                  <IATA_LocationCode>{{Origin}}</IATA_LocationCode>\n               </OriginDepCriteria>\n            </OriginDestCriteria>\n        </FlightCriteria>\n       <Paxs>\n            <Pax>\n                <PaxID>ADT_1</PaxID>\n                <PTC>ADT</PTC>\n            </Pax>\n      </Paxs>\n       <ShoppingCriteria>\n            <ProgramCriteria>\n                <ProgramAccount>\n                    <AccountID>{{AccountCode}}</AccountID>\n                </ProgramAccount>\n                <ProgramOwner>   \n                    <Carrier>\n                        <AirlineDesigCode>LA</AirlineDesigCode>\n                    </Carrier>\n                </ProgramOwner>\n            </ProgramCriteria>  \n        </ShoppingCriteria>     \n    </Request>\n</IATA_AirShoppingRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/airshopping",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"airshopping"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "AirShopping  RT",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<IATA_AirShoppingRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_AirShoppingRQ\">\n    <MessageDoc>\n        <RefVersionNumber>1.0</RefVersionNumber>\n    </MessageDoc>\n    <Party>\n        <Sender>\n             <TravelAgency>\n             <AgencyID>{{AgencyID}}</AgencyID>\n                <IATA_Number>{{IATA}}</IATA_Number>\n                <Name>{{AgencyName}}</Name>\n               <TravelAgent>\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\n                </TravelAgent>\n            </TravelAgency>\n        </Sender>\n    </Party>\n    <POS>\n        <Country>\n            <CountryCode>{{Country}}</CountryCode>\n        </Country>\n        <RequestTime>2021-04-21T07:38:00</RequestTime>\n    </POS>\n    <Request>\n        <FlightCriteria>\n            <!-- FLIGHT SEARCH -->\n            <OriginDestCriteria>\n                <DestArrivalCriteria>\n                    <IATA_LocationCode>GRU</IATA_LocationCode>\n                </DestArrivalCriteria>\n                <OriginDepCriteria>\n                    <Date>2023-10-10</Date>\n                    <IATA_LocationCode>SCL</IATA_LocationCode>\n                </OriginDepCriteria>\n            </OriginDestCriteria>\n            <OriginDestCriteria>\n                <DestArrivalCriteria>\n                    <IATA_LocationCode>SCL</IATA_LocationCode>\n                </DestArrivalCriteria>\n                <OriginDepCriteria>\n                    <Date>2023-10-13</Date>\n                    <IATA_LocationCode>GRU</IATA_LocationCode>\n                </OriginDepCriteria>\n            </OriginDestCriteria>  \n        </FlightCriteria>  \n       <Paxs>\n            <Pax>\n                <PaxID>ADT_1</PaxID>\n                <PTC>ADT</PTC>\n            </Pax>\n        </Paxs>\n    </Request>\n</IATA_AirShoppingRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/airshopping",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"airshopping"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OfferPrice",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');",
+							"pm.environment.set('trackId', uuid.v4());",
+							"",
+							"pm.globals.replaceIn(\"{{iata}}\");",
+							"pm.globals.replaceIn(\"{{userid-agencia}}\");",
+							"pm.globals.replaceIn(\"{{countrycode}}\");",
+							"pm.globals.replaceIn(\"{{Api-Booking-Departure-OfferId}}\");",
+							"pm.globals.replaceIn(\"{{Api-Booking-Departure-OfferItemId}}\");",
+							"pm.globals.replaceIn(\"{{Api-Booking-Return-OfferItemId}}\");",
+							"",
+							"console.log('INICIO - Offer Price.............................................!!!');"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "ES, EN, PT",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<IATA_OfferPriceRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OfferPriceRQ\">\n    <MessageDoc>\n        <RefVersionNumber>1.0</RefVersionNumber>\n    </MessageDoc>\n    <Party>\n        <Sender>\n             <TravelAgency>\n             <AgencyID>{{AgencyID}}</AgencyID>\n                <IATA_Number>{{IATA}}</IATA_Number>\n                <Name>{{AgencyName}}</Name>\n               <TravelAgent>\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\n                </TravelAgent>\n            </TravelAgency>\n        </Sender>\n    </Party>\n    <POS>\n        <Country>\n            <CountryCode>{{Country}}</CountryCode>\n        </Country>\n    </POS>\n    <Request>\n        <DataLists>\n            <PaxList>\n               <Pax>\n                    <PaxID>ADT_1</PaxID>\n                    <PTC>ADT</PTC>\n               </Pax>\n            </PaxList>\n        </DataLists>\n        <PricedOffer>\n            <SelectedOffer>\n               <OfferRefID>{{OfferRefID}}</OfferRefID>\n               <OwnerCode>LA</OwnerCode>\n               <SelectedOfferItem>\n                    <OfferItemRefID>{{OfferItemRefID}}</OfferItemRefID>\n                    <PaxRefID>ADT_1</PaxRefID>\n               </SelectedOfferItem>  \n               <SelectedOfferItem>\n                    <OfferItemRefID>{{OfferRefID}}</OfferItemRefID>\n                    <PaxRefID>ADT_1</PaxRefID>\n                </SelectedOfferItem>  \n            </SelectedOffer>\n        </PricedOffer>\n    </Request>\n</IATA_OfferPriceRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/offerPrice",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"offerPrice"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderCreate",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderCreateRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCreateRQ\">\r\n   <MessageDoc>\r\n      <RefVersionNumber>1.0</RefVersionNumber>\r\n   </MessageDoc>\r\n   <Party>\r\n        <Sender>\r\n            <TravelAgency>\r\n               <AgencyID>{{AgencyID}}</AgencyID>\r\n               <ContactInfoRefID>AGENCY_1_CNT</ContactInfoRefID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{Agency_Name}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n               </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n   </Party>\r\n   <POS >\r\n      <Country>\r\n         <CountryCode>{{Country}}</CountryCode>\r\n      </Country>\r\n   </POS>\r\n   <Request>\r\n        <!-- OW example -->\r\n        <CreateOrder>\r\n            <SelectedOffer>\r\n               <OfferRefID>{{OfferRefID}}</OfferRefID>\r\n               <OwnerCode>LA</OwnerCode>\r\n               <SelectedOfferItem>\r\n                    <OfferItemRefID>{{OfferRefID}}</OfferItemRefID>\r\n                    <PaxRefID>ADT_1</PaxRefID>\r\n               </SelectedOfferItem>\r\n            </SelectedOffer>\r\n         </CreateOrder>\r\n         <!-- RT example \r\n         <CreateOrder>\r\n            <SelectedOffer>\r\n               <OfferRefID>{{OfferRefID_Destination}}</OfferRefID>\r\n               <OwnerCode>LA</OwnerCode>\r\n               <SelectedOfferItem>\r\n                    <OfferItemRefID>{{OfferRefID_Origin}}</OfferItemRefID>\r\n                    <PaxRefID>ADT_1</PaxRefID>\r\n               </SelectedOfferItem>\r\n               <SelectedOfferItem>\r\n                  <OfferItemRefID>{{OfferRefID_Destination}}</OfferItemRefID>\r\n                  <PaxRefID>ADT_1</PaxRefID>\r\n               </SelectedOfferItem> \r\n            </SelectedOffer>\r\n         </CreateOrder>   -->\r\n      <DataLists>\r\n\t\t\t<ContactInfoList>\r\n\t\t\t\t<ContactInfo>\r\n\t\t\t\t\t<ContactInfoID>AGENCY_1_CNT</ContactInfoID>\r\n\t\t\t\t\t<ContactPurposeText>BILLING</ContactPurposeText>\r\n\t\t\t\t\t<EmailAddress>\r\n\t\t\t\t\t\t<EmailAddressText>{{Agency_Email}}</EmailAddressText>\r\n\t\t\t\t\t</EmailAddress>\r\n\t\t\t\t\t<Phone>\r\n                    <AreaCodeNumber>9</AreaCodeNumber>\r\n                    <ContactTypeText>MOBILE</ContactTypeText>\r\n                    <CountryDialingCode>54</CountryDialingCode>\r\n                    <PhoneNumber>123456789</PhoneNumber>\r\n               </Phone>\r\n               <PostalAddress>\r\n                  <CountryCode>CO</CountryCode>\r\n\t\t\t\t\t\t<PostalCode>10967</PostalCode>\r\n\t\t\t\t\t\t<StreetText>Boppstrasse 10</StreetText>\r\n\t\t\t\t\t</PostalAddress>\r\n\t\t\t\t</ContactInfo>\r\n            <ContactInfo>\r\n               <ContactInfoID>ADT_1_CNT</ContactInfoID>\r\n               <EmailAddress>\r\n                  <EmailAddressText>{{Customer_Email}}</EmailAddressText>\r\n               </EmailAddress>\r\n               <Phone>\r\n                  <ContactTypeText>MOBILE</ContactTypeText>\r\n                  <CountryDialingCode>57</CountryDialingCode>\r\n                  <PhoneNumber>3216540987</PhoneNumber>\r\n               </Phone>\r\n            </ContactInfo>\r\n         </ContactInfoList>\r\n         <PaxList>\r\n            <Pax>\r\n               <CitizenshipCountryCode>CO</CitizenshipCountryCode>\r\n               <ContactInfoRefID>ADT_1_CNT</ContactInfoRefID>\r\n               <IdentityDoc>\r\n                  <ExpiryDate>2025-09-23</ExpiryDate>    \r\n                  <IdentityDocID>1116255993</IdentityDocID>\r\n                  <IdentityDocTypeCode>P</IdentityDocTypeCode>\r\n                  <IssuingCountryCode>CO</IssuingCountryCode>\r\n               </IdentityDoc>\r\n               <Individual>\r\n                  <Birthdate>1992-09-23</Birthdate>\r\n                  <GenderCode>M</GenderCode>\r\n                  <GivenName>Oliver</GivenName>\r\n                     <IndividualID>IND_Pax1</IndividualID>\r\n                  <Surname>Jackson</Surname>\r\n               </Individual>\r\n               <PaxID>ADT_1</PaxID>\r\n               <PTC>ADT</PTC>\r\n            </Pax>\r\n         </PaxList>\r\n      </DataLists>\r\n  </Request>\r\n</IATA_OrderCreateRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/create",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"create"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderChange",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderChangeRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderChangeRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n            <TravelAgency>\r\n               <AgencyID>{{AgencyID}}</AgencyID>\r\n               <ContactInfoRefID>AGENCY_1_CNT</ContactInfoRefID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n               </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <Request>\r\n\t\t<DataLists>\r\n\t\t\t<ContactInfoList>\r\n\t\t\t\t<ContactInfo>\r\n\t\t\t\t\t<ContactInfoID>AGENCY_1_CNT</ContactInfoID>\r\n\t\t\t\t\t<ContactPurposeText>BILLING</ContactPurposeText>\r\n\t\t\t\t\t<EmailAddress>\r\n\t\t\t\t\t\t<EmailAddressText>{{EmailAgency}}</EmailAddressText>\r\n\t\t\t\t\t</EmailAddress>\r\n\t\t\t\t\t<PostalAddress>\r\n\t\t\t\t\t\t<CountryCode>CN</CountryCode>\r\n\t\t\t\t\t\t<PostalCode>80000</PostalCode>\r\n\t\t\t\t\t\t<StreetText>St Georges Road</StreetText>\r\n\t\t\t\t\t</PostalAddress>\r\n\t\t\t\t</ContactInfo>\r\n\t\t\t</ContactInfoList>\r\n\t\t\t<PaxList>\r\n            <Pax>\r\n\t\t\t\t   <PaxID>ADT_1</PaxID>\r\n\t\t\t\t\t<PTC>ADT</PTC>\r\n\t\t\t\t</Pax>\r\n  <!-->          <Pax>\r\n\t\t\t\t   <PaxID>INF_1</PaxID>\r\n\t\t\t\t\t<PTC>INF</PTC>\r\n\t\t\t\t</Pax> -->\r\n\t\t\t</PaxList>\r\n\t\t</DataLists>\r\n        <Order>\r\n            <OrderID>LA0350892QZDV</OrderID>\r\n            <OwnerCode>LA</OwnerCode>\r\n        </Order>\r\n         <PaymentFunctions>\r\n            <PaymentProcessingDetails>\r\n                <Amount CurCode=\"COP\">1160400.0</Amount>\r\n                <PaymentMethod>\r\n                    <PaymentCard>\r\n                        <CardBrandCode>VI</CardBrandCode>\r\n                        <CardHolderName>JOAO SILVA</CardHolderName>\r\n                        <CardNumber>4563960122001999</CardNumber>\r\n                        <CardSecurityCode>347</CardSecurityCode>\r\n                        <ExpirationDate>1224</ExpirationDate>\r\n                    </PaymentCard>\r\n                </PaymentMethod>\r\n                <TypeCode>Credit Card</TypeCode>\r\n            </PaymentProcessingDetails>\r\n        </PaymentFunctions>     \r\n   <!-->      <PaymentFunctions>\r\n            <PaymentProcessingDetails>\r\n                <Amount CurCode=\"COP\">1167700.0</Amount>\r\n                <PaymentMethod>\r\n                    <Cash></Cash>\r\n                </PaymentMethod>\r\n                <PaymentTrx>\r\n                    <TrxDataText>ALEX RUC 20111111119</TrxDataText>\r\n                </PaymentTrx>\r\n                <TypeCode>Cash</TypeCode>\r\n            </PaymentProcessingDetails>\r\n        </PaymentFunctions>    --> \r\n    </Request>\r\n</IATA_OrderChangeRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/change/payment",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"change",
+						"payment"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderRetrieve",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						},
+						{
+							"key": "password",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderRetrieveRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderRetrieveRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <POS>\r\n        <Country>\r\n            <CountryCode>{{Country}}</CountryCode>\r\n        </Country>\r\n    </POS>\r\n    <Request>\r\n        <OrderFilterCriteria>\r\n            <Order>\r\n                <OrderID>{{OrderID}}</OrderID>\r\n                <OwnerCode>LA</OwnerCode>\r\n            </Order>\r\n        </OrderFilterCriteria>\r\n    </Request>\r\n</IATA_OrderRetrieveRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/retrieve",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"retrieve"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Installments",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						},
+						{
+							"key": "password",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<InstallmentOptionsRQ>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <Pan>{{CC}}</Pan>\r\n    <OrderId>{{OrdrID}}</OrderId>\r\n    <ExecutionFlow>PAYLATER</ExecutionFlow>\r\n</InstallmentOptionsRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/installments/options",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"installments",
+						"options"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderChangeBooking",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><IATA_OrderChangeRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderChangeRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n   <Party>\r\n        <Sender>\r\n            <TravelAgency>\r\n               <AgencyID>{{AgencyID}}</AgencyID>\r\n               <ContactInfoRefID>AGENCY_1_CNT</ContactInfoRefID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{AgencyNAme}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n               </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n   </Party>\r\n   <Request>\r\n      <DataLists>\r\n\t\t\t<ContactInfoList>\r\n\t\t\t\t<ContactInfo>\r\n\t\t\t\t\t<ContactInfoID>AGENCY_1_CNT</ContactInfoID>\r\n\t\t\t\t\t<ContactPurposeText>BILLING</ContactPurposeText>\r\n\t\t\t\t\t<EmailAddress>\r\n\t\t\t\t\t\t<EmailAddressText>{{AgencyEmail}}</EmailAddressText>\r\n\t\t\t\t\t</EmailAddress>\r\n\t\t\t\t\t<Phone>\r\n                    <AreaCodeNumber>9</AreaCodeNumber>\r\n                    <ContactTypeText>MOBILE</ContactTypeText>\r\n                    <CountryDialingCode>54</CountryDialingCode>\r\n                    <PhoneNumber>42818236</PhoneNumber>\r\n               </Phone>\r\n               <PostalAddress>\r\n                  <CountryCode>CO</CountryCode>\r\n\t\t\t\t\t\t<PostalCode>10967</PostalCode>\r\n\t\t\t\t\t\t<StreetText>Boppstrasse 10</StreetText>\r\n\t\t\t\t\t</PostalAddress>\r\n\t\t\t\t</ContactInfo>\r\n            <ContactInfo>\r\n               <ContactInfoID>ADT_1_CNT</ContactInfoID>\r\n               <EmailAddress>\r\n                  <EmailAddressText>{{EmailCustomer}}</EmailAddressText>\r\n               </EmailAddress>\r\n               <Phone>\r\n                  <ContactTypeText>MOBILE</ContactTypeText>\r\n                  <CountryDialingCode>57</CountryDialingCode>\r\n                  <PhoneNumber>3216540987</PhoneNumber>\r\n               </Phone>\r\n            </ContactInfo>\r\n            <ContactInfo>\r\n               <ContactInfoID>INF_1_CNT</ContactInfoID>\r\n               <EmailAddress>\r\n                  <EmailAddressText>{{EmailCustomer}}</EmailAddressText>\r\n               </EmailAddress>\r\n               <Phone>\r\n                  <ContactTypeText>MOBILE</ContactTypeText>\r\n                  <CountryDialingCode>57</CountryDialingCode>\r\n                  <PhoneNumber>3216540987</PhoneNumber>\r\n               </Phone>\r\n            </ContactInfo>\r\n         </ContactInfoList>\r\n         <PaxList>\r\n            <Pax>\r\n               <CitizenshipCountryCode>CO</CitizenshipCountryCode>\r\n               <ContactInfoRefID>ADT_1_CNT</ContactInfoRefID>\r\n               <IdentityDoc>\r\n                  <ExpiryDate>2025-09-23</ExpiryDate>\r\n                  <IdentityDocID>1116255993</IdentityDocID>\r\n                  <IdentityDocTypeCode>P</IdentityDocTypeCode>\r\n                  <IssuingCountryCode>CO</IssuingCountryCode>\r\n               </IdentityDoc>\r\n               <Individual>\r\n                  <Birthdate>1992-09-23</Birthdate>\r\n                  <GenderCode>M</GenderCode>\r\n                  <GivenName>Oliver</GivenName>\r\n                     <IndividualID>IND_Pax1</IndividualID>\r\n                  <Surname>Zuluaga</Surname>\r\n               </Individual>\r\n               <PaxID>ADT_1</PaxID>\r\n               <PTC>ADT</PTC>\r\n            </Pax>\r\n            <Pax>\r\n               <CitizenshipCountryCode>CO</CitizenshipCountryCode>\r\n               <ContactInfoRefID>INF_1_CNT</ContactInfoRefID>\r\n               <IdentityDoc>\r\n                  <ExpiryDate>2025-09-23</ExpiryDate>\r\n                  <IdentityDocID>8523698745</IdentityDocID>\r\n                  <IdentityDocTypeCode>P</IdentityDocTypeCode>\r\n                  <IssuingCountryCode>CO</IssuingCountryCode>\r\n               </IdentityDoc>\r\n               <Individual>\r\n                  <Birthdate>2021-09-23</Birthdate>\r\n                  <GenderCode>M</GenderCode>\r\n                  <GivenName>Samuel</GivenName>\r\n                  <IndividualID>IND_Pax2</IndividualID>\r\n                  <Surname>Zuluaga</Surname>\r\n               </Individual>\r\n               <PaxID>INF_1</PaxID>\r\n               <PTC>INF</PTC>\r\n            </Pax>\r\n         </PaxList>\r\n      </DataLists>\r\n      <Order>\r\n        <OrderID>LA0455311MVWH</OrderID>\r\n        <OwnerCode>LA</OwnerCode>\r\n      </Order>\r\n  </Request>\r\n</IATA_OrderChangeRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/change/booking",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"change",
+						"booking"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "SeatsAvailability",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_SeatAvailabilityRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_SeatAvailabilityRQ\">\r\n  <MessageDoc>\r\n    <RefVersionNumber>1.0</RefVersionNumber>\r\n  </MessageDoc>\r\n\t<Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n\t</Party>\r\n\t<POS>\r\n\t\t<Country>\r\n\t\t\t<CountryCode>{{Country}}</CountryCode>\r\n\t\t</Country>\r\n\t</POS>\r\n   <Request>\r\n      <CoreRequest>\r\n            <!-- ORDER ID PARAM TO SEARCH FOR SEATS OFFERS -->\r\n <!-->           <Order>\r\n                <OrderID>LA0455123QDPQ</OrderID>\r\n            </Order>\r\n        </CoreRequest> -->\r\n        <!-- PAX LIST \r\n        <Pax>\r\n            <PaxID>ADT_1</PaxID>\r\n            <PTC>ADT</PTC>\r\n        </Pax> -->\r\n         <Offer>\r\n            <OfferID>SEI|Q098UkVWRU5VRXxOT1RfQUN8Tk9UX0NOTnxOT1RfSU5GfFNDTHxHUlV8MjAyMy0wOS0wOXxCUkFOREVEfElCRg==|U0NMfDcwMnxMQXxMQXwyMDIzLTA5LTA5VDIxOjA1OjAwfFFQ</OfferID>\r\n\t      </Offer> \r\n      </CoreRequest>\r\n\t</Request>\r\n</IATA_SeatAvailabilityRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/seats/availability",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"seats",
+						"availability"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ServiceList",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_ServiceListRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_ServiceListRQ\">\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <POS>\r\n        <Country>\r\n            <CountryCode>{{Country}}</CountryCode>\r\n        </Country>\r\n        <RequestTime>2020-09-12T07:38:00</RequestTime>\r\n    </POS>\r\n    <Request>\r\n        <CoreRequest>\r\n            <!-- ORDER TO SEARCH ANCILLARIES -->\r\n            <!-- <Order>  --> \r\n       <!-->         <OrderID>LA0451838KGZU</OrderID>\r\n                <OrderItem>\r\n                    <GrandTotalAmount>0</GrandTotalAmount>\r\n                </OrderItem>  -->\r\n            <Offer>\r\n        <OfferID>SEI|Q098UkVWRU5VRXxOT1RfQUN8Tk9UX0NOTnxOT1RfSU5GfFNDTHxHUlV8MjAyMy0xMC0xMHxHUlV8U0NMfDIwMjMtMTAtMTN8QlJBTkRFRHxJQkY=|R1JVfDYzMXxMQXxMQXwyMDIzLTEwLTEzVDIwOjMwOjAwfFNF</OfferID>\r\n        </Offer>\r\n        <Offer>       \r\n        <OfferID>SEI|Q098UkVWRU5VRXxOT1RfQUN8Tk9UX0NOTnxOT1RfSU5GfFNDTHxHUlV8MjAyMy0xMC0xMHxHUlV8U0NMfDIwMjMtMTAtMTN8QlJBTkRFRHxJQkY=|U0NMfDYzMHxMQXxMQXwyMDIzLTEwLTEwVDE0OjM1OjAwfFNF</OfferID>\r\n         </Offer> \r\n            <!-- </Order>  -->\r\n        </CoreRequest>\r\n        <Pax>\r\n            <PaxID>ADT_1</PaxID>\r\n            <PTC>ADT</PTC>\r\n        </Pax>\r\n        <ShoppingCriteria>\r\n            <!-- SERVICE TYPE SEARCH FOR BAGGAGE -->\r\n            <OfferItemTypeCriteria>\r\n                <OfferItemTypeCode>BAGGAGE</OfferItemTypeCode>\r\n            </OfferItemTypeCriteria>\r\n        </ShoppingCriteria>\r\n    </Request>\r\n</IATA_ServiceListRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/services/list",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"services",
+						"list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderReshop Refund",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderReshopRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderReshopRQ\">\r\n  <MessageDoc>\r\n    <RefVersionNumber>1.0</RefVersionNumber>\r\n  </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n  <POS>\r\n    <Country>\r\n      <CountryCode>{{Country}}</CountryCode>\r\n    </Country>\r\n  </POS>\r\n  <Request>\r\n    <!-- Here we put the orderId -->\r\n    <OrderRefID>LA4622413NWEG</OrderRefID>\r\n    <UpdateOrder>\r\n      <CancelOrder>\r\n        <!-- Here we put the orderId -->\r\n        <OrderRefID>LA4622413NWEG</OrderRefID>\r\n      </CancelOrder>\r\n    </UpdateOrder>\r\n  </Request>\r\n</IATA_OrderReshopRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/reshop",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"reshop"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderCancel Refund",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderCancelRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCancelRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                 <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party> \r\n    <POS>\r\n        <Country>\r\n            <CountryCode>{{Country}}</CountryCode>\r\n        </Country>\r\n    </POS>\r\n    <Request>\r\n        <ExpectedRefundAmount>\r\n        <!-- Here we put the total amount -->\r\n            <TotalAmount>36.59</TotalAmount>\r\n        </ExpectedRefundAmount>\r\n        <Order>\r\n        <!-- Here we put the orderID -->\r\n            <OrderID>{{OrderID}}</OrderID>\r\n            <OwnerCode>LA</OwnerCode>\r\n        </Order>  \r\n    </Request>\r\n</IATA_OrderCancelRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/cancel",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"cancel"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderReshop Exchange",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderReshopRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderReshopRQ\">\r\n  <MessageDoc>\r\n    <RefVersionNumber>1.0</RefVersionNumber>\r\n  </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n  <POS>\r\n    <Country>\r\n      <CountryCode>{{Country}}</CountryCode>\r\n    </Country>\r\n  </POS>\r\n  <Request>\r\n    <OrderRefID>LA0358322GMIT</OrderRefID>\r\n    <UpdateOrder>\r\n      <ReshopOrder>\r\n        <ServiceOrder>\r\n          <AddOfferItems>\r\n            <FlightCriteria>\r\n              <SpecificOriginDestCriteria>\r\n                <DestStationCode>GRU</DestStationCode>\r\n                <OriginStationCode>SCL</OriginStationCode>\r\n                <PaxJourney>\r\n                  <PaxSegment>\r\n                    <Arrival>\r\n                      <IATA_LocationCode>GRU</IATA_LocationCode>\r\n                    </Arrival>\r\n                    <Dep>\r\n                      <AircraftScheduledDateTime>2023-12-27T00:00:00</AircraftScheduledDateTime>\r\n                      <IATA_LocationCode>SCL</IATA_LocationCode>\r\n                    </Dep>\r\n                    <MarketingCarrierInfo>\r\n                      <CarrierDesigCode>LA</CarrierDesigCode>\r\n                      <MarketingCarrierFlightNumberText/>\r\n                    </MarketingCarrierInfo>\r\n                    <OperatingCarrierInfo/>\r\n                  </PaxSegment>\r\n                </PaxJourney>\r\n              </SpecificOriginDestCriteria>\r\n            </FlightCriteria>\r\n            <Paxs>\r\n              <Pax>\r\n                <PaxID>ADT_1</PaxID>\r\n                <PTC>ADT</PTC>\r\n              </Pax>\r\n            </Paxs>\r\n          </AddOfferItems>\r\n        </ServiceOrder>\r\n      </ReshopOrder>\r\n    </UpdateOrder>\r\n  </Request>\r\n</IATA_OrderReshopRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/reshop",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"reshop"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderCancel VOID",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderCancelRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCancelRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                 <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party> \r\n    <POS>\r\n        <Country>\r\n            <CountryCode>{{Country}}</CountryCode>\r\n        </Country>\r\n    </POS>\r\n    <Request>\r\n        <Order>\r\n            <OrderID>LA0350892QZDV</OrderID>\r\n            <OwnerCode>LA</OwnerCode>\r\n        </Order>  \r\n    </Request>\r\n</IATA_OrderCancelRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/cancel",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"cancel"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Billing Information",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						},
+						{
+							"key": "password",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "ES",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<LATAM_AdditionalTaxDetailsRQ>\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <Request>\r\n        <OrderFilterCriteria>\r\n            <Order>\r\n                <OrderID>{{OrderID}}</OrderID>\r\n                <OwnerCode>LA</OwnerCode>\r\n            </Order>\r\n        </OrderFilterCriteria>\r\n    </Request>\r\n</LATAM_AdditionalTaxDetailsRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/tax/info",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"tax",
+						"info"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Order List JSON",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"Party\": {\r\n    \"Sender\": {\r\n      \"TravelAgency\": {\r\n        \"IATA_Number\": \"IATA\",\r\n        \"TravelAgent\": {\r\n          \"TravelAgentID\": \"Robotic User\"\r\n        }\r\n      }\r\n    }\r\n  },\r\n  \"TicketRequest\":{\r\n      \"issueDate\":\"2025-09-28\"\r\n      }\r\n}"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/api/api-b2b-reporting/v1/order/tickets",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"api",
+						"api-b2b-reporting",
+						"v1",
+						"order",
+						"tickets"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Order Cancel BNPL (Cancel Itinenary)",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						},
+						{
+							"key": "password",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderCancelRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCancelRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n                <IATA_Number>{{IATA}}</IATA_Number>\r\n                <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <Request>\r\n        <Order>\r\n        <!-- Here we put the orderID -->\r\n            <OrderID>{{OrderID}}</OrderID>\r\n            <OwnerCode>LA</OwnerCode>\r\n        </Order>\r\n    </Request>\r\n</IATA_OrderCancelRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/cancel/bnpl",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"cancel",
+						"bnpl"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OrderChange FFP (After issue)",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderChangeRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderChangeRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n\t<Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n\t</Party>\r\n    <Request>\r\n        <DataLists>\r\n            <PaxList>\r\n                <Pax>\r\n                    <LoyaltyProgramAccount>\r\n                        <AccountNumber>{{LoyaltyProgramAccount}}</AccountNumber>\r\n                        <LoyaltyProgram>\r\n                            <Carrier>\r\n                                <AirlineDesigCode>LA</AirlineDesigCode>\r\n                            </Carrier>\r\n                        </LoyaltyProgram>\r\n                    </LoyaltyProgramAccount>\r\n                    <PaxID>ADT_1</PaxID>\r\n                    <PTC>ADT</PTC>\r\n                </Pax>\r\n            </PaxList>\r\n        </DataLists>\r\n        <Order>\r\n            <OrderID>{{OrderID}}</OrderID>\r\n            <OwnerCode>LA</OwnerCode>\r\n        </Order>\r\n    </Request>\r\n</IATA_OrderChangeRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/passenger",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"passenger"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Order Llst",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"var uuid = require('uuid');\r",
+							"pm.environment.set('trackId', uuid.v4());"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{authBear}}",
+							"type": "string"
+						},
+						{
+							"key": "password",
+							"value": "{{authBear}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-latam-api-key",
+						"value": "{{APIKey}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/xml",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Track-Id",
+						"value": "{{trackId}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Application-Name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-client-name",
+						"value": "{{AgencyName}}",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-request-id",
+						"value": "{{$randomUUID}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Country",
+						"value": "{{Country}}",
+						"type": "text"
+					},
+					{
+						"key": "X-latam-Lang",
+						"value": "EN",
+						"type": "text"
+					},
+					{
+						"key": "x-latam-api-version",
+						"value": "V2",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<IATA_OrderListRQ xmlns=\"http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderListRQ\">\r\n    <MessageDoc>\r\n        <RefVersionNumber>1.0</RefVersionNumber>\r\n    </MessageDoc>\r\n    <Party>\r\n        <Sender>\r\n             <TravelAgency>\r\n             <AgencyID>{{AgencyID}}</AgencyID>\r\n               <IATA_Number>{{IATA}}</IATA_Number>\r\n               <Name>{{AgencyName}}</Name>\r\n               <TravelAgent>\r\n                   <TravelAgentID>{{TravelAgentID}}</TravelAgentID>\r\n                </TravelAgent>\r\n            </TravelAgency>\r\n        </Sender>\r\n    </Party>\r\n    <Request>\r\n        <OrderFilterCriteria>\r\n            <CreationDateTimeFilterCriteria>\r\n                <FromDateTime TimeZoneCode=\"America/Lima\">2024-02-15T00:00:01</FromDateTime>\r\n                <ToDateTime TimeZoneCode=\"America/Lima\">2024-02-15T14:36:00</ToDateTime>\r\n            </CreationDateTimeFilterCriteria>\r\n            <FlightFilterCriteria>\r\n                <DepFilterCriteria>\r\n                    <DepDate>2024-02-15</DepDate>\r\n                    <StationCode>LIM</StationCode>\r\n                </DepFilterCriteria>\r\n            </FlightFilterCriteria>\r\n        </OrderFilterCriteria>\r\n    </Request>\r\n</IATA_OrderListRQ>"
+				},
+				"url": {
+					"raw": "https://sandbox.api.latam.com/ndc/v192/order/list",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"latam",
+						"com"
+					],
+					"path": [
+						"ndc",
+						"v192",
+						"order",
+						"list"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "@sales-travel/canonical": "workspace:*",
-    "@sales-travel/domain": "workspace:*"
+    "@sales-travel/domain": "workspace:*",
+    "fast-xml-parser": "^4.5.1"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

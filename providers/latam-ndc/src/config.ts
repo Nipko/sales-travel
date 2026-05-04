@@ -1,18 +1,23 @@
 /**
- * Configuración runtime del adapter. Se inyecta desde la app (api) leyendo
- * variables de entorno. Si `apiUrl` o `apiKey` están vacíos, el adapter
- * corre en modo MOCK (devuelve fixtures determinísticas) — útil para dev
- * y para CI sin credenciales reales.
+ * Configuración runtime del adapter LATAM NDC. Se inyecta desde la app
+ * leyendo variables de entorno. Si las credenciales mínimas no están,
+ * el adapter corre en modo MOCK (devuelve fixtures) — útil para dev y CI.
  */
 export interface LatamNdcConfig {
-  apiUrl?: string;
+  apiUrl: string;
   apiKey?: string;
+  apiSecret?: string;
   agencyId?: string;
+  agencyIata?: string;
+  agencyName?: string;
+  travelAgentId?: string;
+  country?: string;
+  accountCode?: string;
   /** Forzar modo mock incluso con credenciales presentes. */
   mock?: boolean;
 }
 
 export function isMockMode(cfg: LatamNdcConfig): boolean {
   if (cfg.mock) return true;
-  return !cfg.apiUrl || !cfg.apiKey;
+  return !cfg.apiKey || !cfg.apiSecret || !cfg.agencyId || !cfg.agencyIata || !cfg.country;
 }
