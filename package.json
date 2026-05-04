@@ -16,7 +16,6 @@
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
-    "gen:airports": "node tools/gen-airports/generate.mjs",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {

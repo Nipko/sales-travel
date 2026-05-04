@@ -39,6 +39,7 @@ jobs:
           - { name: web-b2b, dockerfile: apps/web-b2b/Dockerfile }
           - { name: migrate, dockerfile: tools/db-migrate/Dockerfile }
           - { name: seed-superadmin, dockerfile: tools/seed-superadmin/Dockerfile }
+          - { name: sync-airports, dockerfile: tools/sync-airports/Dockerfile }
     steps:
       - uses: actions/checkout@v4
 
