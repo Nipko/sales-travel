@@ -1,10 +1,10 @@
 /**
- * Airport search engine with lazy-loaded full dataset.
+ * Airport search — 8800+ IATA airports.
  *
- * Strategy:
- * - Popular airports are inline (instant, zero latency)
- * - Full dataset (8800+ airports) loads from /data/airports.json on first focus
- * - Search operates on whatever is loaded; upgrades to full once available
+ * The full dataset lives in src/data/airports-full.ts and is loaded
+ * via dynamic import(). Next.js automatically code-splits it into a
+ * separate chunk served from /_next/static/chunks/ — no public/ files,
+ * no fetch, no Docker issues.
  */
 
 export interface Airport {
@@ -32,9 +32,13 @@ interface RawAirport {
   k?: string;
 }
 
-// ─── Inline popular airports (always available, zero latency) ───────────────
+interface AirportInternal extends Airport {
+  _keywords?: string;
+}
 
-const POPULAR: Airport[] = [
+// ─── Inline popular airports (always available, zero latency) ───
+
+const POPULAR: AirportInternal[] = [
   {
     code: 'BOG',
     name: 'El Dorado Intl',
@@ -237,14 +241,10 @@ const POPULAR: Airport[] = [
   },
 ];
 
-// ─── Full dataset (lazy loaded) ─────────────────────────────────────────────
+// ─── Full dataset (dynamic import — Next.js bundles as chunk) ───
 
 let fullDataset: AirportInternal[] | null = null;
 let loadPromise: Promise<AirportInternal[]> | null = null;
-
-interface AirportInternal extends Airport {
-  _keywords?: string;
-}
 
 function mapRaw(raw: RawAirport): AirportInternal {
   return {
@@ -260,17 +260,13 @@ function mapRaw(raw: RawAirport): AirportInternal {
   };
 }
 
-export function loadFullDataset(): Promise<Airport[]> {
+export function loadFullDataset(): Promise<AirportInternal[]> {
   if (fullDataset) return Promise.resolve(fullDataset);
   if (loadPromise) return loadPromise;
 
-  loadPromise = fetch('/data/airports.json')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json() as Promise<RawAirport[]>;
-    })
-    .then((raw) => {
-      fullDataset = raw.map(mapRaw);
+  loadPromise = import('../data/airports-full.json')
+    .then((mod) => {
+      fullDataset = (mod.default as RawAirport[]).map(mapRaw);
       return fullDataset;
     })
     .catch(() => {
@@ -285,17 +281,18 @@ export function isDatasetLoaded(): boolean {
   return fullDataset !== null;
 }
 
-// ─── Search logic ───────────────────────────────────────────────────────────
+// ─── Search ─────────────────────────────────────────────────────
 
 function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 }
 
-function scoreAirport(airport: Airport, query: string, keywords?: string): number {
+function scoreAirport(airport: AirportInternal, query: string): number {
   const code = airport.code.toLowerCase();
   const city = normalize(airport.city);
   const name = normalize(airport.name);
   const country = normalize(airport.country);
+  const keywords = airport._keywords;
 
   if (code === query) return 100;
   if (city === query) return 90;
@@ -312,10 +309,9 @@ function scoreAirport(airport: Airport, query: string, keywords?: string): numbe
 
   if (city.includes(query)) return 55;
   if (name.includes(query)) return 45;
+  if (keywords?.includes(query)) return 40;
   if (country.startsWith(query)) return 35;
   if (country.includes(query)) return 30;
-
-  if (keywords?.includes(query)) return 40;
 
   const words = query.split(/\s+/);
   if (words.length > 1) {
@@ -328,21 +324,16 @@ function scoreAirport(airport: Airport, query: string, keywords?: string): numbe
   return 0;
 }
 
-function getSearchableDataset(): AirportInternal[] {
-  if (fullDataset) return fullDataset;
-  return POPULAR;
-}
-
 export function searchAirports(query: string, limit = 8): Airport[] {
   const q = normalize(query);
   if (!q) return POPULAR.slice(0, limit);
 
-  const dataset = getSearchableDataset();
+  const dataset: AirportInternal[] = fullDataset ?? POPULAR;
   const scored: { airport: AirportInternal; score: number }[] = [];
 
   for (let i = 0; i < dataset.length; i++) {
     const a = dataset[i]!;
-    const score = scoreAirport(a, q, a._keywords);
+    const score = scoreAirport(a, q);
     if (score > 0) {
       scored.push({ airport: a, score });
     }
@@ -361,7 +352,7 @@ export function getPopularAirports(limit = 8): Airport[] {
   return POPULAR.slice(0, limit);
 }
 
-// ─── Recent airports (localStorage) ─────────────────────────────────────────
+// ─── Recent airports (localStorage) ─────────────────────────────
 
 const RECENT_KEY = 'st:recent-airports';
 const MAX_RECENT = 5;

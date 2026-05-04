@@ -10,8 +10,9 @@ pnpm-lock.yaml
 
 # Postman collections (exports as-is, no need to reformat)
 **/API_LATAM_*.json
+**/*.postman_collection.json
 docs/research/*.postman.json
 
-# Generated data (1.2MB, formatting would bloat it)
-apps/web-b2b/public/data/airports.json
+# Generated data (large JSON with airport catalog)
+apps/web-b2b/src/data/airports-full.json
 
