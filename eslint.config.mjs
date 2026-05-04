@@ -10,6 +10,7 @@ export default tseslint.config(
       '**/.next/**',
       '**/.turbo/**',
       '**/coverage/**',
+      '**/airports.generated.ts',
     ],
   },
   js.configs.recommended,
