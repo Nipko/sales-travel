@@ -20,6 +20,12 @@ export class LatamNdcFlightSearchAdapter implements FlightSearchPort {
   constructor(private readonly cfg: LatamNdcConfig) {
     this.tokens = new LatamTokenService(cfg);
     this.http = new LatamHttpClient(cfg, this.tokens);
+    const mode = isMockMode(cfg) ? 'mock' : 'real';
+    const missing = isMockMode(cfg) ? listMissingFields(cfg) : [];
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[latam-ndc] adapter initialized in ${mode} mode${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`,
+    );
   }
 
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
@@ -35,4 +41,14 @@ export class LatamNdcFlightSearchAdapter implements FlightSearchPort {
     const { offers } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
     return offers;
   }
+}
+
+function listMissingFields(cfg: LatamNdcConfig): string[] {
+  const missing: string[] = [];
+  if (!cfg.apiKey) missing.push('apiKey');
+  if (!cfg.apiSecret) missing.push('apiSecret');
+  if (!cfg.agencyId) missing.push('agencyId');
+  if (!cfg.agencyIata) missing.push('agencyIata');
+  if (!cfg.country) missing.push('country');
+  return missing;
 }
