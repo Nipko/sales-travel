@@ -430,7 +430,9 @@ function buildPriceClassMap(response: unknown): Map<string, PriceClassInfo> {
       | undefined;
     map.set(id, {
       name,
-      cabin: mapCabin(extractText(cabinNode?.CabinTypeName) ?? extractText(cabinNode?.CabinTypeCode)),
+      cabin: mapCabin(
+        extractText(cabinNode?.CabinTypeName) ?? extractText(cabinNode?.CabinTypeCode),
+      ),
     });
   }
   return map;
