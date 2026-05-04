@@ -6,6 +6,8 @@ import {
   getAirportByCode,
   getPopularAirports,
   getRecentAirports,
+  isDatasetLoaded,
+  loadFullDataset,
   saveRecentAirport,
   searchAirports,
   type Airport,
@@ -168,6 +170,11 @@ export function AirportCombobox({
           onFocus={() => {
             setOpen(true);
             if (!query.trim()) setSections(buildSections(''));
+            if (!isDatasetLoaded()) {
+              void loadFullDataset().then(() => {
+                setSections(buildSections(query));
+              });
+            }
           }}
           onKeyDown={handleKeyDown}
           className={cn(
