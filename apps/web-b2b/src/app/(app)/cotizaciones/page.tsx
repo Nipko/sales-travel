@@ -69,9 +69,12 @@ function groupOffersByFlight(offers: Offer[]): FlightGroup[] {
   const groups = new Map<string, Offer[]>();
 
   for (const offer of offers) {
-    const it = offer.itineraries?.[0];
-    if (!it) continue;
-    const key = it.segments.map((s) => `${s.carrier}${s.flightNumber}-${s.departureAt}`).join('|');
+    if (!offer.itineraries?.length) continue;
+    const key = offer.itineraries
+      .map((it) =>
+        it.segments.map((s) => `${s.carrier}${s.flightNumber}-${s.departureAt}`).join('|'),
+      )
+      .join('//');
     const existing = groups.get(key);
     if (existing) existing.push(offer);
     else groups.set(key, [offer]);
