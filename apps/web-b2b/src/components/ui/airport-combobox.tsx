@@ -55,6 +55,7 @@ export function AirportCombobox({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [sections, setSections] = useState<Section[]>([]);
+  const [datasetVersion, setDatasetVersion] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flatItems = sections.flatMap((s) => s.items);
@@ -85,7 +86,7 @@ export function AirportCombobox({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, buildSections]);
+  }, [query, buildSections, datasetVersion]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -172,7 +173,7 @@ export function AirportCombobox({
             if (!query.trim()) setSections(buildSections(''));
             if (!isDatasetLoaded()) {
               void loadFullDataset().then(() => {
-                setSections(buildSections(query));
+                setDatasetVersion((v) => v + 1);
               });
             }
           }}
@@ -195,9 +196,7 @@ export function AirportCombobox({
         ) : null}
       </div>
 
-      {error ? (
-        <p className="text-[11px] text-[var(--color-danger)]">{error}</p>
-      ) : null}
+      {error ? <p className="text-[11px] text-[var(--color-danger)]">{error}</p> : null}
 
       {open && flatItems.length > 0 ? (
         <ul

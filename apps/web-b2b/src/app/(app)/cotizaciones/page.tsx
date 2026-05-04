@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  ArrowLeftRight,
-  ArrowRight,
-  Plane,
-  Search,
-  TriangleAlert,
-} from 'lucide-react';
+import { ArrowLeftRight, ArrowRight, Plane, Search, TriangleAlert } from 'lucide-react';
 import { useActionState, useEffect, useMemo, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AirportCombobox } from '../../../components/ui/airport-combobox';
@@ -26,12 +20,7 @@ function todayISO(): string {
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button
-      type="submit"
-      disabled={pending}
-      size="lg"
-      className="w-full gap-2 sm:w-auto"
-    >
+    <Button type="submit" disabled={pending} size="lg" className="w-full gap-2 sm:w-auto">
       {pending ? (
         <>
           <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -375,9 +364,7 @@ export default function CotizacionesPage() {
       ) : hasSearched && result.ok && !result.error ? (
         <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-16 text-center">
           <Search className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
-          <p className="text-sm font-medium text-[var(--color-fg)]">
-            No se encontraron vuelos
-          </p>
+          <p className="text-sm font-medium text-[var(--color-fg)]">No se encontraron vuelos</p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
             Probá con otras fechas, rutas flexibles o diferente cabina.
           </p>
@@ -385,9 +372,7 @@ export default function CotizacionesPage() {
       ) : !hasSearched ? (
         <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-16 text-center">
           <Plane className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
-          <p className="text-sm font-medium text-[var(--color-fg)]">
-            Buscá vuelos para empezar
-          </p>
+          <p className="text-sm font-medium text-[var(--color-fg)]">Buscá vuelos para empezar</p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
             Seleccioná origen, destino y fechas para ver ofertas disponibles.
           </p>

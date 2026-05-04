@@ -12,3 +12,6 @@ pnpm-lock.yaml
 **/API_LATAM_*.json
 docs/research/*.postman.json
 
+# Generated data (1.2MB, formatting would bloat it)
+apps/web-b2b/public/data/airports.json
+
