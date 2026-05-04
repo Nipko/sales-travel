@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Download,
   Mail,
   Plane,
   Send,
@@ -555,6 +556,14 @@ export default function QuotationDetailPage() {
                     <Copy className="size-4" /> Copiar enlace
                   </>
                 )}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full gap-2"
+                onClick={() => window.open(`/api/quotations/${quotation.id}/pdf`, '_blank')}
+              >
+                <Download className="size-4" /> Descargar PDF
               </Button>
             </CardContent>
           </Card>
