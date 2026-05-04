@@ -1,4 +1,5 @@
 import { z } from '@sales-travel/validation';
+import { HotelStaySchema } from './hotel';
 import { ItinerarySchema } from './itinerary';
 import { MoneySchema } from './money';
 import { PaxTypeSchema } from './pax';
@@ -58,6 +59,7 @@ export const OfferSchema = z.object({
   fareBreakdown: z.array(FareBreakdownEntrySchema).optional(),
 
   itineraries: z.array(ItinerarySchema).optional(),
+  accommodations: z.array(HotelStaySchema).optional(),
 
   fetchedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),

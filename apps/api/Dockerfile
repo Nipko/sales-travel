@@ -9,10 +9,14 @@ FROM base AS builder
 COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY pnpm-lock.yaml* ./
 COPY packages packages
+COPY providers providers
 COPY apps/api apps/api
 RUN pnpm install --filter @sales-travel/api... --no-frozen-lockfile
 RUN pnpm --filter @sales-travel/validation run build
+RUN pnpm --filter @sales-travel/canonical run build
 RUN pnpm --filter @sales-travel/core run build
+RUN pnpm --filter @sales-travel/domain run build
+RUN pnpm --filter @sales-travel/latam-ndc run build
 RUN pnpm --filter @sales-travel/api run build
 RUN pnpm --filter @sales-travel/api deploy --prod /out/api
 
