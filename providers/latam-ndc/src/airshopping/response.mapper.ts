@@ -1,12 +1,4 @@
-import type {
-  CabinClass,
-  IataAirportCode,
-  IataCarrierCode,
-  Itinerary,
-  Money,
-  Offer,
-  Segment,
-} from '@sales-travel/canonical';
+import type { CabinClass, Itinerary, Money, Offer, Segment } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 
@@ -241,10 +233,10 @@ function mapSegment(
     ok: true,
     key,
     segment: {
-      carrier: carrier.CarrierDesigCode as IataCarrierCode,
+      carrier: carrier.CarrierDesigCode,
       flightNumber: String(carrier.MarketingCarrierFlightNumberText),
-      origin: dep.IATA_LocationCode as IataAirportCode,
-      destination: arr2.IATA_LocationCode as IataAirportCode,
+      origin: dep.IATA_LocationCode,
+      destination: arr2.IATA_LocationCode,
       departureAt,
       arrivalAt,
       durationMinutes,
