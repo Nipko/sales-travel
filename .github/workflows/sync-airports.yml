@@ -33,11 +33,19 @@ jobs:
 
             docker pull ghcr.io/nipko/sales-travel-sync-airports:latest
 
-            docker run --rm --network sales-travel_internal \
+            # Necesita 2 redes: internal (Postgres) + edge (Internet, fetch OpenFlights).
+            # docker run solo soporta --network una vez, así que create + connect + start.
+            CID=$(docker create --network sales-travel_internal \
               -e PGHOST=postgres \
               -e PGPORT=5432 \
               -e PGUSER=postgres \
               -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" \
               -e PGDATABASE=sales_travel \
-              ghcr.io/nipko/sales-travel-sync-airports:latest
+              ghcr.io/nipko/sales-travel-sync-airports:latest)
+
+            docker network connect sales-travel_edge "$CID"
+            docker start -a "$CID"
+            EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}')
+            docker rm "$CID" >/dev/null
+            exit "$EXIT"
           BASH
