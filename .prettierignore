@@ -7,3 +7,8 @@ coverage
 pnpm-lock.yaml
 *.min.js
 *.min.css
+
+# Postman collections (exports as-is, no need to reformat)
+**/API_LATAM_*.json
+docs/research/*.postman.json
+

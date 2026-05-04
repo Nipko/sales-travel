@@ -1,9 +1,6 @@
 import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
-import {
-  FlightSearchCriteriaSchema,
-  type FlightSearchCriteria,
-} from '@sales-travel/domain';
+import { FlightSearchCriteriaSchema, type FlightSearchCriteria } from '@sales-travel/domain';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
