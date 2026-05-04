@@ -3,8 +3,8 @@ import type { LatamNdcConfig } from '../config';
 interface TokenResponse {
   access_token?: string;
   accessToken?: string;
-  expires_in?: number;
-  expiresIn?: number;
+  expires_in?: number | string;
+  expiresIn?: number | string;
   token_type?: string;
 }
 
@@ -74,8 +74,9 @@ export class LatamTokenService {
     }
 
     const accessToken = data.access_token ?? data.accessToken;
-    const expiresIn = data.expires_in ?? data.expiresIn;
-    if (!accessToken || typeof expiresIn !== 'number') {
+    const rawExpires = data.expires_in ?? data.expiresIn;
+    const expiresIn = typeof rawExpires === 'string' ? Number(rawExpires) : rawExpires;
+    if (!accessToken || typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)) {
       throw new Error(
         `LATAM oauth/cc/token: missing access_token/expires_in. Body keys=[${Object.keys(data).join(',')}] body=${text.slice(0, 400)}`,
       );
