@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowLeftRight, CheckCircle2, Plane, Search, TriangleAlert } from 'lucide-react';
+import { ArrowLeftRight, CheckCircle2, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
+import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -225,13 +226,22 @@ export default function CotizacionesPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">
-          Cotizaciones
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Buscá vuelos y armá ofertas para tus clientes.
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">
+            Cotizaciones
+          </h1>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+            Buscá vuelos y armá ofertas para tus clientes.
+          </p>
+        </div>
+        <Link
+          href="/cotizaciones/guardadas"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+        >
+          <FileText className="size-3.5" />
+          Ver guardadas
+        </Link>
       </header>
 
       <form ref={formRef} action={formAction} onSubmit={handleSubmit}>
