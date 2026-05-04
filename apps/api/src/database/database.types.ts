@@ -54,9 +54,29 @@ export interface AirportsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'cancelled';
+
+export interface QuotationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  status: Generated<QuotationStatus>;
+  search_criteria: unknown;
+  selected_offer: unknown;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  notes: string | null;
+  quote_number: number;
+  expires_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
   airports: AirportsTable;
+  quotations: QuotationsTable;
 }

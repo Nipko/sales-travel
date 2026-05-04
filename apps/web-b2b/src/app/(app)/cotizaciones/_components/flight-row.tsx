@@ -17,6 +17,7 @@ interface FlightRowProps {
   formatTime: (iso: string) => string;
   formatDate: (iso: string) => string;
   formatDuration: (minutes: number) => string;
+  onQuote?: (offer: Offer) => Promise<void>;
 }
 
 interface Itinerary {
@@ -148,6 +149,7 @@ export function FlightRow({
   formatTime,
   formatDate,
   formatDuration,
+  onQuote,
 }: FlightRowProps) {
   const [expanded, setExpanded] = useState(false);
   const cheapest = group.offers[0]!;
@@ -255,7 +257,7 @@ export function FlightRow({
       {/* Expanded: fare family matrix */}
       {expanded && (
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 p-5">
-          <FareFamilyMatrix fares={group.offers} formatMoney={formatMoney} />
+          <FareFamilyMatrix fares={group.offers} formatMoney={formatMoney} onQuote={onQuote} />
         </div>
       )}
     </div>

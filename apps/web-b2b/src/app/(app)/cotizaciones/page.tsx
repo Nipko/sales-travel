@@ -1,7 +1,7 @@
 'use client';
 
-import { ArrowLeftRight, Plane, Search, TriangleAlert } from 'lucide-react';
-import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeftRight, CheckCircle2, Plane, Search, TriangleAlert } from 'lucide-react';
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AirportCombobox } from '../../../components/ui/airport-combobox';
 import { Button } from '../../../components/ui/button';
@@ -9,6 +9,7 @@ import { Card, CardContent } from '../../../components/ui/card';
 import { Label } from '../../../components/ui/label';
 import { PaxPicker } from '../../../components/ui/pax-picker';
 import { searchFlightsAction, type Offer, type SearchResult } from './actions';
+import { createQuotationAction } from './quotation-actions';
 import { FlightRow, type FlightGroup } from './_components/flight-row';
 import { ResultsHeader } from './_components/results-header';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
@@ -135,12 +136,20 @@ export default function CotizacionesPage() {
   const [comboKey, setComboKey] = useState(0);
   const [swapRotation, setSwapRotation] = useState(0);
   const [clientError, setClientError] = useState('');
+  const [quoteSuccess, setQuoteSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (returnDate && departureDate && returnDate < departureDate) {
       setReturnDate(departureDate);
     }
   }, [departureDate, returnDate]);
+
+  useEffect(() => {
+    if (quoteSuccess) {
+      const timer = setTimeout(() => setQuoteSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [quoteSuccess]);
 
   function handleSwap() {
     const tmpOrigin = originCode;
@@ -177,6 +186,32 @@ export default function CotizacionesPage() {
 
     setHasSearched(true);
   }
+
+  const handleQuote = useCallback(
+    async (offer: Offer) => {
+      const formData = formRef.current ? new FormData(formRef.current) : null;
+      const res = await createQuotationAction(offer, {
+        origin: originCode,
+        destination: destinationCode,
+        departureDate,
+        returnDate: returnDate || undefined,
+        tripType,
+        paxCount: {
+          adults: Number(formData?.get('adults') ?? 1),
+          children: Number(formData?.get('children') ?? 0),
+          infants: Number(formData?.get('infants') ?? 0),
+        },
+        cabin: (formData?.get('cabin') as string) || 'economy',
+        currency: (formData?.get('currency') as string) || 'USD',
+      });
+      if (res.ok) {
+        setQuoteSuccess(`Cotización #${res.quoteNumber} guardada`);
+      } else {
+        setClientError(res.error || 'Error al guardar cotización');
+      }
+    },
+    [originCode, destinationCode, departureDate, returnDate, tripType],
+  );
 
   const flightGroups = useMemo(
     () => sortGroups(groupOffersByFlight(result.offers), sort),
@@ -341,6 +376,14 @@ export default function CotizacionesPage() {
           </CardContent>
         </Card>
 
+        {/* Quote success toast */}
+        {quoteSuccess && (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[var(--color-success)]/25 bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-lg)]">
+            <CheckCircle2 className="size-5 text-[var(--color-success)]" />
+            <span className="text-sm font-medium text-[var(--color-fg)]">{quoteSuccess}</span>
+          </div>
+        )}
+
         {/* Results */}
         <SearchResults
           hasSearched={hasSearched}
@@ -348,6 +391,7 @@ export default function CotizacionesPage() {
           flightGroups={flightGroups}
           sort={sort}
           onSortChange={setSort}
+          onQuote={handleQuote}
         />
       </form>
     </div>
@@ -360,12 +404,14 @@ function SearchResults({
   flightGroups,
   sort,
   onSortChange,
+  onQuote,
 }: {
   hasSearched: boolean;
   result: SearchResult;
   flightGroups: FlightGroup[];
   sort: SortKey;
   onSortChange: (key: SortKey) => void;
+  onQuote: (offer: Offer) => Promise<void>;
 }) {
   const { pending } = useFormStatus();
 
@@ -400,6 +446,7 @@ function SearchResults({
               formatTime={formatTime}
               formatDate={formatDate}
               formatDuration={formatDuration}
+              onQuote={onQuote}
             />
           ))}
         </div>
