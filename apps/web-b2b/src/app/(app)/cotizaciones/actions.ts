@@ -54,6 +54,14 @@ function asInt(value: FormDataEntryValue | null, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const IATA_RE = /^[A-Z]{3}$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function searchFlightsAction(
   _prev: SearchResult,
   formData: FormData,
@@ -62,26 +70,67 @@ export async function searchFlightsAction(
   const destination = asString(formData.get('destination')).toUpperCase().trim();
   const departureDate = asString(formData.get('departureDate'));
   const returnDate = asString(formData.get('returnDate'));
+  const tripType = asString(formData.get('tripType')) || 'roundtrip';
   const cabin = asString(formData.get('cabin')) || 'economy';
   const currency = asString(formData.get('currency')).toUpperCase() || 'USD';
+  const adults = asInt(formData.get('adults'), 1);
+  const children = asInt(formData.get('children'), 0);
+  const infants = asInt(formData.get('infants'), 0);
 
-  if (!origin || !destination || !departureDate) {
-    return { ok: false, offers: [], error: 'Origen, destino y fecha de ida son obligatorios.' };
+  // --- Validaciones ---
+  if (!IATA_RE.test(origin)) {
+    return { ok: false, offers: [], error: 'Seleccioná un origen válido (ej. BOG, GRU, MIA).' };
+  }
+  if (!IATA_RE.test(destination)) {
+    return { ok: false, offers: [], error: 'Seleccioná un destino válido.' };
+  }
+  if (origin === destination) {
+    return { ok: false, offers: [], error: 'Origen y destino deben ser distintos.' };
+  }
+  if (!DATE_RE.test(departureDate)) {
+    return { ok: false, offers: [], error: 'Ingresá una fecha de ida válida.' };
+  }
+  const today = todayISO();
+  if (departureDate < today) {
+    return { ok: false, offers: [], error: 'La fecha de ida no puede ser anterior a hoy.' };
+  }
+  const isRoundtrip = tripType === 'roundtrip';
+  if (isRoundtrip) {
+    if (!DATE_RE.test(returnDate)) {
+      return {
+        ok: false,
+        offers: [],
+        error: 'Ingresá la fecha de vuelta o cambiá a "Solo ida".',
+      };
+    }
+    if (returnDate < departureDate) {
+      return {
+        ok: false,
+        offers: [],
+        error: 'La fecha de vuelta no puede ser anterior a la de ida.',
+      };
+    }
+  }
+  if (adults < 1) {
+    return { ok: false, offers: [], error: 'Mínimo un adulto por reserva.' };
+  }
+  if (infants > adults) {
+    return {
+      ok: false,
+      offers: [],
+      error: 'No puede haber más infantes que adultos (uno por adulto).',
+    };
   }
 
   const body: Record<string, unknown> = {
     origin,
     destination,
     departureDate,
-    paxCount: {
-      adults: asInt(formData.get('adults'), 1),
-      children: asInt(formData.get('children'), 0),
-      infants: asInt(formData.get('infants'), 0),
-    },
+    paxCount: { adults, children, infants },
     cabin,
     currency,
   };
-  if (returnDate) body.returnDate = returnDate;
+  if (isRoundtrip) body.returnDate = returnDate;
 
   const res = await api<{ offers: Offer[] }>('/search/flights', {
     method: 'POST',
@@ -91,6 +140,5 @@ export async function searchFlightsAction(
   if (!res.ok) {
     return { ok: false, offers: [], error: res.error.message };
   }
-
   return { ok: true, offers: res.data.offers };
 }
