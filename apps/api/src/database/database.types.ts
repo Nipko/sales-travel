@@ -42,8 +42,21 @@ export interface MembershipsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AirportsTable {
+  code: string;
+  name: string;
+  city: string;
+  country_code: string | null;
+  country_name: string;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
+  airports: AirportsTable;
 }
