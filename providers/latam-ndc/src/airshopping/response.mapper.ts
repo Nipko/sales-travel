@@ -422,15 +422,15 @@ function buildPriceClassMap(response: unknown): Map<string, PriceClassInfo> {
   const classes = collect(response, ['DataLists', 'PriceClassList'], 'PriceClass');
   for (const pc of classes) {
     const node = pc as Record<string, unknown>;
-    const id = node.PriceClassID as string | undefined;
-    const name = node.Name as string | undefined;
+    const id = extractText(node.PriceClassID);
+    const name = extractText(node.Name);
     if (!id || !name) continue;
     const cabinNode = node.CabinType as
       | { CabinTypeName?: string; CabinTypeCode?: string }
       | undefined;
     map.set(id, {
       name,
-      cabin: mapCabin(cabinNode?.CabinTypeName ?? cabinNode?.CabinTypeCode),
+      cabin: mapCabin(extractText(cabinNode?.CabinTypeName) ?? extractText(cabinNode?.CabinTypeCode)),
     });
   }
   return map;
@@ -474,10 +474,10 @@ function extractFareFamily(
   for (const item of offerItems) {
     const fareDetails = arr<Record<string, unknown>>(item.FareDetail);
     for (const fd of fareDetails) {
-      const fareRefText = fd.FareRefText as string | undefined;
+      const fareRefText = extractText(fd.FareRefText);
       const fareComponents = arr<Record<string, unknown>>(fd.FareComponent);
       for (const fc of fareComponents) {
-        const priceClassRefID = fc.PriceClassRefID as string | undefined;
+        const priceClassRefID = extractText(fc.PriceClassRefID);
         if (priceClassRefID) {
           const pc = priceClassMap.get(priceClassRefID);
           if (pc) return { name: fareRefText ?? pc.name, cabin: pc.cabin };
@@ -554,15 +554,19 @@ function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies
 
 // ---- helpers ----
 
-function extractDateTime(dt: unknown): string | null {
-  if (typeof dt === 'string') return dt;
-  if (dt && typeof dt === 'object') {
-    const obj = dt as Record<string, unknown>;
-    // fast-xml-parser with attributes: {#text: "2026-06-15T05:10:00", @_TimeZoneCode: "-05:00"}
-    const text = obj['#text'] as string | undefined;
-    return text ?? null;
+function extractText(val: unknown): string | undefined {
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (val && typeof val === 'object') {
+    const obj = val as Record<string, unknown>;
+    const text = obj['#text'] ?? obj[''];
+    if (text !== undefined && text !== null) return String(text);
   }
-  return null;
+  return undefined;
+}
+
+function extractDateTime(dt: unknown): string | null {
+  return extractText(dt) ?? null;
 }
 
 function parseDuration(iso: string | undefined): number | null {
