@@ -1,7 +1,7 @@
 'use client';
 
-import { Plane } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Loader2, Plane } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { searchAirports, type Airport } from '../../lib/airports';
 import { cn } from '../../lib/cn';
 
@@ -13,6 +13,8 @@ interface AirportComboboxProps {
   placeholder?: string;
 }
 
+const DEBOUNCE_MS = 200;
+
 export function AirportCombobox({
   name,
   label,
@@ -23,12 +25,44 @@ export function AirportCombobox({
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
   const [query, setQuery] = useState(defaultValue ?? '');
   const [code, setCode] = useState(defaultValue ?? '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [results, setResults] = useState<Airport[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const results = useMemo(() => searchAirports(query, 8), [query]);
+  useEffect(() => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    const handle = setTimeout(() => {
+      setLoading(true);
+      searchAirports(query, 8, ctrl.signal)
+        .then((items) => {
+          if (!ctrl.signal.aborted) {
+            setResults(items);
+            setActiveIndex(0);
+          }
+        })
+        .catch((err: unknown) => {
+          if ((err as { name?: string }).name !== 'AbortError') {
+            setResults([]);
+          }
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setLoading(false);
+        });
+    }, DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(handle);
+      ctrl.abort();
+    };
+  }, [query]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -39,10 +73,6 @@ export function AirportCombobox({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
 
   function selectAirport(a: Airport) {
     setCode(a.code);
@@ -72,7 +102,6 @@ export function AirportCombobox({
         {label}
       </label>
 
-      {/* Hidden input that submits the IATA code */}
       <input type="hidden" name={name} value={code} required={required} />
 
       <div className="relative">
@@ -87,7 +116,6 @@ export function AirportCombobox({
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
-            // Si el usuario tipeó un IATA exacto, autoseleccionarlo
             const v = e.target.value.toUpperCase().trim();
             if (v.length === 3 && /^[A-Z]{3}$/.test(v)) setCode(v);
             else setCode('');
@@ -95,13 +123,15 @@ export function AirportCombobox({
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
           className={cn(
-            'flex h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)]',
+            'flex h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-12 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)]',
             'placeholder:text-[var(--color-fg-subtle)]',
             'focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20',
             'transition-colors',
           )}
         />
-        {code ? (
+        {loading ? (
+          <Loader2 className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-[var(--color-fg-subtle)]" />
+        ) : code ? (
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--color-fg-muted)]">
             {code}
           </span>
@@ -144,7 +174,7 @@ export function AirportCombobox({
         </ul>
       ) : null}
 
-      {open && query.length > 0 && results.length === 0 ? (
+      {open && !loading && query.length > 0 && results.length === 0 ? (
         <div className="absolute z-50 mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-xs text-[var(--color-fg-muted)] shadow-[var(--shadow-md)]">
           Sin resultados para «{query}». Probá con un código IATA o nombre de ciudad.
         </div>
