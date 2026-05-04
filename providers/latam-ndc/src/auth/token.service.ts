@@ -1,9 +1,11 @@
 import type { LatamNdcConfig } from '../config';
 
 interface TokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
+  access_token?: string;
+  accessToken?: string;
+  expires_in?: number;
+  expiresIn?: number;
+  token_type?: string;
 }
 
 interface CachedToken {
@@ -55,18 +57,32 @@ export class LatamTokenService {
       body: 'grant_type=client_credentials',
     });
 
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`LATAM oauth/cc/token ${res.status}: ${text.slice(0, 200)}`);
+      throw new Error(
+        `LATAM oauth/cc/token ${res.status} (content-type=${res.headers.get('content-type') ?? '?'}): ${text.slice(0, 400)}`,
+      );
     }
 
-    const data = (await res.json()) as TokenResponse;
-    if (!data.access_token || typeof data.expires_in !== 'number') {
-      throw new Error('LATAM oauth/cc/token: malformed response');
+    let data: TokenResponse;
+    try {
+      data = JSON.parse(text) as TokenResponse;
+    } catch {
+      throw new Error(
+        `LATAM oauth/cc/token: non-JSON response (content-type=${res.headers.get('content-type') ?? '?'}): ${text.slice(0, 400)}`,
+      );
     }
 
-    const expiresAt = Date.now() + Math.max(60, data.expires_in - 60) * 1000;
-    this.cached = { value: data.access_token, expiresAt };
-    return data.access_token;
+    const accessToken = data.access_token ?? data.accessToken;
+    const expiresIn = data.expires_in ?? data.expiresIn;
+    if (!accessToken || typeof expiresIn !== 'number') {
+      throw new Error(
+        `LATAM oauth/cc/token: missing access_token/expires_in. Body keys=[${Object.keys(data).join(',')}] body=${text.slice(0, 400)}`,
+      );
+    }
+
+    const expiresAt = Date.now() + Math.max(60, expiresIn - 60) * 1000;
+    this.cached = { value: accessToken, expiresAt };
+    return accessToken;
   }
 }
