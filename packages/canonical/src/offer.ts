@@ -3,6 +3,7 @@ import { HotelStaySchema } from './hotel';
 import { ItinerarySchema } from './itinerary';
 import { MoneySchema } from './money';
 import { PaxTypeSchema } from './pax';
+import { CabinClassSchema } from './segment';
 
 /**
  * Tipo de producto que puede vivir en una Offer.
@@ -60,6 +61,28 @@ export const OfferSchema = z.object({
 
   itineraries: z.array(ItinerarySchema).optional(),
   accommodations: z.array(HotelStaySchema).optional(),
+
+  fareFamily: z
+    .object({
+      name: z.string(),
+      cabin: CabinClassSchema,
+    })
+    .optional(),
+
+  baggage: z
+    .object({
+      personalItem: z.number().int().nonnegative(),
+      carryOn: z.object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() }),
+      checked: z.object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() }),
+    })
+    .optional(),
+
+  policies: z
+    .object({
+      changeable: z.boolean(),
+      refundable: z.boolean(),
+    })
+    .optional(),
 
   fetchedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),

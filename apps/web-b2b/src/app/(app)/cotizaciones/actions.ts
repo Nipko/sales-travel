@@ -34,6 +34,13 @@ export interface Offer {
   baseFare: Money;
   taxes: Money;
   itineraries?: Itinerary[];
+  fareFamily?: { name: string; cabin: string };
+  baggage?: {
+    personalItem: number;
+    carryOn: { qty: number; weightKg?: number };
+    checked: { qty: number; weightKg?: number };
+  };
+  policies?: { changeable: boolean; refundable: boolean };
   fetchedAt: string;
   expiresAt: string;
 }

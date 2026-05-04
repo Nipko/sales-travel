@@ -51,6 +51,8 @@ export function mapAirShoppingResponse(
 
   const segmentMap = buildSegmentMap(response, warnings);
   const journeyMap = buildJourneyMap(response, segmentMap, warnings);
+  const priceClassMap = buildPriceClassMap(response);
+  const baggageMap = buildBaggageAllowanceMap(response);
 
   const offerNodes =
     collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer').length > 0
@@ -69,6 +71,8 @@ export function mapAirShoppingResponse(
       const offer = mapOneOffer({
         node: node as OfferNode,
         journeyMap,
+        priceClassMap,
+        baggageMap,
         criteria,
         tenantId,
         fetchedAt,
@@ -97,6 +101,7 @@ interface OfferNode {
   OfferID?: string;
   TotalPrice?: TotalPriceNode;
   OfferItem?: unknown;
+  BaggageAllowance?: unknown;
   TimeLimits?: { OfferExpiration?: { '@_DateTime'?: string } };
 }
 
@@ -124,6 +129,8 @@ function extractMoney(amountNode: unknown, currencyHint?: string): Money | null 
 function mapOneOffer(args: {
   node: OfferNode;
   journeyMap: Map<string, Segment[]>;
+  priceClassMap: Map<string, PriceClassInfo>;
+  baggageMap: Map<string, BaggageInfo>;
   criteria: FlightSearchCriteria;
   tenantId: string;
   fetchedAt: string;
@@ -134,7 +141,6 @@ function mapOneOffer(args: {
   const tp = args.node.TotalPrice;
   if (!tp) return null;
 
-  // LATAM v192 uses TotalAmount/BaseAmount as children with @_CurCode attribute
   const total =
     extractMoney(tp.TotalAmount) ??
     extractMoney(tp.SimpleCurrencyPrice) ??
@@ -155,6 +161,10 @@ function mapOneOffer(args: {
     args.node.TimeLimits?.OfferExpiration?.['@_DateTime'] ??
     new Date(Date.now() + 30 * 60_000).toISOString();
 
+  const fareFamily = extractFareFamily(offerItems, args.priceClassMap);
+  const baggage = extractOfferBaggage(args.node, args.baggageMap);
+  const policies = extractPolicies(offerItems);
+
   return {
     id: randomUUID(),
     tenantId: args.tenantId,
@@ -164,6 +174,9 @@ function mapOneOffer(args: {
     baseFare,
     taxes,
     itineraries,
+    fareFamily,
+    baggage,
+    policies,
     fetchedAt: args.fetchedAt,
     expiresAt,
   };
@@ -389,6 +402,154 @@ function mapFlightSegment(s: unknown): SegResult {
       bookingClass: (bookingClassNode?.Code ?? 'Y').slice(0, 1).toUpperCase(),
     },
   };
+}
+
+// ---- Fare family, baggage, policies extraction ----
+
+interface PriceClassInfo {
+  name: string;
+  cabin: CabinClass;
+}
+
+interface BaggageInfo {
+  type: 'CarryOn' | 'Checked' | 'PersonalItem';
+  qty: number;
+  weightKg?: number;
+}
+
+function buildPriceClassMap(response: unknown): Map<string, PriceClassInfo> {
+  const map = new Map<string, PriceClassInfo>();
+  const classes = collect(response, ['DataLists', 'PriceClassList'], 'PriceClass');
+  for (const pc of classes) {
+    const node = pc as Record<string, unknown>;
+    const id = node.PriceClassID as string | undefined;
+    const name = node.Name as string | undefined;
+    if (!id || !name) continue;
+    const cabinNode = node.CabinType as
+      | { CabinTypeName?: string; CabinTypeCode?: string }
+      | undefined;
+    map.set(id, {
+      name,
+      cabin: mapCabin(cabinNode?.CabinTypeName ?? cabinNode?.CabinTypeCode),
+    });
+  }
+  return map;
+}
+
+function buildBaggageAllowanceMap(response: unknown): Map<string, BaggageInfo> {
+  const map = new Map<string, BaggageInfo>();
+  const items = collect(response, ['DataLists', 'BaggageAllowanceList'], 'BaggageAllowance');
+  for (const ba of items) {
+    const node = ba as Record<string, unknown>;
+    const id = node.BaggageAllowanceID as string | undefined;
+    if (!id) continue;
+
+    const typeCode = node.TypeCode as string | undefined;
+    const pieceNode = node.PieceAllowance as { TotalQty?: number | string } | undefined;
+    const qty = Number(pieceNode?.TotalQty ?? 0);
+
+    let type: BaggageInfo['type'] = 'CarryOn';
+    if (typeCode === 'Checked') type = 'Checked';
+    else if (id.includes('PERSONAL_ITEM')) type = 'PersonalItem';
+
+    let weightKg: number | undefined;
+    const weightNodes = arr<Record<string, unknown>>(node.WeightAllowance);
+    for (const w of weightNodes) {
+      const measure = w.MaximumWeightMeasure as Record<string, unknown> | undefined;
+      if (measure && measure['@_UnitCode'] === 'KG') {
+        weightKg = Number(measure['#text'] ?? measure[''] ?? 0);
+        break;
+      }
+    }
+
+    map.set(id, { type, qty, weightKg });
+  }
+  return map;
+}
+
+function extractFareFamily(
+  offerItems: Record<string, unknown>[],
+  priceClassMap: Map<string, PriceClassInfo>,
+): Offer['fareFamily'] {
+  for (const item of offerItems) {
+    const fareDetails = arr<Record<string, unknown>>(item.FareDetail);
+    for (const fd of fareDetails) {
+      const fareRefText = fd.FareRefText as string | undefined;
+      const fareComponents = arr<Record<string, unknown>>(fd.FareComponent);
+      for (const fc of fareComponents) {
+        const priceClassRefID = fc.PriceClassRefID as string | undefined;
+        if (priceClassRefID) {
+          const pc = priceClassMap.get(priceClassRefID);
+          if (pc) return { name: fareRefText ?? pc.name, cabin: pc.cabin };
+        }
+      }
+      if (fareRefText) {
+        return { name: fareRefText, cabin: 'economy' };
+      }
+    }
+  }
+  return undefined;
+}
+
+function extractOfferBaggage(
+  node: OfferNode,
+  baggageMap: Map<string, BaggageInfo>,
+): Offer['baggage'] {
+  const refs = arr<Record<string, unknown>>(node.BaggageAllowance);
+  if (refs.length === 0) return undefined;
+
+  let personalItem = 0;
+  let carryOnQty = 0;
+  let carryOnWeight: number | undefined;
+  let checkedQty = 0;
+  let checkedWeight: number | undefined;
+
+  for (const ref of refs) {
+    const refId = ref.BaggageAllowanceRefID as string | undefined;
+    if (!refId) continue;
+    const info = baggageMap.get(refId);
+    if (!info) continue;
+
+    if (info.type === 'PersonalItem' && info.qty > personalItem) {
+      personalItem = info.qty;
+    } else if (info.type === 'CarryOn' && info.qty > carryOnQty) {
+      carryOnQty = info.qty;
+      carryOnWeight = info.weightKg;
+    } else if (info.type === 'Checked' && info.qty > checkedQty) {
+      checkedQty = info.qty;
+      checkedWeight = info.weightKg;
+    }
+  }
+
+  return {
+    personalItem,
+    carryOn: { qty: carryOnQty, weightKg: carryOnWeight },
+    checked: { qty: checkedQty, weightKg: checkedWeight },
+  };
+}
+
+function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies'] {
+  let changeable = false;
+  let refundable = false;
+
+  for (const item of offerItems) {
+    const changeNode = item.ChangeRestrictions as Record<string, unknown> | undefined;
+    if (
+      changeNode?.AllowedModificationInd === true ||
+      changeNode?.AllowedModificationInd === 'true'
+    ) {
+      changeable = true;
+    }
+    const cancelNode = item.CancelRestrictions as Record<string, unknown> | undefined;
+    if (
+      cancelNode?.AllowedModificationInd === true ||
+      cancelNode?.AllowedModificationInd === 'true'
+    ) {
+      refundable = true;
+    }
+  }
+
+  return { changeable, refundable };
 }
 
 // ---- helpers ----
