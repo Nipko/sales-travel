@@ -1,13 +1,10 @@
 /**
  * Cliente del catálogo de aeropuertos.
  *
- * Los datos viven en Postgres (tabla `airports`), sincronizados diariamente
- * desde OpenFlights por el cron de GitHub Actions `sync-airports.yml`.
- * Este módulo solo expone los tipos y la función de fetch al endpoint
- * `GET /api/airports?q=...`.
+ * Llama a /api/airports (Route Handler local) que internamente proxy-ea al
+ * servicio NestJS por la red docker interna. Esto evita CORS y mantiene el
+ * patrón "el browser solo habla con Next.js".
  */
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export interface Airport {
   code: string;
@@ -26,11 +23,14 @@ export async function searchAirports(
   limit = 8,
   signal?: AbortSignal,
 ): Promise<Airport[]> {
-  const url = new URL(`${API_BASE}/api/airports`);
-  if (query) url.searchParams.set('q', query);
-  url.searchParams.set('limit', String(limit));
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  params.set('limit', String(limit));
 
-  const res = await fetch(url.toString(), { signal, cache: 'no-store' });
+  const res = await fetch(`/api/airports?${params.toString()}`, {
+    signal,
+    cache: 'no-store',
+  });
   if (!res.ok) throw new Error(`airports search failed: ${res.status}`);
   const body = (await res.json()) as AirportsResponse;
   return body.items;
