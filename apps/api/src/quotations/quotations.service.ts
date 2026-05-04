@@ -101,4 +101,30 @@ export class QuotationsService {
       return row as unknown as QuotationRow | undefined;
     });
   }
+
+  async updateCustomer(
+    tenantId: string,
+    id: string,
+    data: {
+      customerName?: string | null;
+      customerEmail?: string | null;
+      customerPhone?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<QuotationRow | undefined> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const row = await trx
+        .updateTable('quotations')
+        .set({
+          customer_name: data.customerName ?? null,
+          customer_email: data.customerEmail ?? null,
+          customer_phone: data.customerPhone ?? null,
+          notes: data.notes ?? null,
+        })
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst();
+      return row as unknown as QuotationRow | undefined;
+    });
+  }
 }

@@ -3,6 +3,7 @@
 import { ArrowLeftRight, CheckCircle2, Plane, Search, TriangleAlert } from 'lucide-react';
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { AirportCombobox } from '../../../components/ui/airport-combobox';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -122,6 +123,7 @@ function sortGroups(groups: FlightGroup[], sort: SortKey): FlightGroup[] {
 }
 
 export default function CotizacionesPage() {
+  const router = useRouter();
   const [result, formAction] = useActionState(searchFlightsAction, initialState);
   const today = useMemo(todayISO, []);
   const [hasSearched, setHasSearched] = useState(false);
@@ -204,8 +206,9 @@ export default function CotizacionesPage() {
         cabin: (formData?.get('cabin') as string) || 'economy',
         currency: (formData?.get('currency') as string) || 'USD',
       });
-      if (res.ok) {
+      if (res.ok && res.quotationId) {
         setQuoteSuccess(`Cotización #${res.quoteNumber} guardada`);
+        router.push(`/cotizaciones/${res.quotationId}`);
       } else {
         setClientError(res.error || 'Error al guardar cotización');
       }

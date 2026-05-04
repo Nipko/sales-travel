@@ -58,6 +58,25 @@ export class QuotationsController {
     return { quotation: this.serialize(row) };
   }
 
+  @Patch(':id/customer')
+  async updateCustomer(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      customerName?: string | null;
+      customerEmail?: string | null;
+      customerPhone?: string | null;
+      notes?: string | null;
+    },
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.quotations.updateCustomer(tenantId, id, body);
+    if (!row) throw new NotFoundException();
+    return { quotation: this.serialize(row) };
+  }
+
   private serialize(row: {
     id: string;
     status: string;
