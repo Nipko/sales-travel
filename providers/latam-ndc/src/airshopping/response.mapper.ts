@@ -5,19 +5,17 @@ import { randomUUID } from 'node:crypto';
 /**
  * Mapea la respuesta IATA_AirShoppingRS de LATAM al modelo canónico.
  *
- * Estructura típica:
+ * Estructura real de LATAM v192:
  *   IATA_AirShoppingRS
  *     Response
  *       OffersGroup
- *         AirlineOffers[]
- *           Offer[] -> { OfferID, TotalPrice, OfferItem[], TimeLimits, ... }
+ *         CarrierOffers
+ *           Offer[] → { OfferID, TotalPrice{BaseAmount,TotalAmount}, OfferItem[] }
  *       DataLists
- *         FlightList: Flight[] -> { FlightKey, Dep, Arr, MarketingCarrier, ... }
- *         FlightSegmentList: FlightSegment[]
- *
- * NDC tiene MUCHA flexibilidad y cada aerolínea adapta detalles. Esta
- * implementación cubre el caso "feliz" del sandbox y deja `ParseErrors[]`
- * para casos no contemplados, que iremos endureciendo con tests.
+ *         PaxSegmentList → PaxSegment[] (con PaxSegmentID hijo, Dep, Arrival)
+ *         PaxJourneyList → PaxJourney[] (con PaxJourneyID, PaxSegmentRefID)
+ *         PriceClassList → PriceClass[] (nombre de tarifa: BASIC, LIGHT, FULL)
+ *         BaggageAllowanceList
  */
 export interface MapResult {
   offers: Offer[];
@@ -38,15 +36,27 @@ export function mapAirShoppingResponse(
     };
   }
 
+  const errorNode = pick(root, 'Error') as { Code?: string; DescText?: string } | undefined;
+  if (errorNode) {
+    return {
+      offers: [],
+      warnings: [`LATAM error ${errorNode.Code ?? '?'}: ${errorNode.DescText ?? 'unknown'}`],
+    };
+  }
+
   const response = pick(root, 'Response');
   if (!response) {
     return { offers: [], warnings: ['No Response element in AirShoppingRS.'] };
   }
 
   const segmentMap = buildSegmentMap(response, warnings);
-  const flightMap = buildFlightMap(response, segmentMap, warnings);
+  const journeyMap = buildJourneyMap(response, segmentMap, warnings);
 
-  const offerNodes = collect(response, ['OffersGroup', 'AirlineOffers'], 'Offer');
+  const offerNodes =
+    collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer').length > 0
+      ? collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer')
+      : collect(response, ['OffersGroup', 'AirlineOffers'], 'Offer');
+
   if (offerNodes.length === 0) {
     return { offers: [], warnings: [...warnings, 'No offers in response.'] };
   }
@@ -58,7 +68,7 @@ export function mapAirShoppingResponse(
     try {
       const offer = mapOneOffer({
         node: node as OfferNode,
-        flightMap,
+        journeyMap,
         criteria,
         tenantId,
         fetchedAt,
@@ -72,16 +82,47 @@ export function mapAirShoppingResponse(
   return { offers, warnings };
 }
 
+// ---- Offer mapping ----
+
+interface TotalPriceNode {
+  TotalAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
+  BaseAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
+  TaxSummary?: {
+    TotalTaxAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
+  };
+  SimpleCurrencyPrice?: { '#text'?: string | number; '@_Code'?: string };
+}
+
 interface OfferNode {
   OfferID?: string;
-  TotalPrice?: { SimpleCurrencyPrice?: { '#text'?: string | number; '@_Code'?: string } };
+  TotalPrice?: TotalPriceNode;
   OfferItem?: unknown;
   TimeLimits?: { OfferExpiration?: { '@_DateTime'?: string } };
 }
 
+function extractMoney(amountNode: unknown, currencyHint?: string): Money | null {
+  if (amountNode === undefined || amountNode === null) return null;
+
+  let value: number;
+  let currency: string;
+
+  if (typeof amountNode === 'object' && amountNode !== null) {
+    const obj = amountNode as Record<string, unknown>;
+    const text = obj['#text'] ?? obj[''];
+    value = Number(text);
+    currency = String(obj['@_CurCode'] ?? obj['@_Code'] ?? currencyHint ?? 'USD');
+  } else {
+    value = Number(amountNode);
+    currency = currencyHint ?? 'USD';
+  }
+
+  if (!Number.isFinite(value)) return null;
+  return { amountMinor: Math.round(value * 100), currency: currency.toUpperCase() };
+}
+
 function mapOneOffer(args: {
   node: OfferNode;
-  flightMap: Map<string, Segment>;
+  journeyMap: Map<string, Segment[]>;
   criteria: FlightSearchCriteria;
   tenantId: string;
   fetchedAt: string;
@@ -89,21 +130,24 @@ function mapOneOffer(args: {
   const offerRef = args.node.OfferID;
   if (!offerRef) return null;
 
-  const totalPriceText = args.node.TotalPrice?.SimpleCurrencyPrice?.['#text'];
-  const totalCurrency = args.node.TotalPrice?.SimpleCurrencyPrice?.['@_Code'];
-  if (totalPriceText === undefined || !totalCurrency) return null;
+  const tp = args.node.TotalPrice;
+  if (!tp) return null;
 
-  const totalMajor = Number(totalPriceText);
-  if (!Number.isFinite(totalMajor)) return null;
+  // LATAM v192 uses TotalAmount/BaseAmount as children with @_CurCode attribute
+  const total =
+    extractMoney(tp.TotalAmount) ??
+    extractMoney(tp.SimpleCurrencyPrice) ??
+    extractMoney(tp.BaseAmount);
+  if (!total) return null;
 
-  const total: Money = {
-    amountMinor: Math.round(totalMajor * 100),
-    currency: String(totalCurrency).toUpperCase(),
+  const baseFare = extractMoney(tp.BaseAmount) ?? total;
+  const taxes = extractMoney(tp.TaxSummary?.TotalTaxAmount, total.currency) ?? {
+    amountMinor: total.amountMinor - baseFare.amountMinor,
+    currency: total.currency,
   };
 
-  const offerItems = arr<{ Service?: unknown }>(args.node.OfferItem);
-  const flightKeys = collectFlightRefs(offerItems);
-  const itineraries = buildItineraries(flightKeys, args.flightMap);
+  const offerItems = arr<Record<string, unknown>>(args.node.OfferItem);
+  const itineraries = buildItinerariesFromOfferItems(offerItems, args.journeyMap);
   if (itineraries.length === 0) return null;
 
   const expiresAt =
@@ -116,118 +160,171 @@ function mapOneOffer(args: {
     products: ['flight'],
     provider: { name: 'latam-ndc', offerRef },
     total,
-    baseFare: total,
-    taxes: { amountMinor: 0, currency: total.currency },
+    baseFare,
+    taxes,
     itineraries,
     fetchedAt: args.fetchedAt,
     expiresAt,
   };
 }
 
-function buildItineraries(flightKeys: string[][], flightMap: Map<string, Segment>): Itinerary[] {
-  return flightKeys
-    .map((keys) => {
-      const segments = keys.map((k) => flightMap.get(k)).filter((s): s is Segment => Boolean(s));
-      if (segments.length === 0) return null;
-      const totalDur = segments.reduce((sum, s) => sum + s.durationMinutes, 0);
-      return {
-        segments,
-        totalDurationMinutes: totalDur,
-        stops: Math.max(0, segments.length - 1),
-      };
-    })
-    .filter((i): i is Itinerary => i !== null);
-}
+// ---- Itinerary building ----
 
-function collectFlightRefs(offerItems: { Service?: unknown }[]): string[][] {
-  // Cada OfferItem.Service.FlightRefs contiene un grupo de FlightKey separados
-  // por espacios. Cada grupo = un itinerario (outbound / inbound).
-  const groups: string[][] = [];
+function buildItinerariesFromOfferItems(
+  offerItems: Record<string, unknown>[],
+  journeyMap: Map<string, Segment[]>,
+): Itinerary[] {
+  const itineraries: Itinerary[] = [];
+  const seen = new Set<string>();
+
   for (const item of offerItems) {
-    const services = arr<{ FlightRefs?: string }>(item.Service);
-    for (const s of services) {
-      if (typeof s.FlightRefs !== 'string') continue;
-      const keys = s.FlightRefs.split(/\s+/).filter(Boolean);
-      if (keys.length > 0) groups.push(keys);
-    }
-  }
-  return groups;
-}
+    const services = arr<Record<string, unknown>>(item.Service);
+    for (const svc of services) {
+      // LATAM v192: Service.ServiceAssociations.PaxJourneyRefID
+      const assoc = svc.ServiceAssociations as Record<string, unknown> | undefined;
+      const journeyRefs: string[] = [];
 
-function buildFlightMap(
-  response: unknown,
-  segmentMap: Map<string, Segment>,
-  warnings: string[],
-): Map<string, Segment> {
-  const map = new Map<string, Segment>();
-  const flights = collect(response, ['DataLists', 'FlightList'], 'Flight');
-  for (const f of flights) {
-    const key = (f as { '@_FlightKey'?: string })['@_FlightKey'];
-    if (!key) {
-      warnings.push('flight without FlightKey skipped');
-      continue;
-    }
-    // Un Flight referencia 1+ FlightSegmentRefs; el primer segmento basta para
-    // un vuelo directo. Para conexiones, tomamos el segmento "more relevant".
-    const segRefs = (f as { SegmentReferences?: string }).SegmentReferences;
-    if (typeof segRefs === 'string') {
-      const firstSegKey = segRefs.split(/\s+/)[0];
-      if (firstSegKey) {
-        const seg = segmentMap.get(firstSegKey);
-        if (seg) map.set(key, seg);
+      if (assoc) {
+        const refs = assoc.PaxJourneyRefID;
+        if (typeof refs === 'string') journeyRefs.push(refs);
+        else if (Array.isArray(refs)) journeyRefs.push(...refs.map(String));
+      }
+
+      // Fallback: older NDC FlightRefs pattern
+      if (journeyRefs.length === 0 && typeof svc.FlightRefs === 'string') {
+        journeyRefs.push(...svc.FlightRefs.split(/\s+/).filter(Boolean));
+      }
+
+      for (const jRef of journeyRefs) {
+        if (seen.has(jRef)) continue;
+        seen.add(jRef);
+        const segments = journeyMap.get(jRef);
+        if (!segments || segments.length === 0) continue;
+        const totalDur = segments.reduce((sum, s) => sum + s.durationMinutes, 0);
+        itineraries.push({
+          segments,
+          totalDurationMinutes: totalDur,
+          stops: Math.max(0, segments.length - 1),
+        });
       }
     }
   }
+
+  return itineraries;
+}
+
+// ---- Journey & Segment maps ----
+
+function buildJourneyMap(
+  response: unknown,
+  segmentMap: Map<string, Segment>,
+  warnings: string[],
+): Map<string, Segment[]> {
+  const map = new Map<string, Segment[]>();
+  const journeys = collect(response, ['DataLists', 'PaxJourneyList'], 'PaxJourney');
+
+  if (journeys.length > 0) {
+    for (const j of journeys) {
+      const node = j as Record<string, unknown>;
+      const journeyId = node.PaxJourneyID as string | undefined;
+      if (!journeyId) continue;
+      const segRefs = arr<string>(node.PaxSegmentRefID);
+      const segments = segRefs
+        .map((ref) => segmentMap.get(ref))
+        .filter((s): s is Segment => Boolean(s));
+      if (segments.length > 0) map.set(journeyId, segments);
+    }
+  }
+
+  // Fallback: older NDC FlightList pattern
+  if (map.size === 0) {
+    const flights = collect(response, ['DataLists', 'FlightList'], 'Flight');
+    for (const f of flights) {
+      const key = (f as Record<string, unknown>)['@_FlightKey'] as string | undefined;
+      if (!key) {
+        warnings.push('flight without FlightKey skipped');
+        continue;
+      }
+      const segRefs = (f as Record<string, unknown>).SegmentReferences;
+      if (typeof segRefs === 'string') {
+        const segments = segRefs
+          .split(/\s+/)
+          .map((ref) => segmentMap.get(ref))
+          .filter((s): s is Segment => Boolean(s));
+        if (segments.length > 0) map.set(key, segments);
+      }
+    }
+  }
+
   return map;
 }
 
 function buildSegmentMap(response: unknown, warnings: string[]): Map<string, Segment> {
   const map = new Map<string, Segment>();
-  const segs = collect(response, ['DataLists', 'FlightSegmentList'], 'FlightSegment');
-  for (const s of segs) {
-    const seg = mapSegment(s);
+
+  // LATAM v192: PaxSegmentList → PaxSegment
+  const paxSegs = collect(response, ['DataLists', 'PaxSegmentList'], 'PaxSegment');
+  for (const s of paxSegs) {
+    const seg = mapPaxSegment(s);
     if (!seg.ok) {
       warnings.push(`segment skipped: ${seg.reason}`);
       continue;
     }
     map.set(seg.key, seg.segment);
   }
+
+  // Fallback: older NDC FlightSegmentList → FlightSegment
+  if (map.size === 0) {
+    const flightSegs = collect(response, ['DataLists', 'FlightSegmentList'], 'FlightSegment');
+    for (const s of flightSegs) {
+      const seg = mapFlightSegment(s);
+      if (!seg.ok) {
+        warnings.push(`segment skipped: ${seg.reason}`);
+        continue;
+      }
+      map.set(seg.key, seg.segment);
+    }
+  }
+
   return map;
 }
 
-function mapSegment(
-  s: unknown,
-): { ok: true; key: string; segment: Segment } | { ok: false; reason: string } {
+type SegResult = { ok: true; key: string; segment: Segment } | { ok: false; reason: string };
+
+function mapPaxSegment(s: unknown): SegResult {
   const node = s as Record<string, unknown>;
-  const key = node['@_SegmentKey'] as string | undefined;
-  if (!key) return { ok: false, reason: 'no SegmentKey' };
+  const key = node.PaxSegmentID as string | undefined;
+  if (!key) return { ok: false, reason: 'no PaxSegmentID' };
 
   const dep = node.Dep as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
+    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string | Record<string, unknown> }
     | undefined;
-  const arr2 = node.Arrival as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
+  const arrNode = node.Arrival as
+    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string | Record<string, unknown> }
     | undefined;
   const carrier = node.MarketingCarrierInfo as
-    | { CarrierDesigCode?: string; MarketingCarrierFlightNumberText?: string }
+    | { CarrierDesigCode?: string; MarketingCarrierFlightNumberText?: string | number }
     | undefined;
-  const cabinNode = node.CabinType as { CabinTypeName?: string } | undefined;
-  const bookingClassNode = node.ClassOfService as { Code?: string } | undefined;
+  const cabinNode = node.CabinType as
+    | { CabinTypeName?: string; CabinTypeCode?: string }
+    | undefined;
+  const durationStr = node.Duration as string | undefined;
 
-  if (!dep?.IATA_LocationCode || !arr2?.IATA_LocationCode)
+  if (!dep?.IATA_LocationCode || !arrNode?.IATA_LocationCode)
     return { ok: false, reason: 'no Dep/Arrival code' };
-  if (!dep.AircraftScheduledDateTime || !arr2.AircraftScheduledDateTime)
-    return { ok: false, reason: 'no times' };
+
+  const depTime = extractDateTime(dep.AircraftScheduledDateTime);
+  const arrTime = extractDateTime(arrNode.AircraftScheduledDateTime);
+  if (!depTime || !arrTime) return { ok: false, reason: 'no times' };
+
   if (!carrier?.CarrierDesigCode || !carrier?.MarketingCarrierFlightNumberText) {
     return { ok: false, reason: 'no carrier info' };
   }
 
-  const departureAt = ensureIso(dep.AircraftScheduledDateTime);
-  const arrivalAt = ensureIso(arr2.AircraftScheduledDateTime);
-  const durationMinutes = Math.max(
-    1,
-    Math.round((Date.parse(arrivalAt) - Date.parse(departureAt)) / 60_000),
-  );
+  const departureAt = ensureIso(depTime);
+  const arrivalAt = ensureIso(arrTime);
+  const durationMinutes =
+    parseDuration(durationStr) ?? computeDurationMinutes(departureAt, arrivalAt);
 
   return {
     ok: true,
@@ -236,7 +333,54 @@ function mapSegment(
       carrier: carrier.CarrierDesigCode,
       flightNumber: String(carrier.MarketingCarrierFlightNumberText),
       origin: dep.IATA_LocationCode,
-      destination: arr2.IATA_LocationCode,
+      destination: arrNode.IATA_LocationCode,
+      departureAt,
+      arrivalAt,
+      durationMinutes,
+      cabin: mapCabin(cabinNode?.CabinTypeName ?? cabinNode?.CabinTypeCode),
+      bookingClass: 'Y',
+    },
+  };
+}
+
+function mapFlightSegment(s: unknown): SegResult {
+  const node = s as Record<string, unknown>;
+  const key =
+    (node['@_SegmentKey'] as string | undefined) ?? (node.PaxSegmentID as string | undefined);
+  if (!key) return { ok: false, reason: 'no SegmentKey' };
+
+  const dep = node.Dep as
+    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
+    | undefined;
+  const arrNode = node.Arrival as
+    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
+    | undefined;
+  const carrier = node.MarketingCarrierInfo as
+    | { CarrierDesigCode?: string; MarketingCarrierFlightNumberText?: string | number }
+    | undefined;
+  const cabinNode = node.CabinType as { CabinTypeName?: string } | undefined;
+  const bookingClassNode = node.ClassOfService as { Code?: string } | undefined;
+
+  if (!dep?.IATA_LocationCode || !arrNode?.IATA_LocationCode)
+    return { ok: false, reason: 'no Dep/Arrival code' };
+  if (!dep.AircraftScheduledDateTime || !arrNode.AircraftScheduledDateTime)
+    return { ok: false, reason: 'no times' };
+  if (!carrier?.CarrierDesigCode || !carrier?.MarketingCarrierFlightNumberText) {
+    return { ok: false, reason: 'no carrier info' };
+  }
+
+  const departureAt = ensureIso(dep.AircraftScheduledDateTime);
+  const arrivalAt = ensureIso(arrNode.AircraftScheduledDateTime);
+  const durationMinutes = computeDurationMinutes(departureAt, arrivalAt);
+
+  return {
+    ok: true,
+    key,
+    segment: {
+      carrier: carrier.CarrierDesigCode,
+      flightNumber: String(carrier.MarketingCarrierFlightNumberText),
+      origin: dep.IATA_LocationCode,
+      destination: arrNode.IATA_LocationCode,
       departureAt,
       arrivalAt,
       durationMinutes,
@@ -246,21 +390,44 @@ function mapSegment(
   };
 }
 
+// ---- helpers ----
+
+function extractDateTime(dt: unknown): string | null {
+  if (typeof dt === 'string') return dt;
+  if (dt && typeof dt === 'object') {
+    const obj = dt as Record<string, unknown>;
+    // fast-xml-parser with attributes: {#text: "2026-06-15T05:10:00", @_TimeZoneCode: "-05:00"}
+    const text = obj['#text'] as string | undefined;
+    return text ?? null;
+  }
+  return null;
+}
+
+function parseDuration(iso: string | undefined): number | null {
+  if (!iso) return null;
+  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?$/.exec(iso);
+  if (!m) return null;
+  return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
+}
+
+function computeDurationMinutes(dep: string, arr: string): number {
+  return Math.max(1, Math.round((Date.parse(arr) - Date.parse(dep)) / 60_000));
+}
+
 function mapCabin(name: string | undefined): CabinClass {
   const n = (name ?? '').toLowerCase();
-  if (n.includes('first')) return 'first';
-  if (n.includes('business')) return 'business';
-  if (n.includes('premium')) return 'premium_economy';
+  if (n.includes('first') || n === 'f') return 'first';
+  if (n.includes('business') || n === 'j' || n === 'c') return 'business';
+  if (n.includes('premium') || n === 'w') return 'premium_economy';
   return 'economy';
 }
 
 function ensureIso(dt: string): string {
-  // LATAM a veces devuelve "2026-08-15T08:00:00" sin offset. Asumimos UTC en ese caso.
   if (/[+-]\d{2}:?\d{2}$|Z$/.test(dt)) return dt;
   return `${dt}Z`;
 }
 
-// ---- helpers genéricos ----
+// ---- generic helpers ----
 
 function pick(obj: unknown, ...keys: string[]): unknown {
   if (!obj || typeof obj !== 'object') return undefined;
