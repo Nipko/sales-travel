@@ -1,8 +1,9 @@
 'use client';
 
-import { Building2, Plus, Search } from 'lucide-react';
+import { Building2, Plus, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
 
 interface Tenant {
@@ -22,18 +23,91 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   archived: { label: 'Archivado', className: 'bg-zinc-50 text-zinc-500 border-zinc-200' },
 };
 
+const inputClass =
+  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
+const selectClass =
+  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
 export default function AdminTenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  const [form, setForm] = useState({
+    name: '',
+    slug: '',
+    countryCode: 'CO',
+    defaultCurrency: 'COP',
+    defaultLanguage: 'es' as 'es' | 'pt' | 'en',
+    adminEmail: '',
+    adminName: '',
+    adminPassword: '',
+  });
 
   useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  function fetchTenants() {
     fetch('/api/admin/tenants')
       .then((r) => r.json() as Promise<{ tenants: Tenant[] }>)
       .then((d) => setTenants(d.tenants ?? []))
       .catch(() => setTenants([]))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  function handleSlugify(name: string) {
+    setForm((f) => ({
+      ...f,
+      name,
+      slug: name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .slice(0, 50),
+    }));
+  }
+
+  async function handleCreate() {
+    setCreateError('');
+    if (!form.name.trim() || !form.slug.trim()) {
+      setCreateError('Nombre y slug son requeridos.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/admin/tenants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = (await res.json()) as { tenant?: { id: string }; error?: string };
+      if (!res.ok) {
+        setCreateError(data.error ?? 'Error al crear tenant');
+        return;
+      }
+      setShowCreate(false);
+      setForm({
+        name: '',
+        slug: '',
+        countryCode: 'CO',
+        defaultCurrency: 'COP',
+        defaultLanguage: 'es',
+        adminEmail: '',
+        adminName: '',
+        adminPassword: '',
+      });
+      fetchTenants();
+    } catch {
+      setCreateError('Error de conexión');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const filtered = tenants.filter(
     (t) =>
@@ -51,13 +125,13 @@ export default function AdminTenantsPage() {
             {tenants.length} {tenants.length === 1 ? 'workspace' : 'workspaces'} registrados
           </p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowCreate(true)}>
           <Plus className="size-4" />
           Nuevo tenant
         </Button>
       </div>
 
-      {/* Search + Filters */}
+      {/* Search */}
       <div className="mb-4 flex items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
@@ -100,7 +174,7 @@ export default function AdminTenantsPage() {
                   Slug
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                  Pais
+                  País
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
                   Usuarios
@@ -165,6 +239,153 @@ export default function AdminTenantsPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Create Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-[var(--color-fg)]">Nuevo tenant</h2>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1 sm:col-span-2">
+                <Label>Nombre del workspace</Label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => handleSlugify(e.target.value)}
+                  placeholder="Mi Agencia de Viajes"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label>Slug (URL)</Label>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                  placeholder="mi-agencia"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>País</Label>
+                <select
+                  value={form.countryCode}
+                  onChange={(e) => setForm({ ...form, countryCode: e.target.value })}
+                  className={selectClass}
+                >
+                  <option value="CO">Colombia</option>
+                  <option value="BR">Brasil</option>
+                  <option value="PE">Perú</option>
+                  <option value="CL">Chile</option>
+                  <option value="MX">México</option>
+                  <option value="AR">Argentina</option>
+                  <option value="EC">Ecuador</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Moneda</Label>
+                <select
+                  value={form.defaultCurrency}
+                  onChange={(e) => setForm({ ...form, defaultCurrency: e.target.value })}
+                  className={selectClass}
+                >
+                  <option value="COP">COP</option>
+                  <option value="BRL">BRL</option>
+                  <option value="PEN">PEN</option>
+                  <option value="CLP">CLP</option>
+                  <option value="MXN">MXN</option>
+                  <option value="ARS">ARS</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Idioma</Label>
+                <select
+                  value={form.defaultLanguage}
+                  onChange={(e) =>
+                    setForm({ ...form, defaultLanguage: e.target.value as 'es' | 'pt' | 'en' })
+                  }
+                  className={selectClass}
+                >
+                  <option value="es">Español</option>
+                  <option value="pt">Portugués</option>
+                  <option value="en">Inglés</option>
+                </select>
+              </div>
+
+              {/* Admin user section */}
+              <div className="space-y-1 sm:col-span-2">
+                <div className="my-2 border-t border-[var(--color-border)]" />
+                <p className="text-xs font-medium text-[var(--color-fg-muted)]">
+                  Admin del tenant (opcional)
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label>Email admin</Label>
+                <input
+                  type="email"
+                  value={form.adminEmail}
+                  onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
+                  placeholder="admin@agencia.com"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Nombre admin</Label>
+                <input
+                  type="text"
+                  value={form.adminName}
+                  onChange={(e) => setForm({ ...form, adminName: e.target.value })}
+                  placeholder="Juan Admin"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label>Contraseña admin</Label>
+                <input
+                  type="password"
+                  value={form.adminPassword}
+                  onChange={(e) => setForm({ ...form, adminPassword: e.target.value })}
+                  placeholder="Mínimo 12 caracteres"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            {createError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                {createError}
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={creating}
+                onClick={() => void handleCreate()}
+                className="gap-1.5"
+              >
+                <Plus className="size-3.5" />
+                {creating ? 'Creando…' : 'Crear tenant'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

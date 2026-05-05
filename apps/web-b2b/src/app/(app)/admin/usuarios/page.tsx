@@ -1,8 +1,9 @@
 'use client';
 
-import { Mail, Search, Shield, UserPlus } from 'lucide-react';
+import { Mail, Search, Shield, UserPlus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
 
 interface UserRow {
@@ -14,6 +15,11 @@ interface UserRow {
   tenantName: string;
   createdAt: string;
   lastLoginAt: string | null;
+}
+
+interface TenantOption {
+  id: string;
+  name: string;
 }
 
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
@@ -30,18 +36,87 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   invited: { label: 'Invitado', className: 'bg-amber-50 text-amber-700' },
 };
 
+const inputClass =
+  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
+const selectClass =
+  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
 export default function AdminUsuariosPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
+
+  const [form, setForm] = useState({
+    email: '',
+    name: '',
+    password: '',
+    tenantId: '',
+    role: 'vendedor' as 'tenant_admin' | 'admin' | 'vendedor' | 'cliente_final',
+  });
 
   useEffect(() => {
+    fetchUsers();
+    fetch('/api/admin/tenants')
+      .then((r) => r.json() as Promise<{ tenants: TenantOption[] }>)
+      .then((d) => {
+        setTenants(d.tenants ?? []);
+        if (d.tenants?.length && !form.tenantId) {
+          setForm((f) => ({ ...f, tenantId: d.tenants[0]!.id }));
+        }
+      })
+      .catch(() => setTenants([]));
+  }, []);
+
+  function fetchUsers() {
     fetch('/api/admin/users')
       .then((r) => r.json() as Promise<{ users: UserRow[] }>)
       .then((d) => setUsers(d.users ?? []))
       .catch(() => setUsers([]))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  async function handleCreate() {
+    setCreateError('');
+    if (!form.email.trim() || !form.password.trim() || !form.tenantId) {
+      setCreateError('Email, contraseña y tenant son requeridos.');
+      return;
+    }
+    if (form.password.length < 12) {
+      setCreateError('La contraseña debe tener al menos 12 caracteres.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = (await res.json()) as { user?: { id: string }; error?: string };
+      if (!res.ok) {
+        setCreateError(data.error ?? 'Error al crear usuario');
+        return;
+      }
+      setShowCreate(false);
+      setForm({
+        email: '',
+        name: '',
+        password: '',
+        tenantId: tenants[0]?.id ?? '',
+        role: 'vendedor',
+      });
+      fetchUsers();
+    } catch {
+      setCreateError('Error de conexión');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const filtered = users.filter(
     (u) =>
@@ -59,7 +134,7 @@ export default function AdminUsuariosPage() {
             {users.length} {users.length === 1 ? 'usuario' : 'usuarios'} en la plataforma
           </p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowCreate(true)}>
           <UserPlus className="size-4" />
           Invitar usuario
         </Button>
@@ -177,6 +252,115 @@ export default function AdminUsuariosPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Create User Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-[var(--color-fg)]">Invitar usuario</h2>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="space-y-1">
+                <Label>Email</Label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="usuario@empresa.com"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Nombre</Label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Juan Vendedor"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Contraseña</Label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="Mínimo 12 caracteres"
+                  className={inputClass}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Tenant</Label>
+                <select
+                  value={form.tenantId}
+                  onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
+                  className={selectClass}
+                >
+                  {tenants.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Rol</Label>
+                <select
+                  value={form.role}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      role: e.target.value as
+                        | 'tenant_admin'
+                        | 'admin'
+                        | 'vendedor'
+                        | 'cliente_final',
+                    })
+                  }
+                  className={selectClass}
+                >
+                  <option value="tenant_admin">Admin del tenant</option>
+                  <option value="admin">Manager</option>
+                  <option value="vendedor">Vendedor</option>
+                  <option value="cliente_final">Cliente final</option>
+                </select>
+              </div>
+            </div>
+
+            {createError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                {createError}
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={creating}
+                onClick={() => void handleCreate()}
+                className="gap-1.5"
+              >
+                <UserPlus className="size-3.5" />
+                {creating ? 'Creando…' : 'Crear usuario'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

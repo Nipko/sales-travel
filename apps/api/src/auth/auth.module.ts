@@ -8,6 +8,6 @@ import { PasswordService } from './password.service.js';
 @Module({
   controllers: [AuthController],
   providers: [AuthService, JwtService, PasswordService],
-  exports: [JwtService],
+  exports: [JwtService, PasswordService],
 })
 export class AuthModule {}
