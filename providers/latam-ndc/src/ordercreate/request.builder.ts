@@ -67,6 +67,7 @@ export function buildOrderCreateRequest(
 
 function buildContactInfoList(passengers: Passenger[], contactInfo: BookingContactInfo): string {
   const items: string[] = [];
+  const phone = contactInfo.phone.replace(/\D/g, '');
 
   for (const pax of passengers) {
     items.push(`<ContactInfo>
@@ -75,7 +76,7 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
             <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
           </EmailAddress>
           <Phone>
-            <PhoneNumber>${escape(contactInfo.phone)}</PhoneNumber>
+            <PhoneNumber>${phone}</PhoneNumber>
           </Phone>
         </ContactInfo>`);
   }
