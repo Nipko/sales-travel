@@ -1,5 +1,5 @@
 import type { SearchContext } from './flight-search.port';
-import type { BookingContactInfo, Passenger, PaymentInfo } from './order-create.port';
+import type { BookingContactInfo, PaymentInfo } from './order-create.port';
 
 export interface OrderRetrieveResult {
   found: boolean;
