@@ -103,9 +103,11 @@ export class LatamNdcFlightSearchAdapter
       request.passengers,
       request.contactInfo,
       this.cfg,
+      request.criteria?.currency,
     );
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
       trackId: ctx.requestId,
+      country: currencyToCountry(request.criteria?.currency),
     });
 
     return mapOrderCreateResponse(raw);

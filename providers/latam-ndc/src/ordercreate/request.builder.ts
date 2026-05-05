@@ -1,5 +1,6 @@
 import type { Offer } from '@sales-travel/canonical';
 import type { BookingContactInfo, Passenger } from '@sales-travel/domain';
+import { currencyToCountry } from '../airshopping/request.builder';
 import type { LatamNdcConfig } from '../config';
 
 export function buildOrderCreateRequest(
@@ -7,6 +8,7 @@ export function buildOrderCreateRequest(
   passengers: Passenger[],
   contactInfo: BookingContactInfo,
   cfg: LatamNdcConfig,
+  currency?: string,
 ): string {
   const { offerId, offerItemIds } = parseOfferRef(offer.provider.offerRef);
   const paxRefIds = passengers
@@ -23,7 +25,8 @@ export function buildOrderCreateRequest(
     .join('\n        ');
 
   const contactInfoList = buildContactInfoList(passengers, contactInfo);
-  const paxList = buildPaxList(passengers);
+  const paxList = buildPaxList(passengers, contactInfo);
+  const country = currencyToCountry(currency) ?? cfg.country ?? '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OrderCreateRQ xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCreateRQ">
@@ -34,6 +37,7 @@ export function buildOrderCreateRequest(
     <Sender>
       <TravelAgency>
         <AgencyID>${escape(cfg.agencyId ?? '')}</AgencyID>
+        <ContactInfoRefID>AGENCY_1_CNT</ContactInfoRefID>
         <IATA_Number>${escape(cfg.agencyIata ?? '')}</IATA_Number>
         <Name>${escape(cfg.agencyName ?? '')}</Name>
         ${cfg.travelAgentId ? `<TravelAgent><TravelAgentID>${escape(cfg.travelAgentId)}</TravelAgentID></TravelAgent>` : ''}
@@ -42,7 +46,7 @@ export function buildOrderCreateRequest(
   </Party>
   <POS>
     <Country>
-      <CountryCode>${escape(cfg.country ?? '')}</CountryCode>
+      <CountryCode>${escape(country)}</CountryCode>
     </Country>
   </POS>
   <Request>
@@ -67,7 +71,29 @@ export function buildOrderCreateRequest(
 
 function buildContactInfoList(passengers: Passenger[], contactInfo: BookingContactInfo): string {
   const items: string[] = [];
-  const phone = contactInfo.phone.replace(/\D/g, '');
+  const { dialCode, areaCode, number } = parsePhone(contactInfo);
+  const postalCountry = contactInfo.postalAddress?.countryCode ?? 'CO';
+  const postalCode = contactInfo.postalAddress?.postalCode ?? '110001';
+  const street = contactInfo.postalAddress?.street ?? 'N/A';
+
+  items.push(`<ContactInfo>
+          <ContactInfoID>AGENCY_1_CNT</ContactInfoID>
+          <ContactPurposeText>BILLING</ContactPurposeText>
+          <EmailAddress>
+            <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
+          </EmailAddress>
+          <Phone>
+            <AreaCodeNumber>${areaCode}</AreaCodeNumber>
+            <ContactTypeText>MOBILE</ContactTypeText>
+            <CountryDialingCode>${dialCode}</CountryDialingCode>
+            <PhoneNumber>${number}</PhoneNumber>
+          </Phone>
+          <PostalAddress>
+            <CountryCode>${escape(postalCountry)}</CountryCode>
+            <PostalCode>${escape(postalCode)}</PostalCode>
+            <StreetText>${escape(street)}</StreetText>
+          </PostalAddress>
+        </ContactInfo>`);
 
   for (const pax of passengers) {
     items.push(`<ContactInfo>
@@ -76,7 +102,10 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
             <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
           </EmailAddress>
           <Phone>
-            <PhoneNumber>${phone}</PhoneNumber>
+            <AreaCodeNumber>${areaCode}</AreaCodeNumber>
+            <ContactTypeText>MOBILE</ContactTypeText>
+            <CountryDialingCode>${dialCode}</CountryDialingCode>
+            <PhoneNumber>${number}</PhoneNumber>
           </Phone>
         </ContactInfo>`);
   }
@@ -84,16 +113,17 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
   return items.join('\n        ');
 }
 
-function buildPaxList(passengers: Passenger[]): string {
+function buildPaxList(passengers: Passenger[], contactInfo: BookingContactInfo): string {
   return passengers
     .map(
       (p) => `<Pax>
           <CitizenshipCountryCode>${escape(p.citizenshipCountryCode)}</CitizenshipCountryCode>
           <ContactInfoRefID>${escape(p.paxId)}_CNT</ContactInfoRefID>
           <IdentityDoc>
-            <ExpiryDate>${escape(p.identityDoc.expiryDate)}</ExpiryDate>
+            ${p.identityDoc.expiryDate ? `<ExpiryDate>${escape(p.identityDoc.expiryDate)}</ExpiryDate>` : ''}
             <IdentityDocID>${escape(p.identityDoc.number)}</IdentityDocID>
             <IdentityDocTypeCode>${escape(mapDocType(p.identityDoc.type))}</IdentityDocTypeCode>
+            ${p.identityDoc.issueDate ? `<IssueDate>${escape(p.identityDoc.issueDate)}</IssueDate>` : `<IssueDate>2020-01-01</IssueDate>`}
             <IssuingCountryCode>${escape(p.identityDoc.issuingCountryCode)}</IssuingCountryCode>
           </IdentityDoc>
           <Individual>
@@ -102,6 +132,7 @@ function buildPaxList(passengers: Passenger[]): string {
             <GivenName>${escape(p.givenName.toUpperCase())}</GivenName>
             <IndividualID>${escape(p.paxId)}</IndividualID>
             <Surname>${escape(p.surname.toUpperCase())}</Surname>
+            <TitleName>${escape(mapTitle(p))}</TitleName>
           </Individual>
           <PaxID>${escape(p.paxId)}</PaxID>
           <PTC>${escape(p.paxType)}</PTC>
@@ -110,9 +141,39 @@ function buildPaxList(passengers: Passenger[]): string {
     .join('\n        ');
 }
 
+function mapTitle(p: Passenger): string {
+  if (p.title) return p.title;
+  return p.gender === 'M' ? 'Mr' : 'Mrs';
+}
+
 function mapDocType(type: string): string {
-  if (type === 'P') return 'P';
-  return 'IN';
+  switch (type) {
+    case 'P':
+      return 'P';
+    case 'DNI':
+    case 'CC':
+    case 'CE':
+      return 'IN';
+    default:
+      return 'IN';
+  }
+}
+
+function parsePhone(contactInfo: BookingContactInfo): {
+  dialCode: string;
+  areaCode: string;
+  number: string;
+} {
+  const digits = contactInfo.phone.replace(/\D/g, '');
+  const dialCode = contactInfo.countryDialingCode?.replace(/\D/g, '') || '57';
+  const areaCode = contactInfo.areaCode?.replace(/\D/g, '') || '1';
+
+  let number = digits;
+  if (digits.startsWith(dialCode)) {
+    number = digits.slice(dialCode.length);
+  }
+
+  return { dialCode, areaCode, number };
 }
 
 function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] } {

@@ -4,6 +4,7 @@ import type { FlightSearchCriteria, SearchContext } from './flight-search.port';
 export interface Passenger {
   paxId: string;
   paxType: 'ADT' | 'CHD' | 'INF';
+  title?: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
   givenName: string;
   surname: string;
   birthdate: string;
@@ -13,6 +14,7 @@ export interface Passenger {
     type: 'P' | 'DNI' | 'CC' | 'CE';
     number: string;
     issuingCountryCode: string;
+    issueDate?: string;
     expiryDate: string;
   };
 }
@@ -20,6 +22,13 @@ export interface Passenger {
 export interface BookingContactInfo {
   email: string;
   phone: string;
+  countryDialingCode?: string;
+  areaCode?: string;
+  postalAddress?: {
+    countryCode: string;
+    postalCode: string;
+    street: string;
+  };
 }
 
 export interface OrderCreateRequest {
