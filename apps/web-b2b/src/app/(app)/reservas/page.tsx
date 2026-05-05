@@ -1,9 +1,10 @@
 'use client';
 
-import { Clock, Plane, Search, XCircle } from 'lucide-react';
+import { Clock, CreditCard, Plane, Search, X, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
+import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
 
 interface Order {
   id: string;
@@ -62,6 +63,8 @@ export default function ReservasPage() {
     message: string;
     success: boolean;
   } | null>(null);
+  const [payingOrder, setPayingOrder] = useState<Order | null>(null);
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
 
   useEffect(() => {
     fetch('/api/orders')
@@ -140,6 +143,51 @@ export default function ReservasPage() {
       setActionResult({
         orderId: order.id,
         type: 'cancel',
+        success: false,
+        message: 'Error de conexión',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handlePaySubmit() {
+    if (!payingOrder || !paymentData) return;
+    setActionLoading(payingOrder.id);
+    setActionResult(null);
+    try {
+      const res = await fetch(`/api/orders/${payingOrder.id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment: paymentData }),
+      });
+      const data = (await res.json()) as { success?: boolean; status?: string; error?: string };
+      if (data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === payingOrder.id ? { ...o, status: data.status ?? 'confirmed' } : o,
+          ),
+        );
+        setActionResult({
+          orderId: payingOrder.id,
+          type: 'pay',
+          success: true,
+          message: 'Pago procesado exitosamente',
+        });
+        setPayingOrder(null);
+        setPaymentData(null);
+      } else {
+        setActionResult({
+          orderId: payingOrder.id,
+          type: 'pay',
+          success: false,
+          message: data.error ?? 'No se pudo procesar el pago',
+        });
+      }
+    } catch {
+      setActionResult({
+        orderId: payingOrder.id,
+        type: 'pay',
         success: false,
         message: 'Error de conexión',
       });
@@ -241,6 +289,20 @@ export default function ReservasPage() {
                 {/* Actions */}
                 {order.pnr && order.status !== 'cancelled' && order.status !== 'failed' && (
                   <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
+                    {order.status === 'pending' && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={actionLoading === order.id}
+                        onClick={() => {
+                          setPayingOrder(order);
+                          setPaymentData(null);
+                        }}
+                        className="gap-1.5 text-xs"
+                      >
+                        <CreditCard className="size-3.5" /> Pagar
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -279,6 +341,69 @@ export default function ReservasPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Payment modal */}
+      {payingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+                Pagar reserva #{payingOrder.orderNumber}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setPayingOrder(null);
+                  setPaymentData(null);
+                }}
+                className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--color-fg-muted)]">
+                  {payingOrder.searchCriteria.origin} → {payingOrder.searchCriteria.destination}
+                </span>
+                <span className="font-mono font-semibold text-[var(--color-fg)]">
+                  {formatMoney(payingOrder.totalAmount, payingOrder.currency)}
+                </span>
+              </div>
+            </div>
+
+            <PaymentForm
+              totalAmountMinor={payingOrder.totalAmount}
+              currency={payingOrder.currency}
+              onPaymentChange={setPaymentData}
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setPayingOrder(null);
+                  setPaymentData(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!paymentData || actionLoading === payingOrder.id}
+                onClick={() => void handlePaySubmit()}
+                className="gap-1.5"
+              >
+                <CreditCard className="size-3.5" />
+                {actionLoading === payingOrder.id ? 'Procesando…' : 'Confirmar pago'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

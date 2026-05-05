@@ -1,10 +1,12 @@
 'use client';
 
-import { Plane, UserPlus } from 'lucide-react';
+import { Plane, UserPlus, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
+import { PaymentForm, type PaymentData } from './payment-form';
+import { cn } from '../../../../lib/cn';
 
 interface PaxCount {
   adults: number;
@@ -33,11 +35,19 @@ interface ContactInfo {
   phone: string;
 }
 
+type PaymentMode = 'bnpl' | 'pay_now';
+
 interface PassengerFormProps {
   paxCount: PaxCount;
+  totalAmountMinor: number;
+  currency: string;
   defaultEmail?: string;
   defaultPhone?: string;
-  onSubmit: (passengers: Passenger[], contactInfo: ContactInfo) => Promise<void>;
+  onSubmit: (
+    passengers: Passenger[],
+    contactInfo: ContactInfo,
+    payment?: PaymentData,
+  ) => Promise<void>;
 }
 
 function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
@@ -102,6 +112,8 @@ const selectClass =
 
 export function PassengerForm({
   paxCount,
+  totalAmountMinor,
+  currency,
   defaultEmail,
   defaultPhone,
   onSubmit,
@@ -111,6 +123,8 @@ export function PassengerForm({
     email: defaultEmail ?? '',
     phone: defaultPhone ?? '',
   });
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('bnpl');
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,9 +140,12 @@ export function PassengerForm({
 
   function isValid(): boolean {
     if (!contactInfo.email || !contactInfo.phone) return false;
-    return passengers.every(
+    const paxValid = passengers.every(
       (p) => p.givenName.trim() && p.surname.trim() && p.birthdate && p.identityDoc.number.trim(),
     );
+    if (!paxValid) return false;
+    if (paymentMode === 'pay_now' && !paymentData) return false;
+    return true;
   }
 
   async function handleSubmit() {
@@ -136,7 +153,11 @@ export function PassengerForm({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(passengers, contactInfo);
+      await onSubmit(
+        passengers,
+        contactInfo,
+        paymentMode === 'pay_now' ? (paymentData ?? undefined) : undefined,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear la reserva');
     } finally {
@@ -306,6 +327,56 @@ export function PassengerForm({
           ))}
         </div>
 
+        {/* Payment mode selector */}
+        <div className="mt-6 border-t border-[var(--color-border)] pt-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Wallet className="size-4 text-[var(--color-primary)]" />
+            <h3 className="text-sm font-semibold text-[var(--color-fg)]">Método de pago</h3>
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentMode('bnpl');
+                setPaymentData(null);
+              }}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-all',
+                paymentMode === 'bnpl'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+              )}
+            >
+              <p className="text-xs font-medium text-[var(--color-fg)]">Reservar sin pago</p>
+              <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
+                Genera PNR, pagar después
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentMode('pay_now')}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-all',
+                paymentMode === 'pay_now'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+              )}
+            >
+              <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
+              <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">Tarjeta de crédito</p>
+            </button>
+          </div>
+
+          {paymentMode === 'pay_now' && (
+            <PaymentForm
+              totalAmountMinor={totalAmountMinor}
+              currency={currency}
+              onPaymentChange={setPaymentData}
+            />
+          )}
+        </div>
+
         {error && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
             {error}
@@ -321,7 +392,11 @@ export function PassengerForm({
             className="gap-2"
           >
             <Plane className="size-4" />
-            {submitting ? 'Creando reserva…' : 'Crear reserva (PNR)'}
+            {submitting
+              ? 'Creando reserva…'
+              : paymentMode === 'pay_now'
+                ? 'Pagar y crear reserva'
+                : 'Crear reserva (BNPL)'}
           </Button>
         </div>
       </CardContent>

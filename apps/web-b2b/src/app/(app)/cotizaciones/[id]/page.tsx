@@ -20,6 +20,7 @@ import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
+import type { PaymentData } from './payment-form';
 
 interface Quotation {
   id: string;
@@ -211,18 +212,23 @@ export default function QuotationDetailPage() {
       };
     }[],
     contactInfo: { email: string; phone: string },
+    payment?: PaymentData,
   ) {
     if (!quotation) return;
+    const body: Record<string, unknown> = {
+      offer: quotation.selectedOffer,
+      searchCriteria: quotation.searchCriteria,
+      passengers,
+      contactInfo,
+      quotationId: quotation.id,
+    };
+    if (payment) {
+      body.payment = payment;
+    }
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offer: quotation.selectedOffer,
-        searchCriteria: quotation.searchCriteria,
-        passengers,
-        contactInfo,
-        quotationId: quotation.id,
-      }),
+      body: JSON.stringify(body),
     });
     const data = (await res.json()) as {
       providerResult?: { success: boolean; pnr?: string; error?: string };
@@ -557,6 +563,8 @@ export default function QuotationDetailPage() {
           {!bookingResult?.success && (
             <PassengerForm
               paxCount={searchCriteria.paxCount}
+              totalAmountMinor={selectedOffer.total.amountMinor}
+              currency={selectedOffer.total.currency}
               defaultEmail={customerEmail || undefined}
               defaultPhone={customerPhone || undefined}
               onSubmit={handleCreateOrder}
