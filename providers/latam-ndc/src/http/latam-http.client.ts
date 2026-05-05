@@ -61,8 +61,15 @@ export class LatamHttpClient {
     });
 
     const text = await res.text();
+
+    // Always try to parse XML — LATAM returns structured errors in 4xx bodies
+    // that response mappers handle gracefully. Only throw on non-parseable responses.
     if (!res.ok) {
-      throw new Error(`LATAM ${path} ${res.status}: ${text.slice(0, 400)}`);
+      try {
+        return xmlParser.parse(text) as T;
+      } catch {
+        throw new Error(`LATAM ${path} ${res.status}: ${text.slice(0, 400)}`);
+      }
     }
 
     return xmlParser.parse(text) as T;

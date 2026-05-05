@@ -8,10 +8,19 @@ export function buildOrderCreateRequest(
   contactInfo: BookingContactInfo,
   cfg: LatamNdcConfig,
 ): string {
-  const offerRef = offer.provider.offerRef;
+  const { offerId, offerItemIds } = parseOfferRef(offer.provider.offerRef);
   const paxRefIds = passengers
     .map((p) => `<PaxRefID>${escape(p.paxId)}</PaxRefID>`)
     .join('\n            ');
+
+  const selectedItems = offerItemIds
+    .map(
+      (itemId) => `<SelectedOfferItem>
+          <OfferItemRefID>${escape(itemId)}</OfferItemRefID>
+          ${paxRefIds}
+        </SelectedOfferItem>`,
+    )
+    .join('\n        ');
 
   const contactInfoList = buildContactInfoList(passengers, contactInfo);
   const paxList = buildPaxList(passengers);
@@ -39,12 +48,9 @@ export function buildOrderCreateRequest(
   <Request>
     <CreateOrder>
       <SelectedOffer>
-        <OfferRefID>${escape(offerRef)}</OfferRefID>
+        <OfferRefID>${escape(offerId)}</OfferRefID>
         <OwnerCode>LA</OwnerCode>
-        <SelectedOfferItem>
-          <OfferItemRefID>${escape(offerRef)}-ITEM1</OfferItemRefID>
-          ${paxRefIds}
-        </SelectedOfferItem>
+        ${selectedItems}
       </SelectedOffer>
     </CreateOrder>
     <DataLists>
@@ -100,6 +106,16 @@ function buildPaxList(passengers: Passenger[]): string {
         </Pax>`,
     )
     .join('\n        ');
+}
+
+function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] } {
+  const pipeIdx = ref.indexOf('|');
+  if (pipeIdx === -1) {
+    return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] };
+  }
+  const offerId = ref.slice(0, pipeIdx);
+  const offerItemIds = ref.slice(pipeIdx + 1).split(',').filter(Boolean);
+  return { offerId, offerItemIds: offerItemIds.length > 0 ? offerItemIds : [`${offerId}-ITEM1`] };
 }
 
 function escape(s: string): string {

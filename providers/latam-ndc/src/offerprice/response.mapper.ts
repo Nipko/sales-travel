@@ -60,7 +60,12 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
   const expiration = timeLimits?.OfferExpiration as Record<string, unknown> | undefined;
   const newExpiresAt = expiration?.['@_DateTime'] as string | undefined;
 
-  const newOfferRef = (offerNode.OfferID as string) ?? originalOffer.provider.offerRef;
+  // Preserve the encoded OfferItemIDs from the original ref
+  const rawNewId = offerNode.OfferID as string | undefined;
+  const originalItemSuffix = originalOffer.provider.offerRef.includes('|')
+    ? originalOffer.provider.offerRef.slice(originalOffer.provider.offerRef.indexOf('|'))
+    : '';
+  const newOfferRef = rawNewId ? `${rawNewId}${originalItemSuffix}` : originalOffer.provider.offerRef;
 
   const updatedOffer: Offer = {
     ...originalOffer,

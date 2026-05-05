@@ -9,7 +9,16 @@ export function buildOfferPriceRequest(
 ): string {
   const pax = buildPaxList(criteria);
   const paxRefIds = buildPaxRefIds(criteria);
-  const offerRef = offer.provider.offerRef;
+  const { offerId, offerItemIds } = parseOfferRef(offer.provider.offerRef);
+
+  const selectedItems = offerItemIds
+    .map(
+      (itemId) => `<SelectedOfferItem>
+          <OfferItemRefID>${escape(itemId)}</OfferItemRefID>
+          ${paxRefIds}
+        </SelectedOfferItem>`,
+    )
+    .join('\n        ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OfferPriceRQ xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_OfferPriceRQ">
@@ -39,16 +48,24 @@ export function buildOfferPriceRequest(
     </DataLists>
     <PricedOffer>
       <SelectedOffer>
-        <OfferRefID>${escape(offerRef)}</OfferRefID>
+        <OfferRefID>${escape(offerId)}</OfferRefID>
         <OwnerCode>LA</OwnerCode>
-        <SelectedOfferItem>
-          <OfferItemRefID>${escape(offerRef)}-ITEM1</OfferItemRefID>
-          ${paxRefIds}
-        </SelectedOfferItem>
+        ${selectedItems}
       </SelectedOffer>
     </PricedOffer>
   </Request>
 </IATA_OfferPriceRQ>`;
+}
+
+/** Decode offerRef: "OfferID|ItemID1,ItemID2" or plain "OfferID" (legacy) */
+function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] } {
+  const pipeIdx = ref.indexOf('|');
+  if (pipeIdx === -1) {
+    return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] };
+  }
+  const offerId = ref.slice(0, pipeIdx);
+  const offerItemIds = ref.slice(pipeIdx + 1).split(',').filter(Boolean);
+  return { offerId, offerItemIds: offerItemIds.length > 0 ? offerItemIds : [`${offerId}-ITEM1`] };
 }
 
 function buildPaxList(c: FlightSearchCriteria): string {

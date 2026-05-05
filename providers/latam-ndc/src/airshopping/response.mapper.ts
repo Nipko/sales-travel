@@ -165,11 +165,17 @@ function mapOneOffer(args: {
   const baggage = extractOfferBaggage(args.node, args.baggageMap);
   const policies = extractPolicies(offerItems);
 
+  // Encode OfferItemIDs into offerRef so OfferPrice can reference them correctly
+  const itemIds = offerItems
+    .map((item) => (item.OfferItemID as string) ?? '')
+    .filter(Boolean);
+  const encodedRef = itemIds.length > 0 ? `${offerRef}|${itemIds.join(',')}` : offerRef;
+
   return {
     id: randomUUID(),
     tenantId: args.tenantId,
     products: ['flight'],
-    provider: { name: 'latam-ndc', offerRef },
+    provider: { name: 'latam-ndc', offerRef: encodedRef },
     total,
     baseFare,
     taxes,
