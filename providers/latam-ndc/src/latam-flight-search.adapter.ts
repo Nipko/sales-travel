@@ -4,9 +4,12 @@ import type {
   FlightSearchPort,
   OfferPricePort,
   OfferPriceResult,
+  OrderCancelResult,
   OrderCreatePort,
   OrderCreateRequest,
   OrderCreateResult,
+  OrderManagePort,
+  OrderRetrieveResult,
   SearchContext,
 } from '@sales-travel/domain';
 import { buildAirShoppingRequest } from './airshopping/request.builder';
@@ -19,6 +22,8 @@ import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { mapOfferPriceResponse } from './offerprice/response.mapper';
 import { buildOrderCreateRequest } from './ordercreate/request.builder';
 import { mapOrderCreateResponse } from './ordercreate/response.mapper';
+import { buildOrderCancelRequest, buildOrderRetrieveRequest } from './ordermanage/request.builders';
+import { mapOrderCancelResponse, mapOrderRetrieveResponse } from './ordermanage/response.mappers';
 
 /**
  * Anti-Corruption Layer LATAM NDC.
@@ -27,7 +32,7 @@ import { mapOrderCreateResponse } from './ordercreate/response.mapper';
  * Si faltan o `mock=true` → devuelve fixtures canónicas (útil para CI).
  */
 export class LatamNdcFlightSearchAdapter
-  implements FlightSearchPort, OfferPricePort, OrderCreatePort
+  implements FlightSearchPort, OfferPricePort, OrderCreatePort, OrderManagePort
 {
   private readonly tokens: LatamTokenService;
   private readonly http: LatamHttpClient;
@@ -102,6 +107,40 @@ export class LatamNdcFlightSearchAdapter
     });
 
     return mapOrderCreateResponse(raw);
+  }
+
+  async retrieveOrder(orderId: string, ctx: SearchContext): Promise<OrderRetrieveResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        found: true,
+        orderId,
+        status: 'confirmed',
+        warnings: ['mock mode: order retrieved (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderRetrieveRequest(orderId, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/retrieve', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderRetrieveResponse(raw);
+  }
+
+  async cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        success: true,
+        warnings: ['mock mode: order cancelled (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderCancelRequest(orderId, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderCancelResponse(raw);
   }
 }
 

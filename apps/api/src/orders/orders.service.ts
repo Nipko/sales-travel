@@ -2,9 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import {
   ORDER_CREATE_PORT,
+  ORDER_MANAGE_PORT,
   type BookingContactInfo,
+  type OrderCancelResult,
   type OrderCreatePort,
   type OrderCreateResult,
+  type OrderManagePort,
+  type OrderRetrieveResult,
   type Passenger,
 } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
@@ -45,6 +49,7 @@ export class OrdersService {
   constructor(
     private readonly db: DatabaseService,
     @Inject(ORDER_CREATE_PORT) private readonly orderCreatePort: OrderCreatePort,
+    @Inject(ORDER_MANAGE_PORT) private readonly orderManagePort: OrderManagePort,
   ) {}
 
   async createOrder(
@@ -118,5 +123,32 @@ export class OrdersService {
         .executeTakeFirst();
       return row as unknown as OrderRow | undefined;
     });
+  }
+
+  async retrieveFromProvider(tenantId: string, pnr: string): Promise<OrderRetrieveResult> {
+    return this.orderManagePort.retrieveOrder(pnr, { tenantId });
+  }
+
+  async cancelOrder(
+    tenantId: string,
+    id: string,
+    pnr: string,
+  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    const result = await this.orderManagePort.cancelOrder(pnr, { tenantId });
+
+    if (result.success) {
+      const order = await this.db.withTenant(tenantId, async (trx) => {
+        const row = await trx
+          .updateTable('orders')
+          .set({ status: 'cancelled' as OrderStatus })
+          .where('id', '=', id)
+          .returningAll()
+          .executeTakeFirst();
+        return row as unknown as OrderRow | undefined;
+      });
+      return { result, order };
+    }
+
+    return { result };
   }
 }

@@ -1,4 +1,12 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
@@ -43,6 +51,26 @@ export class OrdersController {
     const row = await this.orders.findById(tenantId, id);
     if (!row) return { order: null };
     return { order: this.serialize(row) };
+  }
+
+  @Post(':id/retrieve')
+  async retrieve(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    const result = await this.orders.retrieveFromProvider(tenantId, row.provider_order_id);
+    return result;
+  }
+
+  @Post(':id/cancel')
+  async cancel(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    const { result } = await this.orders.cancelOrder(tenantId, id, row.provider_order_id);
+    return result;
   }
 
   private serialize(row: {
