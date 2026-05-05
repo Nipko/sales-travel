@@ -16,7 +16,7 @@ export function mapOrderCreateResponse(raw: unknown): OrderCreateResult {
     | { Code?: string; DescText?: string; Error?: { Code?: string; DescText?: string } }
     | undefined;
   if (errorNode) {
-    const inner = (errorNode.Error ?? errorNode) as { Code?: string; DescText?: string };
+    const inner = errorNode.Error ?? errorNode;
     const msg = `LATAM OrderCreate error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`;
     return { success: false, warnings: [msg], error: msg };
   }

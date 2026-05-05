@@ -12,7 +12,7 @@ export function mapOrderRetrieveResponse(raw: unknown): OrderRetrieveResult {
     | { Code?: string; DescText?: string; Error?: { Code?: string; DescText?: string } }
     | undefined;
   if (errorNode) {
-    const inner = (errorNode.Error ?? errorNode) as { Code?: string; DescText?: string };
+    const inner = errorNode.Error ?? errorNode;
     return {
       found: false,
       warnings: [`LATAM error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`],
@@ -75,7 +75,7 @@ export function mapOrderCancelResponse(raw: unknown): OrderCancelResult {
     | { Code?: string; DescText?: string; Error?: { Code?: string; DescText?: string } }
     | undefined;
   if (errorNode) {
-    const inner = (errorNode.Error ?? errorNode) as { Code?: string; DescText?: string };
+    const inner = errorNode.Error ?? errorNode;
     const msg = `LATAM error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`;
     return { success: false, warnings: [msg], error: msg };
   }
