@@ -26,7 +26,7 @@ export function buildOrderCreateRequest(
     .join('\n        ');
 
   const contactInfoList = buildContactInfoList(passengers, contactInfo);
-  const paxList = buildPaxList(passengers, contactInfo);
+  const paxList = buildPaxList(passengers);
   const paymentBlock = payment ? buildPaymentFunctions(payment) : '';
   const country = currencyToCountry(currency) ?? cfg.country ?? '';
 
@@ -116,7 +116,7 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
   return items.join('\n        ');
 }
 
-function buildPaxList(passengers: Passenger[], contactInfo: BookingContactInfo): string {
+function buildPaxList(passengers: Passenger[]): string {
   return passengers
     .map(
       (p) => `<Pax>
