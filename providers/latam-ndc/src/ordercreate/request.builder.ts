@@ -99,6 +99,7 @@ function buildPaxList(passengers: Passenger[]): string {
             <Birthdate>${escape(p.birthdate)}</Birthdate>
             <GenderCode>${escape(p.gender)}</GenderCode>
             <GivenName>${escape(p.givenName.toUpperCase())}</GivenName>
+            <IndividualID>${escape(p.paxId)}</IndividualID>
             <Surname>${escape(p.surname.toUpperCase())}</Surname>
           </Individual>
           <PaxID>${escape(p.paxId)}</PaxID>
