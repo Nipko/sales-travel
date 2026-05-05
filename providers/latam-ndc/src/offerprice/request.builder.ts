@@ -1,5 +1,6 @@
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
+import { currencyToCountry } from '../airshopping/request.builder';
 import type { LatamNdcConfig } from '../config';
 
 export function buildOfferPriceRequest(
@@ -37,7 +38,7 @@ export function buildOfferPriceRequest(
   </Party>
   <POS>
     <Country>
-      <CountryCode>${escape(cfg.country ?? '')}</CountryCode>
+      <CountryCode>${escape(currencyToCountry(criteria.currency) ?? cfg.country ?? '')}</CountryCode>
     </Country>
   </POS>
   <Request>

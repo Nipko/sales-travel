@@ -12,7 +12,7 @@ import type {
   OrderRetrieveResult,
   SearchContext,
 } from '@sales-travel/domain';
-import { buildAirShoppingRequest } from './airshopping/request.builder';
+import { buildAirShoppingRequest, currencyToCountry } from './airshopping/request.builder';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
 import { isMockMode, type LatamNdcConfig } from './config';
@@ -55,6 +55,7 @@ export class LatamNdcFlightSearchAdapter
     const xml = buildAirShoppingRequest(criteria, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/airshopping', xml, {
       trackId: ctx.requestId,
+      country: currencyToCountry(criteria.currency),
     });
 
     const { offers } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
@@ -81,6 +82,7 @@ export class LatamNdcFlightSearchAdapter
     const xml = buildOfferPriceRequest(offer, criteria, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/offerPrice', xml, {
       trackId: ctx.requestId,
+      country: currencyToCountry(criteria.currency),
     });
 
     return mapOfferPriceResponse(raw, offer);

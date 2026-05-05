@@ -8,6 +8,8 @@ export interface LatamRequestOptions {
   trackId?: string;
   /** Lang override (default EN). */
   lang?: 'EN' | 'ES' | 'PT';
+  /** Country override — determines currency in response (CO→COP, BR→BRL, CL→CLP). */
+  country?: string;
 }
 
 const xmlParser = new XMLParser({
@@ -53,7 +55,7 @@ export class LatamHttpClient {
         'x-latam-request-id': requestId,
         'X-latam-Application-Name': this.cfg.agencyName,
         'X-latam-client-name': this.cfg.agencyName,
-        'X-latam-Country': this.cfg.country,
+        'X-latam-Country': opts.country ?? this.cfg.country,
         'X-latam-Lang': opts.lang ?? 'EN',
         'x-latam-api-version': 'V2',
       },

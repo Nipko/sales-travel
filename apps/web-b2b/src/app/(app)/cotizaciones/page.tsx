@@ -361,11 +361,11 @@ export default function CotizacionesPage() {
                   <select
                     id="currency"
                     name="currency"
-                    defaultValue="USD"
+                    defaultValue="COP"
                     className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
                   >
-                    <option value="USD">USD</option>
                     <option value="COP">COP</option>
+                    <option value="USD">USD</option>
                     <option value="BRL">BRL</option>
                     <option value="CLP">CLP</option>
                     <option value="PEN">PEN</option>

@@ -14,6 +14,7 @@ export function buildAirShoppingRequest(
   const requestTime = new Date().toISOString().replace(/\.\d{3}Z$/, '');
   const pax = buildPaxList(criteria);
   const odList = buildOriginDestList(criteria);
+  const country = currencyToCountry(criteria.currency) ?? cfg.country ?? '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_AirShoppingRQ xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_AirShoppingRQ">
@@ -32,7 +33,7 @@ export function buildAirShoppingRequest(
   </Party>
   <POS>
     <Country>
-      <CountryCode>${escape(cfg.country ?? '')}</CountryCode>
+      <CountryCode>${escape(country)}</CountryCode>
     </Country>
     <RequestTime>${requestTime}</RequestTime>
   </POS>
@@ -43,6 +44,11 @@ export function buildAirShoppingRequest(
     <Paxs>
       ${pax}
     </Paxs>
+    <ResponseParameters>
+      <LangUsage>
+        <LangCode>ES</LangCode>
+      </LangUsage>
+    </ResponseParameters>
     <ShoppingCriteria>
       <ProgramCriteria>
         <ProgramOwner>
@@ -56,7 +62,39 @@ export function buildAirShoppingRequest(
 </IATA_AirShoppingRQ>`;
 }
 
+const CABIN_MAP: Record<string, string> = {
+  economy: 'Y',
+  premium_economy: 'W',
+  business: 'J',
+  first: 'J',
+};
+
+/** Maps ISO currency code to LATAM POS country code */
+export function currencyToCountry(currency?: string): string | undefined {
+  if (!currency) return undefined;
+  return CURRENCY_COUNTRY_MAP[currency.toUpperCase()];
+}
+
+const CURRENCY_COUNTRY_MAP: Record<string, string> = {
+  COP: 'CO',
+  BRL: 'BR',
+  CLP: 'CL',
+  PEN: 'PE',
+  ARS: 'AR',
+  USD: 'US',
+  EUR: 'ES',
+  MXN: 'MX',
+  UYU: 'UY',
+  BOB: 'BO',
+  PYG: 'PY',
+};
+
 function buildOriginDestList(c: FlightSearchCriteria): string {
+  const cabinCode = c.cabin ? CABIN_MAP[c.cabin] : undefined;
+  const cabinXml = cabinCode
+    ? `\n          <PreferredCabinType>\n            <CabinTypeCode>${cabinCode}</CabinTypeCode>\n          </PreferredCabinType>`
+    : '';
+
   const outbound = `
         <OriginDestCriteria>
           <DestArrivalCriteria>
@@ -65,7 +103,7 @@ function buildOriginDestList(c: FlightSearchCriteria): string {
           <OriginDepCriteria>
             <Date>${c.departureDate}</Date>
             <IATA_LocationCode>${c.origin}</IATA_LocationCode>
-          </OriginDepCriteria>
+          </OriginDepCriteria>${cabinXml}
         </OriginDestCriteria>`;
   if (!c.returnDate) return outbound;
 
@@ -77,7 +115,7 @@ function buildOriginDestList(c: FlightSearchCriteria): string {
           <OriginDepCriteria>
             <Date>${c.returnDate}</Date>
             <IATA_LocationCode>${c.destination}</IATA_LocationCode>
-          </OriginDepCriteria>
+          </OriginDepCriteria>${cabinXml}
         </OriginDestCriteria>`;
   return outbound + inbound;
 }

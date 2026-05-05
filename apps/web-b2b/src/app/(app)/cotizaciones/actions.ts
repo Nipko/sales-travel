@@ -79,7 +79,7 @@ export async function searchFlightsAction(
   const returnDate = asString(formData.get('returnDate'));
   const tripType = asString(formData.get('tripType')) || 'roundtrip';
   const cabin = asString(formData.get('cabin')) || 'economy';
-  const currency = asString(formData.get('currency')).toUpperCase() || 'USD';
+  const currency = asString(formData.get('currency')).toUpperCase() || 'COP';
   const adults = asInt(formData.get('adults'), 1);
   const children = asInt(formData.get('children'), 0);
   const infants = asInt(formData.get('infants'), 0);
