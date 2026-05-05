@@ -55,6 +55,7 @@ export interface AirportsTable {
 }
 
 export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'cancelled';
+export type OrderStatus = 'pending' | 'confirmed' | 'ticketed' | 'cancelled' | 'failed';
 
 export interface QuotationsTable {
   id: Generated<string>;
@@ -73,10 +74,32 @@ export interface QuotationsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface OrdersTable {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  quotation_id: string | null;
+  provider: string;
+  provider_order_id: string | null;
+  status: Generated<OrderStatus>;
+  search_criteria: unknown;
+  selected_offer: unknown;
+  passengers: unknown;
+  contact_info: unknown;
+  total_amount: number;
+  currency: string;
+  order_number: number;
+  provider_raw: unknown | null;
+  error_message: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
   airports: AirportsTable;
   quotations: QuotationsTable;
+  orders: OrdersTable;
 }

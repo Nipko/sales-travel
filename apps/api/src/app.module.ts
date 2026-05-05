@@ -6,11 +6,12 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { MeModule } from './me/me.module.js';
 import { RequestContextMiddleware } from './request-context/request-context.middleware.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { QuotationsModule } from './quotations/quotations.module.js';
 import { SearchModule } from './search/search.module.js';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, MeModule, SearchModule, QuotationsModule],
+  imports: [DatabaseModule, AuthModule, MeModule, SearchModule, QuotationsModule, OrdersModule],
   controllers: [HealthController],
   providers: [
     {

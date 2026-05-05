@@ -19,6 +19,7 @@ import { useParams } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
+import { PassengerForm } from './passenger-form';
 
 interface Quotation {
   id: string;
@@ -140,6 +141,11 @@ export default function QuotationDetailPage() {
     changed: boolean;
     newTotal?: string;
   } | null>(null);
+  const [bookingResult, setBookingResult] = useState<{
+    success: boolean;
+    pnr?: string;
+    error?: string;
+  } | null>(null);
 
   useEffect(() => {
     fetch(`/api/quotations/${params.id}`)
@@ -185,6 +191,50 @@ export default function QuotationDetailPage() {
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCreateOrder(
+    passengers: {
+      paxId: string;
+      paxType: 'ADT' | 'CHD' | 'INF';
+      givenName: string;
+      surname: string;
+      birthdate: string;
+      gender: 'M' | 'F';
+      citizenshipCountryCode: string;
+      identityDoc: {
+        type: 'P' | 'DNI' | 'CC' | 'CE';
+        number: string;
+        issuingCountryCode: string;
+        expiryDate: string;
+      };
+    }[],
+    contactInfo: { email: string; phone: string },
+  ) {
+    if (!quotation) return;
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        offer: quotation.selectedOffer,
+        searchCriteria: quotation.searchCriteria,
+        passengers,
+        contactInfo,
+        quotationId: quotation.id,
+      }),
+    });
+    const data = (await res.json()) as {
+      providerResult?: { success: boolean; pnr?: string; error?: string };
+      error?: string;
+    };
+    if (data.providerResult?.success) {
+      setBookingResult({ success: true, pnr: data.providerResult.pnr });
+    } else {
+      setBookingResult({
+        success: false,
+        error: data.providerResult?.error ?? data.error ?? 'Error desconocido',
+      });
     }
   }
 
@@ -478,6 +528,40 @@ export default function QuotationDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Booking result */}
+          {bookingResult && (
+            <div
+              className={`rounded-xl border p-4 ${
+                bookingResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+              }`}
+            >
+              {bookingResult.success ? (
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-green-800">
+                    Reserva creada exitosamente
+                  </p>
+                  {bookingResult.pnr && (
+                    <p className="font-mono text-lg font-bold text-green-900">
+                      PNR: {bookingResult.pnr}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-red-800">{bookingResult.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* Passenger form for booking */}
+          {!bookingResult?.success && (
+            <PassengerForm
+              paxCount={searchCriteria.paxCount}
+              defaultEmail={customerEmail || undefined}
+              defaultPhone={customerPhone || undefined}
+              onSubmit={handleCreateOrder}
+            />
+          )}
         </div>
 
         {/* Right sidebar */}

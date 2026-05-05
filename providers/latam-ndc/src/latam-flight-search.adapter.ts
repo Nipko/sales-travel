@@ -4,6 +4,9 @@ import type {
   FlightSearchPort,
   OfferPricePort,
   OfferPriceResult,
+  OrderCreatePort,
+  OrderCreateRequest,
+  OrderCreateResult,
   SearchContext,
 } from '@sales-travel/domain';
 import { buildAirShoppingRequest } from './airshopping/request.builder';
@@ -14,6 +17,8 @@ import { buildMockOffers } from './fixtures';
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { mapOfferPriceResponse } from './offerprice/response.mapper';
+import { buildOrderCreateRequest } from './ordercreate/request.builder';
+import { mapOrderCreateResponse } from './ordercreate/response.mapper';
 
 /**
  * Anti-Corruption Layer LATAM NDC.
@@ -21,7 +26,9 @@ import { mapOfferPriceResponse } from './offerprice/response.mapper';
  * Modo: si las credenciales están configuradas → llama al sandbox real.
  * Si faltan o `mock=true` → devuelve fixtures canónicas (útil para CI).
  */
-export class LatamNdcFlightSearchAdapter implements FlightSearchPort, OfferPricePort {
+export class LatamNdcFlightSearchAdapter
+  implements FlightSearchPort, OfferPricePort, OrderCreatePort
+{
   private readonly tokens: LatamTokenService;
   private readonly http: LatamHttpClient;
 
@@ -72,6 +79,29 @@ export class LatamNdcFlightSearchAdapter implements FlightSearchPort, OfferPrice
     });
 
     return mapOfferPriceResponse(raw, offer);
+  }
+
+  async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        success: true,
+        orderId: `MOCK-${Date.now()}`,
+        pnr: 'MOCKPNR',
+        warnings: ['mock mode: order created (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderCreateRequest(
+      request.offer,
+      request.passengers,
+      request.contactInfo,
+      this.cfg,
+    );
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderCreateResponse(raw);
   }
 }
 
