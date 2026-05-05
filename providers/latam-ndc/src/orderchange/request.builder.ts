@@ -103,7 +103,11 @@ function buildPaymentBlock(payment: PaymentInfo): string {
         <TypeCode>GOV</TypeCode>`;
   }
 
-  return `<PaymentFunctions>
+  const payerBlock = payment.payer
+    ? `\n      <Payer>\n        <Name>\n          <GivenName>${escape(payment.payer.name)}</GivenName>\n          <Surname>${escape(payment.payer.surname)}</Surname>\n        </Name>${payment.payer.taxId ? `\n        <TaxID>${escape(payment.payer.taxId)}</TaxID>` : ''}\n      </Payer>`
+    : '';
+
+  return `<PaymentFunctions>${payerBlock}
       <PaymentProcessingDetails>
         <Amount CurCode="${escape(payment.currency)}">${payment.amount}</Amount>
         ${methodContent}

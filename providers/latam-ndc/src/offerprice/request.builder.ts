@@ -40,6 +40,7 @@ export function buildOfferPriceRequest(
     <Country>
       <CountryCode>${escape(currencyToCountry(criteria.currency) ?? cfg.country ?? '')}</CountryCode>
     </Country>
+    <RequestTime>${new Date().toISOString().replace(/\.\d{3}Z$/, '')}</RequestTime>
   </POS>
   <Request>
     <DataLists>

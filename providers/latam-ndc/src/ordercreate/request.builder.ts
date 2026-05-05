@@ -118,8 +118,11 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
 
 function buildPaxList(passengers: Passenger[]): string {
   return passengers
-    .map(
-      (p) => `<Pax>
+    .map((p) => {
+      const loyaltyBlock = p.loyaltyProgramAccount
+        ? `\n          <LoyaltyProgramAccount>\n            <AccountNumber>${escape(p.loyaltyProgramAccount.accountNumber)}</AccountNumber>\n            <Carrier>\n              <AirlineDesigCode>${escape(p.loyaltyProgramAccount.airlineDesigCode ?? 'LA')}</AirlineDesigCode>\n            </Carrier>\n          </LoyaltyProgramAccount>`
+        : '';
+      return `<Pax>
           <CitizenshipCountryCode>${escape(p.citizenshipCountryCode)}</CitizenshipCountryCode>
           <ContactInfoRefID>${escape(p.paxId)}_CNT</ContactInfoRefID>
           <IdentityDoc>
@@ -136,11 +139,11 @@ function buildPaxList(passengers: Passenger[]): string {
             <IndividualID>${escape(p.paxId)}</IndividualID>
             <Surname>${escape(p.surname.toUpperCase())}</Surname>
             <TitleName>${escape(mapTitle(p))}</TitleName>
-          </Individual>
+          </Individual>${loyaltyBlock}
           <PaxID>${escape(p.paxId)}</PaxID>
           <PTC>${escape(p.paxType)}</PTC>
-        </Pax>`,
-    )
+        </Pax>`;
+    })
     .join('\n        ');
 }
 
@@ -193,31 +196,41 @@ function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] }
 }
 
 function buildPaymentFunctions(payment: PaymentInfo): string {
-  let methodBlock: string;
+  let methodContent: string;
 
   if (payment.type === 'Credit Card' && payment.card) {
     const securityCode = payment.card.securityCode
       ? `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
       : '';
-    methodBlock = `<PaymentMethod>
-          <CreditCard>
+    methodContent = `<PaymentMethod>
+          <PaymentCard>
             <CardBrandCode>${escape(payment.card.brandCode)}</CardBrandCode>
             <CardHolderName>${escape(payment.card.holderName)}</CardHolderName>
-            <CardNumber>${escape(payment.card.number)}</CardNumber>
-            <ExpirationDate>${escape(payment.card.expirationDate)}</ExpirationDate>${securityCode}
-          </CreditCard>
-          <TypeCode>${escape(payment.type)}</TypeCode>
-        </PaymentMethod>`;
+            <CardNumber>${escape(payment.card.number)}</CardNumber>${securityCode}
+            <ExpirationDate>${escape(payment.card.expirationDate)}</ExpirationDate>
+          </PaymentCard>
+        </PaymentMethod>
+        <TypeCode>${escape(payment.type)}</TypeCode>`;
+  } else if (payment.type === 'Cash') {
+    methodContent = `<PaymentMethod>
+          <Cash/>
+        </PaymentMethod>
+        <TypeCode>Cash</TypeCode>`;
   } else {
-    methodBlock = `<PaymentMethod>
-          <TypeCode>${escape(payment.type)}</TypeCode>
-        </PaymentMethod>`;
+    methodContent = `<PaymentMethod>
+          <Cash/>
+        </PaymentMethod>
+        <TypeCode>GOV</TypeCode>`;
   }
 
-  return `<PaymentFunctions>
+  const payerBlock = payment.payer
+    ? `\n      <Payer>\n        <Name>\n          <GivenName>${escape(payment.payer.name)}</GivenName>\n          <Surname>${escape(payment.payer.surname)}</Surname>\n        </Name>${payment.payer.taxId ? `\n        <TaxID>${escape(payment.payer.taxId)}</TaxID>` : ''}\n      </Payer>`
+    : '';
+
+  return `<PaymentFunctions>${payerBlock}
       <PaymentProcessingDetails>
-        ${methodBlock}
         <Amount CurCode="${escape(payment.currency)}">${payment.amount}</Amount>
+        ${methodContent}
       </PaymentProcessingDetails>
     </PaymentFunctions>`;
 }

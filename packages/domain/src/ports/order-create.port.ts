@@ -17,6 +17,10 @@ export interface Passenger {
     issueDate?: string;
     expiryDate: string;
   };
+  loyaltyProgramAccount?: {
+    accountNumber: string;
+    airlineDesigCode?: string;
+  };
 }
 
 export interface BookingContactInfo {
@@ -42,6 +46,11 @@ export interface PaymentInfo {
     number: string;
     expirationDate: string;
     securityCode?: string;
+  };
+  payer?: {
+    name: string;
+    surname: string;
+    taxId?: string;
   };
   amount: number;
   currency: string;

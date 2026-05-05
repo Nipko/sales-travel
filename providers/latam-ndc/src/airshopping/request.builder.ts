@@ -49,7 +49,7 @@ export function buildAirShoppingRequest(
         <LangCode>ES</LangCode>
       </LangUsage>
     </ResponseParameters>
-    <ShoppingCriteria>
+    <ShoppingCriteria>${cfg.accountCode ? `\n      <AccountCriteria>\n        <AccountCode>${escape(cfg.accountCode)}</AccountCode>\n      </AccountCriteria>` : ''}
       <ProgramCriteria>
         <ProgramOwner>
           <Carrier>
