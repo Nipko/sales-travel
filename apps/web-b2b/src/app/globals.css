@@ -65,3 +65,35 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) transparent;
 }
+
+/* Form input base — used via className="form-input" */
+.form-input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-fg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.form-input::placeholder {
+  color: var(--color-fg-subtle);
+}
+
+.form-input:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.form-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px oklch(0.46 0.16 250 / 0.12);
+  outline: none;
+}
+
+.form-input:disabled {
+  background: var(--color-surface-muted);
+  cursor: not-allowed;
+}

@@ -29,7 +29,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const memberships = membershipsRes.ok ? membershipsRes.data : [];
 
-  // Determine active tenant: use stored cookie or default to first membership
   let activeTenantId = await getActiveTenant();
   const activeTenant = activeTenantId
     ? (memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0])
@@ -40,7 +39,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     await setActiveTenant(activeTenantId);
   }
 
-  // Fetch branding for active tenant
   let branding: TenantBranding | undefined;
   if (activeTenantId) {
     const brandingRes = await api<TenantBranding>(`/tenants/${activeTenantId}/branding`).catch(
@@ -54,6 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       userEmail={meRes?.ok ? meRes.data.email : undefined}
       tenantName={activeTenant?.tenantName}
       tenantSlug={activeTenant?.tenantSlug}
+      role={activeTenant?.role}
       branding={branding}
     >
       {children}

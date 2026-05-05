@@ -26,6 +26,26 @@ interface UpdateBrandingDto {
 export class TenantsController {
   constructor(private readonly db: DatabaseService) {}
 
+  @Get(':id/config')
+  async getConfig(@CurrentUser() userId: string | undefined, @Param('id') tenantId: string) {
+    if (!userId) throw new UnauthorizedException();
+    await this.assertMembership(userId, tenantId);
+
+    const row = await this.db.db
+      .selectFrom('tenants')
+      .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
+      .where('id', '=', tenantId)
+      .executeTakeFirstOrThrow();
+
+    return {
+      name: row.name,
+      slug: row.slug,
+      countryCode: row.country_code,
+      defaultCurrency: row.default_currency,
+      defaultLanguage: row.default_language,
+    };
+  }
+
   @Get(':id/branding')
   async getBranding(
     @CurrentUser() userId: string | undefined,

@@ -12,10 +12,18 @@ interface AppShellProps {
   userEmail?: string;
   tenantName?: string;
   tenantSlug?: string;
+  role?: string;
   branding?: TenantBranding;
 }
 
-export function AppShell({ children, userEmail, tenantName, tenantSlug, branding }: AppShellProps) {
+export function AppShell({
+  children,
+  userEmail,
+  tenantName,
+  tenantSlug,
+  role,
+  branding,
+}: AppShellProps) {
   const style = branding?.primaryColor
     ? ({
         '--color-primary': branding.primaryColor,
@@ -26,7 +34,7 @@ export function AppShell({ children, userEmail, tenantName, tenantSlug, branding
 
   return (
     <div className="flex min-h-screen bg-[var(--color-bg)]" style={style}>
-      <Sidebar />
+      <Sidebar role={role} tenantName={tenantName} logoUrl={branding?.logoUrl ?? undefined} />
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar
           userEmail={userEmail}

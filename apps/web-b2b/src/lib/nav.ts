@@ -1,4 +1,14 @@
-import { BarChart3, Calendar, Home, Settings, Ticket, Users, type LucideIcon } from 'lucide-react';
+import {
+  BarChart3,
+  Building2,
+  Calendar,
+  Home,
+  Settings,
+  Shield,
+  Ticket,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import type { Route } from 'next';
 
 export interface NavItem {
@@ -16,5 +26,10 @@ export const mainNav: NavItem[] = [
 ];
 
 export const settingsNav: NavItem[] = [
-  { label: 'Configuración', href: '/configuracion', icon: Settings },
+  { label: 'Configuracion', href: '/configuracion', icon: Settings },
+];
+
+export const adminNav: NavItem[] = [
+  { label: 'Tenants', href: '/admin/tenants', icon: Building2 },
+  { label: 'Usuarios', href: '/admin/usuarios', icon: Shield },
 ];
