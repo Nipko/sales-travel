@@ -65,7 +65,9 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
   const originalItemSuffix = originalOffer.provider.offerRef.includes('|')
     ? originalOffer.provider.offerRef.slice(originalOffer.provider.offerRef.indexOf('|'))
     : '';
-  const newOfferRef = rawNewId ? `${rawNewId}${originalItemSuffix}` : originalOffer.provider.offerRef;
+  const newOfferRef = rawNewId
+    ? `${rawNewId}${originalItemSuffix}`
+    : originalOffer.provider.offerRef;
 
   const updatedOffer: Offer = {
     ...originalOffer,

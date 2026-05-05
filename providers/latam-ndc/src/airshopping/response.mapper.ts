@@ -166,9 +166,7 @@ function mapOneOffer(args: {
   const policies = extractPolicies(offerItems);
 
   // Encode OfferItemIDs into offerRef so OfferPrice can reference them correctly
-  const itemIds = offerItems
-    .map((item) => (item.OfferItemID as string) ?? '')
-    .filter(Boolean);
+  const itemIds = offerItems.map((item) => (item.OfferItemID as string) ?? '').filter(Boolean);
   const encodedRef = itemIds.length > 0 ? `${offerRef}|${itemIds.join(',')}` : offerRef;
 
   return {

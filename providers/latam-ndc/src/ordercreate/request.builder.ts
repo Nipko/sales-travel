@@ -114,7 +114,10 @@ function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] }
     return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] };
   }
   const offerId = ref.slice(0, pipeIdx);
-  const offerItemIds = ref.slice(pipeIdx + 1).split(',').filter(Boolean);
+  const offerItemIds = ref
+    .slice(pipeIdx + 1)
+    .split(',')
+    .filter(Boolean);
   return { offerId, offerItemIds: offerItemIds.length > 0 ? offerItemIds : [`${offerId}-ITEM1`] };
 }
 
