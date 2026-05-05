@@ -199,6 +199,7 @@ export default function QuotationDetailPage() {
     passengers: {
       paxId: string;
       paxType: 'ADT' | 'CHD' | 'INF';
+      title: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
       givenName: string;
       surname: string;
       birthdate: string;
@@ -208,10 +209,16 @@ export default function QuotationDetailPage() {
         type: 'P' | 'DNI' | 'CC' | 'CE';
         number: string;
         issuingCountryCode: string;
+        issueDate?: string;
         expiryDate: string;
       };
     }[],
-    contactInfo: { email: string; phone: string },
+    contactInfo: {
+      email: string;
+      phone: string;
+      countryDialingCode: string;
+      areaCode: string;
+    },
     payment?: PaymentData,
   ) {
     if (!quotation) return;

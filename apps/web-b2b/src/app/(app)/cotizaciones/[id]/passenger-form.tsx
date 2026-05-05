@@ -17,6 +17,7 @@ interface PaxCount {
 interface Passenger {
   paxId: string;
   paxType: 'ADT' | 'CHD' | 'INF';
+  title: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
   givenName: string;
   surname: string;
   birthdate: string;
@@ -26,6 +27,7 @@ interface Passenger {
     type: 'P' | 'DNI' | 'CC' | 'CE';
     number: string;
     issuingCountryCode: string;
+    issueDate?: string;
     expiryDate: string;
   };
 }
@@ -33,6 +35,8 @@ interface Passenger {
 interface ContactInfo {
   email: string;
   phone: string;
+  countryDialingCode: string;
+  areaCode: string;
 }
 
 type PaymentMode = 'bnpl' | 'pay_now';
@@ -56,6 +60,7 @@ function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
     pax.push({
       paxId: `ADT_${i}`,
       paxType: 'ADT',
+      title: 'Mr',
       givenName: '',
       surname: '',
       birthdate: '',
@@ -68,6 +73,7 @@ function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
     pax.push({
       paxId: `CHD_${i}`,
       paxType: 'CHD',
+      title: 'Mr',
       givenName: '',
       surname: '',
       birthdate: '',
@@ -80,6 +86,7 @@ function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
     pax.push({
       paxId: `INF_${i}`,
       paxType: 'INF',
+      title: 'Mr',
       givenName: '',
       surname: '',
       birthdate: '',
@@ -96,6 +103,13 @@ const PAX_TYPE_LABELS: Record<string, string> = {
   CHD: 'Niño',
   INF: 'Infante',
 };
+
+const TITLE_OPTIONS = [
+  { value: 'Mr', label: 'Sr (Mr)' },
+  { value: 'Mrs', label: 'Sra (Mrs)' },
+  { value: 'Miss', label: 'Srta (Miss)' },
+  { value: 'Dr', label: 'Dr' },
+];
 
 const DOC_TYPE_OPTIONS = [
   { value: 'CC', label: 'Cédula (CC)' },
@@ -122,6 +136,8 @@ export function PassengerForm({
   const [contactInfo, setContactInfo] = useState<ContactInfo>({
     email: defaultEmail ?? '',
     phone: defaultPhone ?? '',
+    countryDialingCode: '57',
+    areaCode: '1',
   });
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('bnpl');
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
@@ -180,8 +196,8 @@ export function PassengerForm({
           <p className="mb-3 text-xs font-medium text-[var(--color-fg-muted)]">
             Contacto de la reserva
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="booking-email">Email</Label>
               <input
                 id="booking-email"
@@ -193,13 +209,47 @@ export function PassengerForm({
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="booking-phone">Teléfono</Label>
+              <Label htmlFor="booking-dial-code">Cód. país</Label>
+              <input
+                id="booking-dial-code"
+                type="text"
+                value={contactInfo.countryDialingCode}
+                onChange={(e) =>
+                  setContactInfo({
+                    ...contactInfo,
+                    countryDialingCode: e.target.value.replace(/\D/g, ''),
+                  })
+                }
+                placeholder="57"
+                maxLength={4}
+                className={inputClass}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="booking-area-code">Cód. área</Label>
+              <input
+                id="booking-area-code"
+                type="text"
+                value={contactInfo.areaCode}
+                onChange={(e) =>
+                  setContactInfo({
+                    ...contactInfo,
+                    areaCode: e.target.value.replace(/\D/g, ''),
+                  })
+                }
+                placeholder="1"
+                maxLength={4}
+                className={inputClass}
+              />
+            </div>
+            <div className="space-y-1 sm:col-span-2 lg:col-span-4">
+              <Label htmlFor="booking-phone">Teléfono (sin código de país)</Label>
               <input
                 id="booking-phone"
                 type="tel"
                 value={contactInfo.phone}
                 onChange={(e) => setContactInfo({ ...contactInfo, phone: e.target.value })}
-                placeholder="+57 300 123 4567"
+                placeholder="3001234567"
                 className={inputClass}
               />
             </div>
@@ -220,7 +270,25 @@ export function PassengerForm({
                 </span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1">
+                  <Label>Tratamiento</Label>
+                  <select
+                    value={pax.title}
+                    onChange={(e) =>
+                      updatePax(idx, {
+                        title: e.target.value as 'Mr' | 'Mrs' | 'Miss' | 'Dr',
+                      })
+                    }
+                    className={selectClass}
+                  >
+                    {TITLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="space-y-1">
                   <Label>Nombre(s)</Label>
                   <input
@@ -310,6 +378,15 @@ export function PassengerForm({
                     }
                     placeholder="CO"
                     maxLength={2}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Emisión doc.</Label>
+                  <input
+                    type="date"
+                    value={pax.identityDoc.issueDate ?? ''}
+                    onChange={(e) => updateDoc(idx, { issueDate: e.target.value || undefined })}
                     className={inputClass}
                   />
                 </div>
