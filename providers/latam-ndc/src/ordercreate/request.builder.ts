@@ -1,5 +1,5 @@
 import type { Offer } from '@sales-travel/canonical';
-import type { BookingContactInfo, Passenger } from '@sales-travel/domain';
+import type { BookingContactInfo, Passenger, PaymentInfo } from '@sales-travel/domain';
 import { currencyToCountry } from '../airshopping/request.builder';
 import type { LatamNdcConfig } from '../config';
 
@@ -9,6 +9,7 @@ export function buildOrderCreateRequest(
   contactInfo: BookingContactInfo,
   cfg: LatamNdcConfig,
   currency?: string,
+  payment?: PaymentInfo,
 ): string {
   const { offerId, offerItemIds } = parseOfferRef(offer.provider.offerRef);
   const paxRefIds = passengers
@@ -26,6 +27,7 @@ export function buildOrderCreateRequest(
 
   const contactInfoList = buildContactInfoList(passengers, contactInfo);
   const paxList = buildPaxList(passengers, contactInfo);
+  const paymentBlock = payment ? buildPaymentFunctions(payment) : '';
   const country = currencyToCountry(currency) ?? cfg.country ?? '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +67,7 @@ export function buildOrderCreateRequest(
         ${paxList}
       </PaxList>
     </DataLists>
+    ${paymentBlock}
   </Request>
 </IATA_OrderCreateRQ>`;
 }
@@ -187,6 +190,36 @@ function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] }
     .split(',')
     .filter(Boolean);
   return { offerId, offerItemIds: offerItemIds.length > 0 ? offerItemIds : [`${offerId}-ITEM1`] };
+}
+
+function buildPaymentFunctions(payment: PaymentInfo): string {
+  let methodBlock: string;
+
+  if (payment.type === 'Credit Card' && payment.card) {
+    const securityCode = payment.card.securityCode
+      ? `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
+      : '';
+    methodBlock = `<PaymentMethod>
+          <CreditCard>
+            <CardBrandCode>${escape(payment.card.brandCode)}</CardBrandCode>
+            <CardHolderName>${escape(payment.card.holderName)}</CardHolderName>
+            <CardNumber>${escape(payment.card.number)}</CardNumber>
+            <ExpirationDate>${escape(payment.card.expirationDate)}</ExpirationDate>${securityCode}
+          </CreditCard>
+          <TypeCode>${escape(payment.type)}</TypeCode>
+        </PaymentMethod>`;
+  } else {
+    methodBlock = `<PaymentMethod>
+          <TypeCode>${escape(payment.type)}</TypeCode>
+        </PaymentMethod>`;
+  }
+
+  return `<PaymentFunctions>
+      <PaymentProcessingDetails>
+        ${methodBlock}
+        <Amount CurCode="${escape(payment.currency)}">${payment.amount}</Amount>
+      </PaymentProcessingDetails>
+    </PaymentFunctions>`;
 }
 
 function escape(s: string): string {

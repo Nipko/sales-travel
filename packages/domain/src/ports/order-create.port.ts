@@ -31,11 +31,28 @@ export interface BookingContactInfo {
   };
 }
 
+export type CardBrandCode = 'VI' | 'AX' | 'CA' | 'DC' | 'TN' | 'HC' | 'EL' | 'TP';
+export type PaymentTypeCode = 'Credit Card' | 'Cash' | 'GOV';
+
+export interface PaymentInfo {
+  type: PaymentTypeCode;
+  card?: {
+    brandCode: CardBrandCode;
+    holderName: string;
+    number: string;
+    expirationDate: string;
+    securityCode?: string;
+  };
+  amount: number;
+  currency: string;
+}
+
 export interface OrderCreateRequest {
   offer: Offer;
   criteria: FlightSearchCriteria;
   passengers: Passenger[];
   contactInfo: BookingContactInfo;
+  payment?: PaymentInfo;
 }
 
 export interface OrderCreateResult {

@@ -9,8 +9,14 @@ import type {
   OrderCreateRequest,
   OrderCreateResult,
   OrderManagePort,
+  OrderPayRequest,
+  OrderPayResult,
+  OrderReshopRequest,
+  OrderReshopResult,
   OrderRetrieveResult,
   SearchContext,
+  ServiceListRequest,
+  ServiceListResult,
 } from '@sales-travel/domain';
 import { buildAirShoppingRequest, currencyToCountry } from './airshopping/request.builder';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
@@ -20,10 +26,16 @@ import { buildMockOffers } from './fixtures';
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { mapOfferPriceResponse } from './offerprice/response.mapper';
+import { buildOrderChangePaymentRequest } from './orderchange/request.builder';
+import { mapOrderChangePaymentResponse } from './orderchange/response.mapper';
 import { buildOrderCreateRequest } from './ordercreate/request.builder';
 import { mapOrderCreateResponse } from './ordercreate/response.mapper';
 import { buildOrderCancelRequest, buildOrderRetrieveRequest } from './ordermanage/request.builders';
 import { mapOrderCancelResponse, mapOrderRetrieveResponse } from './ordermanage/response.mappers';
+import { buildOrderReshopRequest } from './orderreshop/request.builder';
+import { mapOrderReshopResponse } from './orderreshop/response.mapper';
+import { buildServiceListRequest } from './servicelist/request.builder';
+import { mapServiceListResponse } from './servicelist/response.mapper';
 
 /**
  * Anti-Corruption Layer LATAM NDC.
@@ -104,6 +116,7 @@ export class LatamNdcFlightSearchAdapter
       request.contactInfo,
       this.cfg,
       request.criteria?.currency,
+      request.payment,
     );
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
       trackId: ctx.requestId,
@@ -145,6 +158,83 @@ export class LatamNdcFlightSearchAdapter
     });
 
     return mapOrderCancelResponse(raw);
+  }
+
+  async cancelBnplOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        success: true,
+        warnings: ['mock mode: BNPL order cancelled (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderCancelRequest(orderId, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel/bnpl', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderCancelResponse(raw);
+  }
+
+  async payOrder(request: OrderPayRequest, ctx: SearchContext): Promise<OrderPayResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        success: true,
+        orderId: request.orderId,
+        status: 'confirmed',
+        warnings: ['mock mode: order paid (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderChangePaymentRequest(
+      request.orderId,
+      request.payment,
+      request.contactInfo,
+      request.passengers,
+      this.cfg,
+    );
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/change/payment', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderChangePaymentResponse(raw);
+  }
+
+  async listServices(request: ServiceListRequest, ctx: SearchContext): Promise<ServiceListResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        services: [],
+        warnings: ['mock mode: no services available (no real API call)'],
+      };
+    }
+
+    const xml = buildServiceListRequest(request, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/services/list', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapServiceListResponse(raw);
+  }
+
+  async reshopWithTickets(
+    request: OrderReshopRequest,
+    ctx: SearchContext,
+  ): Promise<OrderReshopResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        success: true,
+        amountDue: { amount: 0, currency: 'COP' },
+        isResidualValue: false,
+        warnings: ['mock mode: reshop simulated (no real API call)'],
+      };
+    }
+
+    const xml = buildOrderReshopRequest(request, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/requote', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOrderReshopResponse(raw);
   }
 }
 
