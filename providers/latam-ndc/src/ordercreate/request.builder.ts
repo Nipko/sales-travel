@@ -72,12 +72,16 @@ export function buildOrderCreateRequest(
 </IATA_OrderCreateRQ>`;
 }
 
+function sanitizeStreet(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9\s.,#-]/g, '').trim() || 'Calle 1';
+}
+
 function buildContactInfoList(passengers: Passenger[], contactInfo: BookingContactInfo): string {
   const items: string[] = [];
   const { dialCode, areaCode, number } = parsePhone(contactInfo);
   const postalCountry = contactInfo.postalAddress?.countryCode ?? 'CO';
   const postalCode = contactInfo.postalAddress?.postalCode ?? '110001';
-  const street = contactInfo.postalAddress?.street ?? 'N/A';
+  const street = sanitizeStreet(contactInfo.postalAddress?.street ?? 'Calle 1');
 
   items.push(`<ContactInfo>
           <ContactInfoID>AGENCY_1_CNT</ContactInfoID>
