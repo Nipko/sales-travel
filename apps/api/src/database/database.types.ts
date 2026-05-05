@@ -16,6 +16,9 @@ export interface TenantsTable {
   default_currency: string;
   default_language: Generated<LanguageCode>;
   status: Generated<TenantStatus>;
+  logo_url: string | null;
+  primary_color: string | null;
+  accent_color: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

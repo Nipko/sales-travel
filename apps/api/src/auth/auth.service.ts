@@ -98,7 +98,15 @@ export class AuthService {
       throw new UnauthorizedException('invalid credentials');
     }
 
+    const membership = await this.db.db
+      .selectFrom('memberships')
+      .select('tenant_id')
+      .where('user_id', '=', user.id)
+      .where('status', '=', 'active')
+      .orderBy('created_at')
+      .executeTakeFirst();
+
     const token = await this.jwt.sign({ sub: user.id });
-    return { token, userId: user.id };
+    return { token, userId: user.id, tenantId: membership?.tenant_id };
   }
 }

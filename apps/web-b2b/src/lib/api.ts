@@ -1,4 +1,4 @@
-import { getSession } from './session';
+import { getActiveTenant, getSession } from './session';
 
 const BASE = process.env.INTERNAL_API_URL ?? 'http://api:3000';
 
@@ -12,9 +12,11 @@ export async function api<T>(
   init: RequestInit = {},
 ): Promise<{ ok: true; data: T } | { ok: false; error: ApiError }> {
   const token = await getSession();
+  const tenantId = await getActiveTenant();
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
   if (token) headers.set('authorization', `Bearer ${token}`);
+  if (tenantId) headers.set('x-tenant-id', tenantId);
 
   const res = await fetch(`${BASE}/api${path}`, {
     ...init,

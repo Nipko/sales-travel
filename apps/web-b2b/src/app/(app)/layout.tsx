@@ -1,4 +1,5 @@
 import { api } from '../../lib/api';
+import { getActiveTenant, setActiveTenant } from '../../lib/session';
 import { AppShell } from '../../components/layout/app-shell';
 
 interface Membership {
@@ -14,6 +15,12 @@ interface MeResponse {
   email?: string;
 }
 
+interface TenantBranding {
+  logoUrl: string | null;
+  primaryColor: string | null;
+  accentColor: string | null;
+}
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [meRes, membershipsRes] = await Promise.all([
     api<MeResponse>('/me').catch(() => null),
@@ -21,13 +28,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
 
   const memberships = membershipsRes.ok ? membershipsRes.data : [];
-  const activeTenant = memberships[0];
+
+  // Determine active tenant: use stored cookie or default to first membership
+  let activeTenantId = await getActiveTenant();
+  const activeTenant = activeTenantId
+    ? (memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0])
+    : memberships[0];
+
+  if (activeTenant && activeTenant.tenantId !== activeTenantId) {
+    activeTenantId = activeTenant.tenantId;
+    await setActiveTenant(activeTenantId);
+  }
+
+  // Fetch branding for active tenant
+  let branding: TenantBranding | undefined;
+  if (activeTenantId) {
+    const brandingRes = await api<TenantBranding>(`/tenants/${activeTenantId}/branding`).catch(
+      () => null,
+    );
+    if (brandingRes?.ok) branding = brandingRes.data;
+  }
 
   return (
     <AppShell
       userEmail={meRes?.ok ? meRes.data.email : undefined}
       tenantName={activeTenant?.tenantName}
       tenantSlug={activeTenant?.tenantSlug}
+      branding={branding}
     >
       {children}
     </AppShell>

@@ -9,9 +9,18 @@ import { RequestContextMiddleware } from './request-context/request-context.midd
 import { OrdersModule } from './orders/orders.module.js';
 import { QuotationsModule } from './quotations/quotations.module.js';
 import { SearchModule } from './search/search.module.js';
+import { TenantsModule } from './tenants/tenants.module.js';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, MeModule, SearchModule, QuotationsModule, OrdersModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    MeModule,
+    SearchModule,
+    QuotationsModule,
+    OrdersModule,
+    TenantsModule,
+  ],
   controllers: [HealthController],
   providers: [
     {

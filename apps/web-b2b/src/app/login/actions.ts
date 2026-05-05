@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { api } from '../../lib/api';
-import { clearSession, setSession } from '../../lib/session';
+import { clearSession, setActiveTenant, setSession } from '../../lib/session';
 
 export interface LoginState {
   error?: string;
@@ -12,6 +12,10 @@ interface AuthResult {
   token: string;
   userId: string;
   tenantId?: string;
+}
+
+interface Membership {
+  tenantId: string;
 }
 
 function asString(value: FormDataEntryValue | null): string {
@@ -36,6 +40,17 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   }
 
   await setSession(res.data.token);
+
+  // Set tenant context: use tenantId from login response or fetch first membership
+  if (res.data.tenantId) {
+    await setActiveTenant(res.data.tenantId);
+  } else {
+    const memberships = await api<Membership[]>('/me/memberships');
+    if (memberships.ok && memberships.data.length > 0) {
+      await setActiveTenant(memberships.data[0]!.tenantId);
+    }
+  }
+
   redirect('/');
 }
 
