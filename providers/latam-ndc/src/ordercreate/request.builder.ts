@@ -92,7 +92,7 @@ function buildPaxList(passengers: Passenger[]): string {
           <IdentityDoc>
             <ExpiryDate>${escape(p.identityDoc.expiryDate)}</ExpiryDate>
             <IdentityDocID>${escape(p.identityDoc.number)}</IdentityDocID>
-            <IdentityDocTypeCode>${escape(p.identityDoc.type === 'P' ? 'P' : 'NI')}</IdentityDocTypeCode>
+            <IdentityDocTypeCode>${escape(mapDocType(p.identityDoc.type))}</IdentityDocTypeCode>
             <IssuingCountryCode>${escape(p.identityDoc.issuingCountryCode)}</IssuingCountryCode>
           </IdentityDoc>
           <Individual>
@@ -107,6 +107,11 @@ function buildPaxList(passengers: Passenger[]): string {
         </Pax>`,
     )
     .join('\n        ');
+}
+
+function mapDocType(type: string): string {
+  if (type === 'P') return 'P';
+  return 'IN';
 }
 
 function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] } {
