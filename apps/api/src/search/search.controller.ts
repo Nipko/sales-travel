@@ -1,6 +1,10 @@
 import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
-import { FlightSearchCriteriaSchema, type FlightSearchCriteria } from '@sales-travel/domain';
+import {
+  FlightSearchCriteriaSchema,
+  type FlightSearchCriteria,
+  type OfferPriceResult,
+} from '@sales-travel/domain';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -24,6 +28,17 @@ export class SearchController {
     const tenantId = await this.resolveActiveTenant(userId);
     const offers = await this.search.searchFlights(criteria, tenantId);
     return { offers };
+  }
+
+  @Post('offer-price')
+  async offerPrice(
+    @CurrentUser() userId: string | undefined,
+    @Body() body: { offer: Offer; searchCriteria: FlightSearchCriteria },
+  ): Promise<OfferPriceResult> {
+    if (!userId) throw new ForbiddenException();
+
+    const tenantId = await this.resolveActiveTenant(userId);
+    return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
   }
 
   /**

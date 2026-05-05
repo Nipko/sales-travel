@@ -1,11 +1,19 @@
 import type { Offer } from '@sales-travel/canonical';
-import type { FlightSearchCriteria, FlightSearchPort, SearchContext } from '@sales-travel/domain';
+import type {
+  FlightSearchCriteria,
+  FlightSearchPort,
+  OfferPricePort,
+  OfferPriceResult,
+  SearchContext,
+} from '@sales-travel/domain';
 import { buildAirShoppingRequest } from './airshopping/request.builder';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
 import { isMockMode, type LatamNdcConfig } from './config';
 import { buildMockOffers } from './fixtures';
 import { LatamHttpClient } from './http/latam-http.client';
+import { buildOfferPriceRequest } from './offerprice/request.builder';
+import { mapOfferPriceResponse } from './offerprice/response.mapper';
 
 /**
  * Anti-Corruption Layer LATAM NDC.
@@ -13,7 +21,7 @@ import { LatamHttpClient } from './http/latam-http.client';
  * Modo: si las credenciales están configuradas → llama al sandbox real.
  * Si faltan o `mock=true` → devuelve fixtures canónicas (útil para CI).
  */
-export class LatamNdcFlightSearchAdapter implements FlightSearchPort {
+export class LatamNdcFlightSearchAdapter implements FlightSearchPort, OfferPricePort {
   private readonly tokens: LatamTokenService;
   private readonly http: LatamHttpClient;
 
@@ -39,6 +47,31 @@ export class LatamNdcFlightSearchAdapter implements FlightSearchPort {
 
     const { offers } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
     return offers;
+  }
+
+  async priceOffer(
+    offer: Offer,
+    criteria: FlightSearchCriteria,
+    ctx: SearchContext,
+  ): Promise<OfferPriceResult> {
+    if (isMockMode(this.cfg)) {
+      return {
+        offer: {
+          ...offer,
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          fetchedAt: new Date().toISOString(),
+        },
+        priceChanged: false,
+        warnings: ['mock mode: price confirmed (no real API call)'],
+      };
+    }
+
+    const xml = buildOfferPriceRequest(offer, criteria, this.cfg);
+    const raw = await this.http.postNdc<unknown>('/ndc/v192/offerPrice', xml, {
+      trackId: ctx.requestId,
+    });
+
+    return mapOfferPriceResponse(raw, offer);
   }
 }
 

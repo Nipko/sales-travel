@@ -9,6 +9,7 @@ import {
   Download,
   Mail,
   Plane,
+  RefreshCw,
   Send,
   User,
 } from 'lucide-react';
@@ -133,6 +134,12 @@ export default function QuotationDetailPage() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [priceStatus, setPriceStatus] = useState<{
+    verified: true;
+    changed: boolean;
+    newTotal?: string;
+  } | null>(null);
 
   useEffect(() => {
     fetch(`/api/quotations/${params.id}`)
@@ -178,6 +185,39 @@ export default function QuotationDetailPage() {
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleVerifyPrice() {
+    if (!quotation) return;
+    setVerifying(true);
+    setPriceStatus(null);
+    try {
+      const res = await fetch('/api/search/offer-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offer: quotation.selectedOffer,
+          searchCriteria: quotation.searchCriteria,
+        }),
+      });
+      const data = (await res.json()) as {
+        offer?: { total: { amountMinor: number; currency: string } };
+        priceChanged?: boolean;
+      };
+      if (data.priceChanged && data.offer) {
+        setPriceStatus({
+          verified: true,
+          changed: true,
+          newTotal: formatMoney(data.offer.total.amountMinor, data.offer.total.currency),
+        });
+      } else {
+        setPriceStatus({ verified: true, changed: false });
+      }
+    } catch {
+      setPriceStatus(null);
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -513,6 +553,30 @@ export default function QuotationDetailPage() {
               <h3 className="mb-3 text-sm font-semibold text-[var(--color-fg)]">Acciones</h3>
               <Button
                 variant="primary"
+                size="sm"
+                className="w-full gap-2"
+                disabled={verifying}
+                onClick={() => void handleVerifyPrice()}
+              >
+                <RefreshCw className={`size-4 ${verifying ? 'animate-spin' : ''}`} />{' '}
+                {verifying ? 'Verificando…' : 'Verificar precio'}
+              </Button>
+              {priceStatus && (
+                <div
+                  className={`rounded-lg border px-3 py-2 text-xs ${
+                    priceStatus.changed
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : 'border-green-200 bg-green-50 text-green-800'
+                  }`}
+                >
+                  {priceStatus.changed
+                    ? `Precio actualizado: ${priceStatus.newTotal}`
+                    : 'Precio confirmado — sin cambios'}
+                </div>
+              )}
+              <div className="my-1 border-t border-[var(--color-border)]" />
+              <Button
+                variant="secondary"
                 size="sm"
                 className="w-full gap-2"
                 disabled={!customerEmail}
