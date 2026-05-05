@@ -38,7 +38,7 @@ export interface OrderRow {
   total_amount: number;
   currency: string;
   order_number: number;
-  provider_raw: unknown | null;
+  provider_raw: unknown;
   error_message: string | null;
   created_at: Date;
   updated_at: Date;

@@ -89,7 +89,7 @@ export interface OrdersTable {
   total_amount: number;
   currency: string;
   order_number: number;
-  provider_raw: unknown | null;
+  provider_raw: unknown;
   error_message: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
