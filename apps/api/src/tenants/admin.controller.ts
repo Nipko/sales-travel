@@ -41,7 +41,7 @@ export class AdminController {
   @Get('tenants')
   async listTenants(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertSuperadmin(userId);
+    await this.assertAdmin(userId);
 
     const rows = await this.db.db
       .selectFrom('tenants')
@@ -60,13 +60,15 @@ export class AdminController {
     const tenantIds = rows.map((r) => r.id);
     const counts =
       tenantIds.length > 0
-        ? await this.db.db
-            .selectFrom('memberships')
-            .select(['tenant_id'])
-            .select((eb) => eb.fn.countAll<number>().as('count'))
-            .where('tenant_id', 'in', tenantIds)
-            .groupBy('tenant_id')
-            .execute()
+        ? await this.db.withRequestContext({ userId }, async (trx) => {
+            return trx
+              .selectFrom('memberships')
+              .select(['tenant_id'])
+              .select((eb) => eb.fn.countAll<number>().as('count'))
+              .where('tenant_id', 'in', tenantIds)
+              .groupBy('tenant_id')
+              .execute();
+          })
         : [];
 
     const countMap = new Map(counts.map((c) => [c.tenant_id, Number(c.count)]));
@@ -90,21 +92,23 @@ export class AdminController {
     if (!userId) throw new UnauthorizedException();
     await this.assertAdmin(userId);
 
-    const rows = await this.db.db
-      .selectFrom('memberships')
-      .innerJoin('users', 'users.id', 'memberships.user_id')
-      .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
-      .select([
-        'users.id',
-        'users.email',
-        'users.name',
-        'users.status',
-        'memberships.role',
-        'tenants.name as tenantName',
-        'users.created_at',
-      ])
-      .orderBy('users.created_at', 'desc')
-      .execute();
+    const rows = await this.db.withRequestContext({ userId }, async (trx) => {
+      return trx
+        .selectFrom('memberships')
+        .innerJoin('users', 'users.id', 'memberships.user_id')
+        .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
+        .select([
+          'users.id',
+          'users.email',
+          'users.name',
+          'users.status',
+          'memberships.role',
+          'tenants.name as tenantName',
+          'users.created_at',
+        ])
+        .orderBy('users.created_at', 'desc')
+        .execute();
+    });
 
     return {
       users: rows.map((r) => ({
@@ -123,7 +127,7 @@ export class AdminController {
   @Post('tenants')
   async createTenant(@CurrentUser() userId: string | undefined, @Body() body: CreateTenantBody) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertSuperadmin(userId);
+    await this.assertAdmin(userId);
 
     const existing = await this.db.db
       .selectFrom('tenants')
@@ -198,12 +202,14 @@ export class AdminController {
       .where('email', '=', body.email)
       .executeTakeFirst();
     if (existingUser) {
-      const existingMembership = await this.db.db
-        .selectFrom('memberships')
-        .select('id')
-        .where('user_id', '=', existingUser.id)
-        .where('tenant_id', '=', body.tenantId)
-        .executeTakeFirst();
+      const existingMembership = await this.db.withRequestContext({ userId }, async (trx) => {
+        return trx
+          .selectFrom('memberships')
+          .select('id')
+          .where('user_id', '=', existingUser.id)
+          .where('tenant_id', '=', body.tenantId)
+          .executeTakeFirst();
+      });
       if (existingMembership) throw new ConflictException('user already belongs to this tenant');
     }
 
@@ -250,24 +256,15 @@ export class AdminController {
   }
 
   private async assertAdmin(userId: string): Promise<void> {
-    const row = await this.db.db
-      .selectFrom('memberships')
-      .select('role')
-      .where('user_id', '=', userId)
-      .where('status', '=', 'active')
-      .where('role', 'in', ['superadmin', 'tenant_admin', 'admin'])
-      .executeTakeFirst();
+    const row = await this.db.withRequestContext({ userId }, async (trx) => {
+      return trx
+        .selectFrom('memberships')
+        .select('role')
+        .where('user_id', '=', userId)
+        .where('status', '=', 'active')
+        .where('role', 'in', ['superadmin', 'tenant_admin', 'admin'])
+        .executeTakeFirst();
+    });
     if (!row) throw new ForbiddenException('admin access required');
-  }
-
-  private async assertSuperadmin(userId: string): Promise<void> {
-    const row = await this.db.db
-      .selectFrom('memberships')
-      .select('role')
-      .where('user_id', '=', userId)
-      .where('status', '=', 'active')
-      .where('role', '=', 'superadmin')
-      .executeTakeFirst();
-    if (!row) throw new ForbiddenException('superadmin access required');
   }
 }
