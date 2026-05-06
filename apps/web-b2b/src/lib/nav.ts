@@ -17,19 +17,22 @@ export interface NavItem {
   icon: LucideIcon;
 }
 
-export const mainNav: NavItem[] = [
+export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
-  { label: 'Cotizaciones', href: '/cotizaciones', icon: Ticket },
-  { label: 'Reservas', href: '/reservas', icon: Calendar },
+  { label: 'Buscar / Cotizar', href: '/cotizaciones', icon: Ticket },
+  { label: 'Mis Reservas', href: '/reservas', icon: Calendar },
+];
+
+export const managementNav: NavItem[] = [
   { label: 'Clientes', href: '/clientes', icon: Users },
   { label: 'Reportes', href: '/reportes', icon: BarChart3 },
 ];
 
-export const settingsNav: NavItem[] = [
-  { label: 'Configuracion', href: '/configuracion', icon: Settings },
+export const adminNav: NavItem[] = [
+  { label: 'Mi Agencia', href: '/configuracion', icon: Settings },
+  { label: 'Equipo (Usuarios)', href: '/admin/usuarios', icon: Shield },
 ];
 
-export const adminNav: NavItem[] = [
-  { label: 'Tenants', href: '/admin/tenants', icon: Building2 },
-  { label: 'Usuarios', href: '/admin/usuarios', icon: Shield },
+export const superAdminNav: NavItem[] = [
+  { label: 'Gestión de Agencias', href: '/admin/tenants', icon: Building2 },
 ];

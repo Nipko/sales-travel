@@ -83,7 +83,7 @@ export default function AdminUsuariosPage() {
   async function handleCreate() {
     setCreateError('');
     if (!form.email.trim() || !form.password.trim() || !form.tenantId) {
-      setCreateError('Email, contraseña y tenant son requeridos.');
+      setCreateError('Email, contraseña y agencia son requeridos.');
       return;
     }
     if (form.password.length < 12) {
@@ -183,7 +183,7 @@ export default function AdminUsuariosPage() {
                   Rol
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                  Tenant
+                  Agencia
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
                   Estado
@@ -302,7 +302,7 @@ export default function AdminUsuariosPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Tenant</Label>
+                <Label>Agencia</Label>
                 <select
                   value={form.tenantId}
                   onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
@@ -331,7 +331,7 @@ export default function AdminUsuariosPage() {
                   }
                   className={selectClass}
                 >
-                  <option value="tenant_admin">Admin del tenant</option>
+                  <option value="tenant_admin">Admin de la agencia</option>
                   <option value="admin">Manager</option>
                   <option value="vendedor">Vendedor</option>
                   <option value="cliente_final">Cliente final</option>

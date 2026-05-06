@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { adminNav, mainNav, settingsNav, type NavItem } from '../../lib/nav';
+import { adminNav, managementNav, operationsNav, superAdminNav, type NavItem } from '../../lib/nav';
 import { cn } from '../../lib/cn';
 
 interface SidebarProps {
@@ -39,6 +39,8 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  
+  const isSuperAdmin = role === 'superadmin';
   const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
 
   return (
@@ -59,32 +61,35 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
+        {/* OPERACIONES DIARIAS */}
         <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-          Operacion
+          Operaciones
         </p>
         <ul className="space-y-0.5">
-          {mainNav.map((item) => (
+          {operationsNav.map((item) => (
             <li key={item.href}>
               <NavLink item={item} active={isActive(item.href)} />
             </li>
           ))}
         </ul>
 
+        {/* GESTIÓN */}
         <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-          Sistema
+          Gestión
         </p>
         <ul className="space-y-0.5">
-          {settingsNav.map((item) => (
+          {managementNav.map((item) => (
             <li key={item.href}>
               <NavLink item={item} active={isActive(item.href)} />
             </li>
           ))}
         </ul>
 
+        {/* ADMINISTRACIÓN (Solo admins de agencia y superadmins) */}
         {isAdmin && (
           <>
             <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-              Admin
+              Administración
             </p>
             <ul className="space-y-0.5">
               {adminNav.map((item) => (
@@ -95,10 +100,26 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
             </ul>
           </>
         )}
+
+        {/* AGENCIAS (Solo superadmins) */}
+        {isSuperAdmin && (
+          <>
+            <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+              Super Admin
+            </p>
+            <ul className="space-y-0.5">
+              {superAdminNav.map((item) => (
+                <li key={item.href}>
+                  <NavLink item={item} active={isActive(item.href)} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </nav>
 
       <div className="border-t border-[var(--color-border)] px-5 py-3">
-        <p className="text-[10px] text-[var(--color-fg-subtle)]">v0.2.0 · Ola 1</p>
+        <p className="text-[10px] text-[var(--color-fg-subtle)]">v0.2.0 · B2B Agent</p>
       </div>
     </aside>
   );

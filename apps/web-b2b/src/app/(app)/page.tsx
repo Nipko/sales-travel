@@ -1,4 +1,5 @@
-import { ArrowUpRight, Calendar, DollarSign, Ticket, Users } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Calendar, DollarSign, Search, Ticket, Users } from 'lucide-react';
+import Link from 'next/link';
 import { Card, CardContent } from '../../components/ui/card';
 import { api } from '../../lib/api';
 
@@ -30,15 +31,52 @@ export default async function DashboardPage() {
   const memberships = res.ok ? res.data : [];
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
-      <header className="mb-8">
+    <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8 space-y-8">
+      <header>
         <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">Inicio</h1>
         <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Resumen de tu actividad. Sprint 0 — esto se llena cuando empieces a operar.
+          Resumen de tu actividad y accesos rápidos.
         </p>
       </header>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* Acciones Rápidas */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link href="/cotizaciones" className="group">
+          <Card className="hover:border-[var(--color-primary)] transition-colors h-full">
+            <CardContent className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                  <Search className="size-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-[var(--color-fg)]">Buscar Vuelos</h3>
+                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">Inicia una nueva cotización de aéreos</p>
+                </div>
+              </div>
+              <ArrowRight className="size-5 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/reservas" className="group">
+          <Card className="hover:border-[var(--color-primary)] transition-colors h-full">
+            <CardContent className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                  <Calendar className="size-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-[var(--color-fg)]">Mis Reservas</h3>
+                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">Gestiona tus PNRs y emisiones pendientes</p>
+                </div>
+              </div>
+              <ArrowRight className="size-5 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
+            </CardContent>
+          </Card>
+        </Link>
+      </section>
+
+      {/* Estadísticas */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s) => {
           const Icon = s.icon;
           return (
@@ -54,7 +92,7 @@ export default async function DashboardPage() {
                       <p className="mt-1 text-[11px] text-[var(--color-fg-subtle)]">{s.delta}</p>
                     ) : null}
                   </div>
-                  <div className="flex size-8 items-center justify-center rounded-md bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
+                  <div className="flex size-8 items-center justify-center rounded-md bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]">
                     <Icon className="size-4" />
                   </div>
                 </div>
@@ -64,15 +102,10 @@ export default async function DashboardPage() {
         })}
       </section>
 
+      {/* Lista de Membresías / Agencias */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--color-fg)]">Tus tenants</h2>
-          <a
-            href="#"
-            className="inline-flex items-center gap-1 text-xs text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
-          >
-            Ver todos <ArrowUpRight className="size-3" />
-          </a>
+          <h2 className="text-sm font-semibold text-[var(--color-fg)]">Tus Agencias</h2>
         </div>
 
         <Card className="overflow-hidden">
@@ -86,7 +119,7 @@ export default async function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[10px] uppercase tracking-wider text-[var(--color-fg-muted)]">
-                  <th className="px-5 py-2.5 text-left font-medium">Tenant</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Agencia</th>
                   <th className="px-5 py-2.5 text-left font-medium">Slug</th>
                   <th className="px-5 py-2.5 text-left font-medium">Rol</th>
                   <th className="px-5 py-2.5 text-left font-medium">Estado</th>
@@ -98,7 +131,7 @@ export default async function DashboardPage() {
                     key={m.id}
                     className="border-b border-[var(--color-border)] last:border-0 transition-colors hover:bg-[var(--color-surface-muted)]"
                   >
-                    <td className="px-5 py-3 text-[var(--color-fg)]">{m.tenantName}</td>
+                    <td className="px-5 py-3 text-[var(--color-fg)] font-medium">{m.tenantName}</td>
                     <td className="px-5 py-3 font-mono text-[11px] text-[var(--color-fg-muted)]">
                       {m.tenantSlug}
                     </td>

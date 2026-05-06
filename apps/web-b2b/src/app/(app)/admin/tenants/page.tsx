@@ -120,14 +120,14 @@ export default function AdminTenantsPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">Tenants</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">Agencias</h1>
           <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            {tenants.length} {tenants.length === 1 ? 'workspace' : 'workspaces'} registrados
+            {tenants.length} {tenants.length === 1 ? 'agencia' : 'agencias'} registradas
           </p>
         </div>
         <Button className="gap-2" onClick={() => setShowCreate(true)}>
           <Plus className="size-4" />
-          Nuevo tenant
+          Nueva agencia
         </Button>
       </div>
 
@@ -247,7 +247,7 @@ export default function AdminTenantsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[var(--color-fg)]">Nuevo tenant</h2>
+              <h2 className="text-base font-semibold text-[var(--color-fg)]">Nueva agencia</h2>
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
@@ -259,7 +259,7 @@ export default function AdminTenantsPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">
-                <Label>Nombre del workspace</Label>
+                <Label>Nombre de la agencia</Label>
                 <input
                   type="text"
                   value={form.name}
@@ -329,7 +329,7 @@ export default function AdminTenantsPage() {
               <div className="space-y-1 sm:col-span-2">
                 <div className="my-2 border-t border-[var(--color-border)]" />
                 <p className="text-xs font-medium text-[var(--color-fg-muted)]">
-                  Admin del tenant (opcional)
+                  Admin de la agencia (opcional)
                 </p>
               </div>
               <div className="space-y-1">
@@ -382,7 +382,7 @@ export default function AdminTenantsPage() {
                 className="gap-1.5"
               >
                 <Plus className="size-3.5" />
-                {creating ? 'Creando…' : 'Crear tenant'}
+                {creating ? 'Creando…' : 'Crear agencia'}
               </Button>
             </div>
           </div>
