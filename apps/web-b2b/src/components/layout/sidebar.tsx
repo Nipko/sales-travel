@@ -39,7 +39,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-  
+
   const isSuperAdmin = role === 'superadmin';
   const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
 

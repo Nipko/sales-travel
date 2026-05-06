@@ -87,7 +87,7 @@ function QuoteButton({
   if (done) {
     return (
       <Button variant="primary" size="sm" className="mt-4 w-full" disabled>
-        <Check className="size-4" /> Cotizado
+        <Check className="size-4" /> Guardado
       </Button>
     );
   }
@@ -100,7 +100,7 @@ function QuoteButton({
       disabled={!onQuote || loading}
       onClick={handleClick}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : 'Cotizar'}
+      {loading ? <Loader2 className="size-4 animate-spin" /> : 'Guardar Cotización'}
     </Button>
   );
 }

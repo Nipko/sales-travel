@@ -41,7 +41,7 @@ export class AdminController {
   @Get('tenants')
   async listTenants(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
+    await this.assertSuperadmin(userId);
 
     const rows = await this.db.db
       .selectFrom('tenants')
@@ -123,7 +123,7 @@ export class AdminController {
   @Post('tenants')
   async createTenant(@CurrentUser() userId: string | undefined, @Body() body: CreateTenantBody) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
+    await this.assertSuperadmin(userId);
 
     const existing = await this.db.db
       .selectFrom('tenants')
@@ -258,5 +258,16 @@ export class AdminController {
       .where('role', 'in', ['superadmin', 'tenant_admin', 'admin'])
       .executeTakeFirst();
     if (!row) throw new ForbiddenException('admin access required');
+  }
+
+  private async assertSuperadmin(userId: string): Promise<void> {
+    const row = await this.db.db
+      .selectFrom('memberships')
+      .select('role')
+      .where('user_id', '=', userId)
+      .where('status', '=', 'active')
+      .where('role', '=', 'superadmin')
+      .executeTakeFirst();
+    if (!row) throw new ForbiddenException('superadmin access required');
   }
 }

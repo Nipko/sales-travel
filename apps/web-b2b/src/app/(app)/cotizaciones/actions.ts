@@ -86,10 +86,10 @@ export async function searchFlightsAction(
 
   // --- Validaciones ---
   if (!IATA_RE.test(origin)) {
-    return { ok: false, offers: [], error: 'Seleccioná un origen válido (ej. BOG, GRU, MIA).' };
+    return { ok: false, offers: [], error: 'Selecciona un origen válido (ej. BOG, GRU, MIA).' };
   }
   if (!IATA_RE.test(destination)) {
-    return { ok: false, offers: [], error: 'Seleccioná un destino válido.' };
+    return { ok: false, offers: [], error: 'Selecciona un destino válido.' };
   }
   if (origin === destination) {
     return { ok: false, offers: [], error: 'Origen y destino deben ser distintos.' };

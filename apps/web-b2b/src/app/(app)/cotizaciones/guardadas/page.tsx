@@ -159,7 +159,7 @@ export default function QuotationsListPage() {
             {filter === 'all' ? 'No hay cotizaciones aún' : 'No hay cotizaciones con este estado'}
           </p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-            Buscá vuelos y cotizá para empezar.
+            Busca vuelos y cotiza para empezar.
           </p>
           <Link href="/cotizaciones" className="mt-4 inline-block">
             <Button variant="primary" size="sm" className="gap-2">

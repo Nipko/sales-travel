@@ -173,12 +173,12 @@ export default function CotizacionesPage() {
 
     if (!origin || !/^[A-Z]{3}$/.test(origin)) {
       e.preventDefault();
-      setClientError('Seleccioná un aeropuerto de origen.');
+      setClientError('Selecciona un aeropuerto de origen.');
       return;
     }
     if (!destination || !/^[A-Z]{3}$/.test(destination)) {
       e.preventDefault();
-      setClientError('Seleccioná un aeropuerto de destino.');
+      setClientError('Selecciona un aeropuerto de destino.');
       return;
     }
     if (origin === destination) {
@@ -229,10 +229,10 @@ export default function CotizacionesPage() {
       <header className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">
-            Cotizaciones
+            Buscar Vuelos
           </h1>
           <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            Buscá vuelos y armá ofertas para tus clientes.
+            Cotiza y reserva vuelos para tus clientes.
           </p>
         </div>
         <Link
@@ -473,7 +473,7 @@ function SearchResults({
         <Search className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
         <p className="text-sm font-medium text-[var(--color-fg)]">No se encontraron vuelos</p>
         <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-          Probá con otras fechas, rutas flexibles o diferente cabina.
+          Prueba con otras fechas, rutas flexibles o diferente cabina.
         </p>
       </div>
     );
@@ -483,9 +483,9 @@ function SearchResults({
     return (
       <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-16 text-center">
         <Plane className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
-        <p className="text-sm font-medium text-[var(--color-fg)]">Buscá vuelos para empezar</p>
+        <p className="text-sm font-medium text-[var(--color-fg)]">Busca vuelos para empezar</p>
         <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-          Seleccioná origen, destino y fechas para ver ofertas disponibles.
+          Selecciona origen, destino y fechas para ver ofertas disponibles.
         </p>
       </div>
     );
