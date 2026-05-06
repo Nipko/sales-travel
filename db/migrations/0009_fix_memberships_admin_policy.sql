@@ -1,10 +1,10 @@
--- 0008_memberships_admin_policy.sql
--- Permite a usuarios con rol admin/superadmin/tenant_admin ver TODAS las memberships.
--- Necesario para el panel de admin que lista usuarios cross-tenant.
---
--- Usamos una función SECURITY DEFINER para evitar recursión infinita:
--- la policy necesita consultar memberships para verificar si el usuario es admin,
--- pero sin SECURITY DEFINER esa sub-consulta dispara la misma policy → loop.
+-- 0009_fix_memberships_admin_policy.sql
+-- Fixes infinite recursion in memberships_admin_read policy from 0008.
+-- The original policy's USING clause queried memberships itself, triggering
+-- the same policy evaluation → infinite loop.
+-- Fix: use a SECURITY DEFINER function that bypasses RLS when checking admin role.
+
+DROP POLICY IF EXISTS memberships_admin_read ON memberships;
 
 CREATE OR REPLACE FUNCTION is_admin_user() RETURNS boolean
   LANGUAGE sql SECURITY DEFINER STABLE
