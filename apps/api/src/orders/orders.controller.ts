@@ -73,6 +73,41 @@ export class OrdersController {
     return result;
   }
 
+  @Post(':id/services')
+  async listServices(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    return this.orders.listServices(tenantId, row);
+  }
+
+  @Post(':id/reshop')
+  async reshopOrder(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body() body: { paidOrderId: string; bnplOrderId: string; ticketDocIds: string[] },
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    return this.orders.reshopOrder(tenantId, body);
+  }
+
+  @Post(':id/pay')
+  async payOrder(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body() body: { payment: unknown },
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    return this.orders.payOrder(tenantId, id, row, body.payment as never);
+  }
+
   private serialize(row: {
     id: string;
     tenant_id: string;

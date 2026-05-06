@@ -8,8 +8,13 @@ import {
   type OrderCreatePort,
   type OrderCreateResult,
   type OrderManagePort,
+  type OrderPayResult,
+  type OrderReshopRequest,
+  type OrderReshopResult,
   type OrderRetrieveResult,
   type Passenger,
+  type PaymentInfo,
+  type ServiceListResult,
 } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
@@ -150,5 +155,47 @@ export class OrdersService {
     }
 
     return { result };
+  }
+
+  async listServices(tenantId: string, row: OrderRow): Promise<ServiceListResult> {
+    const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
+    return this.orderManagePort.listServices(
+      { orderId: row.provider_order_id!, passengers, itemType: 'BAGGAGE' },
+      { tenantId },
+    );
+  }
+
+  async reshopOrder(tenantId: string, body: OrderReshopRequest): Promise<OrderReshopResult> {
+    return this.orderManagePort.reshopWithTickets(body, { tenantId });
+  }
+
+  async payOrder(
+    tenantId: string,
+    id: string,
+    row: OrderRow,
+    payment: PaymentInfo,
+  ): Promise<OrderPayResult> {
+    const contactInfo = (row.contact_info as BookingContactInfo) ?? {
+      email: '',
+      phone: '',
+    };
+    const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
+
+    const result = await this.orderManagePort.payOrder(
+      { orderId: row.provider_order_id!, payment, contactInfo, passengers },
+      { tenantId },
+    );
+
+    if (result.success) {
+      await this.db.withTenant(tenantId, async (trx) => {
+        await trx
+          .updateTable('orders')
+          .set({ status: (result.status ?? 'confirmed') as OrderStatus })
+          .where('id', '=', id)
+          .execute();
+      });
+    }
+
+    return result;
   }
 }

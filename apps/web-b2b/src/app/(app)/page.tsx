@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, Calendar, DollarSign, Search, Ticket, Users } from 'lucide-react';
+import { ArrowRight, Calendar, DollarSign, Search, Ticket, Users } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent } from '../../components/ui/card';
 import { api } from '../../lib/api';
@@ -50,7 +50,9 @@ export default async function DashboardPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-[var(--color-fg)]">Buscar Vuelos</h3>
-                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">Inicia una nueva cotización de aéreos</p>
+                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">
+                    Inicia una nueva cotización de aéreos
+                  </p>
                 </div>
               </div>
               <ArrowRight className="size-5 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
@@ -66,7 +68,9 @@ export default async function DashboardPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-[var(--color-fg)]">Mis Reservas</h3>
-                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">Gestiona tus PNRs y emisiones pendientes</p>
+                  <p className="text-sm text-[var(--color-fg-muted)] mt-0.5">
+                    Gestiona tus PNRs y emisiones pendientes
+                  </p>
                 </div>
               </div>
               <ArrowRight className="size-5 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />

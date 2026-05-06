@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, CreditCard, Plane, Search, X, XCircle } from 'lucide-react';
+import { Clock, CreditCard, Package, Plane, RefreshCw, Search, X, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
@@ -21,6 +21,16 @@ interface Order {
   totalAmount: number;
   currency: string;
   createdAt: string;
+}
+
+interface ServiceItem {
+  offerItemId: string;
+  serviceId: string;
+  description: string;
+  journeyRefId?: string;
+  paxRefIds: string[];
+  price: { amount: number; currency: string };
+  cancellable: boolean;
 }
 
 function formatMoney(amountMinor: number, currency: string): string {
@@ -65,6 +75,9 @@ export default function ReservasPage() {
   } | null>(null);
   const [payingOrder, setPayingOrder] = useState<Order | null>(null);
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
+  const [servicesOrder, setServicesOrder] = useState<Order | null>(null);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/orders')
@@ -196,6 +209,98 @@ export default function ReservasPage() {
     }
   }
 
+  async function handleListServices(order: Order) {
+    setServicesOrder(order);
+    setServicesLoading(true);
+    setServices([]);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/services`, { method: 'POST' });
+      const data = (await res.json()) as { services: ServiceItem[]; warnings: string[] };
+      setServices(data.services ?? []);
+      if (data.warnings?.length) {
+        setActionResult({
+          orderId: order.id,
+          type: 'services',
+          success: false,
+          message: data.warnings.join(', '),
+        });
+        setServicesOrder(null);
+      }
+    } catch {
+      setActionResult({
+        orderId: order.id,
+        type: 'services',
+        success: false,
+        message: 'Error de conexión',
+      });
+      setServicesOrder(null);
+    } finally {
+      setServicesLoading(false);
+    }
+  }
+
+  async function handleReshop(order: Order) {
+    setActionLoading(order.id);
+    setActionResult(null);
+    try {
+      const retrieveRes = await fetch(`/api/orders/${order.id}/retrieve`, { method: 'POST' });
+      const retrieveData = (await retrieveRes.json()) as {
+        found?: boolean;
+        ticketNumbers?: string[];
+      };
+      if (!retrieveData.found || !retrieveData.ticketNumbers?.length) {
+        setActionResult({
+          orderId: order.id,
+          type: 'reshop',
+          success: false,
+          message: 'No se encontraron tickets para repricing',
+        });
+        return;
+      }
+
+      const res = await fetch(`/api/orders/${order.id}/reshop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paidOrderId: order.pnr,
+          bnplOrderId: order.pnr,
+          ticketDocIds: retrieveData.ticketNumbers,
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        amountDue?: { amount: number; currency: string };
+        isResidualValue?: boolean;
+        error?: string;
+      };
+      if (data.success && data.amountDue) {
+        const sign = data.isResidualValue ? 'Crédito residual' : 'Monto a pagar';
+        setActionResult({
+          orderId: order.id,
+          type: 'reshop',
+          success: true,
+          message: `${sign}: ${formatMoney(Math.round(Math.abs(data.amountDue.amount) * 100), data.amountDue.currency)}`,
+        });
+      } else {
+        setActionResult({
+          orderId: order.id,
+          type: 'reshop',
+          success: false,
+          message: data.error ?? 'No se pudo realizar el repricing',
+        });
+      }
+    } catch {
+      setActionResult({
+        orderId: order.id,
+        type: 'reshop',
+        success: false,
+        message: 'Error de conexión',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-5 py-8">
       <div className="mb-6">
@@ -313,6 +418,28 @@ export default function ReservasPage() {
                       <Search className="size-3.5" />
                       {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
                     </Button>
+                    {(order.status === 'confirmed' || order.status === 'ticketed') && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={actionLoading === order.id}
+                        onClick={() => void handleListServices(order)}
+                        className="gap-1.5 text-xs"
+                      >
+                        <Package className="size-3.5" /> Servicios
+                      </Button>
+                    )}
+                    {order.status === 'ticketed' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={actionLoading === order.id}
+                        onClick={() => void handleReshop(order)}
+                        className="gap-1.5 text-xs"
+                      >
+                        <RefreshCw className="size-3.5" /> Repricing
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -401,6 +528,84 @@ export default function ReservasPage() {
               >
                 <CreditCard className="size-3.5" />
                 {actionLoading === payingOrder.id ? 'Procesando…' : 'Confirmar pago'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Services modal */}
+      {servicesOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+                Servicios disponibles — Reserva #{servicesOrder.orderNumber}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setServicesOrder(null)}
+                className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {servicesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="size-6 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]" />
+                <span className="ml-3 text-sm text-[var(--color-fg-muted)]">
+                  Consultando servicios...
+                </span>
+              </div>
+            ) : services.length === 0 ? (
+              <div className="py-12 text-center">
+                <Package className="mx-auto mb-2 size-8 text-[var(--color-fg-subtle)]" />
+                <p className="text-sm text-[var(--color-fg-muted)]">
+                  No hay servicios disponibles para esta reserva.
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] text-left">
+                      <th className="pb-2 font-medium text-[var(--color-fg-muted)]">Servicio</th>
+                      <th className="pb-2 font-medium text-[var(--color-fg-muted)]">Tramo</th>
+                      <th className="pb-2 font-medium text-[var(--color-fg-muted)]">Pasajero(s)</th>
+                      <th className="pb-2 text-right font-medium text-[var(--color-fg-muted)]">
+                        Precio
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {services.map((svc) => (
+                      <tr
+                        key={svc.offerItemId}
+                        className="border-b border-[var(--color-border)]/50"
+                      >
+                        <td className="py-2.5 font-medium text-[var(--color-fg)]">
+                          {svc.description}
+                        </td>
+                        <td className="py-2.5 text-[var(--color-fg-muted)]">
+                          {svc.journeyRefId ?? '—'}
+                        </td>
+                        <td className="py-2.5 text-[var(--color-fg-muted)]">
+                          {svc.paxRefIds.join(', ')}
+                        </td>
+                        <td className="py-2.5 text-right font-mono font-semibold text-[var(--color-fg)]">
+                          {formatMoney(Math.round(svc.price.amount * 100), svc.price.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setServicesOrder(null)}>
+                Cerrar
               </Button>
             </div>
           </div>
