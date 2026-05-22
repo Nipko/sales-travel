@@ -120,6 +120,35 @@ export default function ConfiguracionPage() {
     }
   }
 
+  async function handleSaveConfig() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/tenant/config', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: config.name,
+          countryCode: config.countryCode,
+          defaultCurrency: config.defaultCurrency,
+          defaultLanguage: config.defaultLanguage,
+        }),
+      });
+      if (res.ok) {
+        setMessage({
+          text: 'Configuración general guardada exitosamente.',
+          success: true,
+        });
+      } else {
+        setMessage({ text: 'Error al guardar la configuración.', success: false });
+      }
+    } catch {
+      setMessage({ text: 'Error de conexión con el servidor.', success: false });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
@@ -158,7 +187,10 @@ export default function ConfiguracionPage() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setMessage(null);
+              }}
               className={cn(
                 'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === tab.id
@@ -175,7 +207,15 @@ export default function ConfiguracionPage() {
 
       {/* Tab Content wrapped in Premium visual containers */}
       <div className="space-y-6">
-        {activeTab === 'general' && <GeneralTab config={config} setConfig={setConfig} />}
+        {activeTab === 'general' && (
+          <GeneralTab
+            config={config}
+            setConfig={setConfig}
+            onSave={() => void handleSaveConfig()}
+            saving={saving}
+            message={message}
+          />
+        )}
         {activeTab === 'branding' && (
           <BrandingTab
             branding={branding}
@@ -196,90 +236,131 @@ export default function ConfiguracionPage() {
 function GeneralTab({
   config,
   setConfig,
+  onSave,
+  saving,
+  message,
 }: {
   config: TenantConfig;
   setConfig: (c: TenantConfig) => void;
+  onSave: () => void;
+  saving: boolean;
+  message: { text: string; success: boolean } | null;
 }) {
   return (
-    <Card className="border border-[var(--color-border)]/50 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
-      <CardContent className="p-6 space-y-6">
-        <SectionHeader
-          title="Información general"
-          description="Datos básicos de identificación y operación de su agencia de viajes."
-        />
+    <div className="space-y-6">
+      <Card className="border border-[var(--color-border)]/50 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
+        <CardContent className="p-6 space-y-6">
+          <SectionHeader
+            title="Información general"
+            description="Datos básicos de identificación y operación de su agencia de viajes."
+          />
 
-        <div className="space-y-5">
-          <FormField
-            label="Nombre de la agencia"
-            required
-            helper="Nombre legal o comercial visible en la plataforma."
-          >
-            <input
-              type="text"
-              value={config.name}
-              onChange={(e) => setConfig({ ...config, name: e.target.value })}
-              placeholder="Ej. Viajes Planetour S.A.S"
-              className="form-input shadow-[var(--shadow-xs)]"
-            />
-          </FormField>
-
-          <FormField
-            label="Identificador único (Slug)"
-            helper="Identificador en base de datos. No editable por seguridad."
-          >
-            <input
-              type="text"
-              value={config.slug}
-              disabled
-              className="form-input opacity-50 cursor-not-allowed bg-slate-50 font-mono text-xs"
-            />
-          </FormField>
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 border-t border-slate-100 pt-5">
-            <FormField label="País de Operación">
-              <select
-                value={config.countryCode}
-                onChange={(e) => setConfig({ ...config, countryCode: e.target.value })}
-                className="form-input cursor-pointer"
-              >
-                <option value="CO">Colombia</option>
-                <option value="PE">Perú</option>
-                <option value="BR">Brasil</option>
-                <option value="MX">México</option>
-                <option value="CL">Chile</option>
-                <option value="AR">Argentina</option>
-              </select>
+          <div className="space-y-5">
+            <FormField
+              label="Nombre de la agencia"
+              required
+              helper="Nombre legal o comercial visible en la plataforma."
+            >
+              <input
+                type="text"
+                value={config.name}
+                onChange={(e) => setConfig({ ...config, name: e.target.value })}
+                placeholder="Ej. Viajes Planetour S.A.S"
+                className="form-input shadow-[var(--shadow-xs)]"
+              />
             </FormField>
 
-            <FormField label="Moneda Base">
-              <select
-                value={config.defaultCurrency}
-                onChange={(e) => setConfig({ ...config, defaultCurrency: e.target.value })}
-                className="form-input cursor-pointer font-mono"
-              >
-                <option value="COP">COP ($)</option>
-                <option value="USD">USD ($)</option>
-                <option value="PEN">PEN (S/.)</option>
-                <option value="BRL">BRL (R$)</option>
-                <option value="MXN">MXN ($)</option>
-              </select>
+            <FormField
+              label="Identificador único (Slug)"
+              helper="Identificador en base de datos. No editable por seguridad."
+            >
+              <input
+                type="text"
+                value={config.slug}
+                disabled
+                className="form-input opacity-50 cursor-not-allowed bg-slate-50 font-mono text-xs"
+              />
             </FormField>
 
-            <FormField label="Idioma Preferido">
-              <select
-                value={config.defaultLanguage}
-                onChange={(e) => setConfig({ ...config, defaultLanguage: e.target.value })}
-                className="form-input cursor-pointer"
-              >
-                <option value="es">Español (ES)</option>
-                <option value="pt">Portugués (PT)</option>
-                <option value="en">Inglés (EN)</option>
-              </select>
-            </FormField>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 border-t border-slate-100 pt-5">
+              <FormField label="País de Operación">
+                <select
+                  value={config.countryCode}
+                  onChange={(e) => setConfig({ ...config, countryCode: e.target.value })}
+                  className="form-input cursor-pointer"
+                >
+                  <option value="CO">Colombia</option>
+                  <option value="PE">Perú</option>
+                  <option value="BR">Brasil</option>
+                  <option value="MX">México</option>
+                  <option value="CL">Chile</option>
+                  <option value="AR">Argentina</option>
+                </select>
+              </FormField>
+
+              <FormField label="Moneda Base">
+                <select
+                  value={config.defaultCurrency}
+                  onChange={(e) => setConfig({ ...config, defaultCurrency: e.target.value })}
+                  className="form-input cursor-pointer font-mono"
+                >
+                  <option value="COP">COP ($)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="PEN">PEN (S/.)</option>
+                  <option value="BRL">BRL (R$)</option>
+                  <option value="MXN">MXN ($)</option>
+                </select>
+              </FormField>
+
+              <FormField label="Idioma Preferido">
+                <select
+                  value={config.defaultLanguage}
+                  onChange={(e) => setConfig({ ...config, defaultLanguage: e.target.value })}
+                  className="form-input cursor-pointer"
+                >
+                  <option value="es">Español (ES)</option>
+                  <option value="pt">Portugués (PT)</option>
+                  <option value="en">Inglés (EN)</option>
+                </select>
+              </FormField>
+            </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Floating Save Footer - Glassmorphic */}
+      <div className="sticky bottom-0 -mx-6 border-t border-slate-200/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+        {message ? (
+          <div
+            className={cn(
+              'flex items-center gap-1.5 text-xs font-semibold',
+              message.success ? 'text-emerald-600' : 'text-rose-600',
+            )}
+          >
+            {message.success ? (
+              <CheckCircle2 className="size-4 shrink-0" />
+            ) : (
+              <AlertCircle className="size-4 shrink-0" />
+            )}
+            <span>{message.text}</span>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 font-medium">
+            Configure los cambios antes de guardar
+          </div>
+        )}
+        <div className="ml-auto">
+          <Button
+            onClick={onSave}
+            disabled={saving}
+            className="gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white shadow-md transition-all duration-200 font-semibold cursor-pointer"
+          >
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+            {saving ? 'Guardando...' : 'Guardar configuración'}
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

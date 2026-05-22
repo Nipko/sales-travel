@@ -205,7 +205,7 @@ export default function CotizacionesPage() {
           infants: Number(formData?.get('infants') ?? 0),
         },
         cabin: (formData?.get('cabin') as string) || 'economy',
-        currency: (formData?.get('currency') as string) || 'USD',
+        currency: offer.total.currency,
       });
       if (res.ok && res.quotationId) {
         setQuoteSuccess(`Cotización #${res.quoteNumber} guardada`);
@@ -322,8 +322,8 @@ export default function CotizacionesPage() {
                 </div>
               </div>
 
-              {/* Dates / pax / cabin / currency */}
-              <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              {/* Dates / pax / cabin */}
+              <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-1.5">
                   <Label
                     htmlFor="departureDate"
@@ -392,28 +392,6 @@ export default function CotizacionesPage() {
                     <option value="premium_economy">Económica Premium</option>
                     <option value="business">Ejecutiva (Business)</option>
                     <option value="first">Primera Clase</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="currency"
-                    className="text-xs font-semibold text-[var(--color-fg-muted)]"
-                  >
-                    Moneda
-                  </Label>
-                  <select
-                    id="currency"
-                    name="currency"
-                    defaultValue="COP"
-                    className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
-                  >
-                    <option value="COP">COP ($)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="BRL">BRL (R$)</option>
-                    <option value="CLP">CLP ($)</option>
-                    <option value="PEN">PEN (S/)</option>
-                    <option value="MXN">MXN ($)</option>
                   </select>
                 </div>
               </div>

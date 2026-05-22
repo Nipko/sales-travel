@@ -21,3 +21,22 @@ export async function GET() {
 
   return NextResponse.json(res.data);
 }
+
+export async function PATCH(req: Request) {
+  const tenantId = await getActiveTenant();
+  if (!tenantId) {
+    return NextResponse.json({ error: 'No tenant' }, { status: 400 });
+  }
+
+  const body = await req.text();
+  const res = await api<unknown>(`/tenants/${tenantId}/config`, {
+    method: 'PATCH',
+    body,
+  });
+
+  if (!res.ok) {
+    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
+  }
+
+  return NextResponse.json(res.data);
+}

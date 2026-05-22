@@ -26,6 +26,17 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = await this.resolveActiveTenant(userId);
+
+    // Obtener la moneda base del tenant/agencia e inyectarla
+    const tenant = await this.db.db
+      .selectFrom('tenants')
+      .select(['default_currency'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    if (tenant?.default_currency) {
+      criteria.currency = tenant.default_currency;
+    }
+
     const offers = await this.search.searchFlights(criteria, tenantId);
     return { offers };
   }
@@ -38,6 +49,17 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = await this.resolveActiveTenant(userId);
+
+    // Obtener la moneda base del tenant/agencia e inyectarla
+    const tenant = await this.db.db
+      .selectFrom('tenants')
+      .select(['default_currency'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    if (tenant?.default_currency) {
+      body.searchCriteria.currency = tenant.default_currency;
+    }
+
     return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
   }
 

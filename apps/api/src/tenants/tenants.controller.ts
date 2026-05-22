@@ -22,6 +22,13 @@ interface UpdateBrandingDto {
   accentColor?: string | null;
 }
 
+interface UpdateConfigDto {
+  name?: string;
+  countryCode?: string;
+  defaultCurrency?: string;
+  defaultLanguage?: 'es' | 'pt' | 'en';
+}
+
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly db: DatabaseService) {}
@@ -96,6 +103,41 @@ export class TenantsController {
       logoUrl: row.logo_url,
       primaryColor: row.primary_color,
       accentColor: row.accent_color,
+    };
+  }
+
+  @Patch(':id/config')
+  async updateConfig(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') tenantId: string,
+    @Body() dto: UpdateConfigDto,
+  ) {
+    if (!userId) throw new UnauthorizedException();
+    await this.assertAdminMembership(userId, tenantId);
+
+    await this.db.db
+      .updateTable('tenants')
+      .set({
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.countryCode !== undefined ? { country_code: dto.countryCode } : {}),
+        ...(dto.defaultCurrency !== undefined ? { default_currency: dto.defaultCurrency } : {}),
+        ...(dto.defaultLanguage !== undefined ? { default_language: dto.defaultLanguage } : {}),
+      })
+      .where('id', '=', tenantId)
+      .execute();
+
+    const row = await this.db.db
+      .selectFrom('tenants')
+      .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
+      .where('id', '=', tenantId)
+      .executeTakeFirstOrThrow();
+
+    return {
+      name: row.name,
+      slug: row.slug,
+      countryCode: row.country_code,
+      defaultCurrency: row.default_currency,
+      defaultLanguage: row.default_language,
     };
   }
 
