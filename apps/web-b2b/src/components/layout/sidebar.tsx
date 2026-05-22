@@ -26,18 +26,16 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     >
       {/* Active Indicator Bar */}
       {active && (
-        <span 
-          className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-r bg-[var(--color-primary)]" 
+        <span
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-r bg-[var(--color-primary)]"
           aria-hidden="true"
         />
       )}
-      
+
       <Icon
         className={cn(
           'size-4 shrink-0 transition-transform duration-200 group-hover:scale-105',
-          active
-            ? 'text-[var(--color-primary)]'
-            : 'text-slate-500 group-hover:text-slate-300',
+          active ? 'text-[var(--color-primary)]' : 'text-slate-500 group-hover:text-slate-300',
         )}
       />
       <span>{item.label}</span>
@@ -57,7 +55,11 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
       {/* Header / Branding */}
       <div className="flex h-14 items-center gap-2.5 border-b border-slate-800/60 px-5">
         {logoUrl ? (
-          <img src={logoUrl} alt="" className="size-7 rounded-lg object-contain bg-white/5 p-0.5 border border-white/10" />
+          <img
+            src={logoUrl}
+            alt=""
+            className="size-7 rounded-lg object-contain bg-white/5 p-0.5 border border-white/10"
+          />
         ) : (
           <div className="size-7 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-md">
             <Compass className="size-4 text-white animate-spin-slow" />

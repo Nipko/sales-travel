@@ -4,7 +4,6 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, LogOut, Search, User, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-
 interface TopbarProps {
   userEmail?: string;
   tenantName?: string;
@@ -31,7 +30,11 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarPro
               className="group flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-fg-muted)] shadow-[var(--shadow-xs)] transition-all duration-200 hover:bg-[var(--color-surface-muted)] hover:border-[var(--color-border-strong)] active:scale-[0.98] cursor-pointer"
             >
               {logoUrl ? (
-                <img src={logoUrl} alt="" className="size-4.5 rounded object-contain bg-white/5 border border-[var(--color-border)]" />
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="size-4.5 rounded object-contain bg-white/5 border border-[var(--color-border)]"
+                />
               ) : (
                 <span className="relative flex size-2 shrink-0">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-primary)] opacity-75" />
@@ -87,7 +90,8 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarPro
           <Search className="size-3.5 text-[var(--color-fg-subtle)]" />
           <span className="font-medium">Buscar...</span>
           <kbd className="ml-3 inline-flex items-center gap-0.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--color-fg-subtle)] shadow-[var(--shadow-xs)]">
-            <span>⌘</span><span>K</span>
+            <span>⌘</span>
+            <span>K</span>
           </kbd>
         </button>
 
@@ -119,11 +123,13 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarPro
               </div>
               <div className="px-2.5 pb-2.5 pt-0.5">
                 <p className="truncate text-xs font-semibold text-[var(--color-fg)]">{userEmail}</p>
-                <p className="text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-wider font-semibold mt-0.5">Agente Autorizado</p>
+                <p className="text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-wider font-semibold mt-0.5">
+                  Agente Autorizado
+                </p>
               </div>
-              
+
               <div className="my-1 h-px bg-[var(--color-border)]/60" />
-              
+
               <DropdownMenu.Item
                 onSelect={() => void handleLogout()}
                 className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-[var(--color-fg)] outline-none hover:bg-[var(--color-danger)]/[0.06] hover:text-[var(--color-danger)] transition-colors"

@@ -1,4 +1,13 @@
-import { ArrowRight, Calendar, DollarSign, Search, Ticket, Users, Sparkles, Building2 } from 'lucide-react';
+import {
+  ArrowRight,
+  Calendar,
+  DollarSign,
+  Search,
+  Ticket,
+  Users,
+  Sparkles,
+  Building2,
+} from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent } from '../../components/ui/card';
 import { api } from '../../lib/api';
@@ -98,10 +107,15 @@ export default async function DashboardPage() {
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <Card key={s.label} className="border border-[var(--color-border)]/40 shadow-[var(--shadow-sm)] hover:shadow-md transition-shadow rounded-xl">
+            <Card
+              key={s.label}
+              className="border border-[var(--color-border)]/40 shadow-[var(--shadow-sm)] hover:shadow-md transition-shadow rounded-xl"
+            >
               <CardContent className="p-5 flex items-start justify-between">
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">{s.label}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                    {s.label}
+                  </p>
                   <p className="text-2xl font-bold tracking-tight text-[var(--color-fg)] tabular-nums font-mono">
                     {s.value}
                   </p>
@@ -134,7 +148,9 @@ export default async function DashboardPage() {
           {memberships.length === 0 ? (
             <div className="px-6 py-14 text-center">
               <p className="text-xs text-[var(--color-fg-muted)] font-medium">
-                {res.ok ? 'No tiene agencias asignadas a su perfil todavía.' : `Error de conexión: ${res.error.message}`}
+                {res.ok
+                  ? 'No tiene agencias asignadas a su perfil todavía.'
+                  : `Error de conexión: ${res.error.message}`}
               </p>
             </div>
           ) : (
@@ -150,7 +166,8 @@ export default async function DashboardPage() {
                 </thead>
                 <tbody>
                   {memberships.map((m) => {
-                    const isAdminRole = m.role === 'superadmin' || m.role === 'tenant_admin' || m.role === 'admin';
+                    const isAdminRole =
+                      m.role === 'superadmin' || m.role === 'tenant_admin' || m.role === 'admin';
                     return (
                       <tr
                         key={m.id}
@@ -163,20 +180,30 @@ export default async function DashboardPage() {
                           {m.tenantSlug}
                         </td>
                         <td className="px-6 py-4.5">
-                          <span className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
-                            isAdminRole
-                              ? 'bg-[var(--color-primary)]/[0.06] text-[var(--color-primary)] border-[var(--color-primary)]/15'
-                              : 'bg-slate-100 text-slate-700 border-slate-200'
-                          }`}>
-                            {m.role === 'superadmin' ? 'Super Admin' : m.role === 'tenant_admin' ? 'Administrador de Agencia' : m.role === 'admin' ? 'Admin' : 'Vendedor / Agente'}
+                          <span
+                            className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
+                              isAdminRole
+                                ? 'bg-[var(--color-primary)]/[0.06] text-[var(--color-primary)] border-[var(--color-primary)]/15'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            {m.role === 'superadmin'
+                              ? 'Super Admin'
+                              : m.role === 'tenant_admin'
+                                ? 'Administrador de Agencia'
+                                : m.role === 'admin'
+                                  ? 'Admin'
+                                  : 'Vendedor / Agente'}
                           </span>
                         </td>
                         <td className="px-6 py-4.5">
-                          <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
-                            m.status === 'active'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-100 text-slate-500 border-slate-200'
-                          }`}>
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
+                              m.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                          >
                             <span
                               className={`size-1.5 rounded-full ${
                                 m.status === 'active'

@@ -1,6 +1,17 @@
 'use client';
 
-import { Building2, Globe, Loader2, Palette, Save, Upload, Users, Shield, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  Building2,
+  Globe,
+  Loader2,
+  Palette,
+  Save,
+  Upload,
+  Users,
+  Shield,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -95,7 +106,10 @@ export default function ConfiguracionPage() {
         body: JSON.stringify(branding),
       });
       if (res.ok) {
-        setMessage({ text: 'Identidad corporativa guardada. Recargue la página para aplicar los cambios.', success: true });
+        setMessage({
+          text: 'Identidad corporativa guardada. Recargue la página para aplicar los cambios.',
+          success: true,
+        });
       } else {
         setMessage({ text: 'Error al guardar la configuración.', success: false });
       }
@@ -131,7 +145,8 @@ export default function ConfiguracionPage() {
           Configuración de la Agencia
         </h1>
         <p className="text-xs text-[var(--color-fg-muted)]">
-          Gestione la identidad visual, preferencias del sistema y dominios personalizados de su workspace.
+          Gestione la identidad visual, preferencias del sistema y dominios personalizados de su
+          workspace.
         </p>
       </header>
 
@@ -148,7 +163,7 @@ export default function ConfiguracionPage() {
                 'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === tab.id
                   ? 'bg-white text-slate-800 shadow-[var(--shadow-sm)] border border-slate-200/40'
-                  : 'text-slate-500 hover:text-slate-800'
+                  : 'text-slate-500 hover:text-slate-800',
               )}
             >
               <Icon className="size-3.5 shrink-0" />
@@ -192,9 +207,13 @@ function GeneralTab({
           title="Información general"
           description="Datos básicos de identificación y operación de su agencia de viajes."
         />
-        
+
         <div className="space-y-5">
-          <FormField label="Nombre de la agencia" required helper="Nombre legal o comercial visible en la plataforma.">
+          <FormField
+            label="Nombre de la agencia"
+            required
+            helper="Nombre legal o comercial visible en la plataforma."
+          >
             <input
               type="text"
               value={config.name}
@@ -204,7 +223,10 @@ function GeneralTab({
             />
           </FormField>
 
-          <FormField label="Identificador único (Slug)" helper="Identificador en base de datos. No editable por seguridad.">
+          <FormField
+            label="Identificador único (Slug)"
+            helper="Identificador en base de datos. No editable por seguridad."
+          >
             <input
               type="text"
               value={config.slug}
@@ -280,11 +302,11 @@ function BrandingTab({
       {/* Sección Logo */}
       <Card className="border border-[var(--color-border)]/50 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
         <CardContent className="p-6 space-y-5">
-          <SectionHeader 
-            title="Logotipo Corporativo" 
-            description="Suba el logo oficial de su marca. Se utilizará en la barra lateral, reportes y cotizaciones por correo." 
+          <SectionHeader
+            title="Logotipo Corporativo"
+            description="Suba el logo oficial de su marca. Se utilizará en la barra lateral, reportes y cotizaciones por correo."
           />
-          
+
           <div className="space-y-4">
             {branding.logoUrl ? (
               <div className="flex items-center gap-4 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4 shadow-inner">
@@ -295,7 +317,9 @@ function BrandingTab({
                 />
                 <div className="flex-1 min-w-0">
                   <p className="truncate text-xs font-bold text-slate-800">Logo actual activo</p>
-                  <p className="truncate text-[10px] text-slate-500 font-mono mt-0.5">{branding.logoUrl}</p>
+                  <p className="truncate text-[10px] text-slate-500 font-mono mt-0.5">
+                    {branding.logoUrl}
+                  </p>
                 </div>
                 <Button
                   variant="secondary"
@@ -309,13 +333,15 @@ function BrandingTab({
             ) : (
               <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/30 px-6 py-10 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.02]">
                 <Upload className="mb-3 size-8 text-slate-400" />
-                <p className="text-xs font-bold text-slate-700">Arrastre o seleccione su logotipo</p>
+                <p className="text-xs font-bold text-slate-700">
+                  Arrastre o seleccione su logotipo
+                </p>
                 <p className="mt-1 text-[10px] text-slate-500">
                   Formatos recomendados: PNG, SVG de fondo transparente (200x200px)
                 </p>
               </div>
             )}
-            
+
             <FormField label="URL del logotipo (Alternativa)">
               <input
                 type="url"
@@ -336,14 +362,14 @@ function BrandingTab({
             title="Colores Corporativos"
             description="Personalice la experiencia visual adaptando los botones, alertas y acentos a los colores de su marca."
           />
-          
+
           <div className="space-y-6">
             {/* Color Primario */}
             <div className="space-y-3.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Color Primario (Botones, elementos interactivos principales)
               </label>
-              
+
               {/* Ajuste de paleta recomendada */}
               <div className="flex flex-wrap gap-2">
                 {COLOR_PRESETS.map((color) => (
@@ -355,7 +381,7 @@ function BrandingTab({
                       'size-9 rounded-lg border-2 transition-all duration-200 hover:scale-105 shadow-sm cursor-pointer',
                       branding.primaryColor === color
                         ? 'border-slate-800 ring-4 ring-slate-800/10 scale-105'
-                        : 'border-white'
+                        : 'border-white',
                     )}
                     style={{ backgroundColor: color }}
                     aria-label={`Seleccionar color ${color}`}
@@ -372,7 +398,9 @@ function BrandingTab({
                 <input
                   type="text"
                   value={branding.primaryColor ?? ''}
-                  onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value || null })}
+                  onChange={(e) =>
+                    setBranding({ ...branding, primaryColor: e.target.value || null })
+                  }
                   placeholder="#e37b23"
                   className="form-input flex-1 font-mono text-xs shadow-[var(--shadow-xs)]"
                 />
@@ -398,7 +426,9 @@ function BrandingTab({
                 <input
                   type="text"
                   value={branding.accentColor ?? ''}
-                  onChange={(e) => setBranding({ ...branding, accentColor: e.target.value || null })}
+                  onChange={(e) =>
+                    setBranding({ ...branding, accentColor: e.target.value || null })
+                  }
                   placeholder="#0f355c"
                   className="form-input flex-1 font-mono text-xs shadow-[var(--shadow-xs)]"
                 />
@@ -418,8 +448,11 @@ function BrandingTab({
       {(branding.primaryColor || branding.logoUrl) && (
         <Card className="border border-[var(--color-border)]/50 bg-slate-50/20 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
           <CardContent className="p-6 space-y-4">
-            <SectionHeader title="Previsualización en tiempo real" description="Previsualice cómo se adaptará la interfaz con los colores y logotipo cargados." />
-            
+            <SectionHeader
+              title="Previsualización en tiempo real"
+              description="Previsualice cómo se adaptará la interfaz con los colores y logotipo cargados."
+            />
+
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg)] shadow-[var(--shadow-sm)]">
               {/* Simulador de cabecera */}
               <div className="flex h-12 items-center gap-3 border-b border-slate-100 bg-white px-4">
@@ -435,7 +468,7 @@ function BrandingTab({
                 )}
                 <span className="text-xs font-semibold text-slate-800">Mi Agencia de Viajes</span>
               </div>
-              
+
               {/* Simulador de cuerpo con botones */}
               <div className="flex flex-wrap items-center gap-3.5 p-5 bg-slate-50/40">
                 <button
@@ -472,23 +505,31 @@ function BrandingTab({
       {/* Floating Save Footer - Glassmorphic */}
       <div className="sticky bottom-0 -mx-6 border-t border-slate-200/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {message ? (
-          <div className={cn(
-            'flex items-center gap-1.5 text-xs font-semibold',
-            message.success ? 'text-emerald-600' : 'text-rose-600'
-          )}>
-            {message.success ? <CheckCircle2 className="size-4 shrink-0" /> : <AlertCircle className="size-4 shrink-0" />}
+          <div
+            className={cn(
+              'flex items-center gap-1.5 text-xs font-semibold',
+              message.success ? 'text-emerald-600' : 'text-rose-600',
+            )}
+          >
+            {message.success ? (
+              <CheckCircle2 className="size-4 shrink-0" />
+            ) : (
+              <AlertCircle className="size-4 shrink-0" />
+            )}
             <span>{message.text}</span>
           </div>
         ) : (
-          <div className="text-xs text-slate-400 font-medium">Configure los cambios antes de guardar</div>
+          <div className="text-xs text-slate-400 font-medium">
+            Configure los cambios antes de guardar
+          </div>
         )}
         <div className="ml-auto">
-          <Button onClick={onSave} disabled={saving} className="gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white shadow-md transition-all duration-200 font-semibold cursor-pointer">
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Save className="size-3.5" />
-            )}
+          <Button
+            onClick={onSave}
+            disabled={saving}
+            className="gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white shadow-md transition-all duration-200 font-semibold cursor-pointer"
+          >
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
             {saving ? 'Guardando...' : 'Guardar identidad'}
           </Button>
         </div>
@@ -506,7 +547,7 @@ function DomainTab({ config }: { config: TenantConfig }) {
           title="Dominio personalizado"
           description="Apunta un subdominio o dominio propio de su agencia para brindar un aspecto 100% corporativo."
         />
-        
+
         <div className="space-y-5 pt-3">
           <FormField label="Subdominio por defecto">
             <div className="flex items-center shadow-[var(--shadow-xs)]">
@@ -523,11 +564,14 @@ function DomainTab({ config }: { config: TenantConfig }) {
           </FormField>
 
           <div className="border-t border-slate-100 pt-5">
-            <FormField label="Dominio personalizado (CNAME)" helper="Apunta el CNAME de su dominio propio (ej. viajes.miagencia.com) a: app.planetour.cloud">
-              <input 
-                type="text" 
-                placeholder="Ej. viajes.miagencia.com" 
-                className="form-input shadow-[var(--shadow-xs)] font-mono text-xs" 
+            <FormField
+              label="Dominio personalizado (CNAME)"
+              helper="Apunta el CNAME de su dominio propio (ej. viajes.miagencia.com) a: app.planetour.cloud"
+            >
+              <input
+                type="text"
+                placeholder="Ej. viajes.miagencia.com"
+                className="form-input shadow-[var(--shadow-xs)] font-mono text-xs"
               />
             </FormField>
           </div>
@@ -546,12 +590,13 @@ function TeamTab() {
           title="Miembros de su equipo"
           description="Gestione los agentes de venta, administradores y personal autorizado que tienen acceso a este portal."
         />
-        
+
         <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 px-6 py-12 text-center">
           <Users className="mx-auto mb-3.5 size-8 text-slate-400" />
           <p className="text-xs font-bold text-slate-700">Módulo de Gestión de Usuarios</p>
           <p className="mt-1 text-[10px] text-slate-500 leading-relaxed max-w-sm mx-auto">
-            Habilite cuentas para sus vendedores, configure markups individuales y controle roles. Disponible próximamente.
+            Habilite cuentas para sus vendedores, configure markups individuales y controle roles.
+            Disponible próximamente.
           </p>
         </div>
       </CardContent>

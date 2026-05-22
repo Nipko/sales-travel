@@ -20,10 +20,10 @@ const initialState: LoginState = {};
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button 
-      type="submit" 
-      disabled={pending} 
-      size="lg" 
+    <Button
+      type="submit"
+      disabled={pending}
+      size="lg"
       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] transition-all duration-200 shadow-md font-medium tracking-wide"
     >
       {pending ? 'Iniciando sesión…' : 'Iniciar sesión'}
@@ -41,14 +41,15 @@ export default function LoginPage() {
         {/* Esfera de Luz Difuminada Dinámica */}
         <div className="absolute -top-40 -left-40 size-[500px] rounded-full bg-[var(--color-primary)]/15 mix-blend-screen animate-orbit-glow" />
         <div className="absolute -bottom-20 right-0 size-[450px] rounded-full bg-[var(--color-navy-light)]/20 mix-blend-screen" />
-        
+
         {/* Logo/Branding Header */}
         <div className="relative z-10 flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-lg bg-[var(--color-primary)] shadow-[var(--shadow-md)]">
             <Compass className="size-5 text-[var(--color-primary-fg)] animate-spin-slow" />
           </div>
           <span className="text-lg font-bold tracking-tight text-white">
-            Sales-Travel <span className="text-xs font-normal text-[var(--color-primary)]">B2B</span>
+            Sales-Travel{' '}
+            <span className="text-xs font-normal text-[var(--color-primary)]">B2B</span>
           </span>
         </div>
 
@@ -62,7 +63,9 @@ export default function LoginPage() {
             La plataforma de turismo más moderna y potente de LATAM.
           </h1>
           <p className="text-sm text-slate-300 leading-relaxed">
-            Gestione reservas, cotizaciones y vuelos en tiempo récord. Conéctese directamente con múltiples GDS y herramientas de inteligencia artificial para impulsar las ventas de su agencia.
+            Gestione reservas, cotizaciones y vuelos en tiempo récord. Conéctese directamente con
+            múltiples GDS y herramientas de inteligencia artificial para impulsar las ventas de su
+            agencia.
           </p>
         </div>
 
@@ -117,7 +120,10 @@ export default function LoginPage() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-xs font-semibold text-[var(--color-fg)]">
+                    <Label
+                      htmlFor="password"
+                      className="text-xs font-semibold text-[var(--color-fg)]"
+                    >
                       Contraseña
                     </Label>
                   </div>
@@ -158,4 +164,3 @@ export default function LoginPage() {
     </main>
   );
 }
-
