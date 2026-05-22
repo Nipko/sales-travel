@@ -15,6 +15,7 @@ import {
   CustomersService,
   type CreateCustomerDto,
   type UpdateCustomerDto,
+  type CustomerRow,
 } from './customers.service.js';
 
 @Controller('customers')
@@ -71,7 +72,7 @@ export class CustomersController {
     return { success: true };
   }
 
-  private serialize(row: any) {
+  private serialize(row: CustomerRow) {
     return {
       id: row.id,
       firstName: row.first_name,
@@ -86,7 +87,9 @@ export class CustomersController {
       nationality: row.nationality,
       passportExpiry: row.passport_expiry,
       preferences:
-        typeof row.preferences === 'string' ? JSON.parse(row.preferences) : row.preferences,
+        typeof row.preferences === 'string'
+          ? (JSON.parse(row.preferences) as unknown)
+          : row.preferences,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

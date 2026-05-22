@@ -27,7 +27,7 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
-    console.log(
+    console.warn(
       `[SearchController.flights] Resolving flights for userId: ${userId}, tenantId: ${tenantId}`,
     );
 
@@ -38,16 +38,16 @@ export class SearchController {
       .where('id', '=', tenantId)
       .executeTakeFirst();
 
-    console.log(
+    console.warn(
       `[SearchController.flights] Tenant configuration from DB: ${JSON.stringify(tenant)}`,
     );
-    console.log(
+    console.warn(
       `[SearchController.flights] Search criteria before injected currency: ${JSON.stringify(criteria)}`,
     );
 
     if (tenant?.default_currency) {
       criteria.currency = tenant.default_currency.trim();
-      console.log(
+      console.warn(
         `[SearchController.flights] Injected tenant default currency: ${criteria.currency}`,
       );
     } else {
@@ -68,7 +68,7 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
-    console.log(
+    console.warn(
       `[SearchController.offerPrice] Resolving offerPrice for userId: ${userId}, tenantId: ${tenantId}`,
     );
 
@@ -79,16 +79,16 @@ export class SearchController {
       .where('id', '=', tenantId)
       .executeTakeFirst();
 
-    console.log(
+    console.warn(
       `[SearchController.offerPrice] Tenant configuration from DB: ${JSON.stringify(tenant)}`,
     );
-    console.log(
+    console.warn(
       `[SearchController.offerPrice] Search criteria before injected currency: ${JSON.stringify(body.searchCriteria)}`,
     );
 
     if (tenant?.default_currency) {
       body.searchCriteria.currency = tenant.default_currency.trim();
-      console.log(
+      console.warn(
         `[SearchController.offerPrice] Injected tenant default currency: ${body.searchCriteria.currency}`,
       );
     } else {

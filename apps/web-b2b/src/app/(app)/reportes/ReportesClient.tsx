@@ -178,11 +178,13 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
   const polylinePointsStr = points.map((p) => `${p.x},${p.y}`).join(' ');
 
   // SVG Area path
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
   const areaPointsStr =
-    points.length > 0
-      ? `${points[0].x},${svgHeight - padding} ` +
+    firstPoint && lastPoint
+      ? `${firstPoint.x},${svgHeight - padding} ` +
         polylinePointsStr +
-        ` ${points[points.length - 1].x},${svgHeight - padding}`
+        ` ${lastPoint.x},${svgHeight - padding}`
       : '';
 
   return (

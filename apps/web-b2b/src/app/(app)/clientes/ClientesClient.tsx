@@ -125,10 +125,10 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
     setDocumentType(c.documentType);
     setDocumentNumber(c.documentNumber);
     setDocumentIssuingCountry(c.documentIssuingCountry);
-    setBirthdate(c.birthdate ? c.birthdate.split('T')[0] : '');
+    setBirthdate(c.birthdate ? (c.birthdate.split('T')[0] ?? '') : '');
     setGender(c.gender);
     setNationality(c.nationality);
-    setPassportExpiry(c.passportExpiry ? c.passportExpiry.split('T')[0] : '');
+    setPassportExpiry(c.passportExpiry ? (c.passportExpiry.split('T')[0] ?? '') : '');
     setMealPref(c.preferences?.meal ?? '');
     setSeatPref(c.preferences?.seat ?? '');
     setIsAddModalOpen(true);

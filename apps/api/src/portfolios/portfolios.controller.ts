@@ -1,7 +1,11 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
-import { PortfoliosService } from './portfolios.service.js';
+import {
+  PortfoliosService,
+  type PortfolioRow,
+  type PortfolioTransactionRow,
+} from './portfolios.service.js';
 
 @Controller('portfolios')
 export class PortfoliosController {
@@ -114,7 +118,7 @@ export class PortfoliosController {
     return this.portfolios.rejectBooking(tenantId, orderId);
   }
 
-  private serializePortfolio(p: any) {
+  private serializePortfolio(p: PortfolioRow) {
     return {
       id: p.id,
       tenantId: p.tenant_id,
@@ -127,7 +131,7 @@ export class PortfoliosController {
     };
   }
 
-  private serializeTransaction(tx: any) {
+  private serializeTransaction(tx: PortfolioTransactionRow) {
     return {
       id: tx.id,
       portfolioId: tx.portfolio_id,

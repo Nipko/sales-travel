@@ -131,7 +131,8 @@ export class ReportsService {
       netEarningsMinor: number;
     };
   }> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withTenant(tenantId, async (_trx) => {
+      await Promise.resolve();
       // Simular cálculo de comisión y markup devengado
       // En un escenario real, esto se extrae de las reglas de markup aplicadas a cada item del tiquete/paquete
       const byVertical: CommissionMetric[] = [

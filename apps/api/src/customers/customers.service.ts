@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { type UpdateObject } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
+import { type DB } from '../database/database.types.js';
 
 export interface CreateCustomerDto {
   firstName: string;
@@ -108,7 +110,7 @@ export class CustomersService {
     dto: UpdateCustomerDto,
   ): Promise<CustomerRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
-      const updateData: any = {};
+      const updateData: UpdateObject<DB, 'customers'> = {};
       if (dto.firstName !== undefined) updateData.first_name = dto.firstName;
       if (dto.lastName !== undefined) updateData.last_name = dto.lastName;
       if (dto.email !== undefined) updateData.email = dto.email;

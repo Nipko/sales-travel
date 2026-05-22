@@ -16,6 +16,7 @@ import {
   Search,
   Building2,
   Sparkles,
+  Info,
 } from 'lucide-react';
 
 interface Portfolio {
