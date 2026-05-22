@@ -90,6 +90,23 @@ export function mapAirShoppingResponse(
     }
   }
 
+  // Detect & warn on currency mismatch between what was requested and what LATAM returned.
+  // This commonly happens when the API key is configured for a different country (e.g. Brazil/BRL)
+  // and LATAM ignores the X-latam-Country / <CountryCode> POS hints for pricing purposes.
+  if (offers.length > 0 && criteria.currency) {
+    const responseCurrency = offers[0]?.total?.currency;
+    if (responseCurrency && responseCurrency !== criteria.currency.toUpperCase()) {
+      const msg =
+        `[LATAM GDS AirShopping] ⚠️  Currency mismatch: requested '${criteria.currency}' ` +
+        `but GDS returned '${responseCurrency}'. ` +
+        `The LATAM sandbox API key is likely configured for '${responseCurrency}' (not '${criteria.currency}'). ` +
+        `To receive ${criteria.currency} pricing you need a LATAM NDC API key provisioned for the ` +
+        `corresponding country. Offers are being returned in ${responseCurrency}.`;
+      console.warn(msg);
+      warnings.push(msg);
+    }
+  }
+
   return { offers, warnings };
 }
 

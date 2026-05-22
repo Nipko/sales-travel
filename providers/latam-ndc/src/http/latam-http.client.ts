@@ -43,6 +43,15 @@ export class LatamHttpClient {
     const url = `${this.cfg.apiUrl.replace(/\/$/, '')}${path}`;
     const trackId = opts.trackId ?? randomUUID();
     const requestId = randomUUID();
+    const country = opts.country ?? this.cfg.country;
+
+    console.log(`[LatamHttpClient] >>> Outbound GDS Request: POST ${url}`);
+    console.log(
+      `[LatamHttpClient] Headers: X-latam-Country=${country}, X-latam-Track-Id=${trackId}, x-latam-request-id=${requestId}, X-latam-Application-Name=${this.cfg.agencyName}`,
+    );
+    console.log(
+      `[LatamHttpClient] XML Request Snippet (first 800 chars): ${xmlBody.replace(/\s+/g, ' ').slice(0, 800)}...`,
+    );
 
     const res = await fetch(url, {
       method: 'POST',
@@ -55,7 +64,7 @@ export class LatamHttpClient {
         'x-latam-request-id': requestId,
         'X-latam-Application-Name': this.cfg.agencyName,
         'X-latam-client-name': this.cfg.agencyName,
-        'X-latam-Country': opts.country ?? this.cfg.country,
+        'X-latam-Country': country,
         'X-latam-Lang': opts.lang ?? 'EN',
         'x-latam-api-version': 'V2',
       },
@@ -63,6 +72,17 @@ export class LatamHttpClient {
     });
 
     const text = await res.text();
+    console.log(`[LatamHttpClient] <<< GDS Response Status: ${res.status}`);
+
+    if (res.ok) {
+      console.log(
+        `[LatamHttpClient] XML Response Snippet (first 1000 chars): ${text.replace(/\s+/g, ' ').slice(0, 1000)}...`,
+      );
+    } else {
+      console.error(
+        `[LatamHttpClient] XML Error Response Snippet (first 1000 chars): ${text.replace(/\s+/g, ' ').slice(0, 1000)}...`,
+      );
+    }
 
     // Always try to parse XML — LATAM returns structured errors in 4xx bodies
     // that response mappers handle gracefully. Only throw on non-parseable responses.

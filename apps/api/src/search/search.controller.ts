@@ -9,6 +9,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { SearchService } from './search.service.js';
+import { currentTenantId } from '../request-context/request-context.js';
 
 @Controller('search')
 export class SearchController {
@@ -25,16 +26,34 @@ export class SearchController {
   ): Promise<{ offers: Offer[] }> {
     if (!userId) throw new ForbiddenException();
 
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
+    console.log(
+      `[SearchController.flights] Resolving flights for userId: ${userId}, tenantId: ${tenantId}`,
+    );
 
     // Obtener la moneda base del tenant/agencia e inyectarla
     const tenant = await this.db.db
       .selectFrom('tenants')
-      .select(['default_currency'])
+      .select(['default_currency', 'country_code', 'name'])
       .where('id', '=', tenantId)
       .executeTakeFirst();
+
+    console.log(
+      `[SearchController.flights] Tenant configuration from DB: ${JSON.stringify(tenant)}`,
+    );
+    console.log(
+      `[SearchController.flights] Search criteria before injected currency: ${JSON.stringify(criteria)}`,
+    );
+
     if (tenant?.default_currency) {
-      criteria.currency = tenant.default_currency;
+      criteria.currency = tenant.default_currency.trim();
+      console.log(
+        `[SearchController.flights] Injected tenant default currency: ${criteria.currency}`,
+      );
+    } else {
+      console.warn(
+        `[SearchController.flights] No default_currency found for tenant ${tenantId}, using criteria default: ${criteria.currency}`,
+      );
     }
 
     const offers = await this.search.searchFlights(criteria, tenantId);
@@ -48,16 +67,34 @@ export class SearchController {
   ): Promise<OfferPriceResult> {
     if (!userId) throw new ForbiddenException();
 
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
+    console.log(
+      `[SearchController.offerPrice] Resolving offerPrice for userId: ${userId}, tenantId: ${tenantId}`,
+    );
 
     // Obtener la moneda base del tenant/agencia e inyectarla
     const tenant = await this.db.db
       .selectFrom('tenants')
-      .select(['default_currency'])
+      .select(['default_currency', 'country_code', 'name'])
       .where('id', '=', tenantId)
       .executeTakeFirst();
+
+    console.log(
+      `[SearchController.offerPrice] Tenant configuration from DB: ${JSON.stringify(tenant)}`,
+    );
+    console.log(
+      `[SearchController.offerPrice] Search criteria before injected currency: ${JSON.stringify(body.searchCriteria)}`,
+    );
+
     if (tenant?.default_currency) {
-      body.searchCriteria.currency = tenant.default_currency;
+      body.searchCriteria.currency = tenant.default_currency.trim();
+      console.log(
+        `[SearchController.offerPrice] Injected tenant default currency: ${body.searchCriteria.currency}`,
+      );
+    } else {
+      console.warn(
+        `[SearchController.offerPrice] No default_currency found for tenant ${tenantId}, using criteria default: ${body.searchCriteria.currency}`,
+      );
     }
 
     return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
