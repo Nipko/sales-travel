@@ -6,6 +6,10 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
   const root = pick(raw, 'IATA_OfferPriceRS', 'OfferPriceRS');
 
   if (!root) {
+    console.error(
+      `[LATAM GDS OfferPrice Error] No IATA_OfferPriceRS root element in raw response. Raw payload:`,
+      JSON.stringify(raw),
+    );
     return {
       offer: originalOffer,
       priceChanged: false,
@@ -15,6 +19,9 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
 
   const errorNode = pick(root, 'Error') as { Code?: string; DescText?: string } | undefined;
   if (errorNode) {
+    console.error(
+      `[LATAM GDS OfferPrice Error] GDS returned error - Code: ${errorNode.Code ?? 'unknown'}, Desc: ${errorNode.DescText ?? 'unknown'}`,
+    );
     return {
       offer: originalOffer,
       priceChanged: false,

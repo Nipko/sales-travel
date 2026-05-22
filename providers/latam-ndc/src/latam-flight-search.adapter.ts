@@ -58,19 +58,31 @@ export class LatamNdcFlightSearchAdapter
       `[latam-ndc] adapter initialized in ${mode} mode${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`,
     );
   }
-
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
     if (isMockMode(this.cfg)) {
       return buildMockOffers(criteria, ctx.tenantId);
     }
 
+    const derivedCountry = currencyToCountry(criteria.currency);
+    if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
+      console.warn(
+        `[LatamNdcFlightSearchAdapter] POS mismatch warning: requested currency '${criteria.currency}' maps to country '${derivedCountry}', but agency default is '${this.cfg.country}'. Sandbox keys may fail if they don't support '${derivedCountry}' Point of Sale.`,
+      );
+    }
+
     const xml = buildAirShoppingRequest(criteria, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/airshopping', xml, {
       trackId: ctx.requestId,
-      country: currencyToCountry(criteria.currency),
+      country: derivedCountry,
     });
 
-    const { offers } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
+    const { offers, warnings } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
+    if (warnings && warnings.length > 0) {
+      console.warn(
+        `[LatamNdcFlightSearchAdapter] AirShopping warnings/errors:`,
+        JSON.stringify(warnings),
+      );
+    }
     return offers;
   }
 
@@ -91,13 +103,27 @@ export class LatamNdcFlightSearchAdapter
       };
     }
 
+    const derivedCountry = currencyToCountry(criteria.currency);
+    if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
+      console.warn(
+        `[LatamNdcFlightSearchAdapter] POS mismatch warning in OfferPrice: requested currency '${criteria.currency}' maps to country '${derivedCountry}', but agency default is '${this.cfg.country}'.`,
+      );
+    }
+
     const xml = buildOfferPriceRequest(offer, criteria, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/offerPrice', xml, {
       trackId: ctx.requestId,
-      country: currencyToCountry(criteria.currency),
+      country: derivedCountry,
     });
 
-    return mapOfferPriceResponse(raw, offer);
+    const result = mapOfferPriceResponse(raw, offer);
+    if (result.warnings && result.warnings.length > 0) {
+      console.warn(
+        `[LatamNdcFlightSearchAdapter] OfferPrice warnings/errors:`,
+        JSON.stringify(result.warnings),
+      );
+    }
+    return result;
   }
 
   async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {

@@ -7,8 +7,10 @@ import {
   Patch,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Transaction } from 'kysely';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { DB } from '../database/database.types.js';
 
 interface BrandingView {
   logoUrl: string | null;
@@ -36,21 +38,24 @@ export class TenantsController {
   @Get(':id/config')
   async getConfig(@CurrentUser() userId: string | undefined, @Param('id') tenantId: string) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertMembership(userId, tenantId);
 
-    const row = await this.db.db
-      .selectFrom('tenants')
-      .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
-      .where('id', '=', tenantId)
-      .executeTakeFirstOrThrow();
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await this.assertMembership(trx, userId, tenantId);
 
-    return {
-      name: row.name,
-      slug: row.slug,
-      countryCode: row.country_code,
-      defaultCurrency: row.default_currency,
-      defaultLanguage: row.default_language,
-    };
+      const row = await trx
+        .selectFrom('tenants')
+        .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
+        .where('id', '=', tenantId)
+        .executeTakeFirstOrThrow();
+
+      return {
+        name: row.name,
+        slug: row.slug,
+        countryCode: row.country_code,
+        defaultCurrency: row.default_currency,
+        defaultLanguage: row.default_language,
+      };
+    });
   }
 
   @Get(':id/branding')
@@ -59,19 +64,22 @@ export class TenantsController {
     @Param('id') tenantId: string,
   ): Promise<BrandingView> {
     if (!userId) throw new UnauthorizedException();
-    await this.assertMembership(userId, tenantId);
 
-    const row = await this.db.db
-      .selectFrom('tenants')
-      .select(['logo_url', 'primary_color', 'accent_color'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await this.assertMembership(trx, userId, tenantId);
 
-    return {
-      logoUrl: row?.logo_url ?? null,
-      primaryColor: row?.primary_color ?? null,
-      accentColor: row?.accent_color ?? null,
-    };
+      const row = await trx
+        .selectFrom('tenants')
+        .select(['logo_url', 'primary_color', 'accent_color'])
+        .where('id', '=', tenantId)
+        .executeTakeFirst();
+
+      return {
+        logoUrl: row?.logo_url ?? null,
+        primaryColor: row?.primary_color ?? null,
+        accentColor: row?.accent_color ?? null,
+      };
+    });
   }
 
   @Patch(':id/branding')
@@ -81,29 +89,32 @@ export class TenantsController {
     @Body() dto: UpdateBrandingDto,
   ): Promise<BrandingView> {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdminMembership(userId, tenantId);
 
-    await this.db.db
-      .updateTable('tenants')
-      .set({
-        ...(dto.logoUrl !== undefined ? { logo_url: dto.logoUrl } : {}),
-        ...(dto.primaryColor !== undefined ? { primary_color: dto.primaryColor } : {}),
-        ...(dto.accentColor !== undefined ? { accent_color: dto.accentColor } : {}),
-      })
-      .where('id', '=', tenantId)
-      .execute();
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await this.assertAdminMembership(trx, userId, tenantId);
 
-    const row = await this.db.db
-      .selectFrom('tenants')
-      .select(['logo_url', 'primary_color', 'accent_color'])
-      .where('id', '=', tenantId)
-      .executeTakeFirstOrThrow();
+      await trx
+        .updateTable('tenants')
+        .set({
+          ...(dto.logoUrl !== undefined ? { logo_url: dto.logoUrl } : {}),
+          ...(dto.primaryColor !== undefined ? { primary_color: dto.primaryColor } : {}),
+          ...(dto.accentColor !== undefined ? { accent_color: dto.accentColor } : {}),
+        })
+        .where('id', '=', tenantId)
+        .execute();
 
-    return {
-      logoUrl: row.logo_url,
-      primaryColor: row.primary_color,
-      accentColor: row.accent_color,
-    };
+      const row = await trx
+        .selectFrom('tenants')
+        .select(['logo_url', 'primary_color', 'accent_color'])
+        .where('id', '=', tenantId)
+        .executeTakeFirstOrThrow();
+
+      return {
+        logoUrl: row.logo_url,
+        primaryColor: row.primary_color,
+        accentColor: row.accent_color,
+      };
+    });
   }
 
   @Patch(':id/config')
@@ -113,36 +124,43 @@ export class TenantsController {
     @Body() dto: UpdateConfigDto,
   ) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdminMembership(userId, tenantId);
 
-    await this.db.db
-      .updateTable('tenants')
-      .set({
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.countryCode !== undefined ? { country_code: dto.countryCode } : {}),
-        ...(dto.defaultCurrency !== undefined ? { default_currency: dto.defaultCurrency } : {}),
-        ...(dto.defaultLanguage !== undefined ? { default_language: dto.defaultLanguage } : {}),
-      })
-      .where('id', '=', tenantId)
-      .execute();
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await this.assertAdminMembership(trx, userId, tenantId);
 
-    const row = await this.db.db
-      .selectFrom('tenants')
-      .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
-      .where('id', '=', tenantId)
-      .executeTakeFirstOrThrow();
+      await trx
+        .updateTable('tenants')
+        .set({
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.countryCode !== undefined ? { country_code: dto.countryCode } : {}),
+          ...(dto.defaultCurrency !== undefined ? { default_currency: dto.defaultCurrency } : {}),
+          ...(dto.defaultLanguage !== undefined ? { default_language: dto.defaultLanguage } : {}),
+        })
+        .where('id', '=', tenantId)
+        .execute();
 
-    return {
-      name: row.name,
-      slug: row.slug,
-      countryCode: row.country_code,
-      defaultCurrency: row.default_currency,
-      defaultLanguage: row.default_language,
-    };
+      const row = await trx
+        .selectFrom('tenants')
+        .select(['name', 'slug', 'country_code', 'default_currency', 'default_language'])
+        .where('id', '=', tenantId)
+        .executeTakeFirstOrThrow();
+
+      return {
+        name: row.name,
+        slug: row.slug,
+        countryCode: row.country_code,
+        defaultCurrency: row.default_currency,
+        defaultLanguage: row.default_language,
+      };
+    });
   }
 
-  private async assertMembership(userId: string, tenantId: string): Promise<void> {
-    const row = await this.db.db
+  private async assertMembership(
+    trx: Transaction<DB>,
+    userId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const row = await trx
       .selectFrom('memberships')
       .select('id')
       .where('user_id', '=', userId)
@@ -152,8 +170,12 @@ export class TenantsController {
     if (!row) throw new ForbiddenException('not a member of this tenant');
   }
 
-  private async assertAdminMembership(userId: string, tenantId: string): Promise<void> {
-    const row = await this.db.db
+  private async assertAdminMembership(
+    trx: Transaction<DB>,
+    userId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const row = await trx
       .selectFrom('memberships')
       .select('role')
       .where('user_id', '=', userId)

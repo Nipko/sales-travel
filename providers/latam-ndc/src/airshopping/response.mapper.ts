@@ -30,6 +30,10 @@ export function mapAirShoppingResponse(
   const warnings: string[] = [];
   const root = pick(raw, 'IATA_AirShoppingRS', 'AirShoppingRS');
   if (!root) {
+    console.error(
+      `[LATAM GDS AirShopping Error] No IATA_AirShoppingRS root element in raw response. Raw payload:`,
+      JSON.stringify(raw),
+    );
     return {
       offers: [],
       warnings: ['No IATA_AirShoppingRS root element. Probable error response.'],
@@ -38,6 +42,9 @@ export function mapAirShoppingResponse(
 
   const errorNode = pick(root, 'Error') as { Code?: string; DescText?: string } | undefined;
   if (errorNode) {
+    console.error(
+      `[LATAM GDS AirShopping Error] GDS returned error - Code: ${errorNode.Code ?? 'unknown'}, Desc: ${errorNode.DescText ?? 'unknown'}`,
+    );
     return {
       offers: [],
       warnings: [`LATAM error ${errorNode.Code ?? '?'}: ${errorNode.DescText ?? 'unknown'}`],

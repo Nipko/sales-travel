@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { AllExceptionsFilter } from './all-exceptions.filter.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -9,6 +10,7 @@ async function bootstrap(): Promise<void> {
   });
 
   app.use(helmet());
+  app.useGlobalFilters(new AllExceptionsFilter());
   app.setGlobalPrefix('api');
 
   const port = Number(process.env['PORT'] ?? 3000);

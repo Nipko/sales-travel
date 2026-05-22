@@ -18,24 +18,35 @@ export async function api<T>(
   if (token) headers.set('authorization', `Bearer ${token}`);
   if (tenantId) headers.set('x-tenant-id', tenantId);
 
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...init,
-    headers,
-    cache: 'no-store',
-  });
+  try {
+    const res = await fetch(`${BASE}/api${path}`, {
+      ...init,
+      headers,
+      cache: 'no-store',
+    });
 
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { message?: string | string[] };
-      if (Array.isArray(body.message)) message = body.message.join(', ');
-      else if (body.message) message = body.message;
-    } catch {
-      // ignore parse error, fall back to statusText
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body = (await res.json()) as { message?: string | string[] };
+        if (Array.isArray(body.message)) message = body.message.join(', ');
+        else if (body.message) message = body.message;
+      } catch {
+        // ignore parse error, fall back to statusText
+      }
+      const apiError = { status: res.status, message };
+      console.error(`[API FETCH ERROR] PATH: ${path}, STATUS: ${res.status}, MESSAGE: ${message}`);
+      return { ok: false, error: apiError };
     }
-    return { ok: false, error: { status: res.status, message } };
-  }
 
-  const data = (await res.json()) as T;
-  return { ok: true, data };
+    const data = (await res.json()) as T;
+    return { ok: true, data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[API FETCH CONNECTION ERROR] PATH: ${path}, ERROR: ${message}`);
+    return {
+      ok: false,
+      error: { status: 500, message: `Connection error: ${message}` },
+    };
+  }
 }

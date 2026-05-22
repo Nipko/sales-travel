@@ -10,7 +10,8 @@
     "emitDecoratorMetadata": true,
     "isolatedModules": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "incremental": false
   },
   "include": ["src/**/*"]
 }
