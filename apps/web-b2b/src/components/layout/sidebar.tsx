@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Compass } from 'lucide-react';
 import { adminNav, managementNav, operationsNav, superAdminNav, type NavItem } from '../../lib/nav';
 import { cn } from '../../lib/cn';
 
@@ -17,18 +18,26 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       href={item.href}
       className={cn(
-        'group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+        'group relative flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-xs font-medium transition-all duration-200',
         active
-          ? 'bg-[var(--color-surface-muted)] text-[var(--color-fg)] font-medium'
-          : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)]',
+          ? 'bg-white/[0.06] text-white font-semibold shadow-sm'
+          : 'text-slate-400 hover:text-white hover:bg-white/[0.03]',
       )}
     >
+      {/* Active Indicator Bar */}
+      {active && (
+        <span 
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-r bg-[var(--color-primary)]" 
+          aria-hidden="true"
+        />
+      )}
+      
       <Icon
         className={cn(
-          'size-4 shrink-0',
+          'size-4 shrink-0 transition-transform duration-200 group-hover:scale-105',
           active
             ? 'text-[var(--color-primary)]'
-            : 'text-[var(--color-fg-subtle)] group-hover:text-[var(--color-fg-muted)]',
+            : 'text-slate-500 group-hover:text-slate-300',
         )}
       />
       <span>{item.label}</span>
@@ -44,82 +53,93 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
 
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg)]">
-      <div className="flex h-14 items-center gap-2.5 border-b border-[var(--color-border)] px-5">
+    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300">
+      {/* Header / Branding */}
+      <div className="flex h-14 items-center gap-2.5 border-b border-slate-800/60 px-5">
         {logoUrl ? (
-          <img src={logoUrl} alt="" className="size-7 rounded-md object-contain" />
+          <img src={logoUrl} alt="" className="size-7 rounded-lg object-contain bg-white/5 p-0.5 border border-white/10" />
         ) : (
-          <div className="size-7 rounded-md bg-[var(--color-primary)] flex items-center justify-center">
-            <span className="text-[var(--color-primary-fg)] text-xs font-bold tracking-tight">
-              {tenantName ? tenantName.slice(0, 2).toUpperCase() : 'ST'}
-            </span>
+          <div className="size-7 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-md">
+            <Compass className="size-4 text-white animate-spin-slow" />
           </div>
         )}
-        <span className="text-sm font-semibold tracking-tight text-[var(--color-fg)] truncate">
-          {tenantName ?? 'Sales-Travel'}
-        </span>
+        <div className="flex flex-col min-w-0">
+          <span className="text-xs font-bold tracking-tight text-white truncate leading-tight">
+            {tenantName ?? 'Sales-Travel'}
+          </span>
+          <span className="text-[10px] text-slate-500 leading-none mt-0.5 font-medium uppercase tracking-wider">
+            Agencia B2B
+          </span>
+        </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      {/* Navigation Links */}
+      <nav className="flex-1 overflow-y-auto px-3.5 py-6 space-y-6">
         {/* OPERACIONES DIARIAS */}
-        <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-          Operaciones
-        </p>
-        <ul className="space-y-0.5">
-          {operationsNav.map((item) => (
-            <li key={item.href}>
-              <NavLink item={item} active={isActive(item.href)} />
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-1.5">
+          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+            Operaciones
+          </p>
+          <ul className="space-y-1">
+            {operationsNav.map((item) => (
+              <li key={item.href}>
+                <NavLink item={item} active={isActive(item.href)} />
+              </li>
+            ))}
+          </ul>
+        </div>
 
         {/* GESTIÓN */}
-        <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-          Gestión
-        </p>
-        <ul className="space-y-0.5">
-          {managementNav.map((item) => (
-            <li key={item.href}>
-              <NavLink item={item} active={isActive(item.href)} />
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-1.5">
+          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+            Gestión
+          </p>
+          <ul className="space-y-1">
+            {managementNav.map((item) => (
+              <li key={item.href}>
+                <NavLink item={item} active={isActive(item.href)} />
+              </li>
+            ))}
+          </ul>
+        </div>
 
-        {/* ADMINISTRACIÓN (Solo admins de agencia y superadmins) */}
+        {/* ADMINISTRACIÓN */}
         {isAdmin && (
-          <>
-            <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+          <div className="space-y-1.5">
+            <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
               Administración
             </p>
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {adminNav.map((item) => (
                 <li key={item.href}>
                   <NavLink item={item} active={isActive(item.href)} />
                 </li>
               ))}
             </ul>
-          </>
+          </div>
         )}
 
-        {/* AGENCIAS (Solo superadmins) */}
+        {/* AGENCIAS SUPER ADMIN */}
         {isSuperAdmin && (
-          <>
-            <p className="mt-6 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+          <div className="space-y-1.5">
+            <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
               Super Admin
             </p>
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {superAdminNav.map((item) => (
                 <li key={item.href}>
                   <NavLink item={item} active={isActive(item.href)} />
                 </li>
               ))}
             </ul>
-          </>
+          </div>
         )}
       </nav>
 
-      <div className="border-t border-[var(--color-border)] px-5 py-3">
-        <p className="text-[10px] text-[var(--color-fg-subtle)]">v0.2.0 · B2B Agent</p>
+      {/* Footer info */}
+      <div className="border-t border-slate-800/60 px-5 py-3.5 flex items-center justify-between text-[10px] text-slate-500 font-medium">
+        <span>Planetour Cloud</span>
+        <span className="font-mono text-[9px] text-slate-600">v0.2.0</span>
       </div>
     </aside>
   );

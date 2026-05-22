@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
+import { Compass, Globe, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import {
   Card,
@@ -19,8 +20,13 @@ const initialState: LoginState = {};
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} size="lg" className="w-full">
-      {pending ? 'Ingresando…' : 'Ingresar'}
+    <Button 
+      type="submit" 
+      disabled={pending} 
+      size="lg" 
+      className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] transition-all duration-200 shadow-md font-medium tracking-wide"
+    >
+      {pending ? 'Iniciando sesión…' : 'Iniciar sesión'}
     </Button>
   );
 }
@@ -29,68 +35,127 @@ export default function LoginPage() {
   const [state, formAction] = useActionState(loginAction, initialState);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)] shadow-[var(--shadow-sm)]">
-            <span className="text-sm font-bold tracking-tight text-[var(--color-primary-fg)]">
-              ST
-            </span>
+    <main className="flex min-h-screen bg-[var(--color-bg)]">
+      {/* Panel Izquierdo: Visual Inmersivo Premium (Solo visible en LG y superior) */}
+      <section className="relative hidden w-[55%] lg:flex flex-col justify-between overflow-hidden bg-[var(--color-navy-dark)] p-12 text-white">
+        {/* Esfera de Luz Difuminada Dinámica */}
+        <div className="absolute -top-40 -left-40 size-[500px] rounded-full bg-[var(--color-primary)]/15 mix-blend-screen animate-orbit-glow" />
+        <div className="absolute -bottom-20 right-0 size-[450px] rounded-full bg-[var(--color-navy-light)]/20 mix-blend-screen" />
+        
+        {/* Logo/Branding Header */}
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-[var(--color-primary)] shadow-[var(--shadow-md)]">
+            <Compass className="size-5 text-[var(--color-primary-fg)] animate-spin-slow" />
           </div>
-          <h1 className="text-lg font-semibold tracking-tight text-[var(--color-fg)]">
-            Sales-Travel
-          </h1>
-          <p className="mt-1 text-xs text-[var(--color-fg-muted)]">Panel de agencia</p>
+          <span className="text-lg font-bold tracking-tight text-white">
+            Sales-Travel <span className="text-xs font-normal text-[var(--color-primary)]">B2B</span>
+          </span>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Ingresar a tu cuenta</CardTitle>
-            <CardDescription>Usá tu email corporativo</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form action={formAction} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  placeholder="vos@agencia.com"
-                />
-              </div>
+        {/* Mensaje de Valor Central */}
+        <div className="relative z-10 max-w-lg my-auto space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs backdrop-blur-sm text-[var(--color-accent)] font-medium">
+            <Sparkles className="size-3" />
+            Consolidador Conversacional de Turismo
+          </div>
+          <h1 className="text-4xl font-extrabold tracking-tight leading-tight text-white drop-shadow-sm">
+            La plataforma de turismo más moderna y potente de LATAM.
+          </h1>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            Gestione reservas, cotizaciones y vuelos en tiempo récord. Conéctese directamente con múltiples GDS y herramientas de inteligencia artificial para impulsar las ventas de su agencia.
+          </p>
+        </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Contraseña</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                />
-              </div>
+        {/* Footer del Panel */}
+        <div className="relative z-10 flex items-center gap-3 text-xs text-slate-400">
+          <Globe className="size-4 text-[var(--color-primary)]" />
+          <span>Solución multi-tenant white-label para Colombia, Perú y Brasil.</span>
+        </div>
+      </section>
 
-              {state.error ? (
-                <p
-                  role="alert"
-                  className="rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/8 px-3 py-2 text-xs text-[var(--color-danger)]"
-                >
-                  {state.error}
-                </p>
-              ) : null}
+      {/* Panel Derecho: Formulario de Login */}
+      <section className="flex flex-1 flex-col justify-center px-6 py-12 sm:px-12 lg:px-20 bg-[var(--color-bg)]">
+        <div className="mx-auto w-full max-w-sm space-y-8 animate-fade-in-up">
+          {/* Cabecera Móvil */}
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <div className="mb-4 flex size-12 items-center justify-center rounded-xl bg-[var(--color-primary)] shadow-[var(--shadow-md)] lg:hidden">
+              <Compass className="size-6 text-[var(--color-primary-fg)]" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--color-fg)]">
+              Sales-Travel
+            </h1>
+            <p className="mt-1.5 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-muted)]">
+              Portal de Agencia · Planetour
+            </p>
+          </div>
 
-              <SubmitButton />
-            </form>
-          </CardContent>
-        </Card>
+          <Card className="border border-[var(--color-border)]/50 bg-[var(--color-surface)] shadow-[var(--shadow-md)] rounded-xl overflow-hidden">
+            <CardHeader className="space-y-1.5 pb-4">
+              <CardTitle className="text-lg font-bold text-[var(--color-fg)]">
+                Ingrese a su cuenta
+              </CardTitle>
+              <CardDescription className="text-xs text-[var(--color-fg-muted)]">
+                Use su dirección de correo electrónico corporativo
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={formAction} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-xs font-semibold text-[var(--color-fg)]">
+                    Correo electrónico
+                  </Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    placeholder="ejemplo@agencia.com"
+                    className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
+                  />
+                </div>
 
-        <p className="mt-6 text-center text-[11px] text-[var(--color-fg-subtle)]">
-          ¿Problemas para ingresar? Contactá al admin de tu agencia.
-        </p>
-      </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-xs font-semibold text-[var(--color-fg)]">
+                      Contraseña
+                    </Label>
+                  </div>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
+                  />
+                </div>
+
+                {state.error ? (
+                  <div
+                    role="alert"
+                    className="flex gap-2 rounded-lg border border-[var(--color-danger)]/20 bg-[var(--color-danger)]/5 px-3 py-2.5 text-xs text-[var(--color-danger)]"
+                  >
+                    <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                    <span>{state.error}</span>
+                  </div>
+                ) : null}
+
+                <SubmitButton />
+              </form>
+            </CardContent>
+          </Card>
+
+          <p className="text-center text-xs text-[var(--color-fg-subtle)] lg:text-left">
+            ¿Tiene problemas para ingresar?{' '}
+            <span className="font-medium text-[var(--color-primary)] hover:underline cursor-pointer">
+              Contacte al administrador
+            </span>{' '}
+            de su agencia.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }
+

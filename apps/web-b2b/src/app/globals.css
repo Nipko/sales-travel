@@ -6,26 +6,36 @@
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     'Liberation Mono', 'Courier New';
 
+  /* Colores Base Limpios */
   --color-bg: oklch(0.99 0.002 264);
   --color-surface: oklch(1 0 0);
   --color-surface-muted: oklch(0.975 0.003 264);
-  --color-border: oklch(0.92 0.005 264);
-  --color-border-strong: oklch(0.85 0.008 264);
+  --color-border: oklch(0.92 0.005 264 / 0.8);
+  --color-border-strong: oklch(0.85 0.008 264 / 0.9);
 
-  --color-fg: oklch(0.21 0.012 264);
-  --color-fg-muted: oklch(0.46 0.013 264);
-  --color-fg-subtle: oklch(0.62 0.011 264);
+  /* Texto y Primer Plano */
+  --color-fg: oklch(0.18 0.01 264);
+  --color-fg-muted: oklch(0.42 0.012 264);
+  --color-fg-subtle: oklch(0.58 0.01 264);
 
-  --color-primary: oklch(0.46 0.16 250);
-  --color-primary-fg: oklch(0.99 0 0);
-  --color-primary-hover: oklch(0.41 0.165 250);
+  /* Color Primario: Naranja Planetour Premium */
+  --color-primary: oklch(0.62 0.18 52);
+  --color-primary-fg: oklch(1 0 0);
+  --color-primary-hover: oklch(0.58 0.19 50);
 
-  --color-accent: oklch(0.74 0.15 60);
-  --color-accent-fg: oklch(0.21 0.012 264);
+  /* Color Secundario/Soporte: Azul Midnight GDS */
+  --color-navy: oklch(0.30 0.09 250);
+  --color-navy-dark: oklch(0.13 0.04 250);
+  --color-navy-light: oklch(0.45 0.08 250);
 
-  --color-success: oklch(0.62 0.13 150);
-  --color-warning: oklch(0.78 0.14 80);
-  --color-danger: oklch(0.6 0.21 25);
+  /* Acento: Dorado Cálido */
+  --color-accent: oklch(0.82 0.12 75);
+  --color-accent-fg: oklch(0.18 0.01 264);
+
+  /* Estados estándar */
+  --color-success: oklch(0.60 0.14 150);
+  --color-warning: oklch(0.76 0.13 80);
+  --color-danger: oklch(0.58 0.19 25);
   --color-danger-fg: oklch(0.99 0 0);
 
   --radius-xs: 4px;
@@ -34,10 +44,41 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 
-  --shadow-xs: 0 1px 2px oklch(0.21 0.012 264 / 0.04);
-  --shadow-sm: 0 1px 3px oklch(0.21 0.012 264 / 0.06), 0 1px 2px oklch(0.21 0.012 264 / 0.04);
-  --shadow-md: 0 4px 8px oklch(0.21 0.012 264 / 0.06), 0 2px 4px oklch(0.21 0.012 264 / 0.04);
-  --shadow-lg: 0 12px 24px oklch(0.21 0.012 264 / 0.08), 0 4px 8px oklch(0.21 0.012 264 / 0.04);
+  --shadow-xs: 0 1px 2px oklch(0.13 0.04 250 / 0.03);
+  --shadow-sm: 0 1px 3px oklch(0.13 0.04 250 / 0.05), 0 1px 2px oklch(0.13 0.04 250 / 0.03);
+  --shadow-md: 0 4px 12px oklch(0.13 0.04 250 / 0.05), 0 2px 4px oklch(0.13 0.04 250 / 0.03);
+  --shadow-lg: 0 12px 28px oklch(0.13 0.04 250 / 0.07), 0 4px 12px oklch(0.13 0.04 250 / 0.03);
+  --shadow-xl: 0 20px 40px oklch(0.13 0.04 250 / 0.12);
+
+  /* Animaciones */
+  --animate-fade-in-up: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-orbit-glow: orbit-glow 12s ease-in-out infinite;
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes orbit-glow {
+    0%, 100% {
+      transform: translate(0, 0) scale(1);
+      filter: blur(80px);
+    }
+    33% {
+      transform: translate(30px, -40px) scale(1.15);
+      filter: blur(100px);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+      filter: blur(70px);
+    }
+  }
 }
 
 html,
