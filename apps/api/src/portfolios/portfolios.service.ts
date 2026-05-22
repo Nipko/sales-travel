@@ -176,7 +176,9 @@ export class PortfoliosService {
       const available = Number(portfolio.balance_minor) + Number(portfolio.credit_limit_minor);
 
       if (available < amountMinor) {
-        throw new BadRequestException('Saldo insuficiente para reservar. Recargue saldo o solicite límite de crédito.');
+        throw new BadRequestException(
+          'Saldo insuficiente para reservar. Recargue saldo o solicite límite de crédito.',
+        );
       }
 
       // Provisionar saldo restándolo del balance corriente

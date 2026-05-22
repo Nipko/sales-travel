@@ -117,12 +117,18 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           stroke: 'stroke-slate-500',
           text: 'text-slate-600',
         };
-    };
+    }
   };
 
   // CSV Exporter
   const handleExportCSV = () => {
-    const headers = ['Vertical', 'Total Ventas', 'Comisiones Devengadas', 'Markup Retenido', 'Utilidad Neta'];
+    const headers = [
+      'Vertical',
+      'Total Ventas',
+      'Comisiones Devengadas',
+      'Markup Retenido',
+      'Utilidad Neta',
+    ];
     const rows = commissions.byVertical.map((item) => [
       item.vertical,
       (item.totalSalesMinor / 100).toFixed(0),
@@ -165,20 +171,19 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
   const points = salesMetrics.monthlyTrend.map((t, idx) => {
     const x = padding + (idx / (salesMetrics.monthlyTrend.length - 1)) * graphWidth;
     const y =
-      svgHeight -
-      padding -
-      ((t.amountMinor - trendMin) / (trendMax - trendMin)) * graphHeight;
+      svgHeight - padding - ((t.amountMinor - trendMin) / (trendMax - trendMin)) * graphHeight;
     return { x, y, label: t.month, value: t.amountMinor };
   });
 
   const polylinePointsStr = points.map((p) => `${p.x},${p.y}`).join(' ');
 
   // SVG Area path
-  const areaPointsStr = points.length > 0
-    ? `${points[0].x},${svgHeight - padding} ` +
-      polylinePointsStr +
-      ` ${points[points.length - 1].x},${svgHeight - padding}`
-    : '';
+  const areaPointsStr =
+    points.length > 0
+      ? `${points[0].x},${svgHeight - padding} ` +
+        polylinePointsStr +
+        ` ${points[points.length - 1].x},${svgHeight - padding}`
+      : '';
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8 space-y-8 animate-fade-in">
@@ -193,7 +198,8 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
             Métricas de Negocio & Reportes
           </h1>
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Audite ventas consolidadas, comisiones de proveedores GDS y márgenes de markup en tiempo real.
+            Audite ventas consolidadas, comisiones de proveedores GDS y márgenes de markup en tiempo
+            real.
           </p>
         </div>
         <div className="flex gap-2">
@@ -329,10 +335,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
 
             {/* SVG Line Chart */}
             <div className="w-full overflow-hidden">
-              <svg
-                viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                className="w-full h-auto text-xs"
-              >
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto text-xs">
                 <defs>
                   <linearGradient id="gradientArea" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.18" />
@@ -368,9 +371,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                 })}
 
                 {/* Filled Area */}
-                {areaPointsStr && (
-                  <path d={areaPointsStr} fill="url(#gradientArea)" />
-                )}
+                {areaPointsStr && <path d={areaPointsStr} fill="url(#gradientArea)" />}
 
                 {/* Trend line */}
                 {polylinePointsStr && (
@@ -408,7 +409,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                     >
                       {formatCurrency(p.value).slice(0, 5)}
                     </text>
-                    
+
                     {/* Month Label */}
                     <text
                       x={p.x}
@@ -427,7 +428,9 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           {/* Breakdown Table */}
           <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl overflow-hidden shadow-sm">
             <div className="p-5 border-b border-slate-100">
-              <h3 className="text-xs font-bold text-slate-800">Desglose por Línea de Producto (Vertical)</h3>
+              <h3 className="text-xs font-bold text-slate-800">
+                Desglose por Línea de Producto (Vertical)
+              </h3>
               <p className="text-[10px] text-slate-400 mt-0.5">
                 Volumen y márgenes de ingresos desglosados detalladamente por vertical.
               </p>
@@ -504,7 +507,9 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                     </div>
                     <div>
                       <h4 className="font-bold text-slate-800">{agent.name}</h4>
-                      <p className="text-[9px] text-slate-400 uppercase font-semibold">Agente de Viajes</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-semibold">
+                        Agente de Viajes
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -532,7 +537,10 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
 
             <div className="space-y-4">
               {salesMetrics.byVertical.map((item, idx) => {
-                const total = salesMetrics.byVertical.reduce((sum, v) => sum + v.totalAmountMinor, 0);
+                const total = salesMetrics.byVertical.reduce(
+                  (sum, v) => sum + v.totalAmountMinor,
+                  0,
+                );
                 const percent = total > 0 ? (item.totalAmountMinor / total) * 100 : 0;
                 const cInfo = getVerticalColorClass(item.vertical);
 
@@ -559,8 +567,8 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                             item.vertical.toLowerCase() === 'vuelos'
                               ? 'rgb(56, 189, 248)'
                               : item.vertical.toLowerCase() === 'hoteles'
-                              ? 'rgb(251, 191, 36)'
-                              : 'rgb(52, 211, 153)',
+                                ? 'rgb(251, 191, 36)'
+                                : 'rgb(52, 211, 153)',
                         }}
                       />
                     </div>

@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Get,
-  Param,
-  Patch,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { PortfoliosService } from './portfolios.service.js';
@@ -105,10 +97,7 @@ export class PortfoliosController {
   }
 
   @Post('orders/:orderId/approve')
-  async approve(
-    @CurrentUser() userId: string | undefined,
-    @Param('orderId') orderId: string,
-  ) {
+  async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     await this.assertAdminMembership(userId, tenantId);
@@ -117,10 +106,7 @@ export class PortfoliosController {
   }
 
   @Post('orders/:orderId/reject')
-  async reject(
-    @CurrentUser() userId: string | undefined,
-    @Param('orderId') orderId: string,
-  ) {
+  async reject(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     await this.assertAdminMembership(userId, tenantId);

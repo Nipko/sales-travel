@@ -15,14 +15,16 @@ export default async function CarterasPage() {
     api<Membership[]>('/me/memberships'),
   ]);
 
-  const portfolio = portfolioRes.ok ? portfolioRes.data.portfolio : {
-    id: '',
-    tenantId: '',
-    creditLimitMinor: 0,
-    balanceMinor: 0,
-    currency: 'COP',
-    status: 'active'
-  };
+  const portfolio = portfolioRes.ok
+    ? portfolioRes.data.portfolio
+    : {
+        id: '',
+        tenantId: '',
+        creditLimitMinor: 0,
+        balanceMinor: 0,
+        currency: 'COP',
+        status: 'active',
+      };
 
   const transactions = transactionsRes.ok ? transactionsRes.data.transactions : [];
   const orders = ordersRes.ok ? ordersRes.data.orders : [];

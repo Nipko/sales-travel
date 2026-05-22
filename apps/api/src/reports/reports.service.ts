@@ -47,9 +47,9 @@ export class ReportsService {
       // Convertir a verticales amigables
       const verticalMap: Record<string, string> = {
         'latam-ndc': 'Vuelos',
-        'hotelbeds': 'Hoteles',
-        'hoteldo': 'Hoteles',
-        'assistcard': 'Asistencias',
+        hotelbeds: 'Hoteles',
+        hoteldo: 'Hoteles',
+        assistcard: 'Asistencias',
       };
 
       const byVerticalMap: Record<string, SalesVerticalMetric> = {
@@ -138,7 +138,7 @@ export class ReportsService {
         {
           vertical: 'Vuelos',
           commissionMinor: 6250000, // 5% promedio sobre ventas
-          markupMinor: 8750000,     // Margen de ganancia propio
+          markupMinor: 8750000, // Margen de ganancia propio
           totalSalesMinor: 125000000,
         },
         {

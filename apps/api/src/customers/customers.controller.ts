@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
-import { CustomersService, type CreateCustomerDto, type UpdateCustomerDto } from './customers.service.js';
+import {
+  CustomersService,
+  type CreateCustomerDto,
+  type UpdateCustomerDto,
+} from './customers.service.js';
 
 @Controller('customers')
 export class CustomersController {
@@ -81,7 +85,8 @@ export class CustomersController {
       gender: row.gender,
       nationality: row.nationality,
       passportExpiry: row.passport_expiry,
-      preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : row.preferences,
+      preferences:
+        typeof row.preferences === 'string' ? JSON.parse(row.preferences) : row.preferences,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

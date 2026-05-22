@@ -52,12 +52,12 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGender, setSelectedGender] = useState('ALL');
   const [activeTab, setActiveTab] = useState<'all' | 'passports'>('all');
-  
+
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
+
   // Form states
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -75,7 +75,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
 
   // Selected customer for detail drawer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    initialCustomers[0] ?? null
+    initialCustomers[0] ?? null,
   );
 
   const filteredCustomers = customers.filter((c) => {
@@ -88,11 +88,11 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
       mail.includes(searchTerm.toLowerCase());
 
     const matchesGender = selectedGender === 'ALL' || c.gender === selectedGender;
-    
+
     if (activeTab === 'passports') {
       return matchesSearch && matchesGender && c.documentType === 'PASAPORTE';
     }
-    
+
     return matchesSearch && matchesGender;
   });
 
@@ -350,7 +350,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
                 {filteredCustomers.map((c) => {
                   const isSelected = selectedCustomer?.id === c.id;
                   const expiryDays = getExpiryDays(c.passportExpiry);
-                  
+
                   return (
                     <div
                       key={c.id}
@@ -397,7 +397,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
                             )}
                           </div>
                         )}
-                        
+
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {
@@ -472,15 +472,23 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
                   <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <div>
                       <p className="text-[9px] text-slate-400 font-semibold uppercase">Tipo</p>
-                      <p className="font-bold text-slate-800 mt-0.5">{selectedCustomer.documentType}</p>
+                      <p className="font-bold text-slate-800 mt-0.5">
+                        {selectedCustomer.documentType}
+                      </p>
                     </div>
                     <div>
                       <p className="text-[9px] text-slate-400 font-semibold uppercase">Número</p>
-                      <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedCustomer.documentNumber}</p>
+                      <p className="font-mono font-bold text-slate-800 mt-0.5">
+                        {selectedCustomer.documentNumber}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[9px] text-slate-400 font-semibold uppercase">País Emisión</p>
-                      <p className="font-bold text-slate-800 mt-0.5">{selectedCustomer.documentIssuingCountry}</p>
+                      <p className="text-[9px] text-slate-400 font-semibold uppercase">
+                        País Emisión
+                      </p>
+                      <p className="font-bold text-slate-800 mt-0.5">
+                        {selectedCustomer.documentIssuingCountry}
+                      </p>
                     </div>
                     {selectedCustomer.documentType === 'PASAPORTE' && (
                       <div>
@@ -503,7 +511,9 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
                   <div className="grid grid-cols-2 gap-2 text-slate-600">
                     <div className="flex justify-between border-b border-slate-50 py-1">
                       <span className="text-slate-400">Nacionalidad:</span>
-                      <span className="font-bold text-slate-800">{selectedCustomer.nationality}</span>
+                      <span className="font-bold text-slate-800">
+                        {selectedCustomer.nationality}
+                      </span>
                     </div>
                     <div className="flex justify-between border-b border-slate-50 py-1">
                       <span className="text-slate-400">Género:</span>
@@ -511,8 +521,8 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
                         {selectedCustomer.gender === 'M'
                           ? 'Masculino'
                           : selectedCustomer.gender === 'F'
-                          ? 'Femenino'
-                          : 'Otro'}
+                            ? 'Femenino'
+                            : 'Otro'}
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-slate-50 py-1 col-span-2">
@@ -551,7 +561,9 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
           ) : (
             <div className="bg-white rounded-2xl border border-[var(--color-border)]/45 p-8 text-center text-slate-400 shadow-sm">
               <Users className="size-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-semibold mt-3">Selecciona un pasajero para ver detalles.</p>
+              <p className="text-xs font-semibold mt-3">
+                Selecciona un pasajero para ver detalles.
+              </p>
             </div>
           )}
         </div>

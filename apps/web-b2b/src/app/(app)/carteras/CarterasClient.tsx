@@ -66,16 +66,18 @@ export function CarterasClient({
   const [portfolio, setPortfolio] = useState<Portfolio>(initialPortfolio);
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>(initialTransactions);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
-  
+
   // Modals and UI states
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositNotes, setDepositNotes] = useState('');
-  
+
   const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
   const [creditLimitInput, setCreditLimitInput] = useState('');
 
-  const [activeSubTab, setActiveSubTab] = useState<'transactions' | 'pending-approvals'>('transactions');
+  const [activeSubTab, setActiveSubTab] = useState<'transactions' | 'pending-approvals'>(
+    'transactions',
+  );
 
   const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
 
@@ -144,8 +146,13 @@ export function CarterasClient({
   };
 
   const handleApproveOrder = async (orderId: string) => {
-    if (!confirm('¿Está seguro de aprobar esta reserva? El saldo retenido se debitará permanentemente.')) return;
-    
+    if (
+      !confirm(
+        '¿Está seguro de aprobar esta reserva? El saldo retenido se debitará permanentemente.',
+      )
+    )
+      return;
+
     const res = await fetch(`/api/portfolios/orders/${orderId}/approve`, {
       method: 'POST',
     });
@@ -175,7 +182,12 @@ export function CarterasClient({
   };
 
   const handleRejectOrder = async (orderId: string) => {
-    if (!confirm('¿Está seguro de rechazar esta reserva? El saldo retenido se devolverá a la cartera.')) return;
+    if (
+      !confirm(
+        '¿Está seguro de rechazar esta reserva? El saldo retenido se devolverá a la cartera.',
+      )
+    )
+      return;
 
     const res = await fetch(`/api/portfolios/orders/${orderId}/reject`, {
       method: 'POST',
@@ -262,7 +274,8 @@ export function CarterasClient({
             Cartera & Líneas de Crédito
           </h1>
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Consulte su saldo disponible, realice recargas contables y apruebe reservas con retención preventiva.
+            Consulte su saldo disponible, realice recargas contables y apruebe reservas con
+            retención preventiva.
           </p>
         </div>
         <div className="flex gap-2">
@@ -336,7 +349,7 @@ export function CarterasClient({
             <p className="text-3xl font-extrabold tracking-tight text-[var(--color-primary)] font-mono">
               {formatCurrency(
                 portfolio.balanceMinor + portfolio.creditLimitMinor,
-                portfolio.currency
+                portfolio.currency,
               )}
             </p>
           </div>
@@ -414,7 +427,7 @@ export function CarterasClient({
                           <td className="px-6 py-4">
                             <span
                               className={`inline-flex items-center border rounded-md px-2 py-0.5 text-[9px] font-bold ${getTransactionBadge(
-                                tx.transactionType
+                                tx.transactionType,
                               )}`}
                             >
                               {getTransactionLabel(tx.transactionType)}
@@ -448,9 +461,9 @@ export function CarterasClient({
               <div>
                 <p className="font-bold">Workflow Administrativo de Dos Pasos</p>
                 <p className="mt-0.5 leading-relaxed">
-                  Las reservas pagadas con cartera B2B quedan retenidas preventivamente. Como administrador,
-                  puede **Aprobar** (emitiendo tiquete real en GDS y cobrando cartera) o **Rechazar** (cancelando PNR
-                  y liberando saldo).
+                  Las reservas pagadas con cartera B2B quedan retenidas preventivamente. Como
+                  administrador, puede **Aprobar** (emitiendo tiquete real en GDS y cobrando
+                  cartera) o **Rechazar** (cancelando PNR y liberando saldo).
                 </p>
               </div>
             </div>
@@ -531,7 +544,9 @@ export function CarterasClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 overflow-hidden shadow-2xl animate-scale-up">
             <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">Recargar Saldo</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+                Recargar Saldo
+              </h2>
               <button
                 onClick={() => setIsDepositModalOpen(false)}
                 className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
@@ -543,7 +558,8 @@ export function CarterasClient({
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-emerald-800 flex gap-2">
                 <Sparkles className="size-4 shrink-0" />
                 <p className="text-[10px] leading-relaxed">
-                  Ingrese el monto de la transferencia bancaria o recarga que ha sido validada. El saldo se cargará inmediatamente.
+                  Ingrese el monto de la transferencia bancaria o recarga que ha sido validada. El
+                  saldo se cargará inmediatamente.
                 </p>
               </div>
 
@@ -552,7 +568,9 @@ export function CarterasClient({
                   Monto Recarga (COP)
                 </label>
                 <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                    $
+                  </span>
                   <input
                     type="number"
                     required
@@ -602,7 +620,9 @@ export function CarterasClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 overflow-hidden shadow-2xl animate-scale-up">
             <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">Configurar Crédito</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+                Configurar Crédito
+              </h2>
               <button
                 onClick={() => setIsLimitModalOpen(false)}
                 className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
@@ -616,7 +636,9 @@ export function CarterasClient({
                   Límite de Crédito Autorizado (COP)
                 </label>
                 <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                    $
+                  </span>
                   <input
                     type="number"
                     required

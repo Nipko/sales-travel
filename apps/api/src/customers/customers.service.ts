@@ -102,7 +102,11 @@ export class CustomersService {
     });
   }
 
-  async update(tenantId: string, id: string, dto: UpdateCustomerDto): Promise<CustomerRow | undefined> {
+  async update(
+    tenantId: string,
+    id: string,
+    dto: UpdateCustomerDto,
+  ): Promise<CustomerRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
       const updateData: any = {};
       if (dto.firstName !== undefined) updateData.first_name = dto.firstName;
@@ -111,11 +115,13 @@ export class CustomersService {
       if (dto.phone !== undefined) updateData.phone = dto.phone;
       if (dto.documentType !== undefined) updateData.document_type = dto.documentType;
       if (dto.documentNumber !== undefined) updateData.document_number = dto.documentNumber;
-      if (dto.documentIssuingCountry !== undefined) updateData.document_issuing_country = dto.documentIssuingCountry;
+      if (dto.documentIssuingCountry !== undefined)
+        updateData.document_issuing_country = dto.documentIssuingCountry;
       if (dto.birthdate !== undefined) updateData.birthdate = new Date(dto.birthdate);
       if (dto.gender !== undefined) updateData.gender = dto.gender;
       if (dto.nationality !== undefined) updateData.nationality = dto.nationality;
-      if (dto.passportExpiry !== undefined) updateData.passport_expiry = dto.passportExpiry ? new Date(dto.passportExpiry) : null;
+      if (dto.passportExpiry !== undefined)
+        updateData.passport_expiry = dto.passportExpiry ? new Date(dto.passportExpiry) : null;
       if (dto.preferences !== undefined) updateData.preferences = JSON.stringify(dto.preferences);
 
       const row = await trx
@@ -130,10 +136,7 @@ export class CustomersService {
 
   async remove(tenantId: string, id: string): Promise<boolean> {
     return this.db.withTenant(tenantId, async (trx) => {
-      const result = await trx
-        .deleteFrom('customers')
-        .where('id', '=', id)
-        .executeTakeFirst();
+      const result = await trx.deleteFrom('customers').where('id', '=', id).executeTakeFirst();
       return Number(result.numDeletedRows) > 0;
     });
   }
