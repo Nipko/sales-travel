@@ -10,6 +10,9 @@ import { OrdersModule } from './orders/orders.module.js';
 import { QuotationsModule } from './quotations/quotations.module.js';
 import { SearchModule } from './search/search.module.js';
 import { TenantsModule } from './tenants/tenants.module.js';
+import { CustomersModule } from './customers/customers.module.js';
+import { PortfoliosModule } from './portfolios/portfolios.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { TenantsModule } from './tenants/tenants.module.js';
     QuotationsModule,
     OrdersModule,
     TenantsModule,
+    CustomersModule,
+    PortfoliosModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [

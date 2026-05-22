@@ -7,6 +7,7 @@ import {
   Shield,
   Ticket,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import type { Route } from 'next';
@@ -25,6 +26,7 @@ export const operationsNav: NavItem[] = [
 
 export const managementNav: NavItem[] = [
   { label: 'Clientes', href: '/clientes', icon: Users },
+  { label: 'Cartera B2B', href: '/carteras', icon: Wallet },
   { label: 'Reportes', href: '/reportes', icon: BarChart3 },
 ];
 

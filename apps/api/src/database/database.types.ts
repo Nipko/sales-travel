@@ -98,6 +98,91 @@ export interface OrdersTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface CustomersTable {
+  id: Generated<string>;
+  tenant_id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  document_type: string;
+  document_number: string;
+  document_issuing_country: string;
+  birthdate: ColumnType<Date, Date | string, Date | string>;
+  gender: string;
+  nationality: string;
+  passport_expiry: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  preferences: Generated<unknown>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AgencyPortfoliosTable {
+  id: Generated<string>;
+  tenant_id: string;
+  credit_limit_minor: Generated<number>;
+  balance_minor: Generated<number>;
+  currency: Generated<string>;
+  status: Generated<string>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PortfolioTransactionsTable {
+  id: Generated<string>;
+  portfolio_id: string;
+  amount_minor: number;
+  transaction_type: string;
+  reference_id: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface MarkupRulesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  vertical: string;
+  rule_type: string;
+  value_minor: number;
+  priority: Generated<number>;
+  conditions: Generated<unknown>;
+  status: Generated<string>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PackageQuotationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  user_id: string;
+  status: Generated<string>;
+  title: string;
+  total_amount_minor: Generated<number>;
+  currency: string;
+  customer_id: string | null;
+  global_markup_minor: Generated<number>;
+  notes: string | null;
+  expires_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface PackageItemsTable {
+  id: Generated<string>;
+  package_id: string;
+  vertical: string;
+  provider_name: string;
+  provider_item_id: string;
+  raw_details: unknown;
+  base_fare_minor: number;
+  taxes_minor: number;
+  markup_minor: number;
+  total_minor: number;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
@@ -105,4 +190,10 @@ export interface DB {
   airports: AirportsTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
+  customers: CustomersTable;
+  agency_portfolios: AgencyPortfoliosTable;
+  portfolio_transactions: PortfolioTransactionsTable;
+  markup_rules: MarkupRulesTable;
+  package_quotations: PackageQuotationsTable;
+  package_items: PackageItemsTable;
 }

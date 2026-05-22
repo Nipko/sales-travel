@@ -1,5 +1,9 @@
-import { ComingSoon } from '../../../components/layout/coming-soon';
+import { api } from '../../../lib/api';
+import { ClientesClient } from './ClientesClient';
 
-export default function ClientesPage() {
-  return <ComingSoon title="Clientes" description="Cartera de clientes de la agencia." />;
+export default async function ClientesPage() {
+  const res = await api<{ customers: any[] }>('/customers');
+  const initialCustomers = res.ok ? res.data.customers : [];
+
+  return <ClientesClient initialCustomers={initialCustomers} />;
 }
