@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeftRight, CheckCircle2, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
+import { ArrowLeftRight, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -225,31 +225,46 @@ export default function CotizacionesPage() {
   const displayError = clientError || result.error;
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
-      <header className="mb-6 flex items-start justify-between">
+    <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8 animate-fade-in-up">
+      {/* Decorative top blurred background glow */}
+      <div className="relative">
+        <div className="absolute -top-10 left-1/4 -z-10 size-72 rounded-full bg-[var(--color-primary)]/4 opacity-40 blur-3xl" />
+        <div className="absolute -top-20 right-1/4 -z-10 size-96 rounded-full bg-[var(--color-navy)]/6 opacity-30 blur-3xl" />
+      </div>
+
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">
+          <div className="flex items-center gap-2">
+            <span className="flex size-2 rounded-full bg-[var(--color-primary)] animate-pulse" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-primary)]">
+              Módulo Comercial
+            </span>
+          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-fg)]">
             Buscar Vuelos
           </h1>
           <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            Cotiza y reserva vuelos para tus clientes.
+            Cotice y reserve vuelos para sus clientes en segundos a través de conexión directa NDC.
           </p>
         </div>
         <Link
           href="/cotizaciones/guardadas"
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+          className="flex w-fit items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-xs font-semibold text-[var(--color-fg-muted)] shadow-[var(--shadow-xs)] transition-all duration-200 hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)] hover:shadow-[var(--shadow-sm)] active:scale-[0.98]"
         >
-          <FileText className="size-3.5" />
-          Ver guardadas
+          <FileText className="size-4 text-[var(--color-fg-subtle)]" />
+          Ver cotizaciones guardadas
         </Link>
       </header>
 
       <form ref={formRef} action={formAction} onSubmit={handleSubmit}>
-        <Card className="mb-6">
+        <Card className="overflow-hidden border border-[var(--color-border)]/60 bg-[var(--color-surface)] shadow-[var(--shadow-md)] transition-all hover:shadow-[var(--shadow-lg)]">
+          {/* Top orange brand highlight bar */}
+          <div className="h-1 w-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary)]/70" />
+
           <CardContent className="p-0">
-            <div className="space-y-5 p-5">
+            <div className="space-y-6 p-6">
               {/* Trip type toggle */}
-              <div className="flex w-fit gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-1">
+              <div className="flex w-fit gap-1 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-surface-muted)]/80 p-1 backdrop-blur-sm">
                 <input type="hidden" name="tripType" value={tripType} />
                 {(['roundtrip', 'oneway'] as const).map((type) => (
                   <button
@@ -261,8 +276,8 @@ export default function CotizacionesPage() {
                     }}
                     className={
                       tripType === type
-                        ? 'rounded-md bg-[var(--color-surface)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-fg)] shadow-sm transition-all duration-150'
-                        : 'rounded-md px-3.5 py-1.5 text-xs text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]'
+                        ? 'rounded-lg bg-[var(--color-surface)] px-4 py-1.5 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-sm)] border border-[var(--color-border)]/20 transition-all duration-200'
+                        : 'rounded-lg px-4 py-1.5 text-xs font-medium text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)] cursor-pointer'
                     }
                   >
                     {type === 'roundtrip' ? 'Ida y vuelta' : 'Solo ida'}
@@ -272,41 +287,50 @@ export default function CotizacionesPage() {
 
               {/* Origin / swap / destination */}
               <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_auto_1fr]">
-                <AirportCombobox
-                  key={`origin-${comboKey}`}
-                  name="origin"
-                  label="Origen"
-                  defaultValue={originCode}
-                  onChange={setOriginCode}
-                  required
-                />
+                <div className="relative rounded-xl border border-[var(--color-border)]/65 bg-[var(--color-surface-muted)]/20 p-1.5 focus-within:border-[var(--color-primary)]/60 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/10 transition-all">
+                  <AirportCombobox
+                    key={`origin-${comboKey}`}
+                    name="origin"
+                    label="Aeropuerto de Origen"
+                    defaultValue={originCode}
+                    onChange={setOriginCode}
+                    required
+                  />
+                </div>
 
                 <button
                   type="button"
                   onClick={handleSwap}
                   aria-label="Intercambiar origen y destino"
-                  className="mx-auto flex size-10 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)] shadow-sm transition-all duration-200 hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-primary)] active:scale-90"
+                  className="mx-auto flex size-11 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)] shadow-[var(--shadow-sm)] transition-all duration-300 hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-primary)]/6 hover:text-[var(--color-primary)] hover:scale-105 active:scale-95 hover:shadow-[var(--shadow-md)] cursor-pointer"
                 >
                   <ArrowLeftRight
-                    className="size-4 transition-transform duration-300 ease-out"
+                    className="size-4.5 transition-transform duration-500 ease-out"
                     style={{ transform: `rotate(${swapRotation}deg)` }}
                   />
                 </button>
 
-                <AirportCombobox
-                  key={`destination-${comboKey}`}
-                  name="destination"
-                  label="Destino"
-                  defaultValue={destinationCode}
-                  onChange={setDestinationCode}
-                  required
-                />
+                <div className="relative rounded-xl border border-[var(--color-border)]/65 bg-[var(--color-surface-muted)]/20 p-1.5 focus-within:border-[var(--color-primary)]/60 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/10 transition-all">
+                  <AirportCombobox
+                    key={`destination-${comboKey}`}
+                    name="destination"
+                    label="Aeropuerto de Destino"
+                    defaultValue={destinationCode}
+                    onChange={setDestinationCode}
+                    required
+                  />
+                </div>
               </div>
 
               {/* Dates / pax / cabin / currency */}
-              <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="space-y-1.5">
-                  <Label htmlFor="departureDate">Fecha ida</Label>
+                  <Label
+                    htmlFor="departureDate"
+                    className="text-xs font-semibold text-[var(--color-fg-muted)]"
+                  >
+                    Fecha de Ida
+                  </Label>
                   <input
                     id="departureDate"
                     name="departureDate"
@@ -315,15 +339,20 @@ export default function CotizacionesPage() {
                     min={today}
                     value={departureDate}
                     onChange={(e) => setDepartureDate(e.target.value)}
-                    className="flex h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
+                    className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="returnDate">
-                    Fecha vuelta
+                  <Label
+                    htmlFor="returnDate"
+                    className="text-xs font-semibold text-[var(--color-fg-muted)]"
+                  >
+                    Fecha de Vuelta
                     {tripType === 'oneway' ? (
-                      <span className="ml-1 text-[var(--color-fg-subtle)]">(no aplica)</span>
+                      <span className="ml-1 font-normal text-[var(--color-fg-subtle)]">
+                        (no aplica)
+                      </span>
                     ) : null}
                   </Label>
                   <input
@@ -335,54 +364,69 @@ export default function CotizacionesPage() {
                     required={tripType === 'roundtrip'}
                     value={returnDate}
                     onChange={(e) => setReturnDate(e.target.value)}
-                    className="flex h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)] disabled:cursor-not-allowed disabled:opacity-30 disabled:bg-[var(--color-surface-muted)]/50"
                   />
                 </div>
 
-                <PaxPicker />
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-[var(--color-fg-muted)]">
+                    Pasajeros
+                  </Label>
+                  <PaxPicker />
+                </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="cabin">Cabina</Label>
+                  <Label
+                    htmlFor="cabin"
+                    className="text-xs font-semibold text-[var(--color-fg-muted)]"
+                  >
+                    Clase
+                  </Label>
                   <select
                     id="cabin"
                     name="cabin"
                     defaultValue="economy"
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
+                    className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
                   >
-                    <option value="economy">Economy</option>
-                    <option value="premium_economy">Premium Economy</option>
-                    <option value="business">Business</option>
-                    <option value="first">First</option>
+                    <option value="economy">Económica</option>
+                    <option value="premium_economy">Económica Premium</option>
+                    <option value="business">Ejecutiva (Business)</option>
+                    <option value="first">Primera Clase</option>
                   </select>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="currency">Moneda</Label>
+                  <Label
+                    htmlFor="currency"
+                    className="text-xs font-semibold text-[var(--color-fg-muted)]"
+                  >
+                    Moneda
+                  </Label>
                   <select
                     id="currency"
                     name="currency"
                     defaultValue="COP"
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
+                    className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
                   >
-                    <option value="COP">COP</option>
-                    <option value="USD">USD</option>
-                    <option value="BRL">BRL</option>
-                    <option value="CLP">CLP</option>
-                    <option value="PEN">PEN</option>
-                    <option value="MXN">MXN</option>
+                    <option value="COP">COP ($)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="BRL">BRL (R$)</option>
+                    <option value="CLP">CLP ($)</option>
+                    <option value="PEN">PEN (S/)</option>
+                    <option value="MXN">MXN ($)</option>
                   </select>
                 </div>
               </div>
 
               {/* Error display */}
               {displayError ? (
-                <div className="flex items-start gap-2 rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/6 px-4 py-3 text-sm text-[var(--color-danger)]">
+                <div className="flex items-start gap-2.5 rounded-xl border border-[var(--color-danger)]/20 bg-[var(--color-danger)]/5 px-4.5 py-3.5 text-sm text-[var(--color-danger)]">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                  <span>{displayError}</span>
+                  <span className="font-medium">{displayError}</span>
                 </div>
               ) : null}
 
-              <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
+              <div className="flex justify-end border-t border-[var(--color-border)]/50 pt-4">
                 <SubmitButton />
               </div>
             </div>
@@ -391,9 +435,12 @@ export default function CotizacionesPage() {
 
         {/* Quote success toast */}
         {quoteSuccess && (
-          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[var(--color-success)]/25 bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-lg)]">
-            <CheckCircle2 className="size-5 text-[var(--color-success)]" />
-            <span className="text-sm font-medium text-[var(--color-fg)]">{quoteSuccess}</span>
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl border border-[var(--color-success)]/20 bg-[var(--color-surface)] px-4.5 py-3.5 shadow-[var(--shadow-lg)] animate-fade-in-up">
+            <span className="relative flex size-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-success)] opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-[var(--color-success)]" />
+            </span>
+            <span className="text-sm font-semibold text-[var(--color-fg)]">{quoteSuccess}</span>
           </div>
         )}
 
@@ -430,14 +477,22 @@ function SearchResults({
 
   if (pending) {
     return (
-      <section>
-        <div className="mb-4 flex items-center gap-3">
-          <Plane className="size-5 animate-bounce text-[var(--color-primary)]" />
-          <p className="text-sm font-medium text-[var(--color-fg-muted)]">
-            Buscando vuelos disponibles…
-          </p>
+      <section className="animate-fade-in-up mt-8">
+        <div className="mb-5 rounded-xl border border-[var(--color-primary)]/10 bg-[var(--color-primary)]/4 p-4 flex items-center gap-3">
+          <div className="relative flex size-6 items-center justify-center">
+            <span className="absolute size-4 animate-ping rounded-full bg-[var(--color-primary)] opacity-40" />
+            <Plane className="size-4 animate-bounce text-[var(--color-primary)]" />
+          </div>
+          <div className="flex flex-col">
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary)]">
+              Conexión GDS Activa
+            </p>
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              Buscando y ordenando las mejores tarifas NDC en tiempo real...
+            </p>
+          </div>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <SkeletonFlightRow />
           <SkeletonFlightRow />
           <SkeletonFlightRow />
@@ -448,9 +503,9 @@ function SearchResults({
 
   if (flightGroups.length > 0) {
     return (
-      <section>
+      <section className="animate-fade-in-up mt-8">
         <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
-        <div className="space-y-3">
+        <div className="space-y-4">
           {flightGroups.map((group) => (
             <FlightRow
               key={group.key}
@@ -469,11 +524,16 @@ function SearchResults({
 
   if (hasSearched && result.ok && !result.error) {
     return (
-      <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-16 text-center">
-        <Search className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
-        <p className="text-sm font-medium text-[var(--color-fg)]">No se encontraron vuelos</p>
-        <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-          Prueba con otras fechas, rutas flexibles o diferente cabina.
+      <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)] mt-8 animate-fade-in-up">
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-fg-subtle)]/5 text-[var(--color-fg-subtle)]">
+          <Search className="size-6" />
+        </div>
+        <p className="text-base font-bold text-[var(--color-fg)]">
+          No se encontraron vuelos disponibles
+        </p>
+        <p className="mx-auto mt-1 max-w-sm text-xs text-[var(--color-fg-muted)]">
+          Pruebe seleccionando otras fechas, aeropuertos alternativos o cambie el tipo de cabina
+          solicitado.
         </p>
       </div>
     );
@@ -481,11 +541,14 @@ function SearchResults({
 
   if (!hasSearched) {
     return (
-      <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-16 text-center">
-        <Plane className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
-        <p className="text-sm font-medium text-[var(--color-fg)]">Busca vuelos para empezar</p>
-        <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-          Selecciona origen, destino y fechas para ver ofertas disponibles.
+      <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)] mt-8 animate-fade-in-up">
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
+          <Plane className="size-6 animate-pulse" />
+        </div>
+        <p className="text-base font-bold text-[var(--color-fg)]">Comience su consulta comercial</p>
+        <p className="mx-auto mt-1.5 max-w-sm text-xs text-[var(--color-fg-muted)]">
+          Seleccione las ciudades de origen, destino y las fechas estimadas de viaje para buscar las
+          mejores ofertas disponibles.
         </p>
       </div>
     );

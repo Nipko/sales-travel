@@ -23,22 +23,39 @@ interface FareFamilyMatrixProps {
 }
 
 const FARE_COLORS: Record<string, string> = {
-  BASIC: 'bg-[var(--color-surface-muted)]',
-  LIGHT: 'bg-blue-50/60',
-  FULL: 'bg-green-50/60',
-  'PREMIUM ECONOMY FULL': 'bg-amber-50/60',
+  BASIC: 'bg-[var(--color-surface)] border-[var(--color-border)]/70',
+  LIGHT:
+    'bg-[var(--color-primary)]/[0.02] border-[var(--color-primary)]/15 shadow-[var(--shadow-xs)]',
+  FULL: 'bg-[var(--color-success)]/[0.02] border-[var(--color-success)]/15 shadow-[var(--shadow-xs)]',
+  'PREMIUM ECONOMY FULL':
+    'bg-[var(--color-accent)]/[0.02] border-[var(--color-accent)]/20 shadow-[var(--shadow-xs)]',
 };
 
 const FARE_BADGES: Record<string, string | undefined> = {
   FULL: 'Recomendado',
+  'PREMIUM ECONOMY FULL': 'Clase Preferente',
 };
 
 function AttrIcon({ value }: { value: 'yes' | 'no' | 'partial' }) {
-  if (value === 'yes')
-    return <Check className="size-4 text-[var(--color-success)]" strokeWidth={2.5} />;
-  if (value === 'partial')
-    return <CircleMinus className="size-4 text-[var(--color-warning)]" strokeWidth={2} />;
-  return <X className="size-4 text-[var(--color-fg-subtle)]" strokeWidth={1.5} />;
+  if (value === 'yes') {
+    return (
+      <div className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-[var(--color-success)]/12 text-[var(--color-success)] shadow-[var(--shadow-xs)]">
+        <Check className="size-3" strokeWidth={3} />
+      </div>
+    );
+  }
+  if (value === 'partial') {
+    return (
+      <div className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)]/12 text-[var(--color-warning)] shadow-[var(--shadow-xs)]">
+        <CircleMinus className="size-3" strokeWidth={2.5} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-[var(--color-fg-subtle)]/8 text-[var(--color-fg-subtle)]/60">
+      <X className="size-3" strokeWidth={2} />
+    </div>
+  );
 }
 
 function AttrRow({
@@ -53,12 +70,18 @@ function AttrRow({
   detail?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span className="text-[var(--color-fg-subtle)]">{icon}</span>
-      <div className="flex flex-1 items-center justify-between gap-2">
-        <span className="text-xs text-[var(--color-fg-muted)]">{label}</span>
-        <div className="flex items-center gap-1">
-          {detail && <span className="text-[10px] text-[var(--color-fg-subtle)]">{detail}</span>}
+    <div className="flex items-center gap-2.5 py-2 border-b border-[var(--color-border)]/35 last:border-b-0">
+      <span className="text-[var(--color-fg-subtle)]/80 size-4 flex items-center justify-center">
+        {icon}
+      </span>
+      <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+        <span className="text-xs font-semibold text-[var(--color-fg-muted)] truncate">{label}</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {detail && (
+            <span className="text-[9px] font-bold text-[var(--color-fg-subtle)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-1.5 py-0.5 rounded">
+              {detail}
+            </span>
+          )}
           <AttrIcon value={value} />
         </div>
       </div>
@@ -86,8 +109,13 @@ function QuoteButton({
 
   if (done) {
     return (
-      <Button variant="primary" size="sm" className="mt-4 w-full" disabled>
-        <Check className="size-4" /> Guardado
+      <Button
+        variant="primary"
+        size="sm"
+        className="mt-5 w-full bg-[var(--color-success)] text-white hover:bg-[var(--color-success)] border border-[var(--color-success)]/10 font-bold text-xs gap-1.5 shadow-[var(--shadow-sm)] animate-fade-in-up"
+        disabled
+      >
+        <Check className="size-3.5" strokeWidth={2.5} /> Cotización Guardada
       </Button>
     );
   }
@@ -96,21 +124,29 @@ function QuoteButton({
     <Button
       variant="primary"
       size="sm"
-      className="mt-4 w-full"
+      className="mt-5 w-full bg-[var(--color-primary)] text-[var(--color-primary-fg)] hover:bg-[var(--color-primary-hover)] border border-[var(--color-primary)]/10 font-bold text-xs gap-1.5 transition-all active:scale-[0.98] shadow-[var(--shadow-sm)] cursor-pointer"
       disabled={!onQuote || loading}
       onClick={handleClick}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : 'Guardar Cotización'}
+      {loading ? (
+        <>
+          <Loader2 className="size-3.5 animate-spin" />
+          Procesando...
+        </>
+      ) : (
+        'Guardar Cotización'
+      )}
     </Button>
   );
 }
 
 export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatrixProps) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {fares.map((fare) => {
         const name = fare.fareFamily?.name ?? 'STANDARD';
-        const bgClass = FARE_COLORS[name] ?? 'bg-[var(--color-surface-muted)]';
+        const bgClass =
+          FARE_COLORS[name] ?? 'bg-[var(--color-surface)] border-[var(--color-border)]/70';
         const badge = FARE_BADGES[name];
         const baggage = fare.baggage;
         const policies = fare.policies;
@@ -119,41 +155,55 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
           <div
             key={fare.id}
             className={cn(
-              'relative flex flex-col rounded-xl border border-[var(--color-border)] p-4 transition-all duration-150 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-sm)]',
+              'relative flex flex-col rounded-xl border p-4.5 transition-all duration-300 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-md)]',
               bgClass,
             )}
           >
             {badge && (
-              <span className="absolute -top-2.5 left-3 rounded-full bg-[var(--color-primary)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-fg)]">
+              <span className="absolute -top-2.5 left-4 rounded-full bg-[var(--color-primary)] px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] animate-pulse">
                 {badge}
               </span>
             )}
 
             {/* Fare name + cabin */}
-            <div className="mb-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-fg)]">
+            <div className="mb-4">
+              <p className="text-[11px] font-black uppercase tracking-widest text-[var(--color-fg)]">
                 {name}
               </p>
               {fare.fareFamily?.cabin && fare.fareFamily.cabin !== 'economy' && (
-                <p className="mt-0.5 text-[10px] capitalize text-[var(--color-fg-muted)]">
+                <span className="inline-block mt-1.5 rounded bg-[var(--color-navy)]/8 border border-[var(--color-navy)]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--color-navy)]">
                   {fare.fareFamily.cabin.replace('_', ' ')}
-                </p>
+                </span>
               )}
             </div>
 
             {/* Price */}
-            <div className="mb-4 border-b border-[var(--color-border)] pb-3">
-              <p className="font-mono text-lg font-bold tabular-nums text-[var(--color-fg)]">
+            <div className="mb-4 border-b border-[var(--color-border)]/50 pb-3.5">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-fg-subtle)]">
+                Tarifa Total
+              </p>
+              <p className="font-mono text-xl font-extrabold tabular-nums text-[var(--color-fg)] mt-0.5 tracking-tight leading-none">
                 {formatMoney(fare.total.amountMinor, fare.total.currency)}
               </p>
-              <p className="mt-0.5 text-[10px] text-[var(--color-fg-subtle)]">
-                Base: {formatMoney(fare.baseFare.amountMinor, fare.baseFare.currency)} + Imp:{' '}
-                {formatMoney(fare.taxes.amountMinor, fare.taxes.currency)}
-              </p>
+              <div className="mt-2 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-semibold text-[var(--color-fg-subtle)]">
+                <span>
+                  Base:{' '}
+                  <strong className="font-mono text-[var(--color-fg)]">
+                    {formatMoney(fare.baseFare.amountMinor, fare.baseFare.currency)}
+                  </strong>
+                </span>
+                <span className="text-[var(--color-border)]">|</span>
+                <span>
+                  Imp:{' '}
+                  <strong className="font-mono text-[var(--color-fg)]">
+                    {formatMoney(fare.taxes.amountMinor, fare.taxes.currency)}
+                  </strong>
+                </span>
+              </div>
             </div>
 
             {/* Attributes */}
-            <div className="flex-1 space-y-0.5">
+            <div className="flex-1 space-y-0.5 bg-[var(--color-surface)]/60 rounded-lg p-1.5 border border-[var(--color-border)]/20">
               <AttrRow
                 icon={<Package className="size-3.5" />}
                 label="Artículo personal"
@@ -161,32 +211,32 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
               />
               <AttrRow
                 icon={<Briefcase className="size-3.5" />}
-                label="Carry-on"
+                label="Equipaje de Mano"
                 value={baggage && baggage.carryOn.qty > 0 ? 'yes' : 'no'}
                 detail={
                   baggage && baggage.carryOn.qty > 0 && baggage.carryOn.weightKg
-                    ? `${baggage.carryOn.weightKg}kg`
+                    ? `${baggage.carryOn.weightKg} kg`
                     : undefined
                 }
               />
               <AttrRow
                 icon={<Luggage className="size-3.5" />}
-                label="Maleta facturada"
+                label="Maleta Facturada"
                 value={baggage && baggage.checked.qty > 0 ? 'yes' : 'no'}
                 detail={
                   baggage && baggage.checked.qty > 0 && baggage.checked.weightKg
-                    ? `${baggage.checked.weightKg}kg`
+                    ? `${baggage.checked.weightKg} kg`
                     : undefined
                 }
               />
               <AttrRow
                 icon={<RefreshCw className="size-3.5" />}
-                label="Cambios"
+                label="Cambios de fecha"
                 value={policies?.changeable ? 'yes' : 'no'}
               />
               <AttrRow
                 icon={<RotateCcw className="size-3.5" />}
-                label="Reembolso"
+                label="Reembolso de tarifa"
                 value={policies?.refundable ? 'yes' : 'no'}
               />
             </div>
