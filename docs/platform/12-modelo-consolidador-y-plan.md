@@ -367,12 +367,19 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 | Tipos Kysely + alta de tenant con padre/tipo                                                     | `database.types.ts`, `tenants/admin.controller.ts`                     | ✅                                                 |
 | Test de integración jerarquía + herencia + límite de profundidad                                 | `provider-credentials.integration.test.ts`                             | ⏸ se salta sin `PGHOST` (requiere DB para correr) |
 
-**Pendiente del paso 1-2 (siguiente iteración):**
+**Paso adicional entregado — Wiring BYOC + Autorización jerárquica:**
 
-- RLS jerárquica (`app.current_tenant_path` + policy descendente para `*_admin`) — Fase 0 paso 5.
-- Migrar `latam-ndc` a resolver credenciales vía `provider_accounts` (hoy sigue por env var; no se tocó para no romper el search).
-- Ejecutar el test de integración contra una DB con 0011/0012 aplicadas (no había Postgres en el entorno de desarrollo).
-- Roles ampliados (`consolidator_admin`, `agency_admin`) + JWT con `tid` — Fase 0 pasos 3-4.
+- ✅ `latam-ndc` resuelve credenciales por tenant (BYOC, propia o heredada) con fallback a env (`apps/api/src/providers-latam/*`). En prod desde `012069a`.
+- ✅ `NetworkService` — autorización jerárquica por `path`: un admin gestiona su nodo + descendientes (no ancestros ni otra red). Endpoint `GET /tenants/network` (el consolidador ve su red).
+- ✅ Cierre de hueco de authz: gestionar credenciales BYOC y dar de alta usuarios/sub-agencias sólo dentro del subárbol propio (antes cualquier admin podía escribir credenciales de cualquier tenant).
+- ✅ Tests: factory BYOC (5/5 unit) + autorización jerárquica (integración, se salta sin DB).
+
+**Pendiente (siguiente iteración):**
+
+- **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): `app.current_tenant_path` + policy descendente. **Diferido a propósito** hasta tener una DB de prueba: deployar políticas RLS sin probarlas es riesgo de fuga cross-tenant. La jerarquía ya está aplicada a nivel de **autorización** (NetworkService), que es seguro y cubre la gestión de red.
+- Roles ampliados (`consolidator_admin`, `agency_admin`) + JWT con `tid` y switch-tenant — Fase 0 pasos 3-4.
+- UI de gestión de red (alta de agencia + cargar/heredar credenciales) para cerrar el loop end-to-end.
+- Ejecutar los tests de integración contra una DB con 0011/0012 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).
 
 ### Decisión de secuenciado pendiente (de la investigación)
 

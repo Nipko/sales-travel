@@ -11,6 +11,7 @@ import type { Transaction } from 'kysely';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import { NetworkService, type NetworkTenant } from '../network/network.service.js';
 
 interface BrandingView {
   logoUrl: string | null;
@@ -33,7 +34,20 @@ interface UpdateConfigDto {
 
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly network: NetworkService,
+  ) {}
+
+  /** Subárbol de tenants que el usuario administra (su red de agencias/sub-agencias). */
+  @Get('network')
+  async getNetwork(
+    @CurrentUser() userId: string | undefined,
+  ): Promise<{ tenants: NetworkTenant[] }> {
+    if (!userId) throw new UnauthorizedException();
+    const tenants = await this.network.listNetwork(userId);
+    return { tenants };
+  }
 
   @Get(':id/config')
   async getConfig(@CurrentUser() userId: string | undefined, @Param('id') tenantId: string) {

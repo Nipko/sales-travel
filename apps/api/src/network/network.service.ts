@@ -1,0 +1,110 @@
+import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
+import { DatabaseService } from '../database/database.service.js';
+
+export interface NetworkTenant {
+  id: string;
+  slug: string;
+  name: string;
+  tenantType: string;
+  parentTenantId: string | null;
+  status: string;
+  depth: number;
+}
+
+interface NetworkRow {
+  id: string;
+  slug: string;
+  name: string;
+  tenant_type: string;
+  parent_tenant_id: string | null;
+  status: string;
+  depth: number;
+}
+
+/**
+ * Autorización jerárquica del modelo consolidador. Un admin sólo puede ver/gestionar
+ * tenants dentro de SU subárbol (nodo donde es admin + descendientes), salvo superadmin.
+ * Se apoya en `tenants.path` (ltree): `admin_t.path @> target_t.path` = el nodo admin es
+ * ancestro-o-igual del target.
+ *
+ * NOTA: esto es autorización a nivel de aplicación. La RLS descendente sobre datos
+ * operativos (orders/quotations/...) para agregación de red queda pendiente hasta poder
+ * probarla contra una DB (ver docs/platform/12-modelo-consolidador-y-plan.md §6, Fase 0 paso 5).
+ */
+@Injectable()
+export class NetworkService {
+  constructor(private readonly db: DatabaseService) {}
+
+  /** ¿El usuario tiene rol superadmin en algún nodo? (acceso global). */
+  async isSuperadmin(userId: string): Promise<boolean> {
+    return this.db.withRequestContext({ userId }, async (trx) => {
+      const row = await trx
+        .selectFrom('memberships')
+        .select('id')
+        .where('user_id', '=', userId)
+        .where('status', '=', 'active')
+        .where('role', '=', 'superadmin')
+        .executeTakeFirst();
+      return Boolean(row);
+    });
+  }
+
+  /**
+   * ¿Puede el usuario administrar `targetTenantId`? True si es superadmin, o si tiene
+   * una membership admin en un nodo ancestro-o-igual del target.
+   */
+  async canManageTenant(userId: string, targetTenantId: string): Promise<boolean> {
+    return this.db.withRequestContext({ userId }, async (trx) => {
+      const result = await sql<{ ok: boolean }>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM memberships m
+          JOIN tenants admin_t  ON admin_t.id  = m.tenant_id
+          JOIN tenants target_t ON target_t.id = ${targetTenantId}::uuid
+          WHERE m.user_id = ${userId}::uuid
+            AND m.status = 'active'
+            AND (
+              m.role = 'superadmin'
+              OR (m.role IN ('tenant_admin', 'admin') AND admin_t.path OPERATOR(public.@>) target_t.path)
+            )
+        ) AS ok
+      `.execute(trx);
+      return result.rows[0]?.ok === true;
+    });
+  }
+
+  /** Subárbol de tenants que el usuario administra (su red). Superadmin ve todos. */
+  async listNetwork(userId: string): Promise<NetworkTenant[]> {
+    const superadmin = await this.isSuperadmin(userId);
+    return this.db.withRequestContext({ userId }, async (trx) => {
+      const result = superadmin
+        ? await sql<NetworkRow>`
+            SELECT t.id, t.slug, t.name, t.tenant_type, t.parent_tenant_id, t.status,
+                   nlevel(t.path) AS depth
+            FROM tenants t
+            ORDER BY nlevel(t.path), t.name
+          `.execute(trx)
+        : await sql<NetworkRow>`
+            SELECT DISTINCT t.id, t.slug, t.name, t.tenant_type, t.parent_tenant_id, t.status,
+                   nlevel(t.path) AS depth
+            FROM tenants t
+            JOIN memberships m ON m.user_id = ${userId}::uuid AND m.status = 'active'
+                              AND m.role IN ('tenant_admin', 'admin')
+            JOIN tenants admin_t ON admin_t.id = m.tenant_id
+            WHERE admin_t.path OPERATOR(public.@>) t.path
+            ORDER BY depth, t.name
+          `.execute(trx);
+
+      return result.rows.map((r) => ({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        tenantType: r.tenant_type,
+        parentTenantId: r.parent_tenant_id,
+        status: r.status,
+        depth: Number(r.depth),
+      }));
+    });
+  }
+}

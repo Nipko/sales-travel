@@ -11,6 +11,7 @@ import { sql } from 'kysely';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PasswordService } from '../auth/password.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { NetworkService } from '../network/network.service.js';
 
 interface CreateTenantBody {
   name: string;
@@ -39,6 +40,7 @@ export class AdminController {
   constructor(
     private readonly db: DatabaseService,
     private readonly password: PasswordService,
+    private readonly network: NetworkService,
   ) {}
 
   @Get('tenants')
@@ -132,6 +134,19 @@ export class AdminController {
     if (!userId) throw new UnauthorizedException();
     await this.assertAdmin(userId);
 
+    // Jerarquía: crear un tenant RAÍZ (sin padre) es sólo para superadmin. Un admin de
+    // red puede crear sub-agencias, pero sólo bajo un nodo que administre (su subárbol).
+    const superadmin = await this.network.isSuperadmin(userId);
+    if (!superadmin) {
+      if (!body.parentTenantId) {
+        throw new ForbiddenException('only superadmin can create root tenants');
+      }
+      const canManageParent = await this.network.canManageTenant(userId, body.parentTenantId);
+      if (!canManageParent) {
+        throw new ForbiddenException('parent tenant is outside your network');
+      }
+    }
+
     const existing = await this.db.db
       .selectFrom('tenants')
       .select('id')
@@ -201,6 +216,11 @@ export class AdminController {
   async createUser(@CurrentUser() userId: string | undefined, @Body() body: CreateUserBody) {
     if (!userId) throw new UnauthorizedException();
     await this.assertAdmin(userId);
+
+    const superadmin = await this.network.isSuperadmin(userId);
+    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
+      throw new ForbiddenException('target tenant is outside your network');
+    }
 
     const existingUser = await this.db.db
       .selectFrom('users')

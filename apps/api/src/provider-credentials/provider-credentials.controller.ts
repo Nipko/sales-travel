@@ -8,8 +8,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { DatabaseService } from '../database/database.service.js';
 import type { ProviderAccountStatus } from '../database/database.types.js';
+import { NetworkService } from '../network/network.service.js';
 import { ProviderCredentialsService } from './provider-credentials.service.js';
 
 interface UpsertProviderAccountBody {
@@ -30,7 +30,7 @@ interface UpsertProviderAccountBody {
 export class ProviderCredentialsController {
   constructor(
     private readonly service: ProviderCredentialsService,
-    private readonly db: DatabaseService,
+    private readonly network: NetworkService,
   ) {}
 
   @Post()
@@ -38,7 +38,7 @@ export class ProviderCredentialsController {
     @CurrentUser() userId: string | undefined,
     @Body() body: UpsertProviderAccountBody,
   ): Promise<{ id: string }> {
-    await this.assertAdmin(userId);
+    await this.assertCanManage(userId, body.tenantId);
     return this.service.upsert({
       tenantId: body.tenantId,
       providerCode: body.providerCode,
@@ -55,7 +55,7 @@ export class ProviderCredentialsController {
     @CurrentUser() userId: string | undefined,
     @Query('tenantId') tenantId: string,
   ): Promise<{ accounts: unknown[] }> {
-    await this.assertAdmin(userId);
+    await this.assertCanManage(userId, tenantId);
     const accounts = await this.service.listSafe(tenantId);
     return { accounts };
   }
@@ -76,7 +76,7 @@ export class ProviderCredentialsController {
     label: string;
     inherited: boolean;
   }> {
-    await this.assertAdmin(userId);
+    await this.assertCanManage(userId, tenantId);
     const resolved = await this.service.resolve(tenantId, providerCode);
     // Se omite `credentials` deliberadamente.
     return {
@@ -88,17 +88,15 @@ export class ProviderCredentialsController {
     };
   }
 
-  private async assertAdmin(userId: string | undefined): Promise<void> {
+  /**
+   * Autorización jerárquica: el usuario sólo puede gestionar credenciales de un tenant
+   * dentro de su subárbol (su nodo admin o descendientes), o cualquiera si es superadmin.
+   * Cierra el hueco previo donde cualquier admin podía escribir credenciales de cualquier tenant.
+   */
+  private async assertCanManage(userId: string | undefined, tenantId: string): Promise<void> {
     if (!userId) throw new UnauthorizedException();
-    const row = await this.db.withRequestContext({ userId }, async (trx) =>
-      trx
-        .selectFrom('memberships')
-        .select('role')
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .where('role', 'in', ['superadmin', 'tenant_admin', 'admin'])
-        .executeTakeFirst(),
-    );
-    if (!row) throw new ForbiddenException('admin access required');
+    if (!tenantId) throw new ForbiddenException('tenantId required');
+    const ok = await this.network.canManageTenant(userId, tenantId);
+    if (!ok) throw new ForbiddenException('not authorized to manage this tenant');
   }
 }
