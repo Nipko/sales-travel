@@ -3,10 +3,12 @@ import type { ColumnType, Generated } from 'kysely';
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 
 export type TenantStatus = 'active' | 'suspended' | 'archived';
+export type TenantType = 'platform' | 'consolidator' | 'agency' | 'subagency';
 export type UserStatus = 'active' | 'suspended';
 export type MembershipStatus = 'active' | 'suspended' | 'invited';
 export type LanguageCode = 'es' | 'pt' | 'en';
 export type Role = 'superadmin' | 'tenant_admin' | 'admin' | 'vendedor' | 'cliente_final';
+export type ProviderAccountStatus = 'active' | 'sandbox' | 'disabled';
 
 export interface TenantsTable {
   id: Generated<string>;
@@ -16,9 +18,26 @@ export interface TenantsTable {
   default_currency: string;
   default_language: Generated<LanguageCode>;
   status: Generated<TenantStatus>;
+  // Modelo consolidador (jerarquía B2B2B). path lo mantiene un trigger (ltree → string).
+  parent_tenant_id: string | null;
+  tenant_type: Generated<TenantType>;
+  path: Generated<string>;
   logo_url: string | null;
   primary_color: string | null;
   accent_color: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface ProviderAccountsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  provider_code: string;
+  label: Generated<string>;
+  credentials_enc: Buffer;
+  config: Generated<unknown>;
+  is_inheritable: Generated<boolean>;
+  status: Generated<ProviderAccountStatus>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -187,6 +206,7 @@ export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
+  provider_accounts: ProviderAccountsTable;
   airports: AirportsTable;
   quotations: QuotationsTable;
   orders: OrdersTable;

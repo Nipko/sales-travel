@@ -115,6 +115,7 @@ jobs:
           APP_USER_PASSWORD=${{ secrets.APP_USER_PASSWORD }}
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
+          PROVIDER_CREDENTIALS_KEY=${{ secrets.PROVIDER_CREDENTIALS_KEY }}
           LATAM_API_URL=${{ vars.LATAM_API_URL || secrets.LATAM_API_URL || 'https://sandbox.api.latam.com' }}
           LATAM_API_KEY=${{ secrets.LATAM_API_KEY || vars.LATAM_API_KEY }}
           LATAM_API_SECRET=${{ secrets.LATAM_API_SECRET || vars.LATAM_API_SECRET }}

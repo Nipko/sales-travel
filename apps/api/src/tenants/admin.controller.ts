@@ -18,6 +18,9 @@ interface CreateTenantBody {
   countryCode: string;
   defaultCurrency: string;
   defaultLanguage?: 'es' | 'pt' | 'en';
+  // Modelo consolidador (B2B2B): si se indica padre, el tenant cuelga de él en la jerarquía.
+  parentTenantId?: string;
+  tenantType?: 'platform' | 'consolidator' | 'agency' | 'subagency';
   adminEmail?: string;
   adminName?: string;
   adminPassword?: string;
@@ -145,6 +148,9 @@ export class AdminController {
           country_code: body.countryCode,
           default_currency: body.defaultCurrency,
           default_language: body.defaultLanguage ?? 'es',
+          parent_tenant_id: body.parentTenantId ?? null,
+          // Por defecto una sub-agencia si cuelga de un padre, agencia si es raíz.
+          tenant_type: body.tenantType ?? (body.parentTenantId ? 'subagency' : 'agency'),
         })
         .returning(['id', 'slug', 'name'])
         .executeTakeFirstOrThrow();

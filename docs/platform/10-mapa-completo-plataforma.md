@@ -124,7 +124,7 @@ SALES-TRAVEL PLATFORM
 │   └── M7.8 Tenant lifecycle (onboarding, suspensión, baja)
 │
 ├── 👥 M8 — Roles, Permisos y Equipos
-│   ├── M8.1 Jerarquía: superadmin → admin plataforma → admin tenant → vendedor → cliente final
+│   ├── M8.1 Jerarquía: superadmin → platform_admin → consolidador → agencia → sub-agencia → vendedor → cliente final
 │   ├── M8.2 RBAC granular (acciones por recurso)
 │   ├── M8.3 ABAC (reglas dinámicas: "vendedor solo ve sus clientes")
 │   ├── M8.4 Equipos / squads dentro de agencia
@@ -300,6 +300,9 @@ ABAC (políticas dinámicas evaluadas en runtime):
 TENANT
   id (uuid, pk)
   slug (unique)                    -- "agencia-acme"
+  parent_tenant_id (fk, nullable)  -- null = consolidador raíz; jerarquía B2B2B
+  tenant_type (platform|consolidator|agency|subagency)
+  path (ltree)                     -- materialized path para queries jerárquicas
   legal_name
   display_name
   country (CO|BR|PE|...)
@@ -307,12 +310,25 @@ TENANT
   language_default (es|pt|en)
   status (active|suspended|trial)
   created_at
+  └── self 1:N TENANT (sub-agencias/agencias hijas)
   └── 1:1 BRANDING_CONFIG
-  └── 1:N PRICING_RULE
+  └── 1:N PRICING_RULE              -- aplican en cascada por el path (waterfall)
+  └── 1:N PROVIDER_ACCOUNT          -- BYOC: credenciales propias por nodo (heredables)
   └── 1:N PAYMENT_ACCOUNT
   └── 1:N FISCAL_CONFIG
   └── 1:N USER (vía MEMBERSHIP)
   └── 1:N CUSTOMER
+
+PROVIDER_ACCOUNT (BYOC — credenciales de proveedor por tenant)
+  id (pk)
+  tenant_id (fk)                   -- nodo dueño de las credenciales
+  provider_code (latam-ndc|amadeus|hotelbeds|stripe|...)
+  label
+  credentials_encrypted            -- pgcrypto / ref a vault; NUNCA en logs
+  is_inheritable (bool)            -- si los tenants hijos pueden usarlas
+  status (active|sandbox|disabled)
+  -- Resolución: al buscar/reservar, el ProviderResolver sube por `path`:
+  -- usa la cuenta del nodo si existe; si no, hereda la del ancestro más cercano.
 
 BRANDING_CONFIG
   tenant_id (fk, pk)
