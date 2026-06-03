@@ -1,23 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
-import {
-  FLIGHT_SEARCH_PORT,
-  OFFER_PRICE_PORT,
-  type FlightSearchCriteria,
-  type FlightSearchPort,
-  type OfferPricePort,
-  type OfferPriceResult,
-} from '@sales-travel/domain';
+import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
+import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 
 @Injectable()
 export class SearchService {
-  constructor(
-    @Inject(FLIGHT_SEARCH_PORT) private readonly flightSearch: FlightSearchPort,
-    @Inject(OFFER_PRICE_PORT) private readonly offerPrice: OfferPricePort,
-  ) {}
+  constructor(private readonly latam: LatamNdcProviderFactory) {}
 
   async searchFlights(criteria: FlightSearchCriteria, tenantId: string): Promise<Offer[]> {
-    return this.flightSearch.search(criteria, { tenantId });
+    const adapter = await this.latam.forTenant(tenantId);
+    return adapter.search(criteria, { tenantId });
   }
 
   async priceOffer(
@@ -25,6 +17,7 @@ export class SearchService {
     criteria: FlightSearchCriteria,
     tenantId: string,
   ): Promise<OfferPriceResult> {
-    return this.offerPrice.priceOffer(offer, criteria, { tenantId });
+    const adapter = await this.latam.forTenant(tenantId);
+    return adapter.priceOffer(offer, criteria, { tenantId });
   }
 }
