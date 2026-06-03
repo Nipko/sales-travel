@@ -197,7 +197,15 @@ export class TenantsController {
       .where('status', '=', 'active')
       .executeTakeFirst();
     if (!row) throw new ForbiddenException('not a member of this tenant');
-    if (row.role !== 'tenant_admin' && row.role !== 'superadmin' && row.role !== 'admin') {
+    const adminRoles = [
+      'superadmin',
+      'platform_admin',
+      'consolidator_admin',
+      'tenant_admin',
+      'agency_admin',
+      'admin',
+    ];
+    if (!adminRoles.includes(row.role)) {
       throw new ForbiddenException('admin role required');
     }
   }

@@ -374,12 +374,20 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 - ✅ Cierre de hueco de authz: gestionar credenciales BYOC y dar de alta usuarios/sub-agencias sólo dentro del subárbol propio (antes cualquier admin podía escribir credenciales de cualquier tenant).
 - ✅ Tests: factory BYOC (5/5 unit) + autorización jerárquica (integración, se salta sin DB).
 
+**Entregado — Roles ampliados + JWT con `tid` (Fase 0 pasos 3-4):**
+
+- ✅ Roles `consolidator_admin` y `agency_admin` en el CHECK de `memberships.role` (migración 0013) y en el tipo `Role`; reconocidos como admins en `NetworkService`, `is_admin_user()` y los `assertAdmin`.
+- ✅ JWT lleva `tid` (tenant activo) + `role`; `login`/`register` lo pueblan; `POST /auth/switch-tenant` valida membership activa y emite token firmado con el `tid` elegido.
+- ✅ Middleware: usa `x-tenant-id` (header, compat web-b2b) con fallback al `tid` del JWT. Backward-compatible (tokens viejos sin `tid` siguen igual).
+
+**⚠️ Hallazgo de seguridad (prioridad alta, pendiente):** el API confía en `x-tenant-id` **sin validar membership** del usuario en ese tenant. La RLS filtra por `current_tenant_id` pero no verifica membership ⇒ un cliente directo (no la UI) podría pasar el tenant de otro y leer sus datos. **Fix:** validar membership del tenant resuelto (drop-on-invalid → cae al primer membership; nunca throw) o mover el tenant 100% al `tid` firmado y migrar web-b2b a `switch-tenant`. No se aplicó en el mismo push por riesgo (toca varios controllers + front, sin DB de prueba).
+
 **Pendiente (siguiente iteración):**
 
-- **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): `app.current_tenant_path` + policy descendente. **Diferido a propósito** hasta tener una DB de prueba: deployar políticas RLS sin probarlas es riesgo de fuga cross-tenant. La jerarquía ya está aplicada a nivel de **autorización** (NetworkService), que es seguro y cubre la gestión de red.
-- Roles ampliados (`consolidator_admin`, `agency_admin`) + JWT con `tid` y switch-tenant — Fase 0 pasos 3-4.
+- **Cerrar el hallazgo de `x-tenant-id`** (validación de membership) — prioridad alta.
+- **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): diferido hasta tener DB de prueba (RLS sin testear = riesgo de fuga). La jerarquía ya está a nivel de **autorización** (NetworkService).
 - UI de gestión de red (alta de agencia + cargar/heredar credenciales) para cerrar el loop end-to-end.
-- Ejecutar los tests de integración contra una DB con 0011/0012 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).
+- Ejecutar los tests de integración contra una DB con 0011-0013 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).
 
 ### Decisión de secuenciado pendiente (de la investigación)
 

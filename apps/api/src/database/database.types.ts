@@ -7,7 +7,15 @@ export type TenantType = 'platform' | 'consolidator' | 'agency' | 'subagency';
 export type UserStatus = 'active' | 'suspended';
 export type MembershipStatus = 'active' | 'suspended' | 'invited';
 export type LanguageCode = 'es' | 'pt' | 'en';
-export type Role = 'superadmin' | 'tenant_admin' | 'admin' | 'vendedor' | 'cliente_final';
+export type Role =
+  | 'superadmin'
+  | 'platform_admin'
+  | 'consolidator_admin'
+  | 'tenant_admin'
+  | 'agency_admin'
+  | 'admin'
+  | 'vendedor'
+  | 'cliente_final';
 export type ProviderAccountStatus = 'active' | 'sandbox' | 'disabled';
 
 export interface TenantsTable {

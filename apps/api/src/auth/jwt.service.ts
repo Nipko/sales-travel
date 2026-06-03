@@ -3,6 +3,10 @@ import { jwtVerify, SignJWT } from 'jose';
 
 export interface JwtPayload {
   sub: string;
+  /** Tenant activo del usuario (nodo donde está operando). Opcional para compat con tokens viejos. */
+  tid?: string;
+  /** Rol del usuario en el tenant activo. */
+  role?: string;
 }
 
 const ISSUER = 'sales-travel';
@@ -40,6 +44,10 @@ export class JwtService implements OnModuleInit {
     if (typeof payload.sub !== 'string') {
       throw new Error('JWT missing subject');
     }
-    return { sub: payload.sub };
+    return {
+      sub: payload.sub,
+      tid: typeof payload['tid'] === 'string' ? payload['tid'] : undefined,
+      role: typeof payload['role'] === 'string' ? payload['role'] : undefined,
+    };
   }
 }

@@ -288,7 +288,14 @@ export class AdminController {
         .select('role')
         .where('user_id', '=', userId)
         .where('status', '=', 'active')
-        .where('role', 'in', ['superadmin', 'tenant_admin', 'admin'])
+        .where('role', 'in', [
+          'superadmin',
+          'platform_admin',
+          'consolidator_admin',
+          'tenant_admin',
+          'agency_admin',
+          'admin',
+        ])
         .executeTakeFirst();
     });
     if (!row) throw new ForbiddenException('admin access required');

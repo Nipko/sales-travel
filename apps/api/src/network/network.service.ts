@@ -66,7 +66,7 @@ export class NetworkService {
             AND m.status = 'active'
             AND (
               m.role = 'superadmin'
-              OR (m.role IN ('tenant_admin', 'admin') AND admin_t.path OPERATOR(public.@>) target_t.path)
+              OR (m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin') AND admin_t.path OPERATOR(public.@>) target_t.path)
             )
         ) AS ok
       `.execute(trx);
@@ -90,7 +90,7 @@ export class NetworkService {
                    nlevel(t.path) AS depth
             FROM tenants t
             JOIN memberships m ON m.user_id = ${userId}::uuid AND m.status = 'active'
-                              AND m.role IN ('tenant_admin', 'admin')
+                              AND m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin')
             JOIN tenants admin_t ON admin_t.id = m.tenant_id
             WHERE admin_t.path OPERATOR(public.@>) t.path
             ORDER BY depth, t.name

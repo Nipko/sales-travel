@@ -10,6 +10,7 @@ export class RequestContextMiddleware implements NestMiddleware {
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {
     let userId: string | undefined;
+    let tokenTenantId: string | undefined;
 
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) {
@@ -17,14 +18,18 @@ export class RequestContextMiddleware implements NestMiddleware {
       try {
         const payload = await this.jwt.verify(token);
         userId = payload.sub;
+        tokenTenantId = payload.tid;
       } catch {
         // Token inválido o expirado: dejamos pasar sin userId.
         // El AuthGuard se encargará de rechazar si la ruta lo requiere.
       }
     }
 
+    // El header `x-tenant-id` (que envía web-b2b) tiene precedencia por compatibilidad;
+    // si no viene, se usa el `tid` del JWT firmado. (La validación de membership contra
+    // el tenant resuelto es el siguiente endurecimiento de seguridad — ver docs/platform/12.)
     const tenantHeader = req.headers['x-tenant-id'];
-    const tenantId = typeof tenantHeader === 'string' ? tenantHeader : undefined;
+    const tenantId = (typeof tenantHeader === 'string' ? tenantHeader : undefined) ?? tokenTenantId;
 
     const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
 

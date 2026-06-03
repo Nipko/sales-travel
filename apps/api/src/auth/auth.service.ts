@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { RegisterDto, LoginDto } from './dto.js';
@@ -9,6 +14,7 @@ export interface AuthResult {
   token: string;
   userId: string;
   tenantId?: string;
+  role?: string;
 }
 
 @Injectable()
@@ -78,8 +84,8 @@ export class AuthService {
       return { userId: user.id, tenantId: tenant.id };
     });
 
-    const token = await this.jwt.sign({ sub: userId });
-    return { token, userId, tenantId };
+    const token = await this.jwt.sign({ sub: userId, tid: tenantId, role: 'tenant_admin' });
+    return { token, userId, tenantId, role: 'tenant_admin' };
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -100,13 +106,50 @@ export class AuthService {
 
     const membership = await this.db.db
       .selectFrom('memberships')
-      .select('tenant_id')
+      .select(['tenant_id', 'role'])
       .where('user_id', '=', user.id)
       .where('status', '=', 'active')
       .orderBy('created_at')
       .executeTakeFirst();
 
-    const token = await this.jwt.sign({ sub: user.id });
-    return { token, userId: user.id, tenantId: membership?.tenant_id };
+    const token = await this.jwt.sign({
+      sub: user.id,
+      tid: membership?.tenant_id,
+      role: membership?.role,
+    });
+    return {
+      token,
+      userId: user.id,
+      tenantId: membership?.tenant_id,
+      role: membership?.role,
+    };
+  }
+
+  /**
+   * Cambia el tenant activo del usuario: valida que tenga una membership ACTIVA en el
+   * tenant destino y emite un token nuevo con ese `tid` (firmado, no falsificable).
+   * Base para que el tenant venga del JWT en vez del header `x-tenant-id`.
+   */
+  async switchTenant(userId: string, targetTenantId: string): Promise<AuthResult> {
+    const membership = await this.db.withRequestContext({ userId }, async (trx) =>
+      trx
+        .selectFrom('memberships')
+        .select(['tenant_id', 'role'])
+        .where('user_id', '=', userId)
+        .where('tenant_id', '=', targetTenantId)
+        .where('status', '=', 'active')
+        .executeTakeFirst(),
+    );
+
+    if (!membership) {
+      throw new ForbiddenException('no active membership in target tenant');
+    }
+
+    const token = await this.jwt.sign({
+      sub: userId,
+      tid: membership.tenant_id,
+      role: membership.role,
+    });
+    return { token, userId, tenantId: membership.tenant_id, role: membership.role };
   }
 }
