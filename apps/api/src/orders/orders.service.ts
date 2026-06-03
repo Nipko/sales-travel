@@ -1,13 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import {
-  ORDER_CREATE_PORT,
-  ORDER_MANAGE_PORT,
   type BookingContactInfo,
   type OrderCancelResult,
-  type OrderCreatePort,
   type OrderCreateResult,
-  type OrderManagePort,
   type OrderPayResult,
   type OrderReshopRequest,
   type OrderReshopResult,
@@ -19,6 +15,7 @@ import {
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
 import type { OrderStatus } from '../database/database.types.js';
+import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 
 export interface CreateOrderDto {
   offer: Offer;
@@ -53,8 +50,7 @@ export interface OrderRow {
 export class OrdersService {
   constructor(
     private readonly db: DatabaseService,
-    @Inject(ORDER_CREATE_PORT) private readonly orderCreatePort: OrderCreatePort,
-    @Inject(ORDER_MANAGE_PORT) private readonly orderManagePort: OrderManagePort,
+    private readonly latam: LatamNdcProviderFactory,
   ) {}
 
   async createOrder(
@@ -62,7 +58,8 @@ export class OrdersService {
     userId: string,
     dto: CreateOrderDto,
   ): Promise<{ order: OrderRow; providerResult: OrderCreateResult }> {
-    const providerResult = await this.orderCreatePort.createOrder(
+    const adapter = await this.latam.forTenant(tenantId);
+    const providerResult = await adapter.createOrder(
       {
         offer: dto.offer,
         criteria: dto.offer as never,
@@ -131,7 +128,8 @@ export class OrdersService {
   }
 
   async retrieveFromProvider(tenantId: string, pnr: string): Promise<OrderRetrieveResult> {
-    return this.orderManagePort.retrieveOrder(pnr, { tenantId });
+    const adapter = await this.latam.forTenant(tenantId);
+    return adapter.retrieveOrder(pnr, { tenantId });
   }
 
   async cancelOrder(
@@ -139,7 +137,8 @@ export class OrdersService {
     id: string,
     pnr: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
-    const result = await this.orderManagePort.cancelOrder(pnr, { tenantId });
+    const adapter = await this.latam.forTenant(tenantId);
+    const result = await adapter.cancelOrder(pnr, { tenantId });
 
     if (result.success) {
       const order = await this.db.withTenant(tenantId, async (trx) => {
@@ -159,14 +158,16 @@ export class OrdersService {
 
   async listServices(tenantId: string, row: OrderRow): Promise<ServiceListResult> {
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
-    return this.orderManagePort.listServices(
+    const adapter = await this.latam.forTenant(tenantId);
+    return adapter.listServices(
       { orderId: row.provider_order_id!, passengers, itemType: 'BAGGAGE' },
       { tenantId },
     );
   }
 
   async reshopOrder(tenantId: string, body: OrderReshopRequest): Promise<OrderReshopResult> {
-    return this.orderManagePort.reshopWithTickets(body, { tenantId });
+    const adapter = await this.latam.forTenant(tenantId);
+    return adapter.reshopWithTickets(body, { tenantId });
   }
 
   async payOrder(
@@ -181,7 +182,8 @@ export class OrdersService {
     };
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
 
-    const result = await this.orderManagePort.payOrder(
+    const adapter = await this.latam.forTenant(tenantId);
+    const result = await adapter.payOrder(
       { orderId: row.provider_order_id!, payment, contactInfo, passengers },
       { tenantId },
     );

@@ -15,6 +15,8 @@ export interface ResolvedProviderAccount {
   credentials: Record<string, unknown>;
   /** true si la cuenta provino de un ancestro (consolidador), no del propio tenant. */
   inherited: boolean;
+  /** Última actualización de la cuenta resuelta — útil para invalidar caches de credenciales. */
+  updatedAt: Date;
 }
 
 interface ResolveRow {
@@ -25,6 +27,7 @@ interface ResolveRow {
   credentials_enc: Buffer | null;
   config: unknown;
   status: ProviderAccountStatus | null;
+  updated_at: Date | null;
 }
 
 @Injectable()
@@ -38,7 +41,7 @@ export class ProviderCredentialsService {
    */
   async resolve(tenantId: string, providerCode: string): Promise<ResolvedProviderAccount> {
     const result = await sql<ResolveRow>`
-      SELECT id, tenant_id, provider_code, label, credentials_enc, config, status
+      SELECT id, tenant_id, provider_code, label, credentials_enc, config, status, updated_at
       FROM resolve_provider_account(${tenantId}::uuid, ${providerCode})
     `.execute(this.db.db);
 
@@ -57,6 +60,7 @@ export class ProviderCredentialsService {
       config: (row.config ?? {}) as Record<string, unknown>,
       credentials: JSON.parse(decryptCredentials(row.credentials_enc)) as Record<string, unknown>,
       inherited: row.tenant_id !== tenantId,
+      updatedAt: row.updated_at ?? new Date(0),
     };
   }
 
