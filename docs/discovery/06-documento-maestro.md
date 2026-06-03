@@ -12,6 +12,8 @@
 
 Ser el **consolidador único de turismo de referencia en América**, que permita a agencias de viajes B2B y a consumidores finales B2C **buscar, cotizar, armar y comprar paquetes turísticos completos** (vuelos NDC/GDS, hoteles, actividades, asistencias, autos) desde una sola interfaz **drag-and-drop, intuitiva y conversacional con IA**, con presencia inicial fuerte en Colombia y Brasil y expansión a toda Latinoamérica y luego al resto del mundo.
 
+**La plataforma es además infraestructura para consolidadores (B2B2B).** Un consolidador puede habilitar a **otras agencias y sub-agencias** dentro de su red, y cada una puede **conectar sus propias credenciales de proveedor (modelo BYOC — Bring Your Own Credentials)** o heredar las del consolidador. Esto convierte a Sales-Travel no sólo en una herramienta para vender, sino en el **sistema operativo de redes de distribución turística**: jerarquía multinivel de agencias, credenciales por nodo, y reparto de márgenes/comisiones en cascada entre los niveles. Ver detalle y plan en `docs/platform/12-modelo-consolidador-y-plan.md`.
+
 ### 1.2 Misión
 
 Eliminar la fricción operativa que hoy obliga a las agencias a saltar entre múltiples sistemas (un GDS para vuelos, otro portal para hoteles, otro para asistencias, etc.) y devolverles tiempo para vender, mientras se entrega al consumidor final una experiencia tipo "marketplace de viajes inteligente".

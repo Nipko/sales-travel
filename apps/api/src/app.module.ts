@@ -13,6 +13,7 @@ import { TenantsModule } from './tenants/tenants.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReportsModule } from './reports/reports.module.js';
     CustomersModule,
     PortfoliosModule,
     ReportsModule,
+    ProviderCredentialsModule,
   ],
   controllers: [HealthController],
   providers: [

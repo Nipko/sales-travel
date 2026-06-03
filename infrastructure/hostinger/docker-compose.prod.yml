@@ -98,6 +98,8 @@ services:
       PGPASSWORD: ${APP_USER_PASSWORD}
       PGDATABASE: sales_travel
       JWT_SECRET: ${JWT_SECRET}
+      # BYOC: clave maestra AES-256-GCM para cifrar credenciales de proveedor (base64 de 32 bytes).
+      PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:-}
       LATAM_API_URL: ${LATAM_API_URL:-https://sandbox.api.latam.com}
       LATAM_API_KEY: ${LATAM_API_KEY:-}
       LATAM_API_SECRET: ${LATAM_API_SECRET:-}

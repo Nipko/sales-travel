@@ -6,22 +6,25 @@
 
 ## 🎯 Qué es este proyecto
 
-**Sales-Travel** — plataforma consolidadora de turismo B2B/B2C para LATAM. Multi-tenant white-label con IA omnicanal (WhatsApp/web/voz) y constructor visual drag-and-drop de paquetes turísticos. Mercado inicial: Colombia, Brasil, Perú.
+**Sales-Travel** — plataforma consolidadora de turismo **B2B2B/B2B/B2C** para LATAM. Multi-tenant white-label con IA omnicanal (WhatsApp/web/voz) y constructor visual drag-and-drop de paquetes turísticos. Mercado inicial: Colombia, Brasil, Perú.
 
-Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenciadores: WhatsApp como canal de venta de primera clase, Package Studio visual, cobertura simultánea CO+PE+BR.
+**Modelo consolidador (target central):** la plataforma debe servir a **consolidadores** que dan acceso a **otras agencias (y sub-agencias)** dentro de su red. Cada agencia puede **conectar sus propias credenciales de proveedor (BYOC — Bring Your Own Credentials)** —su PCC/pseudo-city GDS, su API key NDC, su contrato de bedbank, su cuenta de pagos— **o heredar** las del consolidador. Esto exige: jerarquía de tenants multinivel (`consolidador → agencia → sub-agencia → vendedor`), bóveda de credenciales por nodo con herencia, y **pricing waterfall** en cascada (override del consolidador + markup de la agencia + comisión del vendedor). Ver `docs/platform/12-modelo-consolidador-y-plan.md`.
+
+Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenciadores: WhatsApp como canal de venta de primera clase, Package Studio visual, cobertura simultánea CO+PE+BR, y **red de agencias self-service con credenciales propias**.
 
 ---
 
 ## 📚 Antes de cualquier cambio: leer la fuente de verdad
 
-| Pregunta                                                | Documento                                      |
-| ------------------------------------------------------- | ---------------------------------------------- |
-| ¿Qué módulos existen? ¿Qué endpoints? ¿Modelo de datos? | `docs/platform/10-mapa-completo-plataforma.md` |
-| ¿Por qué decidimos X arquitectura/proveedor?            | `docs/research/05-arquitectura-referencia.md`  |
-| ¿Qué proveedor de hoteles/GDS/pagos usamos?             | `docs/research/03-integraciones-ecosistema.md` |
-| ¿Qué exige DIAN/SUNAT/NF-e?                             | `docs/research/04-regulacion-fiscal-latam.md`  |
-| ¿Quién es la competencia? ¿Cuáles son los gaps?         | `docs/research/06-competencia-latam.md`        |
-| ¿Cuándo se construye qué?                               | `docs/discovery/07-roadmap-olas.md`            |
+| Pregunta                                                                      | Documento                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------ |
+| ¿Qué módulos existen? ¿Qué endpoints? ¿Modelo de datos?                       | `docs/platform/10-mapa-completo-plataforma.md`   |
+| ¿Cómo funciona el modelo consolidador/BYOC? ¿Qué nos falta vs mercado? ¿Plan? | `docs/platform/12-modelo-consolidador-y-plan.md` |
+| ¿Por qué decidimos X arquitectura/proveedor?                                  | `docs/research/05-arquitectura-referencia.md`    |
+| ¿Qué proveedor de hoteles/GDS/pagos usamos?                                   | `docs/research/03-integraciones-ecosistema.md`   |
+| ¿Qué exige DIAN/SUNAT/NF-e?                                                   | `docs/research/04-regulacion-fiscal-latam.md`    |
+| ¿Quién es la competencia? ¿Cuáles son los gaps?                               | `docs/research/06-competencia-latam.md`          |
+| ¿Cuándo se construye qué?                                                     | `docs/discovery/07-roadmap-olas.md`              |
 
 **Regla:** si vas a tomar una decisión técnica significativa, primero verifica que no esté ya decidida en estos docs.
 
