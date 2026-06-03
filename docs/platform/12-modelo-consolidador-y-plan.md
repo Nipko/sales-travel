@@ -380,11 +380,10 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 - ✅ JWT lleva `tid` (tenant activo) + `role`; `login`/`register` lo pueblan; `POST /auth/switch-tenant` valida membership activa y emite token firmado con el `tid` elegido.
 - ✅ Middleware: usa `x-tenant-id` (header, compat web-b2b) con fallback al `tid` del JWT. Backward-compatible (tokens viejos sin `tid` siguen igual).
 
-**⚠️ Hallazgo de seguridad (prioridad alta, pendiente):** el API confía en `x-tenant-id` **sin validar membership** del usuario en ese tenant. La RLS filtra por `current_tenant_id` pero no verifica membership ⇒ un cliente directo (no la UI) podría pasar el tenant de otro y leer sus datos. **Fix:** validar membership del tenant resuelto (drop-on-invalid → cae al primer membership; nunca throw) o mover el tenant 100% al `tid` firmado y migrar web-b2b a `switch-tenant`. No se aplicó en el mismo push por riesgo (toca varios controllers + front, sin DB de prueba).
+**✅ Hallazgo de seguridad de `x-tenant-id` — CERRADO:** el API ya no confía ciegamente en el header. El middleware valida el `x-tenant-id` con `NetworkService.canAccessTenant` (miembro directo, superadmin, o admin de un ancestro para act-as); si el usuario no está autorizado, **ignora el header y usa el `tid` firmado** (drop-on-invalid, nunca throw). Así un cliente directo no puede operar bajo un tenant ajeno. Cubierto por tests de integración (vendedor accede sólo a su tenant; header forjado rechazado). _Nota perf: agrega 1 query de validación por request autenticado con header; aceptable a esta escala._
 
 **Pendiente (siguiente iteración):**
 
-- **Cerrar el hallazgo de `x-tenant-id`** (validación de membership) — prioridad alta.
 - **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): diferido hasta tener DB de prueba (RLS sin testear = riesgo de fuga). La jerarquía ya está a nivel de **autorización** (NetworkService).
 - UI de gestión de red (alta de agencia + cargar/heredar credenciales) para cerrar el loop end-to-end.
 - Ejecutar los tests de integración contra una DB con 0011-0013 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).

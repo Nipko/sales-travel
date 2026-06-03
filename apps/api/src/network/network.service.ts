@@ -74,6 +74,38 @@ export class NetworkService {
     });
   }
 
+  /**
+   * ¿Puede el usuario OPERAR en `tenantId`? True si es miembro directo (cualquier rol),
+   * superadmin, o admin de un nodo ancestro (act-as descendiente). Se usa para validar el
+   * header `x-tenant-id` y evitar que un cliente opere bajo un tenant ajeno.
+   */
+  async canAccessTenant(userId: string, tenantId: string): Promise<boolean> {
+    return this.db.withRequestContext({ userId }, async (trx) => {
+      const result = await sql<{ ok: boolean }>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM memberships m
+          WHERE m.user_id = ${userId}::uuid AND m.status = 'active'
+            AND (
+              m.tenant_id = ${tenantId}::uuid
+              OR m.role = 'superadmin'
+              OR (
+                m.role IN ('tenant_admin','admin','consolidator_admin','agency_admin','platform_admin')
+                AND EXISTS (
+                  SELECT 1
+                  FROM tenants admin_t
+                  JOIN tenants target_t ON target_t.id = ${tenantId}::uuid
+                  WHERE admin_t.id = m.tenant_id
+                    AND admin_t.path OPERATOR(public.@>) target_t.path
+                )
+              )
+            )
+        ) AS ok
+      `.execute(trx);
+      return result.rows[0]?.ok === true;
+    });
+  }
+
   /** Subárbol de tenants que el usuario administra (su red). Superadmin ve todos. */
   async listNetwork(userId: string): Promise<NetworkTenant[]> {
     const superadmin = await this.isSuperadmin(userId);

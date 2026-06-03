@@ -14,6 +14,7 @@ import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
+import { NetworkModule } from './network/network.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
     PortfoliosModule,
     ReportsModule,
     ProviderCredentialsModule,
+    NetworkModule,
   ],
   controllers: [HealthController],
   providers: [
