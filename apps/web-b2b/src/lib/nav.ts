@@ -3,6 +3,7 @@ import {
   Building2,
   Calendar,
   Home,
+  Network,
   Settings,
   Shield,
   Ticket,
@@ -31,6 +32,7 @@ export const managementNav: NavItem[] = [
 ];
 
 export const adminNav: NavItem[] = [
+  { label: 'Mi Red', href: '/red', icon: Network },
   { label: 'Mi Agencia', href: '/configuracion', icon: Settings },
   { label: 'Equipo (Usuarios)', href: '/admin/usuarios', icon: Shield },
 ];

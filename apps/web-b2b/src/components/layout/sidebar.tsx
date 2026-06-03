@@ -48,7 +48,14 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
   const isSuperAdmin = role === 'superadmin';
-  const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
+  const isAdmin = [
+    'superadmin',
+    'platform_admin',
+    'consolidator_admin',
+    'tenant_admin',
+    'agency_admin',
+    'admin',
+  ].includes(role ?? '');
 
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300">

@@ -385,7 +385,7 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 **Pendiente (siguiente iteración):**
 
 - **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): diferido hasta tener DB de prueba (RLS sin testear = riesgo de fuga). La jerarquía ya está a nivel de **autorización** (NetworkService).
-- UI de gestión de red (alta de agencia + cargar/heredar credenciales) para cerrar el loop end-to-end.
+- ✅ **UI de gestión de red entregada** (`web-b2b`): página `/red` ("Mi Red") con árbol de agencias/sub-agencias, alta de sub-agencia bajo un nodo, y gestión de credenciales BYOC por nodo (conectar/heredar, secreto nunca mostrado). Nav "Mi Red" visible para roles admin. Cierra el loop end-to-end del modelo consolidador desde el panel.
 - Ejecutar los tests de integración contra una DB con 0011-0013 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).
 
 ### Decisión de secuenciado pendiente (de la investigación)
