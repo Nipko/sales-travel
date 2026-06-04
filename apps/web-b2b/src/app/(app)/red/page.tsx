@@ -83,11 +83,19 @@ const LATAM_NDC: ProviderForm = {
 };
 const PROVIDERS: Record<string, ProviderForm> = { 'latam-ndc': LATAM_NDC };
 
+interface SalesRow {
+  tenantId: string;
+  ordersTotal: number;
+  ordersConfirmed: number;
+  quotationsTotal: number;
+}
+
 export default function RedPage() {
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
   const [credsFor, setCredsFor] = useState<NetworkTenant | null>(null);
+  const [sales, setSales] = useState<Map<string, SalesRow>>(new Map());
 
   useEffect(() => {
     void fetchNetwork();
@@ -98,12 +106,37 @@ export default function RedPage() {
     try {
       const res = await fetch('/api/tenants/network');
       const data = (await res.json()) as { tenants?: NetworkTenant[] };
-      setTenants(data.tenants ?? []);
+      const list = data.tenants ?? [];
+      setTenants(list);
+      void fetchSales(list);
     } catch {
       setTenants([]);
     } finally {
       setLoading(false);
     }
+  }
+
+  // Trae el agregado de ventas por nodo, consultándolo para cada raíz de la red.
+  async function fetchSales(list: NetworkTenant[]) {
+    const ids = new Set(list.map((t) => t.id));
+    const rootIds = list
+      .filter((t) => !t.parentTenantId || !ids.has(t.parentTenantId))
+      .map((t) => t.id);
+    const map = new Map<string, SalesRow>();
+    await Promise.all(
+      rootIds.map(async (rootId) => {
+        try {
+          const r = await fetch(
+            `/api/tenants/network/sales?tenantId=${encodeURIComponent(rootId)}`,
+          );
+          const d = (await r.json()) as { summary?: SalesRow[] };
+          for (const row of d.summary ?? []) map.set(row.tenantId, row);
+        } catch {
+          /* sin datos de ventas para esta raíz */
+        }
+      }),
+    );
+    setSales(map);
   }
 
   // Construye el árbol a partir de parentTenantId (raíces = nodos cuyo padre no está en la red visible).
@@ -173,6 +206,24 @@ export default function RedPage() {
             </span>
           </td>
           <td className="px-4 py-3">
+            {(() => {
+              const s = sales.get(t.id);
+              if (!s) return <span className="text-xs text-[var(--color-fg-subtle)]">—</span>;
+              return (
+                <div className="flex items-center gap-3 text-xs tabular-nums text-[var(--color-fg-muted)]">
+                  <span title="Reservas (confirmadas)">
+                    <span className="font-medium text-[var(--color-fg)]">{s.ordersConfirmed}</span>
+                    <span className="text-[var(--color-fg-subtle)]">/{s.ordersTotal}</span> res.
+                  </span>
+                  <span title="Cotizaciones">
+                    <span className="font-medium text-[var(--color-fg)]">{s.quotationsTotal}</span>{' '}
+                    cot.
+                  </span>
+                </div>
+              );
+            })()}
+          </td>
+          <td className="px-4 py-3">
             <div className="flex items-center justify-end gap-1.5">
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setCredsFor(t)}>
                 <KeyRound className="size-3.5" />
@@ -204,7 +255,14 @@ export default function RedPage() {
             Mi Red
           </h1>
           <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            {tenants.length} {tenants.length === 1 ? 'nodo' : 'nodos'} en tu red de agencias
+            {tenants.length} {tenants.length === 1 ? 'nodo' : 'nodos'}
+            {(() => {
+              const vals = [...sales.values()];
+              if (!vals.length) return null;
+              const o = vals.reduce((a, v) => a + v.ordersTotal, 0);
+              const q = vals.reduce((a, v) => a + v.quotationsTotal, 0);
+              return ` · ${o} reservas · ${q} cotizaciones en tu red`;
+            })()}
           </p>
         </div>
         <Button
@@ -249,6 +307,9 @@ export default function RedPage() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
                   Estado
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                  Ventas
                 </th>
                 <th className="px-4 py-3" />
               </tr>
