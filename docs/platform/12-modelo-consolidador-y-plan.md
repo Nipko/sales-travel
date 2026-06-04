@@ -382,11 +382,23 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 
 **✅ Hallazgo de seguridad de `x-tenant-id` — CERRADO:** el API ya no confía ciegamente en el header. El middleware valida el `x-tenant-id` con `NetworkService.canAccessTenant` (miembro directo, superadmin, o admin de un ancestro para act-as); si el usuario no está autorizado, **ignora el header y usa el `tid` firmado** (drop-on-invalid, nunca throw). Así un cliente directo no puede operar bajo un tenant ajeno. Cubierto por tests de integración (vendedor accede sólo a su tenant; header forjado rechazado). _Nota perf: agrega 1 query de validación por request autenticado con header; aceptable a esta escala._
 
+**✅ Entregado — UI de gestión de red** (`web-b2b`): página `/red` ("Mi Red") con árbol de agencias/sub-agencias, alta de sub-agencia bajo un nodo, gestión de credenciales BYOC por nodo, y **resumen de ventas por nodo** (reservas/cotizaciones). Nav "Mi Red" visible para roles admin.
+
+**✅ Entregado — Harness de tests con Postgres en CI:** job `test` en `ci.yml` levanta `postgres:16`, aplica todas las migraciones y corre la suite del API. Los tests de integración (jerarquía, BYOC, autorización, waterfall, agregación) **corren y validan en cada push/PR**.
+
+**✅ Entregado — Agregación de red** (0014): función `network_sales_summary` (SECURITY DEFINER, gateada por `canManageTenant`). El consolidador ve orders/quotations de toda su red. _Se eligió este enfoque sobre políticas RLS descendentes a propósito: cero riesgo para el aislamiento de las queries normales._
+
+**✅ Entregado — Audit log** (0015): `domain_events` append-only + `AuditService.emit` (best-effort, sin secretos). Emite en cambios de credenciales, creación de tenants y cambios de rol.
+
+**✅ Entregado — Roles** (#3): `createTenant` asigna `consolidator_admin`; `PATCH /admin/memberships/role` cambia roles (gateado + auditado).
+
+**✅ Entregado — Pricing waterfall** (0016): `compute_price_waterfall` aplica markups en cascada por nivel del path (percentage compone, fixed suma); `POST /pricing/waterfall`. Con test de cascada en CI.
+
 **Pendiente (siguiente iteración):**
 
-- **RLS jerárquica a nivel DB sobre datos operativos** (orders/quotations — agregación de red): diferido hasta tener DB de prueba (RLS sin testear = riesgo de fuga). La jerarquía ya está a nivel de **autorización** (NetworkService).
-- ✅ **UI de gestión de red entregada** (`web-b2b`): página `/red` ("Mi Red") con árbol de agencias/sub-agencias, alta de sub-agencia bajo un nodo, y gestión de credenciales BYOC por nodo (conectar/heredar, secreto nunca mostrado). Nav "Mi Red" visible para roles admin. Cierra el loop end-to-end del modelo consolidador desde el panel.
-- Ejecutar los tests de integración contra una DB con 0011-0013 aplicadas (no hay Postgres/Docker en el entorno de desarrollo).
+- **Aplicar el waterfall al flujo real de cotización** (hoy es un simulador via endpoint); visibilidad de breakdown por rol (la sub-agencia ve su costo+final, no el neto del consolidador).
+- **UI de roles y simulador de pricing** en el panel (los endpoints ya existen).
+- Verticales nuevos (hoteles/asistencias) y conciliación BSP — Fases 3-4.
 
 ### Decisión de secuenciado pendiente (de la investigación)
 
