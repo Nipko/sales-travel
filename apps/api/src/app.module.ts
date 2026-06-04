@@ -15,10 +15,13 @@ import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { NetworkModule } from './network/network.module.js';
+import { AuditModule } from './audit/audit.module.js';
+import { PricingModule } from './pricing/pricing.module.js';
 
 @Module({
   imports: [
     DatabaseModule,
+    AuditModule,
     AuthModule,
     MeModule,
     SearchModule,
@@ -30,6 +33,7 @@ import { NetworkModule } from './network/network.module.js';
     ReportsModule,
     ProviderCredentialsModule,
     NetworkModule,
+    PricingModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -7,6 +7,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import type { ProviderAccountStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
@@ -31,6 +32,7 @@ export class ProviderCredentialsController {
   constructor(
     private readonly service: ProviderCredentialsService,
     private readonly network: NetworkService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post()
@@ -39,7 +41,7 @@ export class ProviderCredentialsController {
     @Body() body: UpsertProviderAccountBody,
   ): Promise<{ id: string }> {
     await this.assertCanManage(userId, body.tenantId);
-    return this.service.upsert({
+    const result = await this.service.upsert({
       tenantId: body.tenantId,
       providerCode: body.providerCode,
       label: body.label,
@@ -48,6 +50,21 @@ export class ProviderCredentialsController {
       isInheritable: body.isInheritable,
       status: body.status,
     });
+    // Auditoría: registra el cambio SIN el secreto.
+    await this.audit.emit({
+      eventType: 'ProviderCredentialsUpdated',
+      tenantId: body.tenantId,
+      actorUserId: userId,
+      aggregateType: 'provider_account',
+      aggregateId: result.id,
+      payload: {
+        providerCode: body.providerCode,
+        label: body.label ?? 'default',
+        status: body.status ?? 'sandbox',
+        isInheritable: body.isInheritable ?? true,
+      },
+    });
+    return result;
   }
 
   @Get()

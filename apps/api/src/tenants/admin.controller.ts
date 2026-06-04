@@ -4,14 +4,32 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Patch,
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
 import { sql } from 'kysely';
+import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PasswordService } from '../auth/password.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
+
+const ASSIGNABLE_ROLES: Role[] = [
+  'consolidator_admin',
+  'tenant_admin',
+  'agency_admin',
+  'admin',
+  'vendedor',
+  'cliente_final',
+];
+
+interface ChangeRoleBody {
+  userId: string;
+  tenantId: string;
+  role: Role;
+}
 
 interface CreateTenantBody {
   name: string;
@@ -41,7 +59,42 @@ export class AdminController {
     private readonly db: DatabaseService,
     private readonly password: PasswordService,
     private readonly network: NetworkService,
+    private readonly audit: AuditService,
   ) {}
+
+  /** Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant. */
+  @Patch('memberships/role')
+  async changeRole(@CurrentUser() userId: string | undefined, @Body() body: ChangeRoleBody) {
+    if (!userId) throw new UnauthorizedException();
+    if (!ASSIGNABLE_ROLES.includes(body.role)) {
+      throw new ForbiddenException('invalid role');
+    }
+    const superadmin = await this.network.isSuperadmin(userId);
+    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
+      throw new ForbiddenException('not authorized to manage this tenant');
+    }
+
+    const updated = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
+      trx
+        .updateTable('memberships')
+        .set({ role: body.role })
+        .where('user_id', '=', body.userId)
+        .where('tenant_id', '=', body.tenantId)
+        .returning(['id', 'role'])
+        .executeTakeFirst(),
+    );
+    if (!updated) throw new ForbiddenException('membership not found in this tenant');
+
+    await this.audit.emit({
+      eventType: 'MembershipRoleChanged',
+      tenantId: body.tenantId,
+      actorUserId: userId,
+      aggregateType: 'membership',
+      aggregateId: updated.id,
+      payload: { targetUserId: body.userId, newRole: body.role },
+    });
+    return { id: updated.id, role: updated.role };
+  }
 
   @Get('tenants')
   async listTenants(@CurrentUser() userId: string | undefined) {
@@ -155,6 +208,7 @@ export class AdminController {
     if (existing) throw new ConflictException('slug already in use');
 
     const result = await this.db.db.transaction().execute(async (trx) => {
+      const tenantType = body.tenantType ?? (body.parentTenantId ? 'subagency' : 'agency');
       const tenant = await trx
         .insertInto('tenants')
         .values({
@@ -164,11 +218,13 @@ export class AdminController {
           default_currency: body.defaultCurrency,
           default_language: body.defaultLanguage ?? 'es',
           parent_tenant_id: body.parentTenantId ?? null,
-          // Por defecto una sub-agencia si cuelga de un padre, agencia si es raíz.
-          tenant_type: body.tenantType ?? (body.parentTenantId ? 'subagency' : 'agency'),
+          tenant_type: tenantType,
         })
         .returning(['id', 'slug', 'name'])
         .executeTakeFirstOrThrow();
+
+      // El admin de un consolidador es consolidator_admin; el resto, tenant_admin.
+      const adminRole = tenantType === 'consolidator' ? 'consolidator_admin' : 'tenant_admin';
 
       if (body.adminEmail && body.adminPassword) {
         const existingUser = await trx
@@ -200,13 +256,26 @@ export class AdminController {
           .values({
             tenant_id: tenant.id,
             user_id: adminUserId,
-            role: 'tenant_admin',
+            role: adminRole,
             invited_by: userId,
           })
           .execute();
       }
 
       return tenant;
+    });
+
+    await this.audit.emit({
+      eventType: 'TenantCreated',
+      tenantId: result.id,
+      actorUserId: userId,
+      aggregateType: 'tenant',
+      aggregateId: result.id,
+      payload: {
+        slug: body.slug,
+        tenantType: body.tenantType,
+        parentTenantId: body.parentTenantId,
+      },
     });
 
     return { tenant: result };

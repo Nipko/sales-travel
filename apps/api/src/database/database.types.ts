@@ -210,11 +210,24 @@ export interface PackageItemsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface DomainEventsTable {
+  id: Generated<string>;
+  occurred_at: Generated<Timestamp>;
+  tenant_id: string | null;
+  actor_user_id: string | null;
+  event_type: string;
+  aggregate_type: string | null;
+  aggregate_id: string | null;
+  payload: Generated<unknown>;
+  meta: Generated<unknown>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
   provider_accounts: ProviderAccountsTable;
+  domain_events: DomainEventsTable;
   airports: AirportsTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
