@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -10,6 +10,16 @@ export interface NetworkTenant {
   parentTenantId: string | null;
   status: string;
   depth: number;
+}
+
+export interface NetworkSalesRow {
+  tenantId: string;
+  tenantName: string;
+  tenantType: string;
+  depth: number;
+  ordersTotal: number;
+  ordersConfirmed: number;
+  quotationsTotal: number;
 }
 
 interface NetworkRow {
@@ -104,6 +114,36 @@ export class NetworkService {
       `.execute(trx);
       return result.rows[0]?.ok === true;
     });
+  }
+
+  /**
+   * Agregado de ventas de la red bajo `rootTenantId` (orders/quotations por nodo del
+   * subárbol). Gateado: el usuario debe poder gestionar el root (su nodo o un ancestro).
+   * La función SQL es SECURITY DEFINER y agrega a través de la RLS; la autorización vive acá.
+   */
+  async networkSalesSummary(userId: string, rootTenantId: string): Promise<NetworkSalesRow[]> {
+    if (!(await this.canManageTenant(userId, rootTenantId))) {
+      throw new ForbiddenException('not authorized to view this network');
+    }
+    const result = await sql<{
+      t_id: string;
+      t_name: string;
+      t_type: string;
+      t_depth: number;
+      orders_total: string | number;
+      orders_confirmed: string | number;
+      quotations_total: string | number;
+    }>`SELECT * FROM network_sales_summary(${rootTenantId}::uuid)`.execute(this.db.db);
+
+    return result.rows.map((r) => ({
+      tenantId: r.t_id,
+      tenantName: r.t_name,
+      tenantType: r.t_type,
+      depth: Number(r.t_depth),
+      ordersTotal: Number(r.orders_total),
+      ordersConfirmed: Number(r.orders_confirmed),
+      quotationsTotal: Number(r.quotations_total),
+    }));
   }
 
   /** Subárbol de tenants que el usuario administra (su red). Superadmin ve todos. */

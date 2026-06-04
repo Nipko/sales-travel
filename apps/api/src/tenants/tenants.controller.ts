@@ -5,13 +5,18 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
-import { NetworkService, type NetworkTenant } from '../network/network.service.js';
+import {
+  NetworkService,
+  type NetworkSalesRow,
+  type NetworkTenant,
+} from '../network/network.service.js';
 
 interface BrandingView {
   logoUrl: string | null;
@@ -47,6 +52,18 @@ export class TenantsController {
     if (!userId) throw new UnauthorizedException();
     const tenants = await this.network.listNetwork(userId);
     return { tenants };
+  }
+
+  /** Agregado de ventas (orders/quotations) de toda la red bajo el tenant indicado. */
+  @Get('network/sales')
+  async getNetworkSales(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId') tenantId: string,
+  ): Promise<{ summary: NetworkSalesRow[] }> {
+    if (!userId) throw new UnauthorizedException();
+    if (!tenantId) throw new ForbiddenException('tenantId required');
+    const summary = await this.network.networkSalesSummary(userId, tenantId);
+    return { summary };
   }
 
   @Get(':id/config')

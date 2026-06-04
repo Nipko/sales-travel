@@ -77,12 +77,50 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
   });
 
   afterAll(async () => {
-    await pool.query('DELETE FROM users WHERE id = ANY($1)', [[userId, vendedorId]]); // memberships cascade
+    // Borrar tenants primero (cascadean orders/quotations); recién después users,
+    // porque orders.user_id es FK RESTRICT.
     for (const id of [sub, agency, cons, other]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
+    await pool.query('DELETE FROM users WHERE id = ANY($1)', [[userId, vendedorId]]);
     await pool.end();
   });
+
+  let seq = 0;
+  async function seedOrder(tenantId: string, status: string): Promise<void> {
+    seq += 1;
+    await pool.query(
+      `INSERT INTO orders (tenant_id, user_id, search_criteria, selected_offer, passengers, contact_info, total_amount, order_number, status)
+       VALUES ($1, $2, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 1000, $3, $4)`,
+      [tenantId, userId, seq, status],
+    );
+  }
+  async function seedQuotation(tenantId: string): Promise<void> {
+    seq += 1;
+    await pool.query(
+      `INSERT INTO quotations (tenant_id, user_id, search_criteria, selected_offer, quote_number, expires_at)
+       VALUES ($1, $2, '{}'::jsonb, '{}'::jsonb, $3, now() + interval '7 days')`,
+      [tenantId, userId, seq],
+    );
+  }
+  async function summary(root: string): Promise<Map<string, { o: number; oc: number; q: number }>> {
+    const { rows } = await pool.query<{
+      t_id: string;
+      orders_total: string;
+      orders_confirmed: string;
+      quotations_total: string;
+    }>(`SELECT * FROM network_sales_summary($1::uuid)`, [root]);
+    return new Map(
+      rows.map((r) => [
+        r.t_id,
+        {
+          o: Number(r.orders_total),
+          oc: Number(r.orders_confirmed),
+          q: Number(r.quotations_total),
+        },
+      ]),
+    );
+  }
 
   /** Réplica de NetworkService.canAccessTenant: miembro directo, superadmin, o admin de ancestro. */
   async function canAccess(uid: string, target: string): Promise<boolean> {
@@ -131,5 +169,22 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
     expect(await canAccess(userId, sub)).toBe(true);
     expect(await canAccess(userId, cons)).toBe(false);
     expect(await canAccess(userId, other)).toBe(false);
+  });
+
+  it('network_sales_summary aggregates the subtree and excludes other networks', async () => {
+    await seedOrder(agency, 'confirmed');
+    await seedOrder(agency, 'pending');
+    await seedOrder(sub, 'ticketed');
+    await seedQuotation(sub);
+    await seedOrder(other, 'confirmed'); // otra red: NO debe contar para `cons`
+
+    const s = await summary(cons);
+    expect(s.get(cons)).toEqual({ o: 0, oc: 0, q: 0 }); // el consolidador no tiene orders propias
+    expect(s.get(agency)).toEqual({ o: 2, oc: 1, q: 0 });
+    expect(s.get(sub)).toEqual({ o: 1, oc: 1, q: 1 });
+    expect(s.has(other)).toBe(false); // otra red no aparece
+
+    const totalOrders = [...s.values()].reduce((a, v) => a + v.o, 0);
+    expect(totalOrders).toBe(3); // agency(2) + sub(1), no incluye `other`
   });
 });
