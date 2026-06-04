@@ -42,3 +42,65 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  test:
+    name: Integration tests (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sales_travel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sales_travel
+      APP_USER_PASSWORD: app_user_ci_pw
+      MIGRATIONS_DIR: ${{ github.workspace }}/db/migrations
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # Vitest resuelve los paquetes del workspace por su `dist`; hay que buildearlos.
+      - name: Build workspace deps for tests
+        run: pnpm --filter "@sales-travel/api^..." build
+
+      - name: Create extensions
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d sales_travel -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS citext;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS unaccent;
+          SQL
+
+      - name: Run migrations
+        run: pnpm --filter @sales-travel/db-migrate dev
+
+      - name: Integration + unit tests
+        run: pnpm --filter @sales-travel/api test
