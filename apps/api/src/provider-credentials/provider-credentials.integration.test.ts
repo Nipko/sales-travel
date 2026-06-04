@@ -32,7 +32,7 @@ d('consolidator hierarchy + BYOC resolution', () => {
   ): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
-       VALUES ($1, $1, 'CO', 'COP', $2, $3) RETURNING id`,
+       VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
       [slug, type, parentId],
     );
     return rows[0]!.id;
