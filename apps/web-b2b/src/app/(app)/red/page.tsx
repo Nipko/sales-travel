@@ -8,6 +8,7 @@ import {
   Network,
   Percent,
   Plus,
+  ScrollText,
   ShieldCheck,
   Trash2,
   X,
@@ -107,6 +108,7 @@ export default function RedPage() {
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
   const [credsFor, setCredsFor] = useState<NetworkTenant | null>(null);
   const [pricingFor, setPricingFor] = useState<NetworkTenant | null>(null);
+  const [showAudit, setShowAudit] = useState(false);
   const [sales, setSales] = useState<Map<string, SalesRow>>(new Map());
 
   useEffect(() => {
@@ -286,14 +288,25 @@ export default function RedPage() {
             })()}
           </p>
         </div>
-        <Button
-          className="gap-2"
-          onClick={() => setCreateFor(roots[0] ?? null)}
-          disabled={!roots.length}
-        >
-          <Plus className="size-4" />
-          Nueva agencia
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            className="gap-2"
+            onClick={() => setShowAudit(true)}
+            disabled={!roots.length}
+          >
+            <ScrollText className="size-4" />
+            Actividad
+          </Button>
+          <Button
+            className="gap-2"
+            onClick={() => setCreateFor(roots[0] ?? null)}
+            disabled={!roots.length}
+          >
+            <Plus className="size-4" />
+            Nueva agencia
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -354,6 +367,10 @@ export default function RedPage() {
       {credsFor && <CredentialsModal tenant={credsFor} onClose={() => setCredsFor(null)} />}
 
       {pricingFor && <PricingModal tenant={pricingFor} onClose={() => setPricingFor(null)} />}
+
+      {showAudit && roots[0] && (
+        <AuditModal rootId={roots[0].id} onClose={() => setShowAudit(false)} />
+      )}
     </div>
   );
 }
@@ -1033,6 +1050,92 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
         )}
       </div>
 
+      <ModalFooter>
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+interface AuditEntry {
+  id: string;
+  occurredAt: string;
+  eventType: string;
+  tenantName: string | null;
+  actorEmail: string | null;
+  payload: Record<string, unknown>;
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  TenantCreated: 'Agencia creada',
+  ProviderCredentialsUpdated: 'Credenciales actualizadas',
+  MembershipRoleChanged: 'Rol cambiado',
+  MarkupRuleCreated: 'Regla de markup creada',
+  MarkupRuleDeleted: 'Regla de markup eliminada',
+};
+
+function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }) {
+  const [events, setEvents] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/tenants/network/audit?tenantId=${encodeURIComponent(rootId)}`,
+        );
+        const data = (await res.json()) as { events?: AuditEntry[] };
+        setEvents(data.events ?? []);
+      } catch {
+        setEvents([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [rootId]);
+
+  return (
+    <Modal title="Actividad de la red" onClose={onClose} wide>
+      <p className="mb-3 text-xs text-[var(--color-fg-muted)]">
+        Registro inmutable de acciones sensibles en tu red (credenciales, roles, reglas de pricing,
+        altas de agencias).
+      </p>
+      {loading ? (
+        <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+      ) : events.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-10 text-center text-xs text-[var(--color-fg-muted)]">
+          Sin actividad registrada todavía.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {events.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-start justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-[var(--color-fg)]">
+                  {EVENT_LABELS[e.eventType] ?? e.eventType}
+                </div>
+                <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">
+                  {e.tenantName ?? '—'}
+                  {e.actorEmail ? ` · ${e.actorEmail}` : ''}
+                </div>
+              </div>
+              <time className="shrink-0 text-[10px] text-[var(--color-fg-subtle)]">
+                {new Date(e.occurredAt).toLocaleString('es-CO', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </time>
+            </div>
+          ))}
+        </div>
+      )}
       <ModalFooter>
         <Button variant="secondary" size="sm" onClick={onClose}>
           Cerrar

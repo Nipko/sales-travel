@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Transaction } from 'kysely';
+import { AuditService, type AuditEntry } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
@@ -42,6 +43,7 @@ export class TenantsController {
   constructor(
     private readonly db: DatabaseService,
     private readonly network: NetworkService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Subárbol de tenants que el usuario administra (su red de agencias/sub-agencias). */
@@ -64,6 +66,22 @@ export class TenantsController {
     if (!tenantId) throw new ForbiddenException('tenantId required');
     const summary = await this.network.networkSalesSummary(userId, tenantId);
     return { summary };
+  }
+
+  /** Actividad reciente (audit log) de toda la red bajo el tenant indicado. */
+  @Get('network/audit')
+  async getNetworkAudit(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId') tenantId: string,
+    @Query('limit') limit?: string,
+  ): Promise<{ events: AuditEntry[] }> {
+    if (!userId) throw new UnauthorizedException();
+    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!(await this.network.canManageTenant(userId, tenantId))) {
+      throw new ForbiddenException('not authorized for this network');
+    }
+    const events = await this.audit.networkAudit(tenantId, Number(limit) || 50);
+    return { events };
   }
 
   @Get(':id/config')

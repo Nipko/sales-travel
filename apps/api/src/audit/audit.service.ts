@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { currentContext } from '../request-context/request-context.js';
 
@@ -10,6 +11,17 @@ export interface AuditEvent {
   aggregateId?: string;
   /** NUNCA incluir secretos/credenciales/PII sensible. */
   payload?: Record<string, unknown>;
+}
+
+export interface AuditEntry {
+  id: string;
+  occurredAt: Date;
+  eventType: string;
+  tenantId: string | null;
+  tenantName: string | null;
+  actorEmail: string | null;
+  aggregateType: string | null;
+  payload: Record<string, unknown>;
 }
 
 /**
@@ -39,5 +51,44 @@ export class AuditService {
       // No propagar: la auditoría no debe tumbar la acción principal.
       console.warn(`[audit] failed to emit ${event.eventType}:`, (err as Error).message);
     }
+  }
+
+  /**
+   * Eventos recientes de toda la red bajo `rootTenantId` (subárbol por path). La AUTORIZACIÓN
+   * (que el usuario gestione el root) se valida en el controlador antes de llamar.
+   */
+  async networkAudit(rootTenantId: string, limit = 50): Promise<AuditEntry[]> {
+    const lim = Math.min(200, Math.max(1, Math.trunc(limit)));
+    const res = await sql<{
+      id: string;
+      occurred_at: Date;
+      event_type: string;
+      tenant_id: string | null;
+      tenant_name: string | null;
+      actor_email: string | null;
+      aggregate_type: string | null;
+      payload: unknown;
+    }>`
+      SELECT e.id, e.occurred_at, e.event_type, e.tenant_id,
+             t.name AS tenant_name, u.email AS actor_email, e.aggregate_type, e.payload
+      FROM domain_events e
+      JOIN tenants t    ON t.id   = e.tenant_id
+      JOIN tenants root ON root.id = ${rootTenantId}::uuid
+      LEFT JOIN users u ON u.id = e.actor_user_id
+      WHERE t.path OPERATOR(public.<@) root.path
+      ORDER BY e.occurred_at DESC
+      LIMIT ${lim}
+    `.execute(this.db.db);
+
+    return res.rows.map((r) => ({
+      id: r.id,
+      occurredAt: r.occurred_at,
+      eventType: r.event_type,
+      tenantId: r.tenant_id,
+      tenantName: r.tenant_name,
+      actorEmail: r.actor_email,
+      aggregateType: r.aggregate_type,
+      payload: (r.payload ?? {}) as Record<string, unknown>,
+    }));
   }
 }
