@@ -1,7 +1,9 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/guards/auth.guard.js';
+import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { MeModule } from './me/me.module.js';
@@ -20,6 +22,9 @@ import { PricingModule } from './pricing/pricing.module.js';
 
 @Module({
   imports: [
+    // Rate limiting global: 300 req/min por IP. Endpoints sensibles (login) bajan el límite
+    // con @Throttle. Storage en memoria (1 contenedor api); migrar a Redis si se escala.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     DatabaseModule,
     AuditModule,
     AuthModule,
@@ -37,6 +42,11 @@ import { PricingModule } from './pricing/pricing.module.js';
   ],
   controllers: [HealthController],
   providers: [
+    // El throttler corre ANTES del auth guard (limita incluso intentos no autenticados).
+    {
+      provide: APP_GUARD,
+      useClass: IpThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: AuthGuard,

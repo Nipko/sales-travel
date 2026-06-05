@@ -9,6 +9,11 @@ async function bootstrap(): Promise<void> {
     logger: ['log', 'warn', 'error'],
   });
 
+  // Detrás de Caddy + Cloudflare: confiar en el proxy para que req.ip refleje X-Forwarded-For
+  // (fallback del rate limiter; la IP real del cliente la tomamos de CF-Connecting-IP).
+  const express = app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void };
+  express.set('trust proxy', true);
+
   app.use(helmet());
   app.useGlobalFilters(new AllExceptionsFilter());
   app.setGlobalPrefix('api');

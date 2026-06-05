@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Post, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { AuthService, type AuthResult } from './auth.service.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
@@ -13,6 +14,7 @@ interface SwitchTenantBody {
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Public()
   @Post('register')
   @HttpCode(201)
@@ -20,6 +22,8 @@ export class AuthController {
     return this.auth.register(dto);
   }
 
+  // Anti brute-force: 10 intentos de login por minuto por IP.
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Public()
   @Post('login')
   @HttpCode(200)
