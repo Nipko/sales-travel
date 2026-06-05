@@ -1,6 +1,17 @@
 'use client';
 
-import { Building2, ChevronRight, KeyRound, Network, Plus, ShieldCheck, X } from 'lucide-react';
+import {
+  Building2,
+  Calculator,
+  ChevronRight,
+  KeyRound,
+  Network,
+  Percent,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Label } from '../../../components/ui/label';
@@ -95,6 +106,7 @@ export default function RedPage() {
   const [loading, setLoading] = useState(true);
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
   const [credsFor, setCredsFor] = useState<NetworkTenant | null>(null);
+  const [pricingFor, setPricingFor] = useState<NetworkTenant | null>(null);
   const [sales, setSales] = useState<Map<string, SalesRow>>(new Map());
 
   useEffect(() => {
@@ -225,6 +237,15 @@ export default function RedPage() {
           </td>
           <td className="px-4 py-3">
             <div className="flex items-center justify-end gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setPricingFor(t)}
+              >
+                <Percent className="size-3.5" />
+                Reglas
+              </Button>
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setCredsFor(t)}>
                 <KeyRound className="size-3.5" />
                 Credenciales
@@ -331,6 +352,8 @@ export default function RedPage() {
       )}
 
       {credsFor && <CredentialsModal tenant={credsFor} onClose={() => setCredsFor(null)} />}
+
+      {pricingFor && <PricingModal tenant={pricingFor} onClose={() => setPricingFor(null)} />}
     </div>
   );
 }
@@ -720,6 +743,295 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
           </div>
         </div>
       )}
+
+      <ModalFooter>
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+interface MarkupRule {
+  id: string;
+  vertical: string;
+  ruleType: string;
+  valueMinor: number;
+  priority: number;
+  status: string;
+}
+
+interface WaterfallStep {
+  tenantName: string;
+  level: number;
+  ruleType: string;
+  addedMinor: number;
+}
+
+const VERTICALS = ['all', 'flights', 'hotels', 'cars', 'assistance', 'activities'];
+
+function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () => void }) {
+  const [rules, setRules] = useState<MarkupRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ vertical: 'all', ruleType: 'percentage', value: '' });
+
+  // Simulador
+  const [simVertical, setSimVertical] = useState('flights');
+  const [simNet, setSimNet] = useState('100000');
+  const [sim, setSim] = useState<{ final: number; markup: number; steps: WaterfallStep[] } | null>(
+    null,
+  );
+  const [simulating, setSimulating] = useState(false);
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/pricing/rules?tenantId=${encodeURIComponent(tenant.id)}`);
+      const data = (await res.json()) as { rules?: MarkupRule[] };
+      setRules(data.rules ?? []);
+    } catch {
+      setRules([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function addRule() {
+    setError('');
+    const value = Number(form.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError('Ingresá un valor válido.');
+      return;
+    }
+    // percentage: el usuario ingresa % (ej 5) → value_minor = %×100. fixed: monto en unidad mayor → minor.
+    const valueMinor =
+      form.ruleType === 'percentage' ? Math.round(value * 100) : Math.round(value * 100);
+    setSaving(true);
+    try {
+      const res = await fetch('/api/pricing/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenant.id,
+          vertical: form.vertical,
+          ruleType: form.ruleType,
+          valueMinor,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? 'Error al crear la regla');
+        return;
+      }
+      setForm({ vertical: 'all', ruleType: 'percentage', value: '' });
+      void load();
+    } catch {
+      setError('Error de conexión');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRule(id: string) {
+    await fetch(`/api/pricing/rules/${id}?tenantId=${encodeURIComponent(tenant.id)}`, {
+      method: 'DELETE',
+    });
+    void load();
+  }
+
+  async function simulate() {
+    setSimulating(true);
+    try {
+      const res = await fetch('/api/pricing/waterfall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenant.id,
+          vertical: simVertical,
+          netMinor: Math.round(Number(simNet) * 100),
+        }),
+      });
+      const data = (await res.json()) as {
+        finalMinor: number;
+        totalMarkupMinor: number;
+        breakdown: WaterfallStep[];
+      };
+      setSim({
+        final: data.finalMinor,
+        markup: data.totalMarkupMinor,
+        steps: data.breakdown ?? [],
+      });
+    } catch {
+      setSim(null);
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  const money = (minor: number) =>
+    (minor / 100).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+  return (
+    <Modal title={`Reglas de pricing · ${tenant.name}`} onClose={onClose} wide>
+      <p className="mb-3 text-xs text-[var(--color-fg-muted)]">
+        Las reglas de este nodo se aplican <strong>en cascada</strong> junto con las de sus
+        ancestros (consolidador → agencia → sub-agencia) sobre el neto del proveedor.
+      </p>
+
+      {/* Reglas propias */}
+      {loading ? (
+        <div className="h-12 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+      ) : rules.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-6 text-center text-xs text-[var(--color-fg-muted)]">
+          Sin reglas propias. Este nodo aplica sólo las heredadas de sus ancestros.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {rules.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+            >
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-[var(--color-surface-muted)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--color-fg-muted)]">
+                  {r.vertical}
+                </span>
+                <span className="font-medium text-[var(--color-fg)]">
+                  {r.ruleType === 'percentage'
+                    ? `+${(r.valueMinor / 100).toLocaleString('es-CO')}%`
+                    : `+${money(r.valueMinor)}`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void removeRule(r.id)}
+                className="rounded p-1 text-[var(--color-fg-subtle)] hover:bg-red-50 hover:text-red-600"
+                aria-label="Eliminar regla"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Agregar regla */}
+      <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+        <div className="space-y-1">
+          <Label>Vertical</Label>
+          <select
+            value={form.vertical}
+            onChange={(e) => setForm({ ...form, vertical: e.target.value })}
+            className={selectClass + ' w-32'}
+          >
+            {VERTICALS.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label>Tipo</Label>
+          <select
+            value={form.ruleType}
+            onChange={(e) => setForm({ ...form, ruleType: e.target.value })}
+            className={selectClass + ' w-32'}
+          >
+            <option value="percentage">Porcentaje (%)</option>
+            <option value="fixed">Monto fijo</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label>{form.ruleType === 'percentage' ? 'Valor (%)' : 'Valor'}</Label>
+          <input
+            type="number"
+            value={form.value}
+            onChange={(e) => setForm({ ...form, value: e.target.value })}
+            placeholder={form.ruleType === 'percentage' ? '5' : '10000'}
+            className={inputClass + ' w-28'}
+          />
+        </div>
+        <Button size="sm" className="gap-1.5" disabled={saving} onClick={() => void addRule()}>
+          <Plus className="size-3.5" />
+          {saving ? '…' : 'Agregar'}
+        </Button>
+      </div>
+      {error && <ErrorBox>{error}</ErrorBox>}
+
+      {/* Simulador */}
+      <div className="mt-5 rounded-xl border border-[var(--color-border)] p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-[var(--color-fg)]">
+          <Calculator className="size-4 text-[var(--color-primary)]" />
+          Simulador de cascada
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label>Vertical</Label>
+            <select
+              value={simVertical}
+              onChange={(e) => setSimVertical(e.target.value)}
+              className={selectClass + ' w-32'}
+            >
+              {VERTICALS.filter((v) => v !== 'all').map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label>Neto del proveedor</Label>
+            <input
+              type="number"
+              value={simNet}
+              onChange={(e) => setSimNet(e.target.value)}
+              className={inputClass + ' w-32'}
+            />
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={simulating}
+            onClick={() => void simulate()}
+          >
+            {simulating ? 'Calculando…' : 'Simular'}
+          </Button>
+        </div>
+
+        {sim && (
+          <div className="mt-3 space-y-1.5 text-sm">
+            {sim.steps.map((s, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]"
+              >
+                <span>
+                  {s.tenantName}{' '}
+                  <span className="text-[var(--color-fg-subtle)]">(nivel {s.level})</span>
+                </span>
+                <span>+ {money(s.addedMinor)}</span>
+              </div>
+            ))}
+            <div className="mt-1 flex items-center justify-between border-t border-[var(--color-border)] pt-2 font-medium text-[var(--color-fg)]">
+              <span>Precio final</span>
+              <span>
+                {money(sim.final)}{' '}
+                <span className="text-xs font-normal text-emerald-600">
+                  (+{money(sim.markup)} markup)
+                </span>
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
 
       <ModalFooter>
         <Button variant="secondary" size="sm" onClick={onClose}>
