@@ -133,7 +133,11 @@ export interface CustomersTable {
   email: string | null;
   phone: string | null;
   document_type: string;
-  document_number: string;
+  // PII: el número va cifrado en document_number_enc + blind index en _hash.
+  // La columna plana queda nullable (legacy/fallback); las filas nuevas la dejan NULL.
+  document_number: string | null;
+  document_number_enc: Buffer | null;
+  document_number_hash: string | null;
   document_issuing_country: string;
   birthdate: ColumnType<Date, Date | string, Date | string>;
   gender: string;

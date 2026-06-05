@@ -2,6 +2,32 @@ import { Injectable } from '@nestjs/common';
 import { type UpdateObject } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { type DB } from '../database/database.types.js';
+import { blindIndex, decryptPii, encryptPii } from './pii-cipher.js';
+
+interface RawCustomer {
+  document_number: string | null;
+  document_number_enc: Buffer | null;
+  document_number_hash: string | null;
+  [k: string]: unknown;
+}
+
+/** Descifra el documento (o usa el plano legacy) y quita las columnas internas enc/hash. */
+function toCustomerRow(raw: RawCustomer): CustomerRow {
+  let documentNumber = '';
+  if (raw.document_number_enc) {
+    try {
+      documentNumber = decryptPii(raw.document_number_enc);
+    } catch {
+      documentNumber = '';
+    }
+  } else {
+    documentNumber = raw.document_number ?? '';
+  }
+  const { document_number_enc, document_number_hash, ...rest } = raw;
+  void document_number_enc;
+  void document_number_hash;
+  return { ...rest, document_number: documentNumber } as unknown as CustomerRow;
+}
 
 export interface CreateCustomerDto {
   firstName: string;
@@ -67,7 +93,10 @@ export class CustomersService {
           email: dto.email ?? null,
           phone: dto.phone ?? null,
           document_type: dto.documentType,
-          document_number: dto.documentNumber,
+          // PII cifrada: el documento va en _enc, su blind index en _hash; sin plano.
+          document_number: null,
+          document_number_enc: encryptPii(dto.documentNumber),
+          document_number_hash: blindIndex(dto.documentNumber),
           document_issuing_country: dto.documentIssuingCountry,
           birthdate: new Date(dto.birthdate),
           gender: dto.gender,
@@ -78,7 +107,7 @@ export class CustomersService {
         .returningAll()
         .executeTakeFirstOrThrow();
 
-      return row as unknown as CustomerRow;
+      return toCustomerRow(row);
     });
   }
 
@@ -89,7 +118,7 @@ export class CustomersService {
         .selectAll()
         .orderBy('created_at', 'desc')
         .execute();
-      return rows as unknown as CustomerRow[];
+      return rows.map((r) => toCustomerRow(r));
     });
   }
 
@@ -100,7 +129,7 @@ export class CustomersService {
         .selectAll()
         .where('id', '=', id)
         .executeTakeFirst();
-      return row as unknown as CustomerRow | undefined;
+      return row ? toCustomerRow(row) : undefined;
     });
   }
 
@@ -116,7 +145,11 @@ export class CustomersService {
       if (dto.email !== undefined) updateData.email = dto.email;
       if (dto.phone !== undefined) updateData.phone = dto.phone;
       if (dto.documentType !== undefined) updateData.document_type = dto.documentType;
-      if (dto.documentNumber !== undefined) updateData.document_number = dto.documentNumber;
+      if (dto.documentNumber !== undefined) {
+        updateData.document_number = null;
+        updateData.document_number_enc = encryptPii(dto.documentNumber);
+        updateData.document_number_hash = blindIndex(dto.documentNumber);
+      }
       if (dto.documentIssuingCountry !== undefined)
         updateData.document_issuing_country = dto.documentIssuingCountry;
       if (dto.birthdate !== undefined) updateData.birthdate = new Date(dto.birthdate);
@@ -132,7 +165,7 @@ export class CustomersService {
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirst();
-      return row as unknown as CustomerRow | undefined;
+      return row ? toCustomerRow(row) : undefined;
     });
   }
 

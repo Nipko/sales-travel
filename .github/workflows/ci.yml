@@ -69,6 +69,8 @@ jobs:
       PGDATABASE: sales_travel
       APP_USER_PASSWORD: app_user_ci_pw
       MIGRATIONS_DIR: ${{ github.workspace }}/db/migrations
+      # Clave de prueba (base64 de 32 bytes) para el cipher de credenciales/PII en los tests.
+      PROVIDER_CREDENTIALS_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
     steps:
       - uses: actions/checkout@v4
 
