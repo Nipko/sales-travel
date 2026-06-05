@@ -1,5 +1,28 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+
+const MAX_MINOR = 1_000_000_000_000; // 10^12 — tope de cordura
+
+function assertPositiveAmount(amountMinor: unknown): number {
+  if (
+    typeof amountMinor !== 'number' ||
+    !Number.isInteger(amountMinor) ||
+    amountMinor <= 0 ||
+    amountMinor > MAX_MINOR
+  ) {
+    throw new BadRequestException('amountMinor must be a positive integer');
+  }
+  return amountMinor;
+}
 import { DatabaseService } from '../database/database.service.js';
 import {
   PortfoliosService,
@@ -37,9 +60,11 @@ export class PortfoliosController {
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
+    await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
+    const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.deposit(
       tenantId,
-      body.amountMinor,
+      amount,
       userId,
       body.notes,
     );
@@ -56,9 +81,11 @@ export class PortfoliosController {
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
+    await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
+    const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.withdraw(
       tenantId,
-      body.amountMinor,
+      amount,
       userId,
       body.notes,
     );
@@ -77,6 +104,14 @@ export class PortfoliosController {
     const tenantId = await this.resolveActiveTenant(userId);
     await this.assertAdminMembership(userId, tenantId);
 
+    if (
+      typeof body.creditLimitMinor !== 'number' ||
+      !Number.isInteger(body.creditLimitMinor) ||
+      body.creditLimitMinor < 0 ||
+      body.creditLimitMinor > MAX_MINOR
+    ) {
+      throw new BadRequestException('creditLimitMinor must be a non-negative integer');
+    }
     const portfolio = await this.portfolios.updateCreditLimit(tenantId, body.creditLimitMinor);
     return { portfolio: this.serializePortfolio(portfolio) };
   }
@@ -88,10 +123,11 @@ export class PortfoliosController {
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
+    const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.holdBooking(
       tenantId,
       body.orderId,
-      body.amountMinor,
+      amount,
       userId,
     );
     return {
@@ -169,7 +205,15 @@ export class PortfoliosController {
         .where('status', '=', 'active')
         .executeTakeFirst();
       if (!row) throw new ForbiddenException('not a member of this tenant');
-      if (row.role !== 'tenant_admin' && row.role !== 'superadmin' && row.role !== 'admin') {
+      const adminRoles = [
+        'superadmin',
+        'platform_admin',
+        'consolidator_admin',
+        'tenant_admin',
+        'agency_admin',
+        'admin',
+      ];
+      if (!adminRoles.includes(row.role)) {
         throw new ForbiddenException('admin role required');
       }
     });
