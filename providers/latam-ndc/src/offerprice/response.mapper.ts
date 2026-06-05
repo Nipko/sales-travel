@@ -6,10 +6,14 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
   const root = pick(raw, 'IATA_OfferPriceRS', 'OfferPriceRS');
 
   if (!root) {
-    console.error(
-      `[LATAM GDS OfferPrice Error] No IATA_OfferPriceRS root element in raw response. Raw payload:`,
-      JSON.stringify(raw),
-    );
+    if (process.env['LATAM_DEBUG_HTTP'] === 'true') {
+      console.warn(
+        '[latam-ndc] OfferPrice: no root element. Raw:',
+        JSON.stringify(raw).slice(0, 1000),
+      );
+    } else {
+      console.warn('[latam-ndc] OfferPrice: unexpected response (no root element)');
+    }
     return {
       offer: originalOffer,
       priceChanged: false,

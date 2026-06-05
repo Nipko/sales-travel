@@ -30,10 +30,15 @@ export function mapAirShoppingResponse(
   const warnings: string[] = [];
   const root = pick(raw, 'IATA_AirShoppingRS', 'AirShoppingRS');
   if (!root) {
-    console.error(
-      `[LATAM GDS AirShopping Error] No IATA_AirShoppingRS root element in raw response. Raw payload:`,
-      JSON.stringify(raw),
-    );
+    // No logueamos el payload crudo (puede contener PII). Verbose sólo con LATAM_DEBUG_HTTP.
+    if (process.env['LATAM_DEBUG_HTTP'] === 'true') {
+      console.warn(
+        '[latam-ndc] AirShopping: no root element. Raw:',
+        JSON.stringify(raw).slice(0, 1000),
+      );
+    } else {
+      console.warn('[latam-ndc] AirShopping: unexpected response (no root element)');
+    }
     return {
       offers: [],
       warnings: ['No IATA_AirShoppingRS root element. Probable error response.'],

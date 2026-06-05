@@ -35,13 +35,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof Error ? exception.stack : undefined,
     );
 
-    // Format uniform standard response
+    // Respuesta al cliente: para HttpException, su propio cuerpo (mensajes de negocio
+    // controlados). Para cualquier otro error (500), NUNCA exponer el mensaje crudo
+    // (podría filtrar errores de DB/esquema); se devuelve genérico y el detalle queda
+    // sólo en los logs del servidor.
     response.status(status).json(
       exception instanceof HttpException
         ? exception.getResponse()
         : {
             statusCode: status,
-            message: exception instanceof Error ? exception.message : 'Internal server error',
+            message: 'Internal server error',
             error: 'Internal Server Error',
           },
     );

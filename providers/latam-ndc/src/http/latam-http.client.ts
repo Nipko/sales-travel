@@ -45,13 +45,17 @@ export class LatamHttpClient {
     const requestId = randomUUID();
     const country = opts.country ?? this.cfg.country;
 
-    console.log(`[LatamHttpClient] >>> Outbound GDS Request: POST ${url}`);
-    console.log(
-      `[LatamHttpClient] Headers: X-latam-Country=${country}, X-latam-Track-Id=${trackId}, x-latam-request-id=${requestId}, X-latam-Application-Name=${this.cfg.agencyName}`,
-    );
-    console.log(
-      `[LatamHttpClient] XML Request Snippet (first 800 chars): ${xmlBody.replace(/\s+/g, ' ').slice(0, 800)}...`,
-    );
+    // El XML lleva PII (pasajeros, documentos, contacto) — NO se loguea por defecto.
+    // Verbose solo con LATAM_DEBUG_HTTP=true (dev/troubleshooting), nunca en prod.
+    const debug = process.env['LATAM_DEBUG_HTTP'] === 'true';
+    if (debug) {
+      console.warn(
+        `[latam-ndc] >>> POST ${path} track=${trackId} req=${requestId} country=${country}`,
+      );
+      console.warn(
+        `[latam-ndc] XML req (first 800): ${xmlBody.replace(/\s+/g, ' ').slice(0, 800)}`,
+      );
+    }
 
     const res = await fetch(url, {
       method: 'POST',
@@ -72,16 +76,14 @@ export class LatamHttpClient {
     });
 
     const text = await res.text();
-    console.log(`[LatamHttpClient] <<< GDS Response Status: ${res.status}`);
-
-    if (res.ok) {
-      console.log(
-        `[LatamHttpClient] XML Response Snippet (first 1000 chars): ${text.replace(/\s+/g, ' ').slice(0, 1000)}...`,
+    if (debug) {
+      console.warn(`[latam-ndc] <<< ${path} status=${res.status}`);
+      console.warn(
+        `[latam-ndc] XML resp (first 1000): ${text.replace(/\s+/g, ' ').slice(0, 1000)}`,
       );
-    } else {
-      console.error(
-        `[LatamHttpClient] XML Error Response Snippet (first 1000 chars): ${text.replace(/\s+/g, ' ').slice(0, 1000)}...`,
-      );
+    } else if (!res.ok) {
+      // En prod, sólo el status del error (sin cuerpo con PII).
+      console.warn(`[latam-ndc] ${path} returned status ${res.status}`);
     }
 
     // Always try to parse XML — LATAM returns structured errors in 4xx bodies

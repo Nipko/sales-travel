@@ -98,8 +98,9 @@ export class AdminController {
 
   @Get('tenants')
   async listTenants(@CurrentUser() userId: string | undefined) {
-    if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
+    // Panel de plataforma: lista TODOS los tenants ⇒ sólo superadmin (un consolidador usa
+    // /tenants/network para ver su propia red).
+    await this.assertSuperadmin(userId);
 
     const rows = await this.db.db
       .selectFrom('tenants')
@@ -147,8 +148,8 @@ export class AdminController {
 
   @Get('users')
   async listUsers(@CurrentUser() userId: string | undefined) {
-    if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
+    // Panel de plataforma: lista usuarios de TODOS los tenants ⇒ sólo superadmin.
+    await this.assertSuperadmin(userId);
 
     const rows = await this.db.withRequestContext({ userId }, async (trx) => {
       return trx
@@ -368,5 +369,12 @@ export class AdminController {
         .executeTakeFirst();
     });
     if (!row) throw new ForbiddenException('admin access required');
+  }
+
+  private async assertSuperadmin(userId: string | undefined): Promise<void> {
+    if (!userId) throw new UnauthorizedException();
+    if (!(await this.network.isSuperadmin(userId))) {
+      throw new ForbiddenException('superadmin access required');
+    }
   }
 }
