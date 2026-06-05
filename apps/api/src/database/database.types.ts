@@ -57,6 +57,10 @@ export interface UsersTable {
   name: string | null;
   status: Generated<UserStatus>;
   email_verified_at: Timestamp | null;
+  // Hardening de login (account lockout anti brute-force).
+  failed_login_attempts: Generated<number>;
+  locked_until: Timestamp | null;
+  last_login_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

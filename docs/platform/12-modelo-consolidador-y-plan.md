@@ -403,3 +403,32 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 ### Decisión de secuenciado pendiente (de la investigación)
 
 La investigación deja una pregunta de producto importante: **¿profundidad NDC/offer-order vs amplitud multi-contenido?** NDC ya es baseline pero la cuota de ventas NDC de agencias sigue baja (~10% histórico) y la profundidad offer/order varía. Para un consolidador LATAM, la recomendación tentativa es **amplitud primero** (sumar un segundo source aéreo + hoteles para cumplir el ">80% quiere contenido unificado") sobre profundizar NDC avanzado — pero esto se valida con el founder en función de los contratos de inventario disponibles. Va como **D5** a confirmar.
+
+---
+
+## §6 — Hardening de seguridad (auditoría Tier 1-3)
+
+Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditoría/asientos, roles, estadísticas). Validado con typecheck + lint + tests de integración en Postgres (CI) y desplegado a prod.
+
+**✅ Tier 1 (crítico):**
+
+- PII de pasajeros/PNR fuera de los logs del GDS (logging gateado tras `LATAM_DEBUG_HTTP`).
+- `error.message` crudo ya no se filtra en respuestas 500 (`AllExceptionsFilter` → "Internal server error").
+- Endpoints `/admin/*` con scoping real (`assertSuperadmin`), sin enumeración cross-red.
+
+**✅ Tier 2 (alto):**
+
+- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por `CF-Connecting-IP` (`IpThrottlerGuard`).
+- Validación de montos de cartera (entero positivo, tope de cordura) en depósitos/retiros/holds.
+
+**✅ Tier 3 (medio):**
+
+- **Cifrado de PII de clientes** (migración 0018 + `pii-cipher.ts`): `document_number` en reposo con AES-256-GCM + **blind index** HMAC para búsqueda/dedup por igualdad. Sub-claves vía HKDF de la clave maestra existente (sin secret nuevo). Filas legacy quedan en claro hasta sobreescribirse → **pendiente backfill** (script con la clave). Test unitario 5/5.
+- **Hardening de sesiones/login** (migración 0019 + `auth.service.ts`): **account lockout** por usuario (5 fallos consecutivos → bloqueo 15 min, complementa el rate-limit por IP), **timing-guard** con `bcrypt.compare` dummy para no filtrar existencia de cuenta (anti-enumeración), `last_login_at`, y **auditoría de eventos de auth** a `domain_events` (`auth.register`, `auth.login.success/failed/blocked`, `auth.switch_tenant`). Test de integración del lockout (se salta sin DB, corre en CI).
+
+**Pendiente (Tier 3, opcional):**
+
+- Backfill de PII legacy de clientes (cifrar filas existentes).
+- Verificación de email + (opcional) refresh tokens / revocación de sesión y MFA para roles admin+.
+- Validación Zod en endpoints restantes (orders, customers, quotations, provider-credentials).
+- RLS jerárquica de `memberships` (hoy gateado en app-layer; defensa-en-profundidad).
