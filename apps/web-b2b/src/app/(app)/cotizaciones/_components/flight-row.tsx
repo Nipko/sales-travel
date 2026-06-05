@@ -173,6 +173,9 @@ export function FlightRow({
 
   const hasMultipleFares = group.offers.length > 1;
   const carrier = firstItinerary.segments[0].carrier;
+  // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
+  const sellMinor = cheapest.pricing?.finalMinor ?? cheapest.total.amountMinor;
+  const hasMarkup = (cheapest.pricing?.totalMarkupMinor ?? 0) > 0;
 
   return (
     <div
@@ -212,8 +215,13 @@ export function FlightRow({
             {hasMultipleFares ? 'Desde' : 'Total'}
           </p>
           <p className="font-mono text-xl font-extrabold tabular-nums text-[var(--color-fg)] tracking-tight leading-none mt-1">
-            {formatMoney(cheapest.total.amountMinor, cheapest.total.currency)}
+            {formatMoney(sellMinor, cheapest.total.currency)}
           </p>
+          {hasMarkup && (
+            <p className="mt-1 text-[9px] font-medium text-[var(--color-fg-subtle)]">
+              neto {formatMoney(cheapest.total.amountMinor, cheapest.total.currency)} + markup
+            </p>
+          )}
           <div className="flex flex-col items-end gap-1 mt-2.5">
             {isRoundtrip && (
               <span className="inline-flex rounded-full bg-[var(--color-primary)]/8 border border-[var(--color-primary)]/10 px-2 py-0.5 text-[9px] font-bold text-[var(--color-primary)]">
@@ -268,7 +276,7 @@ export function FlightRow({
             {hasMultipleFares ? 'Desde' : 'Total'}
           </p>
           <p className="font-mono text-base font-black tabular-nums text-[var(--color-fg)]">
-            {formatMoney(cheapest.total.amountMinor, cheapest.total.currency)}
+            {formatMoney(sellMinor, cheapest.total.currency)}
           </p>
         </div>
       </div>

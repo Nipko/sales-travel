@@ -89,7 +89,9 @@ export class OrdersService {
           selected_offer: JSON.stringify(dto.offer),
           passengers: JSON.stringify(dto.passengers),
           contact_info: JSON.stringify(dto.contactInfo),
-          total_amount: dto.offer.total.amountMinor,
+          // El cliente paga el precio final (con la cascada de markup); el proveedor
+          // recibe el neto (dto.offer.total). Si no hay pricing, final = neto.
+          total_amount: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
           currency: dto.offer.total.currency,
           order_number: nextNumber.next,
           provider_raw: null,

@@ -180,11 +180,19 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
             {/* Price */}
             <div className="mb-4 border-b border-[var(--color-border)]/50 pb-3.5">
               <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-fg-subtle)]">
-                Tarifa Total
+                Precio de venta
               </p>
               <p className="font-mono text-xl font-extrabold tabular-nums text-[var(--color-fg)] mt-0.5 tracking-tight leading-none">
-                {formatMoney(fare.total.amountMinor, fare.total.currency)}
+                {formatMoney(
+                  fare.pricing?.finalMinor ?? fare.total.amountMinor,
+                  fare.total.currency,
+                )}
               </p>
+              {(fare.pricing?.totalMarkupMinor ?? 0) > 0 && (
+                <p className="mt-0.5 text-[9px] font-medium text-[var(--color-fg-subtle)]">
+                  neto {formatMoney(fare.total.amountMinor, fare.total.currency)}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-semibold text-[var(--color-fg-subtle)]">
                 <span>
                   Base:{' '}

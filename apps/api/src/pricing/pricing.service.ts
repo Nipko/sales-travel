@@ -17,6 +17,42 @@ export interface WaterfallResult {
   breakdown: WaterfallStep[];
 }
 
+export interface ApplicableRule {
+  tenantId: string;
+  tenantName: string;
+  level: number;
+  ruleType: string;
+  valueMinor: number;
+}
+
+/**
+ * Aplica la cascada en JS (misma semántica que compute_price_waterfall): cada regla se
+ * compone sobre el running total; 'percentage' suma running*(value/10000), 'fixed' suma value.
+ * Se usa para precios en batch (cada oferta de una búsqueda) tras traer las reglas una vez.
+ */
+export function applyCascade(netMinor: number, rules: ApplicableRule[]): WaterfallResult {
+  let running = netMinor;
+  const breakdown: WaterfallStep[] = [];
+  for (const r of rules) {
+    const add =
+      r.ruleType === 'percentage' ? Math.round(running * (r.valueMinor / 10000)) : r.valueMinor;
+    running += add;
+    breakdown.push({
+      tenantId: r.tenantId,
+      tenantName: r.tenantName,
+      level: r.level,
+      ruleType: r.ruleType,
+      addedMinor: add,
+    });
+  }
+  return {
+    netMinor,
+    finalMinor: running,
+    totalMarkupMinor: running - netMinor,
+    breakdown,
+  };
+}
+
 /**
  * Motor de pricing waterfall: aplica las markup_rules de cada nivel del path
  * (consolidador → agencia → sub-agencia) en cascada sobre el neto. La autorización
@@ -25,6 +61,24 @@ export interface WaterfallResult {
 @Injectable()
 export class PricingService {
   constructor(private readonly db: DatabaseService) {}
+
+  /** Reglas aplicables (propias + heredadas de ancestros) a un tenant/vertical, en orden de cascada. */
+  async getApplicableRules(tenantId: string, vertical: string): Promise<ApplicableRule[]> {
+    const res = await sql<{
+      tenant_id: string;
+      tenant_name: string;
+      lvl: number;
+      rule_type: string;
+      value_minor: string | number;
+    }>`SELECT * FROM applicable_markup_rules(${tenantId}::uuid, ${vertical})`.execute(this.db.db);
+    return res.rows.map((r) => ({
+      tenantId: r.tenant_id,
+      tenantName: r.tenant_name,
+      level: Number(r.lvl),
+      ruleType: r.rule_type,
+      valueMinor: Number(r.value_minor),
+    }));
+  }
 
   /** Lista las reglas de markup propias del tenant (no las heredadas). */
   async listRules(tenantId: string) {

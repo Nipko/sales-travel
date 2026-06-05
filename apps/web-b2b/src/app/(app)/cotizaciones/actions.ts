@@ -25,6 +25,14 @@ interface Itinerary {
   stops: number;
 }
 
+export interface OfferPricing {
+  netMinor: number;
+  finalMinor: number;
+  totalMarkupMinor: number;
+  currency: string;
+  breakdown: { tenantName: string; level: number; ruleType: string; addedMinor: number }[];
+}
+
 export interface Offer {
   id: string;
   tenantId: string;
@@ -33,6 +41,8 @@ export interface Offer {
   total: Money;
   baseFare: Money;
   taxes: Money;
+  // Precio de venta con la cascada de markup del consolidador (opcional; `total` es el neto).
+  pricing?: OfferPricing;
   itineraries?: Itinerary[];
   fareFamily?: { name: string; cabin: string };
   baggage?: {

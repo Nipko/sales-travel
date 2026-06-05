@@ -21,6 +21,7 @@ interface QuotationSummary {
   };
   selectedOffer: {
     total: { amountMinor: number; currency: string };
+    pricing?: { finalMinor: number };
     fareFamily?: { name: string };
     itineraries?: { segments: { carrier: string; flightNumber: string }[] }[];
   };
@@ -211,7 +212,10 @@ export default function QuotationsListPage() {
                 {/* Price */}
                 <div className="hidden text-right sm:block">
                   <p className="font-mono text-sm font-semibold tabular-nums text-[var(--color-fg)]">
-                    {formatMoney(q.selectedOffer.total.amountMinor, q.selectedOffer.total.currency)}
+                    {formatMoney(
+                      q.selectedOffer.pricing?.finalMinor ?? q.selectedOffer.total.amountMinor,
+                      q.selectedOffer.total.currency,
+                    )}
                   </p>
                   <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-[var(--color-fg-subtle)]">
                     <Clock className="size-3" />
