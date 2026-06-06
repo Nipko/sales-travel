@@ -29,6 +29,7 @@ export function buildServiceListRequest(request: ServiceListRequest, cfg: LatamN
                 <AgencyID>${escape(cfg.agencyId ?? '')}</AgencyID>
                 <IATA_Number>${escape(cfg.agencyIata ?? '')}</IATA_Number>
                 <Name>${escape(cfg.agencyName ?? '')}</Name>
+                ${cfg.travelAgentId ? `<TravelAgent><TravelAgentID>${escape(cfg.travelAgentId)}</TravelAgentID></TravelAgent>` : ''}
             </TravelAgency>
         </Sender>
     </Party>

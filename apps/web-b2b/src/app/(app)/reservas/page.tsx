@@ -475,7 +475,7 @@ export default function ReservasPage() {
                   </Button>
                   {order.pnr && order.status !== 'cancelled' && order.status !== 'failed' && (
                     <>
-                      {order.status === 'pending' && (
+                      {(order.status === 'pending' || order.status === 'confirmed') && (
                         <Button
                           variant="primary"
                           size="sm"
@@ -486,7 +486,7 @@ export default function ReservasPage() {
                           }}
                           className="gap-1.5 text-xs"
                         >
-                          <CreditCard className="size-3.5" /> Pagar
+                          <CreditCard className="size-3.5" /> Pagar / Emitir
                         </Button>
                       )}
                       <Button
@@ -700,6 +700,11 @@ export default function ReservasPage() {
           order={detailOrder}
           onClose={() => setDetailOrder(null)}
           onCancelRequest={() => setConfirmCancel(detailOrder)}
+          onPayRequest={() => {
+            setPayingOrder(detailOrder);
+            setPaymentData(null);
+            setDetailOrder(null);
+          }}
         />
       )}
 
@@ -729,14 +734,17 @@ function OrderDetailModal({
   order,
   onClose,
   onCancelRequest,
+  onPayRequest,
 }: {
   order: Order;
   onClose: () => void;
   onCancelRequest: () => void;
+  onPayRequest: () => void;
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const itineraries = order.selectedOffer?.itineraries ?? [];
   const canCancel = !!order.pnr && order.status !== 'cancelled' && order.status !== 'failed';
+  const canPay = !!order.pnr && (order.status === 'pending' || order.status === 'confirmed');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -879,6 +887,11 @@ function OrderDetailModal({
               className="gap-1.5 text-xs text-red-600 hover:text-red-700"
             >
               <XCircle className="size-3.5" /> Cancelar reserva
+            </Button>
+          )}
+          {canPay && (
+            <Button variant="primary" size="sm" onClick={onPayRequest} className="gap-1.5 text-xs">
+              <CreditCard className="size-3.5" /> Pagar / Emitir tiquete
             </Button>
           )}
           <Button variant="secondary" size="sm" onClick={onClose}>

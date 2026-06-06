@@ -12,6 +12,7 @@ export function buildOrderRetrieveRequest(orderId: string, cfg: LatamNdcConfig):
         <AgencyID>${escape(cfg.agencyId ?? '')}</AgencyID>
         <IATA_Number>${escape(cfg.agencyIata ?? '')}</IATA_Number>
         <Name>${escape(cfg.agencyName ?? '')}</Name>
+        ${cfg.travelAgentId ? `<TravelAgent><TravelAgentID>${escape(cfg.travelAgentId)}</TravelAgentID></TravelAgent>` : ''}
       </TravelAgency>
     </Sender>
   </Party>
@@ -43,6 +44,7 @@ export function buildOrderCancelRequest(orderId: string, cfg: LatamNdcConfig): s
         <AgencyID>${escape(cfg.agencyId ?? '')}</AgencyID>
         <IATA_Number>${escape(cfg.agencyIata ?? '')}</IATA_Number>
         <Name>${escape(cfg.agencyName ?? '')}</Name>
+        ${cfg.travelAgentId ? `<TravelAgent><TravelAgentID>${escape(cfg.travelAgentId)}</TravelAgentID></TravelAgent>` : ''}
       </TravelAgency>
     </Sender>
   </Party>
