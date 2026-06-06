@@ -11,6 +11,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import type { ProviderAccountStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { UpsertProviderAccountSchema } from './dto.js';
 import { ProviderCredentialsService } from './provider-credentials.service.js';
 
 interface UpsertProviderAccountBody {
@@ -38,7 +40,7 @@ export class ProviderCredentialsController {
   @Post()
   async upsert(
     @CurrentUser() userId: string | undefined,
-    @Body() body: UpsertProviderAccountBody,
+    @Body(new ZodValidationPipe(UpsertProviderAccountSchema)) body: UpsertProviderAccountBody,
   ): Promise<{ id: string }> {
     await this.assertCanManage(userId, body.tenantId);
     const result = await this.service.upsert({

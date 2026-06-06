@@ -11,6 +11,12 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { QuotationStatus } from '../database/database.types.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import {
+  CreateQuotationSchema,
+  QuotationStatusSchema,
+  UpdateQuotationCustomerSchema,
+} from './dto.js';
 import { QuotationsService, type CreateQuotationDto } from './quotations.service.js';
 
 @Controller('quotations')
@@ -21,7 +27,10 @@ export class QuotationsController {
   ) {}
 
   @Post()
-  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateQuotationDto) {
+  async create(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateQuotationSchema)) body: CreateQuotationDto,
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.quotations.create(tenantId, userId, body);
@@ -49,7 +58,7 @@ export class QuotationsController {
   async updateStatus(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body('status') status: QuotationStatus,
+    @Body('status', new ZodValidationPipe(QuotationStatusSchema)) status: QuotationStatus,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
@@ -62,7 +71,7 @@ export class QuotationsController {
   async updateCustomer(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body()
+    @Body(new ZodValidationPipe(UpdateQuotationCustomerSchema))
     body: {
       customerName?: string | null;
       customerEmail?: string | null;

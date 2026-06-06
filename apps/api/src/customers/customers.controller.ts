@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { CreateCustomerSchema, UpdateCustomerSchema } from './dto.js';
 import {
   CustomersService,
   type CreateCustomerDto,
@@ -26,7 +28,10 @@ export class CustomersController {
   ) {}
 
   @Post()
-  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateCustomerDto) {
+  async create(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateCustomerSchema)) body: CreateCustomerDto,
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.customers.create(tenantId, body);
@@ -54,7 +59,7 @@ export class CustomersController {
   async update(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body() body: UpdateCustomerDto,
+    @Body(new ZodValidationPipe(UpdateCustomerSchema)) body: UpdateCustomerDto,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);

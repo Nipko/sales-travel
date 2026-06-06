@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
 
 @Controller('orders')
@@ -19,7 +21,10 @@ export class OrdersController {
   ) {}
 
   @Post()
-  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateOrderDto) {
+  async create(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateOrderSchema)) body: CreateOrderDto,
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
 
@@ -86,7 +91,8 @@ export class OrdersController {
   async reshopOrder(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body() body: { paidOrderId: string; bnplOrderId: string; ticketDocIds: string[] },
+    @Body(new ZodValidationPipe(ReshopOrderSchema))
+    body: { paidOrderId: string; bnplOrderId: string; ticketDocIds: string[] },
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
@@ -99,7 +105,7 @@ export class OrdersController {
   async payOrder(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body() body: { payment: unknown },
+    @Body(new ZodValidationPipe(PayOrderSchema)) body: { payment: unknown },
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);

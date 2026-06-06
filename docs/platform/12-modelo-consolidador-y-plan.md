@@ -425,10 +425,10 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 
 - **Cifrado de PII de clientes** (migración 0018 + `pii-cipher.ts`): `document_number` en reposo con AES-256-GCM + **blind index** HMAC para búsqueda/dedup por igualdad. Sub-claves vía HKDF de la clave maestra existente (sin secret nuevo). Filas legacy quedan en claro hasta sobreescribirse → **pendiente backfill** (script con la clave). Test unitario 5/5.
 - **Hardening de sesiones/login** (migración 0019 + `auth.service.ts`): **account lockout** por usuario (5 fallos consecutivos → bloqueo 15 min, complementa el rate-limit por IP), **timing-guard** con `bcrypt.compare` dummy para no filtrar existencia de cuenta (anti-enumeración), `last_login_at`, y **auditoría de eventos de auth** a `domain_events` (`auth.register`, `auth.login.success/failed/blocked`, `auth.switch_tenant`). Test de integración del lockout (se salta sin DB, corre en CI).
+- **Validación Zod en endpoints restantes** (`*/dto.ts` + `ZodValidationPipe` por endpoint): customers (create/update), orders (create/reshop/pay), quotations (create/status/customer) y provider-accounts (upsert). Valida integridad en el borde (longitudes, email, fechas parseables, `providerCode`, `tenantId` uuid, credenciales no vacías) y **sanea** claves desconocidas; los blobs provider-shaped (offer/searchCriteria/credentials) se validan como objeto con **passthrough** para no perder datos anidados. Sin imponer ISO estricto en campos libres (`'COL'`/`'PASAPORTE'`) para no romper el cliente. 13 tests unitarios.
 
 **Pendiente (Tier 3, opcional):**
 
 - Backfill de PII legacy de clientes (cifrar filas existentes).
 - Verificación de email + (opcional) refresh tokens / revocación de sesión y MFA para roles admin+.
-- Validación Zod en endpoints restantes (orders, customers, quotations, provider-credentials).
 - RLS jerárquica de `memberships` (hoy gateado en app-layer; defensa-en-profundidad).
