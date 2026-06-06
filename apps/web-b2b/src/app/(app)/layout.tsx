@@ -1,6 +1,7 @@
 import { api } from '../../lib/api';
 import { getActiveTenant, setActiveTenant } from '../../lib/session';
 import { AppShell } from '../../components/layout/app-shell';
+import { VerifyBanner } from '../../components/layout/verify-banner';
 
 interface Membership {
   id: string;
@@ -13,6 +14,7 @@ interface Membership {
 
 interface MeResponse {
   email?: string;
+  emailVerified?: boolean;
 }
 
 interface TenantBranding {
@@ -47,6 +49,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (brandingRes?.ok) branding = brandingRes.data;
   }
 
+  const showVerifyBanner = meRes?.ok ? meRes.data.emailVerified === false : false;
+
   return (
     <AppShell
       userEmail={meRes?.ok ? meRes.data.email : undefined}
@@ -55,6 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       role={activeTenant?.role}
       branding={branding}
     >
+      {showVerifyBanner && <VerifyBanner />}
       {children}
     </AppShell>
   );

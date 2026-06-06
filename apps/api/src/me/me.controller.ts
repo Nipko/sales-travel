@@ -6,6 +6,7 @@ interface MeView {
   id: string;
   email: string;
   name: string | null;
+  emailVerified: boolean;
 }
 
 interface MembershipView {
@@ -26,11 +27,16 @@ export class MeController {
     if (!userId) throw new UnauthorizedException();
     const row = await this.db.db
       .selectFrom('users')
-      .select(['id', 'email', 'name'])
+      .select(['id', 'email', 'name', 'email_verified_at'])
       .where('id', '=', userId)
       .executeTakeFirst();
     if (!row) throw new UnauthorizedException();
-    return { id: row.id, email: row.email, name: row.name };
+    return {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      emailVerified: row.email_verified_at != null,
+    };
   }
 
   @Get('memberships')
