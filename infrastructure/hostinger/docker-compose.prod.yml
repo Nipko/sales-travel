@@ -109,6 +109,16 @@ services:
       LATAM_TRAVEL_AGENT_ID: ${LATAM_TRAVEL_AGENT_ID:-}
       LATAM_COUNTRY: ${LATAM_COUNTRY:-}
       LATAM_FORCE_MOCK: ${LATAM_FORCE_MOCK:-false}
+      # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
+      # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
+      APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_SECURE: ${MAIL_SECURE:-false}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PlaneTour}
     networks: [edge, internal]
     depends_on:
       migrate:

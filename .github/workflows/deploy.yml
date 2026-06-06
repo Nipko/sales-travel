@@ -133,6 +133,14 @@ jobs:
           LATAM_TRAVEL_AGENT_ID=${{ secrets.LATAM_TRAVEL_AGENT_ID || vars.LATAM_TRAVEL_AGENT_ID }}
           LATAM_COUNTRY=${{ vars.LATAM_COUNTRY || secrets.LATAM_COUNTRY }}
           LATAM_FORCE_MOCK=${{ vars.LATAM_FORCE_MOCK || 'false' }}
+          APP_WEB_URL=${{ vars.APP_WEB_URL || 'https://app.planetour.cloud' }}
+          MAIL_HOST=${{ vars.MAIL_HOST || secrets.MAIL_HOST }}
+          MAIL_PORT=${{ vars.MAIL_PORT || '587' }}
+          MAIL_SECURE=${{ vars.MAIL_SECURE || 'false' }}
+          MAIL_USER=${{ secrets.MAIL_USER || vars.MAIL_USER }}
+          MAIL_PASS=${{ secrets.MAIL_PASS }}
+          MAIL_FROM=${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
+          MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME || 'PlaneTour' }}
           EOF
 
       - name: Sync stack files
