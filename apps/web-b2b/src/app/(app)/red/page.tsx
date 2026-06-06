@@ -1433,6 +1433,8 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [form, setForm] = useState({
     fromName: '',
     fromEmail: '',
@@ -1516,6 +1518,42 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
       setError('Error de conexión');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function sendTest() {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const res = await fetch('/api/mail/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: tenant.id }),
+      });
+      const data = (await res.json()) as {
+        sent?: boolean;
+        to?: string;
+        from?: string;
+        reason?: string;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        setTestMsg({ ok: false, text: apiError(data, 'No se pudo enviar la prueba.') });
+        return;
+      }
+      if (data.sent) {
+        setTestMsg({
+          ok: true,
+          text: `Correo de prueba enviado a ${data.to ?? ''}${data.from ? ` (desde ${data.from})` : ''}.`,
+        });
+      } else {
+        setTestMsg({ ok: false, text: data.reason ?? 'No se pudo enviar la prueba.' });
+      }
+    } catch {
+      setTestMsg({ ok: false, text: 'Error de conexión.' });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -1622,6 +1660,27 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
               Configuración de email guardada.
             </div>
           )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={testing}
+              onClick={() => void sendTest()}
+            >
+              {testing ? 'Enviando…' : 'Enviar correo de prueba'}
+            </Button>
+            <span className="text-[11px] text-[var(--color-fg-subtle)]">
+              Prueba el correo guardado/efectivo (guardá primero si cambiaste algo).
+            </span>
+            {testMsg && (
+              <span
+                className={cn('w-full text-xs', testMsg.ok ? 'text-emerald-700' : 'text-red-700')}
+              >
+                {testMsg.text}
+              </span>
+            )}
+          </div>
         </>
       )}
 

@@ -18,6 +18,14 @@ export interface TransportSpec {
   from: string;
 }
 
+export interface MailTestResult {
+  sent: boolean;
+  /** Remitente efectivamente usado (sólo en éxito). */
+  from?: string;
+  /** Motivo legible del fallo (sólo cuando sent=false). */
+  reason?: string;
+}
+
 /** provider_code reservado para la configuración de email/SMTP por tenant (BYO-email). */
 export const EMAIL_PROVIDER_CODE = 'email';
 
@@ -79,6 +87,43 @@ export class MailerService {
       );
       return false;
     }
+    const r = await this.deliver(spec, msg);
+    if (!r.ok) {
+      // NUNCA loguear credenciales; sólo el mensaje del error de transporte.
+      this.logger.error(`email send failed (tenant=${tenantId}): ${r.reason}`);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Envía un correo de prueba al remitente que REALMENTE se usaría para este nodo (propio,
+   * heredado o el del sistema). Devuelve detalle para diagnosticar la config SMTP del admin.
+   */
+  async sendTest(tenantId: string, to: string): Promise<MailTestResult> {
+    const spec = await this.resolveSpec(tenantId);
+    if (!spec) {
+      return {
+        sent: false,
+        reason: 'No hay correo configurado para este nodo ni un correo del sistema por defecto.',
+      };
+    }
+    const r = await this.deliver(spec, {
+      to,
+      subject: 'Correo de prueba · PlaneTour',
+      html: '<p>Este es un <strong>correo de prueba</strong> de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.</p>',
+      text: 'Correo de prueba de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.',
+    });
+    return r.ok
+      ? { sent: true, from: spec.from }
+      : { sent: false, reason: `El envío falló: ${r.reason}` };
+  }
+
+  /** Crea el transporte y envía. No loguea credenciales; el error de SMTP no las incluye. */
+  private async deliver(
+    spec: TransportSpec,
+    msg: MailMessage,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
     try {
       const transporter = nodemailer.createTransport({
         host: spec.host,
@@ -93,11 +138,9 @@ export class MailerService {
         html: msg.html,
         text: msg.text,
       });
-      return true;
+      return { ok: true };
     } catch (err) {
-      // NUNCA loguear credenciales; sólo el mensaje del error de transporte.
-      this.logger.error(`email send failed (tenant=${tenantId}): ${(err as Error).message}`);
-      return false;
+      return { ok: false, reason: (err as Error).message };
     }
   }
 
