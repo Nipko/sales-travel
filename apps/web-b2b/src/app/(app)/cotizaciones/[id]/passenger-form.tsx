@@ -316,307 +316,339 @@ export function PassengerForm({
 
   return (
     <Card>
-      <CardContent className="p-5">
-        <div className="mb-1 flex items-center gap-2">
-          <UserPlus className="size-4 text-[var(--color-primary)]" />
-          <h2 className="text-sm font-semibold text-[var(--color-fg)]">Pasajeros de la reserva</h2>
-        </div>
-        <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
-          Datos de quienes viajan. El contacto de la reserva es el del cliente (arriba). Los campos
-          con <span className="text-red-500">*</span> son obligatorios; el resto es opcional.
-        </p>
+      <CardContent className="relative p-5">
+        {submitting && <BookingOverlay payNow={paymentMode === 'pay_now'} />}
+        <fieldset
+          disabled={submitting}
+          className={cn('m-0 min-w-0 border-0 p-0', submitting && 'opacity-60')}
+        >
+          <div className="mb-1 flex items-center gap-2">
+            <UserPlus className="size-4 text-[var(--color-primary)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+              Pasajeros de la reserva
+            </h2>
+          </div>
+          <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
+            Datos de quienes viajan. El contacto de la reserva es el del cliente (arriba). Los
+            campos con <span className="text-red-500">*</span> son obligatorios; el resto es
+            opcional.
+          </p>
 
-        {/* Passengers */}
-        <div className="space-y-4">
-          {passengers.map((pax, idx) => {
-            const issues = attempted ? paxIssues(pax) : [];
-            const bad = (field: string) => issues.includes(field);
-            return (
-              <div key={pax.paxId} className="rounded-lg border border-[var(--color-border)] p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Plane className="size-3.5 text-[var(--color-fg-subtle)]" />
-                    <span className="text-xs font-medium text-[var(--color-fg)]">
-                      {passengerLabel(pax)}
-                    </span>
-                    <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-medium text-[var(--color-fg-muted)]">
-                      {pax.paxType}
-                    </span>
+          {/* Passengers */}
+          <div className="space-y-4">
+            {passengers.map((pax, idx) => {
+              const issues = attempted ? paxIssues(pax) : [];
+              const bad = (field: string) => issues.includes(field);
+              return (
+                <div key={pax.paxId} className="rounded-lg border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Plane className="size-3.5 text-[var(--color-fg-subtle)]" />
+                      <span className="text-xs font-medium text-[var(--color-fg)]">
+                        {passengerLabel(pax)}
+                      </span>
+                      <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-medium text-[var(--color-fg-muted)]">
+                        {pax.paxType}
+                      </span>
+                    </div>
+                    {idx === 0 && (customerName ?? '').trim() && (
+                      <button
+                        type="button"
+                        onClick={() => copyCustomerToPax(idx)}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors',
+                          copiedHint
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
+                        )}
+                      >
+                        {copiedHint ? (
+                          <>
+                            <Check className="size-3" />
+                            Datos copiados
+                          </>
+                        ) : (
+                          <>
+                            <ClipboardCopy className="size-3" />
+                            Usar datos del cliente
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
-                  {idx === 0 && (customerName ?? '').trim() && (
-                    <button
-                      type="button"
-                      onClick={() => copyCustomerToPax(idx)}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors',
-                        copiedHint
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
-                      )}
-                    >
-                      {copiedHint ? (
-                        <>
-                          <Check className="size-3" />
-                          Datos copiados
-                        </>
-                      ) : (
-                        <>
-                          <ClipboardCopy className="size-3" />
-                          Usar datos del cliente
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label>
-                      Nombre(s)
-                      <Req />
-                    </Label>
-                    <input
-                      type="text"
-                      value={pax.givenName}
-                      onChange={(e) => updatePax(idx, { givenName: e.target.value })}
-                      placeholder="OLIVER"
-                      className={cn(inputClass, bad('nombre') && errClass)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>
-                      Apellido(s)
-                      <Req />
-                    </Label>
-                    <input
-                      type="text"
-                      value={pax.surname}
-                      onChange={(e) => updatePax(idx, { surname: e.target.value })}
-                      placeholder="JACKSON"
-                      className={cn(inputClass, bad('apellido') && errClass)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>
-                      Fecha de nacimiento
-                      <Req />
-                    </Label>
-                    <DobPicker
-                      value={pax.birthdate}
-                      onChange={(v) => updatePax(idx, { birthdate: v })}
-                      invalid={bad('fecha de nacimiento')}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>
-                      Tipo de documento
-                      <Req />
-                    </Label>
-                    <select
-                      value={pax.identityDoc.type}
-                      onChange={(e) =>
-                        updateDoc(idx, { type: e.target.value as 'P' | 'DNI' | 'CC' | 'CE' })
-                      }
-                      className={selectClass}
-                    >
-                      {DOC_TYPE_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>
-                      Número de documento
-                      <Req />
-                    </Label>
-                    <input
-                      type="text"
-                      value={pax.identityDoc.number}
-                      onChange={(e) => updateDoc(idx, { number: e.target.value })}
-                      placeholder="1234567890"
-                      className={cn(inputClass, bad('número de documento') && errClass)}
-                    />
-                  </div>
-                  {pax.identityDoc.type === 'P' && (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="space-y-1">
                       <Label>
-                        Vencimiento pasaporte
+                        Nombre(s)
                         <Req />
                       </Label>
                       <input
-                        type="date"
-                        value={pax.identityDoc.expiryDate}
-                        onChange={(e) => updateDoc(idx, { expiryDate: e.target.value })}
-                        className={cn(inputClass, bad('vencimiento del pasaporte') && errClass)}
+                        type="text"
+                        value={pax.givenName}
+                        onChange={(e) => updatePax(idx, { givenName: e.target.value })}
+                        placeholder="OLIVER"
+                        className={cn(inputClass, bad('nombre') && errClass)}
                       />
                     </div>
-                  )}
-                  <div className="space-y-1">
-                    <Label>
-                      Tratamiento
-                      <Opt />
-                    </Label>
-                    <select
-                      value={pax.title}
-                      onChange={(e) =>
-                        updatePax(idx, { title: e.target.value as 'Mr' | 'Mrs' | 'Miss' | 'Dr' })
-                      }
-                      className={selectClass}
-                    >
-                      {TITLE_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Género</Label>
-                    <select
-                      value={pax.gender}
-                      onChange={(e) => updatePax(idx, { gender: e.target.value as 'M' | 'F' })}
-                      className={selectClass}
-                    >
-                      <option value="M">Masculino</option>
-                      <option value="F">Femenino</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Nacionalidad</Label>
-                    <input
-                      type="text"
-                      value={pax.citizenshipCountryCode}
-                      onChange={(e) =>
-                        updatePax(idx, { citizenshipCountryCode: e.target.value.toUpperCase() })
-                      }
-                      placeholder="CO"
-                      maxLength={2}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>País emisor doc.</Label>
-                    <input
-                      type="text"
-                      value={pax.identityDoc.issuingCountryCode}
-                      onChange={(e) =>
-                        updateDoc(idx, { issuingCountryCode: e.target.value.toUpperCase() })
-                      }
-                      placeholder="CO"
-                      maxLength={2}
-                      className={inputClass}
-                    />
-                  </div>
-                  {pax.identityDoc.type === 'P' && (
                     <div className="space-y-1">
                       <Label>
-                        Emisión pasaporte
-                        <Opt />
+                        Apellido(s)
+                        <Req />
                       </Label>
                       <input
-                        type="date"
-                        value={pax.identityDoc.issueDate ?? ''}
-                        onChange={(e) => updateDoc(idx, { issueDate: e.target.value || undefined })}
+                        type="text"
+                        value={pax.surname}
+                        onChange={(e) => updatePax(idx, { surname: e.target.value })}
+                        placeholder="JACKSON"
+                        className={cn(inputClass, bad('apellido') && errClass)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>
+                        Fecha de nacimiento
+                        <Req />
+                      </Label>
+                      <DobPicker
+                        value={pax.birthdate}
+                        onChange={(v) => updatePax(idx, { birthdate: v })}
+                        invalid={bad('fecha de nacimiento')}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>
+                        Tipo de documento
+                        <Req />
+                      </Label>
+                      <select
+                        value={pax.identityDoc.type}
+                        onChange={(e) =>
+                          updateDoc(idx, { type: e.target.value as 'P' | 'DNI' | 'CC' | 'CE' })
+                        }
+                        className={selectClass}
+                      >
+                        {DOC_TYPE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>
+                        Número de documento
+                        <Req />
+                      </Label>
+                      <input
+                        type="text"
+                        value={pax.identityDoc.number}
+                        onChange={(e) => updateDoc(idx, { number: e.target.value })}
+                        placeholder="1234567890"
+                        className={cn(inputClass, bad('número de documento') && errClass)}
+                      />
+                    </div>
+                    {pax.identityDoc.type === 'P' && (
+                      <div className="space-y-1">
+                        <Label>
+                          Vencimiento pasaporte
+                          <Req />
+                        </Label>
+                        <input
+                          type="date"
+                          value={pax.identityDoc.expiryDate}
+                          onChange={(e) => updateDoc(idx, { expiryDate: e.target.value })}
+                          className={cn(inputClass, bad('vencimiento del pasaporte') && errClass)}
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <Label>
+                        Tratamiento
+                        <Opt />
+                      </Label>
+                      <select
+                        value={pax.title}
+                        onChange={(e) =>
+                          updatePax(idx, { title: e.target.value as 'Mr' | 'Mrs' | 'Miss' | 'Dr' })
+                        }
+                        className={selectClass}
+                      >
+                        {TITLE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Género</Label>
+                      <select
+                        value={pax.gender}
+                        onChange={(e) => updatePax(idx, { gender: e.target.value as 'M' | 'F' })}
+                        className={selectClass}
+                      >
+                        <option value="M">Masculino</option>
+                        <option value="F">Femenino</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Nacionalidad</Label>
+                      <input
+                        type="text"
+                        value={pax.citizenshipCountryCode}
+                        onChange={(e) =>
+                          updatePax(idx, { citizenshipCountryCode: e.target.value.toUpperCase() })
+                        }
+                        placeholder="CO"
+                        maxLength={2}
                         className={inputClass}
                       />
                     </div>
-                  )}
+                    <div className="space-y-1">
+                      <Label>País emisor doc.</Label>
+                      <input
+                        type="text"
+                        value={pax.identityDoc.issuingCountryCode}
+                        onChange={(e) =>
+                          updateDoc(idx, { issuingCountryCode: e.target.value.toUpperCase() })
+                        }
+                        placeholder="CO"
+                        maxLength={2}
+                        className={inputClass}
+                      />
+                    </div>
+                    {pax.identityDoc.type === 'P' && (
+                      <div className="space-y-1">
+                        <Label>
+                          Emisión pasaporte
+                          <Opt />
+                        </Label>
+                        <input
+                          type="date"
+                          value={pax.identityDoc.issueDate ?? ''}
+                          onChange={(e) =>
+                            updateDoc(idx, { issueDate: e.target.value || undefined })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Payment mode selector */}
-        <div className="mt-6 border-t border-[var(--color-border)] pt-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Wallet className="size-4 text-[var(--color-primary)]" />
-            <h3 className="text-sm font-semibold text-[var(--color-fg)]">Método de pago</h3>
+              );
+            })}
           </div>
 
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setPaymentMode('bnpl');
-                setPaymentData(null);
-              }}
-              className={cn(
-                'rounded-lg border px-4 py-3 text-left transition-all',
-                paymentMode === 'bnpl'
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
-                  : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-              )}
-            >
-              <p className="text-xs font-medium text-[var(--color-fg)]">Reservar sin pago</p>
-              <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
-                Genera PNR, pagar después
-              </p>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMode('pay_now')}
-              className={cn(
-                'rounded-lg border px-4 py-3 text-left transition-all',
-                paymentMode === 'pay_now'
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
-                  : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-              )}
-            >
-              <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
-              <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">Tarjeta de crédito</p>
-            </button>
-          </div>
-
-          {paymentMode === 'pay_now' && (
-            <PaymentForm
-              totalAmountMinor={totalAmountMinor}
-              currency={currency}
-              onPaymentChange={setPaymentData}
-            />
-          )}
-        </div>
-
-        {/* Resumen de validación: qué falta, en claro */}
-        {attempted && problems.length > 0 && (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-            <div className="mb-1 flex items-center gap-1.5 font-medium">
-              <AlertCircle className="size-3.5" />
-              Faltan datos para crear la reserva
+          {/* Payment mode selector */}
+          <div className="mt-6 border-t border-[var(--color-border)] pt-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Wallet className="size-4 text-[var(--color-primary)]" />
+              <h3 className="text-sm font-semibold text-[var(--color-fg)]">Método de pago</h3>
             </div>
-            <ul className="ml-5 list-disc space-y-0.5">
-              {problems.map((p, i) => (
-                <li key={i}>{p}</li>
-              ))}
-            </ul>
-          </div>
-        )}
 
-        {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-            {error}
-          </div>
-        )}
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentMode('bnpl');
+                  setPaymentData(null);
+                }}
+                className={cn(
+                  'rounded-lg border px-4 py-3 text-left transition-all',
+                  paymentMode === 'bnpl'
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
+                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                )}
+              >
+                <p className="text-xs font-medium text-[var(--color-fg)]">Reservar sin pago</p>
+                <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
+                  Genera PNR, pagar después
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('pay_now')}
+                className={cn(
+                  'rounded-lg border px-4 py-3 text-left transition-all',
+                  paymentMode === 'pay_now'
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
+                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                )}
+              >
+                <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
+                <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
+                  Tarjeta de crédito
+                </p>
+              </button>
+            </div>
 
-        <div className="mt-5 flex justify-end">
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={submitting}
-            onClick={() => void handleSubmit()}
-            className="gap-2"
-          >
-            <Plane className="size-4" />
-            {submitting
-              ? 'Creando reserva…'
-              : paymentMode === 'pay_now'
-                ? 'Pagar y crear reserva'
-                : 'Crear reserva (BNPL)'}
-          </Button>
-        </div>
+            {paymentMode === 'pay_now' && (
+              <PaymentForm
+                totalAmountMinor={totalAmountMinor}
+                currency={currency}
+                onPaymentChange={setPaymentData}
+              />
+            )}
+          </div>
+
+          {/* Resumen de validación: qué falta, en claro */}
+          {attempted && problems.length > 0 && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+              <div className="mb-1 flex items-center gap-1.5 font-medium">
+                <AlertCircle className="size-3.5" />
+                Faltan datos para crear la reserva
+              </div>
+              <ul className="ml-5 list-disc space-y-0.5">
+                {problems.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {error}
+            </div>
+          )}
+
+          <div className="mt-5 flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => void handleSubmit()}
+              className="gap-2"
+            >
+              <Plane className="size-4" />
+              {submitting
+                ? 'Creando reserva…'
+                : paymentMode === 'pay_now'
+                  ? 'Pagar y crear reserva'
+                  : 'Crear reserva (BNPL)'}
+            </Button>
+          </div>
+        </fieldset>
       </CardContent>
     </Card>
+  );
+}
+
+/** Overlay que bloquea el formulario mientras se crea la reserva (no editar a mitad del proceso). */
+function BookingOverlay({ payNow }: { payNow: boolean }) {
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-[var(--color-surface)]/80 backdrop-blur-sm">
+      <div className="relative flex size-14 items-center justify-center">
+        <span className="absolute size-14 animate-ping rounded-full bg-[var(--color-primary)]/20" />
+        <span className="absolute size-11 animate-spin rounded-full border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)]" />
+        <Plane className="size-5 text-[var(--color-primary)]" />
+      </div>
+      <p className="text-sm font-semibold text-[var(--color-fg)]">
+        {payNow ? 'Procesando pago y reserva…' : 'Creando tu reserva…'}
+      </p>
+      <p className="text-xs text-[var(--color-fg-muted)]">
+        Confirmando con la aerolínea. No cierres ni recargues esta ventana.
+      </p>
+    </div>
   );
 }

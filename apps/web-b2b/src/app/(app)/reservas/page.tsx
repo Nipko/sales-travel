@@ -1,25 +1,62 @@
 'use client';
 
-import { Clock, CreditCard, Package, Plane, RefreshCw, Search, X, XCircle } from 'lucide-react';
+import {
+  AlertTriangle,
+  Clock,
+  CreditCard,
+  Eye,
+  Package,
+  Plane,
+  RefreshCw,
+  Search,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
 import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
+
+interface Segment {
+  carrier: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  arrivalAt: string;
+  durationMinutes: number;
+}
+
+interface Passenger {
+  givenName: string;
+  surname: string;
+  paxType: string;
+  birthdate?: string;
+  identityDoc?: { type?: string; number?: string };
+}
 
 interface Order {
   id: string;
   pnr: string | null;
   status: string;
   orderNumber: number;
+  provider?: string;
   searchCriteria: {
     origin: string;
     destination: string;
     departureDate: string;
+    returnDate?: string;
     tripType: string;
   };
-  passengers: { givenName: string; surname: string; paxType: string }[];
+  selectedOffer?: {
+    itineraries?: { segments: Segment[]; totalDurationMinutes: number; stops: number }[];
+    fareFamily?: { name: string };
+  };
+  passengers: Passenger[];
+  contactInfo?: { email?: string; phone?: string };
   totalAmount: number;
   currency: string;
+  errorMessage?: string | null;
   createdAt: string;
 }
 
@@ -63,6 +100,19 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   failed: { label: 'Fallida', className: 'bg-red-50 text-red-700' },
 };
 
+const PAX_LABEL: Record<string, string> = { ADT: 'Adulto', CHD: 'Niño', INF: 'Infante' };
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('es-CO', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+function fmtDuration(min: number): string {
+  return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
+}
+
 export default function ReservasPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,13 +128,28 @@ export default function ReservasPage() {
   const [servicesOrder, setServicesOrder] = useState<Order | null>(null);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<Order | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/orders')
-      .then((res) => res.json() as Promise<{ orders: Order[] }>)
-      .then((data) => setOrders(data.orders ?? []))
-      .catch(() => setOrders([]))
-      .finally(() => setLoading(false));
+    void (async () => {
+      try {
+        const res = await fetch('/api/orders');
+        const data = (await res.json()) as { orders?: Order[]; error?: string };
+        if (!res.ok) {
+          setLoadError(data.error ?? 'No se pudieron cargar las reservas.');
+          setOrders([]);
+        } else {
+          setOrders(data.orders ?? []);
+        }
+      } catch {
+        setLoadError('Error de conexión al cargar las reservas.');
+        setOrders([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   async function handleRetrieve(order: Order) {
@@ -310,6 +375,13 @@ export default function ReservasPage() {
         </p>
       </div>
 
+      {loadError && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -392,65 +464,75 @@ export default function ReservasPage() {
                 </div>
 
                 {/* Actions */}
-                {order.pnr && order.status !== 'cancelled' && order.status !== 'failed' && (
-                  <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
-                    {order.status === 'pending' && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={actionLoading === order.id}
-                        onClick={() => {
-                          setPayingOrder(order);
-                          setPaymentData(null);
-                        }}
-                        className="gap-1.5 text-xs"
-                      >
-                        <CreditCard className="size-3.5" /> Pagar
-                      </Button>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={actionLoading === order.id}
-                      onClick={() => void handleRetrieve(order)}
-                      className="gap-1.5 text-xs"
-                    >
-                      <Search className="size-3.5" />
-                      {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
-                    </Button>
-                    {(order.status === 'confirmed' || order.status === 'ticketed') && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setDetailOrder(order)}
+                    className="gap-1.5 text-xs"
+                  >
+                    <Eye className="size-3.5" /> Ver detalle
+                  </Button>
+                  {order.pnr && order.status !== 'cancelled' && order.status !== 'failed' && (
+                    <>
+                      {order.status === 'pending' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={actionLoading === order.id}
+                          onClick={() => {
+                            setPayingOrder(order);
+                            setPaymentData(null);
+                          }}
+                          className="gap-1.5 text-xs"
+                        >
+                          <CreditCard className="size-3.5" /> Pagar
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={actionLoading === order.id}
-                        onClick={() => void handleListServices(order)}
+                        onClick={() => void handleRetrieve(order)}
                         className="gap-1.5 text-xs"
                       >
-                        <Package className="size-3.5" /> Servicios
+                        <Search className="size-3.5" />
+                        {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
                       </Button>
-                    )}
-                    {order.status === 'ticketed' && (
+                      {(order.status === 'confirmed' || order.status === 'ticketed') && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={actionLoading === order.id}
+                          onClick={() => void handleListServices(order)}
+                          className="gap-1.5 text-xs"
+                        >
+                          <Package className="size-3.5" /> Servicios
+                        </Button>
+                      )}
+                      {order.status === 'ticketed' && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={actionLoading === order.id}
+                          onClick={() => void handleReshop(order)}
+                          className="gap-1.5 text-xs"
+                        >
+                          <RefreshCw className="size-3.5" /> Repricing
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={actionLoading === order.id}
-                        onClick={() => void handleReshop(order)}
-                        className="gap-1.5 text-xs"
+                        onClick={() => setConfirmCancel(order)}
+                        className="gap-1.5 text-xs text-red-600 hover:text-red-700"
                       >
-                        <RefreshCw className="size-3.5" /> Repricing
+                        <XCircle className="size-3.5" /> Cancelar
                       </Button>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={actionLoading === order.id}
-                      onClick={() => void handleCancel(order)}
-                      className="gap-1.5 text-xs text-red-600 hover:text-red-700"
-                    >
-                      <XCircle className="size-3.5" /> Cancelar
-                    </Button>
-                  </div>
-                )}
+                    </>
+                  )}
+                </div>
 
                 {/* Action result */}
                 {actionResult?.orderId === order.id && (
@@ -611,6 +693,252 @@ export default function ReservasPage() {
           </div>
         </div>
       )}
+
+      {/* Detalle de la reserva */}
+      {detailOrder && (
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          onCancelRequest={() => setConfirmCancel(detailOrder)}
+        />
+      )}
+
+      {/* Confirmación de cancelación (evita cancelaciones por error) */}
+      {confirmCancel && (
+        <ConfirmDialog
+          title={`Cancelar reserva #${confirmCancel.orderNumber}`}
+          message={`¿Seguro que querés cancelar esta reserva${
+            confirmCancel.pnr ? ` (PNR ${confirmCancel.pnr})` : ''
+          }? Esta acción no se puede deshacer.`}
+          confirmLabel="Sí, cancelar reserva"
+          danger
+          loading={actionLoading === confirmCancel.id}
+          onClose={() => setConfirmCancel(null)}
+          onConfirm={async () => {
+            await handleCancel(confirmCancel);
+            setConfirmCancel(null);
+            setDetailOrder(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function OrderDetailModal({
+  order,
+  onClose,
+  onCancelRequest,
+}: {
+  order: Order;
+  onClose: () => void;
+  onCancelRequest: () => void;
+}) {
+  const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
+  const itineraries = order.selectedOffer?.itineraries ?? [];
+  const canCancel = !!order.pnr && order.status !== 'cancelled' && order.status !== 'failed';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+              Reserva #{order.orderNumber}
+            </h2>
+            {order.pnr && (
+              <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--color-fg)]">
+                {order.pnr}
+              </span>
+            )}
+            <span
+              className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', status.className)}
+            >
+              {status.label}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+            aria-label="Cerrar"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          {order.status === 'failed' && order.errorMessage && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              <span className="font-semibold">La reserva falló:</span> {order.errorMessage}
+            </div>
+          )}
+
+          {itineraries.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                Vuelo
+              </h3>
+              <div className="space-y-2">
+                {itineraries.map((it, idx) => (
+                  <div key={idx} className="rounded-lg border border-[var(--color-border)] p-3">
+                    <div className="mb-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                      <span>
+                        {itineraries.length > 1 ? (idx === 0 ? 'Ida' : 'Vuelta') : 'Vuelo'}
+                      </span>
+                      <span>
+                        {it.stops === 0
+                          ? 'Directo'
+                          : `${it.stops} ${it.stops === 1 ? 'escala' : 'escalas'}`}
+                      </span>
+                    </div>
+                    {it.segments.map((seg, si) => (
+                      <div
+                        key={si}
+                        className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 py-0.5 text-xs"
+                      >
+                        <span className="font-mono text-[var(--color-fg)]">
+                          {seg.origin} {fmtTime(seg.departureAt)} → {seg.destination}{' '}
+                          {fmtTime(seg.arrivalAt)}
+                        </span>
+                        <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                          {seg.carrier}
+                          {seg.flightNumber} · {fmtDuration(seg.durationMinutes)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <section>
+              <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                Ruta
+              </h3>
+              <p className="text-sm text-[var(--color-fg)]">
+                {order.searchCriteria.origin} → {order.searchCriteria.destination} ·{' '}
+                {order.searchCriteria.departureDate}
+              </p>
+            </section>
+          )}
+
+          <section>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+              Pasajeros ({order.passengers.length})
+            </h3>
+            <div className="space-y-1.5">
+              {order.passengers.map((p, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs"
+                >
+                  <span className="font-medium text-[var(--color-fg)]">
+                    {p.givenName} {p.surname}
+                  </span>
+                  <span className="text-[var(--color-fg-muted)]">
+                    {p.identityDoc?.type
+                      ? `${p.identityDoc.type} ${p.identityDoc.number ?? ''}`
+                      : ''}
+                    {p.identityDoc?.type ? ' · ' : ''}
+                    {PAX_LABEL[p.paxType] ?? p.paxType}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {(order.contactInfo?.email || order.contactInfo?.phone) && (
+            <section>
+              <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                Contacto
+              </h3>
+              <p className="text-xs text-[var(--color-fg-muted)]">
+                {order.contactInfo?.email}
+                {order.contactInfo?.phone ? ` · ${order.contactInfo.phone}` : ''}
+              </p>
+            </section>
+          )}
+
+          <section className="flex items-center justify-between border-t border-[var(--color-border)] pt-3">
+            <span className="text-xs text-[var(--color-fg-muted)]">
+              Creada {formatRelativeDate(order.createdAt)}
+            </span>
+            <span className="font-mono text-sm font-semibold text-[var(--color-fg)]">
+              {formatMoney(order.totalAmount, order.currency)}
+            </span>
+          </section>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] p-4">
+          {canCancel && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onCancelRequest}
+              className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+            >
+              <XCircle className="size-3.5" /> Cancelar reserva
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  danger,
+  loading,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  loading?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
+        <div className="mb-2 flex items-center gap-2.5">
+          <span
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-full',
+              danger
+                ? 'bg-red-50 text-red-600'
+                : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]',
+            )}
+          >
+            <AlertTriangle className="size-4" />
+          </span>
+          <h2 className="text-sm font-semibold text-[var(--color-fg)]">{title}</h2>
+        </div>
+        <p className="mb-4 text-xs leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="secondary" size="sm" disabled={loading} onClick={onClose}>
+            No, volver
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={loading}
+            onClick={() => void onConfirm()}
+            className={cn('gap-1.5', danger && 'bg-red-600 hover:bg-red-700')}
+          >
+            {loading ? 'Procesando…' : confirmLabel}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
