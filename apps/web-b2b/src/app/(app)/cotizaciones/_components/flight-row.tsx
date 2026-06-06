@@ -76,6 +76,18 @@ function ItineraryLeg({
 }) {
   const first = itinerary.segments[0]!;
   const last = itinerary.segments[itinerary.segments.length - 1]!;
+  const layovers = itinerary.segments.slice(0, -1).map((seg, i) => {
+    const next = itinerary.segments[i + 1];
+    const minutes = next
+      ? Math.max(
+          0,
+          Math.round(
+            (new Date(next.departureAt).getTime() - new Date(seg.arrivalAt).getTime()) / 60000,
+          ),
+        )
+      : 0;
+    return { airport: seg.destination, minutes };
+  });
 
   return (
     <div className="grid flex-1 grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-4 sm:gap-6">
@@ -120,9 +132,22 @@ function ItineraryLeg({
             Directo
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning)]/10 px-2 py-0.5 text-[9px] font-bold text-[var(--color-warning)]">
-            {itinerary.stops} {itinerary.stops === 1 ? 'escala' : 'escalas'}
-          </span>
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning)]/10 px-2 py-0.5 text-[9px] font-bold text-[var(--color-warning)]">
+              {itinerary.stops} {itinerary.stops === 1 ? 'escala' : 'escalas'}
+            </span>
+            <div className="flex flex-wrap justify-center gap-x-1.5 gap-y-0.5">
+              {layovers.map((l, i) => (
+                <span
+                  key={i}
+                  title={`Escala en ${l.airport}`}
+                  className="text-[9px] font-medium text-[var(--color-fg-subtle)]"
+                >
+                  {l.airport} · {formatDuration(l.minutes)}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

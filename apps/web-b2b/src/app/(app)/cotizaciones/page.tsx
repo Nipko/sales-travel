@@ -1,10 +1,20 @@
 'use client';
 
-import { ArrowLeftRight, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Building2,
+  Car,
+  FileText,
+  Plane,
+  Plus,
+  Search,
+  TriangleAlert,
+} from 'lucide-react';
 import Link from 'next/link';
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import { cn } from '../../../lib/cn';
 import { AirportCombobox } from '../../../components/ui/airport-combobox';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -130,6 +140,7 @@ export default function CotizacionesPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [sort, setSort] = useState<SortKey>('best');
   const formRef = useRef<HTMLFormElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const [tripType, setTripType] = useState<'roundtrip' | 'oneway'>('roundtrip');
   const [departureDate, setDepartureDate] = useState('');
@@ -188,6 +199,11 @@ export default function CotizacionesPage() {
     }
 
     setHasSearched(true);
+    // El loader/resultados aparecen debajo del formulario (fuera del viewport): bajamos a esa zona.
+    setTimeout(
+      () => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      60,
+    );
   }
 
   const handleQuote = useCallback(
@@ -423,15 +439,86 @@ export default function CotizacionesPage() {
         )}
 
         {/* Results */}
-        <SearchResults
-          hasSearched={hasSearched}
-          result={result}
-          flightGroups={flightGroups}
-          sort={sort}
-          onSortChange={setSort}
-          onQuote={handleQuote}
-        />
+        <div ref={resultsRef} className="scroll-mt-6">
+          <SearchResults
+            hasSearched={hasSearched}
+            result={result}
+            flightGroups={flightGroups}
+            sort={sort}
+            onSortChange={setSort}
+            onQuote={handleQuote}
+          />
+        </div>
       </form>
+    </div>
+  );
+}
+
+/**
+ * Loader conceptual del viaje: avión → hotel → auto → asistencia (cruz). Los nodos laten en
+ * secuencia (delays escalonados) unidos por líneas a trazos, evocando un itinerario armándose.
+ */
+function TravelLoader() {
+  const steps = [
+    {
+      Icon: Plane,
+      label: 'Vuelo',
+      color: 'text-sky-500',
+      bg: 'bg-sky-50',
+      ring: 'ring-sky-200/70',
+    },
+    {
+      Icon: Building2,
+      label: 'Hotel',
+      color: 'text-violet-500',
+      bg: 'bg-violet-50',
+      ring: 'ring-violet-200/70',
+    },
+    {
+      Icon: Car,
+      label: 'Traslado',
+      color: 'text-amber-500',
+      bg: 'bg-amber-50',
+      ring: 'ring-amber-200/70',
+    },
+    {
+      Icon: Plus,
+      label: 'Asistencia',
+      color: 'text-red-500',
+      bg: 'bg-red-50',
+      ring: 'ring-red-200/70',
+    },
+  ];
+  return (
+    <div className="flex flex-col items-center gap-4 py-6">
+      <div className="flex items-center">
+        {steps.map((s, i) => (
+          <Fragment key={s.label}>
+            <div className="flex flex-col items-center gap-1.5">
+              <span
+                className={cn(
+                  'flex size-12 items-center justify-center rounded-2xl ring-1 animate-pulse',
+                  s.bg,
+                  s.ring,
+                )}
+                style={{ animationDelay: `${i * 0.35}s`, animationDuration: '1.5s' }}
+              >
+                <s.Icon className={cn('size-6', s.color)} strokeWidth={1.75} />
+              </span>
+              <span className="text-[10px] font-semibold text-[var(--color-fg-subtle)]">
+                {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <span className="mx-1.5 mb-5 w-6 border-t border-dashed border-[var(--color-border-strong)] sm:w-10" />
+            )}
+          </Fragment>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-fg-muted)]">
+        <span className="size-3.5 animate-spin rounded-full border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)]" />
+        Armando el viaje… buscando las mejores tarifas en tiempo real
+      </div>
     </div>
   );
 }
@@ -456,22 +543,10 @@ function SearchResults({
   if (pending) {
     return (
       <section className="animate-fade-in-up mt-8">
-        <div className="mb-5 rounded-xl border border-[var(--color-primary)]/10 bg-[var(--color-primary)]/4 p-4 flex items-center gap-3">
-          <div className="relative flex size-6 items-center justify-center">
-            <span className="absolute size-4 animate-ping rounded-full bg-[var(--color-primary)] opacity-40" />
-            <Plane className="size-4 animate-bounce text-[var(--color-primary)]" />
-          </div>
-          <div className="flex flex-col">
-            <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary)]">
-              Conexión GDS Activa
-            </p>
-            <p className="text-xs text-[var(--color-fg-muted)]">
-              Buscando y ordenando las mejores tarifas NDC en tiempo real...
-            </p>
-          </div>
+        <div className="mb-5 rounded-2xl border border-[var(--color-primary)]/15 bg-gradient-to-b from-[var(--color-primary)]/5 to-transparent">
+          <TravelLoader />
         </div>
         <div className="space-y-4">
-          <SkeletonFlightRow />
           <SkeletonFlightRow />
           <SkeletonFlightRow />
         </div>

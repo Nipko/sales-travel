@@ -131,14 +131,18 @@ function DobPicker({
   onChange: (v: string) => void;
   invalid?: boolean;
 }) {
-  const [y = '', m = '', d = ''] = value ? value.split('-') : [];
+  const init = value ? value.split('-') : [];
+  const [y, setY] = useState(init[0] ?? '');
+  const [m, setM] = useState(init[1] ?? '');
+  const [d, setD] = useState(init[2] ?? '');
   const currentYear = new Date().getFullYear();
   const years: string[] = [];
   for (let yr = currentYear; yr >= currentYear - 100; yr--) years.push(String(yr));
   const days: string[] = [];
   for (let dd = 1; dd <= 31; dd++) days.push(String(dd).padStart(2, '0'));
 
-  function emit(nd: string, nm: string, ny: string) {
+  // Mantiene las selecciones parciales en estado y sólo emite la fecha cuando están los 3 campos.
+  function commit(nd: string, nm: string, ny: string) {
     onChange(nd && nm && ny ? `${ny}-${nm}-${nd}` : '');
   }
   const cls = cn(selectClass, invalid && errClass);
@@ -148,7 +152,10 @@ function DobPicker({
       <select
         aria-label="Día"
         value={d}
-        onChange={(e) => emit(e.target.value, m, y)}
+        onChange={(e) => {
+          setD(e.target.value);
+          commit(e.target.value, m, y);
+        }}
         className={cls}
       >
         <option value="">Día</option>
@@ -161,7 +168,10 @@ function DobPicker({
       <select
         aria-label="Mes"
         value={m}
-        onChange={(e) => emit(d, e.target.value, y)}
+        onChange={(e) => {
+          setM(e.target.value);
+          commit(d, e.target.value, y);
+        }}
         className={cls}
       >
         <option value="">Mes</option>
@@ -174,7 +184,10 @@ function DobPicker({
       <select
         aria-label="Año"
         value={y}
-        onChange={(e) => emit(d, m, e.target.value)}
+        onChange={(e) => {
+          setY(e.target.value);
+          commit(d, m, e.target.value);
+        }}
         className={cls}
       >
         <option value="">Año</option>
