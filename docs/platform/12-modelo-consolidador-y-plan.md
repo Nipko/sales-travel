@@ -431,4 +431,12 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 **Pendiente (Tier 3, opcional):**
 
 - Backfill de PII legacy de clientes (cifrar filas existentes).
-- Verificación de email + (opcional) refresh tokens / revocación de sesión y MFA para roles admin+.
+- (Opcional) refresh tokens / revocación de sesión y MFA para roles admin+.
+
+## §7 — Notificaciones por email (BYO-email) + verificación
+
+- **BYO-email por agencia**: cada nodo puede configurar su propio remitente (servidor SMTP, correo y **clave de aplicación**) para las notificaciones a su red. Reutiliza la infraestructura BYOC (`provider_accounts` con `provider_code = 'email'`): la clave va cifrada (AES-256-GCM), host/puerto/remitente en `config`, y la **resolución hereda** (propia → ancestro heredable → **default del sistema** vía env `MAIL_*`). Sin tabla nueva. UI: sección "Email" por nodo en _Mi Red_ (`EmailModal`).
+- **MailerService** (`apps/api/src/mail`, nodemailer): `sendToTenant(tenantId, msg)` resuelve el remitente y envía; **best-effort** (nunca rompe la operación de negocio). 5 tests de resolución de spec.
+- **Verificación de email**: token con **audiencia dedicada** (un link de verificación no sirve como bearer de API y viceversa); envío best-effort en `register`; `POST /auth/verify-email` (público) + `POST /auth/resend-verification`; sella `users.email_verified_at` (idempotente) y audita `auth.email_verified`. UI: página pública `/verificar`. No bloquea el login (no rompe usuarios existentes). 3 tests de separación de audiencia.
+- **Gestión de usuarios/roles por nodo**: `GET /tenants/network/users` (gateado por `canManageTenant`) + UI `UsersModal` (listar, cambiar rol, invitar) en _Mi Red_.
+- _Requiere para envío real_: definir el SMTP por defecto del sistema (`MAIL_HOST`/`MAIL_PORT`/`MAIL_USER`/`MAIL_PASS`/`MAIL_FROM`) y `APP_WEB_URL` para el enlace de verificación.

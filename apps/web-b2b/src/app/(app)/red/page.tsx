@@ -5,6 +5,7 @@ import {
   Calculator,
   ChevronRight,
   KeyRound,
+  Mail,
   Network,
   Percent,
   Plus,
@@ -111,6 +112,7 @@ export default function RedPage() {
   const [credsFor, setCredsFor] = useState<NetworkTenant | null>(null);
   const [pricingFor, setPricingFor] = useState<NetworkTenant | null>(null);
   const [usersFor, setUsersFor] = useState<NetworkTenant | null>(null);
+  const [emailFor, setEmailFor] = useState<NetworkTenant | null>(null);
   const [showAudit, setShowAudit] = useState(false);
   const [sales, setSales] = useState<Map<string, SalesRow>>(new Map());
 
@@ -241,7 +243,7 @@ export default function RedPage() {
             })()}
           </td>
           <td className="px-4 py-3">
-            <div className="flex items-center justify-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
               <Button
                 variant="ghost"
                 size="sm"
@@ -254,6 +256,10 @@ export default function RedPage() {
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setCredsFor(t)}>
                 <KeyRound className="size-3.5" />
                 Credenciales
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setEmailFor(t)}>
+                <Mail className="size-3.5" />
+                Email
               </Button>
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setUsersFor(t)}>
                 <Users className="size-3.5" />
@@ -376,6 +382,8 @@ export default function RedPage() {
       {pricingFor && <PricingModal tenant={pricingFor} onClose={() => setPricingFor(null)} />}
 
       {usersFor && <UsersModal tenant={usersFor} onClose={() => setUsersFor(null)} />}
+
+      {emailFor && <EmailModal tenant={emailFor} onClose={() => setEmailFor(null)} />}
 
       {showAudit && roots[0] && (
         <AuditModal rootId={roots[0].id} onClose={() => setShowAudit(false)} />
@@ -592,7 +600,8 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
     try {
       const res = await fetch(`/api/provider-accounts?tenantId=${encodeURIComponent(tenant.id)}`);
       const data = (await res.json()) as { accounts?: ProviderAccount[] };
-      setAccounts(data.accounts ?? []);
+      // El correo se gestiona en su propia sección "Email"; acá sólo proveedores de viaje.
+      setAccounts((data.accounts ?? []).filter((a) => a.providerCode !== 'email'));
     } catch {
       setAccounts([]);
     } finally {
@@ -1183,6 +1192,10 @@ function apiError(data: { message?: string | string[]; error?: string }, fallbac
   return m ?? data.error ?? fallback;
 }
 
+function asStr(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
 function UsersModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () => void }) {
   const [users, setUsers] = useState<NetworkUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1400,6 +1413,224 @@ function UsersModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
       <ModalFooter>
         <Button variant="secondary" size="sm" onClick={onClose}>
           Cerrar
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+interface EmailAccountView {
+  providerCode: string;
+  config: Record<string, unknown>;
+  isInheritable: boolean;
+  status: string;
+  updatedAt: string;
+}
+
+function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () => void }) {
+  const [existing, setExisting] = useState<EmailAccountView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState({
+    fromName: '',
+    fromEmail: '',
+    host: 'smtp.gmail.com',
+    port: '587',
+    user: '',
+    appPassword: '',
+    isInheritable: true,
+  });
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/provider-accounts?tenantId=${encodeURIComponent(tenant.id)}`);
+      const data = (await res.json()) as { accounts?: EmailAccountView[] };
+      const acc = (data.accounts ?? []).find((a) => a.providerCode === 'email') ?? null;
+      setExisting(acc);
+      if (acc) {
+        const c = acc.config ?? {};
+        setForm((f) => ({
+          ...f,
+          fromName: asStr(c['fromName']),
+          fromEmail: asStr(c['fromEmail']),
+          host: asStr(c['host']) || f.host,
+          port:
+            typeof c['port'] === 'number' || typeof c['port'] === 'string'
+              ? String(c['port'])
+              : f.port,
+          isInheritable: acc.isInheritable,
+        }));
+      }
+    } catch {
+      setExisting(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save() {
+    setError('');
+    setSaved(false);
+    if (!form.host.trim() || !form.user.trim() || !form.appPassword) {
+      setError('Servidor, correo y clave de aplicación son requeridos.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const port = Number(form.port) || 587;
+      const res = await fetch('/api/provider-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenant.id,
+          providerCode: 'email',
+          label: 'default',
+          credentials: { user: form.user.trim(), password: form.appPassword },
+          config: {
+            host: form.host.trim(),
+            port,
+            secure: port === 465,
+            fromEmail: form.fromEmail.trim() || form.user.trim(),
+            fromName: form.fromName.trim(),
+          },
+          isInheritable: form.isInheritable,
+          status: 'active',
+        }),
+      });
+      const data = (await res.json()) as { error?: string; message?: string };
+      if (!res.ok) {
+        setError(apiError(data, 'No se pudo guardar la configuración de email'));
+        return;
+      }
+      setForm((f) => ({ ...f, appPassword: '' }));
+      setSaved(true);
+      void load();
+    } catch {
+      setError('Error de conexión');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Email · ${tenant.name}`} onClose={onClose} wide>
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]">
+        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--color-primary)]" />
+        <span>
+          Correo desde el que esta agencia envía sus notificaciones. La clave se cifra y nunca se
+          muestra de vuelta. <strong className="text-[var(--color-fg)]">Si lo dejás vacío</strong>,
+          se usa el correo del sistema (o el del consolidador, si lo heredás).
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+      ) : (
+        <>
+          {existing && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <Mail className="size-3.5 shrink-0" />
+              <span>
+                Correo configurado
+                {asStr(existing.config['fromEmail'])
+                  ? ` (${asStr(existing.config['fromEmail'])})`
+                  : ''}
+                . Para reemplazarlo, completá de nuevo el correo y la clave.
+              </span>
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nombre del remitente">
+              <input
+                value={form.fromName}
+                onChange={(e) => setForm({ ...form, fromName: e.target.value })}
+                placeholder="Agencia Sur"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Correo del remitente">
+              <input
+                type="email"
+                value={form.fromEmail}
+                onChange={(e) => setForm({ ...form, fromEmail: e.target.value })}
+                placeholder="notificaciones@agencia.com"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Servidor SMTP">
+              <input
+                value={form.host}
+                onChange={(e) => setForm({ ...form, host: e.target.value })}
+                placeholder="smtp.gmail.com"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Puerto">
+              <input
+                type="number"
+                value={form.port}
+                onChange={(e) => setForm({ ...form, port: e.target.value })}
+                placeholder="587"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Usuario (correo de la cuenta)">
+              <input
+                type="email"
+                value={form.user}
+                onChange={(e) => setForm({ ...form, user: e.target.value })}
+                placeholder="cuenta@agencia.com"
+                className={inputClass}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Clave de aplicación">
+              <input
+                type="password"
+                value={form.appPassword}
+                onChange={(e) => setForm({ ...form, appPassword: e.target.value })}
+                placeholder="••••••••••••"
+                className={inputClass}
+                autoComplete="new-password"
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
+            En Gmail/Workspace usá una{' '}
+            <span className="font-medium text-[var(--color-fg-muted)]">clave de aplicación</span>{' '}
+            (no tu contraseña normal). Puerto 587 (TLS) o 465 (SSL).
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-fg-muted)]">
+            <input
+              type="checkbox"
+              checked={form.isInheritable}
+              onChange={(e) => setForm({ ...form, isInheritable: e.target.checked })}
+              className="size-4 rounded border-[var(--color-border)]"
+            />
+            Heredable: las sub-agencias sin correo propio usan éste
+          </label>
+          {error && <ErrorBox>{error}</ErrorBox>}
+          {saved && (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Configuración de email guardada.
+            </div>
+          )}
+        </>
+      )}
+
+      <ModalFooter>
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+        <Button size="sm" disabled={saving || loading} onClick={() => void save()}>
+          {saving ? 'Guardando…' : 'Guardar email'}
         </Button>
       </ModalFooter>
     </Modal>
