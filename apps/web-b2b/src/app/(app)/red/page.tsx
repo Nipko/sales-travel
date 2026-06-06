@@ -11,6 +11,8 @@ import {
   ScrollText,
   ShieldCheck,
   Trash2,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -108,6 +110,7 @@ export default function RedPage() {
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
   const [credsFor, setCredsFor] = useState<NetworkTenant | null>(null);
   const [pricingFor, setPricingFor] = useState<NetworkTenant | null>(null);
+  const [usersFor, setUsersFor] = useState<NetworkTenant | null>(null);
   const [showAudit, setShowAudit] = useState(false);
   const [sales, setSales] = useState<Map<string, SalesRow>>(new Map());
 
@@ -252,6 +255,10 @@ export default function RedPage() {
                 <KeyRound className="size-3.5" />
                 Credenciales
               </Button>
+              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setUsersFor(t)}>
+                <Users className="size-3.5" />
+                Usuarios
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -367,6 +374,8 @@ export default function RedPage() {
       {credsFor && <CredentialsModal tenant={credsFor} onClose={() => setCredsFor(null)} />}
 
       {pricingFor && <PricingModal tenant={pricingFor} onClose={() => setPricingFor(null)} />}
+
+      {usersFor && <UsersModal tenant={usersFor} onClose={() => setUsersFor(null)} />}
 
       {showAudit && roots[0] && (
         <AuditModal rootId={roots[0].id} onClose={() => setShowAudit(false)} />
@@ -1136,6 +1145,258 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
           ))}
         </div>
       )}
+      <ModalFooter>
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+interface NetworkUser {
+  userId: string;
+  email: string;
+  name: string | null;
+  userStatus: string;
+  role: string;
+  membershipStatus: string;
+  createdAt: string;
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  superadmin: 'Superadmin',
+  platform_admin: 'Admin plataforma',
+  consolidator_admin: 'Admin consolidador',
+  tenant_admin: 'Admin agencia',
+  agency_admin: 'Admin agencia',
+  admin: 'Admin',
+  vendedor: 'Vendedor',
+  cliente_final: 'Cliente',
+};
+// Roles asignables desde el panel (alineado con ASSIGNABLE_ROLES / CreateUserBody del API).
+const ASSIGNABLE_ROLES = ['tenant_admin', 'admin', 'vendedor', 'cliente_final'];
+
+/** Extrae el mensaje de negocio del cuerpo de error del API (HttpException → { message }). */
+function apiError(data: { message?: string | string[]; error?: string }, fallback: string): string {
+  const m = Array.isArray(data.message) ? data.message.join(', ') : data.message;
+  return m ?? data.error ?? fallback;
+}
+
+function UsersModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () => void }) {
+  const [users, setUsers] = useState<NetworkUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const [inviting, setInviting] = useState(false);
+  const [invite, setInvite] = useState({ email: '', name: '', password: '', role: 'vendedor' });
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/tenants/network/users?tenantId=${encodeURIComponent(tenant.id)}`,
+      );
+      const data = (await res.json()) as { users?: NetworkUser[] };
+      setUsers(data.users ?? []);
+    } catch {
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changeRole(u: NetworkUser, role: string) {
+    if (role === u.role) return;
+    setError('');
+    setSavingId(u.userId);
+    const prev = users;
+    setUsers((list) => list.map((x) => (x.userId === u.userId ? { ...x, role } : x)));
+    try {
+      const res = await fetch('/api/admin/memberships/role', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: u.userId, tenantId: tenant.id, role }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { message?: string | string[]; error?: string };
+        setError(apiError(data, 'No se pudo cambiar el rol'));
+        setUsers(prev);
+      }
+    } catch {
+      setError('Error de conexión');
+      setUsers(prev);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function sendInvite() {
+    setInviteError('');
+    if (!invite.email.trim() || !invite.password) {
+      setInviteError('Email y contraseña son requeridos.');
+      return;
+    }
+    setInviteSaving(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: invite.email.trim(),
+          name: invite.name.trim() || invite.email.trim(),
+          password: invite.password,
+          tenantId: tenant.id,
+          role: invite.role,
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { message?: string | string[]; error?: string };
+        setInviteError(apiError(data, 'No se pudo crear el usuario'));
+        return;
+      }
+      setInvite({ email: '', name: '', password: '', role: 'vendedor' });
+      setInviting(false);
+      void load();
+    } catch {
+      setInviteError('Error de conexión');
+    } finally {
+      setInviteSaving(false);
+    }
+  }
+
+  const roleOptions = (current: string): string[] =>
+    Array.from(new Set([...ASSIGNABLE_ROLES, current]));
+
+  return (
+    <Modal title={`Usuarios · ${tenant.name}`} onClose={onClose} wide>
+      <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
+        Gestioná quién accede a{' '}
+        <span className="font-medium text-[var(--color-fg)]">{tenant.name}</span> y con qué rol. Los
+        cambios quedan registrados en la actividad de la red.
+      </p>
+
+      {loading ? (
+        <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+      ) : users.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center text-xs text-[var(--color-fg-muted)]">
+          Sin usuarios en este nodo todavía.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {users.map((u) => (
+            <div
+              key={u.userId}
+              className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/8 text-xs font-medium text-[var(--color-primary)]">
+                  {(u.name ?? u.email).slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-[var(--color-fg)]">
+                    {u.name ?? u.email}
+                  </div>
+                  <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">
+                    {u.email}
+                  </div>
+                </div>
+              </div>
+              <select
+                value={u.role}
+                disabled={savingId === u.userId}
+                onChange={(e) => void changeRole(u, e.target.value)}
+                className={selectClass + ' w-40 shrink-0'}
+                aria-label={`Rol de ${u.email}`}
+              >
+                {roleOptions(u.role).map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r] ?? r}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <ErrorBox>{error}</ErrorBox>}
+
+      {!inviting ? (
+        <div className="mt-4">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setInviting(true)}
+          >
+            <UserPlus className="size-3.5" />
+            Invitar usuario
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Email">
+              <input
+                type="email"
+                value={invite.email}
+                onChange={(e) => setInvite({ ...invite, email: e.target.value })}
+                placeholder="persona@agencia.com"
+                className={inputClass}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Nombre">
+              <input
+                value={invite.name}
+                onChange={(e) => setInvite({ ...invite, name: e.target.value })}
+                placeholder="Nombre"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Contraseña temporal">
+              <input
+                type="password"
+                value={invite.password}
+                onChange={(e) => setInvite({ ...invite, password: e.target.value })}
+                placeholder="Mínimo 12 caracteres"
+                className={inputClass}
+                autoComplete="new-password"
+              />
+            </Field>
+            <Field label="Rol">
+              <select
+                value={invite.role}
+                onChange={(e) => setInvite({ ...invite, role: e.target.value })}
+                className={selectClass}
+              >
+                {ASSIGNABLE_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r] ?? r}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          {inviteError && <ErrorBox>{inviteError}</ErrorBox>}
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setInviting(false)}>
+              Cancelar
+            </Button>
+            <Button size="sm" disabled={inviteSaving} onClick={() => void sendInvite()}>
+              {inviteSaving ? 'Creando…' : 'Crear usuario'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <ModalFooter>
         <Button variant="secondary" size="sm" onClick={onClose}>
           Cerrar
