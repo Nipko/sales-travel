@@ -98,10 +98,95 @@ const DOC_TYPE_OPTIONS = [
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const inputClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+  'h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
 
 const selectClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+  'h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
+const MONTH_OPTIONS = [
+  { v: '01', l: 'Ene' },
+  { v: '02', l: 'Feb' },
+  { v: '03', l: 'Mar' },
+  { v: '04', l: 'Abr' },
+  { v: '05', l: 'May' },
+  { v: '06', l: 'Jun' },
+  { v: '07', l: 'Jul' },
+  { v: '08', l: 'Ago' },
+  { v: '09', l: 'Sep' },
+  { v: '10', l: 'Oct' },
+  { v: '11', l: 'Nov' },
+  { v: '12', l: 'Dic' },
+];
+
+/**
+ * Selector de fecha de nacimiento con día/mes/año en selects: elegir el año es instantáneo
+ * (no hay que recorrer décadas como en el date-picker nativo). Emite 'YYYY-MM-DD'.
+ */
+function DobPicker({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+}) {
+  const [y = '', m = '', d = ''] = value ? value.split('-') : [];
+  const currentYear = new Date().getFullYear();
+  const years: string[] = [];
+  for (let yr = currentYear; yr >= currentYear - 100; yr--) years.push(String(yr));
+  const days: string[] = [];
+  for (let dd = 1; dd <= 31; dd++) days.push(String(dd).padStart(2, '0'));
+
+  function emit(nd: string, nm: string, ny: string) {
+    onChange(nd && nm && ny ? `${ny}-${nm}-${nd}` : '');
+  }
+  const cls = cn(selectClass, invalid && errClass);
+
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <select
+        aria-label="Día"
+        value={d}
+        onChange={(e) => emit(e.target.value, m, y)}
+        className={cls}
+      >
+        <option value="">Día</option>
+        {days.map((dd) => (
+          <option key={dd} value={dd}>
+            {Number(dd)}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Mes"
+        value={m}
+        onChange={(e) => emit(d, e.target.value, y)}
+        className={cls}
+      >
+        <option value="">Mes</option>
+        {MONTH_OPTIONS.map((mo) => (
+          <option key={mo.v} value={mo.v}>
+            {mo.l}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Año"
+        value={y}
+        onChange={(e) => emit(d, m, e.target.value)}
+        className={cls}
+      >
+        <option value="">Año</option>
+        {years.map((yr) => (
+          <option key={yr} value={yr}>
+            {yr}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 /** Borde rojo para campos obligatorios sin completar (sólo tras intentar reservar). */
 const errClass = 'border-red-400 focus-visible:border-red-500 focus-visible:ring-red-500/20';
@@ -254,7 +339,7 @@ export function PassengerForm({
                   )}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-1">
                     <Label>
                       Nombre(s)
@@ -286,11 +371,10 @@ export function PassengerForm({
                       Fecha de nacimiento
                       <Req />
                     </Label>
-                    <input
-                      type="date"
+                    <DobPicker
                       value={pax.birthdate}
-                      onChange={(e) => updatePax(idx, { birthdate: e.target.value })}
-                      className={cn(inputClass, bad('fecha de nacimiento') && errClass)}
+                      onChange={(v) => updatePax(idx, { birthdate: v })}
+                      invalid={bad('fecha de nacimiento')}
                     />
                   </div>
                   <div className="space-y-1">
@@ -395,18 +479,20 @@ export function PassengerForm({
                       className={inputClass}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <Label>
-                      Emisión doc.
-                      <Opt />
-                    </Label>
-                    <input
-                      type="date"
-                      value={pax.identityDoc.issueDate ?? ''}
-                      onChange={(e) => updateDoc(idx, { issueDate: e.target.value || undefined })}
-                      className={inputClass}
-                    />
-                  </div>
+                  {pax.identityDoc.type === 'P' && (
+                    <div className="space-y-1">
+                      <Label>
+                        Emisión pasaporte
+                        <Opt />
+                      </Label>
+                      <input
+                        type="date"
+                        value={pax.identityDoc.issueDate ?? ''}
+                        onChange={(e) => updateDoc(idx, { issueDate: e.target.value || undefined })}
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             );

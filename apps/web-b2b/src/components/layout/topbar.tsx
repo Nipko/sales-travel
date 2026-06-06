@@ -33,7 +33,7 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarPro
                 <img
                   src={logoUrl}
                   alt=""
-                  className="size-4.5 rounded object-contain bg-white/5 border border-[var(--color-border)]"
+                  className="size-7 rounded-md object-contain bg-white/5 border border-[var(--color-border)]"
                 />
               ) : (
                 <span className="relative flex size-2 shrink-0">

@@ -287,7 +287,7 @@ export default function QuotationDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl px-5 py-8">
+      <div className="mx-auto max-w-6xl px-5 py-8">
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-48 rounded bg-[var(--color-surface-muted)]" />
           <div className="h-64 rounded-xl bg-[var(--color-surface-muted)]" />
@@ -299,7 +299,7 @@ export default function QuotationDetailPage() {
 
   if (error || !quotation) {
     return (
-      <div className="mx-auto max-w-4xl px-5 py-8">
+      <div className="mx-auto max-w-6xl px-5 py-8">
         <p className="text-sm text-[var(--color-danger)]">{error || 'Cotización no encontrada.'}</p>
         <Link
           href="/cotizaciones"
@@ -320,7 +320,7 @@ export default function QuotationDetailPage() {
     searchCriteria.paxCount.infants;
 
   return (
-    <div className="mx-auto max-w-4xl px-5 py-8">
+    <div className="mx-auto max-w-6xl px-5 py-8">
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -371,18 +371,34 @@ export default function QuotationDetailPage() {
                 {selectedOffer.itineraries?.map((it, idx) => {
                   const first = it.segments[0]!;
                   const last = it.segments[it.segments.length - 1]!;
+                  const stopAirports = it.segments.slice(0, -1).map((s) => s.destination);
                   return (
                     <div key={idx} className="rounded-lg border border-[var(--color-border)] p-4">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                          {selectedOffer.itineraries!.length > 1
-                            ? idx === 0
-                              ? 'Ida'
-                              : 'Vuelta'
-                            : 'Vuelo'}
-                        </span>
-                        <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                          {first.carrier} {first.flightNumber}
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                            {selectedOffer.itineraries!.length > 1
+                              ? idx === 0
+                                ? 'Ida'
+                                : 'Vuelta'
+                              : 'Vuelo'}
+                          </span>
+                          <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                            {first.carrier} {first.flightNumber}
+                          </span>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            it.stops === 0
+                              ? 'bg-green-50 text-green-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {it.stops === 0
+                            ? 'Directo'
+                            : `${it.stops} escala${it.stops > 1 ? 's' : ''}${
+                                stopAirports.length ? ` · ${stopAirports.join(', ')}` : ''
+                              }`}
                         </span>
                       </div>
                       <div className="flex items-center gap-4">
@@ -420,6 +436,56 @@ export default function QuotationDetailPage() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Detalle de tramos y escalas */}
+                      {it.stops > 0 && (
+                        <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
+                          {it.segments.map((seg, sIdx) => {
+                            const next = it.segments[sIdx + 1];
+                            const layoverMin = next
+                              ? Math.max(
+                                  0,
+                                  Math.round(
+                                    (new Date(next.departureAt).getTime() -
+                                      new Date(seg.arrivalAt).getTime()) /
+                                      60000,
+                                  ),
+                                )
+                              : null;
+                            return (
+                              <div key={sIdx}>
+                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono font-medium text-[var(--color-fg)]">
+                                      {seg.origin}
+                                    </span>
+                                    <span className="text-[var(--color-fg-subtle)]">
+                                      {formatTime(seg.departureAt)}
+                                    </span>
+                                    <ArrowRight className="size-3 text-[var(--color-fg-subtle)]" />
+                                    <span className="font-mono font-medium text-[var(--color-fg)]">
+                                      {seg.destination}
+                                    </span>
+                                    <span className="text-[var(--color-fg-subtle)]">
+                                      {formatTime(seg.arrivalAt)}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                                    {seg.carrier} {seg.flightNumber} ·{' '}
+                                    {formatDuration(seg.durationMinutes)}
+                                  </span>
+                                </div>
+                                {layoverMin != null && (
+                                  <div className="my-1 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800">
+                                    <Clock className="size-3" />
+                                    Escala en {seg.destination} · {formatDuration(layoverMin)}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -555,45 +621,6 @@ export default function QuotationDetailPage() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Booking result */}
-          {bookingResult && (
-            <div
-              className={`rounded-xl border p-4 ${
-                bookingResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
-              }`}
-            >
-              {bookingResult.success ? (
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-green-800">
-                    Reserva creada exitosamente
-                  </p>
-                  {bookingResult.pnr && (
-                    <p className="font-mono text-lg font-bold text-green-900">
-                      PNR: {bookingResult.pnr}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-red-800">{bookingResult.error}</p>
-              )}
-            </div>
-          )}
-
-          {/* Passenger form for booking */}
-          {!bookingResult?.success && (
-            <PassengerForm
-              paxCount={searchCriteria.paxCount}
-              totalAmountMinor={
-                selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor
-              }
-              currency={selectedOffer.total.currency}
-              customerName={customerName || undefined}
-              contactEmail={customerEmail || undefined}
-              contactPhone={customerPhone || undefined}
-              onSubmit={handleCreateOrder}
-            />
-          )}
         </div>
 
         {/* Right sidebar */}
@@ -763,6 +790,42 @@ export default function QuotationDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Reserva — ancho completo para dar más espacio a los datos de pasajeros */}
+      {bookingResult && (
+        <div
+          className={`mt-5 rounded-xl border p-4 ${
+            bookingResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+          }`}
+        >
+          {bookingResult.success ? (
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-green-800">Reserva creada exitosamente</p>
+              {bookingResult.pnr && (
+                <p className="font-mono text-lg font-bold text-green-900">
+                  PNR: {bookingResult.pnr}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-red-800">{bookingResult.error}</p>
+          )}
+        </div>
+      )}
+
+      {!bookingResult?.success && (
+        <div className="mt-5">
+          <PassengerForm
+            paxCount={searchCriteria.paxCount}
+            totalAmountMinor={selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor}
+            currency={selectedOffer.total.currency}
+            customerName={customerName || undefined}
+            contactEmail={customerEmail || undefined}
+            contactPhone={customerPhone || undefined}
+            onSubmit={handleCreateOrder}
+          />
+        </div>
+      )}
     </div>
   );
 }

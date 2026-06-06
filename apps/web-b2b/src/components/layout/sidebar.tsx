@@ -60,20 +60,20 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300">
       {/* Header / Branding */}
-      <div className="flex h-14 items-center gap-2.5 border-b border-slate-800/60 px-5">
+      <div className="flex h-16 items-center gap-3 border-b border-slate-800/60 px-4">
         {logoUrl ? (
           <img
             src={logoUrl}
             alt=""
-            className="size-7 rounded-lg object-contain bg-white/5 p-0.5 border border-white/10"
+            className="size-11 shrink-0 rounded-lg object-contain bg-white/10 p-1 border border-white/10"
           />
         ) : (
-          <div className="size-7 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-md">
-            <Compass className="size-4 text-white animate-spin-slow" />
+          <div className="size-11 shrink-0 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-md">
+            <Compass className="size-6 text-white animate-spin-slow" />
           </div>
         )}
         <div className="flex flex-col min-w-0">
-          <span className="text-xs font-bold tracking-tight text-white truncate leading-tight">
+          <span className="text-sm font-bold tracking-tight text-white truncate leading-tight">
             {tenantName ?? 'Sales-Travel'}
           </span>
           <span className="text-[10px] text-slate-500 leading-none mt-0.5 font-medium uppercase tracking-wider">
