@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ClipboardCopy, Plane, UserPlus, Wallet } from 'lucide-react';
+import { AlertCircle, Check, ClipboardCopy, Plane, UserPlus, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
@@ -234,6 +234,7 @@ export function PassengerForm({
   const [error, setError] = useState<string | null>(null);
   // `attempted` activa el marcado de errores recién cuando el usuario intenta reservar.
   const [attempted, setAttempted] = useState(false);
+  const [copiedHint, setCopiedHint] = useState(false);
 
   const email = (contactEmail ?? '').trim();
   const phone = (contactPhone ?? '').trim();
@@ -256,6 +257,8 @@ export function PassengerForm({
     const surname = parts.length > 1 ? parts[parts.length - 1]! : '';
     const givenName = parts.length > 1 ? parts.slice(0, -1).join(' ') : full;
     updatePax(idx, { givenName, surname });
+    setCopiedHint(true);
+    setTimeout(() => setCopiedHint(false), 1800);
   }
 
   // ---- Validación: campos realmente obligatorios para emitir la reserva ----
@@ -344,10 +347,24 @@ export function PassengerForm({
                     <button
                       type="button"
                       onClick={() => copyCustomerToPax(idx)}
-                      className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-[10px] font-medium text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors',
+                        copiedHint
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
+                      )}
                     >
-                      <ClipboardCopy className="size-3" />
-                      Usar datos del cliente
+                      {copiedHint ? (
+                        <>
+                          <Check className="size-3" />
+                          Datos copiados
+                        </>
+                      ) : (
+                        <>
+                          <ClipboardCopy className="size-3" />
+                          Usar datos del cliente
+                        </>
+                      )}
                     </button>
                   )}
                 </div>

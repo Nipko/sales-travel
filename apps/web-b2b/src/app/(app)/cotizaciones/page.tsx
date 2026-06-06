@@ -175,6 +175,20 @@ export default function CotizacionesPage() {
     setClientError('');
   }
 
+  // UX: al completar un campo, llevamos el foco al siguiente (menos clicks, flujo más ágil).
+  function focusField(id: string) {
+    // Pequeño delay para que el combobox cierre su dropdown antes de mover el foco.
+    setTimeout(() => document.getElementById(id)?.focus(), 10);
+  }
+  function handleOriginChange(code: string) {
+    setOriginCode(code);
+    if (/^[A-Z]{3}$/.test(code)) focusField('search-destination');
+  }
+  function handleDestinationChange(code: string) {
+    setDestinationCode(code);
+    if (/^[A-Z]{3}$/.test(code)) focusField('departureDate');
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     setClientError('');
 
@@ -307,9 +321,10 @@ export default function CotizacionesPage() {
                   <AirportCombobox
                     key={`origin-${comboKey}`}
                     name="origin"
+                    inputId="search-origin"
                     label="Aeropuerto de Origen"
                     defaultValue={originCode}
-                    onChange={setOriginCode}
+                    onChange={handleOriginChange}
                     required
                   />
                 </div>
@@ -330,9 +345,10 @@ export default function CotizacionesPage() {
                   <AirportCombobox
                     key={`destination-${comboKey}`}
                     name="destination"
+                    inputId="search-destination"
                     label="Aeropuerto de Destino"
                     defaultValue={destinationCode}
-                    onChange={setDestinationCode}
+                    onChange={handleDestinationChange}
                     required
                   />
                 </div>
@@ -354,7 +370,12 @@ export default function CotizacionesPage() {
                     required
                     min={today}
                     value={departureDate}
-                    onChange={(e) => setDepartureDate(e.target.value)}
+                    onChange={(e) => {
+                      setDepartureDate(e.target.value);
+                      // Ida elegida → foco a la vuelta (si es ida y vuelta y aún está vacía).
+                      if (e.target.value && tripType === 'roundtrip' && !returnDate)
+                        focusField('returnDate');
+                    }}
                     className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
                   />
                 </div>

@@ -152,6 +152,8 @@ export default function QuotationDetailPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [customerSaved, setCustomerSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [priceStatus, setPriceStatus] = useState<{
@@ -189,8 +191,10 @@ export default function QuotationDetailPage() {
   async function handleSaveCustomer() {
     if (!quotation) return;
     setSaving(true);
+    setSaveError(null);
+    setCustomerSaved(false);
     try {
-      await fetch(`/api/quotations/${quotation.id}/customer`, {
+      const res = await fetch(`/api/quotations/${quotation.id}/customer`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -200,6 +204,11 @@ export default function QuotationDetailPage() {
           notes: notes || null,
         }),
       });
+      if (!res.ok) {
+        const d = (await res.json()) as { error?: string; message?: string };
+        setSaveError(d.error ?? d.message ?? 'No se pudo guardar el cliente.');
+        return;
+      }
       setQuotation({
         ...quotation,
         customerName: customerName || null,
@@ -207,6 +216,10 @@ export default function QuotationDetailPage() {
         customerPhone: customerPhone || null,
         notes: notes || null,
       });
+      setCustomerSaved(true);
+      setTimeout(() => setCustomerSaved(false), 2500);
+    } catch {
+      setSaveError('Error de conexión.');
     } finally {
       setSaving(false);
     }
@@ -627,7 +640,13 @@ export default function QuotationDetailPage() {
                   />
                 </div>
               </div>
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex items-center justify-end gap-3">
+                {customerSaved && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                    <CheckCircle2 className="size-3.5" /> Guardado
+                  </span>
+                )}
+                {saveError && <span className="text-xs font-medium text-red-600">{saveError}</span>}
                 <Button
                   variant="primary"
                   size="sm"

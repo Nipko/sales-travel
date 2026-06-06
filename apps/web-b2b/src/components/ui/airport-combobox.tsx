@@ -22,6 +22,8 @@ interface AirportComboboxProps {
   placeholder?: string;
   error?: string;
   onChange?: (code: string) => void;
+  /** id estable para el input visible (permite mover el foco a este campo desde afuera). */
+  inputId?: string;
 }
 
 const DEBOUNCE_MS = 80;
@@ -40,8 +42,10 @@ export function AirportCombobox({
   placeholder = 'Ciudad o código IATA',
   error,
   onChange,
+  inputId,
 }: AirportComboboxProps) {
   const id = useId();
+  const fieldId = inputId ?? id;
   const listboxId = `${id}-listbox`;
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -146,7 +150,7 @@ export function AirportCombobox({
 
   return (
     <div ref={containerRef} className="relative space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-medium text-[var(--color-fg)]">
+      <label htmlFor={fieldId} className="block text-xs font-medium text-[var(--color-fg)]">
         {label}
       </label>
 
@@ -155,7 +159,7 @@ export function AirportCombobox({
       <div className="relative">
         <Plane className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
         <input
-          id={id}
+          id={fieldId}
           ref={inputRef}
           role="combobox"
           type="text"
