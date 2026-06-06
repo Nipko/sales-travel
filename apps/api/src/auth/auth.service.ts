@@ -7,6 +7,7 @@ import {
 import { sql } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { MailerService } from '../mail/mailer.service.js';
 import type { RegisterDto, LoginDto } from './dto.js';
 import { JwtService } from './jwt.service.js';
 import { PasswordService } from './password.service.js';
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly password: PasswordService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
   ) {}
 
   /** Garantiza un bcrypt.compare aunque no haya usuario: evita oracle de timing por enumeración. */
@@ -108,8 +110,77 @@ export class AuthService {
       aggregateId: userId,
     });
 
+    // Verificación de email (best-effort: no debe bloquear/romper el registro).
+    await this.sendVerificationEmail(userId, dto.email, tenantId);
+
     const token = await this.jwt.sign({ sub: userId, tid: tenantId, role: 'tenant_admin' });
     return { token, userId, tenantId, role: 'tenant_admin' };
+  }
+
+  /** Envía el correo de verificación. Best-effort: cualquier fallo se traga (no rompe el flujo). */
+  private async sendVerificationEmail(
+    userId: string,
+    email: string,
+    tenantId: string | null,
+  ): Promise<void> {
+    try {
+      const token = await this.jwt.signEmailToken(userId);
+      const base = process.env['APP_WEB_URL'] ?? 'https://app.planetour.cloud';
+      const link = `${base}/verificar?token=${encodeURIComponent(token)}`;
+      await this.mailer.sendToTenant(tenantId, {
+        to: email,
+        subject: 'Verificá tu correo · PlaneTour',
+        html: verificationEmailHtml(link),
+        text: `Verificá tu correo entrando a este enlace: ${link}`,
+      });
+    } catch {
+      // Best-effort: el envío de verificación nunca debe tumbar la operación principal.
+    }
+  }
+
+  /** Marca el email del usuario como verificado a partir de un token válido (idempotente). */
+  async verifyEmail(token: string): Promise<{ verified: boolean }> {
+    let userId: string;
+    try {
+      userId = await this.jwt.verifyEmailToken(token);
+    } catch {
+      throw new UnauthorizedException('invalid or expired verification token');
+    }
+    await this.db.db
+      .updateTable('users')
+      .set({ email_verified_at: sql<Date>`now()` })
+      .where('id', '=', userId)
+      .where('email_verified_at', 'is', null)
+      .execute();
+    await this.audit.emit({
+      eventType: 'auth.email_verified',
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: userId,
+    });
+    return { verified: true };
+  }
+
+  /** Reenvía el correo de verificación al usuario autenticado (si aún no está verificado). */
+  async resendVerification(userId: string): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    const user = await this.db.db
+      .selectFrom('users')
+      .select(['email', 'email_verified_at'])
+      .where('id', '=', userId)
+      .executeTakeFirst();
+    if (!user) throw new UnauthorizedException();
+    if (user.email_verified_at) return { sent: false, alreadyVerified: true };
+
+    const membership = await this.db.db
+      .selectFrom('memberships')
+      .select('tenant_id')
+      .where('user_id', '=', userId)
+      .where('status', '=', 'active')
+      .orderBy('created_at')
+      .executeTakeFirst();
+
+    await this.sendVerificationEmail(userId, user.email, membership?.tenant_id ?? null);
+    return { sent: true, alreadyVerified: false };
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -247,4 +318,31 @@ export class AuthService {
     });
     return { token, userId, tenantId: membership.tenant_id, role: membership.role };
   }
+}
+
+/** HTML simple y sobrio del correo de verificación (sin imágenes externas). */
+function verificationEmailHtml(link: string): string {
+  return `<!doctype html>
+<html lang="es"><body style="margin:0;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#fff;border:1px solid #e4e4e7;border-radius:12px;padding:32px">
+        <tr><td>
+          <h1 style="margin:0 0 8px;font-size:18px;color:#18181b">Verificá tu correo</h1>
+          <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#52525b">
+            Confirmá tu dirección de correo para activar tu cuenta en PlaneTour.
+          </p>
+          <a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
+            Verificar correo
+          </a>
+          <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#a1a1aa">
+            Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
+            <span style="color:#4f46e5;word-break:break-all">${link}</span>
+          </p>
+        </td></tr>
+      </table>
+      <p style="margin:16px 0 0;font-size:11px;color:#a1a1aa">PlaneTour · planetour.cloud</p>
+    </td></tr>
+  </table>
+</body></html>`;
 }

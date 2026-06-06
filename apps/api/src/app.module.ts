@@ -19,6 +19,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
 import { NetworkModule } from './network/network.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
+import { MailerModule } from './mail/mailer.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { PricingModule } from './pricing/pricing.module.js';
     ProviderCredentialsModule,
     NetworkModule,
     PricingModule,
+    MailerModule,
   ],
   controllers: [HealthController],
   providers: [

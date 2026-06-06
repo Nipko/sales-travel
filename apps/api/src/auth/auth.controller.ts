@@ -4,7 +4,14 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { AuthService, type AuthResult } from './auth.service.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 import { Public } from './decorators/public.decorator.js';
-import { LoginSchema, RegisterSchema, type LoginDto, type RegisterDto } from './dto.js';
+import {
+  LoginSchema,
+  RegisterSchema,
+  VerifyEmailSchema,
+  type LoginDto,
+  type RegisterDto,
+  type VerifyEmailDto,
+} from './dto.js';
 
 interface SwitchTenantBody {
   tenantId: string;
@@ -40,5 +47,27 @@ export class AuthController {
   ): Promise<AuthResult> {
     if (!userId) throw new UnauthorizedException();
     return this.auth.switchTenant(userId, body.tenantId);
+  }
+
+  /** Verifica el email a partir del token del enlace enviado por correo. Público. */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  @Public()
+  @Post('verify-email')
+  @HttpCode(200)
+  verifyEmail(
+    @Body(new ZodValidationPipe(VerifyEmailSchema)) dto: VerifyEmailDto,
+  ): Promise<{ verified: boolean }> {
+    return this.auth.verifyEmail(dto.token);
+  }
+
+  /** Reenvía el correo de verificación al usuario autenticado. */
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @Post('resend-verification')
+  @HttpCode(200)
+  resendVerification(
+    @CurrentUser() userId: string | undefined,
+  ): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    if (!userId) throw new UnauthorizedException();
+    return this.auth.resendVerification(userId);
   }
 }

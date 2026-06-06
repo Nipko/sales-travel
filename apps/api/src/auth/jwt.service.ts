@@ -12,6 +12,10 @@ export interface JwtPayload {
 const ISSUER = 'sales-travel';
 const AUDIENCE = 'sales-travel-api';
 const ACCESS_TTL = '24h';
+// Audiencia separada para tokens de verificación de email: así un link de verificación NO sirve
+// como bearer de API (verify() lo rechaza por audiencia) y viceversa.
+const EMAIL_AUDIENCE = 'sales-travel-email-verify';
+const EMAIL_TTL = '2d';
 
 @Injectable()
 export class JwtService implements OnModuleInit {
@@ -49,5 +53,29 @@ export class JwtService implements OnModuleInit {
       tid: typeof payload['tid'] === 'string' ? payload['tid'] : undefined,
       role: typeof payload['role'] === 'string' ? payload['role'] : undefined,
     };
+  }
+
+  /** Firma un token de verificación de email (audiencia separada, TTL corto). */
+  async signEmailToken(userId: string, expiresIn: string = EMAIL_TTL): Promise<string> {
+    return new SignJWT({ purpose: 'email-verify' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setIssuer(ISSUER)
+      .setAudience(EMAIL_AUDIENCE)
+      .setSubject(userId)
+      .setExpirationTime(expiresIn)
+      .sign(this.secret);
+  }
+
+  /** Verifica un token de verificación de email; devuelve el userId. Lanza si es inválido/expirado. */
+  async verifyEmailToken(token: string): Promise<string> {
+    const { payload } = await jwtVerify(token, this.secret, {
+      issuer: ISSUER,
+      audience: EMAIL_AUDIENCE,
+    });
+    if (typeof payload.sub !== 'string') {
+      throw new Error('JWT missing subject');
+    }
+    return payload.sub;
   }
 }
