@@ -103,6 +103,22 @@ function formatDuration(minutes: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
+/** Traduce errores técnicos del proveedor (LATAM NDC) a mensajes claros y accionables. */
+function humanizeBookingError(raw: string): string {
+  const msg = raw.toLowerCase();
+  if (msg.includes('passport') && (msg.includes('mandatory') || msg.includes('required'))) {
+    return 'La aerolínea exige pasaporte para todos los pasajeros en esta reserva (habitual en rutas internacionales). En "Pasajeros", cambiá el tipo de documento a "Pasaporte", completá el número y la fecha de vencimiento, y volvé a reservar.';
+  }
+  if (msg.includes('price') && (msg.includes('changed') || msg.includes('mismatch'))) {
+    return 'El precio cambió desde la cotización. Usá "Verificar precio" para actualizarlo y reintentá.';
+  }
+  if (msg.includes('sold out') || msg.includes('no availability') || msg.includes('unavailable')) {
+    return 'La tarifa ya no está disponible. Volvé a buscar para ver opciones vigentes.';
+  }
+  // Fallback: mostramos el mensaje del proveedor pero sin el ruido del código técnico al inicio.
+  return raw.replace(/^LATAM\s+\w+\s+error\s+\d+:\s*/i, '').trim() || raw;
+}
+
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   draft: {
     label: 'Borrador',
@@ -247,7 +263,9 @@ export default function QuotationDetailPage() {
     } else {
       setBookingResult({
         success: false,
-        error: data.providerResult?.error ?? data.error ?? 'Error desconocido',
+        error: humanizeBookingError(
+          data.providerResult?.error ?? data.error ?? 'Error desconocido',
+        ),
       });
     }
   }
