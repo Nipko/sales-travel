@@ -187,4 +187,26 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
     const totalOrders = [...s.values()].reduce((a, v) => a + v.o, 0);
     expect(totalOrders).toBe(3); // agency(2) + sub(1), no incluye `other`
   });
+
+  /** Réplica del SELECT de NetworkService.listTenantUsers (filtrado por tenant). */
+  async function listUsers(tenantId: string): Promise<Array<{ userId: string; role: string }>> {
+    const { rows } = await pool.query<{ user_id: string; role: string }>(
+      `SELECT m.user_id, m.role
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.tenant_id = $1::uuid
+       ORDER BY m.created_at`,
+      [tenantId],
+    );
+    return rows.map((r) => ({ userId: r.user_id, role: r.role }));
+  }
+
+  it('listTenantUsers returns only the members of the given node (no cross-tenant bleed)', async () => {
+    const agencyUsers = await listUsers(agency);
+    const subUsers = await listUsers(sub);
+    expect(agencyUsers.map((u) => u.userId)).toContain(userId);
+    expect(agencyUsers.map((u) => u.userId)).not.toContain(vendedorId);
+    expect(subUsers.map((u) => u.userId)).toEqual([vendedorId]);
+    expect(subUsers[0]).toMatchObject({ role: 'vendedor' });
+  });
 });

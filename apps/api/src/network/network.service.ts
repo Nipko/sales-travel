@@ -22,6 +22,16 @@ export interface NetworkSalesRow {
   quotationsTotal: number;
 }
 
+export interface NetworkUser {
+  userId: string;
+  email: string;
+  name: string | null;
+  userStatus: string;
+  role: string;
+  membershipStatus: string;
+  createdAt: Date;
+}
+
 interface NetworkRow {
   id: string;
   slug: string;
@@ -144,6 +154,44 @@ export class NetworkService {
       ordersConfirmed: Number(r.orders_confirmed),
       quotationsTotal: Number(r.quotations_total),
     }));
+  }
+
+  /**
+   * Usuarios (memberships) de un nodo de la red. Gateado: el usuario debe poder gestionar
+   * `tenantId` (su nodo, un descendiente, o superadmin). Se lee con el contexto del tenant
+   * destino → la policy `memberships_tenant_isolation` devuelve sólo sus memberships.
+   */
+  async listTenantUsers(userId: string, tenantId: string): Promise<NetworkUser[]> {
+    if (!(await this.canManageTenant(userId, tenantId))) {
+      throw new ForbiddenException('not authorized to manage this tenant');
+    }
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      const rows = await trx
+        .selectFrom('memberships')
+        .innerJoin('users', 'users.id', 'memberships.user_id')
+        .select([
+          'users.id as userId',
+          'users.email as email',
+          'users.name as name',
+          'users.status as userStatus',
+          'memberships.role as role',
+          'memberships.status as membershipStatus',
+          'memberships.created_at as createdAt',
+        ])
+        .where('memberships.tenant_id', '=', tenantId)
+        .orderBy('memberships.created_at')
+        .execute();
+      return rows.map((r) => ({
+        userId: r.userId,
+        email: r.email,
+        name: r.name,
+        userStatus: r.userStatus,
+        role: r.role,
+        membershipStatus: r.membershipStatus,
+        // pg devuelve Date para timestamptz; el tipo Kysely es ColumnType (Timestamp).
+        createdAt: r.createdAt as unknown as Date,
+      }));
+    });
   }
 
   /** Subárbol de tenants que el usuario administra (su red). Superadmin ve todos. */

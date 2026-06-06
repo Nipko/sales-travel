@@ -17,6 +17,7 @@ import {
   NetworkService,
   type NetworkSalesRow,
   type NetworkTenant,
+  type NetworkUser,
 } from '../network/network.service.js';
 
 interface BrandingView {
@@ -82,6 +83,18 @@ export class TenantsController {
     }
     const events = await this.audit.networkAudit(tenantId, Number(limit) || 50);
     return { events };
+  }
+
+  /** Usuarios (memberships) de un nodo de la red. Gateado por canManageTenant. */
+  @Get('network/users')
+  async getNetworkUsers(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId') tenantId: string,
+  ): Promise<{ users: NetworkUser[] }> {
+    if (!userId) throw new UnauthorizedException();
+    if (!tenantId) throw new ForbiddenException('tenantId required');
+    const users = await this.network.listTenantUsers(userId, tenantId);
+    return { users };
   }
 
   @Get(':id/config')
