@@ -24,6 +24,8 @@ interface AirportComboboxProps {
   onChange?: (code: string) => void;
   /** id estable para el input visible (permite mover el foco a este campo desde afuera). */
   inputId?: string;
+  /** Enfoca este campo al montar (sin abrir el dropdown), para empezar a escribir directo. */
+  autoFocus?: boolean;
 }
 
 const DEBOUNCE_MS = 80;
@@ -43,12 +45,15 @@ export function AirportCombobox({
   error,
   onChange,
   inputId,
+  autoFocus,
 }: AirportComboboxProps) {
   const id = useId();
   const fieldId = inputId ?? id;
   const listboxId = `${id}-listbox`;
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Evita que el foco inicial (autoFocus) abra el dropdown automáticamente.
+  const suppressOpenRef = useRef(false);
 
   const [query, setQuery] = useState(() => {
     if (!defaultValue) return '';
@@ -101,6 +106,25 @@ export function AirportCombobox({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-foco al montar (sin abrir el dropdown). Precarga el dataset por si el usuario tipea.
+  useEffect(() => {
+    if (!autoFocus) return;
+    suppressOpenRef.current = true;
+    inputRef.current?.focus({ preventScroll: true });
+    if (!isDatasetLoaded()) {
+      void loadFullDataset().then(() => setDatasetVersion((v) => v + 1));
+    }
+  }, [autoFocus]);
+
+  // Mantiene visible la opción activa al navegar con flechas (scroll-into-view).
+  useEffect(() => {
+    if (activeIndex < 0 || !open) return;
+    const item = flatItems[activeIndex];
+    if (item) {
+      document.getElementById(`${id}-opt-${item.code}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, open]);
 
   function selectAirport(a: Airport) {
     setCode(a.code);
@@ -173,6 +197,11 @@ export function AirportCombobox({
           aria-invalid={error ? true : undefined}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => {
+            // El auto-foco inicial enfoca pero no abre el dropdown.
+            if (suppressOpenRef.current) {
+              suppressOpenRef.current = false;
+              return;
+            }
             setOpen(true);
             if (!query.trim()) setSections(buildSections(''));
             if (!isDatasetLoaded()) {

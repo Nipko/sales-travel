@@ -78,6 +78,23 @@ function formatDuration(minutes: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
+/** Abre el calendario nativo al enfocar la fecha (donde el navegador lo permita). */
+function openDatePicker(e: React.FocusEvent<HTMLInputElement>) {
+  try {
+    e.currentTarget.showPicker?.();
+  } catch {
+    /* showPicker requiere gesto del usuario en algunos navegadores; el campo igual queda enfocado. */
+  }
+}
+
+/** Enter avanza al siguiente campo (si se indica); en el último, deja que el form se envíe. */
+function advanceOnEnter(e: React.KeyboardEvent<HTMLElement>, nextId?: string) {
+  if (e.key === 'Enter' && nextId) {
+    e.preventDefault();
+    document.getElementById(nextId)?.focus();
+  }
+}
+
 function groupOffersByFlight(offers: Offer[]): FlightGroup[] {
   const groups = new Map<string, Offer[]>();
 
@@ -325,6 +342,7 @@ export default function CotizacionesPage() {
                     label="Aeropuerto de Origen"
                     defaultValue={originCode}
                     onChange={handleOriginChange}
+                    autoFocus
                     required
                   />
                 </div>
@@ -370,6 +388,10 @@ export default function CotizacionesPage() {
                     required
                     min={today}
                     value={departureDate}
+                    onFocus={openDatePicker}
+                    onKeyDown={(e) =>
+                      advanceOnEnter(e, tripType === 'roundtrip' ? 'returnDate' : 'cabin')
+                    }
                     onChange={(e) => {
                       setDepartureDate(e.target.value);
                       // Ida elegida → foco a la vuelta (si es ida y vuelta y aún está vacía).
@@ -400,6 +422,8 @@ export default function CotizacionesPage() {
                     disabled={tripType === 'oneway'}
                     required={tripType === 'roundtrip'}
                     value={returnDate}
+                    onFocus={openDatePicker}
+                    onKeyDown={(e) => advanceOnEnter(e, 'cabin')}
                     onChange={(e) => setReturnDate(e.target.value)}
                     className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)] disabled:cursor-not-allowed disabled:opacity-30 disabled:bg-[var(--color-surface-muted)]/50"
                   />
