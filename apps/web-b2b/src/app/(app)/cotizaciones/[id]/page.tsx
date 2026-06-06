@@ -477,16 +477,22 @@ export default function QuotationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Customer info form */}
+          {/* Cliente y contacto (única sección: sirve para enviar la cotización y como contacto de la reserva) */}
           <Card>
             <CardContent className="p-5">
-              <div className="mb-4 flex items-center gap-2">
+              <div className="mb-1 flex items-center gap-2">
                 <User className="size-4 text-[var(--color-primary)]" />
-                <h2 className="text-sm font-semibold text-[var(--color-fg)]">Datos del cliente</h2>
+                <h2 className="text-sm font-semibold text-[var(--color-fg)]">Cliente y contacto</h2>
               </div>
+              <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
+                Se usa para enviar la cotización y como contacto de la reserva. Email y teléfono son
+                obligatorios para reservar.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerName">Nombre</Label>
+                  <Label htmlFor="customerName">
+                    Nombre<span className="text-red-500"> *</span>
+                  </Label>
                   <input
                     id="customerName"
                     type="text"
@@ -497,7 +503,9 @@ export default function QuotationDetailPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerEmail">Email</Label>
+                  <Label htmlFor="customerEmail">
+                    Email<span className="text-red-500"> *</span>
+                  </Label>
                   <input
                     id="customerEmail"
                     type="email"
@@ -508,18 +516,23 @@ export default function QuotationDetailPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerPhone">Teléfono</Label>
+                  <Label htmlFor="customerPhone">
+                    Teléfono<span className="text-red-500"> *</span>
+                  </Label>
                   <input
                     id="customerPhone"
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="+57 300 123 4567"
+                    placeholder="3001234567"
                     className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="notes">Notas</Label>
+                  <Label htmlFor="notes">
+                    Notas
+                    <span className="font-normal text-[var(--color-fg-subtle)]"> (opcional)</span>
+                  </Label>
                   <input
                     id="notes"
                     type="text"
@@ -575,8 +588,9 @@ export default function QuotationDetailPage() {
                 selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor
               }
               currency={selectedOffer.total.currency}
-              defaultEmail={customerEmail || undefined}
-              defaultPhone={customerPhone || undefined}
+              customerName={customerName || undefined}
+              contactEmail={customerEmail || undefined}
+              contactPhone={customerPhone || undefined}
               onSubmit={handleCreateOrder}
             />
           )}
