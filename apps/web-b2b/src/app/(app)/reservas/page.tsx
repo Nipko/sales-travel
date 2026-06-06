@@ -113,6 +113,25 @@ function fmtDuration(min: number): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 }
 
+/** Traduce errores técnicos del proveedor (LATAM NDC) a mensajes claros y accionables. */
+function humanizeOrderError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('933') || m.includes('not suitable for void')) {
+    return 'Esta reserva no está en un estado que permita anularla (VOID). La anulación aplica a tiquetes ya emitidos dentro de la ventana de anulación. Si la reserva aún no está emitida, se libera automáticamente al expirar; si ya pasó la ventana, gestioná la cancelación con la aerolínea.';
+  }
+  if (m.includes('911') || m.includes('not ready for this flow')) {
+    return 'La reserva todavía no está emitida. Usá "Pagar / Emitir tiquete" primero y luego reintentá esta operación.';
+  }
+  if (m.includes('missing agent info') || m.includes('403111009')) {
+    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cargalo en Mi Red → Credenciales → LATAM NDC y reintentá.';
+  }
+  if (m.includes('passport') && (m.includes('mandatory') || m.includes('required'))) {
+    return 'La aerolínea exige pasaporte para todos los pasajeros en esta reserva.';
+  }
+  // Limpia el prefijo técnico "LATAM ... error NNN:" del resto de mensajes del proveedor.
+  return raw.replace(/^LATAM\s+(?:\w+\s+)?error\s+\d+:\s*/i, '').trim() || raw;
+}
+
 export default function ReservasPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,7 +196,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'retrieve',
           success: false,
-          message: data.error ?? 'No se encontró la reserva en LATAM',
+          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en LATAM'),
         });
       }
     } catch {
@@ -214,7 +233,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'cancel',
           success: false,
-          message: data.error ?? 'No se pudo cancelar',
+          message: humanizeOrderError(data.error ?? 'No se pudo cancelar'),
         });
       }
     } catch {
@@ -259,7 +278,7 @@ export default function ReservasPage() {
           orderId: payingOrder.id,
           type: 'pay',
           success: false,
-          message: data.error ?? 'No se pudo procesar el pago',
+          message: humanizeOrderError(data.error ?? 'No se pudo procesar el pago'),
         });
       }
     } catch {
@@ -287,7 +306,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'services',
           success: false,
-          message: data.warnings.join(', '),
+          message: humanizeOrderError(data.warnings.join(', ')),
         });
         setServicesOrder(null);
       }
@@ -351,7 +370,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'reshop',
           success: false,
-          message: data.error ?? 'No se pudo realizar el repricing',
+          message: humanizeOrderError(data.error ?? 'No se pudo realizar el repricing'),
         });
       }
     } catch {
@@ -499,7 +518,7 @@ export default function ReservasPage() {
                         <Search className="size-3.5" />
                         {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
                       </Button>
-                      {(order.status === 'confirmed' || order.status === 'ticketed') && (
+                      {order.status === 'ticketed' && (
                         <Button
                           variant="secondary"
                           size="sm"
