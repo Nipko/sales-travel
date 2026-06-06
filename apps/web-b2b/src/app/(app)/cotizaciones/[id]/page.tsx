@@ -154,6 +154,8 @@ export default function QuotationDetailPage() {
   const [saving, setSaving] = useState(false);
   const [customerSaved, setCustomerSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [priceStatus, setPriceStatus] = useState<{
@@ -222,6 +224,48 @@ export default function QuotationDetailPage() {
       setSaveError('Error de conexión.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!quotation || !customerEmail) return;
+    setEmailSending(true);
+    setEmailResult(null);
+    try {
+      // Asegura que el email del cliente esté guardado antes de enviar.
+      await fetch(`/api/quotations/${quotation.id}/customer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName: customerName || null,
+          customerEmail: customerEmail || null,
+          customerPhone: customerPhone || null,
+          notes: notes || null,
+        }),
+      });
+      const res = await fetch(`/api/quotations/${quotation.id}/send-email`, { method: 'POST' });
+      const data = (await res.json()) as {
+        sent?: boolean;
+        to?: string;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        setEmailResult({ ok: false, text: data.error ?? data.message ?? 'No se pudo enviar.' });
+        return;
+      }
+      setEmailResult(
+        data.sent
+          ? { ok: true, text: `Cotización enviada a ${data.to ?? customerEmail}` }
+          : {
+              ok: false,
+              text: 'No hay correo configurado para enviar. Configurá el email de la agencia (Mi Red → Email) o el del sistema.',
+            },
+      );
+    } catch {
+      setEmailResult({ ok: false, text: 'Error de conexión.' });
+    } finally {
+      setEmailSending(false);
     }
   }
 
@@ -773,17 +817,22 @@ export default function QuotationDetailPage() {
                 variant="secondary"
                 size="sm"
                 className="w-full gap-2"
-                disabled={!customerEmail}
-                onClick={() => {
-                  if (customerEmail) {
-                    window.open(
-                      `mailto:${customerEmail}?subject=${encodeURIComponent(`Cotización #${quotation.quoteNumber} - ${searchCriteria.origin}→${searchCriteria.destination}`)}&body=${encodeURIComponent(`Hola ${customerName || ''},\n\nTe envío la cotización de vuelo:\n\nRuta: ${searchCriteria.origin} → ${searchCriteria.destination}\nFecha: ${searchCriteria.departureDate}\nTotal: ${formatMoney(selectedOffer.total.amountMinor, selectedOffer.total.currency)}\nTarifa: ${selectedOffer.fareFamily?.name ?? 'Standard'}\n\nQuedo atento.\nSaludos.`)}`,
-                    );
-                  }
-                }}
+                disabled={!customerEmail || emailSending}
+                onClick={() => void handleSendEmail()}
               >
-                <Mail className="size-4" /> Enviar por email
+                <Mail className="size-4" /> {emailSending ? 'Enviando…' : 'Enviar por email'}
               </Button>
+              {emailResult && (
+                <div
+                  className={`rounded-lg border px-3 py-2 text-xs ${
+                    emailResult.ok
+                      ? 'border-green-200 bg-green-50 text-green-800'
+                      : 'border-red-200 bg-red-50 text-red-800'
+                  }`}
+                >
+                  {emailResult.text}
+                </div>
+              )}
               <Button
                 variant="secondary"
                 size="sm"

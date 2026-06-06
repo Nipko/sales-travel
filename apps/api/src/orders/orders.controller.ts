@@ -3,21 +3,25 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   Post,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { MailerService } from '../mail/mailer.service.js';
+import { orderConfirmationEmailHtml } from '../mail/templates.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
-import { OrdersService, type CreateOrderDto } from './orders.service.js';
+import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 
 @Controller('orders')
 export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly db: DatabaseService,
+    private readonly mailer: MailerService,
   ) {}
 
   @Post()
@@ -30,6 +34,11 @@ export class OrdersController {
 
     const { order, providerResult } = await this.orders.createOrder(tenantId, userId, body);
 
+    // Confirmación por email al contacto (best-effort: nunca rompe la reserva).
+    if (providerResult.success) {
+      void this.sendConfirmationEmail(tenantId, order);
+    }
+
     return {
       order: this.serialize(order),
       providerResult: {
@@ -39,6 +48,51 @@ export class OrdersController {
         error: providerResult.error,
       },
     };
+  }
+
+  /** Reenvía la confirmación de reserva por email al contacto. */
+  @Post(':id/send-confirmation')
+  @HttpCode(200)
+  async sendConfirmation(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<{ sent: boolean; to: string }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const order = await this.orders.findById(tenantId, id);
+    if (!order) throw new NotFoundException();
+    const to = this.contactEmail(order);
+    if (!to) throw new NotFoundException('La reserva no tiene email de contacto');
+    const sent = await this.sendConfirmationEmail(tenantId, order);
+    return { sent, to };
+  }
+
+  private contactEmail(order: OrderRow): string {
+    const ci = order.contact_info;
+    if (ci && typeof ci === 'object' && 'email' in ci) {
+      const email = (ci as { email?: unknown }).email;
+      return typeof email === 'string' ? email : '';
+    }
+    return '';
+  }
+
+  private async sendConfirmationEmail(tenantId: string, order: OrderRow): Promise<boolean> {
+    const to = this.contactEmail(order);
+    if (!to) return false;
+    const mail = orderConfirmationEmailHtml({
+      orderNumber: order.order_number,
+      pnr: order.provider_order_id,
+      searchCriteria: order.search_criteria,
+      passengers: order.passengers,
+      totalAmount: order.total_amount,
+      currency: order.currency,
+    });
+    return this.mailer.sendToTenant(tenantId, {
+      to,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    });
   }
 
   @Get()

@@ -5,6 +5,7 @@ import {
   Clock,
   CreditCard,
   Eye,
+  Mail,
   Package,
   Plane,
   RefreshCw,
@@ -764,6 +765,31 @@ function OrderDetailModal({
   const itineraries = order.selectedOffer?.itineraries ?? [];
   const canCancel = !!order.pnr && order.status !== 'cancelled' && order.status !== 'failed';
   const canPay = !!order.pnr && (order.status === 'pending' || order.status === 'confirmed');
+  const canSendEmail = !!order.pnr && order.status !== 'failed' && !!order.contactInfo?.email;
+  const [sending, setSending] = useState(false);
+  const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function sendConfirmation() {
+    setSending(true);
+    setSendMsg(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/send-confirmation`, { method: 'POST' });
+      const data = (await res.json()) as { sent?: boolean; to?: string; error?: string };
+      if (!res.ok) {
+        setSendMsg({ ok: false, text: data.error ?? 'No se pudo enviar.' });
+        return;
+      }
+      setSendMsg(
+        data.sent
+          ? { ok: true, text: `Confirmación enviada a ${data.to ?? ''}` }
+          : { ok: false, text: 'No hay correo configurado para enviar.' },
+      );
+    } catch {
+      setSendMsg({ ok: false, text: 'Error de conexión.' });
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -895,6 +921,26 @@ function OrderDetailModal({
               {formatMoney(order.totalAmount, order.currency)}
             </span>
           </section>
+
+          {canSendEmail && (
+            <section className="flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={sending}
+                onClick={() => void sendConfirmation()}
+                className="gap-1.5 text-xs"
+              >
+                <Mail className="size-3.5" />
+                {sending ? 'Enviando…' : 'Enviar confirmación por email'}
+              </Button>
+              {sendMsg && (
+                <span className={cn('text-xs', sendMsg.ok ? 'text-emerald-700' : 'text-red-700')}>
+                  {sendMsg.text}
+                </span>
+              )}
+            </section>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] p-4">

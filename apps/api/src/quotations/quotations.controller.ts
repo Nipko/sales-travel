@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   Patch,
@@ -11,6 +13,8 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { QuotationStatus } from '../database/database.types.js';
+import { MailerService } from '../mail/mailer.service.js';
+import { quotationEmailHtml } from '../mail/templates.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   CreateQuotationSchema,
@@ -24,7 +28,37 @@ export class QuotationsController {
   constructor(
     private readonly quotations: QuotationsService,
     private readonly db: DatabaseService,
+    private readonly mailer: MailerService,
   ) {}
+
+  /** Envía la cotización por email al cliente (usa el BYO-email del tenant / fallback sistema). */
+  @Post(':id/send-email')
+  @HttpCode(200)
+  async sendEmail(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<{ sent: boolean; to: string }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const row = await this.quotations.findById(tenantId, id);
+    if (!row) throw new NotFoundException();
+    if (!row.customer_email) {
+      throw new BadRequestException('La cotización no tiene email de cliente. Guardalo primero.');
+    }
+    const mail = quotationEmailHtml({
+      quoteNumber: row.quote_number,
+      customerName: row.customer_name,
+      searchCriteria: row.search_criteria,
+      selectedOffer: row.selected_offer,
+    });
+    const sent = await this.mailer.sendToTenant(tenantId, {
+      to: row.customer_email,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    });
+    return { sent, to: row.customer_email };
+  }
 
   @Post()
   async create(
