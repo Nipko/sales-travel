@@ -218,6 +218,23 @@ export interface PackageItemsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export type OrderOperationType = 'cancel' | 'pay' | 'reshop' | 'retrieve';
+export type OrderOperationStatus = 'pending' | 'success' | 'failed';
+
+export interface OrderOperationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  type: OrderOperationType;
+  status: Generated<OrderOperationStatus>;
+  attempts: Generated<number>;
+  last_error: string | null;
+  result: Generated<unknown>;
+  actor_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -239,6 +256,7 @@ export interface DB {
   airports: AirportsTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
+  order_operations: OrderOperationsTable;
   customers: CustomersTable;
   agency_portfolios: AgencyPortfoliosTable;
   portfolio_transactions: PortfolioTransactionsTable;

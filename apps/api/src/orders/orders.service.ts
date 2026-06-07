@@ -14,8 +14,21 @@ import {
 } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
-import type { OrderStatus } from '../database/database.types.js';
+import type {
+  OrderOperationStatus,
+  OrderOperationType,
+  OrderStatus,
+} from '../database/database.types.js';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
+
+export interface OrderOperationRow {
+  id: string;
+  type: OrderOperationType;
+  status: OrderOperationStatus;
+  attempts: number;
+  last_error: string | null;
+  created_at: Date;
+}
 
 export interface CreateOrderDto {
   offer: Offer;
@@ -138,9 +151,31 @@ export class OrdersService {
     tenantId: string,
     id: string,
     pnr: string,
+    actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     const adapter = await this.latam.forTenant(tenantId);
-    const result = await adapter.cancelOrder(pnr, { tenantId });
+    let result: OrderCancelResult;
+    try {
+      result = await adapter.cancelOrder(pnr, { tenantId });
+    } catch (err) {
+      await this.logOperation(
+        tenantId,
+        id,
+        'cancel',
+        'failed',
+        (err as Error).message,
+        actorUserId,
+      );
+      throw err;
+    }
+    await this.logOperation(
+      tenantId,
+      id,
+      'cancel',
+      result.success ? 'success' : 'failed',
+      result.success ? null : (result.error ?? 'cancelación rechazada'),
+      actorUserId,
+    );
 
     if (result.success) {
       const order = await this.db.withTenant(tenantId, async (trx) => {
@@ -167,9 +202,111 @@ export class OrdersService {
     );
   }
 
-  async reshopOrder(tenantId: string, body: OrderReshopRequest): Promise<OrderReshopResult> {
+  async reshopOrder(
+    tenantId: string,
+    orderId: string,
+    body: OrderReshopRequest,
+    actorUserId?: string,
+  ): Promise<OrderReshopResult> {
     const adapter = await this.latam.forTenant(tenantId);
-    return adapter.reshopWithTickets(body, { tenantId });
+    let result: OrderReshopResult;
+    try {
+      result = await adapter.reshopWithTickets(body, { tenantId });
+    } catch (err) {
+      await this.logOperation(
+        tenantId,
+        orderId,
+        'reshop',
+        'failed',
+        (err as Error).message,
+        actorUserId,
+      );
+      throw err;
+    }
+    await this.logOperation(
+      tenantId,
+      orderId,
+      'reshop',
+      result.success ? 'success' : 'failed',
+      result.success ? null : (result.error ?? 'reshop rechazado'),
+      actorUserId,
+    );
+    return result;
+  }
+
+  /** Inserta un registro durable de una operación de post-venta (trazabilidad + reintento). */
+  private async logOperation(
+    tenantId: string,
+    orderId: string,
+    type: OrderOperationType,
+    status: OrderOperationStatus,
+    lastError: string | null,
+    actorUserId?: string,
+  ): Promise<void> {
+    try {
+      await this.db.withTenant(tenantId, async (trx) => {
+        await trx
+          .insertInto('order_operations')
+          .values({
+            tenant_id: tenantId,
+            order_id: orderId,
+            type,
+            status,
+            last_error: lastError,
+            result: JSON.stringify({ status }),
+            actor_user_id: actorUserId ?? null,
+          })
+          .execute();
+      });
+    } catch {
+      // El registro de la operación es best-effort: nunca debe tumbar la operación principal.
+    }
+  }
+
+  /** Historial de operaciones de post-venta de una orden (más reciente primero). */
+  async listOperations(tenantId: string, orderId: string): Promise<OrderOperationRow[]> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const rows = await trx
+        .selectFrom('order_operations')
+        .select(['id', 'type', 'status', 'attempts', 'last_error', 'created_at'])
+        .where('order_id', '=', orderId)
+        .orderBy('created_at', 'desc')
+        .execute();
+      return rows as unknown as OrderOperationRow[];
+    });
+  }
+
+  /**
+   * Reintenta una operación fallida. Hoy soporta 'cancel' (re-ejecuta el void con el PNR de la
+   * orden). Para 'pay' no aplica (no guardamos datos de tarjeta por PCI).
+   */
+  async retryOperation(
+    tenantId: string,
+    orderId: string,
+    opId: string,
+    actorUserId?: string,
+  ): Promise<{ result: OrderCancelResult }> {
+    const op = await this.db.withTenant(tenantId, async (trx) =>
+      trx
+        .selectFrom('order_operations')
+        .select(['type'])
+        .where('id', '=', opId)
+        .where('order_id', '=', orderId)
+        .executeTakeFirst(),
+    );
+    if (!op) throw new Error('operation not found');
+    if (op.type !== 'cancel') {
+      throw new Error('Sólo las cancelaciones se pueden reintentar automáticamente.');
+    }
+    const order = await this.findById(tenantId, orderId);
+    if (!order?.provider_order_id) throw new Error('order has no PNR');
+    const { result } = await this.cancelOrder(
+      tenantId,
+      orderId,
+      order.provider_order_id,
+      actorUserId,
+    );
+    return { result };
   }
 
   async payOrder(
@@ -177,6 +314,7 @@ export class OrdersService {
     id: string,
     row: OrderRow,
     payment: PaymentInfo,
+    actorUserId?: string,
   ): Promise<OrderPayResult> {
     const contactInfo = (row.contact_info as BookingContactInfo) ?? {
       email: '',
@@ -185,9 +323,23 @@ export class OrdersService {
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
 
     const adapter = await this.latam.forTenant(tenantId);
-    const result = await adapter.payOrder(
-      { orderId: row.provider_order_id!, payment, contactInfo, passengers },
-      { tenantId },
+    let result: OrderPayResult;
+    try {
+      result = await adapter.payOrder(
+        { orderId: row.provider_order_id!, payment, contactInfo, passengers },
+        { tenantId },
+      );
+    } catch (err) {
+      await this.logOperation(tenantId, id, 'pay', 'failed', (err as Error).message, actorUserId);
+      throw err;
+    }
+    await this.logOperation(
+      tenantId,
+      id,
+      'pay',
+      result.success ? 'success' : 'failed',
+      result.success ? null : (result.error ?? 'pago rechazado'),
+      actorUserId,
     );
 
     if (result.success) {

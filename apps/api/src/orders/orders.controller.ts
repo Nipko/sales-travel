@@ -128,7 +128,29 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    const { result } = await this.orders.cancelOrder(tenantId, id, row.provider_order_id);
+    const { result } = await this.orders.cancelOrder(tenantId, id, row.provider_order_id, userId);
+    return result;
+  }
+
+  /** Historial durable de operaciones de post-venta de la reserva. */
+  @Get(':id/operations')
+  async operations(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const operations = await this.orders.listOperations(tenantId, id);
+    return { operations };
+  }
+
+  /** Reintenta una operación fallida (hoy: cancelación). */
+  @Post(':id/operations/:opId/retry')
+  async retryOperation(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Param('opId') opId: string,
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.resolveActiveTenant(userId);
+    const { result } = await this.orders.retryOperation(tenantId, id, opId, userId);
     return result;
   }
 
@@ -152,7 +174,7 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    return this.orders.reshopOrder(tenantId, body);
+    return this.orders.reshopOrder(tenantId, id, body, userId);
   }
 
   @Post(':id/pay')
@@ -165,7 +187,7 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    return this.orders.payOrder(tenantId, id, row, body.payment as never);
+    return this.orders.payOrder(tenantId, id, row, body.payment as never, userId);
   }
 
   private serialize(row: {

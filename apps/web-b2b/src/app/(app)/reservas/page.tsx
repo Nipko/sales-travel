@@ -71,6 +71,22 @@ interface ServiceItem {
   cancellable: boolean;
 }
 
+interface OrderOperation {
+  id: string;
+  type: string;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+const OP_TYPE_LABEL: Record<string, string> = {
+  cancel: 'Cancelación',
+  pay: 'Pago / Emisión',
+  reshop: 'Reemisión',
+  retrieve: 'Consulta de estado',
+};
+
 function formatMoney(amountMinor: number, currency: string): string {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -791,6 +807,34 @@ function OrderDetailModal({
     }
   }
 
+  const [operations, setOperations] = useState<OrderOperation[]>([]);
+  const [opsLoading, setOpsLoading] = useState(true);
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  useEffect(() => {
+    void reloadOps().finally(() => setOpsLoading(false));
+  }, [order.id]);
+
+  async function reloadOps() {
+    try {
+      const res = await fetch(`/api/orders/${order.id}/operations`);
+      const data = (await res.json()) as { operations?: OrderOperation[] };
+      setOperations(data.operations ?? []);
+    } catch {
+      setOperations([]);
+    }
+  }
+
+  async function retryOp(opId: string) {
+    setRetrying(opId);
+    try {
+      await fetch(`/api/orders/${order.id}/operations/${opId}/retry`, { method: 'POST' });
+      await reloadOps();
+    } finally {
+      setRetrying(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
@@ -938,6 +982,70 @@ function OrderDetailModal({
                 <span className={cn('text-xs', sendMsg.ok ? 'text-emerald-700' : 'text-red-700')}>
                   {sendMsg.text}
                 </span>
+              )}
+            </section>
+          )}
+
+          {(opsLoading || operations.length > 0) && (
+            <section className="border-t border-[var(--color-border)] pt-3">
+              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                Historial de operaciones
+              </h3>
+              {opsLoading ? (
+                <p className="text-xs text-[var(--color-fg-subtle)]">Cargando…</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {operations.map((op) => (
+                    <div
+                      key={op.id}
+                      className="flex items-start justify-between gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-[var(--color-fg)]">
+                            {OP_TYPE_LABEL[op.type] ?? op.type}
+                          </span>
+                          <span
+                            className={cn(
+                              'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+                              op.status === 'success'
+                                ? 'bg-green-50 text-green-700'
+                                : op.status === 'failed'
+                                  ? 'bg-red-50 text-red-700'
+                                  : 'bg-amber-50 text-amber-700',
+                            )}
+                          >
+                            {op.status === 'success'
+                              ? 'OK'
+                              : op.status === 'failed'
+                                ? 'Falló'
+                                : 'Pendiente'}
+                          </span>
+                        </div>
+                        {op.last_error && (
+                          <p className="mt-0.5 text-[10px] text-red-700">
+                            {humanizeOrderError(op.last_error)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <time className="text-[10px] text-[var(--color-fg-subtle)]">
+                          {formatRelativeDate(op.created_at)}
+                        </time>
+                        {op.status === 'failed' && op.type === 'cancel' && (
+                          <button
+                            type="button"
+                            onClick={() => void retryOp(op.id)}
+                            disabled={retrying === op.id}
+                            className="rounded-md border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)] disabled:opacity-50"
+                          >
+                            {retrying === op.id ? '…' : 'Reintentar'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </section>
           )}

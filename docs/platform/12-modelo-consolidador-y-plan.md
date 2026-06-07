@@ -441,3 +441,10 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 - **Gestión de usuarios/roles por nodo**: `GET /tenants/network/users` (gateado por `canManageTenant`) + UI `UsersModal` (listar, cambiar rol, invitar) en _Mi Red_.
 - **Notificaciones reales (cotización + reserva)** (`mail/templates.ts`): `POST /quotations/:id/send-email` envía la cotización al cliente; `POST /orders/:id/send-confirmation` + auto-envío best-effort al crear la reserva mandan la confirmación con PNR. Todo vía `MailerService` (BYO-email). UI: "Enviar por email" en la cotización ahora envía de verdad (antes abría `mailto`); botón "Enviar confirmación por email" en el detalle de reserva. WhatsApp sigue por `wa.me` (canal real).
 - _Requiere para envío real_: definir el SMTP por defecto del sistema (`MAIL_HOST`/`MAIL_PORT`/`MAIL_USER`/`MAIL_PASS`/`MAIL_FROM`) y `APP_WEB_URL` para el enlace de verificación.
+
+## §8 — Post-venta durable (operaciones) — Fase 1 (primer incremento)
+
+- **`order_operations`** (migración 0021): tabla append por orden que registra cada operación de post-venta (cancelar/void, pagar/emitir, reemisión/reshop) con `status` (pending/success/failed), `last_error`, `attempts` y actor. RLS forzada por tenant. `result` nunca guarda datos sensibles (PAN/CVV).
+- **OrdersService** registra cada operación (éxito o fallo, incl. excepciones del proveedor); `listOperations` y `retryOperation` (hoy reintenta **cancelación** re-ejecutando el void con el PNR de la orden; `pay` no se reintenta porque no guardamos datos de tarjeta — PCI).
+- **Endpoints**: `GET /orders/:id/operations`, `POST /orders/:id/operations/:opId/retry`. **UI**: "Historial de operaciones" en el detalle de la reserva con badges de estado, el error humanizado y botón **Reintentar** en cancelaciones fallidas. Test de integración (CI).
+- **Pendiente (evolución):** **worker durable** (Temporal/BullMQ) para reintentos automáticos y la **saga de reserva** con compensación; reembolso y reemisión/cambios como flujos NDC propios.
