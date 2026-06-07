@@ -88,6 +88,23 @@ export interface AirportsTable {
   updated_at: Generated<Timestamp>;
 }
 
+/** Catálogo de hoteles por proveedor (ciudad→IDs). Cross-tenant; lo escribe el job de sync. */
+export interface HotelInventoryTable {
+  provider_code: string;
+  hotel_id: string;
+  city_id: number | null;
+  country_code: string | null;
+  name: string | null;
+  stars: number | null;
+  property_type: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+  zipcode: string | null;
+  merged_ids: unknown;
+  synced_at: Generated<Timestamp>;
+}
+
 export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'cancelled';
 export type OrderStatus = 'pending' | 'confirmed' | 'ticketed' | 'cancelled' | 'failed';
 
@@ -254,6 +271,7 @@ export interface DB {
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
   airports: AirportsTable;
+  hotel_inventory: HotelInventoryTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;

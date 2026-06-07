@@ -16,17 +16,25 @@ export const HotelSuggestQuerySchema = z.object({
   locale: z.string().min(2).max(12).optional(),
 });
 
-export const HotelAvailabilityInputSchema = z.object({
-  checkinDate: isoDate,
-  checkoutDate: isoDate,
-  currency: z.string().length(3).optional(),
-  hotelIds: z.array(z.string().min(1)).min(1).max(100),
-  rooms: z.array(RoomDistributionSchema).min(1).max(8),
-  countryCode: z.string().length(2).optional(),
-  language: lang.optional(),
-  ttl: z.number().int().positive().optional(),
-  refundableOnly: z.boolean().optional(),
-});
+export const HotelAvailabilityInputSchema = z
+  .object({
+    checkinDate: isoDate,
+    checkoutDate: isoDate,
+    currency: z.string().length(3).optional(),
+    // Uno de los dos: lista explícita de hoteles, o destino (city_id) que el API resuelve
+    // a IDs vía el catálogo de inventario.
+    hotelIds: z.array(z.string().min(1)).max(100).optional(),
+    destinationId: z.coerce.number().int().positive().optional(),
+    rooms: z.array(RoomDistributionSchema).min(1).max(8),
+    countryCode: z.string().length(2).optional(),
+    language: lang.optional(),
+    ttl: z.number().int().positive().optional(),
+    refundableOnly: z.boolean().optional(),
+  })
+  .refine((v) => (v.hotelIds && v.hotelIds.length > 0) || v.destinationId != null, {
+    message: 'Indicá un destino o al menos un ID de hotel.',
+    path: ['destinationId'],
+  });
 
 export const HotelDetailInputSchema = z.object({
   hotelId: z.string().min(1),

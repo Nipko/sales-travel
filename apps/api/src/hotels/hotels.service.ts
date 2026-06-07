@@ -17,6 +17,8 @@ import { DatabaseService } from '../database/database.service.js';
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import type { HotelAvailabilityInput, HotelDetailInput } from './hotels.schemas.js';
 
+const PROVIDER_CODE = 'despegar-hotels';
+
 @Injectable()
 export class HotelsService {
   constructor(
@@ -32,19 +34,39 @@ export class HotelsService {
   }
 
   async searchAvailability(tenantId: string, input: HotelAvailabilityInput): Promise<HotelOffer[]> {
+    // Resolución ciudad→IDs: si no llegan IDs explícitos pero sí un destino, se resuelven del
+    // catálogo de inventario. Sin IDs (catálogo aún sin sincronizar) → sin resultados.
+    let hotelIds = input.hotelIds ?? [];
+    if (hotelIds.length === 0 && input.destinationId != null) {
+      hotelIds = await this.resolveCityHotelIds(input.destinationId);
+    }
+    if (hotelIds.length === 0) return [];
+
     const adapter = await this.factory.forTenant(tenantId);
     const defaults = await this.tenantDefaults(tenantId);
     return adapter.searchAvailability({
       checkinDate: input.checkinDate,
       checkoutDate: input.checkoutDate,
       currency: input.currency ?? defaults.currency,
-      hotelIds: input.hotelIds,
+      hotelIds,
       rooms: input.rooms,
       countryCode: input.countryCode ?? defaults.countryCode,
       language: input.language,
       ttl: input.ttl,
       refundableOnly: input.refundableOnly,
     });
+  }
+
+  /** IDs de hotel de una ciudad (city_id) desde el catálogo `hotel_inventory` (cap. por defecto 50). */
+  async resolveCityHotelIds(cityId: number, limit = 50): Promise<string[]> {
+    const rows = await this.db.db
+      .selectFrom('hotel_inventory')
+      .select('hotel_id')
+      .where('provider_code', '=', PROVIDER_CODE)
+      .where('city_id', '=', cityId)
+      .limit(limit)
+      .execute();
+    return rows.map((r) => r.hotel_id);
   }
 
   async getHotelDetail(tenantId: string, input: HotelDetailInput): Promise<HotelOffer> {

@@ -98,7 +98,7 @@ describe('mapSuggestions', () => {
         {
           id: 111,
           target: {
-            id: 111,
+            id: 555,
             gid: 'CITY_222',
             type: 1,
             parents: { city: 'Lima', country: 'Peru' },
@@ -110,8 +110,9 @@ describe('mapSuggestions', () => {
       ],
     });
 
+    // id = target.id (geo/city id), no el id del item.
     expect(result).toEqual([
-      { id: 111, gid: 'CITY_222', type: 1, display: 'Lima, Peru', city: 'Lima', country: 'Peru' },
+      { id: 555, gid: 'CITY_222', type: 1, display: 'Lima, Peru', city: 'Lima', country: 'Peru' },
     ]);
   });
 

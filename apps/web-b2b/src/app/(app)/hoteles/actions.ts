@@ -138,6 +138,8 @@ export async function searchHotelsAction(
   const checkoutDate = asString(formData.get('checkoutDate'));
   const rooms = parseRooms(asString(formData.get('rooms')));
   const hotelIds = parseHotelIds(asString(formData.get('hotelIds')));
+  const destinationRaw = asString(formData.get('destinationId'));
+  const destinationId = /^\d+$/.test(destinationRaw) ? Number(destinationRaw) : undefined;
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
 
   // --- Validaciones de borde (el API revalida con Zod) ---
@@ -156,15 +158,17 @@ export async function searchHotelsAction(
   if (rooms.length === 0) {
     return { ok: false, hotels: [], error: 'Indicá al menos una habitación con un adulto.' };
   }
-  if (hotelIds.length === 0) {
+  if (hotelIds.length === 0 && destinationId === undefined) {
     return {
       ok: false,
       hotels: [],
-      error: 'Indicá al menos un ID de hotel (el buscador por ciudad llega con el catálogo).',
+      error: 'Elegí un destino del autocompletado o indicá IDs de hotel.',
     };
   }
 
-  const body: Record<string, unknown> = { checkinDate, checkoutDate, hotelIds, rooms };
+  const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms };
+  if (hotelIds.length > 0) body.hotelIds = hotelIds;
+  if (destinationId !== undefined) body.destinationId = destinationId;
   if (refundableOnly) body.refundableOnly = true;
 
   const res = await api<{ hotels: HotelOffer[] }>('/hotels/availability', {

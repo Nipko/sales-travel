@@ -23,7 +23,9 @@ export function mapSuggestions(raw: RawSuggestionsResponse): GeoSuggestion[] {
   return (raw.items ?? [])
     .filter((it) => it.target?.gid)
     .map((it) => ({
-      id: it.id ?? it.target?.id ?? 0,
+      // target.id es el id geográfico (= location.city.id del inventario) que usa el catálogo
+      // ciudad→IDs; preferirlo sobre el id del item.
+      id: it.target?.id ?? it.id ?? 0,
       gid: it.target!.gid!,
       type: it.target?.type ?? 0,
       display: it.display ?? '',

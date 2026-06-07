@@ -19,6 +19,7 @@ export function DestinationCombobox() {
   const [query, setQuery] = useState('');
   const [label, setLabel] = useState('');
   const [gid, setGid] = useState('');
+  const [geoId, setGeoId] = useState('');
   const [items, setItems] = useState<GeoSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -60,6 +61,7 @@ export function DestinationCombobox() {
     setLabel(s.display);
     setQuery(s.display);
     setGid(s.gid);
+    setGeoId(String(s.id));
     setItems([]);
     setOpen(false);
   }
@@ -89,6 +91,7 @@ export function DestinationCombobox() {
       <label htmlFor={id} className="block text-xs font-medium text-[var(--color-fg)]">
         Destino
       </label>
+      <input type="hidden" name="destinationId" value={geoId} />
       <input type="hidden" name="destinationGid" value={gid} />
       <input type="hidden" name="destinationLabel" value={label} />
 
@@ -107,6 +110,7 @@ export function DestinationCombobox() {
           onChange={(e) => {
             setQuery(e.target.value);
             setGid('');
+            setGeoId('');
             setLabel('');
             setOpen(true);
           }}

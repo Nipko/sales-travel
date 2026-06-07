@@ -95,7 +95,7 @@ export default function HotelesPage() {
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <div className="space-y-1.5">
             <label htmlFor="hotelIds" className="block text-xs font-medium text-[var(--color-fg)]">
-              IDs de hotel
+              IDs de hotel (opcional)
             </label>
             <input
               id="hotelIds"
@@ -119,8 +119,9 @@ export default function HotelesPage() {
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-[11px] text-[var(--color-fg-muted)]">
           <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
           <span>
-            La API de disponibilidad exige IDs de hotel explícitos. El buscador por ciudad (catálogo
-            ciudad→IDs) llega en el próximo incremento; por ahora el destino es referencial.
+            Elegí un destino del autocompletado y buscamos por ciudad (resolvemos los IDs vía el
+            catálogo de inventario). Opcionalmente podés forzar IDs de hotel específicos. El
+            catálogo se sincroniza al configurar las credenciales del proveedor.
           </span>
         </div>
 
