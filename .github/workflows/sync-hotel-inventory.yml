@@ -1,0 +1,57 @@
+name: Sync Hotel Inventory
+
+on:
+  schedule:
+    # 03:30 UTC todos los días (30 min después del sync de aeropuertos).
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync Despegar inventory → Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+    steps:
+      - name: Setup SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run sync container
+        run: |
+          ssh -p "$SSH_PORT" "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" bash -s <<'BASH'
+            set -euo pipefail
+            cd /opt/sales-travel
+            set -a; source .env; set +a
+
+            if [ -z "${DESPEGAR_API_KEY:-}" ]; then
+              echo "DESPEGAR_API_KEY no configurado en .env — se omite el sync."
+              exit 0
+            fi
+
+            docker pull ghcr.io/nipko/sales-travel-sync-hotel-inventory:latest
+
+            # 2 redes: internal (Postgres) + edge (Internet, fetch Despegar).
+            CID=$(docker create --network sales-travel_internal \
+              -e PGHOST=postgres \
+              -e PGPORT=5432 \
+              -e PGUSER=postgres \
+              -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" \
+              -e PGDATABASE=sales_travel \
+              -e DESPEGAR_API_KEY="${DESPEGAR_API_KEY}" \
+              -e DESPEGAR_BASE_URL="${DESPEGAR_BASE_URL:-https://api-dev.despegar.com/v3}" \
+              ghcr.io/nipko/sales-travel-sync-hotel-inventory:latest)
+
+            docker network connect sales-travel_edge "$CID"
+            docker start -a "$CID"
+            EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}')
+            docker rm "$CID" >/dev/null
+            exit "$EXIT"
+          BASH

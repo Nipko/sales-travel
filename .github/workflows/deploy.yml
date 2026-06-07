@@ -40,6 +40,7 @@ jobs:
           - { name: migrate, dockerfile: tools/db-migrate/Dockerfile }
           - { name: seed-superadmin, dockerfile: tools/seed-superadmin/Dockerfile }
           - { name: sync-airports, dockerfile: tools/sync-airports/Dockerfile }
+          - { name: sync-hotel-inventory, dockerfile: tools/sync-hotel-inventory/Dockerfile }
     steps:
       - uses: actions/checkout@v4
 
@@ -133,6 +134,12 @@ jobs:
           LATAM_TRAVEL_AGENT_ID=${{ secrets.LATAM_TRAVEL_AGENT_ID || vars.LATAM_TRAVEL_AGENT_ID }}
           LATAM_COUNTRY=${{ vars.LATAM_COUNTRY || secrets.LATAM_COUNTRY }}
           LATAM_FORCE_MOCK=${{ vars.LATAM_FORCE_MOCK || 'false' }}
+          DESPEGAR_API_KEY=${{ secrets.DESPEGAR_API_KEY || vars.DESPEGAR_API_KEY }}
+          DESPEGAR_BASE_URL=${{ vars.DESPEGAR_BASE_URL || 'https://api-dev.despegar.com/v3' }}
+          DESPEGAR_LANGUAGE=${{ vars.DESPEGAR_LANGUAGE || 'ES' }}
+          DESPEGAR_COUNTRY=${{ vars.DESPEGAR_COUNTRY }}
+          DESPEGAR_CURRENCY=${{ vars.DESPEGAR_CURRENCY }}
+          DESPEGAR_LOCALE=${{ vars.DESPEGAR_LOCALE }}
           APP_WEB_URL=${{ vars.APP_WEB_URL || 'https://app.planetour.cloud' }}
           MAIL_HOST=${{ vars.MAIL_HOST || secrets.MAIL_HOST }}
           MAIL_PORT=${{ vars.MAIL_PORT || '587' }}

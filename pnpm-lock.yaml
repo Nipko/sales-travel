@@ -319,6 +319,22 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  tools/sync-hotel-inventory:
+    dependencies:
+      pg:
+        specifier: ^8.13.1
+        version: 8.20.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
 packages:
 
   '@alloc/quick-lru@5.2.0':
