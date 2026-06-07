@@ -20,6 +20,7 @@ import type {
   OrderStatus,
 } from '../database/database.types.js';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
+import { PostSaleQueueService } from '../queue/post-sale-queue.service.js';
 
 export interface OrderOperationRow {
   id: string;
@@ -64,6 +65,7 @@ export class OrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly latam: LatamNdcProviderFactory,
+    private readonly queue: PostSaleQueueService,
   ) {}
 
   async createOrder(
@@ -147,7 +149,12 @@ export class OrdersService {
     return adapter.retrieveOrder(pnr, { tenantId });
   }
 
-  async cancelOrder(
+  /**
+   * Ejecuta la cancelación (void) contra el proveedor y registra la operación. LANZA sólo en fallo
+   * TRANSITORIO (el proveedor lanzó: red/timeout/5xx) — un rechazo de negocio devuelve `success:false`
+   * sin lanzar. No encola reintentos (lo decide el caller). Usado por la API y por el worker.
+   */
+  private async runCancel(
     tenantId: string,
     id: string,
     pnr: string,
@@ -191,6 +198,33 @@ export class OrdersService {
     }
 
     return { result };
+  }
+
+  /**
+   * Cancelación desde la API: intenta una vez; si falla por causa transitoria (excepción), encola un
+   * reintento automático (BullMQ) y re-lanza el error al usuario. Los rechazos de negocio no reintentan.
+   */
+  async cancelOrder(
+    tenantId: string,
+    id: string,
+    pnr: string,
+    actorUserId?: string,
+  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    try {
+      return await this.runCancel(tenantId, id, pnr, actorUserId);
+    } catch (err) {
+      await this.queue.enqueueCancelRetry({ tenantId, orderId: id, type: 'cancel' });
+      throw err;
+    }
+  }
+
+  /** Reintento desde el worker: re-ejecuta la cancelación con el PNR de la orden. Propaga el error
+   *  transitorio para que BullMQ reintente; un rechazo de negocio termina el job sin reintentar. */
+  async runCancelById(tenantId: string, orderId: string): Promise<void> {
+    const order = await this.findById(tenantId, orderId);
+    if (!order?.provider_order_id) return;
+    if (order.status === 'cancelled') return;
+    await this.runCancel(tenantId, orderId, order.provider_order_id);
   }
 
   async listServices(tenantId: string, row: OrderRow): Promise<ServiceListResult> {

@@ -119,6 +119,10 @@ services:
       MAIL_PASS: ${MAIL_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PlaneTour}
+      # Cola de reintentos de post-venta (BullMQ). Sin esto, el worker no arranca (reintento manual).
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [edge, internal]
     depends_on:
       migrate:

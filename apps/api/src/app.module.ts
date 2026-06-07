@@ -20,6 +20,7 @@ import { NetworkModule } from './network/network.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
 import { MailerModule } from './mail/mailer.module.js';
+import { QueueModule } from './queue/queue.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { MailerModule } from './mail/mailer.module.js';
     NetworkModule,
     PricingModule,
     MailerModule,
+    QueueModule,
   ],
   controllers: [HealthController],
   providers: [
