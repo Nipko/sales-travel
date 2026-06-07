@@ -21,6 +21,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
 import { MailerModule } from './mail/mailer.module.js';
 import { QueueModule } from './queue/queue.module.js';
+import { HotelsModule } from './hotels/hotels.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { QueueModule } from './queue/queue.module.js';
     PricingModule,
     MailerModule,
     QueueModule,
+    HotelsModule,
   ],
   controllers: [HealthController],
   providers: [

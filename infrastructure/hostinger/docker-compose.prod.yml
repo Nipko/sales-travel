@@ -109,6 +109,13 @@ services:
       LATAM_TRAVEL_AGENT_ID: ${LATAM_TRAVEL_AGENT_ID:-}
       LATAM_COUNTRY: ${LATAM_COUNTRY:-}
       LATAM_FORCE_MOCK: ${LATAM_FORCE_MOCK:-false}
+      # Despegar/HotelDo Hotels v3 (fallback global; cada agencia puede traer su propia API key BYOC).
+      DESPEGAR_API_KEY: ${DESPEGAR_API_KEY:-}
+      DESPEGAR_BASE_URL: ${DESPEGAR_BASE_URL:-https://api-dev.despegar.com/v3}
+      DESPEGAR_LANGUAGE: ${DESPEGAR_LANGUAGE:-ES}
+      DESPEGAR_COUNTRY: ${DESPEGAR_COUNTRY:-}
+      DESPEGAR_CURRENCY: ${DESPEGAR_CURRENCY:-}
+      DESPEGAR_LOCALE: ${DESPEGAR_LOCALE:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
       # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
       APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}
