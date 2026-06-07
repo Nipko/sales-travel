@@ -17,6 +17,7 @@ RUN pnpm --filter @sales-travel/canonical run build
 RUN pnpm --filter @sales-travel/core run build
 RUN pnpm --filter @sales-travel/domain run build
 RUN pnpm --filter @sales-travel/latam-ndc run build
+RUN pnpm --filter @sales-travel/despegar-hotels run build
 RUN pnpm --filter @sales-travel/api run build
 RUN pnpm --filter @sales-travel/api deploy --prod /out/api
 
