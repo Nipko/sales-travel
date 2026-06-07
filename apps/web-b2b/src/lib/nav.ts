@@ -3,6 +3,7 @@ import {
   Building2,
   Calendar,
   Home,
+  Hotel,
   Network,
   Settings,
   Shield,
@@ -22,6 +23,7 @@ export interface NavItem {
 export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
   { label: 'Buscar / Cotizar', href: '/cotizaciones', icon: Ticket },
+  { label: 'Hoteles', href: '/hoteles', icon: Hotel },
   { label: 'Mis Reservas', href: '/reservas', icon: Calendar },
 ];
 
