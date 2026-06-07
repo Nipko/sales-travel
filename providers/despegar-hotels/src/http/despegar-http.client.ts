@@ -42,10 +42,23 @@ export class DespegarHttpClient {
   }
 
   async post<T>(path: string, body: unknown, query: Record<string, QueryValue> = {}): Promise<T> {
+    return this.send<T>('POST', path, body, query);
+  }
+
+  async patch<T>(path: string, body: unknown, query: Record<string, QueryValue> = {}): Promise<T> {
+    return this.send<T>('PATCH', path, body, query);
+  }
+
+  private async send<T>(
+    method: 'POST' | 'PATCH',
+    path: string,
+    body: unknown,
+    query: Record<string, QueryValue>,
+  ): Promise<T> {
     const url = `${this.cfg.baseUrl}${path}${buildQuery(query)}`;
-    if (this.debug) console.warn(`[despegar] POST ${path}`);
+    if (this.debug) console.warn(`[despegar] ${method} ${path}`);
     const res = await fetch(url, {
-      method: 'POST',
+      method,
       headers: {
         'x-apikey': this.cfg.apiKey,
         accept: 'application/json',

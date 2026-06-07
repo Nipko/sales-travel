@@ -1,4 +1,5 @@
 import { type BoardType, Money } from '@sales-travel/canonical';
+import { num } from '../internal/coerce';
 import type {
   CancellationStatus,
   HotelCancellation,
@@ -55,15 +56,6 @@ interface RawHotelItem {
 }
 interface RawAvailabilityResponse {
   items?: RawHotelItem[];
-}
-
-function num(v: unknown): number {
-  if (typeof v === 'number') return v;
-  if (typeof v === 'string') {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
 }
 
 /** Mapea el meal_plan de Despegar al BoardType canónico (RO/BB/HB/FB/AI). Best-effort por palabra. */

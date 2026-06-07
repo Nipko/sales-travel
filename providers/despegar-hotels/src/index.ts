@@ -1,5 +1,24 @@
 import { buildAvailabilityQuery, buildDetailQuery } from './availability/request.builder';
 import { mapAvailability } from './availability/response.mapper';
+import { buildBookBody } from './booking/book.builder';
+import { mapBookResult } from './booking/book.mapper';
+import { buildCancelBody, mapCancelResult } from './booking/cancel.mapper';
+import { buildPaymentOptionsQuery, mapPaymentOptions } from './booking/payments.mapper';
+import { buildPrebookBody } from './booking/prebook.builder';
+import { mapPrebook } from './booking/prebook.mapper';
+import { buildRecoveryBody, mapRecoveryResult } from './booking/recovery.mapper';
+import type {
+  BookRequest,
+  BookResult,
+  CancelReservationRequest,
+  CancelReservationResult,
+  PaymentModality,
+  PaymentOptionsQuery,
+  PrebookQuery,
+  PrebookResult,
+  RecoveryRequest,
+  RecoveryResult,
+} from './booking/types';
 import type { DespegarHotelsConfig } from './config';
 import { mapHotelDetail } from './detail/response.mapper';
 import { DespegarHttpClient } from './http/despegar-http.client';
@@ -8,6 +27,7 @@ import type { AvailabilityQuery, GeoSuggestion, HotelDetailQuery, HotelOffer } f
 
 export * from './config';
 export * from './types';
+export * from './booking/types';
 export { DespegarApiError } from './http/despegar-http.client';
 export {
   buildAvailabilityQuery,
@@ -17,11 +37,19 @@ export {
 export { mapAvailability, mapMealPlan } from './availability/response.mapper';
 export { mapHotelDetail } from './detail/response.mapper';
 export { mapSuggestions } from './suggestions/response.mapper';
+export { buildPrebookBody } from './booking/prebook.builder';
+export { mapPrebook } from './booking/prebook.mapper';
+export { buildPaymentOptionsQuery, mapPaymentOptions } from './booking/payments.mapper';
+export { buildBookBody } from './booking/book.builder';
+export { mapBookResult } from './booking/book.mapper';
+export { buildCancelBody, mapCancelResult } from './booking/cancel.mapper';
+export { buildRecoveryBody, mapRecoveryResult } from './booking/recovery.mapper';
 
 /**
- * Adapter Despegar Hotels v3 (Anti-Corruption Layer). Expone el flujo de búsqueda en tipos
- * normalizados (suggestions → availability → detail). El flujo de reserva (prebook/payments/book)
- * se suma en el siguiente incremento.
+ * Adapter Despegar Hotels v3 (Anti-Corruption Layer). Expone los flujos en tipos normalizados:
+ *   búsqueda  → suggest / searchAvailability / getHotelDetail
+ *   reserva   → prebook → getPaymentOptions → book → getReservation / cancelReservation / recoverBooking
+ * Los DTOs de Despegar se convierten a canónico aquí; nunca se filtran al dominio.
  */
 export class DespegarHotelsAdapter {
   private readonly http: DespegarHttpClient;
@@ -29,6 +57,8 @@ export class DespegarHotelsAdapter {
   constructor(private readonly cfg: DespegarHotelsConfig) {
     this.http = new DespegarHttpClient(cfg);
   }
+
+  // ───────────────────────── Búsqueda ─────────────────────────
 
   /** Autocomplete de destinos/hoteles por texto. */
   async suggest(hint: string, locale?: string): Promise<GeoSuggestion[]> {
@@ -64,5 +94,66 @@ export class DespegarHotelsAdapter {
       }),
     );
     return mapHotelDetail(raw);
+  }
+
+  // ───────────────────────── Reserva ─────────────────────────
+
+  /** Revalida la tarifa del `choice_id` y abre el prebook (con su expiración). 410 → producto vencido. */
+  async prebook(q: PrebookQuery): Promise<PrebookResult> {
+    const raw = await this.http.post<Parameters<typeof mapPrebook>[0]>(
+      '/prebook',
+      buildPrebookBody({ ...q, lang: q.lang ?? this.defaultLang() }),
+    );
+    return mapPrebook(raw);
+  }
+
+  /** Cotiza el prebook y devuelve modalidades/medios de pago (incluye el plan_id para el book). */
+  async getPaymentOptions(q: PaymentOptionsQuery): Promise<PaymentModality[]> {
+    const raw = await this.http.get<Parameters<typeof mapPaymentOptions>[0]>(
+      '/payments',
+      buildPaymentOptionsQuery(q),
+    );
+    return mapPaymentOptions(raw);
+  }
+
+  /** Confirma y emite la reserva. El status puede llegar como SUCCESS/PROCESSING/ERROR con HTTP 200. */
+  async book(req: BookRequest): Promise<BookResult> {
+    const raw = await this.http.post<Parameters<typeof mapBookResult>[0]>(
+      '/book',
+      buildBookBody(req),
+      req.testCase ? { test_case: req.testCase } : {},
+    );
+    return mapBookResult(raw);
+  }
+
+  /** Estado de una reserva por id (o por external_booking_reference). */
+  async getReservation(reservationId: string): Promise<BookResult> {
+    const raw = await this.http.get<Parameters<typeof mapBookResult>[0]>(
+      `/book/${encodeURIComponent(reservationId)}`,
+    );
+    return mapBookResult(raw);
+  }
+
+  /** Cancela una reserva (irreversible). */
+  async cancelReservation(req: CancelReservationRequest): Promise<CancelReservationResult> {
+    const raw = await this.http.post<Parameters<typeof mapCancelResult>[0]>(
+      `/reservations/${encodeURIComponent(req.reservationId)}/cancels`,
+      buildCancelBody(req.reason),
+    );
+    return mapCancelResult(raw);
+  }
+
+  /** Confirma/rechaza un price-jump cuando el book quedó en PROCESSING. */
+  async recoverBooking(req: RecoveryRequest): Promise<RecoveryResult> {
+    const raw = await this.http.patch<Parameters<typeof mapRecoveryResult>[0]>(
+      `/book/${encodeURIComponent(req.reservationId)}/recovery`,
+      buildRecoveryBody(req),
+      req.testCase ? { test_case: req.testCase } : {},
+    );
+    return mapRecoveryResult(raw);
+  }
+
+  private defaultLang(): 'es' | 'en' | 'pt' | undefined {
+    return this.cfg.language ? (this.cfg.language.toLowerCase() as 'es' | 'en' | 'pt') : undefined;
   }
 }
