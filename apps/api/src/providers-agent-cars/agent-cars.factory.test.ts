@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
-import { AgentCarsAdapter, type AgentCarsConfig } from '@sales-travel/agent-cars';
+import type { AgentCarsAdapter } from '@sales-travel/agent-cars';
+import { type AgentCarsConfig } from '@sales-travel/agent-cars';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type {
   ProviderCredentialsService,

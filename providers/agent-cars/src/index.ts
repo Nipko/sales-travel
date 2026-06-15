@@ -77,10 +77,11 @@ export class AgentCarsAdapter {
   // ─────────────────────── Búsqueda de ubicaciones ───────────────────────
 
   async suggest(q: SuggestQuery): Promise<CarLocation[]> {
-    const raw = await this.http.get<any[]>(AGENT_CARS_SUGGEST_URL, '', {
-      query: q.query,
-      ...(q.lang && { lang: q.lang }),
-    });
+    const raw = await this.http.get<Parameters<typeof mapSuggestResults>[0]>(
+      AGENT_CARS_SUGGEST_URL,
+      '',
+      { query: q.query, ...(q.lang && { lang: q.lang }) },
+    );
     return mapSuggestResults(raw);
   }
 
@@ -94,14 +95,18 @@ export class AgentCarsAdapter {
     if (q.cityCode) params['cityCode'] = q.cityCode;
     if (q.companyCode) params['companyCode'] = q.companyCode;
 
-    const raw = await this.http.get<any[]>(this.cfg.baseUrl, '/find-offices', params);
+    const raw = await this.http.get<Parameters<typeof mapOffices>[0]>(
+      this.cfg.baseUrl,
+      '/find-offices',
+      params,
+    );
     return mapOffices(raw);
   }
 
   // ─────────────────────── Tarifas ───────────────────────
 
   async getRates(q: RatesQuery): Promise<RateType[]> {
-    const raw = await this.http.get<any[]>(this.cfg.baseUrl, '/rates', {
+    const raw = await this.http.get<Parameters<typeof mapRates>[0]>(this.cfg.baseUrl, '/rates', {
       country: q.country,
       source: q.source ?? this.cfg.sourceCountry,
       ...(q.language && { language: q.language }),
@@ -112,7 +117,7 @@ export class AgentCarsAdapter {
   // ─────────────────────── Búsqueda de autos ───────────────────────
 
   async getMatrix(q: CarSearchQuery): Promise<CarOffer[]> {
-    const raw = await this.http.get<any[]>(
+    const raw = await this.http.get<Parameters<typeof mapMatrixOffers>[0]>(
       this.cfg.baseUrl,
       '/get-matrix',
       buildMatrixParams({ ...q, source: q.source ?? this.cfg.sourceCountry }),
@@ -187,7 +192,11 @@ export class AgentCarsAdapter {
     const params: Record<string, string | undefined> = {};
     if (q?.date) params['date'] = q.date;
     if (q?.language) params['language'] = q.language;
-    const raw = await this.http.get<any[]>(this.cfg.baseUrl, '/get-daily-report', params);
+    const raw = await this.http.get<Parameters<typeof mapDailyReport>[0]>(
+      this.cfg.baseUrl,
+      '/get-daily-report',
+      params,
+    );
     return mapDailyReport(raw);
   }
 }
