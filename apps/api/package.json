@@ -18,6 +18,7 @@
     "@nestjs/throttler": "^6.4.0",
     "@sales-travel/canonical": "workspace:*",
     "@sales-travel/core": "workspace:*",
+    "@sales-travel/agent-cars": "workspace:*",
     "@sales-travel/despegar-hotels": "workspace:*",
     "@sales-travel/domain": "workspace:*",
     "@sales-travel/latam-ndc": "workspace:*",

@@ -1,0 +1,735 @@
+{
+	"info": {
+		"_postman_id": "d58a2da1-5c58-4a6d-9b70-c777e9c3468d",
+		"name": "Agentcars API v2",
+		"description": "Postman collection for Agentcars API V2, for full documentation please see [https://api.dev.agentcars.com/](https://api.dev.agentcars.com/)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "3403370"
+	},
+	"item": [
+		{
+			"name": "FindOffices",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": []
+				},
+				"url": {
+					"raw": "{{api_url}}/v2/sites/find-offices?distance=2&lat=45.463689&lng=9.188370&access-token={{access-token}}&source={{source}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"find-offices"
+					],
+					"query": [
+						{
+							"key": "distance",
+							"value": "2"
+						},
+						{
+							"key": "lat",
+							"value": "45.463689"
+						},
+						{
+							"key": "lng",
+							"value": "9.188370"
+						},
+						{
+							"key": "cityCode",
+							"value": "MIA",
+							"disabled": true
+						},
+						{
+							"key": "companyCode",
+							"value": "ZR",
+							"disabled": true
+						},
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						},
+						{
+							"key": "source",
+							"value": "{{source}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Rates",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_url}}/v2/sites/rates?access-token={{access-token}}&source={{source}}&country={{country}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"rates"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						},
+						{
+							"key": "source",
+							"value": "{{source}}"
+						},
+						{
+							"key": "country",
+							"value": "{{country}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetMatrix Airport Location",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_url}}/v2/sites/get-matrix?access-token={{access-token}}&pickUpLocation={{pickUpLocation}}&dropOffLocation={{dropOffLocation}}&pickUpDate={{pickUpDate}}&dropOffDate={{dropOffDate}}&pickUpHour={{pickUpHour}}&dropOffHour={{dropOffHour}}&rateType={{rateType}}&country={{country}}&source={{source}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"get-matrix"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						},
+						{
+							"key": "pickUpLocation",
+							"value": "{{pickUpLocation}}"
+						},
+						{
+							"key": "dropOffLocation",
+							"value": "{{dropOffLocation}}"
+						},
+						{
+							"key": "pickUpDate",
+							"value": "{{pickUpDate}}"
+						},
+						{
+							"key": "dropOffDate",
+							"value": "{{dropOffDate}}"
+						},
+						{
+							"key": "pickUpHour",
+							"value": "{{pickUpHour}}"
+						},
+						{
+							"key": "dropOffHour",
+							"value": "{{dropOffHour}}"
+						},
+						{
+							"key": "rateType",
+							"value": "{{rateType}}"
+						},
+						{
+							"key": "country",
+							"value": "{{country}}"
+						},
+						{
+							"key": "source",
+							"value": "{{source}}"
+						},
+						{
+							"key": "pcCode",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "cdCode",
+							"value": null,
+							"disabled": true
+						},
+						{
+							"key": "coupon",
+							"value": null,
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetMatrix City Location",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_url}}/v2/sites/get-matrix?access-token={{access-token}}&pickUpDate={{pickUpDate}}&dropOffDate={{dropOffDate}}&pickUpHour={{pickUpHour}}&dropOffHour={{dropOffHour}}&rateType={{rateType}}&country={{country}}&source={{source}}&pickUpLocation={{pickUpLocationCity}}&dropOffLocation={{dropOffLocationCity}}&companyCode={{companyCode}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"get-matrix"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						},
+						{
+							"key": "pickUpDate",
+							"value": "{{pickUpDate}}"
+						},
+						{
+							"key": "dropOffDate",
+							"value": "{{dropOffDate}}"
+						},
+						{
+							"key": "pickUpHour",
+							"value": "{{pickUpHour}}"
+						},
+						{
+							"key": "dropOffHour",
+							"value": "{{dropOffHour}}"
+						},
+						{
+							"key": "rateType",
+							"value": "{{rateType}}"
+						},
+						{
+							"key": "country",
+							"value": "{{country}}"
+						},
+						{
+							"key": "source",
+							"value": "{{source}}"
+						},
+						{
+							"key": "pcCode",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "cdCode",
+							"value": null,
+							"disabled": true
+						},
+						{
+							"key": "coupon",
+							"value": null,
+							"disabled": true
+						},
+						{
+							"key": "pickUpLocation",
+							"value": "{{pickUpLocationCity}}"
+						},
+						{
+							"key": "dropOffLocation",
+							"value": "{{dropOffLocationCity}}"
+						},
+						{
+							"key": "companyCode",
+							"value": "{{companyCode}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetSelection",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_url}}/v2/sites/get-selection?access-token={{access-token}}&pickUpLocation={{pickUpLocation}}&dropOffLocation={{dropOffLocation}}&pickUpDate={{pickUpDate}}&dropOffDate={{dropOffDate}}&pickUpHour={{pickUpHour}}&dropOffHour={{dropOffHour}}&rateType={{rateType}}&country={{country}}&source={{source}}&companyCode={{companyCode}}&sippCode={{sippCode}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"get-selection"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						},
+						{
+							"key": "pickUpLocation",
+							"value": "{{pickUpLocation}}"
+						},
+						{
+							"key": "dropOffLocation",
+							"value": "{{dropOffLocation}}"
+						},
+						{
+							"key": "pickUpDate",
+							"value": "{{pickUpDate}}"
+						},
+						{
+							"key": "dropOffDate",
+							"value": "{{dropOffDate}}"
+						},
+						{
+							"key": "pickUpHour",
+							"value": "{{pickUpHour}}"
+						},
+						{
+							"key": "dropOffHour",
+							"value": "{{dropOffHour}}"
+						},
+						{
+							"key": "rateType",
+							"value": "{{rateType}}"
+						},
+						{
+							"key": "country",
+							"value": "{{country}}"
+						},
+						{
+							"key": "source",
+							"value": "{{source}}"
+						},
+						{
+							"key": "cdCode",
+							"value": "NA",
+							"disabled": true
+						},
+						{
+							"key": "pcCode",
+							"value": "NA",
+							"disabled": true
+						},
+						{
+							"key": "tp",
+							"value": "1",
+							"disabled": true
+						},
+						{
+							"key": "coupon",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "companyCode",
+							"value": "{{companyCode}}"
+						},
+						{
+							"key": "sippCode",
+							"value": "{{sippCode}}"
+						},
+						{
+							"key": "ccrc",
+							"value": "ZEZDRFSD",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetRateInformation",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_url}}/v2/sites/get-rate-information?access-token={{access_token}}&paymentType=ppd&rateType=3&uniqid=59a5a4ddd3372",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"get-rate-information"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access_token}}"
+						},
+						{
+							"key": "paymentType",
+							"value": "ppd"
+						},
+						{
+							"key": "rateType",
+							"value": "3"
+						},
+						{
+							"key": "uniqid",
+							"value": "59a5a4ddd3372"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Cancel",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "lastName",
+							"value": "Test",
+							"type": "text"
+						},
+						{
+							"key": "confirmationCode",
+							"value": "H4082038290",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{api_url}}/v2/sites/cancel?access-token={{access-token}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"cancel"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Confirmation",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "companyCode",
+							"value": "ZR",
+							"type": "text"
+						},
+						{
+							"key": "sippCode",
+							"value": "ECAR",
+							"type": "text"
+						},
+						{
+							"key": "pickUpLocation",
+							"value": "MIA",
+							"type": "text"
+						},
+						{
+							"key": "dropOffLocation",
+							"value": "MIA",
+							"type": "text"
+						},
+						{
+							"key": "pickUpDate",
+							"value": "2017-12-30",
+							"type": "text"
+						},
+						{
+							"key": "dropOffDate",
+							"value": "2018-01-05",
+							"type": "text"
+						},
+						{
+							"key": "pickUpHour",
+							"value": "1200",
+							"type": "text"
+						},
+						{
+							"key": "dropOffHour",
+							"value": "1200",
+							"type": "text"
+						},
+						{
+							"key": "pickUpAddress",
+							"value": "NA",
+							"type": "text"
+						},
+						{
+							"key": "dropOffAddress",
+							"value": "NA",
+							"type": "text"
+						},
+						{
+							"key": "firstName",
+							"value": "Api",
+							"type": "text"
+						},
+						{
+							"key": "lastName",
+							"value": "Test",
+							"type": "text"
+						},
+						{
+							"key": "age",
+							"value": "27",
+							"type": "text"
+						},
+						{
+							"key": "email",
+							"value": "developer2@agentcars.com",
+							"type": "text"
+						},
+						{
+							"key": "rateType",
+							"value": "3",
+							"type": "text"
+						},
+						{
+							"key": "realBase",
+							"value": "554.00",
+							"type": "text"
+						},
+						{
+							"key": "realTax",
+							"value": "0",
+							"type": "text"
+						},
+						{
+							"key": "total",
+							"value": "531.84",
+							"type": "text"
+						},
+						{
+							"key": "paymentType",
+							"value": "ppd",
+							"type": "text"
+						},
+						{
+							"key": "currency",
+							"value": "USD",
+							"type": "text"
+						},
+						{
+							"key": "uniqid",
+							"value": "59a5a4ddd3372",
+							"type": "text"
+						},
+						{
+							"key": "ccrc",
+							"value": "QUw=",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{api_url}}/v2/sites/confirmation?access-token={{access-token}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"confirmation"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "MyReservation",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "lastName",
+							"value": "Test",
+							"type": "text"
+						},
+						{
+							"key": "confirmationCode",
+							"value": "H4082038290",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{api_url}}/v2/sites/my-reservation?access-token={{access-token}}",
+					"host": [
+						"{{api_url}}"
+					],
+					"path": [
+						"v2",
+						"sites",
+						"my-reservation"
+					],
+					"query": [
+						{
+							"key": "access-token",
+							"value": "{{access-token}}"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// check preconditions",
+					"pm.environment.get(\"variable_key\");",
+					"if (!pm.variables.get('access-token')) {",
+					"    postman.setNextRequest(null);",
+					"    console.log('The access-token environment variables have not been set');",
+					"    // this method is not defined, so will give a clear error to user",
+					"    token_variables();",
+					"}",
+					"",
+					"pm.collectionVariables.set(\"pickUpDate\", getIsoDate(30));",
+					"pm.collectionVariables.set(\"dropOffDate\", getIsoDate(32));",
+					"",
+					"function getIsoTime(days_from_today) {",
+					"    var MS_PER_DAY = 24 * 60 * 60 * 1000;",
+					"    var date = new Date(new Date().getTime() + days_from_today * MS_PER_DAY);",
+					"    return date.toISOString();",
+					"}",
+					"",
+					"function getIsoDate(days_from_today) {",
+					"    var date = new Date(getIsoTime(days_from_today))",
+					"    return date.getFullYear() + '-' + pad(date.getMonth()+1) + '-' + pad(date.getDate());",
+					"}",
+					"",
+					"function pad(number) {",
+					"    var r = String(number);",
+					"    if ( r.length === 1 ) {",
+					"        r = '0' + r;",
+					"    }",
+					"    return r;",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "api_url",
+			"value": "https://api.agentcars.com",
+			"type": "string"
+		},
+		{
+			"key": "access-token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "pickUpLocation",
+			"value": "MIA",
+			"type": "string"
+		},
+		{
+			"key": "dropOffLocation",
+			"value": "MIA",
+			"type": "string"
+		},
+		{
+			"key": "pickUpHour",
+			"value": "1000",
+			"type": "string"
+		},
+		{
+			"key": "dropOffHour",
+			"value": "1000",
+			"type": "string"
+		},
+		{
+			"key": "rateType",
+			"value": "best",
+			"type": "string"
+		},
+		{
+			"key": "country",
+			"value": "US",
+			"type": "string"
+		},
+		{
+			"key": "source",
+			"value": "AR",
+			"type": "string"
+		},
+		{
+			"key": "pickUpDate",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "dropOffDate",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "companyCode",
+			"value": "ZI",
+			"type": "string"
+		},
+		{
+			"key": "sippCode",
+			"value": "ECAR",
+			"type": "string"
+		},
+		{
+			"key": "pickUpLocationCity",
+			"value": "MIAC04",
+			"type": "string"
+		},
+		{
+			"key": "dropOffLocationCity",
+			"value": "MIAC04",
+			"type": "string"
+		}
+	]
+}

@@ -99,3 +99,6 @@ tmp/
 .DS_Store
 *.tgz
 .history/
+
+# Snapshots crudos de docs de proveedores (fuente pesada; el contenido destilado va en .md)
+*.mhtml
