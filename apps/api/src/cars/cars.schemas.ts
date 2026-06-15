@@ -130,9 +130,7 @@ export const ConfirmInputSchema = z.object({
   flightNumber: z.string().min(1).optional(),
   membershipNumber: z.string().min(1).optional(),
   language: z.string().min(2).max(5).optional(),
-  frequentFlyer: z
-    .object({ number: z.string().min(1), carrier: z.string().min(1) })
-    .optional(),
+  frequentFlyer: z.object({ number: z.string().min(1), carrier: z.string().min(1) }).optional(),
   extras: z
     .object({
       childBoosterSeat: z.boolean().optional(),

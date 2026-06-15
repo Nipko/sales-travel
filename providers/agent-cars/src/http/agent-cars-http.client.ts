@@ -25,7 +25,12 @@ export class AgentCarsHttpClient {
     return this.parse<T>(res, path);
   }
 
-  async postForm<T>(baseUrl: string, path: string, body: Record<string, QueryValue>, query: Record<string, QueryValue> = {}): Promise<T> {
+  async postForm<T>(
+    baseUrl: string,
+    path: string,
+    body: Record<string, QueryValue>,
+    query: Record<string, QueryValue> = {},
+  ): Promise<T> {
     const url = this.buildUrl(baseUrl, path, { 'access-token': this.cfg.accessToken, ...query });
     const form = new FormData();
     for (const [k, v] of Object.entries(body)) {

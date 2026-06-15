@@ -59,8 +59,14 @@ export class AgentCarsProviderFactory {
   ): AgentCarsConfig {
     return {
       accessToken: str(credentials['accessToken']) ?? process.env['AGENT_CARS_ACCESS_TOKEN'] ?? '',
-      baseUrl: str(config['baseUrl']) ?? process.env['AGENT_CARS_BASE_URL'] ?? AGENT_CARS_BASE_URLS.development,
-      suggestUrl: str(config['suggestUrl']) ?? process.env['AGENT_CARS_SUGGEST_URL'] ?? AGENT_CARS_SUGGEST_URL,
+      baseUrl:
+        str(config['baseUrl']) ??
+        process.env['AGENT_CARS_BASE_URL'] ??
+        AGENT_CARS_BASE_URLS.development,
+      suggestUrl:
+        str(config['suggestUrl']) ??
+        process.env['AGENT_CARS_SUGGEST_URL'] ??
+        AGENT_CARS_SUGGEST_URL,
       sourceCountry: str(config['sourceCountry']) ?? process.env['AGENT_CARS_SOURCE'] ?? '',
       ...(str(config['language']) && { language: str(config['language']) }),
     };

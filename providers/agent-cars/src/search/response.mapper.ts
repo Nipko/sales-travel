@@ -56,9 +56,10 @@ function mapCarOffer(r: RawCarOffer): CarOffer {
     kmIncluded: str(r.km_included),
     base: Money.fromMajor(num(r.baseAprox), currency),
     tax: Money.fromMajor(num(r.taxAprox), currency),
-    ...(convertedCurrency && r.convertedRateAmount !== undefined && {
-      convertedRateAmount: Money.fromMajor(num(r.convertedRateAmount), convertedCurrency),
-    }),
+    ...(convertedCurrency &&
+      r.convertedRateAmount !== undefined && {
+        convertedRateAmount: Money.fromMajor(num(r.convertedRateAmount), convertedCurrency),
+      }),
     ...(r.ccrc && { ccrc: str(r.ccrc) }),
   };
 }

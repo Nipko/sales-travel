@@ -144,7 +144,11 @@ describe('FindOfficesQuerySchema', () => {
   });
 
   it('acepta companyCode opcional', () => {
-    const parsed = FindOfficesQuerySchema.parse({ distance: 25, cityCode: 'MIA', companyCode: 'ZI' });
+    const parsed = FindOfficesQuerySchema.parse({
+      distance: 25,
+      cityCode: 'MIA',
+      companyCode: 'ZI',
+    });
     expect(parsed.companyCode).toBe('ZI');
   });
 });
@@ -234,9 +238,9 @@ describe('CarSearchInputSchema', () => {
   });
 
   it('rechaza dropOffDate con formato inválido', () => {
-    expect(CarSearchInputSchema.safeParse({ ...validSearch, dropOffDate: '07-01-2026' }).success).toBe(
-      false,
-    );
+    expect(
+      CarSearchInputSchema.safeParse({ ...validSearch, dropOffDate: '07-01-2026' }).success,
+    ).toBe(false);
   });
 
   // Horas HHMM (4 dígitos)
@@ -365,7 +369,8 @@ describe('RateDetailQuerySchema', () => {
 
   it('rechaza paymentType fuera de ppd|pod', () => {
     expect(
-      RateDetailQuerySchema.safeParse({ uniqid: 'abc', paymentType: 'ppd2', rateType: '3' }).success,
+      RateDetailQuerySchema.safeParse({ uniqid: 'abc', paymentType: 'ppd2', rateType: '3' })
+        .success,
     ).toBe(false);
   });
 
@@ -376,9 +381,9 @@ describe('RateDetailQuerySchema', () => {
   });
 
   it('rateType es requerido (sin default aquí)', () => {
-    expect(
-      RateDetailQuerySchema.safeParse({ uniqid: 'abc', paymentType: 'ppd' }).success,
-    ).toBe(false);
+    expect(RateDetailQuerySchema.safeParse({ uniqid: 'abc', paymentType: 'ppd' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -448,7 +453,9 @@ describe('ConfirmInputSchema', () => {
   });
 
   it('acepta paymentType "ppd" y "pod", rechaza otros', () => {
-    expect(ConfirmInputSchema.parse({ ...validConfirm, paymentType: 'pod' }).paymentType).toBe('pod');
+    expect(ConfirmInputSchema.parse({ ...validConfirm, paymentType: 'pod' }).paymentType).toBe(
+      'pod',
+    );
     expect(ConfirmInputSchema.safeParse({ ...validConfirm, paymentType: 'later' }).success).toBe(
       false,
     );
@@ -474,10 +481,12 @@ describe('ConfirmInputSchema', () => {
   });
 
   it('rechaza fechas y horas con formato inválido', () => {
-    expect(ConfirmInputSchema.safeParse({ ...validConfirm, pickUpDate: '01-07-2026' }).success).toBe(
+    expect(
+      ConfirmInputSchema.safeParse({ ...validConfirm, pickUpDate: '01-07-2026' }).success,
+    ).toBe(false);
+    expect(ConfirmInputSchema.safeParse({ ...validConfirm, dropOffHour: '120' }).success).toBe(
       false,
     );
-    expect(ConfirmInputSchema.safeParse({ ...validConfirm, dropOffHour: '120' }).success).toBe(false);
   });
 
   it('acepta frequentFlyer válido', () => {

@@ -77,11 +77,10 @@ export class AgentCarsAdapter {
   // ─────────────────────── Búsqueda de ubicaciones ───────────────────────
 
   async suggest(q: SuggestQuery): Promise<CarLocation[]> {
-    const raw = await this.http.get<any[]>(
-      AGENT_CARS_SUGGEST_URL,
-      '',
-      { query: q.query, ...(q.lang && { lang: q.lang }) },
-    );
+    const raw = await this.http.get<any[]>(AGENT_CARS_SUGGEST_URL, '', {
+      query: q.query,
+      ...(q.lang && { lang: q.lang }),
+    });
     return mapSuggestResults(raw);
   }
 
@@ -168,11 +167,10 @@ export class AgentCarsAdapter {
   }
 
   async cancel(q: CancelQuery): Promise<CancelResult> {
-    const raw = await this.http.postForm<Record<string, unknown>>(
-      this.cfg.baseUrl,
-      '/cancel',
-      { lastName: q.lastName, confirmationCode: q.confirmationCode },
-    );
+    const raw = await this.http.postForm<Record<string, unknown>>(this.cfg.baseUrl, '/cancel', {
+      lastName: q.lastName,
+      confirmationCode: q.confirmationCode,
+    });
     return mapCancelResult(raw);
   }
 

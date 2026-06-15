@@ -26,9 +26,7 @@ function resolved(overrides: Partial<ResolvedProviderAccount> = {}): ResolvedPro
   };
 }
 
-function factoryWith(
-  resolve: ProviderCredentialsService['resolve'],
-): AgentCarsProviderFactory {
+function factoryWith(resolve: ProviderCredentialsService['resolve']): AgentCarsProviderFactory {
   return new AgentCarsProviderFactory({ resolve } as unknown as ProviderCredentialsService);
 }
 
