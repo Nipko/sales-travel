@@ -136,29 +136,32 @@ describe('mapRates', () => {
 // ─────────────────────────── Matrix / Selection ───────────────────────────
 
 describe('mapMatrixOffers', () => {
-  const raw = [
-    {
-      category: 'Economy',
-      sippCode: 'ECMR',
-      companyCode: 'ZE',
-      companyName: 'Hertz',
-      rateAmount: '118.00',
-      payment_option: 'ppd',
-      currency: 'USD',
-      carModel: 'Chevrolet Spark o similar',
-      doors: '4',
-      passengers: '5',
-      bags: '2',
-      trans: 'Automatic',
-      air: '1',
-      km_included: 'Unlimited',
-      baseAprox: '100.00',
-      taxAprox: '18.00',
-      convertedCurrency: 'COP',
-      convertedRateAmount: '470000.00',
-      ccrc: 'token-ccrc-abc',
-    },
-  ];
+  // La respuesta real es un objeto agrupado por categoría, no un array plano.
+  const raw = {
+    Economy: [
+      {
+        category: 'Economy',
+        sippCode: 'ECMR',
+        companyCode: 'ZE',
+        companyName: 'Hertz',
+        rateAmount: '118.00',
+        payment_option: 'ppd',
+        currency: 'USD',
+        carModel: 'Chevrolet Spark o similar',
+        doors: '4',
+        passengers: '5',
+        bags: '2',
+        trans: 'Automatic',
+        air: '1',
+        km_included: 'Unlimited',
+        baseAprox: '100.00',
+        taxAprox: '18.00',
+        convertedCurrency: 'COP',
+        convertedRateAmount: '470000.00',
+        ccrc: 'token-ccrc-abc',
+      },
+    ],
+  };
 
   it('convierte rateAmount/base/tax con Money.fromMajor (118.00 → 11800 USD)', () => {
     const [offer] = mapMatrixOffers(raw);
@@ -189,17 +192,19 @@ describe('mapMatrixOffers', () => {
   });
 
   it('air "0" → false, payment_option desconocido cae a ppd y sin moneda convertida → omite el campo', () => {
-    const [offer] = mapMatrixOffers([
-      {
-        sippCode: 'CDMR',
-        rateAmount: '90.50',
-        payment_option: 'unknown',
-        currency: 'USD',
-        air: '0',
-        baseAprox: '90.50',
-        taxAprox: '0',
-      },
-    ]);
+    const [offer] = mapMatrixOffers({
+      Compact: [
+        {
+          sippCode: 'CDMR',
+          rateAmount: '90.50',
+          payment_option: 'unknown',
+          currency: 'USD',
+          air: '0',
+          baseAprox: '90.50',
+          taxAprox: '0',
+        },
+      ],
+    });
     expect(offer?.air).toBe(false);
     expect(offer?.paymentOption).toBe('ppd');
     expect(offer?.rateAmount).toEqual({ amountMinor: 9050, currency: 'USD' });
@@ -207,68 +212,114 @@ describe('mapMatrixOffers', () => {
     expect(offer).not.toHaveProperty('ccrc');
   });
 
-  it('payment_option "pod" → pod', () => {
-    const [offer] = mapMatrixOffers([
-      { sippCode: 'X', rateAmount: '10', currency: 'USD', payment_option: 'pod', air: true },
-    ]);
-    expect(offer?.paymentOption).toBe('pod');
+  it('aplana múltiples grupos de categoría a un solo array', () => {
+    const offers = mapMatrixOffers({
+      Economy: [{ sippCode: 'A', rateAmount: '10', currency: 'USD', air: true }],
+      Compact: [{ sippCode: 'B', rateAmount: '20', currency: 'USD', air: true }],
+    });
+    expect(offers).toHaveLength(2);
+    expect(offers.map((o) => o.sippCode)).toEqual(['A', 'B']);
   });
 
   it('sin currency → default USD', () => {
-    const [offer] = mapMatrixOffers([{ sippCode: 'X', rateAmount: '10', air: true }]);
+    const [offer] = mapMatrixOffers({ G: [{ sippCode: 'X', rateAmount: '10', air: true }] });
     expect(offer?.rateAmount.currency).toBe('USD');
   });
 
+  it('monto convertido con separador de miles se parsea bien', () => {
+    const [offer] = mapMatrixOffers({
+      G: [
+        {
+          sippCode: 'X',
+          rateAmount: '374.78',
+          currency: 'USD',
+          air: true,
+          convertedCurrency: 'COP',
+          convertedRateAmount: '1,180,729',
+        },
+      ],
+    });
+    expect(offer?.convertedRateAmount).toEqual({ amountMinor: 118072900, currency: 'COP' });
+  });
+
   it('respuesta vacía → []', () => {
-    expect(mapMatrixOffers([])).toEqual([]);
+    expect(mapMatrixOffers({})).toEqual([]);
   });
 });
 
 describe('mapSelection', () => {
-  it('extiende la oferta con el uniqid de sesión', () => {
+  it('lee carInfo[SIPP] y rates[id][ppd] de la respuesta anidada real', () => {
     const selection = mapSelection({
-      sippCode: 'ECMR',
-      companyCode: 'ZE',
-      rateAmount: '118.00',
-      currency: 'USD',
-      payment_option: 'ppd',
-      air: '1',
-      baseAprox: '100.00',
-      taxAprox: '18.00',
       uniqid: 'sess-uniqid-123',
+      carInfo: {
+        MCMR: {
+          sippCode: 'MCMR',
+          doors: '2',
+          passengers: '4',
+          bags: '1',
+          air_conditioner: 'Si',
+          transmission: 'Manual',
+          categoryName: 'Mini',
+          companyCode: 'ZE',
+          companyName: 'HERTZ',
+          carModel: 'A Fiat 500 or similar',
+          km_included: 'Unlimited Km',
+        },
+      },
+      rates: {
+        '7': {
+          ppd: {
+            rateTypeId: '7',
+            currency: 'EUR',
+            baseAprox: '132.96',
+            taxAprox: 0,
+            totalAprox: '132.96',
+            amount: '132.96',
+          },
+        },
+      },
+      currency: 'USD',
     });
     expect(selection.uniqid).toBe('sess-uniqid-123');
-    expect(selection.rateAmount).toEqual({ amountMinor: 11800, currency: 'USD' });
-    expect(selection.paymentOption).toBe('ppd');
+    expect(selection.sippCode).toBe('MCMR');
+    expect(selection.category).toBe('Mini');
+    expect(selection.carModel).toBe('A Fiat 500 or similar');
+    expect(selection.companyName).toBe('HERTZ');
+    expect(selection.trans).toBe('Manual');
     expect(selection.air).toBe(true);
+    expect(selection.paymentOption).toBe('ppd');
+    expect(selection.rateCode).toBe('7');
+    expect(selection.rateAmount).toEqual({ amountMinor: 13296, currency: 'EUR' });
+    expect(selection.base).toEqual({ amountMinor: 13296, currency: 'EUR' });
+    expect(selection.tax).toEqual({ amountMinor: 0, currency: 'EUR' });
   });
 });
 
 // ─────────────────────────── RateDetail ───────────────────────────
 
 describe('mapRateDetail', () => {
-  it('convierte base/tax y los cargos a Money', () => {
+  it('lee los cargos del objeto detail{} y la moneda de realCurrency', () => {
     const detail = mapRateDetail({
-      base: '118.00',
-      tax: '25.50',
-      currency: 'USD',
-      charges: [
-        { code: 'CDW', name: 'Collision Damage Waiver', amount: '15.00' },
-        { code: 'TAX', name: 'Airport Tax', amount: '10.50', currency: 'USD' },
-      ],
+      base: '20.00',
+      tax: '11.92',
+      realCurrency: 'USD',
+      detail: {
+        '1': { amount: '2.30', comment: 'CRF - CONCESSION RECOUP FEE' },
+        '2': { amount: '4.85', comment: 'SCG - RENTAL CAR FACILITY CHG' },
+      },
     });
-    expect(detail.base).toEqual({ amountMinor: 11800, currency: 'USD' });
-    expect(detail.tax).toEqual({ amountMinor: 2550, currency: 'USD' });
+    expect(detail.base).toEqual({ amountMinor: 2000, currency: 'USD' });
+    expect(detail.tax).toEqual({ amountMinor: 1192, currency: 'USD' });
     expect(detail.charges).toHaveLength(2);
     expect(detail.charges[0]).toEqual({
-      code: 'CDW',
-      name: 'Collision Damage Waiver',
-      amount: { amountMinor: 1500, currency: 'USD' },
+      code: '1',
+      name: 'CRF - CONCESSION RECOUP FEE',
+      amount: { amountMinor: 230, currency: 'USD' },
     });
-    expect(detail.charges[1]?.amount).toEqual({ amountMinor: 1050, currency: 'USD' });
+    expect(detail.charges[1]?.amount).toEqual({ amountMinor: 485, currency: 'USD' });
   });
 
-  it('sin charges → arreglo vacío y currency default USD', () => {
+  it('sin detail → arreglo vacío y currency default USD', () => {
     const detail = mapRateDetail({ base: '50', tax: '0' });
     expect(detail.charges).toEqual([]);
     expect(detail.base).toEqual({ amountMinor: 5000, currency: 'USD' });
@@ -279,6 +330,8 @@ describe('mapRateDetail', () => {
 
 describe('mapBookResult', () => {
   it.each([
+    ['Activo', 'confirmed'],
+    ['Active', 'confirmed'],
     ['confirmed', 'confirmed'],
     ['on_hold', 'on_hold'],
     ['on_request', 'on_request'],
@@ -295,9 +348,9 @@ describe('mapBookResult', () => {
     expect(result.rateCode).toBe('RT-9');
   });
 
-  it('status desconocido o ausente → confirmed', () => {
-    expect(mapBookResult({ confirmationCode: 'X', status: 'weird' }).status).toBe('confirmed');
-    expect(mapBookResult({ confirmationCode: 'X' }).status).toBe('confirmed');
+  it('status desconocido o ausente → on_request (default conservador)', () => {
+    expect(mapBookResult({ confirmationCode: 'X', status: 'weird' }).status).toBe('on_request');
+    expect(mapBookResult({ confirmationCode: 'X' }).status).toBe('on_request');
   });
 });
 

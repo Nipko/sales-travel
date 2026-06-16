@@ -135,6 +135,8 @@ export interface CarSelectionQuery extends CarSearchQuery {
 export interface CarSelection extends CarOffer {
   /** ID de sesión. TTL: 15 minutos. */
   uniqid: string;
+  /** ID de la tarifa efectiva (rates[rateId]); usar en get-rate-information y confirmación. */
+  rateCode?: string;
 }
 
 // ─────────────────────────── Detalle de tarifa ───────────────────────────
@@ -161,8 +163,11 @@ export interface CarRateDetail {
 
 // ─────────────────────────── Confirmación / Booking ───────────────────────────
 
-/** Edad del conductor: 1=mayor25, 2=21-24, 3=menor21. */
-export type DriverAgeGroup = 1 | 2 | 3;
+/**
+ * Edad del conductor. El API real (Postman oficial) espera la edad LITERAL (ej: 27, 30), no un
+ * código. Se mantiene el alias por compatibilidad pero el campo en ConfirmCarRequest es `number`.
+ */
+export type DriverAgeGroup = number;
 
 export interface CarExtras {
   childBoosterSeat?: boolean;

@@ -12,27 +12,28 @@ import type {
 import { num, str } from '../internal/coerce.js';
 
 // ──────────── RateInformation ────────────
+// La respuesta real es: { detail: { "1": {amount, comment}, "2": {...} }, base, realBase, total,
+// tax, realTax, realCurrency, ... }. Los cargos viven en `detail` (objeto indexado), la moneda en
+// `realCurrency` (no hay `currency` top-level).
 
 interface RawRateCharge {
-  code?: string;
-  name?: string;
   amount?: number | string;
-  currency?: string;
+  comment?: string;
 }
 
 interface RawRateDetail {
   base?: number | string;
   tax?: number | string;
-  currency?: string;
-  charges?: RawRateCharge[];
+  realCurrency?: string;
+  detail?: Record<string, RawRateCharge>;
 }
 
 export function mapRateDetail(raw: RawRateDetail): CarRateDetail {
-  const currency = str(raw.currency) || 'USD';
-  const charges: RateChargeItem[] = (raw.charges ?? []).map((c) => ({
-    code: str(c.code),
-    name: str(c.name),
-    amount: Money.fromMajor(num(c.amount), str(c.currency) || currency),
+  const currency = str(raw.realCurrency) || 'USD';
+  const charges: RateChargeItem[] = Object.entries(raw.detail ?? {}).map(([code, c]) => ({
+    code,
+    name: str(c.comment),
+    amount: Money.fromMajor(num(c.amount), currency),
   }));
   return {
     base: Money.fromMajor(num(raw.base), currency),
@@ -59,10 +60,16 @@ export function mapBookResult(raw: RawBookResult): CarBookResult {
   };
 }
 
+/**
+ * El status real de AgentCars es un texto display ("Activo"/"Active"), no el token canónico.
+ * Mapea explícitamente; ante un status desconocido/vacío NO asume 'confirmed' (default conservador).
+ */
 function mapBookingStatus(raw: string): BookingStatus {
-  if (raw === 'on_hold') return 'on_hold';
-  if (raw === 'on_request') return 'on_request';
-  return 'confirmed';
+  const s = raw.toLowerCase();
+  if (s.includes('hold')) return 'on_hold';
+  if (s.includes('request')) return 'on_request';
+  if (s.includes('activ') || s.includes('confirm') || s === 'ok') return 'confirmed';
+  return 'on_request';
 }
 
 // ──────────── MyReservation ────────────
@@ -75,7 +82,8 @@ interface RawReservation {
   rateCode?: string;
   status?: string;
   voucherInformation?: Record<string, unknown>;
-  voucherNumber?: string;
+  /** El API lo devuelve numérico (ej: 371853); se normaliza a string. */
+  voucherNumber?: string | number;
 }
 
 export function mapReservation(raw: RawReservation): CarReservation {
@@ -87,7 +95,7 @@ export function mapReservation(raw: RawReservation): CarReservation {
     rateCode: str(raw.rateCode),
     status: str(raw.status),
     voucherInformation: raw.voucherInformation ?? {},
-    ...(raw.voucherNumber && { voucherNumber: str(raw.voucherNumber) }),
+    ...(raw.voucherNumber != null && { voucherNumber: String(raw.voucherNumber) }),
   };
 }
 
