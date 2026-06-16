@@ -67,12 +67,25 @@ export default function OficinasPage() {
 
     const values: FindOfficesValues = { distance: dist };
     if (mode === 'iata') {
-      const code = (cityCode || location?.iata || '').trim();
-      if (!code) {
-        setError('Elegí una ciudad con código IATA o ingresá el código manualmente.');
+      const code = (cityCode || '').trim().toUpperCase();
+      const locIata = (location?.iata ?? '').trim().toUpperCase();
+      const coordsFromPick =
+        location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+          ? { lat: location.latitude, lng: location.longitude }
+          : null;
+      // El índice por cityCode de AgentCars es parcial: muchas ciudades (ej. Bogotá) no
+      // resuelven oficinas por código. Si elegiste la ciudad del autocompletado tenemos sus
+      // coordenadas → buscamos por radio (más confiable). Sólo usamos cityCode si escribiste
+      // un código a mano sin seleccionarlo de la lista.
+      if (coordsFromPick && (code === '' || code === locIata)) {
+        values.lat = coordsFromPick.lat;
+        values.lng = coordsFromPick.lng;
+      } else if (code) {
+        values.cityCode = code;
+      } else {
+        setError('Elegí una ciudad de la lista o ingresá un código IATA.');
         return;
       }
-      values.cityCode = code.toUpperCase();
     } else {
       const latN = Number(lat);
       const lngN = Number(lng);
@@ -134,33 +147,39 @@ export default function OficinasPage() {
                   : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
               )}
             >
-              {m === 'iata' ? 'Por ciudad (IATA)' : 'Por coordenadas'}
+              {m === 'iata' ? 'Por ciudad' : 'Por coordenadas'}
             </button>
           ))}
         </div>
 
         {mode === 'iata' ? (
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <CarLocationCombobox
-              label="Ciudad"
-              value={location}
-              onSelect={onPickLocation}
-              placeholder="Ciudad o código IATA (BOG, MIA)"
-            />
-            <div className="space-y-1.5">
-              <label htmlFor="cityCode" className={labelClass}>
-                Código IATA
-              </label>
-              <input
-                id="cityCode"
-                value={cityCode}
-                onChange={(e) => setCityCode(e.target.value.toUpperCase())}
-                placeholder="BOG"
-                maxLength={4}
-                className={cn(inputClass, 'font-mono uppercase tracking-wider')}
+          <>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <CarLocationCombobox
+                label="Ciudad"
+                value={location}
+                onSelect={onPickLocation}
+                placeholder="Ciudad o código IATA (BOG, MIA)"
               />
+              <div className="space-y-1.5">
+                <label htmlFor="cityCode" className={labelClass}>
+                  Código IATA <span className="text-[var(--color-fg-subtle)]">(opcional)</span>
+                </label>
+                <input
+                  id="cityCode"
+                  value={cityCode}
+                  onChange={(e) => setCityCode(e.target.value.toUpperCase())}
+                  placeholder="BOG"
+                  maxLength={4}
+                  className={cn(inputClass, 'font-mono uppercase tracking-wider')}
+                />
+              </div>
             </div>
-          </div>
+            <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
+              Elegí la ciudad de la lista y buscamos por su ubicación y radio (más preciso). El
+              código IATA es solo un respaldo si lo escribís a mano.
+            </p>
+          </>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
