@@ -9,11 +9,13 @@ import {
   Luggage,
   Search,
   Snowflake,
+  Ticket,
   Users,
 } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { cn } from '../../../lib/cn';
 import { CarLocationCombobox } from './_components/location-combobox';
+import { ReservationPanel } from './_components/reservation-panel';
 import {
   bookCarAction,
   rateDetailAction,
@@ -46,6 +48,17 @@ function todayISO(): string {
 
 function money(m: Money): string {
   return `${(m.amountMinor / 100).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${m.currency}`;
+}
+
+function moneyMinor(minor: number, currency: string): string {
+  return `${(minor / 100).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+/** Precio de venta (neto + markup del consolidador si hay reglas); si no, el neto del proveedor. */
+function salePrice(o: CarOffer): { minor: number; currency: string } {
+  return o.pricing
+    ? { minor: o.pricing.finalMinor, currency: o.pricing.currency }
+    : { minor: o.rateAmount.amountMinor, currency: o.rateAmount.currency };
 }
 
 const AGE_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
@@ -82,6 +95,11 @@ export default function AutosPage() {
     age: 1,
   });
   const [booking, setBooking] = useState<CarBookResult | null>(null);
+  const [manage, setManage] = useState<{
+    lastName?: string;
+    confirmationCode?: string;
+    auto?: boolean;
+  } | null>(null);
 
   function runSearch() {
     setError('');
@@ -170,16 +188,26 @@ export default function AutosPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
-      <header className="flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
-          <Car className="size-5 text-[var(--color-primary)]" />
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
+            <Car className="size-5 text-[var(--color-primary)]" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-[var(--color-fg)]">Autos</h1>
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              Renta de autos vía AgentCars · búsqueda, selección y reserva
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-[var(--color-fg)]">Autos</h1>
-          <p className="text-xs text-[var(--color-fg-muted)]">
-            Renta de autos vía AgentCars · búsqueda, selección y reserva
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setManage({})}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-muted)]"
+        >
+          <Ticket className="size-3.5" />
+          Gestionar reserva
+        </button>
       </header>
 
       <Stepper step={step} />
@@ -443,14 +471,37 @@ export default function AutosPage() {
           <p className="mt-0.5 text-xs text-emerald-700">
             {booking.sippCode} · tarifa {booking.rateCode}
           </p>
-          <button
-            type="button"
-            onClick={reset}
-            className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-sm font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-muted)]"
-          >
-            Nueva búsqueda
-          </button>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setManage({
+                  lastName: driver.lastName,
+                  confirmationCode: booking.confirmationCode,
+                  auto: true,
+                })
+              }
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-5 text-sm font-medium text-[var(--color-primary-fg)] transition-colors hover:bg-[var(--color-primary-hover)]"
+            >
+              <Ticket className="size-4" /> Ver voucher
+            </button>
+            <button
+              type="button"
+              onClick={reset}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-sm font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-muted)]"
+            >
+              Nueva búsqueda
+            </button>
+          </div>
         </div>
+      ) : null}
+
+      {manage ? (
+        <ReservationPanel
+          prefill={manage}
+          autoLookup={manage.auto ?? false}
+          onClose={() => setManage(null)}
+        />
       ) : null}
     </div>
   );
@@ -556,7 +607,21 @@ function CarCard({
 
       <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
         <div className="text-right">
-          <p className="text-base font-semibold text-[var(--color-fg)]">{money(car.rateAmount)}</p>
+          {(() => {
+            const sp = salePrice(car);
+            return (
+              <>
+                <p className="text-base font-semibold text-[var(--color-fg)]">
+                  {moneyMinor(sp.minor, sp.currency)}
+                </p>
+                {car.pricing && car.pricing.totalMarkupMinor > 0 ? (
+                  <p className="text-[10px] text-[var(--color-fg-subtle)]">
+                    neto {moneyMinor(car.pricing.netMinor, car.pricing.currency)}
+                  </p>
+                ) : null}
+              </>
+            );
+          })()}
           <p className="text-[10px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
             {car.paymentOption === 'ppd' ? 'Prepago' : 'En destino'}
           </p>
@@ -606,9 +671,17 @@ function SelectionSummary({
             <dd>{money(c.amount)}</dd>
           </div>
         ))}
+        {selection.pricing && selection.pricing.totalMarkupMinor > 0 ? (
+          <div className="flex justify-between text-emerald-700">
+            <dt>Tu markup</dt>
+            <dd>+{moneyMinor(selection.pricing.totalMarkupMinor, selection.pricing.currency)}</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between border-t border-[var(--color-border)] pt-2 text-sm">
-          <dt className="font-medium text-[var(--color-fg)]">Total</dt>
-          <dd className="font-semibold text-[var(--color-fg)]">{money(selection.rateAmount)}</dd>
+          <dt className="font-medium text-[var(--color-fg)]">Total de venta</dt>
+          <dd className="font-semibold text-[var(--color-fg)]">
+            {moneyMinor(salePrice(selection).minor, salePrice(selection).currency)}
+          </dd>
         </div>
       </dl>
       <p className="mt-3 text-[10px] text-[var(--color-fg-subtle)]">

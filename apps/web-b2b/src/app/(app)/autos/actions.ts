@@ -23,6 +23,23 @@ export interface CarLocation {
 
 export type PaymentType = 'ppd' | 'pod';
 
+export interface WaterfallStep {
+  tenantId: string;
+  tenantName: string;
+  level: number;
+  ruleType: string;
+  addedMinor: number;
+}
+
+/** Pricing waterfall del consolidador: `finalMinor` es el precio de venta (neto + markups). */
+export interface CarPricing {
+  netMinor: number;
+  finalMinor: number;
+  totalMarkupMinor: number;
+  currency: string;
+  breakdown: WaterfallStep[];
+}
+
 export interface CarOffer {
   category: string;
   sippCode: string;
@@ -41,6 +58,7 @@ export interface CarOffer {
   tax: Money;
   convertedRateAmount?: Money;
   ccrc?: string;
+  pricing?: CarPricing;
 }
 
 export interface CarSelection extends CarOffer {
@@ -66,6 +84,24 @@ export interface CarBookResult {
   sippCode: string;
   rateCode: string;
   status: BookingStatus;
+}
+
+export interface CarReservation {
+  confirmationCode: string;
+  firstName: string;
+  lastName: string;
+  sippCode: string;
+  rateCode: string;
+  status: string;
+  /** Debe mostrarse completo al cliente (requisito AgentCars). */
+  voucherInformation: Record<string, unknown>;
+  voucherNumber?: string;
+}
+
+export interface CancelResult {
+  success: boolean;
+  confirmationCode: string;
+  message?: string;
 }
 
 /** Valores comunes de búsqueda, threaded a selección y reserva. */
@@ -262,6 +298,52 @@ export async function bookCarAction(
   const res = await api<CarBookResult>('/cars/book', {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+  if (!res.ok) return { ok: false, error: res.error.message };
+  return { ok: true, result: res.data };
+}
+
+export interface ReservationResult {
+  ok: boolean;
+  reservation?: CarReservation;
+  error?: string;
+}
+
+/** Consulta una reserva por apellido + código (devuelve el voucher completo). */
+export async function getCarReservationAction(
+  lastName: string,
+  confirmationCode: string,
+): Promise<ReservationResult> {
+  const ln = lastName.trim();
+  const code = confirmationCode.trim();
+  if (!ln || !code)
+    return { ok: false, error: 'Apellido y código de confirmación son requeridos.' };
+  const res = await api<CarReservation>('/cars/reservation', {
+    method: 'POST',
+    body: JSON.stringify({ lastName: ln, confirmationCode: code }),
+  });
+  if (!res.ok) return { ok: false, error: res.error.message };
+  return { ok: true, reservation: res.data };
+}
+
+export interface CancelReservationResult {
+  ok: boolean;
+  result?: CancelResult;
+  error?: string;
+}
+
+/** Cancela una reserva por apellido + código. */
+export async function cancelCarReservationAction(
+  lastName: string,
+  confirmationCode: string,
+): Promise<CancelReservationResult> {
+  const ln = lastName.trim();
+  const code = confirmationCode.trim();
+  if (!ln || !code)
+    return { ok: false, error: 'Apellido y código de confirmación son requeridos.' };
+  const res = await api<CancelResult>('/cars/reservations/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ lastName: ln, confirmationCode: code }),
   });
   if (!res.ok) return { ok: false, error: res.error.message };
   return { ok: true, result: res.data };
