@@ -18,10 +18,11 @@ export class AgentCarsHttpClient {
 
   async get<T>(baseUrl: string, path: string, query: Record<string, QueryValue> = {}): Promise<T> {
     const url = this.buildUrl(baseUrl, path, { 'access-token': this.cfg.accessToken, ...query });
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
+    const res = await this.fetchOrThrow(
+      url,
+      { method: 'GET', headers: { Accept: 'application/json' } },
+      path,
+    );
     return this.parse<T>(res, path);
   }
 
@@ -36,11 +37,17 @@ export class AgentCarsHttpClient {
     for (const [k, v] of Object.entries(body)) {
       if (v !== null && v !== undefined) form.append(k, String(v));
     }
-    const res = await fetch(url, {
-      method: 'POST',
-      body: form,
-    });
+    const res = await this.fetchOrThrow(url, { method: 'POST', body: form }, path);
     return this.parse<T>(res, path);
+  }
+
+  /** Envuelve un fallo de red (DNS/timeout/conexión) como AgentCarsApiError(status 0). */
+  private async fetchOrThrow(url: string, init: RequestInit, path: string): Promise<Response> {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      throw new AgentCarsApiError(0, (err as Error).message, path);
+    }
   }
 
   private buildUrl(base: string, path: string, query: Record<string, QueryValue>): string {
@@ -56,6 +63,10 @@ export class AgentCarsHttpClient {
   private async parse<T>(res: Response, path: string): Promise<T> {
     const text = await res.text();
     if (!res.ok) throw new AgentCarsApiError(res.status, text, path);
-    return (text ? JSON.parse(text) : {}) as T;
+    try {
+      return (text ? JSON.parse(text) : {}) as T;
+    } catch {
+      throw new AgentCarsApiError(res.status, `respuesta no-JSON: ${text.slice(0, 200)}`, path);
+    }
   }
 }

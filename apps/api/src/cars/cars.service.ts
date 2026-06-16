@@ -69,9 +69,9 @@ export class CarsService {
 
   async findOffices(tenantId: string, input: FindOfficesInput): Promise<CarOffice[]> {
     const adapter = await this.factory.forTenant(tenantId);
-    // source es opcional: si no llega, el adapter usa el sourceCountry de la cuenta BYOC.
+    const source = await this.resolveSource(tenantId, input.source);
     const q: FindOfficesQuery = { distance: input.distance };
-    if (input.source) q.source = input.source;
+    if (source) q.source = source;
     if (input.lat !== undefined) q.lat = input.lat;
     if (input.lng !== undefined) q.lng = input.lng;
     if (input.cityCode) q.cityCode = input.cityCode;
@@ -81,22 +81,25 @@ export class CarsService {
 
   async getRates(tenantId: string, input: RatesInput): Promise<RateType[]> {
     const adapter = await this.factory.forTenant(tenantId);
+    const source = await this.resolveSource(tenantId, input.source);
     const q: RatesQuery = { country: input.country };
-    if (input.source) q.source = input.source;
+    if (source) q.source = source;
     if (input.language) q.language = input.language;
     return adapter.getRates(q);
   }
 
   async getMatrix(tenantId: string, input: CarSearchInput): Promise<PricedCarOffer[]> {
     const adapter = await this.factory.forTenant(tenantId);
-    const offers = await adapter.getMatrix(this.toSearchQuery(input));
+    const source = await this.resolveSource(tenantId, input.source);
+    const offers = await adapter.getMatrix(this.toSearchQuery(input, source));
     return this.withPricing(offers, tenantId);
   }
 
   async getSelection(tenantId: string, input: CarSelectionInput): Promise<PricedCarSelection> {
     const adapter = await this.factory.forTenant(tenantId);
+    const source = await this.resolveSource(tenantId, input.source);
     const q: CarSelectionQuery = {
-      ...this.toSearchQuery(input),
+      ...this.toSearchQuery(input, source),
       companyCode: input.companyCode,
       sippCode: input.sippCode,
     };
@@ -285,11 +288,26 @@ export class CarsService {
   }
 
   /**
-   * Arma el CarSearchQuery canónico. `country` (destino) es requerido por el schema. `source`
-   * (origen) es opcional: si el cliente no lo envía, el adapter usa el sourceCountry de la cuenta
-   * BYOC del tenant. La validación de coordenadas para búsqueda por ciudad ya la hizo el schema.
+   * Resuelve el país de origen (source) que AgentCars EXIGE en matrix/selection/rates:
+   *   source explícito del request → país del tenant (country_code) → (el adapter cae a cfg.sourceCountry).
+   * AgentCars rechaza con HTTP 412 "Source Country cannot be blank" si queda vacío, así que el
+   * país del tenant (cargado al crear la agencia) sirve de fallback robusto sin depender del env.
    */
-  private toSearchQuery(input: CarSearchInput): CarSearchQuery {
+  private async resolveSource(tenantId: string, explicit?: string): Promise<string | undefined> {
+    if (explicit) return explicit;
+    const t = await this.db.db
+      .selectFrom('tenants')
+      .select(['country_code'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    return t?.country_code ?? undefined;
+  }
+
+  /**
+   * Arma el CarSearchQuery canónico. `country` (destino) lo exige el schema; `source` (origen) ya
+   * viene resuelto por resolveSource(). La validación de coordenadas para ciudad la hizo el schema.
+   */
+  private toSearchQuery(input: CarSearchInput, source?: string): CarSearchQuery {
     const q: CarSearchQuery = {
       pickUpLocation: input.pickUpLocation,
       dropOffLocation: input.dropOffLocation,
@@ -300,7 +318,7 @@ export class CarsService {
       rateType: input.rateType,
       country: input.country,
     };
-    if (input.source) q.source = input.source;
+    if (source) q.source = source;
     if (input.paymentType) q.paymentType = input.paymentType;
     if (input.companyCode) q.companyCode = input.companyCode;
     if (input.cdCode) q.cdCode = input.cdCode;
