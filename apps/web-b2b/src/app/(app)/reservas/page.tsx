@@ -11,13 +11,16 @@ import {
   Plane,
   RefreshCw,
   Search,
+  Ticket,
   X,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
 import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
+import { getCarReservationAction } from '../autos/actions';
+import { VoucherDetails } from '../autos/_components/voucher-details';
 
 interface Segment {
   carrier: string;
@@ -195,6 +198,41 @@ export default function ReservasPage() {
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<Order | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Búsqueda + filtros (organización de la lista).
+  const [query, setQuery] = useState('');
+  const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
+  const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'cars'>('all');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return orders.filter((o) => {
+      const car = isCarOrder(o);
+      if (verticalF === 'cars' && !car) return false;
+      if (verticalF === 'flights' && car) return false;
+      if (statusF === 'confirmed' && !(o.status === 'confirmed' || o.status === 'ticketed'))
+        return false;
+      if (statusF === 'pending' && o.status !== 'pending') return false;
+      if (statusF === 'cancelled' && !(o.status === 'cancelled' || o.status === 'failed'))
+        return false;
+      if (!q) return true;
+      const sc = o.searchCriteria ?? {};
+      const pax = (o.passengers ?? [])
+        .map((p) => `${p?.givenName ?? ''} ${p?.surname ?? ''}`)
+        .join(' ');
+      const hay = [
+        String(o.orderNumber),
+        o.pnr ?? '',
+        sc.origin ?? '',
+        sc.destination ?? '',
+        sc.pickUpLocation ?? '',
+        sc.dropOffLocation ?? '',
+        pax,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [orders, query, statusF, verticalF]);
 
   useEffect(() => {
     void (async () => {
@@ -432,12 +470,51 @@ export default function ReservasPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-8">
-      <div className="mb-6">
+      <div className="mb-5">
         <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">Reservas</h1>
         <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
           {orders.length} {orders.length === 1 ? 'reserva' : 'reservas'} en total
+          {filtered.length !== orders.length ? ` · ${filtered.length} visibles` : ''}
         </p>
       </div>
+
+      {!loading && orders.length > 0 ? (
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por #, código, pasajero o ruta"
+              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FilterChip active={verticalF === 'all'} onClick={() => setVerticalF('all')}>
+              Todos
+            </FilterChip>
+            <FilterChip active={verticalF === 'flights'} onClick={() => setVerticalF('flights')}>
+              <Plane className="size-3" /> Vuelos
+            </FilterChip>
+            <FilterChip active={verticalF === 'cars'} onClick={() => setVerticalF('cars')}>
+              <Car className="size-3" /> Autos
+            </FilterChip>
+            <span className="mx-1 h-4 w-px bg-[var(--color-border)]" aria-hidden />
+            <FilterChip active={statusF === 'all'} onClick={() => setStatusF('all')}>
+              Todas
+            </FilterChip>
+            <FilterChip active={statusF === 'confirmed'} onClick={() => setStatusF('confirmed')}>
+              Confirmadas
+            </FilterChip>
+            <FilterChip active={statusF === 'pending'} onClick={() => setStatusF('pending')}>
+              Pendientes
+            </FilterChip>
+            <FilterChip active={statusF === 'cancelled'} onClick={() => setStatusF('cancelled')}>
+              Canceladas
+            </FilterChip>
+          </div>
+        </div>
+      ) : null}
 
       {loadError && (
         <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -468,12 +545,20 @@ export default function ReservasPage() {
           <Plane className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
           <p className="text-sm font-medium text-[var(--color-fg)]">No hay reservas aún</p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-            Las reservas aparecerán aquí cuando crees un PNR desde una cotización.
+            Las reservas aparecerán aquí cuando crees una reserva de vuelo o auto.
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-12 text-center">
+          <Search className="mx-auto mb-3 size-7 text-[var(--color-fg-subtle)]" />
+          <p className="text-sm font-medium text-[var(--color-fg)]">Sin resultados</p>
+          <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+            Ninguna reserva coincide con la búsqueda o los filtros.
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {orders.map((order) => {
+          {filtered.map((order) => {
             const statusInfo = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
             const isCar = isCarOrder(order);
             const paxNames = order.passengers
@@ -841,6 +926,31 @@ function OrderDetailModal({
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Voucher del proveedor (autos): se consulta on-demand por apellido + código de confirmación.
+  const [voucher, setVoucher] = useState<Record<string, unknown> | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [voucherErr, setVoucherErr] = useState('');
+  const driverSurname = (order.passengers?.[0]?.surname ?? '').trim();
+
+  async function loadVoucher() {
+    if (!order.pnr || !driverSurname) {
+      setVoucherErr('No hay datos suficientes para consultar el voucher.');
+      return;
+    }
+    setVoucherErr('');
+    setVoucherLoading(true);
+    try {
+      const res = await getCarReservationAction(driverSurname, order.pnr);
+      if (!res.ok || !res.reservation) {
+        setVoucherErr(res.error ?? 'No se pudo obtener el voucher.');
+        return;
+      }
+      setVoucher(res.reservation.voucherInformation ?? {});
+    } finally {
+      setVoucherLoading(false);
+    }
+  }
+
   async function sendConfirmation() {
     setSending(true);
     setSendMsg(null);
@@ -963,6 +1073,26 @@ function OrderDetailModal({
                   )}
                 </div>
               </div>
+              {order.pnr ? (
+                <div className="mt-3">
+                  {voucher ? (
+                    <VoucherDetails voucher={voucher} />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void loadVoucher()}
+                      disabled={voucherLoading || !driverSurname}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Ticket className="size-3.5" />
+                      {voucherLoading ? 'Cargando voucher…' : 'Ver voucher'}
+                    </button>
+                  )}
+                  {voucherErr ? (
+                    <p className="mt-1.5 text-[11px] text-[var(--color-danger)]">{voucherErr}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           ) : itineraries.length > 0 ? (
             <section>
@@ -1168,6 +1298,31 @@ function OrderDetailModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+          : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

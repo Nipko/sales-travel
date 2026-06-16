@@ -9,6 +9,7 @@ import {
   releaseReservationAction,
   type CarReservation,
 } from '../actions';
+import { VoucherDetails } from './voucher-details';
 
 /** Detecta una reserva en estado ON HOLD a partir de su `status` textual del proveedor. */
 function isOnHold(status: string): boolean {
@@ -21,14 +22,6 @@ const inputClass = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 focus-visible:border-[var(--color-primary)]',
 );
 const labelClass = 'block text-xs font-medium text-[var(--color-fg)]';
-
-/** Formatea un valor arbitrario del voucher para mostrarlo (sin caer en "[object Object]"). */
-function fmtVoucherValue(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  return JSON.stringify(v);
-}
 
 interface Props {
   /** Prefill opcional (al venir desde una reserva recién confirmada). */
@@ -104,8 +97,6 @@ export function ReservationPanel({ prefill, autoLookup, onClose }: Props) {
   useEffect(() => {
     if (autoLookup && prefill?.lastName && prefill?.confirmationCode) lookup();
   }, []);
-
-  const voucherEntries = reservation ? Object.entries(reservation.voucherInformation ?? {}) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -199,18 +190,9 @@ export function ReservationPanel({ prefill, autoLookup, onClose }: Props) {
                 </p>
               ) : null}
 
-              {voucherEntries.length > 0 ? (
-                <dl className="space-y-1 border-t border-[var(--color-border)] pt-2 text-xs">
-                  {voucherEntries.map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-3">
-                      <dt className="text-[var(--color-fg-muted)]">{k}</dt>
-                      <dd className="truncate text-right font-medium text-[var(--color-fg)]">
-                        {fmtVoucherValue(v)}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
+              <div className="border-t border-[var(--color-border)] pt-2">
+                <VoucherDetails voucher={reservation.voucherInformation ?? {}} />
+              </div>
 
               {isOnHold(reservation.status) ? (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
