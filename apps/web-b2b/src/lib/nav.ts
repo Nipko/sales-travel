@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   Calendar,
+  Car,
   Home,
   Hotel,
   Network,
@@ -24,6 +25,7 @@ export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
   { label: 'Buscar / Cotizar', href: '/cotizaciones', icon: Ticket },
   { label: 'Hoteles', href: '/hoteles', icon: Hotel },
+  { label: 'Autos', href: '/autos', icon: Car },
   { label: 'Mis Reservas', href: '/reservas', icon: Calendar },
 ];
 
