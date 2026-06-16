@@ -48,6 +48,17 @@ afterEach(() => {
 });
 
 describe('AgentCarsAdapter — requests GET', () => {
+  it('suggest() siempre envía lang (el endpoint público lo exige; sin lang → HTTP 400)', async () => {
+    const { calls } = stubFetch([]);
+    const adapter = new AgentCarsAdapter(cfg);
+    await adapter.suggest({ query: 'miami' });
+
+    const u = url(calls);
+    expect(u).toContain('suggest.agentcars.com');
+    expect(u).toContain('query=miami');
+    expect(u).toContain('lang=es');
+  });
+
   it('getMatrix() arma GET con todos los query params + access-token', async () => {
     const { calls } = stubFetch([]);
     const adapter = new AgentCarsAdapter(cfg);

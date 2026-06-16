@@ -77,12 +77,13 @@ export class AgentCarsAdapter {
   // ─────────────────────── Búsqueda de ubicaciones ───────────────────────
 
   async suggest(q: SuggestQuery): Promise<CarLocation[]> {
+    // El endpoint público de suggest REQUIERE `lang`: sin él devuelve HTTP 400 (no resultados).
     const raw = await this.http.get<Parameters<typeof mapSuggestResults>[0]>(
       AGENT_CARS_SUGGEST_URL,
       '',
-      { query: q.query, ...(q.lang && { lang: q.lang }) },
+      { query: q.query, lang: q.lang ?? this.cfg.language ?? 'es' },
     );
-    return mapSuggestResults(raw);
+    return Array.isArray(raw) ? mapSuggestResults(raw) : [];
   }
 
   async findOffices(q: FindOfficesQuery): Promise<CarOffice[]> {
