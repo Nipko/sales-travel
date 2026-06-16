@@ -316,11 +316,23 @@ export interface BookResult {
   error?: string;
 }
 
+/** Extras y opciones de la reserva (todos opcionales). */
+export interface BookOptions {
+  gps?: boolean;
+  childToddlerSeat?: boolean;
+  childBoosterSeat?: boolean;
+  skyracks?: boolean;
+  flightNumber?: string;
+  /** Crea la reserva en estado ON HOLD (hay que activarla ≥48h antes del pickup). */
+  onHold?: boolean;
+}
+
 /** Confirma la reserva. Convierte los Money de la selección a montos mayores para el API. */
 export async function bookCarAction(
   search: CarSearchValues,
   selection: CarSelection,
   driver: DriverValues,
+  options: BookOptions = {},
 ): Promise<BookResult> {
   if (!driver.firstName.trim() || !driver.lastName.trim()) {
     return { ok: false, error: 'Nombre y apellido del conductor son requeridos.' };
@@ -358,6 +370,14 @@ export async function bookCarAction(
     ...(selection.companyName && { companyName: selection.companyName }),
   };
   if (selection.ccrc) body.ccrc = selection.ccrc;
+  if (options.flightNumber?.trim()) body.flightNumber = options.flightNumber.trim();
+  if (options.onHold) body.onHold = true;
+  const extras: Record<string, boolean> = {};
+  if (options.gps) extras.gps = true;
+  if (options.childToddlerSeat) extras.childToddlerSeat = true;
+  if (options.childBoosterSeat) extras.childBoosterSeat = true;
+  if (options.skyracks) extras.skyracks = true;
+  if (Object.keys(extras).length > 0) body.extras = extras;
 
   const res = await api<CarBookResult>('/cars/book', {
     method: 'POST',

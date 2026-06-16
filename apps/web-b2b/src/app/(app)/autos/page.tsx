@@ -23,6 +23,7 @@ import {
   rateDetailAction,
   searchCarsAction,
   selectCarAction,
+  type BookOptions,
   type CarLocation,
   type CarOffer,
   type CarRateDetail,
@@ -98,6 +99,7 @@ export default function AutosPage() {
     age: 30,
   });
   const [booking, setBooking] = useState<CarBookResult | null>(null);
+  const [options, setOptions] = useState<BookOptions>({});
   const [manage, setManage] = useState<{
     lastName?: string;
     confirmationCode?: string;
@@ -231,7 +233,7 @@ export default function AutosPage() {
     if (!search || !selection) return;
     setError('');
     startTransition(async () => {
-      const res = await bookCarAction(search, selection, driver);
+      const res = await bookCarAction(search, selection, driver, options);
       if (!res.ok || !res.result) {
         setError(res.error ?? 'No se pudo confirmar la reserva.');
         return;
@@ -249,6 +251,7 @@ export default function AutosPage() {
     setSelection(null);
     setRateDetail(null);
     setBooking(null);
+    setOptions({});
     setError('');
   }
 
@@ -554,6 +557,62 @@ export default function AutosPage() {
                   />
                 </div>
               </div>
+
+              <div className="mt-5 space-y-3 border-t border-[var(--color-border)] pt-4">
+                <p className="text-xs font-semibold text-[var(--color-fg)]">Extras y opciones</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(
+                    [
+                      ['gps', 'GPS'],
+                      ['childToddlerSeat', 'Silla bebé (0-2)'],
+                      ['childBoosterSeat', 'Silla niño (2-5)'],
+                      ['skyracks', 'Portaequipajes'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-2.5 py-2 text-xs text-[var(--color-fg-muted)]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(options[key])}
+                        onChange={(e) => setOptions((o) => ({ ...o, [key]: e.target.checked }))}
+                        className="size-4 accent-[var(--color-primary)]"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label htmlFor="flightNumber" className={labelClass}>
+                      Número de vuelo (opcional)
+                    </label>
+                    <input
+                      id="flightNumber"
+                      value={options.flightNumber ?? ''}
+                      onChange={(e) => setOptions((o) => ({ ...o, flightNumber: e.target.value }))}
+                      placeholder="AA1234"
+                      className={inputClass}
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 self-end rounded-lg border border-[var(--color-border)] px-2.5 py-2.5 text-xs text-[var(--color-fg-muted)]">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(options.onHold)}
+                      onChange={(e) => setOptions((o) => ({ ...o, onHold: e.target.checked }))}
+                      className="mt-0.5 size-4 accent-[var(--color-primary)]"
+                    />
+                    <span>
+                      <strong className="text-[var(--color-fg)]">
+                        Reservar en espera (ON HOLD)
+                      </strong>{' '}
+                      — hay que activarla al menos 48 h antes del pickup o se cancela sola.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               <div className="mt-5 flex justify-end">
                 <button
                   type="button"
