@@ -116,6 +116,12 @@ services:
       DESPEGAR_COUNTRY: ${DESPEGAR_COUNTRY:-}
       DESPEGAR_CURRENCY: ${DESPEGAR_CURRENCY:-}
       DESPEGAR_LOCALE: ${DESPEGAR_LOCALE:-}
+      # AgentCars renta de autos (fallback global; cada agencia puede traer su propio token BYOC).
+      AGENT_CARS_ACCESS_TOKEN: ${AGENT_CARS_ACCESS_TOKEN:-}
+      AGENT_CARS_BASE_URL: ${AGENT_CARS_BASE_URL:-https://api.dev.agentcars.com/v2/sites}
+      AGENT_CARS_SUGGEST_URL: ${AGENT_CARS_SUGGEST_URL:-https://suggest.agentcars.com/suggest}
+      AGENT_CARS_SOURCE: ${AGENT_CARS_SOURCE:-}
+      AGENT_CARS_LANGUAGE: ${AGENT_CARS_LANGUAGE:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
       # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
       APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}

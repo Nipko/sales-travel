@@ -140,6 +140,11 @@ jobs:
           DESPEGAR_COUNTRY=${{ vars.DESPEGAR_COUNTRY }}
           DESPEGAR_CURRENCY=${{ vars.DESPEGAR_CURRENCY }}
           DESPEGAR_LOCALE=${{ vars.DESPEGAR_LOCALE }}
+          AGENT_CARS_ACCESS_TOKEN=${{ secrets.AGENT_CARS_ACCESS_TOKEN || vars.AGENT_CARS_ACCESS_TOKEN }}
+          AGENT_CARS_BASE_URL=${{ vars.AGENT_CARS_BASE_URL || 'https://api.dev.agentcars.com/v2/sites' }}
+          AGENT_CARS_SUGGEST_URL=${{ vars.AGENT_CARS_SUGGEST_URL || 'https://suggest.agentcars.com/suggest' }}
+          AGENT_CARS_SOURCE=${{ vars.AGENT_CARS_SOURCE }}
+          AGENT_CARS_LANGUAGE=${{ vars.AGENT_CARS_LANGUAGE }}
           APP_WEB_URL=${{ vars.APP_WEB_URL || 'https://app.planetour.cloud' }}
           MAIL_HOST=${{ vars.MAIL_HOST || secrets.MAIL_HOST }}
           MAIL_PORT=${{ vars.MAIL_PORT || '587' }}
