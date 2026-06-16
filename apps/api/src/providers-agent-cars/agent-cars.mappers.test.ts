@@ -108,6 +108,21 @@ describe('mapOffices', () => {
     expect(office?.schedule).toEqual({});
   });
 
+  it('aplana una respuesta objeto-indexada (no array) sin romper', () => {
+    const offices = mapOffices({
+      '0': { office_code: 'A', company_name: 'Hertz' },
+      '1': { office_code: 'B', company_name: 'Avis' },
+    });
+    expect(offices.map((o) => o.officeCode)).toEqual(['A', 'B']);
+  });
+
+  it('schedule como array por día → toma el primer tramo', () => {
+    const [office] = mapOffices([
+      { office_code: 'X', schedule: { '1': [{ opening: '0800', close: '1800' }] } },
+    ]);
+    expect(office?.schedule['1']).toEqual({ opening: '0800', close: '1800' });
+  });
+
   it('respuesta vacía → []', () => {
     expect(mapOffices([])).toEqual([]);
   });

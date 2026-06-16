@@ -141,11 +141,19 @@ interface RawDailyEntry {
   status?: string;
 }
 
-export function mapDailyReport(raw: RawDailyEntry[]): DailyReportEntry[] {
-  return raw.map((r) => ({
-    confirmationCode: str(r.confirmationCode),
-    pickUpDate: str(r.pickUpDate),
-    dropOffDate: str(r.dropOffDate),
-    status: str(r.status),
-  }));
+export function mapDailyReport(raw: unknown): DailyReportEntry[] {
+  // Defensivo: el consolidado puede venir como array o como objeto (indexado/envuelto).
+  const list: unknown[] = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.values(raw as Record<string, unknown>).flat()
+      : [];
+  return list
+    .filter((r): r is RawDailyEntry => r != null && typeof r === 'object')
+    .map((r) => ({
+      confirmationCode: str(r.confirmationCode),
+      pickUpDate: str(r.pickUpDate),
+      dropOffDate: str(r.dropOffDate),
+      status: str(r.status),
+    }));
 }
