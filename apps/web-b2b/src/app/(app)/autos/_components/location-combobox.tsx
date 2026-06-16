@@ -5,7 +5,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { suggestCarLocationsAction, type CarLocation } from '../actions';
 
-const DEBOUNCE_MS = 220;
+const DEBOUNCE_MS = 160;
+
+/** Caché de sugerencias por query (nivel módulo: persiste mientras viva la sesión del SPA). */
+const suggestCache = new Map<string, CarLocation[]>();
 
 const inputClass = cn(
   'flex h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-14 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)]',
@@ -31,6 +34,7 @@ export function CarLocationCombobox({
   const listboxId = `${id}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRef = useRef('');
 
   const [query, setQuery] = useState(value?.value ?? '');
   const [open, setOpen] = useState(false);
@@ -48,14 +52,27 @@ export function CarLocationCombobox({
 
   function runSearch(q: string) {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (q.trim().length < 2) {
+    const norm = q.trim().toLowerCase();
+    latestRef.current = norm;
+    if (norm.length < 2) {
       setItems([]);
+      setLoading(false);
+      return;
+    }
+    // Caché: resultados instantáneos para una query ya consultada (sin spinner ni round-trip).
+    const cached = suggestCache.get(norm);
+    if (cached) {
+      setItems(cached);
+      setActiveIndex(-1);
       setLoading(false);
       return;
     }
     setLoading(true);
     timerRef.current = setTimeout(() => {
       void suggestCarLocationsAction(q).then((results) => {
+        suggestCache.set(norm, results);
+        // Aplica sólo si la query sigue vigente (una respuesta vieja no pisa una más nueva).
+        if (latestRef.current !== norm) return;
         setItems(results);
         setActiveIndex(-1);
         setLoading(false);
