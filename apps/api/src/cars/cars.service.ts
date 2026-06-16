@@ -24,6 +24,7 @@ import type {
 } from '@sales-travel/agent-cars';
 import { DatabaseService } from '../database/database.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
+import { PricingService, applyCascade, type WaterfallStep } from '../pricing/pricing.service.js';
 import type {
   CarSearchInput,
   CarSelectionInput,
@@ -33,11 +34,26 @@ import type {
   RatesInput,
 } from './cars.schemas.js';
 
+const VERTICAL = 'cars';
+
+/** Pricing waterfall del consolidador adjunto a una oferta. `finalMinor` = precio de venta. */
+export interface CarPricing {
+  netMinor: number;
+  finalMinor: number;
+  totalMarkupMinor: number;
+  currency: string;
+  breakdown: WaterfallStep[];
+}
+
+export type PricedCarOffer = CarOffer & { pricing?: CarPricing };
+export type PricedCarSelection = CarSelection & { pricing?: CarPricing };
+
 @Injectable()
 export class CarsService {
   constructor(
     private readonly factory: AgentCarsProviderFactory,
     private readonly db: DatabaseService,
+    private readonly pricing: PricingService,
   ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -67,12 +83,13 @@ export class CarsService {
     return adapter.getRates(q);
   }
 
-  async getMatrix(tenantId: string, input: CarSearchInput): Promise<CarOffer[]> {
+  async getMatrix(tenantId: string, input: CarSearchInput): Promise<PricedCarOffer[]> {
     const adapter = await this.factory.forTenant(tenantId);
-    return adapter.getMatrix(this.toSearchQuery(input));
+    const offers = await adapter.getMatrix(this.toSearchQuery(input));
+    return this.withPricing(offers, tenantId);
   }
 
-  async getSelection(tenantId: string, input: CarSelectionInput): Promise<CarSelection> {
+  async getSelection(tenantId: string, input: CarSelectionInput): Promise<PricedCarSelection> {
     const adapter = await this.factory.forTenant(tenantId);
     const q: CarSelectionQuery = {
       ...this.toSearchQuery(input),
@@ -82,7 +99,9 @@ export class CarsService {
     if (input.ccrc) q.ccrc = input.ccrc;
     if (input.coupon) q.coupon = input.coupon;
     if (input.tp) q.tp = input.tp;
-    return adapter.getSelection(q);
+    const selection = await adapter.getSelection(q);
+    const [priced] = await this.withPricing([selection], tenantId);
+    return priced ?? selection;
   }
 
   async getRateDetail(tenantId: string, q: RateDetailQuery): Promise<CarRateDetail> {
@@ -152,6 +171,32 @@ export class CarsService {
   }
 
   // ───────────────────────── Helpers ─────────────────────────
+
+  /**
+   * Adjunta el pricing waterfall del consolidador a cada oferta (vertical 'cars'). El neto del
+   * proveedor (`rateAmount`/`base`/`tax`) NO se muta — se sigue reservando al neto; `pricing.finalMinor`
+   * es el precio de venta. Sin reglas aplicables, devuelve las ofertas sin tocar (precio = neto).
+   */
+  private async withPricing<T extends CarOffer>(
+    offers: T[],
+    tenantId: string,
+  ): Promise<(T & { pricing?: CarPricing })[]> {
+    const rules = await this.pricing.getApplicableRules(tenantId, VERTICAL);
+    if (rules.length === 0) return offers;
+    return offers.map((o) => {
+      const w = applyCascade(o.rateAmount.amountMinor, rules);
+      return {
+        ...o,
+        pricing: {
+          netMinor: w.netMinor,
+          finalMinor: w.finalMinor,
+          totalMarkupMinor: w.totalMarkupMinor,
+          currency: o.rateAmount.currency,
+          breakdown: w.breakdown,
+        },
+      };
+    });
+  }
 
   /**
    * Arma el CarSearchQuery canónico. `country` (destino) es requerido por el schema. `source`

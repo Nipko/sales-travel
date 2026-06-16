@@ -3,11 +3,9 @@ import type {
   CancelResult,
   CarBookResult,
   CarLocation,
-  CarOffer,
   CarOffice,
   CarRateDetail,
   CarReservation,
-  CarSelection,
   DailyReportEntry,
   RateType,
   ReleaseResult,
@@ -15,7 +13,7 @@ import type {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { currentTenantId } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { CarsService } from './cars.service.js';
+import { CarsService, type PricedCarOffer, type PricedCarSelection } from './cars.service.js';
 import {
   CancelBodySchema,
   CarSearchInputSchema,
@@ -78,7 +76,7 @@ export class CarsController {
   async search(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(CarSearchInputSchema)) body: CarSearchInput,
-  ): Promise<{ cars: CarOffer[] }> {
+  ): Promise<{ cars: PricedCarOffer[] }> {
     const tenantId = await this.tenant(userId);
     return { cars: await this.cars.getMatrix(tenantId, body) };
   }
@@ -87,7 +85,7 @@ export class CarsController {
   async selection(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(CarSelectionInputSchema)) body: CarSelectionInput,
-  ): Promise<CarSelection> {
+  ): Promise<PricedCarSelection> {
     const tenantId = await this.tenant(userId);
     return this.cars.getSelection(tenantId, body);
   }
