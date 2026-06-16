@@ -43,10 +43,14 @@ export async function api<T>(
     return { ok: true, data };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // El detalle técnico queda en el log; al usuario se le muestra un mensaje claro y accionable.
     console.error(`[API FETCH CONNECTION ERROR] PATH: ${path}, ERROR: ${message}`);
     return {
       ok: false,
-      error: { status: 500, message: `Connection error: ${message}` },
+      error: {
+        status: 0,
+        message: 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.',
+      },
     };
   }
 }

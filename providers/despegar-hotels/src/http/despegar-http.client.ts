@@ -34,10 +34,11 @@ export class DespegarHttpClient {
   async get<T>(path: string, query: Record<string, QueryValue> = {}): Promise<T> {
     const url = `${this.cfg.baseUrl}${path}${buildQuery(query)}`;
     if (this.debug) console.warn(`[despegar] GET ${path}${buildQuery(query)}`);
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { 'x-apikey': this.cfg.apiKey, accept: 'application/json' },
-    });
+    const res = await this.fetchOrThrow(
+      url,
+      { method: 'GET', headers: { 'x-apikey': this.cfg.apiKey, accept: 'application/json' } },
+      path,
+    );
     return this.parse<T>(res, path);
   }
 
@@ -57,21 +58,44 @@ export class DespegarHttpClient {
   ): Promise<T> {
     const url = `${this.cfg.baseUrl}${path}${buildQuery(query)}`;
     if (this.debug) console.warn(`[despegar] ${method} ${path}`);
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'x-apikey': this.cfg.apiKey,
-        accept: 'application/json',
-        'content-type': 'application/json',
+    const res = await this.fetchOrThrow(
+      url,
+      {
+        method,
+        headers: {
+          'x-apikey': this.cfg.apiKey,
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      path,
+    );
     return this.parse<T>(res, path);
+  }
+
+  /** fetch con timeout (15s) que envuelve red/abort como DespegarApiError(status 0). */
+  private async fetchOrThrow(url: string, init: RequestInit, path: string): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      const msg = (err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message;
+      throw new DespegarApiError(0, msg, path);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async parse<T>(res: Response, path: string): Promise<T> {
     const text = await res.text();
     if (!res.ok) throw new DespegarApiError(res.status, text, path);
-    return (text ? JSON.parse(text) : {}) as T;
+    if (!text.trim()) return {} as T; // 2xx vacío: los mappers lo toleran (devuelven [] / vacío).
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new DespegarApiError(res.status, `respuesta no-JSON: ${text.slice(0, 200)}`, path);
+    }
   }
 }

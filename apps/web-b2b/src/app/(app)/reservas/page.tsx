@@ -176,8 +176,10 @@ function humanizeOrderError(raw: string): string {
   if (m.includes('passport') && (m.includes('mandatory') || m.includes('required'))) {
     return 'La aerolínea exige pasaporte para todos los pasajeros en esta reserva.';
   }
-  // Limpia el prefijo técnico "LATAM ... error NNN:" del resto de mensajes del proveedor.
-  return raw.replace(/^LATAM\s+(?:\w+\s+)?error\s+\d+:\s*/i, '').trim() || raw;
+  // Limpia el prefijo técnico del proveedor en sus varias formas: "LATAM NDC error 933:",
+  // "LATAM error: 933", "LATAM NDC error 933 ...". Si tras limpiar queda vacío, devuelve el crudo.
+  const cleaned = raw.replace(/^latam(?:\s+\w+)*\s+error\b\s*:?\s*\d*\s*:?\s*/i, '').trim();
+  return cleaned || raw;
 }
 
 export default function ReservasPage() {

@@ -33,6 +33,18 @@ describe('humanizeAgentCarsError', () => {
     expect(humanizeAgentCarsError(412, '{"error":"rate not available"}')).toContain('disponible');
   });
 
+  it('"Empty response on CarService" (el caso reportado) → tarifa pudo expirar, volvé a buscar', () => {
+    const msg = humanizeAgentCarsError(400, 'Empty response on CarService');
+    expect(msg).toContain('no devolvió disponibilidad');
+    expect(msg).toContain('volvé a buscar');
+  });
+
+  it('respuesta vacía del proveedor → mismo mensaje accionable', () => {
+    expect(humanizeAgentCarsError(200, 'respuesta vacía del proveedor')).toContain(
+      'volvé a buscar',
+    );
+  });
+
   it('detalle corto desconocido se muestra al agente', () => {
     expect(humanizeAgentCarsError(400, '{"error":"Invalid pickUpDate format"}')).toContain(
       'Invalid pickUpDate format',

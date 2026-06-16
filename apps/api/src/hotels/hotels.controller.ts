@@ -1,4 +1,13 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseFilters,
+} from '@nestjs/common';
 import type {
   BookRequest,
   BookResult,
@@ -13,6 +22,7 @@ import type {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { currentTenantId } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
 import { HotelsService } from './hotels.service.js';
 import {
   BookSchema,
@@ -32,6 +42,7 @@ import {
 } from './hotels.schemas.js';
 
 @Controller('hotels')
+@UseFilters(DespegarHotelsExceptionFilter)
 export class HotelsController {
   constructor(private readonly hotels: HotelsService) {}
 

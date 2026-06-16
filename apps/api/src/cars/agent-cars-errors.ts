@@ -72,6 +72,18 @@ export function humanizeAgentCarsError(status: number, body: string): string {
     return 'La sesión de la búsqueda expiró (es válida 15 minutos). Volvé a buscar y seleccioná el auto de nuevo.';
   }
 
+  // Respuesta vacía del servicio de autos del proveedor: el rental no devolvió datos. Suele pasar
+  // cuando la tarifa/sesión (uniqid, TTL 15 min) venció entre la selección y la confirmación, o el
+  // auto dejó de estar disponible.
+  if (
+    m.includes('empty response') ||
+    m.includes('carservice') ||
+    m.includes('respuesta vacía') ||
+    detail.trim() === ''
+  ) {
+    return 'AgentCars no devolvió disponibilidad para esta operación. La tarifa pudo expirar (válida 15 min): volvé a buscar y seleccioná el auto de nuevo.';
+  }
+
   // Tarifa / disponibilidad ya no vigente.
   if (
     m.includes('rate') ||

@@ -63,8 +63,9 @@ export class AgentCarsHttpClient {
   private async parse<T>(res: Response, path: string): Promise<T> {
     const text = await res.text();
     if (!res.ok) throw new AgentCarsApiError(res.status, text, path);
+    if (!text.trim()) return {} as T; // 2xx vacío: los mappers lo toleran (devuelven [] / vacío).
     try {
-      return (text ? JSON.parse(text) : {}) as T;
+      return JSON.parse(text) as T;
     } catch {
       throw new AgentCarsApiError(res.status, `respuesta no-JSON: ${text.slice(0, 200)}`, path);
     }
