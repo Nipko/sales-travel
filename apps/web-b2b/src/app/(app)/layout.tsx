@@ -1,3 +1,4 @@
+import { Toaster } from 'sonner';
 import { api } from '../../lib/api';
 import { getActiveTenant, setActiveTenant } from '../../lib/session';
 import { AppShell } from '../../components/layout/app-shell';
@@ -61,6 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
       {showVerifyBanner && <VerifyBanner />}
       {children}
+      <Toaster richColors closeButton position="top-right" />
     </AppShell>
   );
 }

@@ -21,6 +21,7 @@ import { cn } from '../../../lib/cn';
 import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
+import { humanizeProviderError } from '../../../lib/provider-errors';
 
 interface Segment {
   carrier: string;
@@ -161,25 +162,9 @@ function fmtDuration(min: number): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 }
 
-/** Traduce errores técnicos del proveedor (LATAM NDC) a mensajes claros y accionables. */
+/** Traduce errores crudos del proveedor a mensajes claros (helper compartido). */
 function humanizeOrderError(raw: string): string {
-  const m = raw.toLowerCase();
-  if (m.includes('933') || m.includes('not suitable for void')) {
-    return 'Esta reserva no está en un estado que permita anularla (VOID). La anulación aplica a tiquetes ya emitidos dentro de la ventana de anulación. Si la reserva aún no está emitida, se libera automáticamente al expirar; si ya pasó la ventana, gestioná la cancelación con la aerolínea.';
-  }
-  if (m.includes('911') || m.includes('not ready for this flow')) {
-    return 'La reserva todavía no está emitida. Usá "Pagar / Emitir tiquete" primero y luego reintentá esta operación.';
-  }
-  if (m.includes('missing agent info') || m.includes('403111009')) {
-    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cargalo en Mi Red → Credenciales → LATAM NDC y reintentá.';
-  }
-  if (m.includes('passport') && (m.includes('mandatory') || m.includes('required'))) {
-    return 'La aerolínea exige pasaporte para todos los pasajeros en esta reserva.';
-  }
-  // Limpia el prefijo técnico del proveedor en sus varias formas: "LATAM NDC error 933:",
-  // "LATAM error: 933", "LATAM NDC error 933 ...". Si tras limpiar queda vacío, devuelve el crudo.
-  const cleaned = raw.replace(/^latam(?:\s+\w+)*\s+error\b\s*:?\s*\d*\s*:?\s*/i, '').trim();
-  return cleaned || raw;
+  return humanizeProviderError(raw);
 }
 
 export default function ReservasPage() {

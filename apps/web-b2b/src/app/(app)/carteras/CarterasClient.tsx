@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Wallet,
   ArrowUpRight,
@@ -96,7 +97,7 @@ export function CarterasClient({
     e.preventDefault();
     const amountVal = parseFloat(depositAmount);
     if (isNaN(amountVal) || amountVal <= 0) {
-      alert('Monto de recarga inválido');
+      toast.error('Monto de recarga inválido');
       return;
     }
 
@@ -116,7 +117,7 @@ export function CarterasClient({
       setDepositAmount('');
       setDepositNotes('');
     } else {
-      alert('Error al realizar depósito');
+      toast.error('Error al realizar depósito');
     }
   };
 
@@ -124,7 +125,7 @@ export function CarterasClient({
     e.preventDefault();
     const limitVal = parseFloat(creditLimitInput);
     if (isNaN(limitVal) || limitVal < 0) {
-      alert('Límite de crédito inválido');
+      toast.error('Límite de crédito inválido');
       return;
     }
 
@@ -142,7 +143,7 @@ export function CarterasClient({
       setIsLimitModalOpen(false);
       setCreditLimitInput('');
     } else {
-      alert('Error al actualizar límite de crédito');
+      toast.error('Error al actualizar límite de crédito');
     }
   };
 
@@ -159,7 +160,7 @@ export function CarterasClient({
     });
 
     if (res.ok) {
-      alert('Reserva aprobada y tiquete emitido correctamente.');
+      toast.success('Reserva aprobada y tiquete emitido correctamente.');
       // Refresh state
       const ordersRes = await fetch('/api/orders');
       if (ordersRes.ok) {
@@ -178,7 +179,7 @@ export function CarterasClient({
       }
     } else {
       const err = await res.json();
-      alert(`Error al aprobar: ${err.error || 'Intente nuevamente'}`);
+      toast.error(`Error al aprobar: ${err.error || 'Intente nuevamente'}`);
     }
   };
 
@@ -195,7 +196,7 @@ export function CarterasClient({
     });
 
     if (res.ok) {
-      alert('Reserva rechazada y saldo liberado correctamente.');
+      toast.success('Reserva rechazada y saldo liberado correctamente.');
       // Refresh state
       const ordersRes = await fetch('/api/orders');
       if (ordersRes.ok) {
@@ -214,7 +215,7 @@ export function CarterasClient({
       }
     } else {
       const err = await res.json();
-      alert(`Error al rechazar: ${err.error || 'Intente nuevamente'}`);
+      toast.error(`Error al rechazar: ${err.error || 'Intente nuevamente'}`);
     }
   };
 

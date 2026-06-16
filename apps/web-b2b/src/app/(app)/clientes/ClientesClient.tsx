@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -137,7 +138,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName || !lastName || !documentNumber || !birthdate) {
-      alert('Por favor complete todos los campos requeridos.');
+      toast.error('Por favor complete todos los campos requeridos.');
       return;
     }
 
@@ -172,7 +173,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
         if (selectedCustomer?.id === editingId) setSelectedCustomer(customer);
         setIsAddModalOpen(false);
       } else {
-        alert('Error al actualizar el cliente');
+        toast.error('Error al actualizar el cliente');
       }
     } else {
       const res = await fetch('/api/customers', {
@@ -186,7 +187,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
         setSelectedCustomer(customer);
         setIsAddModalOpen(false);
       } else {
-        alert('Error al crear el cliente');
+        toast.error('Error al crear el cliente');
       }
     }
   };
@@ -201,7 +202,7 @@ export function ClientesClient({ initialCustomers }: ClientesClientProps) {
         setSelectedCustomer(updatedList[0] ?? null);
       }
     } else {
-      alert('Error al eliminar cliente');
+      toast.error('Error al eliminar cliente');
     }
   };
 
