@@ -640,7 +640,6 @@ function CarCard({
     <div className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
         {car.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={car.imageUrl}
             alt={car.carModel || car.category}
@@ -719,7 +718,6 @@ function SelectionSummary({
   return (
     <div className="h-fit rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)]">
       {selection.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={selection.imageUrl}
           alt={selection.carModel || selection.category}
