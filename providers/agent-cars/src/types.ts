@@ -120,6 +120,12 @@ export interface CarOffer {
   convertedRateAmount?: Money;
   /** Token opaco requerido en GetSelection y Confirmation. */
   ccrc?: string;
+  /** rateType real de la oferta (índice de tarifa, ej "3"); usar en GetSelection (NO 'best'). */
+  rateType?: string;
+  /** URL absoluta de la imagen del auto. */
+  imageUrl?: string;
+  /** URL del logo de la arrendadora. */
+  companyImageUrl?: string;
 }
 
 // ─────────────────────────── Selección ───────────────────────────

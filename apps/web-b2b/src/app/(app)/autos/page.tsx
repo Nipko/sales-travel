@@ -180,6 +180,7 @@ export default function AutosPage() {
         companyCode: car.companyCode,
         sippCode: car.sippCode,
         ...(car.ccrc ? { ccrc: car.ccrc } : {}),
+        ...(car.rateType ? { rateType: car.rateType } : {}),
       });
       if (!res.ok || !res.selection) {
         setError(res.error ?? 'No se pudo seleccionar el auto.');
@@ -637,27 +638,40 @@ function CarCard({
 }) {
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="rounded-md bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-fg-muted)]">
-            {car.sippCode}
-          </span>
-          <h3 className="truncate text-sm font-semibold text-[var(--color-fg)]">{car.category}</h3>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-[var(--color-fg-muted)]">
-          {car.carModel} · {car.companyName}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <Spec icon={Users} value={car.passengers} />
-          <Spec icon={DoorOpen} value={car.doors} />
-          <Spec icon={Luggage} value={car.bags} />
-          <span className="inline-flex items-center gap-1 text-xs text-[var(--color-fg-muted)]">
-            {car.trans}
-          </span>
-          {car.air ? <Spec icon={Snowflake} value="A/C" /> : null}
-          {car.kmIncluded ? (
-            <span className="text-xs text-[var(--color-fg-muted)]">{car.kmIncluded}</span>
-          ) : null}
+      <div className="flex min-w-0 items-center gap-3">
+        {car.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={car.imageUrl}
+            alt={car.carModel || car.category}
+            className="h-14 w-20 shrink-0 rounded-md bg-[var(--color-surface-muted)] object-cover"
+            loading="lazy"
+          />
+        ) : null}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-fg-muted)]">
+              {car.sippCode}
+            </span>
+            <h3 className="truncate text-sm font-semibold text-[var(--color-fg)]">
+              {car.category}
+            </h3>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-[var(--color-fg-muted)]">
+            {car.carModel} · {car.companyName}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <Spec icon={Users} value={car.passengers} />
+            <Spec icon={DoorOpen} value={car.doors} />
+            <Spec icon={Luggage} value={car.bags} />
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--color-fg-muted)]">
+              {car.trans}
+            </span>
+            {car.air ? <Spec icon={Snowflake} value="A/C" /> : null}
+            {car.kmIncluded ? (
+              <span className="text-xs text-[var(--color-fg-muted)]">{car.kmIncluded}</span>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -704,6 +718,15 @@ function SelectionSummary({
 }) {
   return (
     <div className="h-fit rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)]">
+      {selection.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={selection.imageUrl}
+          alt={selection.carModel || selection.category}
+          className="mb-3 h-28 w-full rounded-md bg-[var(--color-surface-muted)] object-cover"
+          loading="lazy"
+        />
+      ) : null}
       <h3 className="text-sm font-semibold text-[var(--color-fg)]">{selection.category}</h3>
       <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
         {selection.carModel} · {selection.companyName}

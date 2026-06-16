@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Post, Query, UseFilters } from '@nestjs/common';
 import type {
   CancelResult,
   CarBookResult,
@@ -14,6 +14,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { currentTenantId } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CarsService, type PricedCarOffer, type PricedCarSelection } from './cars.service.js';
+import { AgentCarsExceptionFilter } from './agent-cars-exception.filter.js';
 import {
   CancelBodySchema,
   CarSearchInputSchema,
@@ -40,6 +41,7 @@ import {
 } from './cars.schemas.js';
 
 @Controller('cars')
+@UseFilters(AgentCarsExceptionFilter)
 export class CarsController {
   constructor(private readonly cars: CarsService) {}
 

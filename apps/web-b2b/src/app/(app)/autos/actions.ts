@@ -58,6 +58,10 @@ export interface CarOffer {
   tax: Money;
   convertedRateAmount?: Money;
   ccrc?: string;
+  /** rateType real del auto (índice de tarifa); se usa en la selección, no 'best'. */
+  rateType?: string;
+  imageUrl?: string;
+  companyImageUrl?: string;
   pricing?: CarPricing;
 }
 
@@ -261,7 +265,7 @@ export interface CarSelectionResult {
 /** Selecciona un auto concreto y abre la sesión (uniqid, TTL 15 min). */
 export async function selectCarAction(
   search: CarSearchValues,
-  car: { companyCode: string; sippCode: string; ccrc?: string },
+  car: { companyCode: string; sippCode: string; ccrc?: string; rateType?: string },
 ): Promise<CarSelectionResult> {
   const body: Record<string, unknown> = {
     pickUpLocation: search.pickUpLocation,
@@ -271,7 +275,9 @@ export async function selectCarAction(
     dropOffDate: search.dropOffDate,
     pickUpHour: normalizeHour(search.pickUpHour),
     dropOffHour: normalizeHour(search.dropOffHour),
-    rateType: search.rateType || 'best',
+    // El rateType REAL del auto elegido (índice de tarifa), no el 'best' de la búsqueda:
+    // get-selection exige el rateType específico de la oferta.
+    rateType: car.rateType || search.rateType || 'best',
     companyCode: car.companyCode,
     sippCode: car.sippCode,
   };

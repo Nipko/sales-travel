@@ -2,6 +2,18 @@ import { Money } from '@sales-travel/canonical';
 import type { CarOffer, CarSelection, PaymentType } from '../types.js';
 import { bool, num, str } from '../internal/coerce.js';
 
+/**
+ * Normaliza la URL de imagen del auto a absoluta. La matriz devuelve paths relativos tipo
+ * "/cdn/images/cars/X.jpg" que se sirven desde https://cdn.agentcars.com/images/cars/X.jpg
+ * (se quita el prefijo "/cdn"). La selección ya trae URLs absolutas (Amadeus), se dejan igual.
+ */
+function absImg(raw: string): string {
+  if (!raw) return '';
+  if (raw.startsWith('http')) return raw;
+  const path = raw.replace(/^\/cdn/, '');
+  return `https://cdn.agentcars.com${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 // ──────────── GetMatrix ────────────
 // La respuesta real de get-matrix es un OBJETO agrupado por categoría:
 //   { "Economy Automatic": [ {car}, {car} ], "Compact": [ {car} ], ... }
@@ -27,6 +39,9 @@ interface RawCarOffer {
   convertedCurrency?: string;
   convertedRateAmount?: number | string;
   ccrc?: string;
+  rateType?: string;
+  img?: string;
+  companyImg?: string;
 }
 
 export function mapMatrixOffers(raw: Record<string, RawCarOffer[]>): CarOffer[] {
@@ -64,6 +79,11 @@ function mapCarOffer(r: RawCarOffer): CarOffer {
     offer.convertedRateAmount = Money.fromMajor(num(r.convertedRateAmount), convertedCurrency);
   }
   if (r.ccrc) offer.ccrc = str(r.ccrc);
+  if (r.rateType) offer.rateType = str(r.rateType);
+  const img = absImg(str(r.img));
+  if (img) offer.imageUrl = img;
+  const companyImg = absImg(str(r.companyImg));
+  if (companyImg) offer.companyImageUrl = companyImg;
   return offer;
 }
 
@@ -84,6 +104,7 @@ interface RawSelectionCarInfo {
   companyName?: string;
   carModel?: string;
   km_included?: string;
+  img?: string;
 }
 
 interface RawSelectionRate {
@@ -136,7 +157,12 @@ export function mapSelection(raw: RawSelection): CarSelection {
     tax: Money.fromMajor(num(rate?.taxAprox), currency),
     uniqid: str(raw.uniqid),
   };
-  if (rateId) selection.rateCode = rateId;
+  if (rateId) {
+    selection.rateCode = rateId;
+    selection.rateType = rateId;
+  }
+  const img = absImg(str(carInfo?.img));
+  if (img) selection.imageUrl = img;
   if (convertedCurrency && rate?.convertedTotalAprox !== undefined) {
     selection.convertedRateAmount = Money.fromMajor(
       num(rate.convertedTotalAprox),

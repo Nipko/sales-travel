@@ -242,6 +242,25 @@ describe('mapMatrixOffers', () => {
     expect(offer?.convertedRateAmount).toEqual({ amountMinor: 118072900, currency: 'COP' });
   });
 
+  it('mapea img relativo "/cdn/..." a URL absoluta de cdn y captura rateType', () => {
+    const [offer] = mapMatrixOffers({
+      G: [
+        {
+          sippCode: 'X',
+          rateAmount: '10',
+          currency: 'USD',
+          air: true,
+          rateType: '3',
+          img: '/cdn/images/cars/Promo_Economy.jpg',
+          companyImg: 'https://cdn.agentcars.com/images/common/promoS.png',
+        },
+      ],
+    });
+    expect(offer?.rateType).toBe('3');
+    expect(offer?.imageUrl).toBe('https://cdn.agentcars.com/images/cars/Promo_Economy.jpg');
+    expect(offer?.companyImageUrl).toBe('https://cdn.agentcars.com/images/common/promoS.png');
+  });
+
   it('respuesta vacía → []', () => {
     expect(mapMatrixOffers({})).toEqual([]);
   });
@@ -264,6 +283,7 @@ describe('mapSelection', () => {
           companyName: 'HERTZ',
           carModel: 'A Fiat 500 or similar',
           km_included: 'Unlimited Km',
+          img: 'https://multimedia.amadeus.com/car.jpg',
         },
       },
       rates: {
@@ -289,6 +309,8 @@ describe('mapSelection', () => {
     expect(selection.air).toBe(true);
     expect(selection.paymentOption).toBe('ppd');
     expect(selection.rateCode).toBe('7');
+    expect(selection.rateType).toBe('7');
+    expect(selection.imageUrl).toBe('https://multimedia.amadeus.com/car.jpg');
     expect(selection.rateAmount).toEqual({ amountMinor: 13296, currency: 'EUR' });
     expect(selection.base).toEqual({ amountMinor: 13296, currency: 'EUR' });
     expect(selection.tax).toEqual({ amountMinor: 0, currency: 'EUR' });
