@@ -1,4 +1,5 @@
 import type { LatamNdcConfig } from '../config';
+import { LatamApiError } from '../errors';
 
 interface TokenResponse {
   access_token?: string;
@@ -41,44 +42,57 @@ export class LatamTokenService {
   }
 
   private async fetchToken(): Promise<string> {
+    const path = '/oauth/cc/token';
     if (!this.cfg.apiKey || !this.cfg.apiSecret) {
-      throw new Error('LatamTokenService: apiKey and apiSecret required');
+      throw new LatamApiError(401, 'apiKey and apiSecret required', path);
     }
 
     const basic = Buffer.from(`${this.cfg.apiKey}:${this.cfg.apiSecret}`).toString('base64');
-    const url = `${this.cfg.apiUrl.replace(/\/$/, '')}/oauth/cc/token`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basic}`,
-        'x-api-key': this.cfg.apiKey,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials',
-    });
+    const url = `${this.cfg.apiUrl.replace(/\/$/, '')}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${basic}`,
+          'x-api-key': this.cfg.apiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'grant_type=client_credentials',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LatamApiError(
+        0,
+        (err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message,
+        path,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
 
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(
-        `LATAM oauth/cc/token ${res.status} (content-type=${res.headers.get('content-type') ?? '?'}): ${text.slice(0, 400)}`,
-      );
+      throw new LatamApiError(res.status, text.slice(0, 400), path);
     }
 
     let data: TokenResponse;
     try {
       data = JSON.parse(text) as TokenResponse;
     } catch {
-      throw new Error(
-        `LATAM oauth/cc/token: non-JSON response (content-type=${res.headers.get('content-type') ?? '?'}): ${text.slice(0, 400)}`,
-      );
+      throw new LatamApiError(res.status, `non-JSON token response: ${text.slice(0, 200)}`, path);
     }
 
     const accessToken = data.access_token ?? data.accessToken;
     const rawExpires = data.expires_in ?? data.expiresIn;
     const expiresIn = typeof rawExpires === 'string' ? Number(rawExpires) : rawExpires;
     if (!accessToken || typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)) {
-      throw new Error(
-        `LATAM oauth/cc/token: missing access_token/expires_in. Body keys=[${Object.keys(data).join(',')}] body=${text.slice(0, 400)}`,
+      throw new LatamApiError(
+        res.status,
+        'missing access_token/expires_in in token response',
+        path,
       );
     }
 

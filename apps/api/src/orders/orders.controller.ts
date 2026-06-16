@@ -8,7 +8,10 @@ import {
   NotFoundException,
   Param,
   Post,
+  UseFilters,
 } from '@nestjs/common';
+import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
+import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { MailerService } from '../mail/mailer.service.js';
@@ -18,6 +21,7 @@ import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 
 @Controller('orders')
+@UseFilters(LatamNdcExceptionFilter, AgentCarsExceptionFilter)
 export class OrdersController {
   constructor(
     private readonly orders: OrdersService,

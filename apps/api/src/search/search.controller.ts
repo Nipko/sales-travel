@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Post, UseFilters } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import {
   FlightSearchCriteriaSchema,
@@ -9,9 +9,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { SearchService } from './search.service.js';
+import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
 
 @Controller('search')
+@UseFilters(LatamNdcExceptionFilter)
 export class SearchController {
   constructor(
     private readonly search: SearchService,
