@@ -113,7 +113,9 @@ export const ConfirmInputSchema = z.object({
   dropOffAddress: z.string().min(1).default('NA'),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  age: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  // Edad LITERAL del conductor (ej: 27, 30). El API real espera la edad real, no un código 1/2/3
+  // (el rango 1..99 acepta también esos códigos por si alguna cuenta los usa). Pasa al proveedor tal cual.
+  age: z.coerce.number().int().min(1).max(99),
   email: z.string().email(),
   realBase: z.coerce.number().nonnegative(),
   realTax: z.coerce.number().nonnegative(),
@@ -124,6 +126,10 @@ export const ConfirmInputSchema = z.object({
     .length(3)
     .regex(/^[A-Za-z]{3}$/)
     .transform((c) => c.toUpperCase()),
+  // Datos legibles de la selección, sólo para persistir en la orden (no se envían al proveedor).
+  category: z.string().min(1).optional(),
+  carModel: z.string().min(1).optional(),
+  companyName: z.string().min(1).optional(),
   ccrc: z.string().min(1).optional(),
   cdCode: z.string().min(1).optional(),
   pcCode: z.string().min(1).optional(),

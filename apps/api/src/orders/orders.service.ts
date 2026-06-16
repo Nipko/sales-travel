@@ -19,6 +19,7 @@ import type {
   OrderOperationType,
   OrderStatus,
 } from '../database/database.types.js';
+import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 import { PostSaleQueueService } from '../queue/post-sale-queue.service.js';
 
@@ -37,6 +38,24 @@ export interface CreateOrderDto {
   passengers: Passenger[];
   contactInfo: BookingContactInfo;
   quotationId?: string;
+}
+
+/**
+ * Persiste una orden cuya reserva YA ocurrió contra el proveedor (no se llama a ningún
+ * proveedor en `recordExternalOrder`). Usado por verticales que confirman fuera de OrdersService
+ * (p.ej. autos vía CarsService.book). Montos en unidades menores; el discriminador es `provider`.
+ */
+export interface RecordExternalOrderInput {
+  provider: string;
+  providerOrderId: string | null;
+  status: OrderStatus;
+  searchCriteria: unknown;
+  selectedOffer: unknown;
+  passengers: unknown;
+  contactInfo: unknown;
+  totalAmountMinor: number;
+  currency: string;
+  errorMessage?: string | null;
 }
 
 export interface OrderRow {
@@ -66,7 +85,50 @@ export class OrdersService {
     private readonly db: DatabaseService,
     private readonly latam: LatamNdcProviderFactory,
     private readonly queue: PostSaleQueueService,
+    private readonly agentCars: AgentCarsProviderFactory,
   ) {}
+
+  /**
+   * Inserta una fila `orders` para una reserva que YA fue confirmada por el proveedor (no se llama
+   * a ningún proveedor aquí). Reusa la asignación de `order_number` por tenant. Devuelve la fila.
+   */
+  async recordExternalOrder(
+    tenantId: string,
+    userId: string,
+    input: RecordExternalOrderInput,
+  ): Promise<OrderRow> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const nextNumber = await trx
+        .selectFrom('orders')
+        .select(sql<number>`COALESCE(MAX(order_number), 0) + 1`.as('next'))
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirstOrThrow();
+
+      const row = await trx
+        .insertInto('orders')
+        .values({
+          tenant_id: tenantId,
+          user_id: userId,
+          quotation_id: null,
+          provider: input.provider,
+          provider_order_id: input.providerOrderId,
+          status: input.status,
+          search_criteria: JSON.stringify(input.searchCriteria),
+          selected_offer: JSON.stringify(input.selectedOffer),
+          passengers: JSON.stringify(input.passengers),
+          contact_info: JSON.stringify(input.contactInfo),
+          total_amount: input.totalAmountMinor,
+          currency: input.currency,
+          order_number: nextNumber.next,
+          provider_raw: null,
+          error_message: input.errorMessage ?? null,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      return row as unknown as OrderRow;
+    });
+  }
 
   async createOrder(
     tenantId: string,
@@ -160,10 +222,13 @@ export class OrdersService {
     pnr: string,
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
-    const adapter = await this.latam.forTenant(tenantId);
+    const existing = await this.findById(tenantId, id);
     let result: OrderCancelResult;
     try {
-      result = await adapter.cancelOrder(pnr, { tenantId });
+      result =
+        existing?.provider === 'agent-cars'
+          ? await this.cancelAgentCarsOrder(tenantId, existing, pnr)
+          : await (await this.latam.forTenant(tenantId)).cancelOrder(pnr, { tenantId });
     } catch (err) {
       await this.logOperation(
         tenantId,
@@ -198,6 +263,28 @@ export class OrdersService {
     }
 
     return { result };
+  }
+
+  /**
+   * Cancela una reserva de auto contra AgentCars (no LATAM). `confirmationCode` = provider_order_id;
+   * `lastName` sale del primer pasajero (DRIVER). Mapea el CancelResult del proveedor al
+   * OrderCancelResult del dominio.
+   */
+  private async cancelAgentCarsOrder(
+    tenantId: string,
+    order: OrderRow,
+    confirmationCode: string,
+  ): Promise<OrderCancelResult> {
+    const passengers = (order.passengers as { surname?: unknown }[] | null) ?? [];
+    const surname = passengers[0]?.surname;
+    const lastName = typeof surname === 'string' ? surname : '';
+    const adapter = await this.agentCars.forTenant(tenantId);
+    const res = await adapter.cancel({ lastName, confirmationCode });
+    return {
+      success: res.success,
+      warnings: [],
+      ...(res.success ? {} : { error: res.message ?? 'cancelación rechazada' }),
+    };
   }
 
   /**

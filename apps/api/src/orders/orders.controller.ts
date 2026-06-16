@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -118,8 +119,19 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupportsLatamOps(row);
     const result = await this.orders.retrieveFromProvider(tenantId, row.provider_order_id);
     return result;
+  }
+
+  /** Pago/emisión, consulta, servicios y repricing son operaciones específicas de LATAM NDC.
+   *  Para otros proveedores (ej: agent-cars) no aplican; se rechazan antes de tocar el adapter LATAM. */
+  private assertSupportsLatamOps(row: OrderRow): void {
+    if (row.provider !== 'latam-ndc') {
+      throw new BadRequestException(
+        `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
+      );
+    }
   }
 
   @Post(':id/cancel')
@@ -160,6 +172,7 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupportsLatamOps(row);
     return this.orders.listServices(tenantId, row);
   }
 
@@ -174,6 +187,7 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupportsLatamOps(row);
     return this.orders.reshopOrder(tenantId, id, body, userId);
   }
 
@@ -187,6 +201,7 @@ export class OrdersController {
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupportsLatamOps(row);
     return this.orders.payOrder(tenantId, id, row, body.payment as never, userId);
   }
 

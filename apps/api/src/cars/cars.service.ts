@@ -22,7 +22,9 @@ import type {
   ReleaseResult,
   RateType,
 } from '@sales-travel/agent-cars';
+import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { OrdersService } from '../orders/orders.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { PricingService, applyCascade, type WaterfallStep } from '../pricing/pricing.service.js';
 import type {
@@ -54,6 +56,8 @@ export class CarsService {
     private readonly factory: AgentCarsProviderFactory,
     private readonly db: DatabaseService,
     private readonly pricing: PricingService,
+    private readonly orders: OrdersService,
+    private readonly audit: AuditService,
   ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -111,8 +115,10 @@ export class CarsService {
 
   // ───────────────────────── Reserva ─────────────────────────
 
-  async book(tenantId: string, input: ConfirmInput): Promise<CarBookResult> {
+  async book(tenantId: string, userId: string, input: ConfirmInput): Promise<CarBookResult> {
     const adapter = await this.factory.forTenant(tenantId);
+    // El proveedor SIEMPRE recibe el neto (input.total). El precio de venta (con la cascada de
+    // markup) se calcula aparte y se guarda en la orden — nunca se le manda al proveedor.
     const req: ConfirmCarRequest = {
       uniqid: input.uniqid,
       paymentType: input.paymentType,
@@ -144,7 +150,87 @@ export class CarsService {
     if (input.membershipNumber) req.membershipNumber = input.membershipNumber;
     if (input.onHold !== undefined) req.onHold = input.onHold;
     if (input.language) req.language = input.language;
-    return adapter.confirm(req);
+
+    const result = await adapter.confirm(req);
+
+    // La reserva YA ocurrió: persistirla NO debe poder tumbarla. Cualquier fallo de persistencia o
+    // auditoría se loguea y se traga; el cliente igual recibe el CarBookResult.
+    try {
+      await this.persistOrder(tenantId, userId, input, result);
+    } catch (err) {
+      console.error(
+        `[cars] reserva ${result.confirmationCode} confirmada pero falló su persistencia:`,
+        (err as Error).message,
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * Persiste la reserva de auto como fila `orders` (provider='agent-cars') y emite el domain event.
+   * `total_amount` es el precio de VENTA: aplica el pricing waterfall del consolidador sobre el neto
+   * (input.total). El neto enviado al proveedor no se toca.
+   */
+  private async persistOrder(
+    tenantId: string,
+    userId: string,
+    input: ConfirmInput,
+    result: CarBookResult,
+  ): Promise<void> {
+    const netTotalMinor = Math.round(input.total * 100);
+    const waterfall = await this.pricing.computeWaterfall(tenantId, VERTICAL, netTotalMinor);
+    const status = result.status === 'confirmed' ? 'confirmed' : 'pending';
+    const rateAmount = Money.fromMajor(input.total, input.currency);
+
+    const order = await this.orders.recordExternalOrder(tenantId, userId, {
+      provider: 'agent-cars',
+      providerOrderId: result.confirmationCode,
+      status,
+      searchCriteria: {
+        vertical: VERTICAL,
+        pickUpLocation: input.pickUpLocation,
+        dropOffLocation: input.dropOffLocation,
+        pickUpDate: input.pickUpDate,
+        dropOffDate: input.dropOffDate,
+        pickUpHour: input.pickUpHour,
+        dropOffHour: input.dropOffHour,
+      },
+      selectedOffer: {
+        // Nombres legibles si el cliente los envió (de la selección); si no, el código como fallback.
+        category: input.category ?? result.sippCode,
+        carModel: input.carModel ?? result.sippCode,
+        companyName: input.companyName ?? input.companyCode,
+        sippCode: result.sippCode,
+        companyCode: input.companyCode,
+        rateAmount,
+        pricing: {
+          finalMinor: waterfall.finalMinor,
+          netMinor: waterfall.netMinor,
+          totalMarkupMinor: waterfall.totalMarkupMinor,
+          currency: input.currency,
+        },
+      },
+      passengers: [{ givenName: input.firstName, surname: input.lastName, paxType: 'DRIVER' }],
+      contactInfo: { email: input.email },
+      totalAmountMinor: waterfall.finalMinor,
+      currency: input.currency,
+    });
+
+    await this.audit.emit({
+      eventType: 'CarReservationCreated',
+      tenantId,
+      actorUserId: userId,
+      aggregateType: 'order',
+      aggregateId: order.id,
+      payload: {
+        provider: 'agent-cars',
+        confirmationCode: result.confirmationCode,
+        status,
+        totalMinor: waterfall.finalMinor,
+        currency: input.currency,
+      },
+    });
   }
 
   async myReservation(tenantId: string, q: MyReservationQuery): Promise<CarReservation> {

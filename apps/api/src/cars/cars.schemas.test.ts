@@ -439,17 +439,17 @@ describe('ConfirmInputSchema', () => {
     expect(ConfirmInputSchema.safeParse({ ...validConfirm, total: 'abc' }).success).toBe(false);
   });
 
-  // age sólo 1 | 2 | 3
-  it.each([1, 2, 3] as const)('acepta age=%s', (age) => {
+  // age = edad LITERAL del conductor (1..99); el API real espera la edad real, no un código.
+  it.each([18, 27, 30, 99])('acepta edad literal %s', (age) => {
     expect(ConfirmInputSchema.parse({ ...validConfirm, age }).age).toBe(age);
   });
 
-  it.each([0, 4, 25, -1])('rechaza age fuera de {1,2,3}: %s', (age) => {
-    expect(ConfirmInputSchema.safeParse({ ...validConfirm, age }).success).toBe(false);
+  it('coacciona age string "27" → 27', () => {
+    expect(ConfirmInputSchema.parse({ ...validConfirm, age: '27' }).age).toBe(27);
   });
 
-  it('rechaza age como string "1" (literal numérico, no coercible)', () => {
-    expect(ConfirmInputSchema.safeParse({ ...validConfirm, age: '1' }).success).toBe(false);
+  it.each([0, -1, 100, 'abc'])('rechaza age inválida: %s', (age) => {
+    expect(ConfirmInputSchema.safeParse({ ...validConfirm, age }).success).toBe(false);
   });
 
   it('acepta paymentType "ppd" y "pod", rechaza otros', () => {

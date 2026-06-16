@@ -106,8 +106,9 @@ export class CarsController {
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(ConfirmInputSchema)) body: ConfirmInput,
   ): Promise<CarBookResult> {
+    if (!userId) throw new ForbiddenException();
     const tenantId = await this.tenant(userId);
-    return this.cars.book(tenantId, body);
+    return this.cars.book(tenantId, userId, body);
   }
 
   @Post('reservation')
