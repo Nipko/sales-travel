@@ -126,6 +126,10 @@ export function CarLocationCombobox({
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-[var(--color-primary)]/10 px-2 py-0.5 font-mono text-[11px] font-semibold tracking-wider text-[var(--color-primary)]">
             {value.iata}
           </span>
+        ) : value ? (
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-[var(--color-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-fg-muted)]">
+            Ciudad
+          </span>
         ) : null}
       </div>
 
@@ -155,7 +159,11 @@ export function CarLocationCombobox({
                     : 'text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]',
                 )}
               >
-                <Plane className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
+                {loc.iata ? (
+                  <Plane className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
+                ) : (
+                  <MapPin className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{loc.value}</p>
                   <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
@@ -167,7 +175,11 @@ export function CarLocationCombobox({
                   <span className="shrink-0 rounded-md bg-[var(--color-surface-muted)] px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-[var(--color-fg-muted)]">
                     {loc.iata}
                   </span>
-                ) : null}
+                ) : (
+                  <span className="shrink-0 rounded-md bg-[var(--color-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-fg-muted)]">
+                    Ciudad
+                  </span>
+                )}
               </li>
             );
           })}
@@ -180,7 +192,8 @@ export function CarLocationCombobox({
             Sin resultados para «{query.trim()}»
           </p>
           <p className="mt-1 text-[11px] text-[var(--color-fg-muted)]">
-            Probá con un código IATA (BOG, MIA) o el nombre de la ciudad.
+            Probá con un código IATA (BOG, MIA) o el nombre de la ciudad. Las ciudades sin
+            aeropuerto también sirven.
           </p>
         </div>
       ) : null}

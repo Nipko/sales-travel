@@ -3,8 +3,10 @@ import {
   Building2,
   Calendar,
   Car,
+  FileText,
   Home,
   Hotel,
+  MapPin,
   Network,
   Settings,
   Shield,
@@ -26,6 +28,8 @@ export const operationsNav: NavItem[] = [
   { label: 'Buscar / Cotizar', href: '/cotizaciones', icon: Ticket },
   { label: 'Hoteles', href: '/hoteles', icon: Hotel },
   { label: 'Autos', href: '/autos', icon: Car },
+  { label: 'Oficinas', href: '/autos/oficinas', icon: MapPin },
+  { label: 'Reporte autos', href: '/autos/reporte', icon: FileText },
   { label: 'Mis Reservas', href: '/reservas', icon: Calendar },
 ];
 

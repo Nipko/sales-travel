@@ -63,6 +63,8 @@ export interface CarOffer {
 
 export interface CarSelection extends CarOffer {
   uniqid: string;
+  /** ID de la tarifa efectiva; usar en rate-detail y confirmación (no reusar 'best'). */
+  rateCode?: string;
 }
 
 export interface RateChargeItem {
@@ -104,6 +106,20 @@ export interface CancelResult {
   message?: string;
 }
 
+/** Resultado de activar (release) una reserva ON HOLD. */
+export interface ReleaseResult {
+  confirmationCode: string;
+  sippCode: string;
+  rateCode: string;
+  status: string;
+}
+
+/** Tipo de tarifa del catálogo del consolidador (GET /cars/rates). */
+export interface RateType {
+  id: string;
+  name: string;
+}
+
 /** Valores comunes de búsqueda, threaded a selección y reserva. */
 export interface CarSearchValues {
   pickUpLocation: string;
@@ -115,13 +131,20 @@ export interface CarSearchValues {
   dropOffHour: string;
   rateType: string;
   paymentType?: PaymentType;
+  /** Coordenadas de recogida; requeridas cuando pickUpLocation === 'City'. */
+  lat?: number;
+  lng?: number;
+  /** Coordenadas de devolución; requeridas cuando dropOffLocation === 'City2'. */
+  latDropOff?: number;
+  lngDropOff?: number;
 }
 
 export interface DriverValues {
   firstName: string;
   lastName: string;
   email: string;
-  age: 1 | 2 | 3;
+  /** Edad real del conductor (el API espera la edad literal, ej: 30). */
+  age: number;
 }
 
 // ─────────────────────────── Helpers de validación ───────────────────────────
@@ -151,7 +174,24 @@ function validSearch(v: CarSearchValues): string | null {
     return 'La devolución debe ser igual o posterior a la recogida.';
   if (!HOUR_RE.test(v.pickUpHour)) return 'Hora de recogida inválida.';
   if (!HOUR_RE.test(v.dropOffHour)) return 'Hora de devolución inválida.';
+  // Búsqueda por ciudad: AgentCars exige coordenadas si la ubicación es genérica.
+  if (v.pickUpLocation === 'City' && (v.lat == null || v.lng == null))
+    return 'Falta la ubicación de recogida (coordenadas de la ciudad).';
+  if (v.dropOffLocation === 'City2' && (v.latDropOff == null || v.lngDropOff == null))
+    return 'Falta la ubicación de devolución (coordenadas de la ciudad).';
   return null;
+}
+
+/** Agrega lat/lng/latDropOff/lngDropOff al body sólo cuando aplica (búsqueda por ciudad). */
+function withCityCoords(body: Record<string, unknown>, v: CarSearchValues): void {
+  if (v.pickUpLocation === 'City' && v.lat != null && v.lng != null) {
+    body.lat = v.lat;
+    body.lng = v.lng;
+  }
+  if (v.dropOffLocation === 'City2' && v.latDropOff != null && v.lngDropOff != null) {
+    body.latDropOff = v.latDropOff;
+    body.lngDropOff = v.lngDropOff;
+  }
 }
 
 // ─────────────────────────── Actions ───────────────────────────
@@ -162,6 +202,17 @@ export async function suggestCarLocationsAction(query: string): Promise<CarLocat
   if (q.length < 2) return [];
   const res = await api<{ items: CarLocation[] }>(`/cars/suggestions?q=${encodeURIComponent(q)}`);
   return res.ok ? res.data.items : [];
+}
+
+/** Catálogo de tipos de tarifa para el país destino (GET /cars/rates). */
+export async function getRatesAction(country: string, source?: string): Promise<RateType[]> {
+  const c = country.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(c)) return [];
+  const qs = new URLSearchParams({ country: c });
+  const src = source?.trim().toUpperCase();
+  if (src && /^[A-Z]{2}$/.test(src)) qs.set('source', src);
+  const res = await api<{ rates: RateType[] }>(`/cars/rates?${qs.toString()}`);
+  return res.ok ? res.data.rates : [];
 }
 
 export interface CarSearchResult {
@@ -191,6 +242,7 @@ export async function searchCarsAction(values: CarSearchValues): Promise<CarSear
     rateType: v.rateType,
   };
   if (v.paymentType) body.paymentType = v.paymentType;
+  withCityCoords(body, v);
 
   const res = await api<{ cars: CarOffer[] }>('/cars/search', {
     method: 'POST',
@@ -225,6 +277,7 @@ export async function selectCarAction(
   };
   if (search.paymentType) body.paymentType = search.paymentType;
   if (car.ccrc) body.ccrc = car.ccrc;
+  withCityCoords(body, search);
 
   const res = await api<CarSelection>('/cars/selection', {
     method: 'POST',
@@ -274,7 +327,8 @@ export async function bookCarAction(
   const body: Record<string, unknown> = {
     uniqid: selection.uniqid,
     paymentType: search.paymentType ?? selection.paymentOption,
-    rateType: search.rateType || 'best',
+    // Tarifa efectiva de la selección (no reusar 'best' de la búsqueda).
+    rateType: selection.rateCode || search.rateType || 'best',
     companyCode: selection.companyCode,
     sippCode: selection.sippCode,
     pickUpLocation: search.pickUpLocation,
@@ -292,6 +346,10 @@ export async function bookCarAction(
     realTax: major(selection.tax),
     total: major(selection.rateAmount),
     currency: selection.rateAmount.currency,
+    // Datos legibles para persistir en la orden (no se mandan al proveedor).
+    ...(selection.category && { category: selection.category }),
+    ...(selection.carModel && { carModel: selection.carModel }),
+    ...(selection.companyName && { companyName: selection.companyName }),
   };
   if (selection.ccrc) body.ccrc = selection.ccrc;
 
@@ -344,6 +402,29 @@ export async function cancelCarReservationAction(
   const res = await api<CancelResult>('/cars/reservations/cancel', {
     method: 'POST',
     body: JSON.stringify({ lastName: ln, confirmationCode: code }),
+  });
+  if (!res.ok) return { ok: false, error: res.error.message };
+  return { ok: true, result: res.data };
+}
+
+export interface ReleaseReservationResult {
+  ok: boolean;
+  result?: ReleaseResult;
+  error?: string;
+}
+
+/** Activa (release) una reserva ON HOLD. referenceCode = confirmationCode de la reserva. */
+export async function releaseReservationAction(
+  lastName: string,
+  referenceCode: string,
+): Promise<ReleaseReservationResult> {
+  const ln = lastName.trim();
+  const code = referenceCode.trim();
+  if (!ln || !code)
+    return { ok: false, error: 'Apellido y código de confirmación son requeridos.' };
+  const res = await api<ReleaseResult>('/cars/reservations/release', {
+    method: 'POST',
+    body: JSON.stringify({ lastName: ln, referenceCode: code }),
   });
   if (!res.ok) return { ok: false, error: res.error.message };
   return { ok: true, result: res.data };

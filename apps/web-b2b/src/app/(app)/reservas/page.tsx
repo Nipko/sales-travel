@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Car,
   Clock,
   CreditCard,
   Eye,
@@ -42,16 +43,33 @@ interface Order {
   status: string;
   orderNumber: number;
   provider?: string;
+  // searchCriteria es polimórfico por vertical: vuelos traen origin/destination/departureDate,
+  // autos traen vertical:'cars' + campos de pickup/dropoff. Todo opcional para no romper render.
   searchCriteria: {
-    origin: string;
-    destination: string;
-    departureDate: string;
+    // vuelos
+    origin?: string;
+    destination?: string;
+    departureDate?: string;
     returnDate?: string;
-    tripType: string;
+    tripType?: string;
+    // autos
+    vertical?: string;
+    pickUpLocation?: string;
+    dropOffLocation?: string;
+    pickUpDate?: string;
+    dropOffDate?: string;
+    pickUpHour?: string;
+    dropOffHour?: string;
   };
   selectedOffer?: {
+    // vuelos
     itineraries?: { segments: Segment[]; totalDurationMinutes: number; stops: number }[];
     fareFamily?: { name: string };
+    // autos
+    category?: string;
+    carModel?: string;
+    companyName?: string;
+    sippCode?: string;
   };
   passengers: Passenger[];
   contactInfo?: { email?: string; phone?: string };
@@ -59,6 +77,11 @@ interface Order {
   currency: string;
   errorMessage?: string | null;
   createdAt: string;
+}
+
+/** Una orden es de autos si la persistió el adapter AgentCars o el criterio marca la vertical. */
+function isCarOrder(order: Order): boolean {
+  return order.provider === 'agent-cars' || order.searchCriteria?.vertical === 'cars';
 }
 
 interface ServiceItem {
@@ -117,7 +140,12 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   failed: { label: 'Fallida', className: 'bg-red-50 text-red-700' },
 };
 
-const PAX_LABEL: Record<string, string> = { ADT: 'Adulto', CHD: 'Niño', INF: 'Infante' };
+const PAX_LABEL: Record<string, string> = {
+  ADT: 'Adulto',
+  CHD: 'Niño',
+  INF: 'Infante',
+  DRIVER: 'Conductor',
+};
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-CO', {
@@ -447,9 +475,16 @@ export default function ReservasPage() {
         <div className="space-y-3">
           {orders.map((order) => {
             const statusInfo = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
-            const paxNames = (order.passengers as { givenName: string; surname: string }[])
-              ?.map((p) => `${p.givenName} ${p.surname}`)
+            const isCar = isCarOrder(order);
+            const paxNames = order.passengers
+              ?.map((p) => `${p?.givenName ?? ''} ${p?.surname ?? ''}`.trim())
+              .filter(Boolean)
               .join(', ');
+            const sc = order.searchCriteria;
+            const routeLabel = isCar
+              ? `${sc?.pickUpLocation ?? '—'} → ${sc?.dropOffLocation ?? '—'}`
+              : `${sc?.origin ?? '—'} → ${sc?.destination ?? '—'}`;
+            const dateLabel = isCar ? sc?.pickUpDate : sc?.departureDate;
 
             return (
               <div
@@ -458,14 +493,13 @@ export default function ReservasPage() {
               >
                 <div className="flex items-center gap-4">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
-                    <Plane className="size-4" />
+                    {isCar ? <Car className="size-4" /> : <Plane className="size-4" />}
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-[var(--color-fg)]">
-                        #{order.orderNumber} · {order.searchCriteria.origin} →{' '}
-                        {order.searchCriteria.destination}
+                        #{order.orderNumber} · {routeLabel}
                       </p>
                       {order.pnr && (
                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--color-fg)]">
@@ -474,7 +508,7 @@ export default function ReservasPage() {
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-fg-muted)]">
-                      <span>{order.searchCriteria.departureDate}</span>
+                      {dateLabel && <span>{dateLabel}</span>}
                       {paxNames && <span className="truncate">· {paxNames}</span>}
                     </div>
                   </div>
@@ -509,54 +543,12 @@ export default function ReservasPage() {
                   >
                     <Eye className="size-3.5" /> Ver detalle
                   </Button>
-                  {order.pnr && order.status !== 'cancelled' && order.status !== 'failed' && (
-                    <>
-                      {(order.status === 'pending' || order.status === 'confirmed') && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          disabled={actionLoading === order.id}
-                          onClick={() => {
-                            setPayingOrder(order);
-                            setPaymentData(null);
-                          }}
-                          className="gap-1.5 text-xs"
-                        >
-                          <CreditCard className="size-3.5" /> Pagar / Emitir
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={actionLoading === order.id}
-                        onClick={() => void handleRetrieve(order)}
-                        className="gap-1.5 text-xs"
-                      >
-                        <Search className="size-3.5" />
-                        {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
-                      </Button>
-                      {order.status === 'ticketed' && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={actionLoading === order.id}
-                          onClick={() => void handleListServices(order)}
-                          className="gap-1.5 text-xs"
-                        >
-                          <Package className="size-3.5" /> Servicios
-                        </Button>
-                      )}
-                      {order.status === 'ticketed' && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={actionLoading === order.id}
-                          onClick={() => void handleReshop(order)}
-                          className="gap-1.5 text-xs"
-                        >
-                          <RefreshCw className="size-3.5" /> Repricing
-                        </Button>
-                      )}
+                  {order.pnr &&
+                    order.status !== 'cancelled' &&
+                    order.status !== 'failed' &&
+                    (isCar ? (
+                      // Autos: el backend de cancelación es provider-aware, mismo endpoint.
+                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing (todo eso es LATAM).
                       <Button
                         variant="secondary"
                         size="sm"
@@ -566,8 +558,65 @@ export default function ReservasPage() {
                       >
                         <XCircle className="size-3.5" /> Cancelar
                       </Button>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        {(order.status === 'pending' || order.status === 'confirmed') && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={actionLoading === order.id}
+                            onClick={() => {
+                              setPayingOrder(order);
+                              setPaymentData(null);
+                            }}
+                            className="gap-1.5 text-xs"
+                          >
+                            <CreditCard className="size-3.5" /> Pagar / Emitir
+                          </Button>
+                        )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={actionLoading === order.id}
+                          onClick={() => void handleRetrieve(order)}
+                          className="gap-1.5 text-xs"
+                        >
+                          <Search className="size-3.5" />
+                          {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
+                        </Button>
+                        {order.status === 'ticketed' && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id}
+                            onClick={() => void handleListServices(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Package className="size-3.5" /> Servicios
+                          </Button>
+                        )}
+                        {order.status === 'ticketed' && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id}
+                            onClick={() => void handleReshop(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <RefreshCw className="size-3.5" /> Repricing
+                          </Button>
+                        )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={actionLoading === order.id}
+                          onClick={() => setConfirmCancel(order)}
+                          className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                        >
+                          <XCircle className="size-3.5" /> Cancelar
+                        </Button>
+                      </>
+                    ))}
                 </div>
 
                 {/* Action result */}
@@ -612,7 +661,8 @@ export default function ReservasPage() {
             <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[var(--color-fg-muted)]">
-                  {payingOrder.searchCriteria.origin} → {payingOrder.searchCriteria.destination}
+                  {payingOrder.searchCriteria?.origin ?? '—'} →{' '}
+                  {payingOrder.searchCriteria?.destination ?? '—'}
                 </span>
                 <span className="font-mono font-semibold text-[var(--color-fg)]">
                   {formatMoney(payingOrder.totalAmount, payingOrder.currency)}
@@ -778,10 +828,16 @@ function OrderDetailModal({
   onPayRequest: () => void;
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
+  const isCar = isCarOrder(order);
   const itineraries = order.selectedOffer?.itineraries ?? [];
   const canCancel = !!order.pnr && order.status !== 'cancelled' && order.status !== 'failed';
-  const canPay = !!order.pnr && (order.status === 'pending' || order.status === 'confirmed');
-  const canSendEmail = !!order.pnr && order.status !== 'failed' && !!order.contactInfo?.email;
+  // Pagar/Emitir es flujo LATAM; los autos se pagan en su propio checkout, nunca acá.
+  const canPay =
+    !isCar && !!order.pnr && (order.status === 'pending' || order.status === 'confirmed');
+  // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
+  // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
+  const canSendEmail =
+    !isCar && !!order.pnr && order.status !== 'failed' && !!order.contactInfo?.email;
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -871,7 +927,44 @@ function OrderDetailModal({
             </div>
           )}
 
-          {itineraries.length > 0 ? (
+          {isCar ? (
+            <section>
+              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                Auto
+              </h3>
+              <div className="rounded-lg border border-[var(--color-border)] p-3">
+                <div className="flex items-center gap-2">
+                  {order.selectedOffer?.sippCode && (
+                    <span className="rounded-md bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--color-fg-muted)]">
+                      {order.selectedOffer.sippCode}
+                    </span>
+                  )}
+                  <span className="text-sm font-medium text-[var(--color-fg)]">
+                    {order.selectedOffer?.category ?? 'Auto'}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
+                  {[order.selectedOffer?.carModel, order.selectedOffer?.companyName]
+                    .filter(Boolean)
+                    .join(' · ') || '—'}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--color-fg-muted)]">
+                  <span className="font-mono text-[var(--color-fg)]">
+                    {order.searchCriteria?.pickUpLocation ?? '—'} →{' '}
+                    {order.searchCriteria?.dropOffLocation ?? '—'}
+                  </span>
+                  {order.searchCriteria?.pickUpDate && (
+                    <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                      {order.searchCriteria.pickUpDate}
+                      {order.searchCriteria?.dropOffDate
+                        ? ` → ${order.searchCriteria.dropOffDate}`
+                        : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : itineraries.length > 0 ? (
             <section>
               <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
                 Vuelo
@@ -914,8 +1007,10 @@ function OrderDetailModal({
                 Ruta
               </h3>
               <p className="text-sm text-[var(--color-fg)]">
-                {order.searchCriteria.origin} → {order.searchCriteria.destination} ·{' '}
-                {order.searchCriteria.departureDate}
+                {order.searchCriteria?.origin ?? '—'} → {order.searchCriteria?.destination ?? '—'}
+                {order.searchCriteria?.departureDate
+                  ? ` · ${order.searchCriteria.departureDate}`
+                  : ''}
               </p>
             </section>
           )}

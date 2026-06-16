@@ -12,12 +12,13 @@ import {
   Ticket,
   Users,
 } from 'lucide-react';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { cn } from '../../../lib/cn';
 import { CarLocationCombobox } from './_components/location-combobox';
 import { ReservationPanel } from './_components/reservation-panel';
 import {
   bookCarAction,
+  getRatesAction,
   rateDetailAction,
   searchCarsAction,
   selectCarAction,
@@ -30,6 +31,7 @@ import {
   type DriverValues,
   type Money,
   type PaymentType,
+  type RateType,
 } from './actions';
 
 type Step = 'search' | 'results' | 'checkout' | 'done';
@@ -61,12 +63,6 @@ function salePrice(o: CarOffer): { minor: number; currency: string } {
     : { minor: o.rateAmount.amountMinor, currency: o.rateAmount.currency };
 }
 
-const AGE_OPTIONS: { value: 1 | 2 | 3; label: string }[] = [
-  { value: 1, label: 'Mayor de 25' },
-  { value: 2, label: 'Entre 21 y 24' },
-  { value: 3, label: 'Menor de 21' },
-];
-
 export default function AutosPage() {
   const today = todayISO();
   const [isPending, startTransition] = useTransition();
@@ -83,6 +79,12 @@ export default function AutosPage() {
   const [dropOffTime, setDropOffTime] = useState('10:00');
   const [paymentType, setPaymentType] = useState<PaymentType>('ppd');
 
+  // Tipo de tarifa: 'best' siempre disponible; el resto se trae de /cars/rates según país.
+  const [rateType, setRateType] = useState('best');
+  const [rates, setRates] = useState<RateType[]>([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const pickupCountry = pickup?.countryCode?.toUpperCase() ?? '';
+
   // Resultados / selección / reserva
   const [search, setSearch] = useState<CarSearchValues | null>(null);
   const [cars, setCars] = useState<CarOffer[]>([]);
@@ -92,7 +94,7 @@ export default function AutosPage() {
     firstName: '',
     lastName: '',
     email: '',
-    age: 1,
+    age: 30,
   });
   const [booking, setBooking] = useState<CarBookResult | null>(null);
   const [manage, setManage] = useState<{
@@ -101,30 +103,63 @@ export default function AutosPage() {
     auto?: boolean;
   } | null>(null);
 
+  // Trae el catálogo de tarifas cuando hay país de recogida; resetea rateType si ya no es válido.
+  useEffect(() => {
+    if (!pickupCountry) {
+      setRates([]);
+      setRateType('best');
+      return;
+    }
+    let cancelled = false;
+    setRatesLoading(true);
+    void getRatesAction(pickupCountry).then((result) => {
+      if (cancelled) return;
+      setRates(result);
+      setRateType((current) =>
+        current === 'best' || result.some((r) => r.id === current) ? current : 'best',
+      );
+      setRatesLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupCountry]);
+
   function runSearch() {
     setError('');
-    const dest = pickup?.countryCode?.toUpperCase() ?? '';
-    const pickIata = pickup?.iata ?? '';
-    const dropIata = sameDropoff ? pickIata : (dropoff?.iata ?? '');
-    if (!pickIata) {
-      setError('Elegí un lugar de recogida con código de aeropuerto (IATA).');
+    const dest = pickupCountry;
+    if (!pickup) {
+      setError('Elegí un lugar de recogida.');
       return;
     }
-    if (!sameDropoff && !dropIata) {
-      setError('Elegí un lugar de devolución con código de aeropuerto (IATA).');
+    if (!sameDropoff && !dropoff) {
+      setError('Elegí un lugar de devolución.');
       return;
     }
+    // Si la ubicación tiene IATA usamos el código; si es ciudad usamos "City"/"City2" + coordenadas.
+    const dropLoc = sameDropoff ? pickup : dropoff;
+    const pickUpLocation = pickup.iata ?? 'City';
+    const dropOffLocation = sameDropoff ? pickUpLocation : (dropLoc?.iata ?? 'City2');
+
     const values: CarSearchValues = {
-      pickUpLocation: pickIata,
-      dropOffLocation: dropIata,
+      pickUpLocation,
+      dropOffLocation,
       country: dest,
       pickUpDate,
       dropOffDate,
       pickUpHour: pickUpTime,
       dropOffHour: dropOffTime,
-      rateType: 'best',
+      rateType: rateType || 'best',
       paymentType,
     };
+    if (pickUpLocation === 'City') {
+      values.lat = pickup.latitude;
+      values.lng = pickup.longitude;
+    }
+    if (dropOffLocation === 'City2' && dropLoc) {
+      values.latDropOff = dropLoc.latitude;
+      values.lngDropOff = dropLoc.longitude;
+    }
     startTransition(async () => {
       const res = await searchCarsAction(values);
       if (!res.ok) {
@@ -155,7 +190,7 @@ export default function AutosPage() {
       const detail = await rateDetailAction(
         res.selection.uniqid,
         search.paymentType ?? res.selection.paymentOption,
-        search.rateType,
+        res.selection.rateCode || search.rateType,
       );
       if (detail.ok && detail.detail) setRateDetail(detail.detail);
       setStep('checkout');
@@ -296,24 +331,50 @@ export default function AutosPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-            <div className="space-y-1.5">
-              <span className={labelClass}>Pago</span>
-              <div className="flex gap-1 rounded-lg border border-[var(--color-border)] p-0.5">
-                {(['ppd', 'pod'] as PaymentType[]).map((pt) => (
-                  <button
-                    key={pt}
-                    type="button"
-                    onClick={() => setPaymentType(pt)}
-                    className={cn(
-                      'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                      paymentType === pt
-                        ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-                        : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
-                    )}
-                  >
-                    {pt === 'ppd' ? 'Prepago' : 'En destino'}
-                  </button>
-                ))}
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <span className={labelClass}>Pago</span>
+                <div className="flex gap-1 rounded-lg border border-[var(--color-border)] p-0.5">
+                  {(['ppd', 'pod'] as PaymentType[]).map((pt) => (
+                    <button
+                      key={pt}
+                      type="button"
+                      onClick={() => setPaymentType(pt)}
+                      className={cn(
+                        'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                        paymentType === pt
+                          ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
+                          : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
+                      )}
+                    >
+                      {pt === 'ppd' ? 'Prepago' : 'En destino'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="rateType" className={labelClass}>
+                  Tipo de tarifa
+                </label>
+                <select
+                  id="rateType"
+                  value={rateType}
+                  onChange={(e) => setRateType(e.target.value)}
+                  disabled={!pickupCountry || ratesLoading}
+                  className={cn(inputClass, 'w-48 disabled:cursor-not-allowed disabled:opacity-60')}
+                >
+                  <option value="best">
+                    {ratesLoading ? 'Mejor tarifa (cargando…)' : 'Mejor tarifa'}
+                  </option>
+                  {rates
+                    .filter((r) => r.id !== 'best')
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                </select>
               </div>
             </div>
 
@@ -414,20 +475,15 @@ export default function AutosPage() {
                   <label htmlFor="age" className={labelClass}>
                     Edad del conductor
                   </label>
-                  <select
+                  <input
                     id="age"
+                    type="number"
+                    min={18}
+                    max={99}
                     value={driver.age}
-                    onChange={(e) =>
-                      setDriver({ ...driver, age: Number(e.target.value) as 1 | 2 | 3 })
-                    }
+                    onChange={(e) => setDriver({ ...driver, age: Number(e.target.value) })}
                     className={inputClass}
-                  >
-                    {AGE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <div className="mt-5 flex justify-end">
