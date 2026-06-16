@@ -96,7 +96,22 @@ const LATAM_NDC: ProviderForm = {
   ],
   config: [{ key: 'apiUrl', label: 'API URL' }],
 };
-const PROVIDERS: Record<string, ProviderForm> = { 'latam-ndc': LATAM_NDC };
+// AgentCars (renta de autos). El token es secreto; sourceCountry = POS del agente.
+// baseUrl/suggestUrl/language son opcionales (el adapter usa defaults de desarrollo).
+const AGENT_CARS: ProviderForm = {
+  label: 'AgentCars',
+  credentials: [{ key: 'accessToken', label: 'Access Token', secret: true }],
+  config: [
+    { key: 'sourceCountry', label: 'País origen / POS (ej: CO)' },
+    { key: 'baseUrl', label: 'Base URL (opcional)' },
+    { key: 'suggestUrl', label: 'Suggest URL (opcional)' },
+    { key: 'language', label: 'Idioma (opcional)' },
+  ],
+};
+const PROVIDERS: Record<string, ProviderForm> = {
+  'latam-ndc': LATAM_NDC,
+  'agent-cars': AGENT_CARS,
+};
 
 interface SalesRow {
   tenantId: string;
