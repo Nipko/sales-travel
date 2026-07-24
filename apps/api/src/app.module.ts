@@ -23,6 +23,7 @@ import { MailerModule } from './mail/mailer.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { HotelsModule } from './hotels/hotels.module.js';
 import { CarsModule } from './cars/cars.module.js';
+import { CrmModule } from './crm/crm.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { CarsModule } from './cars/cars.module.js';
     OrdersModule,
     TenantsModule,
     CustomersModule,
+    CrmModule,
     PortfoliosModule,
     ReportsModule,
     ProviderCredentialsModule,

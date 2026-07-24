@@ -165,8 +165,87 @@ export interface CustomersTable {
   nationality: string;
   passport_expiry: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   preferences: Generated<unknown>;
+  frequent_flyer_program: Generated<unknown>;
+  travel_preferences: Generated<unknown>;
+  tags: Generated<string[]>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface CustomerPassengersTable {
+  id: Generated<string>;
+  customer_id: string;
+  relationship: string;
+  first_name: string;
+  last_name: string;
+  document_type: string;
+  document_number: string;
+  document_issuing_country: string;
+  birthdate: ColumnType<Date, Date | string, Date | string>;
+  gender: string;
+  nationality: string;
+  passport_expiry: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CustomerDocumentsVaultTable {
+  id: Generated<string>;
+  customer_id: string;
+  document_category: string;
+  document_number: string | null;
+  issue_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  expiry_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  file_url: string | null;
+  notes: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export type CrmOpportunityStage =
+  | 'AI_HANDLING'
+  | 'LEAD_UNASSIGNED'
+  | 'QUALIFIED_LEAD'
+  | 'QUOTE_SENT'
+  | 'NEGOTIATION'
+  | 'BOOKING_CONFIRMED'
+  | 'IN_TRAVEL'
+  | 'POST_TRAVEL_COMPLETED'
+  | 'CLOSED_LOST';
+
+export interface CrmOpportunitiesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  customer_id: string;
+  assigned_user_id: string | null;
+  stage: Generated<CrmOpportunityStage>;
+  title: string;
+  estimated_value_minor: Generated<number>;
+  currency: Generated<string>;
+  destination_city: string | null;
+  travel_start_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  travel_end_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  pax_count: Generated<number>;
+  package_quotation_id: string | null;
+  order_id: string | null;
+  source_channel: Generated<string>;
+  is_ai_controlled: Generated<boolean>;
+  lost_reason: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmInteractionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  customer_id: string;
+  opportunity_id: string | null;
+  channel: string;
+  direction: string;
+  summary: string;
+  payload: Generated<unknown>;
+  created_by_user_id: string | null;
+  created_at: Generated<Timestamp>;
 }
 
 export interface AgencyPortfoliosTable {
@@ -276,6 +355,10 @@ export interface DB {
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
   customers: CustomersTable;
+  customer_passengers: CustomerPassengersTable;
+  customer_documents_vault: CustomerDocumentsVaultTable;
+  crm_opportunities: CrmOpportunitiesTable;
+  crm_interactions: CrmInteractionsTable;
   agency_portfolios: AgencyPortfoliosTable;
   portfolio_transactions: PortfolioTransactionsTable;
   markup_rules: MarkupRulesTable;
