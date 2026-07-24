@@ -287,17 +287,12 @@ export function ClientesClient({
     } else {
       toast.error('Error al eliminar cliente');
     }
-=======
-    setOpportunities([newOpp, ...opportunities]);
-    setIsAddOppModalOpen(false);
-    setOppTitle('');
   };
 
   const handleMoveStage = (oppId: string, nextStage: Opportunity['stage']) => {
     setOpportunities((prev) =>
       prev.map((o) => (o.id === oppId ? { ...o, stage: nextStage } : o)),
     );
->>>>>>> Stashed changes
   };
 
   const isPassportExpiringSoon = (expiryDate: string | null) => {

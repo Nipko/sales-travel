@@ -1,6 +1,8 @@
 import { api } from '../../../lib/api';
 import { ClientesClient } from './ClientesClient';
 
+export const dynamic = 'force-dynamic';
+
 export default async function ClientesPage() {
   const [customersRes, opportunitiesRes] = await Promise.all([
     api<{ customers: any[] }>('/customers').catch(() => null),

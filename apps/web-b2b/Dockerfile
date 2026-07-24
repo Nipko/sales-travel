@@ -10,6 +10,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY pnpm-lock.yaml* ./
 COPY packages packages
+COPY providers providers
 COPY apps/web-b2b apps/web-b2b
 RUN pnpm install --filter @sales-travel/web-b2b... --no-frozen-lockfile
 RUN pnpm --filter @sales-travel/web-b2b build
