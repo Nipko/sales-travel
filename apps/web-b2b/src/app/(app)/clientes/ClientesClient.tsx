@@ -99,12 +99,42 @@ interface ClientesClientProps {
 }
 
 const STAGES: { key: Opportunity['stage']; label: string; color: string; icon: any }[] = [
-  { key: 'AI_HANDLING', label: 'Copiloto IA', color: 'border-purple-500/30 bg-purple-500/10 text-purple-400', icon: Bot },
-  { key: 'QUALIFIED_LEAD', label: 'Calificado', color: 'border-blue-500/30 bg-blue-500/10 text-blue-400', icon: UserCheck },
-  { key: 'QUOTE_SENT', label: 'Cotización Enviada', color: 'border-amber-500/30 bg-amber-500/10 text-amber-400', icon: FileText },
-  { key: 'BOOKING_CONFIRMED', label: 'Reserva Confirmada', color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400', icon: CheckCircle },
-  { key: 'IN_TRAVEL', label: 'En Viaje', color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400', icon: Plane },
-  { key: 'POST_TRAVEL_COMPLETED', label: 'Completado', color: 'border-slate-500/30 bg-slate-500/10 text-slate-400', icon: Sparkles },
+  {
+    key: 'AI_HANDLING',
+    label: 'Copiloto IA',
+    color: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+    icon: Bot,
+  },
+  {
+    key: 'QUALIFIED_LEAD',
+    label: 'Calificado',
+    color: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+    icon: UserCheck,
+  },
+  {
+    key: 'QUOTE_SENT',
+    label: 'Cotización Enviada',
+    color: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    icon: FileText,
+  },
+  {
+    key: 'BOOKING_CONFIRMED',
+    label: 'Reserva Confirmada',
+    color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    icon: CheckCircle,
+  },
+  {
+    key: 'IN_TRAVEL',
+    label: 'En Viaje',
+    color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400',
+    icon: Plane,
+  },
+  {
+    key: 'POST_TRAVEL_COMPLETED',
+    label: 'Completado',
+    color: 'border-slate-500/30 bg-slate-500/10 text-slate-400',
+    icon: Sparkles,
+  },
 ];
 
 export function ClientesClient({
@@ -290,9 +320,7 @@ export function ClientesClient({
   };
 
   const handleMoveStage = (oppId: string, nextStage: Opportunity['stage']) => {
-    setOpportunities((prev) =>
-      prev.map((o) => (o.id === oppId ? { ...o, stage: nextStage } : o)),
-    );
+    setOpportunities((prev) => prev.map((o) => (o.id === oppId ? { ...o, stage: nextStage } : o)));
   };
 
   const isPassportExpiringSoon = (expiryDate: string | null) => {
@@ -309,13 +337,16 @@ export function ClientesClient({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-white">Travel CRM Conversacional</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white">
+              Travel CRM Conversacional
+            </h1>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
               <Bot className="size-3.5" /> IA Native M9
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Gestión inteligente de oportunidades de viajes, atención automática por WhatsApp y expediente 360° de pasajeros.
+            Gestión inteligente de oportunidades de viajes, atención automática por WhatsApp y
+            expediente 360° de pasajeros.
           </p>
         </div>
 
@@ -380,7 +411,11 @@ export function ClientesClient({
           <div>
             <p className="text-xs text-slate-400 font-medium">Cotizaciones Activas</p>
             <p className="text-2xl font-bold text-amber-400 mt-1">
-              {opportunities.filter((o) => o.stage === 'QUOTE_SENT' || o.stage === 'QUALIFIED_LEAD').length}
+              {
+                opportunities.filter(
+                  (o) => o.stage === 'QUOTE_SENT' || o.stage === 'QUALIFIED_LEAD',
+                ).length
+              }
             </p>
           </div>
           <div className="size-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
@@ -449,9 +484,7 @@ export function ClientesClient({
                               <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                                 <Bot className="size-3" /> Copiloto IA Atendiendo
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                WhatsApp
-                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">WhatsApp</span>
                             </div>
                           )}
 
@@ -466,10 +499,12 @@ export function ClientesClient({
 
                           <div className="flex items-center justify-between text-[11px] text-slate-300 pt-1 border-t border-slate-800/60 font-mono">
                             <span className="flex items-center gap-1 text-slate-400">
-                              <MapPin className="size-3 text-sky-400" /> {opp.destinationCity ?? 'N/A'}
+                              <MapPin className="size-3 text-sky-400" />{' '}
+                              {opp.destinationCity ?? 'N/A'}
                             </span>
                             <span className="font-bold text-emerald-400">
-                              ${(opp.estimatedValueMinor / 100).toLocaleString('es-CO')} {opp.currency}
+                              ${(opp.estimatedValueMinor / 100).toLocaleString('es-CO')}{' '}
+                              {opp.currency}
                             </span>
                           </div>
 
@@ -486,7 +521,9 @@ export function ClientesClient({
 
                             <select
                               value={opp.stage}
-                              onChange={(e) => handleMoveStage(opp.id, e.target.value as Opportunity['stage'])}
+                              onChange={(e) =>
+                                handleMoveStage(opp.id, e.target.value as Opportunity['stage'])
+                              }
                               className="bg-slate-950 text-[10px] text-slate-300 border border-slate-800 rounded px-1.5 py-0.5 focus:outline-none focus:border-sky-500"
                             >
                               {STAGES.map((s) => (
@@ -582,11 +619,15 @@ export function ClientesClient({
                           <div className="font-mono text-slate-200">
                             {cust.documentType}: {cust.documentNumber}
                           </div>
-                          <div className="text-[10px] text-slate-400">{cust.documentIssuingCountry}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {cust.documentIssuingCountry}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           <div className="text-slate-300">{cust.phone ?? 'Sin teléfono'}</div>
-                          <div className="text-[10px] text-slate-500">{cust.email ?? 'Sin email'}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {cust.email ?? 'Sin email'}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           {cust.passportExpiry ? (
@@ -700,14 +741,19 @@ export function ClientesClient({
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Kanban className="size-4 text-sky-400" /> Crear Oportunidad de Viaje
               </h3>
-              <button onClick={() => setIsAddOppModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => setIsAddOppModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="size-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateOpportunity} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-400 font-medium mb-1">Título de la Oportunidad</label>
+                <label className="block text-slate-400 font-medium mb-1">
+                  Título de la Oportunidad
+                </label>
                 <input
                   type="text"
                   required
@@ -757,7 +803,9 @@ export function ClientesClient({
               </div>
 
               <div>
-                <label className="block text-slate-400 font-medium mb-1">Valor Estimado (COP)</label>
+                <label className="block text-slate-400 font-medium mb-1">
+                  Valor Estimado (COP)
+                </label>
                 <input
                   type="number"
                   placeholder="1500000"
@@ -795,7 +843,10 @@ export function ClientesClient({
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Users className="size-4 text-sky-400" /> Registrar Nuevo Viajero
               </h3>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="size-5" />
               </button>
             </div>
@@ -826,7 +877,9 @@ export function ClientesClient({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Teléfono / WhatsApp</label>
+                  <label className="block text-slate-400 font-medium mb-1">
+                    Teléfono / WhatsApp
+                  </label>
                   <input
                     type="text"
                     placeholder="+573001234567"

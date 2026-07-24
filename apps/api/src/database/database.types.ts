@@ -223,7 +223,11 @@ export interface CrmOpportunitiesTable {
   estimated_value_minor: Generated<number>;
   currency: Generated<string>;
   destination_city: string | null;
-  travel_start_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  travel_start_date: ColumnType<
+    Date | null,
+    Date | string | null | undefined,
+    Date | string | null
+  >;
   travel_end_date: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   pax_count: Generated<number>;
   package_quotation_id: string | null;

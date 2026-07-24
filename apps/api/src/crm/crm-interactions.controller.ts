@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Get,
-  Param,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import {
@@ -22,10 +15,7 @@ export class CrmInteractionsController {
   ) {}
 
   @Post()
-  async create(
-    @CurrentUser() userId: string | undefined,
-    @Body() body: CreateInteractionDto,
-  ) {
+  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateInteractionDto) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.interactions.create(tenantId, {
@@ -55,8 +45,7 @@ export class CrmInteractionsController {
       channel: row.channel,
       direction: row.direction,
       summary: row.summary,
-      payload:
-        typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+      payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
       createdByUserId: row.created_by_user_id,
       createdAt: row.created_at,
     };

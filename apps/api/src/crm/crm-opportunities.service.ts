@@ -198,11 +198,7 @@ export class CrmOpportunitiesService {
       if (dto.isAiControlled !== undefined) updateData.is_ai_controlled = dto.isAiControlled;
       if (dto.lostReason !== undefined) updateData.lost_reason = dto.lostReason;
 
-      await trx
-        .updateTable('crm_opportunities')
-        .set(updateData)
-        .where('id', '=', id)
-        .execute();
+      await trx.updateTable('crm_opportunities').set(updateData).where('id', '=', id).execute();
 
       return this.findById(tenantId, id);
     });

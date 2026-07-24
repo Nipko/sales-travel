@@ -27,10 +27,7 @@ export class CrmOpportunitiesController {
   ) {}
 
   @Post()
-  async create(
-    @CurrentUser() userId: string | undefined,
-    @Body() body: CreateOpportunityDto,
-  ) {
+  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateOpportunityDto) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.resolveActiveTenant(userId);
     const row = await this.opportunities.create(tenantId, body);
