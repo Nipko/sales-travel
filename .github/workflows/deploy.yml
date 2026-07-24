@@ -32,7 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
-      fail-fast: true
+      fail-fast: false
+      max-parallel: 3
       matrix:
         app:
           - { name: api, dockerfile: apps/api/Dockerfile }
