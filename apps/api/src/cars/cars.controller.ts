@@ -39,7 +39,10 @@ import {
   type RatesInput,
   type ReleaseBody,
 } from './cars.schemas.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('cars')
 @UseFilters(AgentCarsExceptionFilter)
 export class CarsController {

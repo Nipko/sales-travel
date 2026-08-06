@@ -41,6 +41,25 @@ export const ADMIN_ROLES = [
 ] as const satisfies readonly Role[];
 
 /**
+ * Administradores de un nodo de la red (sin los roles globales de plataforma, que
+ * RolesGuard deja pasar siempre). Es el grupo que gobierna configuración sensible:
+ * markup, credenciales BYOC, límites de crédito y movimientos de cartera.
+ */
+export const AGENCY_ADMIN_ROLES = [
+  'consolidator_admin',
+  'tenant_admin',
+  'agency_admin',
+  'admin',
+] as const satisfies readonly Role[];
+
+/**
+ * Quienes operan comercialmente: los admins de nodo más el vendedor. Cubre cotizar,
+ * reservar y gestionar clientes. Excluye a `cliente_final`, que no debe alcanzar
+ * ningún endpoint de gestión.
+ */
+export const SELLING_ROLES = [...AGENCY_ADMIN_ROLES, 'vendedor'] as const satisfies readonly Role[];
+
+/**
  * Jerarquía de privilegio. Se usa para impedir que un admin asigne un rol igual o
  * superior al propio (auto-promoción) o degrade a alguien por encima suyo.
  */

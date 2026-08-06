@@ -14,7 +14,10 @@ import { NetworkService } from '../network/network.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { TestEmailSchema, type TestEmailDto } from './dto.js';
 import { MailerService, type MailTestResult } from './mailer.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 
+@Roles(...AGENCY_ADMIN_ROLES)
 @Controller('mail')
 export class MailController {
   constructor(

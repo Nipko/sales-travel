@@ -6,7 +6,10 @@ import {
   type CreateInteractionDto,
   type InteractionRow,
 } from './crm-interactions.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('crm/interactions')
 export class CrmInteractionsController {
   constructor(

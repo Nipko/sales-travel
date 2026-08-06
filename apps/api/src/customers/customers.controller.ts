@@ -19,7 +19,10 @@ import {
   type UpdateCustomerDto,
   type CustomerRow,
 } from './customers.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('customers')
 export class CustomersController {
   constructor(
@@ -68,6 +71,7 @@ export class CustomersController {
     return { customer: this.serialize(row) };
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Delete(':id')
   async remove(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();

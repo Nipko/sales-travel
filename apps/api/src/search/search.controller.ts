@@ -11,7 +11,10 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { SearchService } from './search.service.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('search')
 @UseFilters(LatamNdcExceptionFilter)
 export class SearchController {

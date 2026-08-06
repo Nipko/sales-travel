@@ -19,6 +19,8 @@ import {
   type NetworkTenant,
   type NetworkUser,
 } from '../network/network.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 
 interface BrandingView {
   logoUrl: string | null;
@@ -58,6 +60,7 @@ export class TenantsController {
   }
 
   /** Agregado de ventas (orders/quotations) de toda la red bajo el tenant indicado. */
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Get('network/sales')
   async getNetworkSales(
     @CurrentUser() userId: string | undefined,
@@ -70,6 +73,7 @@ export class TenantsController {
   }
 
   /** Actividad reciente (audit log) de toda la red bajo el tenant indicado. */
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Get('network/audit')
   async getNetworkAudit(
     @CurrentUser() userId: string | undefined,
@@ -86,6 +90,7 @@ export class TenantsController {
   }
 
   /** Usuarios (memberships) de un nodo de la red. Gateado por canManageTenant. */
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Get('network/users')
   async getNetworkUsers(
     @CurrentUser() userId: string | undefined,
@@ -144,6 +149,7 @@ export class TenantsController {
     });
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Patch(':id/branding')
   async updateBranding(
     @CurrentUser() userId: string | undefined,
@@ -179,6 +185,7 @@ export class TenantsController {
     });
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Patch(':id/config')
   async updateConfig(
     @CurrentUser() userId: string | undefined,

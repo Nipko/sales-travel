@@ -40,7 +40,10 @@ import {
   type PaymentOptionsInput,
   type RecoveryBody,
 } from './hotels.schemas.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('hotels')
 @UseFilters(DespegarHotelsExceptionFilter)
 export class HotelsController {

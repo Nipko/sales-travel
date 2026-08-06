@@ -13,6 +13,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { NetworkService } from '../network/network.service.js';
 import { PricingService, type WaterfallResult } from './pricing.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
 interface WaterfallBody {
   tenantId: string;
@@ -28,6 +30,7 @@ interface CreateRuleBody {
   priority?: number;
 }
 
+@Roles(...SELLING_ROLES)
 @Controller('pricing')
 export class PricingController {
   constructor(
@@ -45,6 +48,7 @@ export class PricingController {
   }
 
   /** Crea una regla de markup en un tenant. Requiere gestionar ese tenant. */
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Post('rules')
   async createRule(@CurrentUser() userId: string | undefined, @Body() body: CreateRuleBody) {
     await this.assertManage(userId, body.tenantId);
@@ -68,6 +72,7 @@ export class PricingController {
     return result;
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Delete('rules/:id')
   async deleteRule(
     @CurrentUser() userId: string | undefined,

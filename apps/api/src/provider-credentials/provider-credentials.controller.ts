@@ -14,6 +14,8 @@ import { NetworkService } from '../network/network.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { UpsertProviderAccountSchema } from './dto.js';
 import { ProviderCredentialsService } from './provider-credentials.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 
 interface UpsertProviderAccountBody {
   tenantId: string;
@@ -29,6 +31,7 @@ interface UpsertProviderAccountBody {
  * Gestión de credenciales BYOC por tenant. Sólo admins. El secreto NUNCA se
  * devuelve: las respuestas exponen sólo metadata (config no-secreta, status...).
  */
+@Roles(...AGENCY_ADMIN_ROLES)
 @Controller('provider-accounts')
 export class ProviderCredentialsController {
   constructor(

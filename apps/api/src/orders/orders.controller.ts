@@ -19,7 +19,10 @@ import { orderConfirmationEmailHtml } from '../mail/templates.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('orders')
 @UseFilters(LatamNdcExceptionFilter, AgentCarsExceptionFilter)
 export class OrdersController {

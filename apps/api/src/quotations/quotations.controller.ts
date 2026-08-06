@@ -22,7 +22,10 @@ import {
   UpdateQuotationCustomerSchema,
 } from './dto.js';
 import { QuotationsService, type CreateQuotationDto } from './quotations.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('quotations')
 export class QuotationsController {
   constructor(

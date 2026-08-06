@@ -2,7 +2,10 @@ import { Controller, ForbiddenException, Get } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ReportsService } from './reports.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('reports')
 export class ReportsController {
   constructor(
@@ -17,6 +20,7 @@ export class ReportsController {
     return this.reports.getSalesMetrics(tenantId);
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Get('commissions')
   async getCommissions(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();

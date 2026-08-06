@@ -13,7 +13,6 @@ import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PasswordService } from '../auth/password.service.js';
 import { SessionService } from '../auth/session.service.js';
-import { ADMIN_ROLES, canGrantRole, isAdminRole } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
@@ -31,7 +30,10 @@ import {
   type SetMembershipStatusDto,
   type SetUserStatusDto,
 } from './dto.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, canGrantRole, isAdminRole } from '../auth/roles.js';
 
+@Roles(...AGENCY_ADMIN_ROLES)
 @Controller('admin')
 export class AdminController {
   constructor(

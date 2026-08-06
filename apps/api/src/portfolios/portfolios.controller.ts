@@ -29,7 +29,10 @@ import {
   type PortfolioRow,
   type PortfolioTransactionRow,
 } from './portfolios.service.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
+@Roles(...SELLING_ROLES)
 @Controller('portfolios')
 export class PortfoliosController {
   constructor(
@@ -53,6 +56,7 @@ export class PortfoliosController {
     return { transactions: txs.map((tx) => this.serializeTransaction(tx)) };
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Post('deposit')
   async deposit(
     @CurrentUser() userId: string | undefined,
@@ -74,6 +78,7 @@ export class PortfoliosController {
     };
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Post('withdraw')
   async withdraw(
     @CurrentUser() userId: string | undefined,
@@ -95,6 +100,7 @@ export class PortfoliosController {
     };
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Patch('credit-limit')
   async updateLimit(
     @CurrentUser() userId: string | undefined,
@@ -136,6 +142,7 @@ export class PortfoliosController {
     };
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/approve')
   async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
@@ -145,6 +152,7 @@ export class PortfoliosController {
     return this.portfolios.approveBooking(tenantId, orderId);
   }
 
+  @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/reject')
   async reject(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
