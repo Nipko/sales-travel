@@ -116,7 +116,9 @@ export interface UserInvitationsTable {
   expires_at: Timestamp;
   accepted_at: Timestamp | null;
   revoked_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  // Timestamp (no Generated<Timestamp>): sigue siendo opcional al insertar y el SELECT
+  // devuelve Date en vez de un ColumnType anidado. Ver SessionsTable.
+  created_at: Timestamp;
 }
 
 export interface MembershipsTable {

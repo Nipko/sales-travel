@@ -38,6 +38,20 @@ export const CreateUserSchema = z.object({
 });
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;
 
+export const InviteUserSchema = z.object({
+  email: z.string().email().toLowerCase(),
+  tenantId: z.string().uuid(),
+  role: AssignableRoleSchema,
+});
+export type InviteUserDto = z.infer<typeof InviteUserSchema>;
+
+export const AcceptInvitationSchema = z.object({
+  token: z.string().min(10).max(512),
+  name: z.string().min(1).max(120),
+  password: z.string().min(12).max(128),
+});
+export type AcceptInvitationDto = z.infer<typeof AcceptInvitationSchema>;
+
 export const SetMembershipStatusSchema = z.object({
   userId: z.string().uuid(),
   tenantId: z.string().uuid(),
