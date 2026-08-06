@@ -45,7 +45,11 @@ export class CrmInteractionsController {
       channel: row.channel,
       direction: row.direction,
       summary: row.summary,
-      payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+      // El driver devuelve jsonb ya parseado, salvo cuando viaja como texto.
+      payload:
+        typeof row.payload === 'string'
+          ? (JSON.parse(row.payload) as Record<string, unknown>)
+          : (row.payload as Record<string, unknown>),
       createdByUserId: row.created_by_user_id,
       createdAt: row.created_at,
     };
