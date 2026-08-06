@@ -12,46 +12,25 @@ import { sql } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PasswordService } from '../auth/password.service.js';
+import { SessionService } from '../auth/session.service.js';
+import { ADMIN_ROLES, canGrantRole, isAdminRole } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
-
-const ASSIGNABLE_ROLES: Role[] = [
-  'consolidator_admin',
-  'tenant_admin',
-  'agency_admin',
-  'admin',
-  'vendedor',
-  'cliente_final',
-];
-
-interface ChangeRoleBody {
-  userId: string;
-  tenantId: string;
-  role: Role;
-}
-
-interface CreateTenantBody {
-  name: string;
-  slug: string;
-  countryCode: string;
-  defaultCurrency: string;
-  defaultLanguage?: 'es' | 'pt' | 'en';
-  // Modelo consolidador (B2B2B): si se indica padre, el tenant cuelga de él en la jerarquía.
-  parentTenantId?: string;
-  tenantType?: 'platform' | 'consolidator' | 'agency' | 'subagency';
-  adminEmail?: string;
-  adminName?: string;
-  adminPassword?: string;
-}
-
-interface CreateUserBody {
-  email: string;
-  name: string;
-  password: string;
-  tenantId: string;
-  role: 'tenant_admin' | 'admin' | 'vendedor' | 'cliente_final';
-}
+import { currentRole } from '../request-context/request-context.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import {
+  ChangeRoleSchema,
+  CreateTenantSchema,
+  CreateUserSchema,
+  SetMembershipStatusSchema,
+  SetUserStatusSchema,
+  type ChangeRoleDto,
+  type CreateTenantDto,
+  type CreateUserDto,
+  type SetMembershipStatusDto,
+  type SetUserStatusDto,
+} from './dto.js';
 
 @Controller('admin')
 export class AdminController {
@@ -60,18 +39,44 @@ export class AdminController {
     private readonly password: PasswordService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
+    private readonly sessions: SessionService,
   ) {}
 
   /** Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant. */
   @Patch('memberships/role')
-  async changeRole(@CurrentUser() userId: string | undefined, @Body() body: ChangeRoleBody) {
+  async changeRole(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(ChangeRoleSchema)) body: ChangeRoleDto,
+  ) {
     if (!userId) throw new UnauthorizedException();
-    if (!ASSIGNABLE_ROLES.includes(body.role)) {
-      throw new ForbiddenException('invalid role');
+    // Sin esto, un `admin` podía promoverse a consolidator_admin dentro de su propio nodo.
+    if (body.userId === userId) {
+      throw new ForbiddenException('no podés cambiar tu propio rol');
     }
+
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
       throw new ForbiddenException('not authorized to manage this tenant');
+    }
+
+    const current = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
+      trx
+        .selectFrom('memberships')
+        .select(['id', 'role'])
+        .where('user_id', '=', body.userId)
+        .where('tenant_id', '=', body.tenantId)
+        .executeTakeFirst(),
+    );
+    if (!current) throw new ForbiddenException('membership not found in this tenant');
+
+    // Hay que superar en rango tanto al rol actual del objetivo (para poder tocarlo) como
+    // al rol que se le quiere dar (para no conceder más autoridad de la propia).
+    this.assertOutranks(current.role, superadmin);
+    this.assertOutranks(body.role, superadmin);
+
+    // Degradar al último admin dejaría el nodo sin quien lo administre.
+    if (isAdminRole(current.role) && !isAdminRole(body.role)) {
+      await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
     }
 
     const updated = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
@@ -184,7 +189,10 @@ export class AdminController {
   }
 
   @Post('tenants')
-  async createTenant(@CurrentUser() userId: string | undefined, @Body() body: CreateTenantBody) {
+  async createTenant(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateTenantSchema)) body: CreateTenantDto,
+  ) {
     if (!userId) throw new UnauthorizedException();
     await this.assertAdmin(userId);
 
@@ -283,7 +291,10 @@ export class AdminController {
   }
 
   @Post('users')
-  async createUser(@CurrentUser() userId: string | undefined, @Body() body: CreateUserBody) {
+  async createUser(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateUserSchema)) body: CreateUserDto,
+  ) {
     if (!userId) throw new UnauthorizedException();
     await this.assertAdmin(userId);
 
@@ -348,7 +359,153 @@ export class AdminController {
       return user;
     });
 
+    await this.audit.emit({
+      eventType: 'UserCreated',
+      tenantId: body.tenantId,
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: result.id,
+      payload: { email: body.email, role: body.role, existingUserLinked: Boolean(existingUser) },
+    });
+
     return { user: result };
+  }
+
+  /**
+   * Suspende o reactiva una membership. Es la baja de un vendedor o de una agencia dentro
+   * de la red: al suspender se revocan sus sesiones, así que el acceso corta en el acto
+   * en lugar de sobrevivir hasta que expire el token.
+   */
+  @Patch('memberships/status')
+  async setMembershipStatus(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(SetMembershipStatusSchema)) body: SetMembershipStatusDto,
+  ) {
+    if (!userId) throw new UnauthorizedException();
+    if (body.userId === userId) {
+      throw new ForbiddenException('no podés cambiar el estado de tu propia membership');
+    }
+
+    const superadmin = await this.network.isSuperadmin(userId);
+    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
+      throw new ForbiddenException('not authorized to manage this tenant');
+    }
+
+    const target = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
+      trx
+        .selectFrom('memberships')
+        .select(['id', 'role'])
+        .where('user_id', '=', body.userId)
+        .where('tenant_id', '=', body.tenantId)
+        .executeTakeFirst(),
+    );
+    if (!target) throw new ForbiddenException('membership not found in this tenant');
+
+    this.assertOutranks(target.role, superadmin);
+
+    // No dejar el nodo sin ningún admin activo: quedaría inadministrable salvo por soporte.
+    if (body.status === 'suspended' && isAdminRole(target.role)) {
+      await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
+    }
+
+    await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
+      trx
+        .updateTable('memberships')
+        .set({ status: body.status })
+        .where('id', '=', target.id)
+        .execute(),
+    );
+
+    if (body.status === 'suspended') {
+      await this.sessions.revokeAllForUser(body.userId, 'membership_suspended');
+    }
+
+    await this.audit.emit({
+      eventType: 'MembershipStatusChanged',
+      tenantId: body.tenantId,
+      actorUserId: userId,
+      aggregateType: 'membership',
+      aggregateId: target.id,
+      payload: { targetUserId: body.userId, status: body.status, role: target.role },
+    });
+
+    return { id: target.id, status: body.status };
+  }
+
+  /**
+   * Suspende o reactiva un usuario a nivel plataforma (todas sus memberships a la vez).
+   * Sólo superadmin: `users` es cross-tenant, así que un admin de red no debe poder
+   * desactivar una identidad que quizá también opera en otra red.
+   */
+  @Patch('users/status')
+  async setUserStatus(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(SetUserStatusSchema)) body: SetUserStatusDto,
+  ) {
+    await this.assertSuperadmin(userId);
+    if (body.userId === userId) {
+      throw new ForbiddenException('no podés suspender tu propio usuario');
+    }
+
+    await this.db.db
+      .updateTable('users')
+      .set({ status: body.status })
+      .where('id', '=', body.userId)
+      .execute();
+
+    if (body.status === 'suspended') {
+      await this.sessions.revokeAllForUser(body.userId, 'user_suspended');
+    }
+
+    await this.audit.emit({
+      eventType: 'UserStatusChanged',
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: body.userId,
+      payload: { status: body.status },
+    });
+
+    return { id: body.userId, status: body.status };
+  }
+
+  /**
+   * El actor debe superar estrictamente en rango al rol que toca. Impide auto-promoción
+   * y que un `admin` degrade o suspenda a un `tenant_admin` por encima suyo.
+   *
+   * Se apoya en el rol efectivo del tenant activo del request (lo resuelve
+   * RequestContextMiddleware contra la base). Si el actor opera desde un nodo ancestro
+   * distinto del tenant destino, ese rol es igualmente el que le da la potestad.
+   */
+  private assertOutranks(targetRole: Role, isSuperadmin: boolean): void {
+    if (isSuperadmin) return;
+    const actorRole = currentRole();
+    if (!actorRole || !canGrantRole(actorRole, targetRole)) {
+      throw new ForbiddenException('no podés modificar a un usuario de rango igual o superior');
+    }
+  }
+
+  private async assertNotLastAdmin(
+    actorUserId: string,
+    tenantId: string,
+    excludeUserId: string,
+  ): Promise<void> {
+    const remaining = await this.db.withRequestContext(
+      { userId: actorUserId, tenantId },
+      async (trx) =>
+        trx
+          .selectFrom('memberships')
+          .select((eb) => eb.fn.countAll<string>().as('count'))
+          .where('tenant_id', '=', tenantId)
+          .where('status', '=', 'active')
+          .where('user_id', '!=', excludeUserId)
+          .where('role', 'in', [...ADMIN_ROLES])
+          .executeTakeFirst(),
+    );
+    if (Number(remaining?.count ?? 0) === 0) {
+      throw new ForbiddenException(
+        'es el último administrador activo del tenant: asigná otro antes de suspenderlo',
+      );
+    }
   }
 
   private async assertAdmin(userId: string): Promise<void> {

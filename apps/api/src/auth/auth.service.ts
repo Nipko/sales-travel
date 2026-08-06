@@ -8,16 +8,34 @@ import { sql } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { MailerService } from '../mail/mailer.service.js';
+import { currentContext } from '../request-context/request-context.js';
 import type { RegisterDto, LoginDto } from './dto.js';
-import { JwtService } from './jwt.service.js';
+import { ACCESS_TTL_MS, JwtService } from './jwt.service.js';
+import { MfaService } from './mfa.service.js';
 import { PasswordService } from './password.service.js';
+import { requiresMfa } from './roles.js';
+import { SessionService } from './session.service.js';
 
 export interface AuthResult {
   token: string;
   userId: string;
   tenantId?: string;
   role?: string;
+  /**
+   * El rol exige MFA (CLAUDE.md) pero el usuario todavía no lo enroló. No se bloquea el
+   * login —dejaría fuera a todos los admins actuales al desplegar— sino que el panel debe
+   * forzar el enrolamiento antes de permitir operar.
+   */
+  mfaEnrollmentRequired?: boolean;
 }
+
+/** La contraseña era correcta pero falta el segundo factor. No es una sesión todavía. */
+export interface MfaChallenge {
+  mfaRequired: true;
+  mfaToken: string;
+}
+
+export type LoginResult = AuthResult | MfaChallenge;
 
 /** Tras este número de fallos consecutivos la cuenta se bloquea temporalmente. */
 const LOCKOUT_THRESHOLD = 5;
@@ -35,7 +53,35 @@ export class AuthService {
     private readonly password: PasswordService,
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
+    private readonly sessions: SessionService,
+    private readonly mfa: MfaService,
   ) {}
+
+  /**
+   * Emite un access token respaldado por una fila en `sessions`, para que el token sea
+   * revocable. El `jti` del token es el id de esa sesión; RequestContextMiddleware la
+   * valida en cada request.
+   */
+  private async issueToken(params: {
+    userId: string;
+    tenantId?: string | null;
+    role?: string;
+  }): Promise<string> {
+    const ctx = currentContext();
+    const sessionId = await this.sessions.create({
+      userId: params.userId,
+      tenantId: params.tenantId ?? null,
+      expiresAt: new Date(Date.now() + ACCESS_TTL_MS),
+      ip: ctx?.ip ?? null,
+      userAgent: ctx?.userAgent ?? null,
+    });
+    return this.jwt.sign({
+      sub: params.userId,
+      tid: params.tenantId ?? undefined,
+      role: params.role,
+      jti: sessionId,
+    });
+  }
 
   /** Garantiza un bcrypt.compare aunque no haya usuario: evita oracle de timing por enumeración. */
   private getDummyHash(): Promise<string> {
@@ -87,8 +133,11 @@ export class AuthService {
         .returning('id')
         .executeTakeFirstOrThrow();
 
-      // Set GUC para que la INSERT en memberships pase la policy WITH CHECK.
+      // GUCs para que el INSERT en memberships pase memberships_tenant_isolation.
+      // El tenant es obligatorio desde 0029_rls_hardening: memberships_self pasó a ser
+      // FOR SELECT, así que este INSERT ya no puede apoyarse en su WITH CHECK.
       await sql`SELECT set_config('app.current_user_id', ${user.id}, true)`.execute(trx);
+      await sql`SELECT set_config('app.current_tenant_id', ${tenant.id}, true)`.execute(trx);
 
       await trx
         .insertInto('memberships')
@@ -113,7 +162,7 @@ export class AuthService {
     // Verificación de email (best-effort: no debe bloquear/romper el registro).
     await this.sendVerificationEmail(userId, dto.email, tenantId);
 
-    const token = await this.jwt.sign({ sub: userId, tid: tenantId, role: 'tenant_admin' });
+    const token = await this.issueToken({ userId, tenantId, role: 'tenant_admin' });
     return { token, userId, tenantId, role: 'tenant_admin' };
   }
 
@@ -183,10 +232,17 @@ export class AuthService {
     return { sent: true, alreadyVerified: false };
   }
 
-  async login(dto: LoginDto): Promise<AuthResult> {
+  async login(dto: LoginDto): Promise<LoginResult> {
     const user = await this.db.db
       .selectFrom('users')
-      .select(['id', 'password_hash', 'status', 'failed_login_attempts', 'locked_until'])
+      .select([
+        'id',
+        'password_hash',
+        'status',
+        'failed_login_attempts',
+        'locked_until',
+        'mfa_enabled_at',
+      ])
       .where('email', '=', dto.email)
       .executeTakeFirst();
 
@@ -229,31 +285,77 @@ export class AuthService {
     // Éxito: limpiamos contadores y registramos el último login.
     await this.onLoginSuccess(user!.id);
 
+    // Con MFA activo la contraseña sola NO emite sesión: se devuelve un desafío de vida
+    // corta y audiencia propia, que no sirve como bearer de API.
+    if (user!.mfa_enabled_at) {
+      await this.audit.emit({
+        eventType: 'auth.mfa.challenged',
+        actorUserId: user!.id,
+        aggregateType: 'user',
+        aggregateId: user!.id,
+      });
+      return { mfaRequired: true, mfaToken: await this.jwt.signMfaChallenge(user!.id) };
+    }
+
+    return this.finishLogin(user!.id, false);
+  }
+
+  /** Canjea el desafío MFA por una sesión real. */
+  async completeMfa(mfaToken: string, code: string): Promise<AuthResult> {
+    let userId: string;
+    try {
+      userId = await this.jwt.verifyMfaChallenge(mfaToken);
+    } catch {
+      throw new UnauthorizedException('mfa challenge expired');
+    }
+
+    if (!(await this.mfa.verifyCode(userId, code))) {
+      await this.audit.emit({
+        eventType: 'auth.mfa.failed',
+        actorUserId: userId,
+        aggregateType: 'user',
+        aggregateId: userId,
+      });
+      throw new UnauthorizedException('invalid mfa code');
+    }
+
+    return this.finishLogin(userId, true);
+  }
+
+  /** Resuelve el tenant por defecto y emite la sesión. Compartido por login y completeMfa. */
+  private async finishLogin(userId: string, mfaEnabled: boolean): Promise<AuthResult> {
     const membership = await this.db.db
       .selectFrom('memberships')
       .select(['tenant_id', 'role'])
-      .where('user_id', '=', user!.id)
+      .where('user_id', '=', userId)
       .where('status', '=', 'active')
       .orderBy('created_at')
       .executeTakeFirst();
 
-    const token = await this.jwt.sign({
-      sub: user!.id,
-      tid: membership?.tenant_id,
+    const token = await this.issueToken({
+      userId,
+      tenantId: membership?.tenant_id,
       role: membership?.role,
     });
     await this.audit.emit({
       eventType: 'auth.login.success',
       tenantId: membership?.tenant_id ?? null,
-      actorUserId: user!.id,
+      actorUserId: userId,
       aggregateType: 'user',
-      aggregateId: user!.id,
+      aggregateId: userId,
+      payload: { mfa: mfaEnabled },
     });
+
+    const enrollmentRequired = Boolean(
+      membership?.role && requiresMfa(membership.role) && !mfaEnabled,
+    );
+
     return {
       token,
-      userId: user!.id,
+      userId,
       tenantId: membership?.tenant_id,
       role: membership?.role,
+      ...(enrollmentRequired ? { mfaEnrollmentRequired: true } : {}),
     };
   }
 
@@ -304,9 +406,11 @@ export class AuthService {
       throw new ForbiddenException('no active membership in target tenant');
     }
 
-    const token = await this.jwt.sign({
-      sub: userId,
-      tid: membership.tenant_id,
+    // Sesión nueva por tenant: así el listado de dispositivos muestra bajo qué nodo se
+    // está operando y se puede revocar el acceso a un tenant sin cerrar los demás.
+    const token = await this.issueToken({
+      userId,
+      tenantId: membership.tenant_id,
       role: membership.role,
     });
     await this.audit.emit({
@@ -317,6 +421,50 @@ export class AuthService {
       aggregateId: membership.tenant_id,
     });
     return { token, userId, tenantId: membership.tenant_id, role: membership.role };
+  }
+
+  /**
+   * Cierra la sesión actual. A diferencia del logout anterior —que sólo borraba la cookie
+   * del navegador mientras el bearer seguía sirviendo— esto revoca la sesión en la base,
+   * con efecto inmediato.
+   */
+  async logout(userId: string, sessionId: string): Promise<{ ok: true }> {
+    await this.sessions.revoke(sessionId, userId, 'logout');
+    await this.audit.emit({
+      eventType: 'auth.logout',
+      actorUserId: userId,
+      aggregateType: 'session',
+      aggregateId: sessionId,
+    });
+    return { ok: true };
+  }
+
+  /** "Cerrar sesión en todos los dispositivos". */
+  async logoutAll(userId: string): Promise<{ revoked: number }> {
+    const revoked = await this.sessions.revokeAllForUser(userId, 'logout_all');
+    await this.audit.emit({
+      eventType: 'auth.logout_all',
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: userId,
+      payload: { revoked },
+    });
+    return { revoked };
+  }
+
+  async listSessions(userId: string, currentSessionId?: string) {
+    return this.sessions.listActive(userId, currentSessionId);
+  }
+
+  /** Email del usuario, para etiquetar la entrada en el authenticator. */
+  async emailOf(userId: string): Promise<string> {
+    const user = await this.db.db
+      .selectFrom('users')
+      .select('email')
+      .where('id', '=', userId)
+      .executeTakeFirst();
+    if (!user) throw new UnauthorizedException();
+    return user.email;
   }
 }
 

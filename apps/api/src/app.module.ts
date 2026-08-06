@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/guards/auth.guard.js';
+import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -60,6 +61,11 @@ import { CrmModule } from './crm/crm.module.js';
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    // Después de AuthGuard: sólo opina en handlers marcados con @Roles().
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })

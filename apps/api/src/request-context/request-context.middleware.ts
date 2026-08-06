@@ -2,6 +2,8 @@ import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { JwtService } from '../auth/jwt.service.js';
+import { SessionService } from '../auth/session.service.js';
+import type { Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
 import { requestContextStorage } from './request-context.js';
 
@@ -10,11 +12,14 @@ export class RequestContextMiddleware implements NestMiddleware {
   constructor(
     private readonly jwt: JwtService,
     private readonly network: NetworkService,
+    private readonly sessions: SessionService,
   ) {}
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {
     let userId: string | undefined;
     let tokenTenantId: string | undefined;
+    let sessionId: string | undefined;
+    let issuedAt: Date | undefined;
 
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) {
@@ -23,6 +28,8 @@ export class RequestContextMiddleware implements NestMiddleware {
         const payload = await this.jwt.verify(token);
         userId = payload.sub;
         tokenTenantId = payload.tid;
+        sessionId = payload.jti;
+        issuedAt = payload.iat ? new Date(payload.iat * 1000) : undefined;
       } catch {
         // Token inválido o expirado: dejamos pasar sin userId.
         // El AuthGuard se encargará de rechazar si la ruta lo requiere.
@@ -48,10 +55,54 @@ export class RequestContextMiddleware implements NestMiddleware {
       }
     }
 
+    // Sesión revocable (0026): el token firmado ya no basta. Se comprueba contra la base
+    // que la sesión siga viva, que el usuario no esté suspendido y que el token no sea
+    // anterior al último cambio de contraseña. De paso se resuelve el rol EFECTIVO en el
+    // tenant activo, para que degradar un rol o suspender una membership aplique en el acto.
+    //
+    // Un token sin `jti` es previo a esta versión: se rechaza. Consecuencia deliberada y
+    // por única vez: al desplegar, todas las sesiones vigentes deben volver a loguearse.
+    let role: Role | undefined;
+    if (userId) {
+      if (!sessionId) {
+        userId = undefined;
+      } else {
+        try {
+          const validated = await this.sessions.validate({
+            sessionId,
+            userId,
+            tenantId,
+            tokenIssuedAt: issuedAt,
+          });
+          if (!validated) {
+            userId = undefined;
+            sessionId = undefined;
+          } else {
+            role = validated.role;
+          }
+        } catch {
+          // Fail-closed: si no podemos comprobar la sesión, el request va sin autenticar.
+          userId = undefined;
+          sessionId = undefined;
+        }
+      }
+    }
+
     const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
 
-    requestContextStorage.run({ userId, tenantId, requestId }, () => {
-      next();
-    });
+    requestContextStorage.run(
+      {
+        userId,
+        tenantId,
+        requestId,
+        sessionId,
+        role,
+        ip: req.ip ?? undefined,
+        userAgent: req.headers['user-agent'],
+      },
+      () => {
+        next();
+      },
+    );
   }
 }

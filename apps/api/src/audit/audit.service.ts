@@ -44,7 +44,14 @@ export class AuditService {
           aggregate_type: event.aggregateType ?? null,
           aggregate_id: event.aggregateId ?? null,
           payload: JSON.stringify(event.payload ?? {}),
-          meta: JSON.stringify({ requestId: ctx?.requestId ?? null }),
+          meta: JSON.stringify({
+            requestId: ctx?.requestId ?? null,
+            // Sin IP ni user-agent, un audit log de seguridad no sirve para investigar
+            // un incidente: no se puede distinguir el acceso legítimo del robado.
+            ip: ctx?.ip ?? null,
+            userAgent: ctx?.userAgent ?? null,
+            sessionId: ctx?.sessionId ?? null,
+          }),
         })
         .execute();
     } catch (err) {
@@ -59,7 +66,8 @@ export class AuditService {
    */
   async networkAudit(rootTenantId: string, limit = 50): Promise<AuditEntry[]> {
     const lim = Math.min(200, Math.max(1, Math.trunc(limit)));
-    const res = await sql<{
+    const ctx = currentContext();
+    const query = sql<{
       id: string;
       occurred_at: Date;
       event_type: string;
@@ -78,7 +86,16 @@ export class AuditService {
       WHERE t.path OPERATOR(public.<@) root.path
       ORDER BY e.occurred_at DESC
       LIMIT ${lim}
-    `.execute(this.db.db);
+    `;
+
+    // Desde 0029_rls_hardening, domain_events tiene RLS por subárbol
+    // (domain_events_subtree_read), que se evalúa contra app.current_user_id. Sin
+    // contexto de request esta consulta devolvería cero filas EN SILENCIO en vez de
+    // fallar, así que setear el GUC es obligatorio, no una optimización.
+    const res = await this.db.withRequestContext(
+      { userId: ctx?.userId, tenantId: rootTenantId },
+      (trx) => query.execute(trx),
+    );
 
     return res.rows.map((r) => ({
       id: r.id,

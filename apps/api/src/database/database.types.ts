@@ -61,8 +61,62 @@ export interface UsersTable {
   failed_login_attempts: Generated<number>;
   locked_until: Timestamp | null;
   last_login_at: Timestamp | null;
+  // 0026: invalida cualquier token emitido antes de este cambio de contraseña.
+  password_changed_at: Timestamp | null;
+  // 0027: MFA TOTP. mfa_secret va cifrado (AES-256-GCM), nunca en claro.
+  mfa_secret: string | null;
+  mfa_enabled_at: Timestamp | null;
+  mfa_last_used_step: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface SessionsTable {
+  /** Viaja como claim `jti` del access token. */
+  id: Generated<string>;
+  user_id: string;
+  tenant_id: string | null;
+  // Timestamp (no Generated<Timestamp>): su tipo de inserción ya admite undefined, así
+  // que sigue siendo opcional al insertar, pero el SELECT devuelve Date en vez de
+  // ColumnType anidado.
+  issued_at: Timestamp;
+  expires_at: Timestamp;
+  last_seen_at: Timestamp;
+  revoked_at: Timestamp | null;
+  revoked_reason: string | null;
+  ip: string | null;
+  user_agent: string | null;
+}
+
+export interface MfaRecoveryCodesTable {
+  id: Generated<string>;
+  user_id: string;
+  code_hash: string;
+  used_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface PasswordResetTokensTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Timestamp | null;
+  requested_ip: string | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface UserInvitationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  email: string;
+  role: Role;
+  token_hash: string;
+  invited_by: string | null;
+  expires_at: Timestamp;
+  accepted_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
 }
 
 export interface MembershipsTable {
@@ -351,6 +405,10 @@ export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
+  sessions: SessionsTable;
+  mfa_recovery_codes: MfaRecoveryCodesTable;
+  password_reset_tokens: PasswordResetTokensTable;
+  user_invitations: UserInvitationsTable;
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
   airports: AirportsTable;
