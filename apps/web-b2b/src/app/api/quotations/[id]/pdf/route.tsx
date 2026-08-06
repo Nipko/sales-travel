@@ -17,9 +17,21 @@ interface Quotation {
     currency: string;
   };
   selectedOffer: {
+    /** NETO del proveedor. Nunca se le muestra al cliente final. */
     total: { amountMinor: number; currency: string };
     baseFare: { amountMinor: number; currency: string };
     taxes: { amountMinor: number; currency: string };
+    /**
+     * Pricing waterfall del consolidador. Ausente si el tenant no tiene reglas de markup
+     * aplicables (SearchService.withPricing devuelve la oferta sin tocar), en cuyo caso
+     * el precio de venta coincide con el neto.
+     */
+    pricing?: {
+      netMinor: number;
+      finalMinor: number;
+      totalMarkupMinor: number;
+      currency: string;
+    };
     itineraries?: {
       segments: {
         carrier: string;
@@ -163,6 +175,15 @@ function QuotationPDF({ q }: { q: Quotation }) {
     searchCriteria.paxCount.adults +
     searchCriteria.paxCount.children +
     searchCriteria.paxCount.infants;
+
+  // Este documento lo recibe el CLIENTE FINAL, así que muestra el precio de VENTA, no el
+  // neto del proveedor. El markup se absorbe en la tarifa base para que las tres líneas
+  // sigan cuadrando y el cliente no pueda inferir el margen de su agencia restando.
+  // Sin reglas de markup aplicables, `pricing` no existe y venta == neto.
+  const netMinor = selectedOffer.total.amountMinor;
+  const finalMinor = selectedOffer.pricing?.finalMinor ?? netMinor;
+  const displayBaseFareMinor = selectedOffer.baseFare.amountMinor + (finalMinor - netMinor);
+  const currency = selectedOffer.total.currency;
 
   return (
     <Document>
@@ -317,9 +338,7 @@ function QuotationPDF({ q }: { q: Quotation }) {
         <View style={s.priceSection}>
           <View style={s.priceRow}>
             <Text style={s.priceLabel}>Tarifa base ({totalPax} pax)</Text>
-            <Text style={s.priceValue}>
-              {formatMoney(selectedOffer.baseFare.amountMinor, selectedOffer.baseFare.currency)}
-            </Text>
+            <Text style={s.priceValue}>{formatMoney(displayBaseFareMinor, currency)}</Text>
           </View>
           <View style={s.priceRow}>
             <Text style={s.priceLabel}>Impuestos y tasas</Text>
@@ -329,9 +348,7 @@ function QuotationPDF({ q }: { q: Quotation }) {
           </View>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Total</Text>
-            <Text style={s.totalValue}>
-              {formatMoney(selectedOffer.total.amountMinor, selectedOffer.total.currency)}
-            </Text>
+            <Text style={s.totalValue}>{formatMoney(finalMinor, currency)}</Text>
           </View>
         </View>
 

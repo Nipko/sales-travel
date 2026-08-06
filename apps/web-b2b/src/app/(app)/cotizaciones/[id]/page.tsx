@@ -831,7 +831,7 @@ export default function QuotationDetailPage() {
                 onClick={() => {
                   if (customerPhone) {
                     const phone = customerPhone.replace(/\D/g, '');
-                    const text = `Hola ${customerName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${selectedOffer.fareFamily?.name ?? 'Standard'}\n\n¿Te interesa?`;
+                    const text = `Hola ${customerName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${selectedOffer.fareFamily?.name ?? 'Standard'}\n\n¿Te interesa?`;
                     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
                   }
                 }}
