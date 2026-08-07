@@ -17,6 +17,7 @@ const d = hasDb ? describe : describe.skip;
 d('hierarchical memberships RLS (can_read_membership)', () => {
   const pool = new pg.Pool();
   const sfx = randomBytes(4).toString('hex');
+  let platform: string;
   let cons: string;
   let agency: string;
   let sub: string;
@@ -66,6 +67,11 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
   }
 
   beforeAll(async () => {
+    // El superadmin cuelga del nodo de PLATAFORMA, no de un consolidador: desde
+    // 0025_role_escalation_guard un rol global sólo puede existir sobre tenant_type
+    // 'platform'. Es el invariante que impide que un admin de agencia se fabrique un
+    // superadmin dentro de su propio nodo y obtenga acceso a toda la plataforma.
+    platform = await tenant(`p-${sfx}`, 'platform', null);
     cons = await tenant(`c-${sfx}`, 'consolidator', null);
     agency = await tenant(`a-${sfx}`, 'agency', cons);
     sub = await tenant(`s-${sfx}`, 'subagency', agency);
@@ -76,12 +82,12 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
     vendedor = await user(`ve-${sfx}@test.local`);
 
     await member(agency, agencyAdmin, 'tenant_admin'); // admin del nodo intermedio
-    await member(cons, superadmin, 'superadmin'); // superadmin (rol global)
+    await member(platform, superadmin, 'superadmin'); // rol global, sólo sobre el nodo platform
     await member(sub, vendedor, 'vendedor'); // no-admin
   });
 
   afterAll(async () => {
-    for (const id of [sub, agency, cons, other]) {
+    for (const id of [sub, agency, cons, other, platform]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
     await pool.query('DELETE FROM users WHERE id = ANY($1)', [[agencyAdmin, superadmin, vendedor]]);
@@ -116,5 +122,54 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
 
   it('with no current_user_id the policy grants nothing', async () => {
     expect(await canRead('', sub)).toBe(false);
+  });
+
+  /**
+   * Guarda de escalada (0025_role_escalation_guard).
+   *
+   * Cierra la vía por la que cualquier admin —hasta el de la sub-agencia más profunda—
+   * podía crearse un usuario con role='superadmin' en su propio tenant y, como
+   * isSuperadmin() busca ese rol en CUALQUIER nodo sin filtrar por tenant, quedarse con
+   * acceso a toda la plataforma: todos los tenants, todas las redes y todas las
+   * credenciales BYOC. La validación Zod del controller la tapa en un punto; esto la
+   * mueve a la base, donde no depende de que cada endpoint futuro se acuerde.
+   */
+  describe('guarda de roles de plataforma', () => {
+    it('RECHAZA un rol global sobre un tenant que no es de plataforma', async () => {
+      const victim = await user(`esc-${sfx}@test.local`);
+      for (const [node, label] of [
+        [sub, 'subagency'],
+        [agency, 'agency'],
+        [cons, 'consolidator'],
+      ] as const) {
+        await expect(
+          member(node, victim, 'superadmin'),
+          `superadmin sobre ${label}`,
+        ).rejects.toThrow(/platform-wide role/);
+        await expect(
+          member(node, victim, 'platform_admin'),
+          `platform_admin sobre ${label}`,
+        ).rejects.toThrow(/platform-wide role/);
+      }
+      await pool.query('DELETE FROM users WHERE id = $1', [victim]);
+    });
+
+    it('PERMITE los roles no globales en cualquier nodo', async () => {
+      const normal = await user(`ok-${sfx}@test.local`);
+      await expect(member(sub, normal, 'tenant_admin')).resolves.toBeUndefined();
+      await pool.query('DELETE FROM users WHERE id = $1', [normal]);
+    });
+
+    it('impide MOVER una membership global a un nodo que no es de plataforma', async () => {
+      // El trigger cubre UPDATE OF role, tenant_id: si sólo mirara el INSERT, bastaría
+      // crear el superadmin en platform y después reasignarlo.
+      await expect(
+        pool.query('UPDATE memberships SET tenant_id = $1 WHERE user_id = $2 AND role = $3', [
+          cons,
+          superadmin,
+          'superadmin',
+        ]),
+      ).rejects.toThrow(/platform-wide role/);
+    });
   });
 });
