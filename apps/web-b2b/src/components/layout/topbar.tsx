@@ -3,15 +3,17 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, LogOut, Search, User, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { MobileNav } from './mobile-nav';
 
 interface TopbarProps {
   userEmail?: string;
   tenantName?: string;
   tenantSlug?: string;
   logoUrl?: string;
+  role?: string;
 }
 
-export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarProps) {
+export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: TopbarProps) {
   const router = useRouter();
 
   async function handleLogout() {
@@ -23,6 +25,7 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl }: TopbarPro
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-6 backdrop-blur-md transition-all">
       {/* Left side: Active Agency Indicator */}
       <div className="flex items-center gap-3">
+        <MobileNav role={role} tenantName={tenantName} logoUrl={logoUrl} />
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button

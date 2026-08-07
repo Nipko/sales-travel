@@ -50,7 +50,14 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
+/**
+ * Contenido del sidebar, sin el contenedor.
+ *
+ * Se comparte entre el `<aside>` de escritorio y el drawer móvil, para que la navegación
+ * no se duplique y no se desincronice. Bajo 1024px el aside está oculto y, hasta ahora,
+ * no había ninguna alternativa: la app se quedaba sin navegación.
+ */
+export function SidebarContent({ role, tenantName, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -65,7 +72,7 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
   ].includes(role ?? '');
 
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300">
+    <>
       {/* Header / Branding */}
       <div className="flex h-16 items-center gap-3 border-b border-slate-800/60 px-4">
         {logoUrl ? (
@@ -171,6 +178,15 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
         <span>Planetour Cloud</span>
         <span className="font-mono text-[9px] text-slate-600">v0.2.0</span>
       </div>
+    </>
+  );
+}
+
+/** Sidebar fijo de escritorio. En móvil se usa MobileNav con el mismo contenido. */
+export function Sidebar(props: SidebarProps) {
+  return (
+    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300">
+      <SidebarContent {...props} />
     </aside>
   );
 }

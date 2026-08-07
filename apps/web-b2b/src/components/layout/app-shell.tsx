@@ -41,6 +41,7 @@ export function AppShell({
           tenantName={tenantName}
           tenantSlug={tenantSlug}
           logoUrl={branding?.logoUrl ?? undefined}
+          role={role}
         />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
