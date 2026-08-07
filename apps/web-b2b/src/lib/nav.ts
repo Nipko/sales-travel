@@ -6,6 +6,7 @@ import {
   FileText,
   Home,
   Hotel,
+  Lock,
   MapPin,
   Network,
   Settings,
@@ -43,6 +44,14 @@ export const adminNav: NavItem[] = [
   { label: 'Mi Red', href: '/red', icon: Network },
   { label: 'Mi Agencia', href: '/configuracion', icon: Settings },
   { label: 'Equipo (Usuarios)', href: '/admin/usuarios', icon: Shield },
+];
+
+/**
+ * Seguridad de la propia cuenta (2FA, contraseña, dispositivos). Va aparte de adminNav
+ * porque no es administración de la agencia: la usa cualquier usuario, incluido un vendedor.
+ */
+export const accountNav: NavItem[] = [
+  { label: 'Seguridad', href: '/configuracion/seguridad', icon: Lock },
 ];
 
 export const superAdminNav: NavItem[] = [

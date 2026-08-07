@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
+import Link from 'next/link';
 import { Compass, Globe, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import {
@@ -17,8 +18,9 @@ import { loginAction, type LoginState } from './actions';
 
 const initialState: LoginState = {};
 
-function SubmitButton() {
+function SubmitButton({ mfaStep }: { mfaStep: boolean }) {
   const { pending } = useFormStatus();
+  const label = mfaStep ? 'Verificar código' : 'Iniciar sesión';
   return (
     <Button
       type="submit"
@@ -26,13 +28,14 @@ function SubmitButton() {
       size="lg"
       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] transition-all duration-200 shadow-md font-medium tracking-wide"
     >
-      {pending ? 'Iniciando sesión…' : 'Iniciar sesión'}
+      {pending ? `${label}…` : label}
     </Button>
   );
 }
 
 export default function LoginPage() {
   const [state, formAction] = useActionState(loginAction, initialState);
+  const mfaStep = Boolean(state.mfaToken);
 
   return (
     <main className="flex min-h-screen bg-[var(--color-bg)]">
@@ -95,47 +98,89 @@ export default function LoginPage() {
           <Card className="border border-[var(--color-border)]/50 bg-[var(--color-surface)] shadow-[var(--shadow-md)] rounded-xl overflow-hidden">
             <CardHeader className="space-y-1.5 pb-4">
               <CardTitle className="text-lg font-bold text-[var(--color-fg)]">
-                Ingrese a su cuenta
+                {mfaStep ? 'Verificación en dos pasos' : 'Ingrese a su cuenta'}
               </CardTitle>
               <CardDescription className="text-xs text-[var(--color-fg-muted)]">
-                Use su dirección de correo electrónico corporativo
+                {mfaStep
+                  ? `Ingresá el código de 6 dígitos de tu app de autenticación${state.email ? ` para ${state.email}` : ''}.`
+                  : 'Use su dirección de correo electrónico corporativo'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form action={formAction} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-xs font-semibold text-[var(--color-fg)]">
-                    Correo electrónico
-                  </Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    placeholder="ejemplo@agencia.com"
-                    className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
-                  />
-                </div>
+                {mfaStep ? (
+                  <>
+                    <input type="hidden" name="mfaToken" value={state.mfaToken} />
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="code"
+                        className="text-xs font-semibold text-[var(--color-fg)]"
+                      >
+                        Código de verificación
+                      </Label>
+                      <Input
+                        id="code"
+                        name="code"
+                        // `inputMode` numérico abre el teclado correcto en móvil, pero el
+                        // campo acepta texto porque los códigos de recuperación son hex.
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoFocus
+                        required
+                        placeholder="000000"
+                        className="h-12 text-center text-lg font-mono tracking-[0.4em] border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
+                      />
+                      <p className="text-xs text-[var(--color-fg-subtle)]">
+                        ¿Perdiste el acceso a la app? Usá uno de tus códigos de recuperación.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="email"
+                        className="text-xs font-semibold text-[var(--color-fg)]"
+                      >
+                        Correo electrónico
+                      </Label>
+                      <Input
+                        id="email"
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        placeholder="ejemplo@agencia.com"
+                        className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="password"
-                      className="text-xs font-semibold text-[var(--color-fg)]"
-                    >
-                      Contraseña
-                    </Label>
-                  </div>
-                  <Input
-                    id="password"
-                    name="password"
-                    type="password"
-                    required
-                    autoComplete="current-password"
-                    className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label
+                          htmlFor="password"
+                          className="text-xs font-semibold text-[var(--color-fg)]"
+                        >
+                          Contraseña
+                        </Label>
+                        <Link
+                          href="/olvide-password"
+                          className="text-xs font-medium text-[var(--color-primary)] hover:underline"
+                        >
+                          ¿Olvidaste tu contraseña?
+                        </Link>
+                      </div>
+                      <Input
+                        id="password"
+                        name="password"
+                        type="password"
+                        required
+                        autoComplete="current-password"
+                        className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] shadow-sm rounded-lg"
+                      />
+                    </div>
+                  </>
+                )}
 
                 {state.error ? (
                   <div
@@ -147,7 +192,7 @@ export default function LoginPage() {
                   </div>
                 ) : null}
 
-                <SubmitButton />
+                <SubmitButton mfaStep={mfaStep} />
               </form>
             </CardContent>
           </Card>

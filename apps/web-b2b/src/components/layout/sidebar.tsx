@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Compass } from 'lucide-react';
-import { adminNav, managementNav, operationsNav, superAdminNav, type NavItem } from '../../lib/nav';
+import {
+  accountNav,
+  adminNav,
+  managementNav,
+  operationsNav,
+  superAdminNav,
+  type NavItem,
+} from '../../lib/nav';
 import { cn } from '../../lib/cn';
 
 interface SidebarProps {
@@ -127,6 +134,20 @@ export function Sidebar({ role, tenantName, logoUrl }: SidebarProps) {
             </ul>
           </div>
         )}
+
+        {/* MI CUENTA — visible para todos: la seguridad de la propia cuenta no es admin */}
+        <div className="space-y-1.5">
+          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+            Mi cuenta
+          </p>
+          <ul className="space-y-1">
+            {accountNav.map((item) => (
+              <li key={item.href}>
+                <NavLink item={item} active={isActive(item.href)} />
+              </li>
+            ))}
+          </ul>
+        </div>
 
         {/* AGENCIAS SUPER ADMIN */}
         {isSuperAdmin && (
