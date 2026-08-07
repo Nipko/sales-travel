@@ -8,7 +8,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditEntry } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -21,24 +21,51 @@ import {
 } from '../network/network.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import {
+  UpdateBrandingSchema,
+  UpdateConfigSchema,
+  type UpdateBrandingDto,
+  type UpdateConfigDto,
+} from './branding.schemas.js';
 
+/**
+ * Branding EFECTIVO: lo que hay que pintar. Los campos que el tenant no configuró
+ * vienen heredados de su cadena de ancestros (ver resolve_tenant_branding, 0030).
+ */
 interface BrandingView {
   logoUrl: string | null;
+  faviconUrl: string | null;
   primaryColor: string | null;
   accentColor: string | null;
+  commercialName: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
+  websiteUrl: string | null;
 }
 
-interface UpdateBrandingDto {
-  logoUrl?: string | null;
-  primaryColor?: string | null;
-  accentColor?: string | null;
+interface BrandingRow {
+  logo_url: string | null;
+  favicon_url: string | null;
+  primary_color: string | null;
+  accent_color: string | null;
+  commercial_name: string | null;
+  support_email: string | null;
+  support_phone: string | null;
+  website_url: string | null;
 }
 
-interface UpdateConfigDto {
-  name?: string;
-  countryCode?: string;
-  defaultCurrency?: string;
-  defaultLanguage?: 'es' | 'pt' | 'en';
+function toBrandingView(row: BrandingRow | undefined): BrandingView {
+  return {
+    logoUrl: row?.logo_url ?? null,
+    faviconUrl: row?.favicon_url ?? null,
+    primaryColor: row?.primary_color ?? null,
+    accentColor: row?.accent_color ?? null,
+    commercialName: row?.commercial_name ?? null,
+    supportEmail: row?.support_email ?? null,
+    supportPhone: row?.support_phone ?? null,
+    websiteUrl: row?.website_url ?? null,
+  };
 }
 
 @Controller('tenants')
@@ -135,17 +162,47 @@ export class TenantsController {
     return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       await this.assertMembership(trx, userId, tenantId);
 
+      // Branding EFECTIVO, no el crudo de la fila: una sub-agencia que sólo configuró su
+      // logo hereda el color de su agencia, y en última instancia el del consolidador.
+      const res = await sql<BrandingRow>`
+        SELECT * FROM resolve_tenant_branding(${tenantId}::uuid)
+      `.execute(trx);
+
+      return toBrandingView(res.rows[0]);
+    });
+  }
+
+  /**
+   * Branding PROPIO del tenant, sin heredar. Es lo que necesita el formulario de
+   * configuración: mezclar lo heredado haría que al guardar se persistiera como propio
+   * lo que en realidad venía del padre, rompiendo la herencia en silencio.
+   */
+  @Roles(...AGENCY_ADMIN_ROLES)
+  @Get(':id/branding/own')
+  async getOwnBranding(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') tenantId: string,
+  ): Promise<BrandingView> {
+    if (!userId) throw new UnauthorizedException();
+    await this.assertCanManage(userId, tenantId);
+
+    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       const row = await trx
         .selectFrom('tenants')
-        .select(['logo_url', 'primary_color', 'accent_color'])
+        .select([
+          'logo_url',
+          'favicon_url',
+          'primary_color',
+          'accent_color',
+          'commercial_name',
+          'support_email',
+          'support_phone',
+          'website_url',
+        ])
         .where('id', '=', tenantId)
         .executeTakeFirst();
 
-      return {
-        logoUrl: row?.logo_url ?? null,
-        primaryColor: row?.primary_color ?? null,
-        accentColor: row?.accent_color ?? null,
-      };
+      return toBrandingView(row);
     });
   }
 
@@ -154,35 +211,47 @@ export class TenantsController {
   async updateBranding(
     @CurrentUser() userId: string | undefined,
     @Param('id') tenantId: string,
-    @Body() dto: UpdateBrandingDto,
+    @Body(new ZodValidationPipe(UpdateBrandingSchema)) dto: UpdateBrandingDto,
   ): Promise<BrandingView> {
     if (!userId) throw new UnauthorizedException();
+    // Por jerarquía, no por membership directa: un consolidador debe poder administrar
+    // el branding de las agencias de su red sin ser miembro de cada una.
+    await this.assertCanManage(userId, tenantId);
 
-    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
-      await this.assertAdminMembership(trx, userId, tenantId);
-
+    const view = await this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       await trx
         .updateTable('tenants')
         .set({
           ...(dto.logoUrl !== undefined ? { logo_url: dto.logoUrl } : {}),
+          ...(dto.faviconUrl !== undefined ? { favicon_url: dto.faviconUrl } : {}),
           ...(dto.primaryColor !== undefined ? { primary_color: dto.primaryColor } : {}),
           ...(dto.accentColor !== undefined ? { accent_color: dto.accentColor } : {}),
+          ...(dto.commercialName !== undefined ? { commercial_name: dto.commercialName } : {}),
+          ...(dto.supportEmail !== undefined ? { support_email: dto.supportEmail } : {}),
+          ...(dto.supportPhone !== undefined ? { support_phone: dto.supportPhone } : {}),
+          ...(dto.websiteUrl !== undefined ? { website_url: dto.websiteUrl } : {}),
         })
         .where('id', '=', tenantId)
         .execute();
 
-      const row = await trx
-        .selectFrom('tenants')
-        .select(['logo_url', 'primary_color', 'accent_color'])
-        .where('id', '=', tenantId)
-        .executeTakeFirstOrThrow();
-
-      return {
-        logoUrl: row.logo_url,
-        primaryColor: row.primary_color,
-        accentColor: row.accent_color,
-      };
+      const res = await sql<BrandingRow>`
+        SELECT * FROM resolve_tenant_branding(${tenantId}::uuid)
+      `.execute(trx);
+      return toBrandingView(res.rows[0]);
     });
+
+    // Cambiar la marca de una agencia afecta lo que ve su cliente final: queda auditado.
+    // Sólo los campos tocados, nunca sus valores (una URL de logo puede ser de un tercero).
+    await this.audit.emit({
+      eventType: 'tenant.branding.updated',
+      tenantId,
+      actorUserId: userId,
+      aggregateType: 'tenant',
+      aggregateId: tenantId,
+      payload: { changed: Object.keys(dto) },
+    });
+
+    return view;
   }
 
   @Roles(...AGENCY_ADMIN_ROLES)
@@ -190,13 +259,12 @@ export class TenantsController {
   async updateConfig(
     @CurrentUser() userId: string | undefined,
     @Param('id') tenantId: string,
-    @Body() dto: UpdateConfigDto,
+    @Body(new ZodValidationPipe(UpdateConfigSchema)) dto: UpdateConfigDto,
   ) {
     if (!userId) throw new UnauthorizedException();
+    await this.assertCanManage(userId, tenantId);
 
-    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
-      await this.assertAdminMembership(trx, userId, tenantId);
-
+    const result = await this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       await trx
         .updateTable('tenants')
         .set({
@@ -222,6 +290,31 @@ export class TenantsController {
         defaultLanguage: row.default_language,
       };
     });
+
+    await this.audit.emit({
+      eventType: 'tenant.config.updated',
+      tenantId,
+      actorUserId: userId,
+      aggregateType: 'tenant',
+      aggregateId: tenantId,
+      payload: { changed: Object.keys(dto) },
+    });
+
+    return result;
+  }
+
+  /**
+   * Autorización JERÁRQUICA sobre un tenant de la red.
+   *
+   * Reemplaza a assertAdminMembership en los caminos de branding y configuración: esa
+   * exigía membership DIRECTA, con lo que un consolidador no podía administrar la marca
+   * de las agencias de su propia red pese a ser exactamente su rol.
+   */
+  private async assertCanManage(userId: string, tenantId: string): Promise<void> {
+    if (await this.network.isSuperadmin(userId)) return;
+    if (!(await this.network.canManageTenant(userId, tenantId))) {
+      throw new ForbiddenException('target tenant is outside your network');
+    }
   }
 
   private async assertMembership(

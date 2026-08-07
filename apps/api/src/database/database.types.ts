@@ -30,9 +30,15 @@ export interface TenantsTable {
   parent_tenant_id: string | null;
   tenant_type: Generated<TenantType>;
   path: Generated<string>;
+  // Branding heredable por la jerarquía (0030). NULL = hereda del ancestro más cercano.
   logo_url: string | null;
+  favicon_url: string | null;
   primary_color: string | null;
   accent_color: string | null;
+  commercial_name: string | null;
+  support_email: string | null;
+  support_phone: string | null;
+  website_url: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
