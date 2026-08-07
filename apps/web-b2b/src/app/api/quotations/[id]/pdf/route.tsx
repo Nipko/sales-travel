@@ -1,6 +1,32 @@
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 import { NextResponse } from 'next/server';
 import { api } from '../../../../../lib/api';
+import { isValidHex } from '../../../../../lib/brand-tokens';
+import { getActiveTenant } from '../../../../../lib/session';
+
+/**
+ * Identidad efectiva de la agencia que emite la cotización.
+ *
+ * Este documento lo recibe el CLIENTE FINAL, así que tiene que llevar la marca de SU
+ * agencia. Antes decía literalmente "PlaneTour" con un azul #2563eb fijo: cada agencia
+ * de la red le mandaba a su cliente un PDF con la marca del consolidador —y encima con
+ * un color que ni siquiera era el de la plataforma, cuyo primario es naranja.
+ */
+interface TenantBranding {
+  logoUrl: string | null;
+  primaryColor: string | null;
+  commercialName: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
+  websiteUrl: string | null;
+}
+
+/** Azul de la plataforma, sólo como último recurso si el tenant no tiene marca. */
+const FALLBACK_BRAND_COLOR = '#2563eb';
+
+function brandColor(branding: TenantBranding | null): string {
+  return isValidHex(branding?.primaryColor) ? branding.primaryColor : FALLBACK_BRAND_COLOR;
+}
 
 interface Quotation {
   id: string;
@@ -169,7 +195,14 @@ const s = StyleSheet.create({
   },
 });
 
-function QuotationPDF({ q }: { q: Quotation }) {
+function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding | null }) {
+  // Los estilos se crean a nivel de módulo, así que el color de marca —que depende del
+  // tenant— se superpone en línea sobre los pocos elementos que lo llevan.
+  const color = brandColor(branding);
+  const agencyName = branding?.commercialName ?? 'PlaneTour';
+  const agencyContact =
+    branding?.websiteUrl ?? branding?.supportEmail ?? branding?.supportPhone ?? 'planetour.cloud';
+
   const { searchCriteria, selectedOffer } = q;
   const totalPax =
     searchCriteria.paxCount.adults +
@@ -191,7 +224,7 @@ function QuotationPDF({ q }: { q: Quotation }) {
         {/* Header */}
         <View style={s.header}>
           <View>
-            <Text style={s.brand}>PlaneTour</Text>
+            <Text style={[s.brand, { color }]}>{agencyName}</Text>
             <Text style={s.subtitle}>Cotización de vuelo</Text>
           </View>
           <View>
@@ -348,7 +381,7 @@ function QuotationPDF({ q }: { q: Quotation }) {
           </View>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Total</Text>
-            <Text style={s.totalValue}>{formatMoney(finalMinor, currency)}</Text>
+            <Text style={[s.totalValue, { color }]}>{formatMoney(finalMinor, currency)}</Text>
           </View>
         </View>
 
@@ -364,7 +397,9 @@ function QuotationPDF({ q }: { q: Quotation }) {
               minute: '2-digit',
             })}
           </Text>
-          <Text style={s.footerText}>Generado por PlaneTour · planetour.cloud</Text>
+          <Text style={s.footerText}>
+            Generado por {agencyName} · {agencyContact}
+          </Text>
         </View>
       </Page>
     </Document>
@@ -373,14 +408,24 @@ function QuotationPDF({ q }: { q: Quotation }) {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const res = await api<{ quotation: Quotation }>(`/quotations/${id}`);
+  const tenantId = await getActiveTenant();
+
+  // El branding EFECTIVO: si la agencia no configuró marca propia, hereda la de su
+  // agencia padre y en última instancia la del consolidador (resolve_tenant_branding).
+  const [res, brandingRes] = await Promise.all([
+    api<{ quotation: Quotation }>(`/quotations/${id}`),
+    tenantId
+      ? api<TenantBranding>(`/tenants/${tenantId}/branding`).catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
   if (!res.ok) {
     return NextResponse.json({ error: res.error.message }, { status: res.error.status });
   }
 
+  const branding = brandingRes?.ok ? brandingRes.data : null;
   const q = res.data.quotation;
-  const buffer = await renderToBuffer(<QuotationPDF q={q} />);
+  const buffer = await renderToBuffer(<QuotationPDF q={q} branding={branding} />);
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

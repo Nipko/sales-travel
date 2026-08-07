@@ -26,16 +26,35 @@ function esc(v: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function layout(heading: string, bodyHtml: string): string {
+/**
+ * Marca a aplicar al correo. Es la identidad EFECTIVA del tenant (BrandingService),
+ * o sea la propia o la heredada de su cadena de ancestros.
+ */
+export interface EmailBrand {
+  name: string;
+  color: string | null;
+}
+
+/** Índigo de la plataforma, sólo si el tenant no tiene marca resoluble. */
+const FALLBACK_COLOR = '#4f46e5';
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+function layout(heading: string, bodyHtml: string, brand?: EmailBrand | null): string {
+  // Re-validado acá aunque BrandingService ya filtre: esto se interpola en un style.
+  const color = brand?.color && HEX.test(brand.color) ? brand.color : FALLBACK_COLOR;
+  // Este correo lo recibe el CLIENTE FINAL, así que la firma es la de SU agencia.
+  // Antes decía siempre "vía PlaneTour", filtrando la marca del consolidador.
+  const signature = brand?.name ? `Enviado por ${esc(brand.name)}` : 'Enviado por tu agencia';
+
   return `<!doctype html>
 <html lang="es"><body style="margin:0;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fff;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden">
-        <tr><td style="background:#4f46e5;padding:18px 28px"><span style="color:#fff;font-size:16px;font-weight:700">${esc(heading)}</span></td></tr>
+        <tr><td style="background:${color};padding:18px 28px"><span style="color:#fff;font-size:16px;font-weight:700">${esc(heading)}</span></td></tr>
         <tr><td style="padding:28px">${bodyHtml}</td></tr>
       </table>
-      <p style="margin:16px 0 0;font-size:11px;color:#a1a1aa">Enviado por tu agencia vía PlaneTour</p>
+      <p style="margin:16px 0 0;font-size:11px;color:#a1a1aa">${signature}</p>
     </td></tr>
   </table>
 </body></html>`;
@@ -53,6 +72,7 @@ export function quotationEmailHtml(input: {
   customerName: string | null;
   searchCriteria: unknown;
   selectedOffer: unknown;
+  brand?: EmailBrand | null;
 }): { subject: string; html: string; text: string } {
   const sc = obj(input.searchCriteria);
   const offer = obj(input.selectedOffer);
@@ -87,7 +107,7 @@ export function quotationEmailHtml(input: {
 
   return {
     subject: `Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
-    html: layout('Cotización de vuelo', body),
+    html: layout('Cotización de vuelo', body, input.brand),
     text: `Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Respondé para reservar.`,
   };
 }
@@ -99,6 +119,7 @@ export function orderConfirmationEmailHtml(input: {
   passengers: unknown;
   totalAmount: number;
   currency: string;
+  brand?: EmailBrand | null;
 }): { subject: string; html: string; text: string } {
   const sc = obj(input.searchCriteria);
   const route = `${s(sc['origin'])} → ${s(sc['destination'])}`;
@@ -138,7 +159,7 @@ export function orderConfirmationEmailHtml(input: {
 
   return {
     subject: `Reserva confirmada #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
-    html: layout('Reserva confirmada', body),
+    html: layout('Reserva confirmada', body, input.brand),
     text: `Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
   };
 }

@@ -15,6 +15,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { QuotationStatus } from '../database/database.types.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { quotationEmailHtml } from '../mail/templates.js';
+import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   CreateQuotationSchema,
@@ -32,6 +33,7 @@ export class QuotationsController {
     private readonly quotations: QuotationsService,
     private readonly db: DatabaseService,
     private readonly mailer: MailerService,
+    private readonly branding: BrandingService,
   ) {}
 
   /** Envía la cotización por email al cliente (usa el BYO-email del tenant / fallback sistema). */
@@ -53,6 +55,8 @@ export class QuotationsController {
       customerName: row.customer_name,
       searchCriteria: row.search_criteria,
       selectedOffer: row.selected_offer,
+      // El correo lo recibe el cliente final: lleva la marca de SU agencia.
+      brand: await this.branding.resolve(tenantId),
     });
     const sent = await this.mailer.sendToTenant(tenantId, {
       to: row.customer_email,

@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { orderConfirmationEmailHtml } from '../mail/templates.js';
+import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
@@ -30,6 +31,7 @@ export class OrdersController {
     private readonly orders: OrdersService,
     private readonly db: DatabaseService,
     private readonly mailer: MailerService,
+    private readonly branding: BrandingService,
   ) {}
 
   @Post()
@@ -94,6 +96,7 @@ export class OrdersController {
       passengers: order.passengers,
       totalAmount: order.total_amount,
       currency: order.currency,
+      brand: await this.branding.resolve(tenantId),
     });
     return this.mailer.sendToTenant(tenantId, {
       to,
