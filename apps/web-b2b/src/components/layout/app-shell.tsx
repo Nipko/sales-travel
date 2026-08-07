@@ -1,3 +1,4 @@
+import { brandStyleSheet } from '../../lib/brand-tokens';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -24,16 +25,15 @@ export function AppShell({
   role,
   branding,
 }: AppShellProps) {
-  const style = branding?.primaryColor
-    ? ({
-        '--color-primary': branding.primaryColor,
-        '--color-primary-hover': branding.primaryColor,
-        ...(branding.accentColor ? { '--color-accent': branding.accentColor } : {}),
-      } as React.CSSProperties)
-    : undefined;
+  // Hoja de estilo con alcance :root en vez de un style inline en este div. Dos razones:
+  // los Portals de React (toasts, diálogos) se montan fuera de este árbol y con el style
+  // inline se quedaban con los colores de la plataforma; y así se derivan hover y
+  // foreground del color elegido en lugar de repetir el mismo hex (ver brand-tokens.ts).
+  const brandCss = brandStyleSheet(branding?.primaryColor, branding?.accentColor);
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-bg)]" style={style}>
+    <div className="flex min-h-screen bg-[var(--color-bg)]">
+      {brandCss ? <style dangerouslySetInnerHTML={{ __html: brandCss }} /> : null}
       <Sidebar role={role} tenantName={tenantName} logoUrl={branding?.logoUrl ?? undefined} />
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar

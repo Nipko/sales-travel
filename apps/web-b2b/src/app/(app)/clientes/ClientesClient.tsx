@@ -102,37 +102,38 @@ const STAGES: { key: Opportunity['stage']; label: string; color: string; icon: a
   {
     key: 'AI_HANDLING',
     label: 'Copiloto IA',
-    color: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+    color: 'border-purple-500/30 bg-purple-500/10 text-purple-700',
     icon: Bot,
   },
   {
     key: 'QUALIFIED_LEAD',
     label: 'Calificado',
-    color: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+    color: 'border-blue-500/30 bg-blue-500/10 text-blue-700',
     icon: UserCheck,
   },
   {
     key: 'QUOTE_SENT',
     label: 'Cotización Enviada',
-    color: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    color: 'border-amber-500/30 bg-amber-500/10 text-amber-700',
     icon: FileText,
   },
   {
     key: 'BOOKING_CONFIRMED',
     label: 'Reserva Confirmada',
-    color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    color: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700',
     icon: CheckCircle,
   },
   {
     key: 'IN_TRAVEL',
     label: 'En Viaje',
-    color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400',
+    color: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-700',
     icon: Plane,
   },
   {
     key: 'POST_TRAVEL_COMPLETED',
     label: 'Completado',
-    color: 'border-slate-500/30 bg-slate-500/10 text-slate-400',
+    color:
+      'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
     icon: Sparkles,
   },
 ];
@@ -334,17 +335,17 @@ export function ClientesClient({
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
       {/* HEADER PRINCIPAL & SWICHER DE VISTAS */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-white">
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--color-fg)]">
               Travel CRM Conversacional
             </h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-700 border border-purple-500/20">
               <Bot className="size-3.5" /> IA Native M9
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--color-fg-subtle)] mt-1">
             Gestión inteligente de oportunidades de viajes, atención automática por WhatsApp y
             expediente 360° de pasajeros.
           </p>
@@ -352,13 +353,13 @@ export function ClientesClient({
 
         <div className="flex items-center gap-3">
           {/* View Switcher */}
-          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1">
+          <div className="flex bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-1">
             <button
               onClick={() => setActiveView('kanban')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 activeView === 'kanban'
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-sm'
+                  : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
               }`}
             >
               <Kanban className="size-3.5" /> Pipeline Kanban
@@ -367,8 +368,8 @@ export function ClientesClient({
               onClick={() => setActiveView('directory')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 activeView === 'directory'
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-sm'
+                  : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
               }`}
             >
               <Users className="size-3.5" /> Directorio Viajeros
@@ -378,14 +379,14 @@ export function ClientesClient({
           {activeView === 'kanban' ? (
             <button
               onClick={() => setIsAddOppModalOpen(true)}
-              className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-md"
+              className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-md"
             >
               <Plus className="size-4" /> Nueva Oportunidad
             </button>
           ) : (
             <button
               onClick={handleOpenAddModal}
-              className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-md"
+              className="inline-flex items-center gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-md"
             >
               <Plus className="size-4" /> Nuevo Viajero
             </button>
@@ -395,22 +396,26 @@ export function ClientesClient({
 
       {/* METRICAS RAPIDAS CRM */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 flex items-center justify-between">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Atendidos por IA (WhatsApp)</p>
-            <p className="text-2xl font-bold text-purple-400 mt-1">
+            <p className="text-xs text-[var(--color-fg-subtle)] font-medium">
+              Atendidos por IA (WhatsApp)
+            </p>
+            <p className="text-2xl font-bold text-purple-700 mt-1">
               {opportunities.filter((o) => o.isAiControlled || o.stage === 'AI_HANDLING').length}
             </p>
           </div>
           <div className="size-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-            <Bot className="size-5 text-purple-400" />
+            <Bot className="size-5 text-purple-700" />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 flex items-center justify-between">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Cotizaciones Activas</p>
-            <p className="text-2xl font-bold text-amber-400 mt-1">
+            <p className="text-xs text-[var(--color-fg-subtle)] font-medium">
+              Cotizaciones Activas
+            </p>
+            <p className="text-2xl font-bold text-amber-700 mt-1">
               {
                 opportunities.filter(
                   (o) => o.stage === 'QUOTE_SENT' || o.stage === 'QUALIFIED_LEAD',
@@ -419,29 +424,33 @@ export function ClientesClient({
             </p>
           </div>
           <div className="size-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-            <FileText className="size-5 text-amber-400" />
+            <FileText className="size-5 text-amber-700" />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 flex items-center justify-between">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Pasajeros Registrados</p>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">{customers.length}</p>
+            <p className="text-xs text-[var(--color-fg-subtle)] font-medium">
+              Pasajeros Registrados
+            </p>
+            <p className="text-2xl font-bold text-emerald-700 mt-1">{customers.length}</p>
           </div>
           <div className="size-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-            <Users className="size-5 text-emerald-400" />
+            <Users className="size-5 text-emerald-700" />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 flex items-center justify-between">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Pasaportes por Vencer</p>
-            <p className="text-2xl font-bold text-rose-400 mt-1">
+            <p className="text-xs text-[var(--color-fg-subtle)] font-medium">
+              Pasaportes por Vencer
+            </p>
+            <p className="text-2xl font-bold text-rose-700 mt-1">
               {customers.filter((c) => isPassportExpiringSoon(c.passportExpiry)).length}
             </p>
           </div>
           <div className="size-10 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-            <AlertTriangle className="size-5 text-rose-400" />
+            <AlertTriangle className="size-5 text-rose-700" />
           </div>
         </div>
       </div>
@@ -456,53 +465,55 @@ export function ClientesClient({
               return (
                 <div
                   key={stg.key}
-                  className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3.5 flex flex-col min-h-[500px] space-y-3"
+                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3.5 flex flex-col min-h-[500px] space-y-3"
                 >
-                  <div className="flex items-center justify-between border-b border-slate-800/60 pb-2.5">
+                  <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2.5">
                     <div className="flex items-center gap-2">
-                      <StageIcon className="size-4 text-slate-400" />
-                      <h3 className="text-xs font-bold text-slate-200">{stg.label}</h3>
+                      <StageIcon className="size-4 text-[var(--color-fg-subtle)]" />
+                      <h3 className="text-xs font-bold text-[var(--color-fg)]">{stg.label}</h3>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]">
                       {stageOpps.length}
                     </span>
                   </div>
 
                   <div className="flex-1 space-y-3">
                     {stageOpps.length === 0 ? (
-                      <div className="h-32 border border-dashed border-slate-800/60 rounded-lg flex items-center justify-center text-[11px] text-slate-600 font-medium">
+                      <div className="h-32 border border-dashed border-[var(--color-border)] rounded-lg flex items-center justify-center text-[11px] text-[var(--color-fg-muted)] font-medium">
                         Sin oportunidades
                       </div>
                     ) : (
                       stageOpps.map((opp) => (
                         <div
                           key={opp.id}
-                          className="group relative rounded-lg border border-slate-800 bg-slate-900/80 hover:bg-slate-900 p-3.5 transition-all shadow-sm space-y-2.5 hover:border-slate-700"
+                          className="group relative rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface)] p-3.5 transition-all shadow-sm space-y-2.5 hover:border-[var(--color-border-strong)]"
                         >
                           {opp.isAiControlled && (
                             <div className="flex items-center justify-between">
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-700 border border-purple-500/30">
                                 <Bot className="size-3" /> Copiloto IA Atendiendo
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono">WhatsApp</span>
+                              <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
+                                WhatsApp
+                              </span>
                             </div>
                           )}
 
                           <div>
-                            <h4 className="text-xs font-semibold text-white group-hover:text-sky-400 transition-colors">
+                            <h4 className="text-xs font-semibold text-[var(--color-fg)] group-hover:text-sky-700 transition-colors">
                               {opp.title}
                             </h4>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
+                            <p className="text-[11px] text-[var(--color-fg-subtle)] mt-0.5">
                               {opp.customer?.firstName} {opp.customer?.lastName}
                             </p>
                           </div>
 
-                          <div className="flex items-center justify-between text-[11px] text-slate-300 pt-1 border-t border-slate-800/60 font-mono">
-                            <span className="flex items-center gap-1 text-slate-400">
-                              <MapPin className="size-3 text-sky-400" />{' '}
+                          <div className="flex items-center justify-between text-[11px] text-[var(--color-fg-muted)] pt-1 border-t border-[var(--color-border)] font-mono">
+                            <span className="flex items-center gap-1 text-[var(--color-fg-subtle)]">
+                              <MapPin className="size-3 text-sky-700" />{' '}
                               {opp.destinationCity ?? 'N/A'}
                             </span>
-                            <span className="font-bold text-emerald-400">
+                            <span className="font-bold text-emerald-700">
                               ${(opp.estimatedValueMinor / 100).toLocaleString('es-CO')}{' '}
                               {opp.currency}
                             </span>
@@ -514,7 +525,7 @@ export function ClientesClient({
                               href={`https://wa.me/${(opp.customer?.phone ?? '').replace(/[^0-9]/g, '')}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-medium"
+                              className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-700 font-medium"
                             >
                               <MessageSquare className="size-3" /> Chat WhatsApp
                             </a>
@@ -524,7 +535,7 @@ export function ClientesClient({
                               onChange={(e) =>
                                 handleMoveStage(opp.id, e.target.value as Opportunity['stage'])
                               }
-                              className="bg-slate-950 text-[10px] text-slate-300 border border-slate-800 rounded px-1.5 py-0.5 focus:outline-none focus:border-sky-500"
+                              className="bg-[var(--color-surface-muted)] text-[10px] text-[var(--color-fg-muted)] border border-[var(--color-border)] rounded px-1.5 py-0.5 focus:outline-none focus:border-sky-500"
                             >
                               {STAGES.map((s) => (
                                 <option key={s.key} value={s.key}>
@@ -549,15 +560,15 @@ export function ClientesClient({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* TABLA Y FILTROS VIAJEROS */}
           <div className="lg:col-span-8 space-y-4">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3.5">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-3.5">
               <div className="relative flex-1 w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[var(--color-fg-subtle)]" />
                 <input
                   type="text"
                   placeholder="Buscar por nombre, pasaporte o documento..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-950 text-xs text-white placeholder-slate-500 pl-9 pr-3 py-2 rounded-lg border border-slate-800 focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] text-xs text-[var(--color-fg)] placeholder-[var(--color-fg-subtle)] pl-9 pr-3 py-2 rounded-lg border border-[var(--color-border)] focus:outline-none focus:border-sky-500"
                 />
               </div>
 
@@ -566,8 +577,8 @@ export function ClientesClient({
                   onClick={() => setActiveTab('all')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     activeTab === 'all'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-[var(--color-surface-muted)] text-[var(--color-fg)]'
+                      : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
                   }`}
                 >
                   Todos ({customers.length})
@@ -576,8 +587,8 @@ export function ClientesClient({
                   onClick={() => setActiveTab('passports')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     activeTab === 'passports'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-[var(--color-surface-muted)] text-[var(--color-fg)]'
+                      : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]'
                   }`}
                 >
                   Solo Pasaportes
@@ -586,9 +597,9 @@ export function ClientesClient({
             </div>
 
             {/* TABLA CUSTOMERS */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase font-semibold text-[10px] tracking-wider">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+              <table className="w-full text-left text-xs text-[var(--color-fg-muted)]">
+                <thead className="bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)] border-b border-[var(--color-border)] uppercase font-semibold text-[10px] tracking-wider">
                   <tr>
                     <th className="py-3 px-4">Viajero</th>
                     <th className="py-3 px-4">Documento / Pasaporte</th>
@@ -597,7 +608,7 @@ export function ClientesClient({
                     <th className="py-3 px-4 text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-[var(--color-border)]">
                   {filteredCustomers.map((cust) => {
                     const isExpiring = isPassportExpiringSoon(cust.passportExpiry);
                     const isSelected = selectedCustomer?.id === cust.id;
@@ -606,42 +617,48 @@ export function ClientesClient({
                         key={cust.id}
                         onClick={() => setSelectedCustomer(cust)}
                         className={`cursor-pointer transition-colors ${
-                          isSelected ? 'bg-sky-500/10' : 'hover:bg-slate-800/40'
+                          isSelected ? 'bg-sky-500/10' : 'hover:bg-[var(--color-surface-muted)]'
                         }`}
                       >
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-white">
+                          <div className="font-semibold text-[var(--color-fg)]">
                             {cust.firstName} {cust.lastName}
                           </div>
-                          <div className="text-[10px] text-slate-400">Nac: {cust.birthdate}</div>
+                          <div className="text-[10px] text-[var(--color-fg-subtle)]">
+                            Nac: {cust.birthdate}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-mono text-slate-200">
+                          <div className="font-mono text-[var(--color-fg)]">
                             {cust.documentType}: {cust.documentNumber}
                           </div>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[10px] text-[var(--color-fg-subtle)]">
                             {cust.documentIssuingCountry}
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="text-slate-300">{cust.phone ?? 'Sin teléfono'}</div>
-                          <div className="text-[10px] text-slate-500">
+                          <div className="text-[var(--color-fg-muted)]">
+                            {cust.phone ?? 'Sin teléfono'}
+                          </div>
+                          <div className="text-[10px] text-[var(--color-fg-subtle)]">
                             {cust.email ?? 'Sin email'}
                           </div>
                         </td>
                         <td className="py-3 px-4">
                           {cust.passportExpiry ? (
                             isExpiring ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-500/10 text-rose-700 border border-rose-500/20">
                                 <AlertTriangle className="size-3" /> Vence: {cust.passportExpiry}
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
                                 <ShieldCheck className="size-3" /> Vigente ({cust.passportExpiry})
                               </span>
                             )
                           ) : (
-                            <span className="text-[10px] text-slate-500">Sin pasaporte</span>
+                            <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                              Sin pasaporte
+                            </span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-right">
@@ -649,7 +666,7 @@ export function ClientesClient({
                             href={`https://wa.me/${(cust.phone ?? '').replace(/[^0-9]/g, '')}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 font-medium px-2 py-1 rounded hover:bg-emerald-500/10"
+                            className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-700 font-medium px-2 py-1 rounded hover:bg-emerald-500/10"
                           >
                             <MessageSquare className="size-3.5" /> WhatsApp
                           </a>
@@ -665,47 +682,49 @@ export function ClientesClient({
           {/* FICHA DETALLE 360 DEL CLIENTE SELECCIONADO */}
           <div className="lg:col-span-4">
             {selectedCustomer ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 space-y-5 sticky top-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-5 sticky top-6">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
                   <div>
-                    <h3 className="text-base font-bold text-white">
+                    <h3 className="text-base font-bold text-[var(--color-fg)]">
                       {selectedCustomer.firstName} {selectedCustomer.lastName}
                     </h3>
-                    <p className="text-xs text-slate-400">Expediente del Viajero 360°</p>
+                    <p className="text-xs text-[var(--color-fg-subtle)]">
+                      Expediente del Viajero 360°
+                    </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/10 text-sky-700 border border-sky-500/20">
                     {selectedCustomer.nationality}
                   </span>
                 </div>
 
                 {/* DATOS PERSONALES */}
-                <div className="space-y-2 text-xs text-slate-300">
-                  <div className="flex justify-between py-1 border-b border-slate-800/40">
-                    <span className="text-slate-400">Documento:</span>
-                    <span className="font-mono text-white">
+                <div className="space-y-2 text-xs text-[var(--color-fg-muted)]">
+                  <div className="flex justify-between py-1 border-b border-[var(--color-border)]">
+                    <span className="text-[var(--color-fg-subtle)]">Documento:</span>
+                    <span className="font-mono text-[var(--color-fg)]">
                       {selectedCustomer.documentType} {selectedCustomer.documentNumber}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-800/40">
-                    <span className="text-slate-400">WhatsApp:</span>
-                    <span className="text-emerald-400 font-mono">{selectedCustomer.phone}</span>
+                  <div className="flex justify-between py-1 border-b border-[var(--color-border)]">
+                    <span className="text-[var(--color-fg-subtle)]">WhatsApp:</span>
+                    <span className="text-emerald-700 font-mono">{selectedCustomer.phone}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-800/40">
-                    <span className="text-slate-400">Email:</span>
-                    <span className="text-slate-200">{selectedCustomer.email}</span>
+                  <div className="flex justify-between py-1 border-b border-[var(--color-border)]">
+                    <span className="text-[var(--color-fg-subtle)]">Email:</span>
+                    <span className="text-[var(--color-fg)]">{selectedCustomer.email}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-800/40">
-                    <span className="text-slate-400">Fecha Nacimiento:</span>
+                  <div className="flex justify-between py-1 border-b border-[var(--color-border)]">
+                    <span className="text-[var(--color-fg-subtle)]">Fecha Nacimiento:</span>
                     <span>{selectedCustomer.birthdate}</span>
                   </div>
                 </div>
 
                 {/* ETIQUETAS & PREFERENCIAS */}
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  <h4 className="text-xs font-bold text-[var(--color-fg-muted)] uppercase tracking-wider">
                     Preferencias de Viaje
                   </h4>
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800/60 text-xs text-slate-400 space-y-1">
+                  <div className="p-3 rounded-lg bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-xs text-[var(--color-fg-subtle)] space-y-1">
                     <p>💺 Asiento: Pasillo preferido</p>
                     <p>🥗 Dieta: Sin restricciones</p>
                     <p>🏨 Hotel: Cama King, piso alto</p>
@@ -718,14 +737,14 @@ export function ClientesClient({
                     href={`https://wa.me/${(selectedCustomer.phone ?? '').replace(/[^0-9]/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2.5 rounded-lg transition-all shadow-md"
+                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-[var(--color-fg)] font-semibold text-xs py-2.5 rounded-lg transition-all shadow-md"
                   >
                     <MessageSquare className="size-4" /> Iniciar Chat por WhatsApp
                   </a>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-xs text-slate-500">
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-xs text-[var(--color-fg-subtle)]">
                 Selecciona un viajero para ver su expediente 360°
               </div>
             )}
@@ -736,14 +755,14 @@ export function ClientesClient({
       {/* MODAL: NUEVA OPORTUNIDAD */}
       {isAddOppModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Kanban className="size-4 text-sky-400" /> Crear Oportunidad de Viaje
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <h3 className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2">
+                <Kanban className="size-4 text-sky-700" /> Crear Oportunidad de Viaje
               </h3>
               <button
                 onClick={() => setIsAddOppModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >
                 <X className="size-5" />
               </button>
@@ -751,7 +770,7 @@ export function ClientesClient({
 
             <form onSubmit={handleCreateOpportunity} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-400 font-medium mb-1">
+                <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
                   Título de la Oportunidad
                 </label>
                 <input
@@ -760,16 +779,18 @@ export function ClientesClient({
                   placeholder="Ej: Vacaciones Cancún 7 Noches"
                   value={oppTitle}
                   onChange={(e) => setOppTitle(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 font-medium mb-1">Viajero / Cliente</label>
+                <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                  Viajero / Cliente
+                </label>
                 <select
                   value={oppCustomer}
                   onChange={(e) => setOppCustomer(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                 >
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -781,29 +802,33 @@ export function ClientesClient({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Destino</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Destino
+                  </label>
                   <input
                     type="text"
                     placeholder="Cancún (CUN)"
                     value={oppDestination}
                     onChange={(e) => setOppDestination(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Pasajeros</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Pasajeros
+                  </label>
                   <input
                     type="number"
                     min="1"
                     value={oppPax}
                     onChange={(e) => setOppPax(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-400 font-medium mb-1">
+                <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
                   Valor Estimado (COP)
                 </label>
                 <input
@@ -811,7 +836,7 @@ export function ClientesClient({
                   placeholder="1500000"
                   value={oppValue}
                   onChange={(e) => setOppValue(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
@@ -819,13 +844,13 @@ export function ClientesClient({
                 <button
                   type="button"
                   onClick={() => setIsAddOppModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white font-semibold shadow-md"
+                  className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-md"
                 >
                   Crear Oportunidad
                 </button>
@@ -838,14 +863,14 @@ export function ClientesClient({
       {/* MODAL: NUEVO VIAJERO */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Users className="size-4 text-sky-400" /> Registrar Nuevo Viajero
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <h3 className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2">
+                <Users className="size-4 text-sky-700" /> Registrar Nuevo Viajero
               </h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >
                 <X className="size-5" />
               </button>
@@ -854,30 +879,34 @@ export function ClientesClient({
             <form onSubmit={handleCreateCustomer} className="space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Nombres</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Nombres
+                  </label>
                   <input
                     type="text"
                     required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Apellidos</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Apellidos
+                  </label>
                   <input
                     type="text"
                     required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
                     Teléfono / WhatsApp
                   </label>
                   <input
@@ -885,28 +914,32 @@ export function ClientesClient({
                     placeholder="+573001234567"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Email</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Email
+                  </label>
                   <input
                     type="email"
                     placeholder="cliente@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Tipo Doc</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Tipo Doc
+                  </label>
                   <select
                     value={documentType}
                     onChange={(e) => setDocumentType(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   >
                     <option value="PASAPORTE">PASAPORTE</option>
                     <option value="CC">CC</option>
@@ -915,22 +948,26 @@ export function ClientesClient({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Número</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Número
+                  </label>
                   <input
                     type="text"
                     required
                     value={documentNumber}
                     onChange={(e) => setDocumentNumber(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-medium mb-1">Venc. Pasaporte</label>
+                  <label className="block text-[var(--color-fg-subtle)] font-medium mb-1">
+                    Venc. Pasaporte
+                  </label>
                   <input
                     type="date"
                     value={passportExpiry}
                     onChange={(e) => setPassportExpiry(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -939,13 +976,13 @@ export function ClientesClient({
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white font-semibold shadow-md"
+                  className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-md"
                 >
                   Guardar Viajero
                 </button>

@@ -104,5 +104,7 @@ jobs:
       - name: Run migrations
         run: pnpm --filter @sales-travel/db-migrate dev
 
+      # Antes sólo corría el filtro de la API, así que los tests de web-b2b no se
+      # ejecutaban en ninguna parte. `turbo run test` cubre todo paquete con script test.
       - name: Integration + unit tests
-        run: pnpm --filter @sales-travel/api test
+        run: pnpm test
