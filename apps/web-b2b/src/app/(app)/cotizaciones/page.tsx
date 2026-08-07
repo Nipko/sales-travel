@@ -508,9 +508,9 @@ function TravelLoader() {
     {
       Icon: Plane,
       label: 'Vuelo',
-      color: 'text-sky-500',
+      color: 'text-[var(--color-primary)]',
       bg: 'bg-sky-50',
-      ring: 'ring-sky-200/70',
+      ring: 'ring-[var(--color-primary)]/20/70',
     },
     {
       Icon: Building2,

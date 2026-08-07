@@ -20,7 +20,11 @@ interface Tenant {
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   active: { label: 'Activo', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   suspended: { label: 'Suspendido', className: 'bg-red-50 text-red-700 border-red-200' },
-  archived: { label: 'Archivado', className: 'bg-zinc-50 text-zinc-500 border-zinc-200' },
+  archived: {
+    label: 'Archivado',
+    className:
+      'bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)] border-[var(--color-border)]',
+  },
 };
 
 const inputClass =

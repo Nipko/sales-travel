@@ -57,7 +57,11 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   agency_admin: { label: 'Admin agencia', className: 'bg-blue-50 text-blue-700 border-blue-200' },
   admin: { label: 'Manager', className: 'bg-blue-50 text-blue-700 border-blue-200' },
   vendedor: { label: 'Vendedor', className: 'bg-teal-50 text-teal-700 border-teal-200' },
-  cliente_final: { label: 'Cliente', className: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
+  cliente_final: {
+    label: 'Cliente',
+    className:
+      'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]',
+  },
 };
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -382,7 +386,8 @@ export default function AdminUsuariosPage() {
                       <span
                         className={cn(
                           'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                          status?.className ?? 'bg-zinc-50 text-zinc-600',
+                          status?.className ??
+                            'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
                         )}
                       >
                         {status?.label ?? u.membershipStatus}

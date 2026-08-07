@@ -242,9 +242,9 @@ export function CarterasClient({
       case 'BOOKING_HOLD':
         return 'bg-amber-50 text-amber-700 border-amber-100';
       case 'BOOKING_REJECTED':
-        return 'bg-slate-100 text-slate-600 border-slate-200';
+        return 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]';
       default:
-        return 'bg-slate-50 text-slate-600 border-slate-100';
+        return 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]';
     }
   };
 
@@ -287,7 +287,7 @@ export function CarterasClient({
                 setCreditLimitInput((portfolio.creditLimitMinor / 100).toString());
                 setIsLimitModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-xs font-bold text-[var(--color-fg-muted)] shadow-sm hover:bg-[var(--color-surface-muted)] transition"
             >
               Configurar Crédito
             </button>
@@ -329,23 +329,23 @@ export function CarterasClient({
         {/* Credit limit card */}
         <div className="md:col-span-1 bg-white border border-[var(--color-border)]/45 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[170px]">
           <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Límite de Crédito Autorizado
             </span>
-            <p className="text-3xl font-extrabold tracking-tight text-slate-800 font-mono">
+            <p className="text-3xl font-extrabold tracking-tight text-[var(--color-fg)] font-mono">
               {formatCurrency(portfolio.creditLimitMinor, portfolio.currency)}
             </p>
           </div>
-          <div className="flex justify-between items-center text-[10px] text-slate-400 pt-6 border-t border-slate-100 mt-4">
+          <div className="flex justify-between items-center text-[10px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)] mt-4">
             <span>Respaldo B2B:</span>
-            <span className="font-bold text-slate-600">Cupo Adicional</span>
+            <span className="font-bold text-[var(--color-fg-muted)]">Cupo Adicional</span>
           </div>
         </div>
 
         {/* Total available credit card */}
         <div className="md:col-span-1 bg-white border border-[var(--color-border)]/45 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[170px]">
           <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Poder de Compra (Crédito + Saldo)
             </span>
             <p className="text-3xl font-extrabold tracking-tight text-[var(--color-primary)] font-mono">
@@ -355,9 +355,9 @@ export function CarterasClient({
               )}
             </p>
           </div>
-          <div className="flex justify-between items-center text-[10px] text-slate-400 pt-6 border-t border-slate-100 mt-4">
+          <div className="flex justify-between items-center text-[10px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)] mt-4">
             <span>Capacidad Total:</span>
-            <span className="font-bold text-slate-600">Disponibilidad Inmediata</span>
+            <span className="font-bold text-[var(--color-fg-muted)]">Disponibilidad Inmediata</span>
           </div>
         </div>
       </div>
@@ -365,13 +365,13 @@ export function CarterasClient({
       {/* Main Board */}
       <div className="space-y-4">
         {/* Navigation Tab */}
-        <div className="flex border-b border-slate-200">
+        <div className="flex border-b border-[var(--color-border)]">
           <button
             onClick={() => setActiveSubTab('transactions')}
             className={`px-5 py-3 text-xs font-bold -mb-px border-b-2 transition-all ${
               activeSubTab === 'transactions'
                 ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-extrabold'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
+                : 'border-transparent text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]'
             }`}
           >
             Historial de Transacciones
@@ -381,7 +381,7 @@ export function CarterasClient({
             className={`relative px-5 py-3 text-xs font-bold -mb-px border-b-2 transition-all ${
               activeSubTab === 'pending-approvals'
                 ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-extrabold'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
+                : 'border-transparent text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]'
             }`}
           >
             Reservas por Aprobar (Cartera)
@@ -399,7 +399,7 @@ export function CarterasClient({
             {transactions.length === 0 ? (
               <div className="px-6 py-14 text-center">
                 <Clock className="size-8 text-slate-300 mx-auto" />
-                <p className="text-xs text-slate-400 font-medium mt-3">
+                <p className="text-xs text-[var(--color-fg-subtle)] font-medium mt-3">
                   No se registran transacciones contables en su cartera todavía.
                 </p>
               </div>
@@ -407,7 +407,7 @@ export function CarterasClient({
               <div className="overflow-x-auto text-xs">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[var(--color-border)]/55 bg-slate-50 text-[9px] uppercase tracking-widest font-bold text-slate-500">
+                    <tr className="border-b border-[var(--color-border)]/55 bg-[var(--color-surface-muted)] text-[9px] uppercase tracking-widest font-bold text-[var(--color-fg-subtle)]">
                       <th className="px-6 py-3.5 font-bold">Fecha / Hora</th>
                       <th className="px-6 py-3.5 font-bold">Tipo Movimiento</th>
                       <th className="px-6 py-3.5 font-bold">Valor</th>
@@ -421,9 +421,9 @@ export function CarterasClient({
                       return (
                         <tr
                           key={tx.id}
-                          className="border-b border-slate-100 last:border-0 hover:bg-slate-50/40 transition"
+                          className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-muted)]/40 transition"
                         >
-                          <td className="px-6 py-4 text-slate-500">
+                          <td className="px-6 py-4 text-[var(--color-fg-subtle)]">
                             {new Date(tx.createdAt).toLocaleString('es-CO')}
                           </td>
                           <td className="px-6 py-4">
@@ -443,10 +443,12 @@ export function CarterasClient({
                             {isNegative ? '-' : '+'}
                             {formatCurrency(Math.abs(tx.amountMinor), portfolio.currency)}
                           </td>
-                          <td className="px-6 py-4 font-mono font-bold text-slate-700">
+                          <td className="px-6 py-4 font-mono font-bold text-[var(--color-fg-muted)]">
                             {tx.referenceId ? tx.referenceId.slice(0, 8).toUpperCase() : 'N/A'}
                           </td>
-                          <td className="px-6 py-4 text-slate-600 italic">{tx.notes ?? '-'}</td>
+                          <td className="px-6 py-4 text-[var(--color-fg-muted)] italic">
+                            {tx.notes ?? '-'}
+                          </td>
                         </tr>
                       );
                     })}
@@ -473,7 +475,7 @@ export function CarterasClient({
             {pendingApprovals.length === 0 ? (
               <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl py-14 text-center shadow-sm">
                 <Check className="size-8 text-emerald-500 bg-emerald-50 p-1.5 rounded-full mx-auto" />
-                <p className="text-xs text-slate-400 font-semibold mt-3">
+                <p className="text-xs text-[var(--color-fg-subtle)] font-semibold mt-3">
                   No hay reservas pendientes de aprobación en este momento.
                 </p>
               </div>
@@ -485,8 +487,8 @@ export function CarterasClient({
                     className="bg-white border border-[var(--color-border)]/45 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between"
                   >
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                        <span className="font-mono font-bold text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+                      <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2.5">
+                        <span className="font-mono font-bold text-[10px] bg-[var(--color-surface-muted)] px-2 py-0.5 rounded text-[var(--color-fg-muted)]">
                           Reserva #{o.orderNumber}
                         </span>
                         <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
@@ -495,21 +497,25 @@ export function CarterasClient({
                         </span>
                       </div>
 
-                      <div className="text-xs space-y-2 text-slate-600">
+                      <div className="text-xs space-y-2 text-[var(--color-fg-muted)]">
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Pasajeros:</span>
-                          <span className="font-bold text-slate-800 text-right shrink-0">
+                          <span className="text-[var(--color-fg-subtle)]">Pasajeros:</span>
+                          <span className="font-bold text-[var(--color-fg)] text-right shrink-0">
                             {getPassengersNames(o.passengers)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Vertical / Proveedor:</span>
-                          <span className="font-semibold text-slate-800 uppercase">
+                          <span className="text-[var(--color-fg-subtle)]">
+                            Vertical / Proveedor:
+                          </span>
+                          <span className="font-semibold text-[var(--color-fg)] uppercase">
                             {o.provider === 'latam-ndc' ? 'Vuelos (LATAM NDC)' : o.provider}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100 mt-2">
-                          <span className="text-slate-400 font-semibold">Valor Hold:</span>
+                        <div className="flex justify-between items-center bg-[var(--color-surface-muted)] p-2.5 rounded-xl border border-[var(--color-border)] mt-2">
+                          <span className="text-[var(--color-fg-subtle)] font-semibold">
+                            Valor Hold:
+                          </span>
                           <span className="font-extrabold text-[var(--color-primary)] font-mono text-sm">
                             {formatCurrency(o.totalAmount, o.currency)}
                           </span>
@@ -520,7 +526,7 @@ export function CarterasClient({
                     <div className="flex items-center gap-2.5 pt-2">
                       <button
                         onClick={() => handleRejectOrder(o.id)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 rounded-xl py-2 text-xs font-bold shadow-sm transition"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 border border-[var(--color-border)] text-[var(--color-fg-muted)] bg-white hover:bg-[var(--color-surface-muted)] rounded-xl py-2 text-xs font-bold shadow-sm transition"
                       >
                         <X className="size-3.5" />
                         Rechazar / Liberar
@@ -544,7 +550,7 @@ export function CarterasClient({
       {/* Recarga de Saldo Modal */}
       {isDepositModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 overflow-hidden shadow-2xl animate-scale-up">
+          <div className="bg-white w-full max-w-md rounded-2xl border border-[var(--color-border)] overflow-hidden shadow-2xl animate-scale-up">
             <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-wider text-white">
                 Recargar Saldo
@@ -566,11 +572,11 @@ export function CarterasClient({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
                   Monto Recarga (COP)
                 </label>
                 <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] font-bold">
                     $
                   </span>
                   <input
@@ -580,28 +586,28 @@ export function CarterasClient({
                     placeholder="Ej: 500000"
                     value={depositAmount}
                     onChange={(e) => setDepositAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-[var(--color-fg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
                   Detalle / Comprobante / Notas
                 </label>
                 <textarea
                   value={depositNotes}
                   onChange={(e) => setDepositNotes(e.target.value)}
                   placeholder="Ej: Transferencia Bancolombia #54223"
-                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs mt-1.5 h-20 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-3 py-2.5 rounded-xl text-xs mt-1.5 h-20 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
                 <button
                   type="button"
                   onClick={() => setIsDepositModalOpen(false)}
-                  className="px-4 py-2.5 border border-slate-200 text-slate-500 font-bold hover:bg-slate-50 rounded-xl"
+                  className="px-4 py-2.5 border border-[var(--color-border)] text-[var(--color-fg-subtle)] font-bold hover:bg-[var(--color-surface-muted)] rounded-xl"
                 >
                   Cancelar
                 </button>
@@ -620,7 +626,7 @@ export function CarterasClient({
       {/* Configurar Crédito Modal */}
       {isLimitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 overflow-hidden shadow-2xl animate-scale-up">
+          <div className="bg-white w-full max-w-md rounded-2xl border border-[var(--color-border)] overflow-hidden shadow-2xl animate-scale-up">
             <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-wider text-white">
                 Configurar Crédito
@@ -634,11 +640,11 @@ export function CarterasClient({
             </div>
             <form onSubmit={handleLimitSubmit} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
                   Límite de Crédito Autorizado (COP)
                 </label>
                 <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] font-bold">
                     $
                   </span>
                   <input
@@ -648,16 +654,16 @@ export function CarterasClient({
                     placeholder="Ej: 2000000"
                     value={creditLimitInput}
                     onChange={(e) => setCreditLimitInput(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-[var(--color-fg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
                 <button
                   type="button"
                   onClick={() => setIsLimitModalOpen(false)}
-                  className="px-4 py-2.5 border border-slate-200 text-slate-500 font-bold hover:bg-slate-50 rounded-xl"
+                  className="px-4 py-2.5 border border-[var(--color-border)] text-[var(--color-fg-subtle)] font-bold hover:bg-[var(--color-surface-muted)] rounded-xl"
                 >
                   Cancelar
                 </button>

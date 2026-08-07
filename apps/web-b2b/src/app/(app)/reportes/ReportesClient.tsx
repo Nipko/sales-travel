@@ -92,8 +92,8 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
       case 'vuelos':
         return {
           bg: 'bg-sky-50 text-sky-600 border-sky-100',
-          fill: 'fill-sky-500',
-          stroke: 'stroke-sky-500',
+          fill: 'fill-[var(--color-primary)]',
+          stroke: 'stroke-[var(--color-primary)]',
           text: 'text-sky-600',
         };
       case 'hoteles':
@@ -112,10 +112,10 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
         };
       default:
         return {
-          bg: 'bg-slate-50 text-slate-600 border-slate-100',
+          bg: 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]',
           fill: 'fill-slate-500',
           stroke: 'stroke-slate-500',
-          text: 'text-slate-600',
+          text: 'text-[var(--color-fg-muted)]',
         };
     }
   };
@@ -208,7 +208,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           <select
             value={selectedTimeframe}
             onChange={(e) => setSelectedTimeframe(e.target.value)}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] shadow-sm"
+            className="bg-white border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs font-semibold text-[var(--color-fg-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] shadow-sm"
           >
             <option value="2026">Año 2026 (Proyectado)</option>
             <option value="current-month">Mes Actual</option>
@@ -228,7 +228,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
         {/* Total Sales */}
         <div className="rounded-2xl border border-[var(--color-border)]/45 bg-white p-5 flex flex-col justify-between shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Ventas Totales
             </span>
             <div className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -236,7 +236,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-black text-slate-800 tracking-tight font-mono">
+            <h3 className="text-2xl font-black text-[var(--color-fg)] tracking-tight font-mono">
               {formatCurrency(commissions.summary.totalSalesMinor)}
             </h3>
             <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-1">
@@ -249,7 +249,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
         {/* Earned Commissions */}
         <div className="rounded-2xl border border-[var(--color-border)]/45 bg-white p-5 flex flex-col justify-between shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Comisiones Recibidas
             </span>
             <div className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -257,7 +257,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-black text-slate-800 tracking-tight font-mono">
+            <h3 className="text-2xl font-black text-[var(--color-fg)] tracking-tight font-mono">
               {formatCurrency(commissions.summary.totalCommissionsMinor)}
             </h3>
             <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-1">
@@ -270,7 +270,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
         {/* Retained Markups */}
         <div className="rounded-2xl border border-[var(--color-border)]/45 bg-white p-5 flex flex-col justify-between shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Markup Propietario
             </span>
             <div className="size-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
@@ -278,7 +278,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
             </div>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-black text-slate-800 tracking-tight font-mono">
+            <h3 className="text-2xl font-black text-[var(--color-fg)] tracking-tight font-mono">
               {formatCurrency(commissions.summary.totalMarkupsMinor)}
             </h3>
             <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-1">
@@ -320,14 +320,14 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl p-5 shadow-sm space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-bold text-slate-800">
+                <h3 className="text-xs font-bold text-[var(--color-fg)]">
                   Tendencia Mensual de Ventas ({selectedTimeframe})
                 </h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">
+                <p className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">
                   Visualización histórica de ventas brutas consolidadas acumuladas.
                 </p>
               </div>
-              <div className="flex items-center gap-4 text-[10px] text-slate-400 font-semibold">
+              <div className="flex items-center gap-4 text-[10px] text-[var(--color-fg-subtle)] font-semibold">
                 <span className="flex items-center gap-1">
                   <span className="size-2 rounded-full bg-[var(--color-primary)]" />
                   Monto de Ventas
@@ -429,11 +429,11 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
 
           {/* Breakdown Table */}
           <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl overflow-hidden shadow-sm">
-            <div className="p-5 border-b border-slate-100">
-              <h3 className="text-xs font-bold text-slate-800">
+            <div className="p-5 border-b border-[var(--color-border)]">
+              <h3 className="text-xs font-bold text-[var(--color-fg)]">
                 Desglose por Línea de Producto (Vertical)
               </h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <p className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">
                 Volumen y márgenes de ingresos desglosados detalladamente por vertical.
               </p>
             </div>
@@ -441,7 +441,7 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
             <div className="overflow-x-auto text-xs">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-[9px] uppercase tracking-widest font-bold text-slate-500">
+                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[9px] uppercase tracking-widest font-bold text-[var(--color-fg-subtle)]">
                     <th className="px-6 py-3 font-bold">Vertical</th>
                     <th className="px-6 py-3 font-bold text-right">Volumen Ventas</th>
                     <th className="px-6 py-3 font-bold text-right">Comisión Devengada</th>
@@ -456,21 +456,21 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                     return (
                       <tr
                         key={idx}
-                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/40 transition"
+                        className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-muted)]/40 transition"
                       >
-                        <td className="px-6 py-4 font-bold text-slate-700 flex items-center gap-2">
+                        <td className="px-6 py-4 font-bold text-[var(--color-fg-muted)] flex items-center gap-2">
                           <span className={`p-1.5 rounded-lg border ${cInfo.bg}`}>
                             {getVerticalIcon(item.vertical)}
                           </span>
                           {item.vertical}
                         </td>
-                        <td className="px-6 py-4 font-mono font-bold text-slate-800 text-right">
+                        <td className="px-6 py-4 font-mono font-bold text-[var(--color-fg)] text-right">
                           {formatCurrency(item.totalSalesMinor)}
                         </td>
-                        <td className="px-6 py-4 font-mono text-slate-600 text-right">
+                        <td className="px-6 py-4 font-mono text-[var(--color-fg-muted)] text-right">
                           {formatCurrency(item.commissionMinor)}
                         </td>
-                        <td className="px-6 py-4 font-mono text-slate-600 text-right">
+                        <td className="px-6 py-4 font-mono text-[var(--color-fg-muted)] text-right">
                           {formatCurrency(item.markupMinor)}
                         </td>
                         <td className="px-6 py-4 font-mono font-bold text-[var(--color-primary)] text-right">
@@ -490,8 +490,8 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           {/* Top Performers */}
           <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl p-5 shadow-sm space-y-4">
             <div>
-              <h3 className="text-xs font-bold text-slate-800">Top Vendedores del Mes</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <h3 className="text-xs font-bold text-[var(--color-fg)]">Top Vendedores del Mes</h3>
+              <p className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">
                 Clasificación de agentes por volumen de ventas emitidas en firme.
               </p>
             </div>
@@ -500,22 +500,22 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
               {salesMetrics.topPerformers.map((agent, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition"
+                  className="flex items-center justify-between p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 hover:bg-[var(--color-surface-muted)] transition"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600 uppercase border border-slate-200">
+                    <div className="size-8 rounded-full bg-[var(--color-surface-muted)] flex items-center justify-center font-bold text-[var(--color-fg-muted)] uppercase border border-[var(--color-border)]">
                       {agent.name[0]}
                       {agent.name.split(' ')[1]?.[0] ?? ''}
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800">{agent.name}</h4>
-                      <p className="text-[9px] text-slate-400 uppercase font-semibold">
+                      <h4 className="font-bold text-[var(--color-fg)]">{agent.name}</h4>
+                      <p className="text-[9px] text-[var(--color-fg-subtle)] uppercase font-semibold">
                         Agente de Viajes
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-mono font-black text-slate-800">
+                    <p className="font-mono font-black text-[var(--color-fg)]">
                       {formatCurrency(agent.salesMinor)}
                     </p>
                     <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full mt-0.5">
@@ -531,8 +531,8 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
           {/* Efficiency indicators card */}
           <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl p-5 shadow-sm space-y-4">
             <div>
-              <h3 className="text-xs font-bold text-slate-800">Distribución de Ingresos</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <h3 className="text-xs font-bold text-[var(--color-fg)]">Distribución de Ingresos</h3>
+              <p className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">
                 Proporción de ingresos generados por cada canal de producto.
               </p>
             </div>
@@ -549,18 +549,18 @@ export function ReportesClient({ salesMetrics, commissions }: ReportesClientProp
                 return (
                   <div key={idx} className="space-y-1.5 text-xs">
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <span className="font-bold text-[var(--color-fg-muted)] flex items-center gap-1.5">
                         <span className={`p-1 rounded-md border ${cInfo.bg}`}>
                           {getVerticalIcon(item.vertical)}
                         </span>
                         {item.vertical}
                       </span>
-                      <span className="font-mono font-bold text-slate-600">
+                      <span className="font-mono font-bold text-[var(--color-fg-muted)]">
                         {percent.toFixed(1)}%
                       </span>
                     </div>
                     {/* Visual Bar */}
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-2 bg-[var(--color-surface-muted)] rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500`}
                         style={{

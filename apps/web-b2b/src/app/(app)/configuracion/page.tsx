@@ -156,7 +156,7 @@ export default function ConfiguracionPage() {
           <div className="h-4 w-24 rounded bg-slate-200" />
           <div className="h-8 w-48 rounded bg-slate-200" />
           <div className="h-10 w-full rounded-xl bg-slate-200" />
-          <div className="h-64 rounded-2xl bg-slate-100" />
+          <div className="h-64 rounded-2xl bg-[var(--color-surface-muted)]" />
         </div>
       </div>
     );
@@ -180,7 +180,7 @@ export default function ConfiguracionPage() {
       </header>
 
       {/* Tabs - Segmented Control Moderno */}
-      <div className="flex gap-1 rounded-xl border border-slate-200/50 bg-slate-100/80 p-1 shadow-[var(--shadow-xs)]">
+      <div className="flex gap-1 rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-surface-muted)]/80 p-1 shadow-[var(--shadow-xs)]">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -194,8 +194,8 @@ export default function ConfiguracionPage() {
               className={cn(
                 'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all duration-200 cursor-pointer',
                 activeTab === tab.id
-                  ? 'bg-white text-slate-800 shadow-[var(--shadow-sm)] border border-slate-200/40'
-                  : 'text-slate-500 hover:text-slate-800',
+                  ? 'bg-white text-[var(--color-fg)] shadow-[var(--shadow-sm)] border border-[var(--color-border)]/40'
+                  : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]',
               )}
             >
               <Icon className="size-3.5 shrink-0" />
@@ -278,11 +278,11 @@ function GeneralTab({
                 type="text"
                 value={config.slug}
                 disabled
-                className="form-input opacity-50 cursor-not-allowed bg-slate-50 font-mono text-xs"
+                className="form-input opacity-50 cursor-not-allowed bg-[var(--color-surface-muted)] font-mono text-xs"
               />
             </FormField>
 
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 border-t border-slate-100 pt-5">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 border-t border-[var(--color-border)] pt-5">
               <FormField label="País de Operación">
                 <select
                   value={config.countryCode}
@@ -329,7 +329,7 @@ function GeneralTab({
       </Card>
 
       {/* Floating Save Footer - Glassmorphic */}
-      <div className="sticky bottom-0 -mx-6 border-t border-slate-200/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+      <div className="sticky bottom-0 -mx-6 border-t border-[var(--color-border)]/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {message ? (
           <div
             className={cn(
@@ -345,7 +345,7 @@ function GeneralTab({
             <span>{message.text}</span>
           </div>
         ) : (
-          <div className="text-xs text-slate-400 font-medium">
+          <div className="text-xs text-[var(--color-fg-subtle)] font-medium">
             Configure los cambios antes de guardar
           </div>
         )}
@@ -390,15 +390,17 @@ function BrandingTab({
 
           <div className="space-y-4">
             {branding.logoUrl ? (
-              <div className="flex items-center gap-4 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4 shadow-inner">
+              <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-surface-muted)]/50 p-4 shadow-inner">
                 <img
                   src={branding.logoUrl}
                   alt="Previsualización del logo"
-                  className="size-16 rounded-lg border border-slate-200 bg-white object-contain p-1.5 shadow-sm"
+                  className="size-16 rounded-lg border border-[var(--color-border)] bg-white object-contain p-1.5 shadow-sm"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="truncate text-xs font-bold text-slate-800">Logo actual activo</p>
-                  <p className="truncate text-[10px] text-slate-500 font-mono mt-0.5">
+                  <p className="truncate text-xs font-bold text-[var(--color-fg)]">
+                    Logo actual activo
+                  </p>
+                  <p className="truncate text-[10px] text-[var(--color-fg-subtle)] font-mono mt-0.5">
                     {branding.logoUrl}
                   </p>
                 </div>
@@ -406,18 +408,18 @@ function BrandingTab({
                   variant="secondary"
                   size="sm"
                   onClick={() => setBranding({ ...branding, logoUrl: null })}
-                  className="border-slate-200 text-slate-600 hover:bg-slate-100"
+                  className="border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
                 >
                   Quitar logo
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/30 px-6 py-10 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.02]">
-                <Upload className="mb-3 size-8 text-slate-400" />
-                <p className="text-xs font-bold text-slate-700">
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-muted)]/30 px-6 py-10 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.02]">
+                <Upload className="mb-3 size-8 text-[var(--color-fg-subtle)]" />
+                <p className="text-xs font-bold text-[var(--color-fg-muted)]">
                   Arrastre o seleccione su logotipo
                 </p>
-                <p className="mt-1 text-[10px] text-slate-500">
+                <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)]">
                   Formatos recomendados: PNG, SVG de fondo transparente (200x200px)
                 </p>
               </div>
@@ -447,7 +449,7 @@ function BrandingTab({
           <div className="space-y-6">
             {/* Color Primario */}
             <div className="space-y-3.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
                 Color Primario (Botones, elementos interactivos principales)
               </label>
 
@@ -471,9 +473,9 @@ function BrandingTab({
               </div>
 
               {/* Selector e Input de color primario */}
-              <div className="flex items-center gap-3 border-t border-slate-100 pt-4">
+              <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
                 <div
-                  className="size-10 shrink-0 rounded-lg border border-slate-200 shadow-sm"
+                  className="size-10 shrink-0 rounded-lg border border-[var(--color-border)] shadow-sm"
                   style={{ backgroundColor: branding.primaryColor ?? '#e37b23' }}
                 />
                 <input
@@ -489,19 +491,19 @@ function BrandingTab({
                   type="color"
                   value={branding.primaryColor ?? '#e37b23'}
                   onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                  className="size-10 cursor-pointer rounded-lg border border-slate-200 p-0.5 hover:scale-[1.02] transition-transform"
+                  className="size-10 cursor-pointer rounded-lg border border-[var(--color-border)] p-0.5 hover:scale-[1.02] transition-transform"
                 />
               </div>
             </div>
 
             {/* Color Acento */}
-            <div className="space-y-3.5 border-t border-slate-100 pt-5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="space-y-3.5 border-t border-[var(--color-border)] pt-5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
                 Color de Acento (Badges, notificaciones y elementos secundarios)
               </label>
               <div className="flex items-center gap-3">
                 <div
-                  className="size-10 shrink-0 rounded-lg border border-slate-200 shadow-sm"
+                  className="size-10 shrink-0 rounded-lg border border-[var(--color-border)] shadow-sm"
                   style={{ backgroundColor: branding.accentColor ?? '#0f355c' }}
                 />
                 <input
@@ -517,7 +519,7 @@ function BrandingTab({
                   type="color"
                   value={branding.accentColor ?? '#0f355c'}
                   onChange={(e) => setBranding({ ...branding, accentColor: e.target.value })}
-                  className="size-10 cursor-pointer rounded-lg border border-slate-200 p-0.5 hover:scale-[1.02] transition-transform"
+                  className="size-10 cursor-pointer rounded-lg border border-[var(--color-border)] p-0.5 hover:scale-[1.02] transition-transform"
                 />
               </div>
             </div>
@@ -527,16 +529,16 @@ function BrandingTab({
 
       {/* Previsualización en Vivo */}
       {(branding.primaryColor || branding.logoUrl) && (
-        <Card className="border border-[var(--color-border)]/50 bg-slate-50/20 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
+        <Card className="border border-[var(--color-border)]/50 bg-[var(--color-surface-muted)]/20 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
           <CardContent className="p-6 space-y-4">
             <SectionHeader
               title="Previsualización en tiempo real"
               description="Previsualice cómo se adaptará la interfaz con los colores y logotipo cargados."
             />
 
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg)] shadow-[var(--shadow-sm)]">
+            <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] shadow-[var(--shadow-sm)]">
               {/* Simulador de cabecera */}
-              <div className="flex h-12 items-center gap-3 border-b border-slate-100 bg-white px-4">
+              <div className="flex h-12 items-center gap-3 border-b border-[var(--color-border)] bg-white px-4">
                 {branding.logoUrl ? (
                   <img src={branding.logoUrl} alt="" className="size-6 rounded object-contain" />
                 ) : (
@@ -547,11 +549,13 @@ function BrandingTab({
                     AG
                   </div>
                 )}
-                <span className="text-xs font-semibold text-slate-800">Mi Agencia de Viajes</span>
+                <span className="text-xs font-semibold text-[var(--color-fg)]">
+                  Mi Agencia de Viajes
+                </span>
               </div>
 
               {/* Simulador de cuerpo con botones */}
-              <div className="flex flex-wrap items-center gap-3.5 p-5 bg-slate-50/40">
+              <div className="flex flex-wrap items-center gap-3.5 p-5 bg-[var(--color-surface-muted)]/40">
                 <button
                   type="button"
                   className="rounded-lg px-4 py-2 text-xs font-bold text-white shadow-md active:scale-95 transition-all"
@@ -561,7 +565,7 @@ function BrandingTab({
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="rounded-lg border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-bold text-[var(--color-fg-muted)] shadow-sm hover:bg-[var(--color-surface-muted)]"
                 >
                   Botón Secundario
                 </button>
@@ -584,7 +588,7 @@ function BrandingTab({
       )}
 
       {/* Floating Save Footer - Glassmorphic */}
-      <div className="sticky bottom-0 -mx-6 border-t border-slate-200/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+      <div className="sticky bottom-0 -mx-6 border-t border-[var(--color-border)]/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {message ? (
           <div
             className={cn(
@@ -600,7 +604,7 @@ function BrandingTab({
             <span>{message.text}</span>
           </div>
         ) : (
-          <div className="text-xs text-slate-400 font-medium">
+          <div className="text-xs text-[var(--color-fg-subtle)] font-medium">
             Configure los cambios antes de guardar
           </div>
         )}
@@ -636,15 +640,15 @@ function DomainTab({ config }: { config: TenantConfig }) {
                 type="text"
                 value={config.slug}
                 disabled
-                className="form-input rounded-r-none border-r-0 opacity-60 bg-slate-50 font-mono text-xs cursor-not-allowed"
+                className="form-input rounded-r-none border-r-0 opacity-60 bg-[var(--color-surface-muted)] font-mono text-xs cursor-not-allowed"
               />
-              <span className="inline-flex items-center rounded-r-lg border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-xs font-semibold text-slate-500">
+              <span className="inline-flex items-center rounded-r-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3.5 py-2.5 text-xs font-semibold text-[var(--color-fg-subtle)]">
                 .planetour.cloud
               </span>
             </div>
           </FormField>
 
-          <div className="border-t border-slate-100 pt-5">
+          <div className="border-t border-[var(--color-border)] pt-5">
             <FormField
               label="Dominio personalizado (CNAME)"
               helper="Apunta el CNAME de su dominio propio (ej. viajes.miagencia.com) a: app.planetour.cloud"
@@ -672,10 +676,12 @@ function TeamTab() {
           description="Gestione los agentes de venta, administradores y personal autorizado que tienen acceso a este portal."
         />
 
-        <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/30 px-6 py-12 text-center">
-          <Users className="mx-auto mb-3.5 size-8 text-slate-400" />
-          <p className="text-xs font-bold text-slate-700">Módulo de Gestión de Usuarios</p>
-          <p className="mt-1 text-[10px] text-slate-500 leading-relaxed max-w-sm mx-auto">
+        <div className="rounded-xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 px-6 py-12 text-center">
+          <Users className="mx-auto mb-3.5 size-8 text-[var(--color-fg-subtle)]" />
+          <p className="text-xs font-bold text-[var(--color-fg-muted)]">
+            Módulo de Gestión de Usuarios
+          </p>
+          <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)] leading-relaxed max-w-sm mx-auto">
             Habilite cuentas para sus vendedores, configure markups individuales y controle roles.
             Disponible próximamente.
           </p>
@@ -688,11 +694,11 @@ function TeamTab() {
 // --- Reusable components ---
 function SectionHeader({ title, description }: { title: string; description: string }) {
   return (
-    <div className="space-y-1 border-b border-slate-100 pb-4">
-      <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+    <div className="space-y-1 border-b border-[var(--color-border)] pb-4">
+      <h2 className="text-sm font-bold text-[var(--color-fg)] flex items-center gap-2">
         <span>{title}</span>
       </h2>
-      <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
+      <p className="text-xs text-[var(--color-fg-subtle)] leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -710,7 +716,7 @@ function FormField({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-slate-700">
+      <label className="text-xs font-semibold text-[var(--color-fg-muted)]">
         {label}
         {required && (
           <span className="ml-0.5 text-rose-500" aria-hidden="true">
@@ -719,7 +725,11 @@ function FormField({
         )}
       </label>
       {children}
-      {helper && <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{helper}</p>}
+      {helper && (
+        <p className="text-[10px] text-[var(--color-fg-subtle)] font-medium leading-relaxed">
+          {helper}
+        </p>
+      )}
     </div>
   );
 }

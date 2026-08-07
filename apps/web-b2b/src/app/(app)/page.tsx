@@ -184,7 +184,7 @@ export default async function DashboardPage() {
                             className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
                               isAdminRole
                                 ? 'bg-[var(--color-primary)]/[0.06] text-[var(--color-primary)] border-[var(--color-primary)]/15'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                                : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]'
                             }`}
                           >
                             {m.role === 'superadmin'
@@ -201,7 +201,7 @@ export default async function DashboardPage() {
                             className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
                               m.status === 'active'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                                : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)] border-[var(--color-border)]'
                             }`}
                           >
                             <span

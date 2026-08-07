@@ -535,7 +535,7 @@ export function ClientesClient({
                               onChange={(e) =>
                                 handleMoveStage(opp.id, e.target.value as Opportunity['stage'])
                               }
-                              className="bg-[var(--color-surface-muted)] text-[10px] text-[var(--color-fg-muted)] border border-[var(--color-border)] rounded px-1.5 py-0.5 focus:outline-none focus:border-sky-500"
+                              className="bg-[var(--color-surface-muted)] text-[10px] text-[var(--color-fg-muted)] border border-[var(--color-border)] rounded px-1.5 py-0.5 focus:outline-none focus:border-[var(--color-primary)]"
                             >
                               {STAGES.map((s) => (
                                 <option key={s.key} value={s.key}>
@@ -568,7 +568,7 @@ export function ClientesClient({
                   placeholder="Buscar por nombre, pasaporte o documento..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-[var(--color-surface-muted)] text-xs text-[var(--color-fg)] placeholder-[var(--color-fg-subtle)] pl-9 pr-3 py-2 rounded-lg border border-[var(--color-border)] focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] text-xs text-[var(--color-fg)] placeholder-[var(--color-fg-subtle)] pl-9 pr-3 py-2 rounded-lg border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-primary)]"
                 />
               </div>
 
@@ -617,7 +617,9 @@ export function ClientesClient({
                         key={cust.id}
                         onClick={() => setSelectedCustomer(cust)}
                         className={`cursor-pointer transition-colors ${
-                          isSelected ? 'bg-sky-500/10' : 'hover:bg-[var(--color-surface-muted)]'
+                          isSelected
+                            ? 'bg-[var(--color-primary)]/10'
+                            : 'hover:bg-[var(--color-surface-muted)]'
                         }`}
                       >
                         <td className="py-3 px-4">
@@ -692,7 +694,7 @@ export function ClientesClient({
                       Expediente del Viajero 360°
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/10 text-sky-700 border border-sky-500/20">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-primary)]/10 text-sky-700 border border-[var(--color-primary)]/20">
                     {selectedCustomer.nationality}
                   </span>
                 </div>
@@ -779,7 +781,7 @@ export function ClientesClient({
                   placeholder="Ej: Vacaciones Cancún 7 Noches"
                   value={oppTitle}
                   onChange={(e) => setOppTitle(e.target.value)}
-                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                 />
               </div>
 
@@ -790,7 +792,7 @@ export function ClientesClient({
                 <select
                   value={oppCustomer}
                   onChange={(e) => setOppCustomer(e.target.value)}
-                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                 >
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -810,7 +812,7 @@ export function ClientesClient({
                     placeholder="Cancún (CUN)"
                     value={oppDestination}
                     onChange={(e) => setOppDestination(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
                 <div>
@@ -822,7 +824,7 @@ export function ClientesClient({
                     min="1"
                     value={oppPax}
                     onChange={(e) => setOppPax(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
               </div>
@@ -836,7 +838,7 @@ export function ClientesClient({
                   placeholder="1500000"
                   value={oppValue}
                   onChange={(e) => setOppValue(e.target.value)}
-                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
                 />
               </div>
 
@@ -887,7 +889,7 @@ export function ClientesClient({
                     required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
                 <div>
@@ -899,7 +901,7 @@ export function ClientesClient({
                     required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
               </div>
@@ -914,7 +916,7 @@ export function ClientesClient({
                     placeholder="+573001234567"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
                   />
                 </div>
                 <div>
@@ -926,7 +928,7 @@ export function ClientesClient({
                     placeholder="cliente@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
               </div>
@@ -939,7 +941,7 @@ export function ClientesClient({
                   <select
                     value={documentType}
                     onChange={(e) => setDocumentType(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   >
                     <option value="PASAPORTE">PASAPORTE</option>
                     <option value="CC">CC</option>
@@ -956,7 +958,7 @@ export function ClientesClient({
                     required
                     value={documentNumber}
                     onChange={(e) => setDocumentNumber(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
                   />
                 </div>
                 <div>
@@ -967,7 +969,7 @@ export function ClientesClient({
                     type="date"
                     value={passportExpiry}
                     onChange={(e) => setPassportExpiry(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-sky-500"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
                   />
                 </div>
               </div>

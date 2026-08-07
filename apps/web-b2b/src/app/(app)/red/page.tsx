@@ -700,7 +700,7 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                     : a.status === 'sandbox'
                       ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : 'border-zinc-200 bg-zinc-50 text-zinc-500',
+                      : 'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
                 )}
               >
                 {a.status}
