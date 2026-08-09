@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useConfirm } from '../../../components/ui/dialog';
 import {
   Search,
   Plus,
@@ -143,6 +144,7 @@ export function ClientesClient({
   initialOpportunities = [],
 }: ClientesClientProps) {
   const [activeView, setActiveView] = useState<'kanban' | 'directory'>('kanban');
+  const [confirmAction, confirmDialog] = useConfirm();
 
   // Customer State
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -325,7 +327,13 @@ export function ClientesClient({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Está seguro de eliminar este pasajero de la base de datos?')) return;
+    const ok = await confirmAction({
+      title: 'Eliminar pasajero',
+      description:
+        'Se borra el cliente y, en cascada, sus oportunidades e historial de interacciones. No se puede deshacer.',
+      confirmLabel: 'Eliminar',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
     if (res.ok) {
       const updatedList = customers.filter((c) => c.id !== id);
@@ -374,6 +382,7 @@ export function ClientesClient({
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+      {confirmDialog}
       {/* HEADER PRINCIPAL & SWICHER DE VISTAS */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-5">
         <div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useConfirm } from '../../../components/ui/dialog';
 import { toast } from 'sonner';
 import {
   Wallet,
@@ -65,6 +66,7 @@ export function CarterasClient({
   initialOrders,
   role,
 }: CarterasClientProps) {
+  const [confirmAction, confirmDialog] = useConfirm();
   const [portfolio, setPortfolio] = useState<Portfolio>(initialPortfolio);
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>(initialTransactions);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
@@ -148,12 +150,14 @@ export function CarterasClient({
   };
 
   const handleApproveOrder = async (orderId: string) => {
-    if (
-      !confirm(
-        '¿Está seguro de aprobar esta reserva? El saldo retenido se debitará permanentemente.',
-      )
-    )
-      return;
+    const ok = await confirmAction({
+      title: 'Aprobar reserva',
+      description:
+        'El saldo retenido se debita en forma permanente y se emite el tiquete. No se puede deshacer.',
+      confirmLabel: 'Aprobar y emitir',
+      destructive: false,
+    });
+    if (!ok) return;
 
     const res = await fetch(`/api/portfolios/orders/${orderId}/approve`, {
       method: 'POST',
@@ -184,12 +188,12 @@ export function CarterasClient({
   };
 
   const handleRejectOrder = async (orderId: string) => {
-    if (
-      !confirm(
-        '¿Está seguro de rechazar esta reserva? El saldo retenido se devolverá a la cartera.',
-      )
-    )
-      return;
+    const ok = await confirmAction({
+      title: 'Rechazar reserva',
+      description: 'Se libera el saldo retenido y vuelve a la cartera de la agencia.',
+      confirmLabel: 'Rechazar',
+    });
+    if (!ok) return;
 
     const res = await fetch(`/api/portfolios/orders/${orderId}/reject`, {
       method: 'POST',
@@ -265,6 +269,7 @@ export function CarterasClient({
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8 space-y-8 animate-fade-in">
+      {confirmDialog}
       {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

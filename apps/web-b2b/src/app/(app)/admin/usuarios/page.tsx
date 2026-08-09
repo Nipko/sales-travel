@@ -4,6 +4,7 @@ import { Mail, Search, Shield, UserMinus, UserPlus, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Label } from '../../../../components/ui/label';
+import { useConfirm } from '../../../../components/ui/dialog';
 import { cn } from '../../../../lib/cn';
 
 /**
@@ -86,6 +87,7 @@ const selectClass =
   'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
 
 export default function AdminUsuariosPage() {
+  const [confirmAction, confirmDialog] = useConfirm();
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
   const [tenantId, setTenantId] = useState('');
   const [users, setUsers] = useState<NetworkUser[]>([]);
@@ -170,7 +172,16 @@ export default function AdminUsuariosPage() {
 
   async function setStatus(userId: string, status: 'active' | 'suspended') {
     const verb = status === 'suspended' ? 'suspender' : 'reactivar';
-    if (!confirm(`¿Seguro que querés ${verb} a este usuario en la agencia seleccionada?`)) return;
+    const ok = await confirmAction({
+      title: status === 'suspended' ? 'Suspender usuario' : 'Reactivar usuario',
+      description:
+        status === 'suspended'
+          ? 'Se le corta el acceso de inmediato y se cierran sus sesiones abiertas.'
+          : 'Vuelve a tener acceso a esta agencia.',
+      confirmLabel: status === 'suspended' ? 'Suspender' : 'Reactivar',
+      destructive: status === 'suspended',
+    });
+    if (!ok) return;
 
     const res = await fetch('/api/admin/memberships/status', {
       method: 'PATCH',
@@ -213,6 +224,7 @@ export default function AdminUsuariosPage() {
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-[var(--color-fg)]">Equipo</h1>
