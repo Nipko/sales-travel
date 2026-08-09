@@ -1,13 +1,25 @@
 import { Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService } from './search-telemetry.service.js';
+import { MemoryCacheAdapter } from './memory-cache.adapter.js';
+import { fanOut } from './provider-fanout.js';
 
 /** Único proveedor de vuelos por ahora; el fan-out multi-proveedor va aparte. */
 const FLIGHTS_PROVIDER = 'latam-ndc';
+
+/** Ventana de conveniencia. Corta a proposito: las tarifas cambian. */
+const SEARCH_CACHE_TTL_SECONDS = 90;
+
+/** Clave por tenant + criterio. Incluye el tenant porque el markup aplicado difiere. */
+function flightsCacheKey(tenantId: string, c: FlightSearchCriteria): string {
+  const digest = createHash('sha256').update(JSON.stringify(c)).digest('hex').slice(0, 24);
+  return `search:flights:${tenantId}:${digest}`;
+}
 
 @Injectable()
 export class SearchService {
@@ -16,6 +28,7 @@ export class SearchService {
     private readonly pricing: PricingService,
     private readonly telemetry: SearchTelemetryService,
     private readonly breaker: CircuitBreakerService,
+    private readonly cache: MemoryCacheAdapter,
   ) {}
 
   /**
@@ -32,7 +45,14 @@ export class SearchService {
     // consulta, así que no tiene sentido gastar la llamada para después rechazarla.
     await this.telemetry.assertWithinQuota(tenantId);
 
-    return this.telemetry.instrument(
+    // Caché por criterio: reordenar o volver atrás en el navegador no debe volver a
+    // golpear al proveedor, que cobra por consulta y tarda segundos. TTL corto porque
+    // las tarifas cambian; es una ventana de conveniencia, no un almacén.
+    const cacheKey = flightsCacheKey(tenantId, criteria);
+    const cached = await this.cache.get<{ offers: Offer[]; simulated: boolean }>(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.telemetry.instrument(
       {
         tenantId,
         vertical: 'flights',
@@ -48,19 +68,42 @@ export class SearchService {
       },
       async () => {
         const adapter = await this.latam.forTenant(tenantId);
-        // A través del circuito: si LATAM está caído, falla al instante en vez de
-        // esperar el timeout completo en cada búsqueda.
-        const offers = await this.breaker.execute(FLIGHTS_PROVIDER, () =>
-          adapter.search(criteria, { tenantId }),
-        );
+
+        // Fan-out: hoy hay un solo proveedor de vuelos, pero pasa por la misma ruta que
+        // usarán los demás. Sumar Amadeus o Sabre es agregar una entrada a este arreglo,
+        // no reescribir el servicio — y desde ya se obtiene degradación parcial.
+        const { items, failed } = await fanOut([
+          {
+            code: FLIGHTS_PROVIDER,
+            // A través del circuito: si el proveedor está caído, falla al instante en
+            // vez de esperar el timeout completo en cada búsqueda.
+            run: () =>
+              this.breaker.execute(FLIGHTS_PROVIDER, () => adapter.search(criteria, { tenantId })),
+          },
+        ]);
+
+        // Con TODOS los proveedores caídos no hay degradación posible: se propaga el
+        // error en vez de devolver una lista vacía, que el vendedor leería como
+        // "no hay vuelos" y le diría eso a su cliente.
+        if (items.length === 0 && failed.length > 0) {
+          throw new Error(failed.map((f) => `${f.code}: ${f.reason}`).join('; '));
+        }
+
         return {
-          offers: await this.withPricing(offers, tenantId, 'flights'),
+          offers: await this.withPricing(items, tenantId, 'flights'),
           simulated: adapter.isMock,
         };
       },
       (r) => r.offers.length,
       (r) => r.simulated,
     );
+
+    // Un resultado simulado no se cachea: el tenant puede estar cargando sus
+    // credenciales en este mismo momento y quedaría viendo precios falsos hasta el TTL.
+    if (!result.simulated) {
+      await this.cache.set(cacheKey, result, SEARCH_CACHE_TTL_SECONDS);
+    }
+    return result;
   }
 
   async priceOffer(
