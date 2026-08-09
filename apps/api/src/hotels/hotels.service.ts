@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type {
   BookRequest,
   BookResult,
@@ -72,12 +72,18 @@ export class HotelsService {
 
   async searchAvailability(tenantId: string, input: HotelAvailabilityInput): Promise<HotelOffer[]> {
     // Resolución ciudad→IDs: si no llegan IDs explícitos pero sí un destino, se resuelven del
-    // catálogo de inventario. Sin IDs (catálogo aún sin sincronizar) → sin resultados.
+    // catálogo de inventario.
     let hotelIds = input.hotelIds ?? [];
     if (hotelIds.length === 0 && input.destinationId != null) {
       hotelIds = await this.resolveCityHotelIds(input.destinationId);
     }
-    if (hotelIds.length === 0) return [];
+    // Lista vacía = el catálogo de esa ciudad no está sincronizado, NO que no haya
+    // hoteles. Devolver [] en silencio hacía que el vendedor concluyera lo segundo.
+    if (hotelIds.length === 0) {
+      throw new ServiceUnavailableException(
+        'El catálogo de hoteles de ese destino todavía no está sincronizado. Probá con otra ciudad o avisá al administrador.',
+      );
+    }
 
     await this.telemetry.assertWithinQuota(tenantId);
     const adapter = await this.factory.forTenant(tenantId);
@@ -113,13 +119,21 @@ export class HotelsService {
     return this.withPricing(offers, tenantId);
   }
 
-  /** IDs de hotel de una ciudad (city_id) desde el catálogo `hotel_inventory` (cap. por defecto 50). */
+  /**
+   * IDs de hotel de una ciudad. Orden DETERMINISTA por id.
+   *
+   * Sin `orderBy`, Postgres puede devolver las filas en cualquier orden entre llamadas,
+   * así que dos búsquedas idénticas consultaban subconjuntos distintos de los 50 y
+   * devolvían hoteles distintos — el vendedor veía que "desaparecían" resultados al
+   * repetir la misma búsqueda.
+   */
   async resolveCityHotelIds(cityId: number, limit = 50): Promise<string[]> {
     const rows = await this.db.db
       .selectFrom('hotel_inventory')
       .select('hotel_id')
       .where('provider_code', '=', PROVIDER_CODE)
       .where('city_id', '=', cityId)
+      .orderBy('hotel_id')
       .limit(limit)
       .execute();
     return rows.map((r) => r.hotel_id);

@@ -66,6 +66,8 @@ export function AirportCombobox({
   const [sections, setSections] = useState<Section[]>([]);
   const [datasetVersion, setDatasetVersion] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Cancela la respuesta en vuelo si el usuario sigue tipeando. */
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const flatItems = sections.flatMap((s) => s.items);
   const activeItem = activeIndex >= 0 ? flatItems[activeIndex] : undefined;
@@ -86,14 +88,57 @@ export function AirportCombobox({
     return [{ label: 'Resultados', icon: Plane, items: results }];
   }, []);
 
+  /**
+   * Búsqueda híbrida: primero el endpoint, con el dataset local como respaldo.
+   *
+   * El endpoint /airports —que consulta la tabla `airports` de Postgres— existía pero
+   * NADIE lo llamaba: toda la búsqueda salía del JSON de 1,27 MB embebido en el cliente,
+   * así que había dos fuentes de verdad y la del servidor era código muerto.
+   *
+   * No se elimina el JSON, y esto es deliberado: el job "Sync Airports" que puebla la
+   * tabla viene fallando en su paso de SSH al VPS, así que la tabla puede estar vacía o
+   * vieja. Si se quitara el respaldo, el autocompletado dejaría de funcionar por
+   * completo. Con el híbrido, cuando el sync se arregle la fuente autoritativa manda
+   * sola, y mientras tanto nadie se queda sin buscar.
+   */
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    const trimmed = query.trim();
+
     timerRef.current = setTimeout(() => {
-      setSections(buildSections(query));
-      setActiveIndex(-1);
+      if (!trimmed) {
+        setSections(buildSections(query));
+        setActiveIndex(-1);
+        return;
+      }
+
+      let cancelled = false;
+      void fetch(`/api/airports?q=${encodeURIComponent(trimmed)}&limit=8`)
+        .then((r) => (r.ok ? (r.json() as Promise<{ items?: Airport[] }>) : null))
+        .then((data) => {
+          if (cancelled) return;
+          const items = data?.items ?? [];
+          // Sin resultados del servidor se cae al dataset local: puede ser un aeropuerto
+          // que la tabla todavía no tiene, no necesariamente uno inexistente.
+          setSections(
+            items.length > 0 ? [{ label: 'Resultados', icon: Plane, items }] : buildSections(query),
+          );
+          setActiveIndex(-1);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSections(buildSections(query));
+          setActiveIndex(-1);
+        });
+
+      cleanupRef.current = () => {
+        cancelled = true;
+      };
     }, DEBOUNCE_MS);
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+      cleanupRef.current?.();
     };
   }, [query, buildSections, datasetVersion]);
 
