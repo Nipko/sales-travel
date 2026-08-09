@@ -73,3 +73,37 @@ export const CreateInteractionSchema = z
   })
   .strict();
 export type CreateInteractionDto = z.infer<typeof CreateInteractionSchema>;
+
+/** Tipos de tarea de seguimiento. Espejo del CHECK de 0034. */
+export const TASK_KINDS = [
+  'FOLLOW_UP',
+  'CALL',
+  'QUOTE_EXPIRY',
+  'TRAVEL_START',
+  'POST_TRAVEL',
+  'BIRTHDAY',
+  'DOCUMENT_EXPIRY',
+  'OTHER',
+] as const;
+export type CrmTaskKind = (typeof TASK_KINDS)[number];
+
+export const CreateTaskSchema = z
+  .object({
+    opportunityId: z.string().uuid().nullable().optional(),
+    customerId: z.string().uuid().nullable().optional(),
+    assignedUserId: z.string().uuid().nullable().optional(),
+    title: z.string().min(1).max(200),
+    notes: z.string().max(2000).nullable().optional(),
+    kind: z.enum(TASK_KINDS).optional(),
+    dueAt: z.union([z.string(), z.date()]),
+  })
+  .strict();
+export type CreateTaskDto = z.infer<typeof CreateTaskSchema>;
+
+export const ReassignPortfolioSchema = z
+  .object({
+    fromUserId: z.string().uuid(),
+    toUserId: z.string().uuid(),
+  })
+  .strict();
+export type ReassignPortfolioDto = z.infer<typeof ReassignPortfolioSchema>;

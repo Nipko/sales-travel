@@ -51,6 +51,32 @@ export interface TenantsTable {
 export type SearchVertical = 'flights' | 'hotels' | 'cars';
 export type SearchOutcome = 'ok' | 'empty' | 'error' | 'simulated';
 
+export type CrmTaskKind =
+  | 'FOLLOW_UP'
+  | 'CALL'
+  | 'QUOTE_EXPIRY'
+  | 'TRAVEL_START'
+  | 'POST_TRAVEL'
+  | 'BIRTHDAY'
+  | 'DOCUMENT_EXPIRY'
+  | 'OTHER';
+
+export interface CrmTasksTable {
+  id: Generated<string>;
+  tenant_id: string;
+  opportunity_id: string | null;
+  customer_id: string | null;
+  assigned_user_id: string | null;
+  title: string;
+  notes: string | null;
+  kind: Generated<CrmTaskKind>;
+  due_at: Timestamp;
+  completed_at: Timestamp | null;
+  created_by_user_id: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface SearchLogsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -441,6 +467,7 @@ export interface DB {
   password_reset_tokens: PasswordResetTokensTable;
   user_invitations: UserInvitationsTable;
   search_logs: SearchLogsTable;
+  crm_tasks: CrmTasksTable;
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
   airports: AirportsTable;
