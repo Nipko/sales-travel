@@ -15,6 +15,14 @@ export class ReportsController {
     private readonly activeTenant: ActiveTenantService,
   ) {}
 
+  /** KPIs de la portada. Accesible a todo rol que vende: es su propio desempeño. */
+  @Get('dashboard')
+  async getDashboard(@CurrentUser() userId: string | undefined) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    return this.reports.getDashboardKpis(tenantId);
+  }
+
   @Get('sales-metrics')
   async getSalesMetrics(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();

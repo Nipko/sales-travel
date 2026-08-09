@@ -172,4 +172,59 @@ export class ReportsService {
       };
     });
   }
+
+  /**
+   * KPIs de la portada del panel.
+   *
+   * El dashboard mostraba cuatro ceros HARDCODEADOS con leyendas del tipo "Cartera
+   * actualizada", indistinguibles de métricas reales: una agencia que sí vendió veía
+   * cero y podía concluir que la plataforma no registró sus ventas. Todo sale de las
+   * mismas tablas que ya alimentan los reportes.
+   */
+  async getDashboardKpis(tenantId: string): Promise<{
+    quotationsThisMonth: number;
+    confirmedThisMonth: number;
+    activeCustomers: number;
+    salesThisMonthMinor: number;
+    currency: string;
+  }> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const [quotations, orders, customers, tenant] = await Promise.all([
+        trx
+          .selectFrom('quotations')
+          .select((eb) => eb.fn.countAll<string>().as('count'))
+          .where('tenant_id', '=', tenantId)
+          .where(sql<boolean>`created_at >= date_trunc('month', now())`)
+          .executeTakeFirst(),
+        trx
+          .selectFrom('orders')
+          .select([
+            (eb) => eb.fn.countAll<string>().as('count'),
+            sql<string>`COALESCE(SUM(total_amount), 0)`.as('total'),
+          ])
+          .where('tenant_id', '=', tenantId)
+          .where('status', 'in', ['confirmed', 'ticketed'])
+          .where(sql<boolean>`created_at >= date_trunc('month', now())`)
+          .executeTakeFirst(),
+        trx
+          .selectFrom('customers')
+          .select((eb) => eb.fn.countAll<string>().as('count'))
+          .where('tenant_id', '=', tenantId)
+          .executeTakeFirst(),
+        trx
+          .selectFrom('tenants')
+          .select('default_currency')
+          .where('id', '=', tenantId)
+          .executeTakeFirst(),
+      ]);
+
+      return {
+        quotationsThisMonth: Number(quotations?.count ?? 0),
+        confirmedThisMonth: Number(orders?.count ?? 0),
+        activeCustomers: Number(customers?.count ?? 0),
+        salesThisMonthMinor: Number(orders?.total ?? 0),
+        currency: (tenant?.default_currency ?? 'COP').trim(),
+      };
+    });
+  }
 }

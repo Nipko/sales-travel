@@ -28,16 +28,73 @@ interface Stat {
   icon: typeof Calendar;
 }
 
-const stats: Stat[] = [
-  { label: 'Cotizaciones del mes', value: '0', delta: 'Listo para cotizar', icon: Ticket },
-  { label: 'Reservas confirmadas', value: '0', delta: 'Sin emisiones pendientes', icon: Calendar },
-  { label: 'Clientes activos', value: '0', delta: 'Cartera actualizada', icon: Users },
-  { label: 'Ventas del mes', value: '$0', delta: 'Corte actual', icon: DollarSign },
-];
+interface DashboardKpis {
+  quotationsThisMonth: number;
+  confirmedThisMonth: number;
+  activeCustomers: number;
+  salesThisMonthMinor: number;
+  currency: string;
+}
+
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(minor / 100);
+}
+
+/**
+ * Antes eran cuatro ceros HARDCODEADOS con leyendas del tipo "Cartera actualizada",
+ * indistinguibles de metricas reales: una agencia que si vendio veia cero y podia
+ * concluir que la plataforma no registro sus ventas.
+ */
+function buildStats(k: DashboardKpis | null): Stat[] {
+  if (!k) {
+    return [
+      { label: 'Cotizaciones del mes', value: '—', delta: 'Sin datos', icon: Ticket },
+      { label: 'Reservas confirmadas', value: '—', delta: 'Sin datos', icon: Calendar },
+      { label: 'Clientes activos', value: '—', delta: 'Sin datos', icon: Users },
+      { label: 'Ventas del mes', value: '—', delta: 'Sin datos', icon: DollarSign },
+    ];
+  }
+  return [
+    {
+      label: 'Cotizaciones del mes',
+      value: String(k.quotationsThisMonth),
+      delta: k.quotationsThisMonth === 0 ? 'Listo para cotizar' : 'Mes en curso',
+      icon: Ticket,
+    },
+    {
+      label: 'Reservas confirmadas',
+      value: String(k.confirmedThisMonth),
+      delta: k.confirmedThisMonth === 0 ? 'Sin emisiones aun' : 'Mes en curso',
+      icon: Calendar,
+    },
+    {
+      label: 'Clientes activos',
+      value: String(k.activeCustomers),
+      delta: 'En la cartera',
+      icon: Users,
+    },
+    {
+      label: 'Ventas del mes',
+      value: money(k.salesThisMonthMinor, k.currency),
+      delta: 'Confirmadas y emitidas',
+      icon: DollarSign,
+    },
+  ];
+}
 
 export default async function DashboardPage() {
-  const res = await api<Membership[]>('/me/memberships');
+  const [res, kpiRes] = await Promise.all([
+    api<Membership[]>('/me/memberships'),
+    api<DashboardKpis>('/reports/dashboard').catch(() => null),
+  ]);
   const memberships = res.ok ? res.data : [];
+  // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y seria falso.
+  const stats = buildStats(kpiRes?.ok ? kpiRes.data : null);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8 space-y-8 animate-fade-in-up">
