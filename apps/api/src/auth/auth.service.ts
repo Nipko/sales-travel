@@ -90,6 +90,20 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto): Promise<AuthResult> {
+    // El alta pública crea un tenant RAÍZ, es decir un nodo fuera de la jerarquía de
+    // cualquier consolidador y con su autor como tenant_admin. En una plataforma
+    // consolidadora eso no es autoservicio legítimo: las agencias entran por invitación
+    // de su red (POST /invitations) o las crea un admin bajo un padre que administre
+    // (POST /admin/tenants, que ya exige parentTenantId salvo para superadmin).
+    //
+    // Se desactiva por defecto y queda tras un flag explícito, para no romper entornos
+    // de demo que dependan del alta abierta.
+    if (process.env['ALLOW_PUBLIC_SIGNUP'] !== 'true') {
+      throw new ForbiddenException(
+        'el alta pública está deshabilitada: pedí una invitación a tu agencia',
+      );
+    }
+
     const existingUser = await this.db.db
       .selectFrom('users')
       .select('id')
@@ -265,7 +279,7 @@ export class AuthService {
 
     if (!valid) {
       if (user) {
-        await this.registerFailedAttempt(user.id, user.failed_login_attempts);
+        await this.registerFailedAttempt(user.id);
         await this.audit.emit({
           eventType: 'auth.login.failed',
           actorUserId: user.id,
@@ -364,18 +378,29 @@ export class AuthService {
    * LOCKOUT_MINUTES y resetea el contador (tras expirar el bloqueo, vuelve a tener
    * LOCKOUT_THRESHOLD intentos). `users` no tiene RLS (cross-tenant), seguro por id.
    */
-  private async registerFailedAttempt(userId: string, current: number): Promise<void> {
-    const willLock = current + 1 >= LOCKOUT_THRESHOLD;
-    await this.db.db
-      .updateTable('users')
-      .set({
-        failed_login_attempts: willLock ? 0 : current + 1,
-        locked_until: willLock
-          ? sql<Date>`now() + make_interval(mins => ${LOCKOUT_MINUTES})`
-          : null,
-      })
-      .where('id', '=', userId)
-      .execute();
+  private async registerFailedAttempt(userId: string): Promise<void> {
+    // Un solo UPDATE que incrementa en la BASE, no en la app.
+    //
+    // Antes era read-modify-write: el contador se leía en el SELECT del login y se
+    // escribía `current + 1`. Con intentos concurrentes todos leían el mismo valor y
+    // escribían el mismo `current + 1`, así que N intentos en paralelo sumaban 1 y el
+    // lockout no llegaba nunca — justo el escenario de un ataque de fuerza bruta.
+    //
+    // Dentro de un UPDATE, `failed_login_attempts` a la derecha es el valor VIEJO, así
+    // que ambos CASE ven el mismo estado de forma consistente.
+    await sql`
+      UPDATE users
+         SET failed_login_attempts = CASE
+               WHEN failed_login_attempts + 1 >= ${LOCKOUT_THRESHOLD} THEN 0
+               ELSE failed_login_attempts + 1
+             END,
+             locked_until = CASE
+               WHEN failed_login_attempts + 1 >= ${LOCKOUT_THRESHOLD}
+                 THEN now() + make_interval(mins => ${LOCKOUT_MINUTES})
+               ELSE locked_until
+             END
+       WHERE id = ${userId}::uuid
+    `.execute(this.db.db);
   }
 
   private async onLoginSuccess(userId: string): Promise<void> {

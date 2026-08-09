@@ -3,10 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 
 /**
- * Valida el account lockout (migración 0019) replicando la lógica read-modify-write de
- * AuthService.registerFailedAttempt/onLoginSuccess contra Postgres: tras LOCKOUT_THRESHOLD
- * fallos la cuenta se bloquea (locked_until futuro, contador reseteado) y un login OK limpia
- * todo y sella last_login_at. Se SALTA sin PGHOST.
+ * Valida el account lockout (migración 0019) contra Postgres.
+ *
+ * Ejecuta el MISMO SQL que AuthService.registerFailedAttempt, no una réplica en JS: la
+ * versión anterior de este test replicaba la lógica read-modify-write, así que validaba
+ * una copia y no el código real — y por eso no detectó que el contador se podía evadir
+ * con peticiones concurrentes. Ahora el incremento ocurre dentro del UPDATE y hay un
+ * caso explícito de concurrencia.
  */
 const hasDb = Boolean(process.env['PGHOST'] && process.env['PGUSER'] && process.env['PGPASSWORD']);
 const d = hasDb ? describe : describe.skip;
@@ -39,16 +42,23 @@ d('account lockout (AuthService semantics)', () => {
     };
   }
 
-  /** Réplica de AuthService.registerFailedAttempt (read-modify-write). */
+  /**
+   * SQL idéntico al de AuthService.registerFailedAttempt: el incremento ocurre en la
+   * base, así que dos llamadas concurrentes cuentan dos.
+   */
   async function failOnce(): Promise<void> {
-    const { attempts } = await readUser();
-    const willLock = attempts + 1 >= LOCKOUT_THRESHOLD;
     await pool.query(
       `UPDATE users
-         SET failed_login_attempts = $2,
-             locked_until = CASE WHEN $3 THEN now() + make_interval(mins => $4) ELSE NULL END
-       WHERE id = $1`,
-      [userId, willLock ? 0 : attempts + 1, willLock, LOCKOUT_MINUTES],
+          SET failed_login_attempts = CASE
+                WHEN failed_login_attempts + 1 >= $2 THEN 0
+                ELSE failed_login_attempts + 1
+              END,
+              locked_until = CASE
+                WHEN failed_login_attempts + 1 >= $2 THEN now() + make_interval(mins => $3)
+                ELSE locked_until
+              END
+        WHERE id = $1`,
+      [userId, LOCKOUT_THRESHOLD, LOCKOUT_MINUTES],
     );
   }
 
@@ -102,5 +112,25 @@ d('account lockout (AuthService semantics)', () => {
     expect(u.attempts).toBe(0);
     expect(u.lockedUntil).toBeNull();
     expect(u.lastLogin).not.toBeNull();
+  });
+
+  it('cuenta TODOS los intentos concurrentes (el bug que tenía el read-modify-write)', async () => {
+    await succeed(); // parte de cero
+
+    // Con el incremento en la app, estos N fallos leían el mismo valor y escribían el
+    // mismo `current + 1`: sumaban 1 en total y el lockout no llegaba nunca, que es
+    // exactamente el patrón de un ataque de fuerza bruta paralelo.
+    const concurrent = LOCKOUT_THRESHOLD - 1;
+    await Promise.all(Array.from({ length: concurrent }, () => failOnce()));
+
+    const u = await readUser();
+    expect(u.attempts).toBe(concurrent);
+    expect(u.lockedUntil).toBeNull();
+
+    // Y el siguiente fallo, ya en el umbral, bloquea.
+    await failOnce();
+    const locked = await readUser();
+    expect(locked.lockedUntil).not.toBeNull();
+    expect(locked.attempts).toBe(0);
   });
 });

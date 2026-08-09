@@ -21,6 +21,11 @@ api.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy api:3000 {
 		header_up X-Real-IP {remote_host}
+		# IP del peer TCP real, que el cliente no puede falsificar (a diferencia de
+		# CF-Connecting-IP, que es sólo una cabecera). El throttler la usa como segunda
+		# clave para que forjar CF-Connecting-IP no alcance para estrenar cupo.
+		header_up -X-Edge-Peer-IP
+		header_up X-Edge-Peer-IP {remote_host}
 	}
 	import security_headers
 }
@@ -30,6 +35,11 @@ app.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy web-b2b:3001 {
 		header_up X-Real-IP {remote_host}
+		# IP del peer TCP real, que el cliente no puede falsificar (a diferencia de
+		# CF-Connecting-IP, que es sólo una cabecera). El throttler la usa como segunda
+		# clave para que forjar CF-Connecting-IP no alcance para estrenar cupo.
+		header_up -X-Edge-Peer-IP
+		header_up X-Edge-Peer-IP {remote_host}
 	}
 	import security_headers
 }
