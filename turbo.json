@@ -21,7 +21,18 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "//": "Turbo filtra el entorno: sin declararlas acá, las variables de Postgres no llegan a vitest y TODOS los tests de integración se saltan en silencio, dejando el CI en verde sin haber probado la RLS.",
+      "env": [
+        "PGHOST",
+        "PGPORT",
+        "PGUSER",
+        "PGPASSWORD",
+        "PGDATABASE",
+        "APP_USER_PASSWORD",
+        "PROVIDER_CREDENTIALS_KEY",
+        "JWT_SECRET"
+      ]
     },
     "clean": {
       "cache": false
