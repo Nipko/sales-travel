@@ -227,4 +227,22 @@ export class NetworkService {
       }));
     });
   }
+
+  /**
+   * Tenant dueño de un host propio VERIFICADO (0033).
+   *
+   * Sólo resuelve dominios ya comprobados: si bastara con declararlo, cualquier agencia
+   * podría reclamar el host de otra y servir su marca bajo él.
+   */
+  async resolveTenantByHost(host: string): Promise<string | null> {
+    try {
+      const res = await sql<{
+        resolve_tenant_by_host: string | null;
+      }>`SELECT resolve_tenant_by_host(${host})`.execute(this.db.db);
+      return res.rows[0]?.resolve_tenant_by_host ?? null;
+    } catch {
+      // Resolver el host es mejor-esfuerzo: no puede tumbar el request.
+      return null;
+    }
+  }
 }

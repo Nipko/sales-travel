@@ -2,7 +2,7 @@
 // Implementaciones concretas viven en /providers/* o /apps/api/src/infrastructure/*.
 // Ver docs/research/05-arquitectura-referencia.md §"Hexagonal + ACL".
 
-export type { BlobStoragePort } from './blob-storage.port.js';
+export type { BlobMetadata, BlobStoragePort } from './blob-storage.port.js';
 export type { CachePort } from './cache.port.js';
 export type { ClockPort } from './clock.port.js';
 export type { CryptoPort } from './crypto.port.js';

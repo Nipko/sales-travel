@@ -21,6 +21,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
 import { NetworkModule } from './network/network.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { BrandingModule } from './branding/branding.module.js';
+import { StorageModule } from './storage/storage.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
 import { MailerModule } from './mail/mailer.module.js';
 import { QueueModule } from './queue/queue.module.js';
@@ -37,6 +38,7 @@ import { CrmModule } from './crm/crm.module.js';
     RequestContextModule,
     AuditModule,
     BrandingModule,
+    StorageModule,
     AuthModule,
     MeModule,
     SearchModule,

@@ -42,6 +42,17 @@ export class RequestContextMiddleware implements NestMiddleware {
     // operar bajo un tenant ajeno pasando un header forjado. Drop-on-invalid: si el
     // header no autoriza, se ignora y se usa el `tid`.
     let tenantId = tokenTenantId;
+
+    // Dominio propio de la agencia (0033). Se usa SÓLO como valor por defecto para
+    // requests sin sesión —el portal público de una agencia—: para un usuario ya
+    // autenticado manda su tenant activo, porque si no, entrar por el dominio de otra
+    // agencia de la red cambiaría en silencio bajo qué nodo está operando.
+    if (!tenantId) {
+      const host = (req.headers['x-forwarded-host'] ?? req.headers.host) as string | undefined;
+      if (host) {
+        tenantId = (await this.network.resolveTenantByHost(host.split(':')[0]!)) ?? undefined;
+      }
+    }
     const tenantHeader = req.headers['x-tenant-id'];
     const headerTenant = typeof tenantHeader === 'string' ? tenantHeader : undefined;
     if (headerTenant && userId) {
