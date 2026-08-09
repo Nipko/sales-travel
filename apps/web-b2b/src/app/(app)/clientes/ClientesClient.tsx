@@ -271,39 +271,57 @@ export function ClientesClient({
     }
   };
 
-  const handleCreateOpportunity = (e: React.FormEvent) => {
+  /**
+   * Crea la oportunidad EN LA BASE.
+   *
+   * Antes construía un objeto en memoria con un id sintético (`opp-${Date.now()}`) y un
+   * tenantId hardcodeado, y sólo lo metía en el estado de React: la oportunidad
+   * desaparecía al recargar y nunca llegaba a Postgres.
+   */
+  const handleCreateOpportunity = async (e: React.FormEvent) => {
     e.preventDefault();
-    const custObj = customers.find((c) => c.id === oppCustomer);
-    const newOpp: Opportunity = {
-      id: `opp-${Date.now()}`,
-      tenantId: 'tenant-1',
-      customerId: oppCustomer,
-      assignedUserId: null,
-      stage: 'AI_HANDLING',
-      title: oppTitle || `Viaje a ${oppDestination}`,
-      estimatedValueMinor: Number(oppValue) || 1500000,
-      currency: 'COP',
-      destinationCity: oppDestination,
-      travelStartDate: '2026-10-10',
-      travelEndDate: '2026-10-17',
-      paxCount: Number(oppPax) || 2,
-      packageQuotationId: null,
-      orderId: null,
-      sourceChannel: oppChannel,
-      isAiControlled: true,
-      lostReason: null,
-      createdAt: new Date().toISOString(),
-      customer: {
-        firstName: custObj?.firstName ?? 'Cliente',
-        lastName: custObj?.lastName ?? 'Viajero',
-        phone: custObj?.phone ?? '+573000000000',
-        email: custObj?.email ?? '',
-      },
-    };
+    if (!oppCustomer) {
+      toast.error('Elegí un cliente para la oportunidad');
+      return;
+    }
 
-    setOpportunities([newOpp, ...opportunities]);
+    const res = await fetch('/api/crm/opportunities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: oppCustomer,
+        title: oppTitle || `Viaje a ${oppDestination}`,
+        estimatedValueMinor: Number(oppValue) || 0,
+        destinationCity: oppDestination || null,
+        paxCount: Number(oppPax) || 1,
+        sourceChannel: oppChannel,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = (await res.json()) as { error?: string };
+      toast.error(body.error ?? 'No pudimos crear la oportunidad');
+      return;
+    }
+
+    const { opportunity } = (await res.json()) as { opportunity: Opportunity };
+    const custObj = customers.find((c) => c.id === oppCustomer);
+    setOpportunities([
+      {
+        ...opportunity,
+        // El endpoint devuelve la fila cruda; el kanban muestra además el cliente.
+        customer: {
+          firstName: custObj?.firstName ?? '',
+          lastName: custObj?.lastName ?? '',
+          phone: custObj?.phone ?? '',
+          email: custObj?.email ?? '',
+        },
+      },
+      ...opportunities,
+    ]);
     setIsAddOppModalOpen(false);
     setOppTitle('');
+    toast.success('Oportunidad creada');
   };
 
   const handleDelete = async (id: string) => {
@@ -320,8 +338,30 @@ export function ClientesClient({
     }
   };
 
-  const handleMoveStage = (oppId: string, nextStage: Opportunity['stage']) => {
+  /**
+   * Mueve la oportunidad de etapa Y LO PERSISTE.
+   *
+   * Antes sólo tocaba el estado de React: el pipeline volvía atrás en cuanto se recargaba
+   * la página, así que el Kanban parecía funcionar pero no guardaba nada.
+   *
+   * Optimista: se pinta el cambio de inmediato y se revierte si el servidor lo rechaza,
+   * para que arrastrar una tarjeta no se sienta lento.
+   */
+  const handleMoveStage = async (oppId: string, nextStage: Opportunity['stage']) => {
+    const previous = opportunities;
     setOpportunities((prev) => prev.map((o) => (o.id === oppId ? { ...o, stage: nextStage } : o)));
+
+    const res = await fetch(`/api/crm/opportunities/${oppId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage: nextStage }),
+    });
+
+    if (!res.ok) {
+      setOpportunities(previous);
+      const body = (await res.json()) as { error?: string };
+      toast.error(body.error ?? 'No pudimos mover la oportunidad');
+    }
   };
 
   const isPassportExpiringSoon = (expiryDate: string | null) => {

@@ -12,12 +12,14 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import { CrmOpportunitiesService, type OpportunityRow } from './crm-opportunities.service.js';
 import {
-  CrmOpportunitiesService,
+  CreateOpportunitySchema,
+  UpdateOpportunitySchema,
   type CreateOpportunityDto,
   type UpdateOpportunityDto,
-  type OpportunityRow,
-} from './crm-opportunities.service.js';
+} from './crm.schemas.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { type CrmOpportunityStage } from '../database/database.types.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -32,7 +34,10 @@ export class CrmOpportunitiesController {
   ) {}
 
   @Post()
-  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateOpportunityDto) {
+  async create(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateOpportunitySchema)) body: CreateOpportunityDto,
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.opportunities.create(tenantId, body);
@@ -63,7 +68,7 @@ export class CrmOpportunitiesController {
   async update(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body() body: UpdateOpportunityDto,
+    @Body(new ZodValidationPipe(UpdateOpportunitySchema)) body: UpdateOpportunityDto,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);

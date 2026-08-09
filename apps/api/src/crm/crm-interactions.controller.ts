@@ -2,11 +2,9 @@ import { Body, Controller, ForbiddenException, Get, Param, Post } from '@nestjs/
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
-import {
-  CrmInteractionsService,
-  type CreateInteractionDto,
-  type InteractionRow,
-} from './crm-interactions.service.js';
+import { CrmInteractionsService, type InteractionRow } from './crm-interactions.service.js';
+import { CreateInteractionSchema, type CreateInteractionDto } from './crm.schemas.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
@@ -20,12 +18,20 @@ export class CrmInteractionsController {
   ) {}
 
   @Post()
-  async create(@CurrentUser() userId: string | undefined, @Body() body: CreateInteractionDto) {
+  async create(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateInteractionSchema)) body: CreateInteractionDto,
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.interactions.create(tenantId, {
       ...body,
-      createdByUserId: body.createdByUserId ?? userId,
+      // La autoría la fija el servidor, SIEMPRE. Antes se aceptaba `createdByUserId` del
+      // body y sólo se caía al usuario autenticado si venía vacío, así que cualquiera
+      // podía registrar una interacción a nombre de otro vendedor —o de la IA— en el
+      // historial del cliente. El esquema Zod es .strict(), así que ese campo ni siquiera
+      // se admite en el body.
+      createdByUserId: userId,
     });
     return { interaction: this.serialize(row) };
   }
