@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
@@ -21,7 +22,7 @@ async function bootstrap(): Promise<void> {
   const port = Number(process.env['PORT'] ?? 3000);
   await app.listen(port, '0.0.0.0');
 
-  console.warn(`[api] listening on :${port}`);
+  new Logger('Bootstrap').log(`API escuchando en :${port}`);
 }
 
 void bootstrap();

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Money } from '@sales-travel/canonical';
 import type {
   CancelQuery,
@@ -55,6 +55,8 @@ export type PricedCarSelection = CarSelection & { pricing?: CarPricing };
 
 @Injectable()
 export class CarsService {
+  private readonly logger = new Logger(CarsService.name);
+
   constructor(
     private readonly factory: AgentCarsProviderFactory,
     private readonly db: DatabaseService,
@@ -165,7 +167,7 @@ export class CarsService {
     try {
       await this.persistOrder(tenantId, userId, input, result);
     } catch (err) {
-      console.error(
+      this.logger.error(
         `[cars] reserva ${result.confirmationCode} confirmada pero falló su persistencia:`,
         (err as Error).message,
       );

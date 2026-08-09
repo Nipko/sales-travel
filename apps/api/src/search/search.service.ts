@@ -3,12 +3,19 @@ import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
+import { CircuitBreakerService } from './circuit-breaker.service.js';
+import { SearchTelemetryService } from './search-telemetry.service.js';
+
+/** Único proveedor de vuelos por ahora; el fan-out multi-proveedor va aparte. */
+const FLIGHTS_PROVIDER = 'latam-ndc';
 
 @Injectable()
 export class SearchService {
   constructor(
     private readonly latam: LatamNdcProviderFactory,
     private readonly pricing: PricingService,
+    private readonly telemetry: SearchTelemetryService,
+    private readonly breaker: CircuitBreakerService,
   ) {}
 
   /**
@@ -21,12 +28,39 @@ export class SearchService {
     criteria: FlightSearchCriteria,
     tenantId: string,
   ): Promise<{ offers: Offer[]; simulated: boolean }> {
-    const adapter = await this.latam.forTenant(tenantId);
-    const offers = await adapter.search(criteria, { tenantId });
-    return {
-      offers: await this.withPricing(offers, tenantId, 'flights'),
-      simulated: adapter.isMock,
-    };
+    // La cuota se comprueba ANTES de salir al proveedor: los proveedores cobran por
+    // consulta, así que no tiene sentido gastar la llamada para después rechazarla.
+    await this.telemetry.assertWithinQuota(tenantId);
+
+    return this.telemetry.instrument(
+      {
+        tenantId,
+        vertical: 'flights',
+        providerCode: FLIGHTS_PROVIDER,
+        // Criterio reducido: ruta, fechas y pax. Nunca datos del pasajero.
+        criteria: {
+          origin: criteria.origin,
+          destination: criteria.destination,
+          departureDate: criteria.departureDate,
+          returnDate: criteria.returnDate,
+          cabin: criteria.cabin,
+        },
+      },
+      async () => {
+        const adapter = await this.latam.forTenant(tenantId);
+        // A través del circuito: si LATAM está caído, falla al instante en vez de
+        // esperar el timeout completo en cada búsqueda.
+        const offers = await this.breaker.execute(FLIGHTS_PROVIDER, () =>
+          adapter.search(criteria, { tenantId }),
+        );
+        return {
+          offers: await this.withPricing(offers, tenantId, 'flights'),
+          simulated: adapter.isMock,
+        };
+      },
+      (r) => r.offers.length,
+      (r) => r.simulated,
+    );
   }
 
   async priceOffer(

@@ -39,8 +39,28 @@ export interface TenantsTable {
   support_email: string | null;
   support_phone: string | null;
   website_url: string | null;
+  /** 0032: búsquedas/hora permitidas. NULL = usa el tope de la plataforma. */
+  search_quota_per_hour: number | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export type SearchVertical = 'flights' | 'hotels' | 'cars';
+export type SearchOutcome = 'ok' | 'empty' | 'error' | 'simulated';
+
+export interface SearchLogsTable {
+  id: Generated<string>;
+  occurred_at: Generated<Timestamp>;
+  tenant_id: string | null;
+  actor_user_id: string | null;
+  vertical: SearchVertical;
+  provider_code: string;
+  duration_ms: number;
+  result_count: Generated<number>;
+  outcome: SearchOutcome;
+  error_code: string | null;
+  /** Criterio REDUCIDO (ruta, fechas, pax). Nunca PII. */
+  criteria: Generated<unknown>;
 }
 
 export interface ProviderAccountsTable {
@@ -417,6 +437,7 @@ export interface DB {
   mfa_recovery_codes: MfaRecoveryCodesTable;
   password_reset_tokens: PasswordResetTokensTable;
   user_invitations: UserInvitationsTable;
+  search_logs: SearchLogsTable;
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
   airports: AirportsTable;

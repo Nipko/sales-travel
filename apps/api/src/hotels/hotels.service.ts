@@ -16,6 +16,8 @@ import type {
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
+import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import { SearchTelemetryService } from '../search/search-telemetry.service.js';
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import type { HotelAvailabilityInput, HotelDetailInput } from './hotels.schemas.js';
 
@@ -28,6 +30,8 @@ export class HotelsService {
     private readonly db: DatabaseService,
     private readonly pricing: PricingService,
     private readonly activeTenant: ActiveTenantService,
+    private readonly telemetry: SearchTelemetryService,
+    private readonly breaker: CircuitBreakerService,
   ) {}
 
   /**
@@ -75,19 +79,37 @@ export class HotelsService {
     }
     if (hotelIds.length === 0) return [];
 
+    await this.telemetry.assertWithinQuota(tenantId);
     const adapter = await this.factory.forTenant(tenantId);
     const defaults = await this.tenantDefaults(tenantId);
-    const offers = await adapter.searchAvailability({
-      checkinDate: input.checkinDate,
-      checkoutDate: input.checkoutDate,
-      currency: input.currency ?? defaults.currency,
-      hotelIds,
-      rooms: input.rooms,
-      countryCode: input.countryCode ?? defaults.countryCode,
-      language: input.language,
-      ttl: input.ttl,
-      refundableOnly: input.refundableOnly,
-    });
+    const offers = await this.telemetry.instrument(
+      {
+        tenantId,
+        vertical: 'hotels',
+        providerCode: PROVIDER_CODE,
+        criteria: {
+          checkinDate: input.checkinDate,
+          checkoutDate: input.checkoutDate,
+          destinationId: input.destinationId,
+          hotelCount: hotelIds.length,
+        },
+      },
+      () =>
+        this.breaker.execute(PROVIDER_CODE, () =>
+          adapter.searchAvailability({
+            checkinDate: input.checkinDate,
+            checkoutDate: input.checkoutDate,
+            currency: input.currency ?? defaults.currency,
+            hotelIds,
+            rooms: input.rooms,
+            countryCode: input.countryCode ?? defaults.countryCode,
+            language: input.language,
+            ttl: input.ttl,
+            refundableOnly: input.refundableOnly,
+          }),
+        ),
+      (r) => r.length,
+    );
     return this.withPricing(offers, tenantId);
   }
 

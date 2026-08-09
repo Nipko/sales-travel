@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { currentContext } from '../request-context/request-context.js';
@@ -30,6 +30,8 @@ export interface AuditEntry {
  */
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   async emit(event: AuditEvent): Promise<void> {
@@ -56,7 +58,7 @@ export class AuditService {
         .execute();
     } catch (err) {
       // No propagar: la auditoría no debe tumbar la acción principal.
-      console.warn(`[audit] failed to emit ${event.eventType}:`, (err as Error).message);
+      this.logger.warn(`no se pudo registrar ${event.eventType}: ${(err as Error).message}`);
     }
   }
 
