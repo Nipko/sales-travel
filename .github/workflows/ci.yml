@@ -104,7 +104,12 @@ jobs:
       - name: Run migrations
         run: pnpm --filter @sales-travel/db-migrate dev
 
-      # Antes sólo corría el filtro de la API, así que los tests de web-b2b no se
-      # ejecutaban en ninguna parte. `turbo run test` cubre todo paquete con script test.
+      # `turbo run test` cubre todo paquete con script test (antes sólo corría el filtro
+      # de la API, así que los tests de web-b2b no se ejecutaban en ninguna parte).
+      #
+      # OJO: turbo FILTRA el entorno. Las variables PG* van declaradas en la tarea `test`
+      # de turbo.json; si se quitan de ahí, el guard `hasDb` de los tests de integración
+      # da false y TODOS se saltan en silencio, dejando el CI en verde sin haber probado
+      # el aislamiento entre tenants.
       - name: Integration + unit tests
         run: pnpm test
