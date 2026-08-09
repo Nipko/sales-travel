@@ -7,7 +7,9 @@ import {
 } from '@sales-travel/domain';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { OfferPriceBodySchema, type OfferPriceBody } from './search.schemas.js';
 import { SearchService } from './search.service.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
@@ -21,6 +23,7 @@ export class SearchController {
   constructor(
     private readonly search: SearchService,
     private readonly db: DatabaseService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Post('flights')
@@ -31,7 +34,7 @@ export class SearchController {
   ): Promise<{ offers: Offer[] }> {
     if (!userId) throw new ForbiddenException();
 
-    const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
 
     // Moneda base del tenant, inyectada en el criterio. (Sin logs de PII/criterios.)
     const tenant = await this.db.db
@@ -51,11 +54,11 @@ export class SearchController {
   @Post('offer-price')
   async offerPrice(
     @CurrentUser() userId: string | undefined,
-    @Body() body: { offer: Offer; searchCriteria: FlightSearchCriteria },
+    @Body(new ZodValidationPipe(OfferPriceBodySchema)) body: OfferPriceBody,
   ): Promise<OfferPriceResult> {
     if (!userId) throw new ForbiddenException();
 
-    const tenantId = currentTenantId() ?? (await this.resolveActiveTenant(userId));
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
 
     const tenant = await this.db.db
       .selectFrom('tenants')
@@ -68,25 +71,5 @@ export class SearchController {
     }
 
     return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
-  }
-
-  /**
-   * Sprint 0 simplificado: el primer tenant activo del usuario es el "tenant
-   * actual". Cuando implementemos /auth/switch-tenant, esto va a leer un
-   * claim del JWT.
-   */
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

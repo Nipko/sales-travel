@@ -26,11 +26,10 @@ interface Itinerary {
 }
 
 export interface OfferPricing {
-  netMinor: number;
+  costMinor: number;
   finalMinor: number;
-  totalMarkupMinor: number;
+  ownMarkupMinor: number;
   currency: string;
-  breakdown: { tenantName: string; level: number; ruleType: string; addedMinor: number }[];
 }
 
 export interface Offer {

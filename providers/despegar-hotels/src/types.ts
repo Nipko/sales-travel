@@ -55,6 +55,21 @@ export interface HotelRoomItem {
   choiceId?: string;
 }
 
+/**
+ * Pricing waterfall del consolidador aplicado a un roompack.
+ *
+ * Mismo contrato que el de vuelos (canonical Offer.pricing): `price.total` sigue siendo
+ * el NETO del proveedor y nunca se muta; `finalMinor` es el precio de VENTA.
+ */
+export interface HotelPricing {
+  /** Lo que le cuesta a ESTE tenant: neto del proveedor + markup de su red por encima. */
+  costMinor: number;
+  finalMinor: number;
+  /** Margen propio del tenant. No incluye el de sus ancestros. */
+  ownMarkupMinor: number;
+  currency: string;
+}
+
 /** Combinación bookable de habitaciones con un único precio (roompack de Despegar). */
 export interface HotelRoompack {
   id: string;
@@ -62,6 +77,8 @@ export interface HotelRoompack {
   rooms: HotelRoomItem[];
   cancellation: HotelCancellation;
   price: HotelPrice;
+  /** Ausente si el tenant no tiene reglas de markup: precio de venta = neto. */
+  pricing?: HotelPricing;
 }
 
 export interface HotelOffer {

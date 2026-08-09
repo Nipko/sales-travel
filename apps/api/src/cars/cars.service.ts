@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Money } from '@sales-travel/canonical';
 import type {
   CancelQuery,
@@ -24,9 +24,15 @@ import type {
 } from '@sales-travel/agent-cars';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
-import { PricingService, applyCascade, type WaterfallStep } from '../pricing/pricing.service.js';
+import {
+  PricingService,
+  applyCascade,
+  toTenantView,
+  type TenantPricingView,
+} from '../pricing/pricing.service.js';
 import type {
   CarSearchInput,
   CarSelectionInput,
@@ -38,14 +44,11 @@ import type {
 
 const VERTICAL = 'cars';
 
-/** Pricing waterfall del consolidador adjunto a una oferta. `finalMinor` = precio de venta. */
-export interface CarPricing {
-  netMinor: number;
-  finalMinor: number;
-  totalMarkupMinor: number;
-  currency: string;
-  breakdown: WaterfallStep[];
-}
+/**
+ * Pricing acotado al tenant que consulta. Sin neto ni desglose por ancestro: le
+ * revelarian a la agencia cuanto gana el consolidador sobre ella.
+ */
+export type CarPricing = TenantPricingView;
 
 export type PricedCarOffer = CarOffer & { pricing?: CarPricing };
 export type PricedCarSelection = CarSelection & { pricing?: CarPricing };
@@ -58,6 +61,7 @@ export class CarsService {
     private readonly pricing: PricingService,
     private readonly orders: OrdersService,
     private readonly audit: AuditService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -273,16 +277,13 @@ export class CarsService {
     const rules = await this.pricing.getApplicableRules(tenantId, VERTICAL);
     if (rules.length === 0) return offers;
     return offers.map((o) => {
-      const w = applyCascade(o.rateAmount.amountMinor, rules);
       return {
         ...o,
-        pricing: {
-          netMinor: w.netMinor,
-          finalMinor: w.finalMinor,
-          totalMarkupMinor: w.totalMarkupMinor,
-          currency: o.rateAmount.currency,
-          breakdown: w.breakdown,
-        },
+        pricing: toTenantView(
+          applyCascade(o.rateAmount.amountMinor, rules),
+          tenantId,
+          o.rateAmount.currency,
+        ),
       };
     });
   }
@@ -329,24 +330,5 @@ export class CarsService {
     if (input.latDropOff !== undefined) q.latDropOff = input.latDropOff;
     if (input.lngDropOff !== undefined) q.lngDropOff = input.lngDropOff;
     return q;
-  }
-
-  /**
-   * Sprint 0: el primer tenant activo del usuario es el "tenant actual" (igual que SearchController).
-   * Cuando exista /auth/switch-tenant, esto leerá un claim del JWT.
-   */
-  async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

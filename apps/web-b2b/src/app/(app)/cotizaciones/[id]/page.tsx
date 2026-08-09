@@ -40,7 +40,7 @@ interface Quotation {
   selectedOffer: {
     id: string;
     total: { amountMinor: number; currency: string };
-    pricing?: { finalMinor: number; totalMarkupMinor: number; currency: string };
+    pricing?: { costMinor: number; finalMinor: number; ownMarkupMinor: number; currency: string };
     baseFare: { amountMinor: number; currency: string };
     taxes: { amountMinor: number; currency: string };
     itineraries?: {
@@ -738,12 +738,12 @@ export default function QuotationDetailPage() {
                     {formatMoney(selectedOffer.taxes.amountMinor, selectedOffer.taxes.currency)}
                   </span>
                 </div>
-                {(selectedOffer.pricing?.totalMarkupMinor ?? 0) > 0 && (
+                {(selectedOffer.pricing?.ownMarkupMinor ?? 0) > 0 && (
                   <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
                     <span>Markup</span>
                     <span className="text-emerald-600">
                       {formatMoney(
-                        selectedOffer.pricing!.totalMarkupMinor,
+                        selectedOffer.pricing!.ownMarkupMinor,
                         selectedOffer.total.currency,
                       )}
                     </span>

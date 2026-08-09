@@ -200,7 +200,7 @@ export function FlightRow({
   const carrier = firstItinerary.segments[0].carrier;
   // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
   const sellMinor = cheapest.pricing?.finalMinor ?? cheapest.total.amountMinor;
-  const hasMarkup = (cheapest.pricing?.totalMarkupMinor ?? 0) > 0;
+  const hasMarkup = (cheapest.pricing?.ownMarkupMinor ?? 0) > 0;
 
   return (
     <div

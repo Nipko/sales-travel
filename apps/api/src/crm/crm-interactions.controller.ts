@@ -1,6 +1,7 @@
 import { Body, Controller, ForbiddenException, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import {
   CrmInteractionsService,
   type CreateInteractionDto,
@@ -15,12 +16,13 @@ export class CrmInteractionsController {
   constructor(
     private readonly interactions: CrmInteractionsService,
     private readonly db: DatabaseService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Post()
   async create(@CurrentUser() userId: string | undefined, @Body() body: CreateInteractionDto) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.interactions.create(tenantId, {
       ...body,
       createdByUserId: body.createdByUserId ?? userId,
@@ -34,7 +36,7 @@ export class CrmInteractionsController {
     @Param('customerId') customerId: string,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.interactions.findByCustomer(tenantId, customerId);
     return { interactions: rows.map((r) => this.serialize(r)) };
   }
@@ -56,20 +58,5 @@ export class CrmInteractionsController {
       createdByUserId: row.created_by_user_id,
       createdAt: row.created_at,
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

@@ -806,9 +806,9 @@ function CarCard({
             <p className="text-base font-semibold text-[var(--color-fg)]">
               {moneyMinor(sp.minor, sp.currency)}
             </p>
-            {car.pricing && car.pricing.totalMarkupMinor > 0 ? (
+            {car.pricing && car.pricing.ownMarkupMinor > 0 ? (
               <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                neto {moneyMinor(car.pricing.netMinor, car.pricing.currency)}
+                costo {moneyMinor(car.pricing.costMinor, car.pricing.currency)}
               </p>
             ) : null}
             <p className="text-[10px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
@@ -988,10 +988,10 @@ function SelectionSummary({
             <dd>{money(c.amount)}</dd>
           </div>
         ))}
-        {selection.pricing && selection.pricing.totalMarkupMinor > 0 ? (
+        {selection.pricing && selection.pricing.ownMarkupMinor > 0 ? (
           <div className="flex justify-between text-emerald-700">
             <dt>Tu markup</dt>
-            <dd>+{moneyMinor(selection.pricing.totalMarkupMinor, selection.pricing.currency)}</dd>
+            <dd>+{moneyMinor(selection.pricing.ownMarkupMinor, selection.pricing.currency)}</dd>
           </div>
         ) : null}
         <div className="flex justify-between border-t border-[var(--color-border)] pt-2 text-sm">

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
-import { PricingService, applyCascade } from '../pricing/pricing.service.js';
+import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 
 @Injectable()
 export class SearchService {
@@ -23,7 +23,13 @@ export class SearchService {
     tenantId: string,
   ): Promise<OfferPriceResult> {
     const adapter = await this.latam.forTenant(tenantId);
-    return adapter.priceOffer(offer, criteria, { tenantId });
+    const result = await adapter.priceOffer(offer, criteria, { tenantId });
+
+    // La revalidación de precio devolvía la oferta del proveedor SIN pasar por el
+    // waterfall, así que el último paso antes de reservar descartaba el markup y la
+    // agencia terminaba vendiendo al costo. Es el mismo tratamiento que la búsqueda.
+    const [priced] = await this.withPricing([result.offer], tenantId, 'flights');
+    return { ...result, offer: priced ?? result.offer };
   }
 
   /**
@@ -34,18 +40,11 @@ export class SearchService {
   private async withPricing(offers: Offer[], tenantId: string, vertical: string): Promise<Offer[]> {
     const rules = await this.pricing.getApplicableRules(tenantId, vertical);
     if (rules.length === 0) return offers;
-    return offers.map((o) => {
-      const w = applyCascade(o.total.amountMinor, rules);
-      return {
-        ...o,
-        pricing: {
-          netMinor: w.netMinor,
-          finalMinor: w.finalMinor,
-          totalMarkupMinor: w.totalMarkupMinor,
-          currency: o.total.currency,
-          breakdown: w.breakdown,
-        },
-      };
-    });
+    return offers.map((o) => ({
+      ...o,
+      // Vista acotada al tenant: sin netMinor ni breakdown, que revelarían el margen
+      // del consolidador a la agencia que está mirando los resultados.
+      pricing: toTenantView(applyCascade(o.total.amountMinor, rules), tenantId, o.total.currency),
+    }));
   }
 }

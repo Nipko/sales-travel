@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type {
   BookRequest,
   BookResult,
@@ -14,6 +14,8 @@ import type {
   RecoveryResult,
 } from '@sales-travel/despegar-hotels';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import type { HotelAvailabilityInput, HotelDetailInput } from './hotels.schemas.js';
 
@@ -24,7 +26,38 @@ export class HotelsService {
   constructor(
     private readonly factory: DespegarHotelsProviderFactory,
     private readonly db: DatabaseService,
+    private readonly pricing: PricingService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
+
+  /**
+   * Adjunta el pricing waterfall del consolidador a cada roompack.
+   *
+   * Hasta ahora la vertical de hoteles NO pasaba por el waterfall —cero referencias a
+   * PricingService en este módulo— así que toda la red vendía hoteles al costo del
+   * proveedor, sin margen para el consolidador ni para la agencia. Vuelos sí lo aplicaba
+   * (SearchService.withPricing); esto lo alinea.
+   *
+   * `price.total` (el neto) NO se muta: `pricing.finalMinor` es el precio de venta.
+   */
+  private async withPricing(offers: HotelOffer[], tenantId: string): Promise<HotelOffer[]> {
+    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
+    if (rules.length === 0) return offers;
+
+    return offers.map((offer) => ({
+      ...offer,
+      roompacks: offer.roompacks.map((pack) => {
+        return {
+          ...pack,
+          pricing: toTenantView(
+            applyCascade(pack.price.total.amountMinor, rules),
+            tenantId,
+            pack.price.total.currency,
+          ),
+        };
+      }),
+    }));
+  }
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -44,7 +77,7 @@ export class HotelsService {
 
     const adapter = await this.factory.forTenant(tenantId);
     const defaults = await this.tenantDefaults(tenantId);
-    return adapter.searchAvailability({
+    const offers = await adapter.searchAvailability({
       checkinDate: input.checkinDate,
       checkoutDate: input.checkoutDate,
       currency: input.currency ?? defaults.currency,
@@ -55,6 +88,7 @@ export class HotelsService {
       ttl: input.ttl,
       refundableOnly: input.refundableOnly,
     });
+    return this.withPricing(offers, tenantId);
   }
 
   /** IDs de hotel de una ciudad (city_id) desde el catálogo `hotel_inventory` (cap. por defecto 50). */
@@ -72,7 +106,7 @@ export class HotelsService {
   async getHotelDetail(tenantId: string, input: HotelDetailInput): Promise<HotelOffer> {
     const adapter = await this.factory.forTenant(tenantId);
     const defaults = await this.tenantDefaults(tenantId);
-    return adapter.getHotelDetail({
+    const offer = await adapter.getHotelDetail({
       hotelId: input.hotelId,
       checkinDate: input.checkinDate,
       checkoutDate: input.checkoutDate,
@@ -84,6 +118,9 @@ export class HotelsService {
       ttl: input.ttl,
       refundableOnly: input.refundableOnly,
     });
+    // El detalle es la pantalla desde la que se reserva: sin esto mostraría el neto.
+    const [priced] = await this.withPricing([offer], tenantId);
+    return priced ?? offer;
   }
 
   // ───────────────────────── Reserva ─────────────────────────
@@ -137,24 +174,5 @@ export class HotelsService {
     };
     if (t?.country_code) result.countryCode = t.country_code;
     return result;
-  }
-
-  /**
-   * Sprint 0: el primer tenant activo del usuario es el "tenant actual" (igual que SearchController).
-   * Cuando exista /auth/switch-tenant, esto leerá un claim del JWT.
-   */
-  async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

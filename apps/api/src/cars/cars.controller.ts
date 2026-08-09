@@ -1,4 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Post, Query, UseFilters } from '@nestjs/common';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type {
   CancelResult,
   CarBookResult,
@@ -11,7 +12,6 @@ import type {
   ReleaseResult,
 } from '@sales-travel/agent-cars';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { currentTenantId } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CarsService, type PricedCarOffer, type PricedCarSelection } from './cars.service.js';
 import { AgentCarsExceptionFilter } from './agent-cars-exception.filter.js';
@@ -46,7 +46,10 @@ import { SELLING_ROLES } from '../auth/roles.js';
 @Controller('cars')
 @UseFilters(AgentCarsExceptionFilter)
 export class CarsController {
-  constructor(private readonly cars: CarsService) {}
+  constructor(
+    private readonly cars: CarsService,
+    private readonly activeTenant: ActiveTenantService,
+  ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -154,6 +157,6 @@ export class CarsController {
 
   private async tenant(userId: string | undefined): Promise<string> {
     if (!userId) throw new ForbiddenException();
-    return currentTenantId() ?? (await this.cars.resolveActiveTenant(userId));
+    return this.activeTenant.resolve(userId);
   }
 }

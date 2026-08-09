@@ -33,11 +33,12 @@ export interface WaterfallStep {
 
 /** Pricing waterfall del consolidador: `finalMinor` es el precio de venta (neto + markups). */
 export interface CarPricing {
-  netMinor: number;
+  /** Costo para esta agencia: neto del proveedor + markup de su red por encima. */
+  costMinor: number;
   finalMinor: number;
-  totalMarkupMinor: number;
+  /** Margen propio. No incluye el de los ancestros. */
+  ownMarkupMinor: number;
   currency: string;
-  breakdown: WaterfallStep[];
 }
 
 export interface CarOffer {

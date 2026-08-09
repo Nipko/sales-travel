@@ -59,24 +59,22 @@ export const OfferSchema = z.object({
   fees: MoneySchema.optional(),
   fareBreakdown: z.array(FareBreakdownEntrySchema).optional(),
 
-  // Pricing waterfall del consolidador. OPCIONAL: lo adjunta la capa de búsqueda tras
-  // aplicar la cascada de markups. `total`/`provider` siguen siendo el NETO del proveedor
-  // (lo que se reserva); `pricing.finalMinor` es el precio de venta al cliente.
+  // Pricing waterfall del consolidador, ACOTADO al tenant que consulta. OPCIONAL: lo
+  // adjunta la capa de búsqueda tras aplicar la cascada de markups. `total`/`provider`
+  // siguen siendo el NETO del proveedor (lo que se reserva).
+  //
+  // Deliberadamente NO lleva el neto ni el desglose paso a paso: ambos le revelarían a
+  // una agencia cuánto gana el consolidador sobre ella. El desglose completo sólo se
+  // expone en /pricing/waterfall, que un consolidador consulta sobre su propia red.
   pricing: z
     .object({
-      netMinor: z.number().int(),
+      /** Costo para este tenant: neto del proveedor + markup de su red por encima. */
+      costMinor: z.number().int(),
+      /** Precio de venta al cliente final. */
       finalMinor: z.number().int(),
-      totalMarkupMinor: z.number().int(),
+      /** Margen propio del tenant. No incluye el de sus ancestros. */
+      ownMarkupMinor: z.number().int(),
       currency: z.string(),
-      breakdown: z.array(
-        z.object({
-          tenantId: z.string(),
-          tenantName: z.string(),
-          level: z.number().int(),
-          ruleType: z.string(),
-          addedMinor: z.number().int(),
-        }),
-      ),
     })
     .optional(),
 

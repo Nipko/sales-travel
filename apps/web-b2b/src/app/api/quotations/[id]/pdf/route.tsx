@@ -53,9 +53,9 @@ interface Quotation {
      * el precio de venta coincide con el neto.
      */
     pricing?: {
-      netMinor: number;
+      costMinor: number;
       finalMinor: number;
-      totalMarkupMinor: number;
+      ownMarkupMinor: number;
       currency: string;
     };
     itineraries?: {

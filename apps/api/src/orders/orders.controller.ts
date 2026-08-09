@@ -14,6 +14,7 @@ import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { orderConfirmationEmailHtml } from '../mail/templates.js';
 import { BrandingService } from '../branding/branding.service.js';
@@ -32,6 +33,7 @@ export class OrdersController {
     private readonly db: DatabaseService,
     private readonly mailer: MailerService,
     private readonly branding: BrandingService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Post()
@@ -40,7 +42,7 @@ export class OrdersController {
     @Body(new ZodValidationPipe(CreateOrderSchema)) body: CreateOrderDto,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
 
     const { order, providerResult } = await this.orders.createOrder(tenantId, userId, body);
 
@@ -68,7 +70,7 @@ export class OrdersController {
     @Param('id') id: string,
   ): Promise<{ sent: boolean; to: string }> {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const order = await this.orders.findById(tenantId, id);
     if (!order) throw new NotFoundException();
     const to = this.contactEmail(order);
@@ -109,7 +111,7 @@ export class OrdersController {
   @Get()
   async list(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.orders.findAll(tenantId);
     return { orders: rows.map((r) => this.serialize(r)) };
   }
@@ -117,7 +119,7 @@ export class OrdersController {
   @Get(':id')
   async findOne(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row) return { order: null };
     return { order: this.serialize(row) };
@@ -126,7 +128,7 @@ export class OrdersController {
   @Post(':id/retrieve')
   async retrieve(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupportsLatamOps(row);
@@ -147,7 +149,7 @@ export class OrdersController {
   @Post(':id/cancel')
   async cancel(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     const { result } = await this.orders.cancelOrder(tenantId, id, row.provider_order_id, userId);
@@ -158,7 +160,7 @@ export class OrdersController {
   @Get(':id/operations')
   async operations(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const operations = await this.orders.listOperations(tenantId, id);
     return { operations };
   }
@@ -171,7 +173,7 @@ export class OrdersController {
     @Param('opId') opId: string,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const { result } = await this.orders.retryOperation(tenantId, id, opId, userId);
     return result;
   }
@@ -179,7 +181,7 @@ export class OrdersController {
   @Post(':id/services')
   async listServices(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupportsLatamOps(row);
@@ -194,7 +196,7 @@ export class OrdersController {
     body: { paidOrderId: string; bnplOrderId: string; ticketDocIds: string[] },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupportsLatamOps(row);
@@ -208,7 +210,7 @@ export class OrdersController {
     @Body(new ZodValidationPipe(PayOrderSchema)) body: { payment: unknown },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupportsLatamOps(row);
@@ -253,20 +255,5 @@ export class OrdersController {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

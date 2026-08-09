@@ -8,6 +8,7 @@ import {
   Query,
   UseFilters,
 } from '@nestjs/common';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type {
   BookRequest,
   BookResult,
@@ -20,7 +21,6 @@ import type {
   RecoveryResult,
 } from '@sales-travel/despegar-hotels';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { currentTenantId } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
 import { HotelsService } from './hotels.service.js';
@@ -47,7 +47,10 @@ import { SELLING_ROLES } from '../auth/roles.js';
 @Controller('hotels')
 @UseFilters(DespegarHotelsExceptionFilter)
 export class HotelsController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+    private readonly activeTenant: ActiveTenantService,
+  ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -143,6 +146,6 @@ export class HotelsController {
 
   private async tenant(userId: string | undefined): Promise<string> {
     if (!userId) throw new ForbiddenException();
-    return currentTenantId() ?? (await this.hotels.resolveActiveTenant(userId));
+    return this.activeTenant.resolve(userId);
   }
 }

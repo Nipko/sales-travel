@@ -188,7 +188,7 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
                   fare.total.currency,
                 )}
               </p>
-              {(fare.pricing?.totalMarkupMinor ?? 0) > 0 && (
+              {(fare.pricing?.ownMarkupMinor ?? 0) > 0 && (
                 <p className="mt-0.5 text-[9px] font-medium text-[var(--color-fg-subtle)]">
                   neto {formatMoney(fare.total.amountMinor, fare.total.currency)}
                 </p>

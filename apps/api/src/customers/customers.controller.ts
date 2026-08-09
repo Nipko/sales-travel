@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateCustomerSchema, UpdateCustomerSchema } from './dto.js';
 import {
@@ -28,6 +29,7 @@ export class CustomersController {
   constructor(
     private readonly customers: CustomersService,
     private readonly db: DatabaseService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Post()
@@ -36,7 +38,7 @@ export class CustomersController {
     @Body(new ZodValidationPipe(CreateCustomerSchema)) body: CreateCustomerDto,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.customers.create(tenantId, body);
     return { customer: this.serialize(row) };
   }
@@ -44,7 +46,7 @@ export class CustomersController {
   @Get()
   async list(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.customers.findAll(tenantId);
     return { customers: rows.map((r) => this.serialize(r)) };
   }
@@ -52,7 +54,7 @@ export class CustomersController {
   @Get(':id')
   async findOne(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.customers.findById(tenantId, id);
     if (!row) throw new NotFoundException();
     return { customer: this.serialize(row) };
@@ -65,7 +67,7 @@ export class CustomersController {
     @Body(new ZodValidationPipe(UpdateCustomerSchema)) body: UpdateCustomerDto,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.customers.update(tenantId, id, body);
     if (!row) throw new NotFoundException();
     return { customer: this.serialize(row) };
@@ -75,7 +77,7 @@ export class CustomersController {
   @Delete(':id')
   async remove(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const deleted = await this.customers.remove(tenantId, id);
     if (!deleted) throw new NotFoundException();
     return { success: true };
@@ -102,20 +104,5 @@ export class CustomersController {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

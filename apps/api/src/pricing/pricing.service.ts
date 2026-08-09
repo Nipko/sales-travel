@@ -17,6 +17,42 @@ export interface WaterfallResult {
   breakdown: WaterfallStep[];
 }
 
+/**
+ * Pricing tal como puede verlo un tenant concreto.
+ *
+ * Lo que se manda al browser en los resultados de búsqueda. Deliberadamente NO lleva
+ * `netMinor` ni el `breakdown` paso a paso: ambos revelan cuánto gana el consolidador
+ * sobre la agencia que está mirando. La agencia ve su COSTO (el neto del proveedor más
+ * lo que le carga su red por encima) y su PROPIO margen, que es lo que necesita para
+ * vender; el desglose completo sólo se expone en /pricing/waterfall, que un consolidador
+ * consulta sobre su propia red.
+ */
+export interface TenantPricingView {
+  costMinor: number;
+  finalMinor: number;
+  ownMarkupMinor: number;
+  currency: string;
+}
+
+export function toTenantView(
+  w: WaterfallResult,
+  tenantId: string,
+  currency: string,
+): TenantPricingView {
+  let own = 0;
+  let fromAncestors = 0;
+  for (const step of w.breakdown) {
+    if (step.tenantId === tenantId) own += step.addedMinor;
+    else fromAncestors += step.addedMinor;
+  }
+  return {
+    costMinor: w.netMinor + fromAncestors,
+    finalMinor: w.finalMinor,
+    ownMarkupMinor: own,
+    currency,
+  };
+}
+
 export interface ApplicableRule {
   tenantId: string;
   tenantName: string;

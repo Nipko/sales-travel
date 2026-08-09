@@ -24,6 +24,7 @@ function assertPositiveAmount(amountMinor: unknown): number {
   return amountMinor;
 }
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import {
   PortfoliosService,
   type PortfolioRow,
@@ -38,12 +39,13 @@ export class PortfoliosController {
   constructor(
     private readonly portfolios: PortfoliosService,
     private readonly db: DatabaseService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Get()
   async get(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const portfolio = await this.portfolios.getPortfolio(tenantId);
     return { portfolio: this.serializePortfolio(portfolio) };
   }
@@ -51,7 +53,7 @@ export class PortfoliosController {
   @Get('transactions')
   async listTransactions(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const txs = await this.portfolios.getTransactions(tenantId);
     return { transactions: txs.map((tx) => this.serializeTransaction(tx)) };
   }
@@ -63,7 +65,7 @@ export class PortfoliosController {
     @Body() body: { amountMinor: number; notes?: string },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
     const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.deposit(
@@ -85,7 +87,7 @@ export class PortfoliosController {
     @Body() body: { amountMinor: number; notes?: string },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
     const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.withdraw(
@@ -107,7 +109,7 @@ export class PortfoliosController {
     @Body() body: { creditLimitMinor: number },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
     if (
@@ -128,7 +130,7 @@ export class PortfoliosController {
     @Body() body: { orderId: string; amountMinor: number },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const amount = assertPositiveAmount(body.amountMinor);
     const { portfolio, transaction } = await this.portfolios.holdBooking(
       tenantId,
@@ -146,7 +148,7 @@ export class PortfoliosController {
   @Post('orders/:orderId/approve')
   async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
     return this.portfolios.approveBooking(tenantId, orderId);
@@ -156,7 +158,7 @@ export class PortfoliosController {
   @Post('orders/:orderId/reject')
   async reject(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
     return this.portfolios.rejectBooking(tenantId, orderId);
@@ -186,21 +188,6 @@ export class PortfoliosController {
       createdBy: tx.created_by,
       createdAt: tx.created_at,
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 
   private async assertAdminMembership(userId: string, tenantId: string): Promise<void> {

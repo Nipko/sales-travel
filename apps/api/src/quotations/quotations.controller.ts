@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type { QuotationStatus } from '../database/database.types.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { quotationEmailHtml } from '../mail/templates.js';
@@ -34,6 +35,7 @@ export class QuotationsController {
     private readonly db: DatabaseService,
     private readonly mailer: MailerService,
     private readonly branding: BrandingService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   /** Envía la cotización por email al cliente (usa el BYO-email del tenant / fallback sistema). */
@@ -44,7 +46,7 @@ export class QuotationsController {
     @Param('id') id: string,
   ): Promise<{ sent: boolean; to: string }> {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.quotations.findById(tenantId, id);
     if (!row) throw new NotFoundException();
     if (!row.customer_email) {
@@ -73,7 +75,7 @@ export class QuotationsController {
     @Body(new ZodValidationPipe(CreateQuotationSchema)) body: CreateQuotationDto,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.quotations.create(tenantId, userId, body);
     return { quotation: this.serialize(row) };
   }
@@ -81,7 +83,7 @@ export class QuotationsController {
   @Get()
   async list(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.quotations.findAll(tenantId);
     return { quotations: rows.map((r) => this.serialize(r)) };
   }
@@ -89,7 +91,7 @@ export class QuotationsController {
   @Get(':id')
   async findOne(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.quotations.findById(tenantId, id);
     if (!row) throw new NotFoundException();
     return { quotation: this.serialize(row) };
@@ -102,7 +104,7 @@ export class QuotationsController {
     @Body('status', new ZodValidationPipe(QuotationStatusSchema)) status: QuotationStatus,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.quotations.updateStatus(tenantId, id, status);
     if (!row) throw new NotFoundException();
     return { quotation: this.serialize(row) };
@@ -121,7 +123,7 @@ export class QuotationsController {
     },
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.quotations.updateCustomer(tenantId, id, body);
     if (!row) throw new NotFoundException();
     return { quotation: this.serialize(row) };
@@ -153,20 +155,5 @@ export class QuotationsController {
       expiresAt: row.expires_at,
       createdAt: row.created_at,
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }

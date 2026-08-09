@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import {
   CrmOpportunitiesService,
   type CreateOpportunityDto,
@@ -27,12 +28,13 @@ export class CrmOpportunitiesController {
   constructor(
     private readonly opportunities: CrmOpportunitiesService,
     private readonly db: DatabaseService,
+    private readonly activeTenant: ActiveTenantService,
   ) {}
 
   @Post()
   async create(@CurrentUser() userId: string | undefined, @Body() body: CreateOpportunityDto) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.opportunities.create(tenantId, body);
     return { opportunity: this.serialize(row) };
   }
@@ -43,7 +45,7 @@ export class CrmOpportunitiesController {
     @Query('stage') stage?: CrmOpportunityStage,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.opportunities.findAll(tenantId, stage);
     return { opportunities: rows.map((r) => this.serialize(r)) };
   }
@@ -51,7 +53,7 @@ export class CrmOpportunitiesController {
   @Get(':id')
   async findOne(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.opportunities.findById(tenantId, id);
     if (!row) throw new NotFoundException();
     return { opportunity: this.serialize(row) };
@@ -64,7 +66,7 @@ export class CrmOpportunitiesController {
     @Body() body: UpdateOpportunityDto,
   ) {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.resolveActiveTenant(userId);
+    const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.opportunities.update(tenantId, id, body);
     if (!row) throw new NotFoundException();
     return { opportunity: this.serialize(row) };
@@ -98,20 +100,5 @@ export class CrmOpportunitiesController {
         email: row.customer_email,
       },
     };
-  }
-
-  private async resolveActiveTenant(userId: string): Promise<string> {
-    return this.db.withRequestContext({ userId }, async (trx) => {
-      const row = await trx
-        .selectFrom('memberships')
-        .select(['tenant_id'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
-        .limit(1)
-        .executeTakeFirst();
-      if (!row) throw new ForbiddenException('user has no active membership');
-      return row.tenant_id;
-    });
   }
 }
