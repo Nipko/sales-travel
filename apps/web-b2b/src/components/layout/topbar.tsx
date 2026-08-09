@@ -4,6 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, LogOut, Search, User, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { MobileNav } from './mobile-nav';
+import { ThemeToggle } from './theme-toggle';
 
 interface TopbarProps {
   userEmail?: string;
@@ -85,6 +86,7 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
 
       {/* Right side: Search & User Controls */}
       <div className="flex items-center gap-3">
+        <ThemeToggle />
         {/* Comando de Búsqueda Rápida */}
         <button
           type="button"

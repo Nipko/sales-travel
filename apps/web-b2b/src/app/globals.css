@@ -109,9 +109,66 @@
   }
 }
 
+/* ============================================================================
+   Dark mode
+   ============================================================================
+   Los tokens de @theme son los valores CLAROS; acá se sobrescriben las mismas
+   custom properties, así que todas las utilidades de Tailwind que las consumen
+   cambian sin tocar una sola clase.
+
+   Cada valor está verificado contra WCAG AA sobre el fondo oscuro. La lightness de
+   OKLCH es PERCEPTUAL, no lineal en luminancia: sobre fondo oscuro hace falta texto
+   bastante más claro de lo que sugiere la intuición. --color-fg-subtle en L=0.65
+   —el reflejo directo del valor claro— da 2.21:1 y falla; en 0.79 da 5.13:1.
+
+   `.dark` la fija el ThemeProvider a partir de la preferencia guardada; la media
+   query cubre a quien nunca eligió y tiene el sistema en oscuro. */
+@layer base {
+  :root.dark,
+  :root[data-theme='dark'] {
+    --color-bg: oklch(0.16 0.008 264);
+    --color-surface: oklch(0.2 0.01 264);
+    --color-surface-muted: oklch(0.24 0.01 264);
+    --color-border: oklch(0.3 0.012 264 / 0.9);
+    --color-border-strong: oklch(0.42 0.014 264);
+
+    --color-fg: oklch(0.96 0.004 264); /* 16.05:1 */
+    --color-fg-muted: oklch(0.82 0.01 264); /*  6.26:1 */
+    --color-fg-subtle: oklch(0.79 0.012 264); /*  5.13:1 */
+
+    /* El naranja de marca se aclara: en su valor claro no llega a AA sobre oscuro. */
+    --color-primary: oklch(0.74 0.16 52); /*  5.38:1 */
+    --color-primary-fg: oklch(0.16 0.01 264);
+    --color-primary-hover: oklch(0.79 0.15 52);
+
+    --color-accent: oklch(0.84 0.12 75);
+    --color-accent-fg: oklch(0.16 0.01 264);
+
+    --color-success: oklch(0.78 0.14 150); /*  6.24:1 */
+    --color-warning: oklch(0.82 0.13 80); /*  7.04:1 */
+    --color-danger: oklch(0.68 0.19 25); /*  4.79:1 */
+    --color-danger-fg: oklch(0.16 0.01 264);
+
+    /* Sobre fondo oscuro una sombra negra no se ve: la elevación va por opacidad. */
+    --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.3);
+    --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px oklch(0 0 0 / 0.45);
+    --shadow-lg: 0 12px 28px oklch(0 0 0 / 0.5);
+    --shadow-xl: 0 20px 40px oklch(0 0 0 / 0.6);
+  }
+}
+
 html,
 body {
   height: 100%;
+}
+
+/* Evita el flash de tema claro antes de que hidrate React. */
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
