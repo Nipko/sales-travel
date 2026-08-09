@@ -58,6 +58,11 @@ export interface SearchResult {
   ok: boolean;
   offers: Offer[];
   error?: string;
+  /**
+   * El proveedor devolvio fixtures en vez de tarifas reales, porque al tenant le falta
+   * alguna credencial. Los precios son INVENTADOS y no se pueden cotizar a un cliente.
+   */
+  simulated?: boolean;
 }
 
 function asString(value: FormDataEntryValue | null): string {
@@ -154,9 +159,9 @@ export async function searchFlightsAction(
   };
   if (isRoundtrip) body.returnDate = returnDate;
 
-  let res: Awaited<ReturnType<typeof api<{ offers: Offer[] }>>>;
+  let res: Awaited<ReturnType<typeof api<{ offers: Offer[]; simulated?: boolean }>>>;
   try {
-    res = await api<{ offers: Offer[] }>('/search/flights', {
+    res = await api<{ offers: Offer[]; simulated?: boolean }>('/search/flights', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -171,5 +176,5 @@ export async function searchFlightsAction(
   if (!res.ok) {
     return { ok: false, offers: [], error: res.error.message };
   }
-  return { ok: true, offers: res.data.offers };
+  return { ok: true, offers: res.data.offers, simulated: res.data.simulated === true };
 }

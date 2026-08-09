@@ -5,6 +5,8 @@ export interface AgentCarsConfig {
   /** País de origen del agente (alpha-2, ej: CO, AR). Usado como `source` en todos los requests. */
   sourceCountry: string;
   language?: string;
+  /** Techo de espera por request, en ms. Por defecto 15 000 (ver el cliente HTTP). */
+  timeoutMs?: number;
 }
 
 export const AGENT_CARS_BASE_URLS = {

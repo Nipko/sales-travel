@@ -43,6 +43,12 @@ function url(calls: FetchCall[]): string {
   return calls[0]?.url ?? '';
 }
 
+/** Cabecera enviada en la llamada capturada. El token va acá, NO en el query string. */
+function header(calls: FetchCall[], key: string): string | undefined {
+  const h = calls[0]?.init?.headers as Record<string, string> | undefined;
+  return h?.[key];
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -59,7 +65,7 @@ describe('AgentCarsAdapter — requests GET', () => {
     expect(u).toContain('lang=es');
   });
 
-  it('getMatrix() arma GET con todos los query params + access-token', async () => {
+  it('getMatrix() arma GET con los query params y el token en cabecera', async () => {
     const { calls } = stubFetch([]);
     const adapter = new AgentCarsAdapter(cfg);
     await adapter.getMatrix({
@@ -80,7 +86,8 @@ describe('AgentCarsAdapter — requests GET', () => {
     const u = url(calls);
     expect(calls[0]?.init.method).toBe('GET');
     expect(u).toContain('https://api.dev.agentcars.com/v2/sites/get-matrix?');
-    expect(u).toContain('access-token=tok-123');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(u).toContain('pickUpLocation=MIA');
     expect(u).toContain('dropOffLocation=MIA');
     expect(u).toContain('pickUpDate=2026-07-01');
@@ -135,7 +142,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/get-selection?');
-    expect(u).toContain('access-token=tok-123');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(u).toContain('companyCode=ZE');
     expect(u).toContain('sippCode=ECMR');
     expect(u).toContain('ccrc=token-ccrc');
@@ -148,7 +156,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/find-offices?');
-    expect(u).toContain('access-token=tok-123');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(u).toContain('distance=25');
     expect(u).toContain('source=CO');
     expect(u).toContain('lat=25.79');
@@ -172,7 +181,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/rates?');
-    expect(u).toContain('access-token=tok-123');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(u).toContain('country=US');
     expect(u).toContain('source=CO');
     expect(u).toContain('language=es');
@@ -185,7 +195,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/get-rate-information?');
-    expect(u).toContain('access-token=tok-123');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(u).toContain('uniqid=sess-1');
     expect(u).toContain('paymentType=ppd');
     expect(u).toContain('rateType=best');
@@ -226,8 +237,9 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
 
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
-    expect(u).toContain('/confirmation?');
-    expect(u).toContain('access-token=tok-123');
+    expect(u).toContain('/confirmation');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(init.body).toBeInstanceOf(FormData);
 
     // age numérico se serializa como string en FormData
@@ -298,8 +310,9 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
 
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
-    expect(u).toContain('/my-reservation?');
-    expect(u).toContain('access-token=tok-123');
+    expect(u).toContain('/my-reservation');
+    expect(header(calls, 'access-token')).toBe('tok-123');
+    expect(u).not.toContain('access-token');
     expect(field(init, 'lastName')).toBe('García');
     expect(field(init, 'confirmationCode')).toBe('ABC123');
     expect(field(init, 'language')).toBe('es');
@@ -312,7 +325,7 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
 
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
-    expect(u).toContain('/cancel?');
+    expect(u).toContain('/cancel');
     expect(field(init, 'lastName')).toBe('García');
     expect(field(init, 'confirmationCode')).toBe('ABC123');
   });
@@ -324,7 +337,7 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
 
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
-    expect(u).toContain('/release-reservation?');
+    expect(u).toContain('/release-reservation');
     expect(field(init, 'lastName')).toBe('García');
     expect(field(init, 'referenceCode')).toBe('REF-9');
   });

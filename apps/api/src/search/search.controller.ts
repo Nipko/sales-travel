@@ -31,7 +31,7 @@ export class SearchController {
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(FlightSearchCriteriaSchema))
     criteria: FlightSearchCriteria,
-  ): Promise<{ offers: Offer[] }> {
+  ): Promise<{ offers: Offer[]; simulated: boolean }> {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
@@ -47,8 +47,7 @@ export class SearchController {
       criteria.currency = tenant.default_currency.trim();
     }
 
-    const offers = await this.search.searchFlights(criteria, tenantId);
-    return { offers };
+    return this.search.searchFlights(criteria, tenantId);
   }
 
   @Post('offer-price')

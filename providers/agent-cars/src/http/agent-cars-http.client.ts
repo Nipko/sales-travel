@@ -13,14 +13,21 @@ export class AgentCarsApiError extends Error {
   }
 }
 
+/**
+ * Techo de espera por request. Sin esto, un proveedor que acepta la conexión y no
+ * responde deja el request de nuestra API colgado indefinidamente: se agotan los
+ * workers de Node y cae toda la búsqueda, no sólo la de autos.
+ */
+const DEFAULT_TIMEOUT_MS = 15_000;
+
 export class AgentCarsHttpClient {
   constructor(private readonly cfg: AgentCarsConfig) {}
 
   async get<T>(baseUrl: string, path: string, query: Record<string, QueryValue> = {}): Promise<T> {
-    const url = this.buildUrl(baseUrl, path, { 'access-token': this.cfg.accessToken, ...query });
+    const url = this.buildUrl(baseUrl, path, query);
     const res = await this.fetchOrThrow(
       url,
-      { method: 'GET', headers: { Accept: 'application/json' } },
+      { method: 'GET', headers: this.headers({ Accept: 'application/json' }) },
       path,
     );
     return this.parse<T>(res, path);
@@ -32,21 +39,43 @@ export class AgentCarsHttpClient {
     body: Record<string, QueryValue>,
     query: Record<string, QueryValue> = {},
   ): Promise<T> {
-    const url = this.buildUrl(baseUrl, path, { 'access-token': this.cfg.accessToken, ...query });
+    const url = this.buildUrl(baseUrl, path, query);
     const form = new FormData();
     for (const [k, v] of Object.entries(body)) {
       if (v !== null && v !== undefined) form.append(k, String(v));
     }
-    const res = await this.fetchOrThrow(url, { method: 'POST', body: form }, path);
+    const res = await this.fetchOrThrow(
+      url,
+      { method: 'POST', body: form, headers: this.headers() },
+      path,
+    );
     return this.parse<T>(res, path);
+  }
+
+  /**
+   * El token viaja en CABECERA, no en el query string.
+   *
+   * Antes iba como `?access-token=…`, así que la credencial del tenant quedaba escrita
+   * en los access logs de cualquier proxy intermedio, en el historial del navegador si
+   * la URL se compartía, y en el Referer de recursos externos. AgentCars acepta ambas
+   * formas; la cabecera no se registra.
+   */
+  private headers(extra: Record<string, string> = {}): Record<string, string> {
+    return { 'access-token': this.cfg.accessToken, ...extra };
   }
 
   /** Envuelve un fallo de red (DNS/timeout/conexión) como AgentCarsApiError(status 0). */
   private async fetchOrThrow(url: string, init: RequestInit, path: string): Promise<Response> {
+    const timeoutMs = this.cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     try {
-      return await fetch(url, init);
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (err) {
-      throw new AgentCarsApiError(0, (err as Error).message, path);
+      const e = err as Error;
+      const reason =
+        e.name === 'TimeoutError' || e.name === 'AbortError'
+          ? `el proveedor no respondió en ${timeoutMs} ms`
+          : e.message;
+      throw new AgentCarsApiError(0, reason, path);
     }
   }
 

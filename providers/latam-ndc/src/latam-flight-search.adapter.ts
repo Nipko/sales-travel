@@ -49,6 +49,17 @@ export class LatamNdcFlightSearchAdapter
   private readonly tokens: LatamTokenService;
   private readonly http: LatamHttpClient;
 
+  /**
+   * El adaptador está devolviendo fixtures en vez de consultar a LATAM.
+   *
+   * Se expone para que la capa de aplicación pueda avisarlo: un tenant al que le falte
+   * una credencial cae en modo mock en silencio y cotiza PRECIOS INVENTADOS con aspecto
+   * de reales, que un vendedor podría llegar a pasarle a un cliente.
+   */
+  get isMock(): boolean {
+    return isMockMode(this.cfg);
+  }
+
   constructor(private readonly cfg: LatamNdcConfig) {
     this.tokens = new LatamTokenService(cfg);
     this.http = new LatamHttpClient(cfg, this.tokens);

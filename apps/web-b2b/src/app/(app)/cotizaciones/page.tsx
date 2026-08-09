@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AlertTriangle,
   ArrowLeftRight,
   Building2,
   Car,
@@ -602,6 +603,20 @@ function SearchResults({
   if (flightGroups.length > 0) {
     return (
       <section className="animate-fade-in-up mt-8">
+        {result.simulated ? (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2.5 rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-sm text-[var(--color-fg)]"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]" />
+            <span>
+              <strong className="font-semibold">Tarifas simuladas.</strong> Faltan credenciales del
+              proveedor para esta agencia, así que estos precios son de prueba y{' '}
+              <strong className="font-semibold">no se le pueden cotizar a un cliente</strong>.
+              Cargalas en Configuración → Credenciales.
+            </span>
+          </div>
+        ) : null}
         <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
         <div className="space-y-4">
           {flightGroups.map((group) => (

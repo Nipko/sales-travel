@@ -11,10 +11,22 @@ export class SearchService {
     private readonly pricing: PricingService,
   ) {}
 
-  async searchFlights(criteria: FlightSearchCriteria, tenantId: string): Promise<Offer[]> {
+  /**
+   * `simulated` avisa que el adaptador devolvió fixtures en vez de consultar a LATAM.
+   * Un tenant al que le falte una credencial cae en modo mock EN SILENCIO y cotiza
+   * precios inventados con aspecto de reales; sin esta señal, un vendedor podría
+   * pasárselos a un cliente sin enterarse.
+   */
+  async searchFlights(
+    criteria: FlightSearchCriteria,
+    tenantId: string,
+  ): Promise<{ offers: Offer[]; simulated: boolean }> {
     const adapter = await this.latam.forTenant(tenantId);
     const offers = await adapter.search(criteria, { tenantId });
-    return this.withPricing(offers, tenantId, 'flights');
+    return {
+      offers: await this.withPricing(offers, tenantId, 'flights'),
+      simulated: adapter.isMock,
+    };
   }
 
   async priceOffer(
