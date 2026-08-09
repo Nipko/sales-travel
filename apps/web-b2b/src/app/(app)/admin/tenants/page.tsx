@@ -167,7 +167,7 @@ export default function AdminTenantsPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)]">

@@ -120,7 +120,7 @@ export default function ReportePage() {
             <p className="text-xs text-[var(--color-fg-muted)]">
               {entries.length} {entries.length === 1 ? 'movimiento' : 'movimientos'}
             </p>
-            <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]">
+            <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-fg-muted)]">

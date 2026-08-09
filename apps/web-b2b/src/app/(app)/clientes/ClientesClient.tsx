@@ -637,7 +637,7 @@ export function ClientesClient({
             </div>
 
             {/* TABLA CUSTOMERS */}
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-x-auto">
               <table className="w-full text-left text-xs text-[var(--color-fg-muted)]">
                 <thead className="bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)] border-b border-[var(--color-border)] uppercase font-semibold text-[10px] tracking-wider">
                   <tr>
