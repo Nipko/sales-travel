@@ -24,6 +24,12 @@ import { PaxPicker } from '../../../components/ui/pax-picker';
 import { searchFlightsAction, type Offer, type SearchResult } from './actions';
 import { createQuotationAction } from './quotation-actions';
 import { FlightRow, type FlightGroup } from './_components/flight-row';
+import {
+  applyFlightFilters,
+  EMPTY_FILTERS,
+  FlightFilters,
+  type FlightFilterState,
+} from './_components/flight-filters';
 import { ResultsHeader } from './_components/results-header';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import type { SortKey } from './_components/sort-toggle';
@@ -157,6 +163,7 @@ export default function CotizacionesPage() {
   const today = useMemo(todayISO, []);
   const [hasSearched, setHasSearched] = useState(false);
   const [sort, setSort] = useState<SortKey>('best');
+  const [filters, setFilters] = useState<FlightFilterState>(EMPTY_FILTERS);
   const formRef = useRef<HTMLFormElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -265,10 +272,17 @@ export default function CotizacionesPage() {
     [originCode, destinationCode, departureDate, returnDate, tripType],
   );
 
-  const flightGroups = useMemo(
+  // Los grupos sin filtrar alimentan las OPCIONES de filtro (aerolineas, precio maximo):
+  // derivarlas de la lista ya filtrada haria desaparecer las opciones al usarlas.
+  const allGroups = useMemo(
     () => sortGroups(groupOffersByFlight(result.offers), sort),
     [result.offers, sort],
   );
+  const flightGroups = useMemo(() => applyFlightFilters(allGroups, filters), [allGroups, filters]);
+
+  useEffect(() => {
+    setFilters(EMPTY_FILTERS);
+  }, [result.offers]);
 
   const displayError = clientError || result.error;
 
@@ -489,7 +503,10 @@ export default function CotizacionesPage() {
           <SearchResults
             hasSearched={hasSearched}
             result={result}
+            allGroups={allGroups}
             flightGroups={flightGroups}
+            filters={filters}
+            onFiltersChange={setFilters}
             sort={sort}
             onSortChange={setSort}
             onQuote={handleQuote}
@@ -572,14 +589,20 @@ function TravelLoader() {
 function SearchResults({
   hasSearched,
   result,
+  allGroups,
   flightGroups,
+  filters,
+  onFiltersChange,
   sort,
   onSortChange,
   onQuote,
 }: {
   hasSearched: boolean;
   result: SearchResult;
+  allGroups: FlightGroup[];
   flightGroups: FlightGroup[];
+  filters: FlightFilterState;
+  onFiltersChange: (next: FlightFilterState) => void;
   sort: SortKey;
   onSortChange: (key: SortKey) => void;
   onQuote: (offer: Offer) => Promise<void>;
@@ -600,7 +623,11 @@ function SearchResults({
     );
   }
 
-  if (flightGroups.length > 0) {
+  // Se entra por allGroups, no por flightGroups: si los filtros excluyen todo, la sección
+  // tiene que seguir en pantalla para poder limpiarlos. Con la condición sobre los grupos
+  // ya filtrados, la UI de filtros desaparecía junto con los resultados y el usuario
+  // quedaba encerrado en un estado vacío que él mismo había provocado.
+  if (allGroups.length > 0) {
     return (
       <section className="animate-fade-in-up mt-8">
         {result.simulated ? (
@@ -617,20 +644,38 @@ function SearchResults({
             </span>
           </div>
         ) : null}
+        <FlightFilters
+          groups={allGroups}
+          value={filters}
+          onChange={onFiltersChange}
+          formatMoney={formatMoney}
+        />
         <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
-        <div className="space-y-4">
-          {flightGroups.map((group) => (
-            <FlightRow
-              key={group.key}
-              group={group}
-              formatMoney={formatMoney}
-              formatTime={formatTime}
-              formatDate={formatDate}
-              formatDuration={formatDuration}
-              onQuote={onQuote}
-            />
-          ))}
-        </div>
+        {flightGroups.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
+            <p className="text-sm font-medium text-[var(--color-fg)]">
+              Ningún vuelo coincide con los filtros
+            </p>
+            <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+              Hay {allGroups.length} {allGroups.length === 1 ? 'resultado' : 'resultados'} en total.
+              Probá quitando algún filtro.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {flightGroups.map((group) => (
+              <FlightRow
+                key={group.key}
+                group={group}
+                formatMoney={formatMoney}
+                formatTime={formatTime}
+                formatDate={formatDate}
+                formatDuration={formatDuration}
+                onQuote={onQuote}
+              />
+            ))}
+          </div>
+        )}
       </section>
     );
   }
