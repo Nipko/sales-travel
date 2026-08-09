@@ -28,6 +28,7 @@ import { QueueModule } from './queue/queue.module.js';
 import { HotelsModule } from './hotels/hotels.module.js';
 import { CarsModule } from './cars/cars.module.js';
 import { CrmModule } from './crm/crm.module.js';
+import { PackagesModule } from './packages/packages.module.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { CrmModule } from './crm/crm.module.js';
     TenantsModule,
     CustomersModule,
     CrmModule,
+    PackagesModule,
     PortfoliosModule,
     ReportsModule,
     ProviderCredentialsModule,
