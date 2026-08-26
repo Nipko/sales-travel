@@ -7,7 +7,7 @@ FROM node:${NODE_VERSION} AS base
 # ERR_PNPM_PNPM_ENGINE_IDENTITY_UNVERIFIABLE — no puede verificar que el pnpm que corre es el que
 # declara `packageManager` en package.json. Corepack es la via soportada y establece esa identidad.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 
 FROM base AS builder

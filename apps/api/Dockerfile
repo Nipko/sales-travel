@@ -6,8 +6,12 @@ FROM node:${NODE_VERSION} AS base
 # base flotante trajo un npm mas nuevo y pnpm empezo a rechazar arrancar con
 # ERR_PNPM_PNPM_ENGINE_IDENTITY_UNVERIFIABLE — no puede verificar que el pnpm que corre es el que
 # declara `packageManager` en package.json. Corepack es la via soportada y establece esa identidad.
+#
+# Y corepack se ACTUALIZA antes de usarlo: el que viene en la imagen de Node trae las claves de
+# firma de npm caducadas y falla con 'Cannot find matching keyid' al verificar pnpm. Actualizarlo
+# trae las claves nuevas; la alternativa habria sido apagar la verificacion de firma, que es peor.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 
 FROM base AS builder
