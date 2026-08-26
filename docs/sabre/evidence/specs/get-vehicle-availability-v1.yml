@@ -1,0 +1,2418 @@
+swagger: '2.0'
+info:
+  title: Get Vehicle Availability
+  version: v1
+  description: |
+    The Get Vehicle Availability API is used to request information regarding car rental location(s), available car types at the location(s), and the rates of those cars.
+    * A specific car supplier at a specific location
+    * One to all car suppliers that serve a specific airport
+    * One to all car suppliers around a specific point for a variable distance
+    Get Vehicle Availability responses include:vehicle rates, vehicle types, legal number of occupants, number of bags.
+host: api.cert.platform.sabre.com
+basePath: /
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /v1.0.0/get/vehavail:
+    post:
+      operationId: getRentalLocation
+      parameters:
+        - name: GetVehAvailRQ
+          description: "The Get Vehicle Availability API is used to request information regarding car rental location(s), available car types at the location(s), and the rates of those cars."
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/GetVehAvailRQ'
+      responses:
+        '200':
+          schema:
+            $ref: '#/definitions/GetVehAvailRS'
+          description: Success
+        '400':
+          description: |
+            Bad Request
+
+            - The request was not valid.
+        '404':
+          description: |
+            Not Found
+
+            - No results were found.
+definitions:
+  VehAvailInfosVehAvailInfoVehRentalRateVehicleChargesVehicleCharge:
+    description : Contains vehicle charge information.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      Type:
+        type: string
+  Address:
+    description : Refers to the exact location of the destination.
+    type: object
+    properties:
+      Description: 
+        type: string
+      Ref:
+        type: string
+  CarExtra:
+    description : Refers to any extra physical equipments, services or surcharges availed.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      Type:
+        type: string
+  Size:
+    description : Size is mandatory if the Bags element is used. Size can be either Small or Large.
+    type: object
+    properties:
+      JsonMemberEnum:
+        type: array
+        items:
+          example : "Large"
+          type: string
+      Type:
+        type: string
+  UnitOfMeasureType:
+    description : Unit of measure type is optional and if used, must be MI-miles or KM-Kilometers. It finds the radius of search and sorts the information.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  SortByType:
+    description : Sort by Type allows the subscriber to change from the 'default' of how the data is returned.
+    type: object
+    properties:
+      Description:
+        type: string
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  VendorPrefs:
+    type: object
+    description : Vendor preference is mandatory if "VendorPrefs" is present. Vendor preference is used to list vendor codes to include or exclude from the request.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+      VendorPref:
+        type: object
+  Image:
+    description : |
+      Image Type is mandatory, if Image Reference is used. Image Type must be one of the following.
+      * Original 
+      * Thumbnail- scalable to 100 x 150 
+      * Small- scalable to 200 x 200 
+      * Medium- scalable to 400 x 400 
+      * Large-  scalable to 800 x 800
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  CurrencyCode:
+    description : |
+      Currency code is used to request a currency that is not the default currency of the country where the car rental is being booked. This is primarily used at major cities near country borders as some car suppliers will accept multiple currencies at rental locations. 
+      Currency Code is an optional field and it is 3 alpha numeric.
+    type: object
+    properties:
+      Ref:
+        example : "USD"
+        type: string
+  ExtraMileageCharge:
+    description : Contains information about charges for extra mileage.
+    type: object
+    properties:
+      Ref:
+        example : "0.25"
+        type: string
+  RatePrefs:
+    description : Rate preferences is optional. If used, then at least one of the following attributes is required such as 'RateAssured', 'RateCategory', 'RatePlan'.
+
+
+    type: object
+    properties:
+      Commission:
+        type: boolean
+        description : Commission is used to request only suppliers that return commission information. Commission is optional. If used, it must contain “true” or “false”. If false, it is usually omitted.
+      CurrencyInfo:
+        $ref: '#/definitions/CurrencyInfo'
+      CustLoyalty:
+        type: object
+      GuaranteePrepaid:
+        $ref: '#/definitions/GuaranteePrepaid'
+      RateAssured:
+        type: boolean
+        example : true
+      RateCategory:
+        description : Rate category is used to request types of a rate. Rate category if used, must contain S,P,G,A,I,C,U,B,V,R,K,L,N.
+        type: string
+      RateCode:
+        description : Rate code is a car supplier specific 2-6 alpha numeric code that is tied to the available rate. This is similar to Airline fares codes.
+        type: object
+      RatePlan:
+        description : Rate plan is mandatory. This field is 1 alpha and is used to generally describe the  length of rental for rates. 
+          For example, Daily rates 'D', Weekly rates 'W'. 
+          For most plans, this field is determined by the length of the car rental based on the number of days and hours, the difference between pickup date/time, and the return date/time.
+          The list of possible rate plans is daily ‘D’, weekend 'E', weekly 'W', monthly 'M', and Bundled 'B' (length of rental).
+        type: string
+  Ordinal:
+    type: object
+    properties:
+      Ref:
+        type: string
+  MembershipId:
+    description : |
+      Membership id is mandatory. It varies in length
+      * CD, IT, ID, FT - 1-25 alpha numeric
+      * PC - 1-10 alpha numeric
+    example :   {"CustLoyalty MembershipType" : "CD", "MembershipCode" : "VV", "MembershipId" : "123456"}
+    type: object
+    properties:
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Pattern:
+        type: string
+      Type:
+        type: string
+  PickUpTime:
+    description : Vehicle Pickup Time is the vehicle arrival time for pickup to the customer location. It should be in hh:mm format. It is mandatory and must be in the 24-hour clock format.
+    type: object
+    properties:
+      Pattern:
+        type: string
+      Title:
+        type: string
+      Translatorfixme:
+        type: string
+      Type:
+        type: string
+  StringLength2to4:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  RateRule:
+    description : Rate rule is optional. This data may be repeated for each car supplier. The limit is 50, which is currently greater than the number of car suppliers in Sabre.This is only used if the requester already knows this information, otherwise it is not used.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Title:
+        type: string
+      Type:
+        type: string
+  Distance:
+    description: Distance is the length of the trip. This is usually in MI-miles or KM-kilometers.
+    type: object
+    properties:
+      Ref:
+        type: string
+  VehicleCharges:
+    description : Vehicle Charges contains all information regarding car rental pricing.
+    type: object
+    properties:
+      Ref:
+        type: string
+      Title:
+        type: string
+  PolicyRef:
+    type: object
+    properties:
+      Ref:
+        type: string
+  PickUpDate:
+    description : Vehicle Pickup date is mandatory and should be in yyyy-mm-dd format. 
+    type: object
+    properties:
+      Ref:
+        example : PickUpDate="2026-01-11"
+        type: string
+      Title:
+        type: string
+  Status:
+    type: object
+    description : Status displays when PricedEquip is present in the response. It can be Confirmed "CNF", On Request "ONR", or Not Available "NTA".
+    properties:
+      Ref:
+        example : "Complete"
+        type: string
+  ReturnLocation:
+    description : Return Location is used to designate the car return location by airport code or non-airport code. This field is optional.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      LocationCode:
+        example : "LAX"
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  LocType:
+    description : Type of location which can be airport or non-airport.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      type:
+        type: string
+  StringLength2to8:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  StringLength2to6:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  ApplicationResults:
+    description : Application Results represents application status.
+    type: object
+    properties:
+      Ref:
+        example : "Success"
+        type: string
+  Images:
+    type: object
+    description : Images is optional. It will be returned if the request in GetVehAvailRQ contains ‘ImagesRef’ element.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Type:
+        type: string
+  LocationCode:
+    description : LocationCode is mandatory. It is used to designate the car pickup location field and must have 3 alpha characters.
+    type: object
+    properties:
+      Pattern:
+        type: string
+      Ref:
+        type: string
+      Title:
+        type: string
+      Translatorfixme:
+        type: string
+      Type:
+        type: string
+  Code:
+    description: Generic String to represent any Code in the object.
+    type: object
+    properties:
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Pattern:
+        type: string
+      Ref:
+        type: string
+      Type:
+        type: string
+  Longitude:
+    description : Longitude is set up as follows.
+      If a negative sign is needed, 1-3 numeric, decimal point, followed by 6 numeric. The longitude rate is -180.000000 to 180.000000 
+      Latitude and Longitude attributes are the most common method to supply the API with pickup or drop off search criteria.
+    type: object
+    properties:
+      Ref:
+        example :    "-12.123456"             
+        type: string
+  AddressLine3:
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  AnyURL:
+    description: Generic String represents the URL for the application.
+    type: object
+    properties:
+      Type:
+        type: string
+  AddressLine2:
+    description: AddressLine2 is additional information about the official address.
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  RateInfoRefRatePrefsGuaranteePrepaid:
+    description : Contains Rate Info Ref, Rate Prefs, Guaranteed Prepaid.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  SortOrderType:
+    description: To sort by price, distance, car type.
+    type: object
+    properties:
+      Description:
+        type: string
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  StringLength0to20:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  StringLength2to50:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  AddressLine1:
+    description: AddressLine1 is the official address.
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  MembershipCode:
+    description : Membership code attribute is mandatory. The membership code is the 2 alpha code of the car supplier and must equal VendorPref Code, if RentalLocRef is used.
+    type: object
+    properties:
+      Ref:
+        example : "AB"
+        type: string
+  SellGuaranteeReq:
+    description: Sell with Guarantee request.
+    type: object
+    properties:
+      Ref:
+        type: string
+  RateInfoRefRatePrefs:
+    description : Contains Rate Info Ref, Rate Prefs.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Properties:
+        $ref: '#/definitions/Properties'
+      Title:
+        type: string
+      type:
+        type: string
+  VehPrefs:
+    description : Vehicle Preferences is optional, it is used to request the type of vehicle or vehicles, its seat belts, and bag info.
+      If a Vehicle Preference is used, then VehPref, or SeatBeltsAndBagsInfo must be input.
+    type: object
+    properties:
+      SeatBeltsBagInfo:
+        $ref: '#/definitions/SeatBeltsBagInfo'
+      VehPref:
+        $ref: '#/definitions/VehPref'
+  VehAvailInfosVehAvailInfoVehRentalRate:
+    description : Contains Vehicle Information, Vehicle rental rate.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  PrepayDeposit:
+    description: Amount of deposit that has to be prepaid for vehicle rental.
+    type: object
+    properties:
+      Ref:
+        type: string
+  PickUpLocation:
+    description : Pickup Location is used to designate the pickup location as per the airport code or non-airport code.
+    type: object
+    properties:
+      LocationCode:
+        example : "DFW"
+        type: string
+      Ref:
+        type: string
+      Title:
+        type: string
+  RefPoint:
+    type: object
+    description : RefPoint is optional. If this option is used, then GeoCode and AddressRef cannot be used.
+    properties:
+      CityName:
+        type: string
+      CountryCode:
+        description : Country Code is mandatory.It is 2-50 characters, but usually has the 2 character country code abbreviation.
+        example : US
+        type: string
+      PostalCode:
+        type: string
+      RefPointType:
+        description : The reference point type is attribute mandatory.
+                      The reference point type describes the type of data in the ‘Value’ attribute.
+                      The following is a list of valid code number 
+                      6- Airport 11-Hotel                     
+        type: string
+        enum:
+          - '5'
+          - '6'
+          - '7'
+          - '11'
+          - '16'
+          - '18'
+      StateProv:
+        description : The State Province is 1-50 characters, but it's usually a 2-3 character abbreviation for the state or province code.
+        example : NY 
+        type: string
+      Value:
+        type: string
+      ValueContext:
+        type: string
+        enum:
+          - NAME
+          - CODE
+  CountryName:
+    type: object
+    description : Name of the country.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        example : France
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      type:
+        type: string
+  VehRentalRate:
+    description : Vehicle Rental Rate is mandatory. It provides all the details to the rate and cartype via the attributes and children.
+    type: object
+    properties:
+      ref:
+        type: string
+      title:
+        type: string
+  GeoRef:
+    type: object
+    description : Represents Geo Reference from the request.
+    properties:
+      Direction:
+        description : Direction attribute is mandatory, if request contains “GeoRef”. If used, it must be N-north, S-south, E-east, W-west, or combined NE, NW, SE, SW.  If direction is “NA”- Not Available, it means the latitude and longitude is not exact.
+        example : "NE"
+        type: string
+        enum:
+          - E
+          - N
+          - S
+          - W
+          - NE
+          - NW
+          - SW
+          - SE
+      MaxLocations:
+        type: integer
+        format: int32
+      PickUpLocRef:
+        $ref: '#/definitions/GeoLocRef'
+      Radius:
+        type: integer
+        format: int32
+      ReturnLocRef:
+        $ref: '#/definitions/GeoLocRef'
+      Uom:
+        description : Unit of measure is optional, if not input it will default to miles. Unit of measure, if used must be MI-miles or KM-kilometers. The default is miles, so it should be omitted for miles and used if the distance searched is in kilometers.
+        example : MI
+        type: string
+        enum:
+          - MI
+          - KM
+  DateOrTimeOrDateTimeType:
+    type: object
+    properties:
+      AnyOf:
+        type: array
+        items:
+          $ref: '#/definitions/AnyOfItem'
+      Description:
+        type: string
+  VehAvailInfosVehAvailInfoVehRentalRateVehicleCharges:
+    type: object
+    description : Contains multiple Vehicle Avail Information which includes Rental Rate and Vehicle Charges.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      properties:
+        $ref: '#/definitions/Properties'
+      Title:
+        type: string
+      Type:
+        type: string
+  StringLength0to50:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  Direction:
+    type: object
+    description : Direction is mandatory, if request contains “GeoRef”. If used must be N-north, S-south, E-east, W-west, or combined NE, NW, SE, SW. If direction is “NA”- Not Available, it means the latitude and longitude is not exact.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        example : "SW"
+        type: string
+      Type:
+        type: string
+  RatePlan:
+    description: Rate plan is used to request the length of rental rates. Rate plan is optional. If used, it must contain daily ‘D’, weekend ‘E’,weekly ‘W’, and monthly ‘M’.
+    type: object
+    properties:
+      Title:
+        example : "D"
+        type: string
+      Type:
+        type: string
+  PickUpLocationRS:
+    description : Represents the pick up location response.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        example : "DFW"
+
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  LocationName:
+    description: Name of the location.
+    type: object
+    properties:
+      Ref:
+        type: string
+  GuaranteeInd:
+    description: Represents Guarantee/Prepaid indicator.
+    type: object
+    properties:
+      Ref:
+        type: string
+  BaseAmount:
+    description: Represents car rental amount excluding taxes and fees.
+    type: object
+    properties:
+      Ref:
+        type: string
+  StringLength0to55:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  VehAvailInfos:
+    type: object
+    description : Contains vehicle availability information.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  VendorCode:
+    type: object
+    properties:
+      Pattern:
+        type: string
+      Type:
+        type: string
+  VehAvailInfosVehAvailInfo:
+    description : Contains multiple VehAvailInfo.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  GeoLocRef:
+    type: object
+    description : Geo Location Reference
+    properties:
+      AddressRef:
+        $ref: '#/definitions/AddressRef'
+      GeoCode:
+        $ref: '#/definitions/GeoCode'
+      RefPoint:
+        $ref: '#/definitions/RefPoint'
+  StringLength0to2:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  BagsInfo:
+    type: object
+    description : Bags Information is optional. If BagsInfo is used, then there must be one Bags element. If there is no bag quantity, this element should be omitted. The BagsInfo element can be used in conjunction with SeatBelts.
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  Fixed:
+    description : Fixed attribute is mandatory.It must be “false” if percent attribute is present.
+    type: object
+    properties:
+      Ref:
+        example : "false"
+        type: string
+  ReturnDate:
+    description : Return date is mandatory and must be in the year month day (yyyy-mm-dd) format.
+    type: object
+    properties:
+      Ref:
+        example : "2024-01-12"
+        type: string
+      Title:
+        type: string
+  PositiveInteger:
+    type: object
+    properties:
+      Minimum:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  AmountPercentage: 
+    description: Amount Percentage is the percentage of commission received.
+    type: object
+    properties:
+      Ref:
+        type: string
+  StateProv:
+    type: object
+    description : State province code is mandatory for US country code. It is optional for all other country codes and is 2-3 alpha characters. The use of state province code should be used to help narrow down the proper city when there are multiple city names in the same country.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        example : "TX"
+        type: string
+      Type:
+        type: string
+  Definitions:
+    type: object
+    description : Object to contains multiple properties
+    properties:
+      AnyURL:
+        $ref: '#/definitions/AnyURL'
+      BagsInfoRes:
+        $ref: '#/definitions/BagsInfoRes'
+      CarExtrasPrefs:
+        $ref: '#/definitions/CarExtrasPrefs'
+      CountryName:
+        $ref: '#/definitions/CountryName'
+      CurrencyInfo:
+        $ref: '#/definitions/CurrencyInfo'
+      DateOrTimeOrDateTimeType:
+        $ref: '#/definitions/DateOrTimeOrDateTimeType'
+      Direction:
+        $ref: '#/definitions/Direction'
+      GetVehAvailRS:
+        $ref: '#/definitions/GetVehAvailRS'
+      Image:
+        $ref: '#/definitions/Image'
+      ImageTypes:
+        $ref: '#/definitions/ImageTypes'
+      Images:
+        $ref: '#/definitions/Images'
+      ImagesRef:
+        $ref: '#/definitions/ImagesRef'
+      LocType:
+        $ref: '#/definitions/LocType'
+      LocationInfo:
+        $ref: '#/definitions/LocationInfo'
+      LocationInfos:
+        $ref: '#/definitions/LocationInfos'
+      PickUpLocationRS:
+        $ref: '#/definitions/PickUpLocationRS'
+      PositiveInteger:
+        $ref: '#/definitions/PositiveInteger'
+      RateInfoRefRatePrefs:
+        $ref: '#/definitions/RateInfoRefRatePrefs'
+      RateInfoRefRatePrefsCustLoyalty:
+        $ref: '#/definitions/RateInfoRefRatePrefsCustLoyalty'
+      RateInfoRefRatePrefsGuaranteePrepaid:
+        $ref: '#/definitions/RateInfoRefRatePrefsGuaranteePrepaid'
+      RateInfoRefRatePrefsRateRule:
+        $ref: '#/definitions/RateInfoRefRatePrefsRateRule'
+      ReturnLocation:
+        $ref: '#/definitions/ReturnLocation'
+      ReturnLocationRS:
+        $ref: '#/definitions/ReturnLocationRS'
+      SeatBelts:
+        $ref: '#/definitions/SeatBelts'
+      SortByType:
+        $ref: '#/definitions/SortByType'
+      SortOrderType:
+        $ref: '#/definitions/SortOrderType'
+      StateProv:
+        $ref: '#/definitions/StateProv'
+      StringLength0to10:
+        $ref: '#/definitions/StringLength0to10'
+      StringLength0to2:
+        $ref: '#/definitions/StringLength0to2'
+      StringLength0to20:
+        $ref: '#/definitions/StringLength0to20'
+      StringLength0to255:
+        $ref: '#/definitions/StringLength0to255'
+      StringLength0to50:
+        $ref: '#/definitions/StringLength0to50'
+      StringLength0to55:
+        $ref: '#/definitions/StringLength0to55'
+      StringLength1to1:
+        $ref: '#/definitions/StringLength1to1'
+      StringLength1to2:
+        $ref: '#/definitions/StringLength1to2'
+      StringLength2:
+        $ref: '#/definitions/StringLength2'
+      StringLength2or4:
+        $ref: '#/definitions/StringLength2or4'
+      StringLength2to10:
+        $ref: '#/definitions/StringLength2to10'
+      StringLength2to4:
+        $ref: '#/definitions/StringLength2to4'
+      StringLength2to50:
+        $ref: '#/definitions/StringLength2to50'
+      StringLength2to6:
+        $ref: '#/definitions/StringLength2to6'
+      StringLength2to8:
+        $ref: '#/definitions/StringLength2to8'
+      StringLength3:
+        $ref: '#/definitions/StringLength3'
+      StringLength3to20:
+        $ref: '#/definitions/StringLength3to20'
+      StringLength3to4:
+        $ref: '#/definitions/StringLength3to4'
+      StringLength3to50:
+        $ref: '#/definitions/StringLength3to50'
+      Type:
+        $ref: '#/definitions/Type'
+      UnitOfMeasureType:
+        $ref: '#/definitions/UnitOfMeasureType'
+      VehAvailInfos:
+        $ref: '#/definitions/VehAvailInfos'
+      VehAvailInfosVehAvailInfo:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfo'
+      VehAvailInfosVehAvailInfoVehRentalRate:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRate'
+      VehAvailInfosVehAvailInfoVehRentalRateCarExtraCharges:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateCarExtraCharges'
+      VehAvailInfosVehAvailInfoVehRentalRateCommission:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateCommission'
+      VehAvailInfosVehAvailInfoVehRentalRateGuaranteePrepaid:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateGuaranteePrepaid'
+      VehAvailInfosVehAvailInfoVehRentalRateVehicle:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateVehicle'
+      VehAvailInfosVehAvailInfoVehRentalRateVehicleCharges:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateVehicleCharges'
+      VehAvailInfosVehAvailInfoVehRentalRateVehicleChargesVehicleCharge:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVehRentalRateVehicleChargesVehicleCharge'
+      VehAvailInfosVehAvailInfoVendor:
+        $ref: '#/definitions/VehAvailInfosVehAvailInfoVendor'
+      VehLocPolicyInfo:
+        $ref: '#/definitions/VehLocPolicyInfo'
+      VehLocPolicyInfoAddress:
+        $ref: '#/definitions/VehLocPolicyInfoAddress'
+      VehLocPolicyInfoOperationSchedule:
+        $ref: '#/definitions/VehLocPolicyInfoOperationSchedule'
+      VehLocPolicyInfoOperationScheduleOperationTimes:
+        $ref: '#/definitions/VehLocPolicyInfoOperationScheduleOperationTimes'
+      VehLocPolicyInfoOperationScheduleOperationTimesOperationTime:
+        $ref: '#/definitions/VehLocPolicyInfoOperationScheduleOperationTimesOperationTime'
+      VehLocPolicyInfos:
+        $ref: '#/definitions/VehLocPolicyInfos'
+      VendorDetails:
+        $ref: '#/definitions/VendorDetails'
+      VendorPrefs:
+        $ref: '#/definitions/VendorPrefs'
+  VehAvailInfosVehAvailInfoVehRentalRateCarExtraCharges:
+    description : Contains Vehicle Rental Rate Car Extra Charges.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string      
+  Amount:
+    description: Amount refers to the total rental amount.
+    type: object
+    properties:
+      Ref:
+        type: string
+  GuaranteePrepaid:
+    description : |
+      Guarantee prepaid is optional. If omitted, guarantee and prepay rates may be returned, but usually only retail rates are returned. If used, the guarantee prepaid element must be one of the following 
+      * G -  guaranteed only rates 
+      * P -  prepaid only rates 
+      * GP - guarantee and/or prepaid rates only 
+      * GR - guarantee and/or retail rates only 
+      * PR - prepaid and/or retail rates only 
+      * GPR - guarantee, prepaid, and/or retail rates.
+    type: object
+    properties:
+      Ref:
+        type: string
+      Title:
+        type: string
+      Type:
+        description : The indicator is 1 alpha, guarantee ‘G’ or prepaid ‘P’.
+        example : G
+        type: string
+        enum:
+          - G
+          - P
+          - GP
+  MembershipType:
+    description : |
+      Membership type is mandatory. It is 2 alpha and must be one of the following 
+      CD – corporate discount, identifies agreements between a company car supplier. 
+      IT – tour code, usually a package that includes more than just car supplier.
+      ID – identity number of car supplier, frequent renter. 
+      PC – promotional coupon – a temporary discount/upgrade offered by car supplier. 
+      FT – frequent traveler number – airline frequent flyer – usually car supplier adds 'points' to the user's airline's card.
+    type: object
+    properties:
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+        example : CD
+
+  Plan:
+    description: Represents rate plan. It could be daily, weekly, monthly.
+    type: object
+    properties:
+      Ref:
+        type: string
+  SearchCriteria:
+    description : Search Criteria is used to describe the pickup and return date/time as well as any sort criteria.
+    type: object
+    properties:
+      AirportRef:
+        $ref: '#/definitions/AirportRef'
+      CarExtrasPrefs:
+        $ref: '#/definitions/CarExtrasPrefs'
+      GeoRef:
+        $ref: '#/definitions/GeoRef'
+      ImageRef:
+        $ref: '#/definitions/ImagesRef'
+      LocPolicyRef:
+        $ref: '#/definitions/LocPolicyRef'
+      PickUpDate:
+        description : The pickup date attribute is mandatory and must be in year month day format
+        example : "2024-01-11"
+        type: string
+      PickUpTime:
+        type: string
+        description : The pickup time attribute is mandatory and must be in the 24-hour clock format.
+        example : 08:15
+      RatePrefs:
+        $ref: '#/definitions/RatePrefs'
+
+      RentalLocRef:
+        type: object
+      ReturnDate:
+        type: string
+      ReturnTime:
+        type: string
+      SortBy:
+        description : |
+          Sort By is optional. If present it must be Distance, Price, Preferred, Vendor, CarType. 
+          * If SortBy is Preferred, it should be omitted, as it is the default. The default is different depending on the type of entry. 
+          * If SortBy is not present and RentalLocRef is used, then display is ordered by Car Supplier.
+          * If SortBy is not present and AirportRef used, then display is ordered by Price. 
+          * If SortBy is not present and GeoRef used, then display is ordered by Distance.
+          * If RentalLocRef is used, then SortBy Cartype or Price 
+          * If AirportRef is used, then SortBy Vendor, Cartype, or Price 
+          * If GeoRef used, then SortBy Distance, Vendor, Cartype, or Price.
+        example : Price
+        type: string
+        enum:
+          - Preferred
+          - Distance
+          - Price
+          - Vendor
+          - CarType
+      SortOrder:
+        type: string
+        enum:
+          - ASC
+          - DESC
+      VehPrefs:
+        $ref: '#/definitions/VehPrefs'
+      VendorPrefs:
+        $ref: '#/definitions/VendorPrefs'
+  LocationInfo:
+    description : Location contains latitude and longitude information.The latitude and longitude attributes are optional, but are almost always present. They are not present if the geocode is not exact.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Type:
+        type: string
+  VehLocPolicyInfoAddress:
+    description : Contains vehicle location policy information.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  VehLocPolicyInfoOperationSchedule:
+    description : COntains vehicle location policy information operation schedule.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  VehAvailInfosVehAvailInfoVendor:
+    description : Contains vendor information.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  Type:
+    description: Contains type of the car extra.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Pattern:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Type:
+        type: string
+  ImagesRef:
+    description : Images element is returned if the request in GetVehAvailRQ contains ‘ImagesRef’ element and if images are available for the vehicle requested for the car supplier in the country. It is optional.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Image:
+        type: object
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  AnyOfItem:
+    description: Represents properties such as Bags.
+    type: object
+    properties:
+      Type:
+        type: string      
+  AirportRef:
+    description : Airport Reference is used when there is a single airport location code. If this option is used, then RentalLocRef and GeoRef cannot be used. When the airport code is entered as AirportRef it will get car rental locations that offer airport service. This will NOT get car rental locations around the Geo Point of the airport.
+    type: object
+    properties:
+      PickUpLocation:
+        $ref: '#/definitions/PickUpLocation'
+      ReturnLocation:
+        $ref: '#/definitions/ReturnLocation'
+  ChargeType:
+    description : |
+      Charge type is mandatory. It must be one of the following 
+        * BaseRateTotal – Primary rate total before taxes and
+        * Fees ExtraDay – Charge for additional day if vehicle not returned on time
+        * ExtraHour – Charge for additional hour if vehicle not returned on time
+        * ApproximateTotalPrice – Estimated total price including taxes, fees, and car extras.
+    type: object
+    properties:
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      type:
+        example : BaseRateTotal
+        type: string
+  RentalHours:
+    description : Rental hours is mandatory. Rental hours must be 1-2 numeric. A 'day' is a 24-hour period of time based on the time the car was picked up. 
+      
+      
+      For 'single location, single car supplier' responses it contains the actual number of days the car supplier used to determine the type of rate returned. 
+      
+      
+      For all other responses it contains the number of days and hours in the request as the difference between pickup date/time and return date/time. This is done because each supplier may round up or down on the length of rental to determine the rates returned.
+    type: object
+    properties:
+      Ref:
+        type: string
+  LocationOwner:
+    description : |
+      Location owner attribute is mandatory. It is 1 alpha. 
+       * 'C' – corporate owned location, 
+       * 'F' – Franchise owned location.
+    type: object
+    properties:
+      Ref:
+        example : C
+        type: string
+  StringLength2:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  VehLocPolicyInfoOperationScheduleOperationTimes:
+    type: object
+    description : Contains schedule operation times (date range, day/s of week, time open and time closed for car supplier location).
+    properties:
+      AdditionalProperties:
+        type: boolean
+      properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  StringLength3to4:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  VehAvailInfosVehAvailInfoVehRentalRateGuaranteePrepaid:
+    description : Represents vehicle rental rate guarantee prepaid.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  StringLength3:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  CarExtrasPrefs:
+    description : Represents Car extras such as nav, toll etc.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      CarExtrasPref:
+        type: object
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  Commission:
+    type: object
+    description : |
+      Commission is used to request only suppliers that return commission information. It is optional. If used, it must contain 'true' or 'false'. 
+      If false, it is usually omitted.
+      The Travel Agency may elect to not have this information returned based on settings in their control record in Sabre (travel journal record – TJR).
+      * The amount attribute is mandatory if commission element is used. 
+      * The amount attribute is 1-12 numeric with up to 1 decimal point. 
+      * The percent attribute is optional. If not present, then Fixed must be 'true'.
+      * The percent attribute is 1 -3 numeric, decimal point, then 3 numeric. Most car suppliers use a true percentage, not fixed.
+    properties:
+      Ref:
+        type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  RentalDays:
+    description : Rental days is mandatory and must be 1-3 numeric. 
+      A 'day' is a 24-hour period of time from the time the car was picked up. 
+      
+      For 'single location, single car supplier' responses, it contains the actual number of days the car supplier determines the type of rate returned. 
+      
+      For all other responses it contains the number of days and hours in the request as the difference between pickup date/time and return date/time. This is done because each supplier may round up or down on the length of rental to determine the rates returned.
+    type: object
+    properties:
+      Ref:
+        example : "5"
+        type: string
+  LocPolicyRef:
+    description: Refers to the location's preferred policy.
+    type: object
+    properties:
+      Include:
+        type: boolean
+  Latitude:
+    description: Latitude is the geographic reference for a location.
+    type: object
+    properties:
+      Ref:
+        type: string
+  VehLocPolicyInfos:
+    type: object
+    description : Contains location address, corporate or franchise, schedule of operation.
+    properties:
+      AdditionalProperties:
+        type: boolean
+      properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  Name:
+    description: Name of the vehicle.
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  Vehicle:
+    description: Vehicle gives information on the type, seat belts and bags, and number of people that fit in the car.
+    type: object
+    properties:
+      Ref:
+        type: string
+      Title:
+        type: string
+  VehAvailInfosVehAvailInfoVehRentalRateCommission:
+    description : Contains rate commission.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  SeatBeltsBagInfo:
+    description : SeatBeltsAndBagsInfo is optional. If it is input, then SeatBelts or BagsInfo must be used. If SeatBeltsAndBagsInfo is used, then VehPref cannot be used.
+    type: object
+    properties:
+      BagsInfo:
+        $ref: '#/definitions/BagsInfoReq'
+      SeatBelts:
+        $ref: '#/definitions/SeatBelts'
+  Bags:
+    description : Object to contains multiple properties
+    type: object
+    properties:
+      AnyOf:
+        type: array
+        items:
+          $ref: '#/definitions/AnyOfItem'
+      Quantity:
+        type: integer
+        format: int32
+      Size:
+        type: string
+        enum:
+          - SMALL
+          - LARGE
+  Version:
+    description: Version of the API.
+    type: object
+    properties:
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  Items:
+    description: Represents properties for Car Extras, Customer Loyalty etc.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  MileageAllowance:
+    description : Mileage allowance is mandatory, if 'hour' is present. Mileage allowance is either ‘UNL’ for unlimited or 1-5 numeric, a number is the limit of distance allowed for extra hour of rental. If the base rate mileage amount has 'UNL', then extra hour must have 'UNL'.
+    type: object
+    properties:
+      Ref:
+        example : "UNL"
+        type: string
+  CustLoyalty:
+    description : Contains customer loyalty information such as membership type, code, id etc.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Title:
+        type: string
+      Type:
+        type: string
+  BagsInfoRes:
+    description : Contains information on the number of bags that fit in the car. Type can be small or large.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  VehAvailInfo:
+    description : Represents Vehicle Avail Info response.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Title:
+        type: string
+      Type:
+        type: string
+  BagsInfoReq:
+    type: object
+    properties:
+      Bags:
+        $ref: '#/definitions/Bags'
+  StringLength0to255:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  SeatBelts:
+    description : SeatBelts is optional. It is the maximum legal capacity that a vehicle can contain. Seatbelts can be used in conjunction with BagsInfo.
+      By using this option, the vehicle type is chosen by the car supplier based on legal capacity. 
+      If there are 5 people traveling, a vehicle will have a legal capacity of 5 or more.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Quantity:
+        type: integer
+        format: int32
+      Ref:
+        type: string
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  RatePlanRequested:
+    description: Represents the rate plan that is requested.
+    type: object
+    properties:
+      Ref:
+        type: string
+  VendorDetails:
+    description: Details of the car supplier, code and name.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  CityName:
+    description: Name of the selected city for car rental.
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  RateCategory:
+    description: Rate category is used to request types of a rate. 
+          If used, Rate Category must contain S,P,G,A,I,C,U,B,V,R,K,L,N.
+    type: object
+    properties:
+      Title:
+        type: string
+      Type:
+        type: string
+  VehPref:
+    description : The Vehicle Preferences element is an optional field. It is used to request the type of vehicle or vehicles, seat belts, and bag info.
+      If a Vehicle Preference is used, then VehPref, or SeatBeltsAndBagsInfo must be input.
+    type: object
+    properties:
+      VehType:
+        type: object
+  OperationTime:
+    description : The operation times is mandatory.
+                    The operation times contains the 'OperationTime Start and End'.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      MaxItems:
+        type: integer
+        format: int32
+      MinItems:
+        type: integer
+        format: int32
+      Title:
+        type: string
+      Type:
+        type: string
+  StringLength2or4:
+    type: object
+    properties:
+      AnyOf:
+        type: array
+        items:
+          $ref: '#/definitions/AnyOfItem'
+      Description:
+        type: string
+      Type:
+        type: string
+  SeatBeltsAndBagsInfo:
+    description : The SeatBeltsAndBagsInfo element is optional.
+                  If SeatBeltsAndBagsInfo is inputted, then SeatBelts or BagsInfo must be used.
+                  If SeatBeltsAndBagsInfo is used, then VehPref cannot be used.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Type:
+        type: string
+  StringLength2to10:
+    type: object
+    properties:
+      Description:
+        type: string
+      Pattern:
+        type: string
+      Type:
+        type: string
+  VehLocPolicyInfo:
+    description : Vehicle Location Policy Information contains LocationCode, Extended Location Code etc.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  DaysPrior:
+    description : Represents the number of days until the cancellation policy can't be used.
+    type: object
+    properties:
+      Ref:
+        example : "1"
+        type: string
+  View:
+    type: object
+    properties:
+      ContentType:
+        type: string      
+  ReturnTime:
+    description : Return time attribute is mandatory and must be in the 24-hour clock format.
+    type: object
+    properties:
+      Pattern:
+        type: string
+      Title:
+        type: string
+      Translatorfixme:
+        type: string
+      Type:
+        type: string
+  StringLength1to2:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  StringLength1to1:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  RatePlanChangeIndicator:
+    type: object
+    description : Contains rate plan change indicator.
+    properties:
+      Ref:
+        example : "true"
+        type: string
+  StringLength3to50:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  CounterLocation:
+    description : Counter location is mandatory. It is one alpha. If ExtendedLocationCode is not equal to LocationCode, then CounterLocation is always 'N' - Non Airport Location.
+    type: object
+    properties:
+      Ref:
+        example : "N"
+        type: string
+  Ind:
+    description : Indicator is 1 alpha, guarantee ‘G’ or prepaid ‘P’.
+    type: object
+    properties:
+      Ref:
+        type: string
+        example : P
+
+  VehType:
+    description : The Vehicle Type element is mandatory, if VehPref is input.
+                  The Vehicle Type element is 4 alpha.
+                  If VehPref is used, then SeatBeltsBagsInfo cannot be used.
+    type: object
+    properties:
+      Ref:
+        example : "ACAR"
+        type: string
+  Category:
+    description: Represents Rate Category, single character code like S for Standard, G for Government, C for Corporate.
+    type: object
+    properties:
+      Ref:
+        type: string
+  ImageTypes:
+    description : Contains image type information.
+    type: object
+    properties:
+      Description:
+        type: string
+      JsonMemberEnum:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  ModelAndView:
+    description : Represents the structure of the application.
+    type: object
+    properties:
+      Empty:
+        type: boolean
+      Model:
+        type: object
+      ModelMap:
+        type: object
+        additionalProperties:
+          type: object
+      Reference:
+        type: boolean
+      Status:
+        type: string
+        enum:
+          - 100 CONTINUE
+          - 101 SWITCHING_PROTOCOLS
+          - 102 PROCESSING
+          - 103 CHECKPOINT
+          - 200 OK
+          - 201 CREATED
+          - 202 ACCEPTED
+          - 203 NON_AUTHORITATIVE_INFORMATION
+          - 204 NO_CONTENT
+          - 205 RESET_CONTENT
+          - 206 PARTIAL_CONTENT
+          - 207 MULTI_STATUS
+          - 208 ALREADY_REPORTED
+          - 226 IM_USED
+          - 300 MULTIPLE_CHOICES
+          - 301 MOVED_PERMANENTLY
+          - 302 FOUND
+          - 302 MOVED_TEMPORARILY
+          - 303 SEE_OTHER
+          - 304 NOT_MODIFIED
+          - 305 USE_PROXY
+          - 307 TEMPORARY_REDIRECT
+          - 308 PERMANENT_REDIRECT
+          - 400 BAD_REQUEST
+          - 401 UNAUTHORIZED
+          - 402 PAYMENT_REQUIRED
+          - 403 FORBIDDEN
+          - 404 NOT_FOUND
+          - 405 METHOD_NOT_ALLOWED
+          - 406 NOT_ACCEPTABLE
+          - 407 PROXY_AUTHENTICATION_REQUIRED
+          - 408 REQUEST_TIMEOUT
+          - 409 CONFLICT
+          - 410 GONE
+          - 411 LENGTH_REQUIRED
+          - 412 PRECONDITION_FAILED
+          - 413 PAYLOAD_TOO_LARGE
+          - 413 REQUEST_ENTITY_TOO_LARGE
+          - 414 URI_TOO_LONG
+          - 414 REQUEST_URI_TOO_LONG
+          - 415 UNSUPPORTED_MEDIA_TYPE
+          - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+          - 417 EXPECTATION_FAILED
+          - 418 I_AM_A_TEAPOT
+          - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+          - 420 METHOD_FAILURE
+          - 421 DESTINATION_LOCKED
+          - 422 UNPROCESSABLE_ENTITY
+          - 423 LOCKED
+          - 424 FAILED_DEPENDENCY
+          - 426 UPGRADE_REQUIRED
+          - 428 PRECONDITION_REQUIRED
+          - 429 TOO_MANY_REQUESTS
+          - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+          - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+          - 500 INTERNAL_SERVER_ERROR
+          - 501 NOT_IMPLEMENTED
+          - 502 BAD_GATEWAY
+          - 503 SERVICE_UNAVAILABLE
+          - 504 GATEWAY_TIMEOUT
+          - 505 HTTP_VERSION_NOT_SUPPORTED
+          - 506 VARIANT_ALSO_NEGOTIATES
+          - 507 INSUFFICIENT_STORAGE
+          - 508 LOOP_DETECTED
+          - 509 BANDWIDTH_LIMIT_EXCEEDED
+          - 510 NOT_EXTENDED
+          - 511 NETWORK_AUTHENTICATION_REQUIRED
+      View:
+        $ref: '#/definitions/View'
+      EiewName:
+        type: string
+  PostalCode:
+    description : Postal Code is optional. Postal Code can be between 1-50 characters, but usually is 5-11 alpha.
+    type: object
+    properties:
+      Description:
+        type: string
+      Ref:
+        type: string
+  AvailabilityStatus:
+    description: Checks whether the requested vehicle is available or not.
+    type: object
+    properties:
+      Ref:
+        type: string      
+  Properties:
+    type: object
+    properties:
+      Address:
+        $ref: '#/definitions/Address'
+      AddressLine1:
+        $ref: '#/definitions/AddressLine1'
+      AddressLine2:
+        $ref: '#/definitions/AddressLine2'
+      AddressLine3:
+        $ref: '#/definitions/AddressLine3'
+      Amount:
+        $ref: '#/definitions/Amount'
+      AmountPercentage:
+        $ref: '#/definitions/AmountPercentage'
+      ApplicationResults:
+        $ref: '#/definitions/ApplicationResults'
+      AvailabilityStatus:
+        $ref: '#/definitions/AvailabilityStatus'
+      Bags:
+        $ref: '#/definitions/Bags'
+      BagsInfo:
+        $ref: '#/definitions/BagsInfo'
+      BaseAmount:
+        $ref: '#/definitions/BaseAmount'
+      CancellationRefundAmount:
+        $ref: '#/definitions/CancellationRefundAmount'
+      CarExtra:
+        $ref: '#/definitions/CarExtra'
+      CarExtraCharges:
+        $ref: '#/definitions/CarExtraCharges'
+      Category:
+        $ref: '#/definitions/Category'
+      ChargeType:
+        $ref: '#/definitions/ChargeType'
+      CityName:
+        $ref: '#/definitions/CityName'
+      Code:
+        $ref: '#/definitions/Code'
+      Commission:
+        $ref: '#/definitions/Commission'
+      CounterLocation:
+        $ref: '#/definitions/CounterLocation'
+      CountryName:
+        $ref: '#/definitions/CountryName'
+      CurrencyCode:
+        $ref: '#/definitions/CurrencyCode'
+      CurrencyInfo:
+        $ref: '#/definitions/CurrencyInfo'
+      CustLoyalty:
+        $ref: '#/definitions/CustLoyalty'
+      DaysPrior:
+        $ref: '#/definitions/DaysPrior'
+      Direction:
+        $ref: '#/definitions/Direction'
+      Distance:
+        $ref: '#/definitions/Distance'
+      ExtendedLocationCode:
+        $ref: '#/definitions/ExtendedLocationCode'
+      ExtraMileageCharge:
+        $ref: '#/definitions/ExtraMileageCharge'
+      Fixed:
+        $ref: '#/definitions/Fixed'
+      GetVehAvailRS:
+        $ref: '#/definitions/GetVehAvailRS'
+      GuaranteeInd:
+        $ref: '#/definitions/GuaranteeInd'
+      GuaranteePrepaid:
+        $ref: '#/definitions/GuaranteePrepaid'
+      Image:
+        $ref: '#/definitions/Image'
+      Images:
+        $ref: '#/definitions/Images'
+      Ind:
+        $ref: '#/definitions/Ind'
+      Latitude:
+        $ref: '#/definitions/Latitude'
+      LocationCode:
+        $ref: '#/definitions/LocationCode'
+      LocationInfo:
+        $ref: '#/definitions/LocationInfo'
+      LocationInfos:
+        $ref: '#/definitions/LocationInfos'
+      LocationName:
+        $ref: '#/definitions/LocationName'
+      LocationOwner:
+        $ref: '#/definitions/LocationOwner'
+      LocationType:
+        $ref: '#/definitions/LocationType'
+      Longitude:
+        $ref: '#/definitions/Longitude'
+      MembershipCode:
+        $ref: '#/definitions/MembershipCode'
+      MembershipId:
+        $ref: '#/definitions/MembershipId'
+      MembershipType:
+        $ref: '#/definitions/MembershipType'
+      MileageAllowance:
+        $ref: '#/definitions/MileageAllowance'
+      Name:
+        $ref: '#/definitions/Name'
+      OperationSchedule:
+        $ref: '#/definitions/OperationSchedule'
+      OperationTime:
+        $ref: '#/definitions/OperationTime'
+      Ordinal:
+        $ref: '#/definitions/Ordinal'
+      Percent:
+        $ref: '#/definitions/Percent'
+      PickUpDate:
+        $ref: '#/definitions/PickUpDate'
+      PickUpLocation:
+        $ref: '#/definitions/PickUpLocation'
+      PickUpTime:
+        $ref: '#/definitions/PickUpTime'
+      Plan:
+        $ref: '#/definitions/Plan'
+      PolicyRef:
+        $ref: '#/definitions/PolicyRef'
+      PostalCode:
+        $ref: '#/definitions/PostalCode'
+      PrepayDeposit:
+        $ref: '#/definitions/PrepayDeposit'
+      Quantity:
+        $ref: '#/definitions/Quantity'
+      RateAssured:
+        $ref: '#/definitions/RateAssured'
+      RateCategory:
+        $ref: '#/definitions/RateCategory'
+      RateCode:
+        $ref: '#/definitions/RateCode'
+      RateKey:
+        $ref: '#/definitions/RateKey'
+      RatePlan:
+        $ref: '#/definitions/RatePlan'
+      RatePlanChangeIndicator:
+        $ref: '#/definitions/RatePlanChangeIndicator'
+      RatePlanRequested:
+        $ref: '#/definitions/RatePlanRequested'
+      RatePlanReturned:
+        $ref: '#/definitions/RatePlanReturned'
+      RateRule:
+        $ref: '#/definitions/RateRule'
+      RentalDays:
+        $ref: '#/definitions/RentalDays'
+      RentalHours:
+        $ref: '#/definitions/RentalHours'
+      ReturnDate:
+        $ref: '#/definitions/ReturnDate'
+      ReturnLocation:
+        $ref: '#/definitions/ReturnLocation'
+      ReturnTime:
+        $ref: '#/definitions/ReturnTime'
+      SeatBelts:
+        $ref: '#/definitions/SeatBelts'
+      SeatBeltsAndBagsInfo:
+        $ref: '#/definitions/SeatBeltsAndBagsInfo'
+      SellGuaranteeReq:
+        $ref: '#/definitions/SellGuaranteeReq'
+      Size:
+        $ref: '#/definitions/Size'
+      StateCode:
+        $ref: '#/definitions/StateCode'
+      StateProv:
+        $ref: '#/definitions/StateProv'
+      Status:
+        $ref: '#/definitions/Status'
+      TotalAmount:
+        $ref: '#/definitions/TotalAmount'
+      Type:
+        $ref: '#/definitions/Type'
+      Uom:
+        $ref: '#/definitions/UOM'
+      VehAvailInfo:
+        $ref: '#/definitions/VehAvailInfo'
+      VehAvailInfos:
+        $ref: '#/definitions/VehAvailInfos'
+      VehLocPolicyInfos:
+        $ref: '#/definitions/VehLocPolicyInfos'
+      VehRentalRate:
+        $ref: '#/definitions/VehRentalRate'
+      VehType:
+        $ref: '#/definitions/VehType'
+      Vehicle:
+        $ref: '#/definitions/Vehicle'
+      VehicleCharges:
+        $ref: '#/definitions/VehicleCharges'
+      Vendor:
+        $ref: '#/definitions/Vendor'
+      VendorCode:
+        $ref: '#/definitions/VendorCode'
+      VendorDetails:
+        $ref: '#/definitions/VendorDetails'
+      Version:
+        $ref: '#/definitions/Version'
+  RateAssured:
+    type: object
+    properties:
+      Ref:
+        description : 
+          Rate assured is optional. If used, it must contain "true" or "false".  If false, it is usually omitted. 
+          RatePrefs rate assured is used to request only suppliers that return the best publicly available rates. If this field is omitted, the response will contain responses from both car suppliers that return rate assured information and those that do not.
+        type: string    
+  Quantity:
+    type: object
+    properties:
+      Maximum:
+        description : Quantity is the maximum/minimum number of people in the vehicle.
+                      Quantity is mandatory if the SeatBelts element is used. Quantity is 1-2 numeric (1-99 value). A realistic number would be 1-14.
+        example :   5
+        type: integer
+        format: int32
+      Minimum:
+        description : Quantity is mandatory if the SeatBelts element is used. Quantity is 1-2 numeric (1-99 value). A realistic number would be 1-14.
+        example :   1
+        type: integer
+        format: int32
+      Type:
+        type: string      
+  RateCode:
+    type: object
+    properties:
+      Ref:
+        description : Rate code is a car supplier specific 2-6 alpha numeric code that is tied to the available rate. This is similar to Airline fares codes.
+        example :   {"RateRule Vendor" : "XX" , "RateCode" : "ABC123"}
+        type: object      
+  RatePlanReturned:
+    type: object
+    properties:
+      Ref:
+        type: string
+        description: Rate plan is mandatory. This field is 1 alpha and is used to generally describe the length of rental for rates.
+          For example, Daily rates ‘D’, Weekly rates ‘W’. 
+          This field for most plans are determined by the length of the car rental based on the number of days and hours, the difference between pickup date/time and return date/time. 
+          The list of possible rate plans are daily ‘D’, weekend ‘E’, weekly ‘W’, monthly ‘M’, and ‘B’ Bundled (length of rental).
+        example: "D"       
+  RateKey:
+    description: Key generated by the Rate during booking time.
+    type: object
+    properties:
+      Ref:
+        type: string      
+  StateCode:
+    description: State province state code is mandatory for USA locations and optional for all other locations. The state province state code is 2-3 alpha.
+    type: object
+    properties:
+      Ref:
+        type: string
+        description: The state province state code element is mandatory for USA locations and optional for all other locations. The state province state code is 2-3 alpha.
+        example : "TX"
+
+  TotalAmount:
+    description: Total Amount is mandatory.The total amount is 1-13 numeric or up to 12 with one decimal point.
+    type: object
+    properties:
+      Ref:
+        description : Total Amount is mandatory. The total amount is 1-13 numeric or up to 12 with one decimal point.
+        example : "100"
+        type: string      
+  UOM:
+    type: object
+    properties:
+      Ref:
+        type: string     
+        description : Unit of measure is optional, if not input it will default to miles. If used, it must be MI-miles or KM-kilometers. The default is miles, so it should be omitted for miles and used if the distance searched is in kilometers.
+        example :   "KM"
+  Vendor:
+    description: Vendor code is the car supplier code. It is mandatory and is 2 alpha.
+    type: object
+    properties:
+      Ref:
+        description : The vendor code (car supplier code) attribute is mandatory.The vendor code is 2 alpha. 
+        type: string
+      Title:
+        type: string      
+  OperationSchedule:
+    description: Time scheduled for the operation.
+    type: object
+    properties:
+      Ref:
+        type: string
+      Title:
+        type: string      
+  ExtendedLocationCode:
+
+    type: object
+    properties:
+      Pattern:
+        type: string
+      Ref:
+        description : Extended Location Code attribute is optional. 
+          If extended location code is used then the 3 alpha is followed by 1 additional alpha and 1-3 numerics. 
+          The 1 additional alpha designates the type of non-airport either by a direction or type code. N-north, S-south, E-east, W-west, R-resort, X-rail, P-port, or C-city
+        example :  "N987"    
+        type: string
+      Title:
+        type: string
+      Translatorfixme:
+        type: string
+      Type:
+        type: string
+  VehAvailInfosVehAvailInfoVehRentalRateVehicle:
+    description: Rates provided for types of vehicles available.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  GeoCode:
+    type: object
+    properties:
+      Latitude:
+        type: number
+        format: double
+        description : The latitude and longitude attributes must be used together. The latitude and longitude attributes are the most common method of supplying the API with pickup or drop-off search criteria.
+        example :  -12.123456
+      Longitude:
+        description : The latitude and longitude attributes must be used together. The latitude and longitude attributes are the most common method of supplying the API with pickup or drop-off search criteria.
+        example :  -12.123456
+        type: number
+        format: double
+  CurrencyInfo:
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Code:
+        type: string
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+        description : Currency code is optional and is 3 alpha. Currency code is used to request a currency that is not the default currency of the country where the car rental is requested. This is primarily used at major cities near country borders as some car suppliers will accept multiple currencies at rental locations.
+        example :   "EUR"
+      Required:
+        type: array
+        items:
+          type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  CancellationRefundAmount:
+    type: object
+    properties:
+      Items:
+        description : Cancellation Refund Amount has one attribute, either a monetary or a percentage amount. This amount is always the cancellation amount.
+        example : 500
+        $ref: '#/definitions/Items'
+      Type:
+        type: string
+  RateInfoRefRatePrefsRateRule:
+    description: Rate preferences including rate code and rate rule.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      Type:
+        type: string
+  StringLength0to10:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  VehLocPolicyInfoOperationScheduleOperationTimesOperationTime:
+    description: Schedule (date range, day/s of week, time open and time closed) for car supplier location.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      MinItems:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  StringLength3to20:
+    type: object
+    properties:
+      Description:
+        type: string
+      MaxLength:
+        type: integer
+        format: int32
+      MinLength:
+        type: integer
+        format: int32
+      Type:
+        type: string
+  LocationType:
+    description: Type of the location.
+    type: object
+    properties:
+      Ref:
+        type: string      
+  AddressRef:
+    type: object
+    properties:
+      City:
+        type: string
+      CountryCode:
+        type: string
+      County:
+        type: string
+      PostalCode:
+        type: string
+      StateProv:
+        type: string
+      Street:
+        type: string
+  CarExtraCharges:
+    type: object
+    properties:
+      Ref:
+        description : Car Extra Charges is optional, but if present it contains the 'TotalAmount' attribute and the 'CarExtra' element/s. Some suppliers do not support this element.
+        example : "100"
+        type: string
+      Title:
+        type: string
+  GetVehAvailRS:
+    description: Response to Get Vehicle Availability.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Definitions:
+        $ref: '#/definitions/Definitions'
+      Id:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Title:
+        type: string
+      Type:
+        type: string
+  LocationInfos:
+    description: Information on the location.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Ref:
+        type: string
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  RateInfoRefRatePrefsCustLoyalty:
+    description: Rate preferences including Customer Loyalty discounts.
+    type: object
+    properties:
+      Items:
+        $ref: '#/definitions/Items'
+      Type:
+        type: string
+  ReturnLocationRS:
+    description: Return location code in the response.
+    type: object
+    properties:
+      AdditionalProperties:
+        type: boolean
+      Description:
+        type: string
+      Properties:
+        $ref: '#/definitions/Properties'
+      Required:
+        type: array
+        items:
+          type: string
+      Type:
+        type: string
+  Percent:
+    description: Percent is commission received on each trip.
+    type: object
+    properties:
+      Ref:
+        type: string
+        
+  GetVehAvailRQ:
+    description : GetVehAvailRQ is used to request information about car rental location or locations, the car type available and the rates for those cars at specific locations. Sample request can be seen in the how_to_use.md file.
+    type: object
+    properties:
+      SearchCriteria:
+        $ref: '#/definitions/SearchCriteria'
+      Version:
+        type: string
+securityDefinitions:
+  oauth2_authentication:
+    type: oauth2
+    tokenUrl: 'https://api.cert.platform.sabre.com/v2/auth/token'
+    flow: application
+    x-base64-encode-client-credentials: true
+security:
+  - oauth2_authentication: []

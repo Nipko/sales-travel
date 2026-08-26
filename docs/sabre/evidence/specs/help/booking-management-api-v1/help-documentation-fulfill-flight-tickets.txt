@@ -1,0 +1,239 @@
+Fulfill Flight Tickets
+
+Overview
+
+The Fulfill Flight Tickets method is exposed to facilitate document issuance in a single, seamless API call. This includes electronic tickets and electronic miscellaneous documents (EMDs).
+
+ |
+
+The initial release covers fulfillment of ATPCO and NDC content (limited functionality).
+ |
+
+Technical overview
+
+Fulfill Flight Tickets is an endpoint of the Booking Management API within the Flight Tickets suite, available in RPC/JSON format and designed to operate in a stateless way.
+
+While Booking Management is a stateless API, it accepts both sessionless (ATK) and session-based (ATH) tokens. When you make a call to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+The logic applied by Fulfill Flight Tickets varies depending on the booking content (ATPCO or NDC) and selected fulfillment parameters. Two different processing paths are possible:
+
+ATPCO path
+
+NDC path
+
+ |
+
+The fulfillment operation is currently not supported for hybrid bookings that contain both traditional ATPCO and NDC flights.
+ |
+
+Within the ATPCO path, Fulfill Flight Tickets offers the following capabilities:
+
+Issues multiple air tickets and EMDs in a single call
+
+Issues tickets based on the stored PQ (Price Quote) or PQR (Price Quote Reissue) records
+
+Designates a printer address
+
+Implements error handling to ensure the successful issuance of an air ticket
+
+Returns newly issued ticket numbers together with additional details about these documents
+
+Handles context change/AAA
+
+Deletes air accounting data or lines prior to ticketing
+
+Within the NDC path, Fulfill Flight Tickets offers the following capabilities:
+
+Fulfills an entire NDC order (all order items) in a single call
+
+Introduces error handling to ensure the successful issuance of ticketing documents
+
+Returns newly issued ticket numbers together with additional details about these documents
+
+Handles context change/AAA
+
+ |
+
+In the case of NDC bookings, the application automatically obtains information about the total price of the order and uses this information during fulfillment.
+ |
+
+ |
+
+When fulfilling an order for NDC distribution model it is mandatory to pass form of payment information. When using a credit card form of payment it is required that the secured payment transaction channel code is specified, for point-of-sale applications that do not process credit card transactions with 3DSv2 validations the Mail Order (MO) or Telephone Order (TO) value is used. If the point-of-sale application does process credit card transactions using the 3DSv2 protocol, then the fulfillment request is populated with the additional values and the payment transaction channel code is set to eCommerce (EC).
+If the operation is successful, the API automatically stores the issued documents in the booking.
+ |
+
+Internal orchestration
+
+The APIs orchestrated by Fulfill Flight Tickets are:
+
+ContextChangeLLSRQ
+
+GetReservationRQ
+
+AirTicketRQ
+
+Order Management
+
+Request structure
+
+Since the Fulfill Flight Tickets method supports two types of air content (traditional ATPCO or NDC), your request should include the following mandatory parameters:
+
+confirmationId: The booking reference ID as shown in the source supplier/vendor system. For SABRE, this is the PNR Locator value.
+
+fulfillments: Lists fulfillment details required to issue a document such as a ticket or an EMD.
+
+Although the remaining parameters are optional, some of them may be necessary to perform fulfillment operations successfully. The application will perform different validations to notify you about that. Moreover, these properties depend on the booking content type, so they may be required only for a particular processing path (ATPCO vs NDC).
+
+General properties mandatory for both ATPCO and NDC:
+
+bookingSource: Identifies the source of the booking. Defaults to SABRE.
+
+targetPcc: The pseudo city code of the target destination for which a ticket exchange is requested.
+
+formsOfPayment: Lists the payment methods to use during the fulfillment process.
+
+ |
+
+In the NDC path, some airlines may require agency, payer and/or cardholder details to process fulfillment correctly.
+ |
+
+agency: Contains basic agency information.
+
+In the ATPCO path, the following parameters should be provided:
+
+errorHandlingPolicy: Lists the type of error handling policy used by the Fulfill Flight Tickets service. Available options are:
+
+ALLOW_PARTIAL_FULFILLMENT (default): Continues processing upon encountering any error from downline services during ticket issuance.
+
+HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR: Stops processing if the minimum connecting time between flights is not met.
+
+retainAccounting: If false, the service automatically deletes all existing accounting lines prior to ticketing.
+
+receivedFrom: The entity that authorizes the changes in a Passenger Name Record.
+
+designatePrinters: Lists printers or a printer profile to designate.
+
+travelers: Lists information about the travelers.
+
+generateSingleInvoice: If true, the service will send a single commit message after issuing multiple tickets.
+
+commitTicketToBookingWaitTime: The maximum wait time in milliseconds applied to asynchronous updates during the ghost ticket validation process, which is performed to check if a newly issued ticket has been committed to the PNR.
+
+acceptNegotiatedFare: If true, uses the negotiated fare for ticketing when it is not possible to use the stored fare.
+
+acceptPriceChanges: If true, issues a ticket when the price increases during processing.
+
+backDatePriceQuoteMethod: Identifies how the service handles expired Price Quotes (PQ) or Price Quotes with a back date price.
+
+priceQuoteExpirationMethod: Identifies how the service handles expired Price Quotes (PQ) or Price Quotes with a back date price.
+
+notificationEmail: Identifies the method of e-mail notification.
+
+Response structure
+
+The Fulfill Flight Tickets response contains:
+
+tickets: Lists all electronic flight tickets issued for the travelers.
+
+request Includes a copy of the request sent to the API.
+
+errors Includes all errors returned by the API. This array will not display in successful responses.
+
+warnings: Warning details. May appear in successful responses.
+
+Limitations
+
+The operations listed below are currently not supported:
+
+Fulfillment of hybrid bookings that contain both traditional ATPCO and NDC flights
+
+Partial fulfillment of NDC bookings for selected order items (only fulfillment of the entire order is allowed)
+
+Error handling
+
+This section illustrates the error handling logic for Fulfill Flight Tickets.
+
+Error structure
+
+Field |
+Type |
+Description |
+
+category
+ |
+String
+ |
+Indicates the error category.
+ |
+
+description
+ |
+String
+ |
+Provides a detailed error description.
+ |
+
+type
+ |
+String
+ |
+Indicates the error type.
+ |
+
+fieldPath
+ |
+String
+ |
+Request field path if the error was caused by a bad request.
+ |
+
+fieldName
+ |
+String
+ |
+Request field name if the error was caused by a bad request.
+ |
+
+fieldValue
+ |
+String
+ |
+Request field value if the error was caused by a bad request.
+ |
+
+Error codes
+
+In the event of an error, Fulfill Flight Tickets returns a non-empty errors array. Each item in the list contains three fields:
+
+type
+
+category
+
+description
+
+ |
+
+Refer to the Fulfill Flight Tickets – Error List section for additional details on possible errors returned by Fulfill Flight Tickets.
+ |
+
+Warning handling
+
+Warnings are handled using the same structure and logic as errors.
+
+Warning codes
+
+If a warning occurs, Fulfill Flight Tickets returns a non-empty warnings array. Each item in the array contains three (3) parameters:
+
+type
+
+category
+
+description
+
+ |
+
+To view a complete list of warnings returned by Fulfill Flight Tickets, go to the Fulfill Flight Tickets – Warning List section.
+ |

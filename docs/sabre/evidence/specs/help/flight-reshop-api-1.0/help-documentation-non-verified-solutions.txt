@@ -1,0 +1,64 @@
+Non-Verified Solutions
+
+Overview
+
+This feature controls how the fare search algorithm treats Category 31 (Voluntary Changes) rules during exchange shopping. By default, exchange offers are priced strictly using Cat 31 rules. Non-verified solutions allow the system to return pricing options that bypass or fall back from Cat 31 processing.
+
+Use this feature to:
+
+retrieve exchange options when Cat 31 processing fails or returns no results.
+
+price options without Voluntary Changes rules using simplified logic.
+
+automatically fall back to non-Cat 31 pricing when Cat 31 options are unavailable.
+
+Recommended handling:
+
+Check FlightReshopResponse.offers.isPriceGuaranteed before presenting offers to confirm whether Cat 31 pricing was applied.
+
+Treat offers with FlightReshopResponse.offers.isPriceGuaranteed: false as indicative pricing only.
+
+Requesting non-verified solutions
+
+Set FlightReshopRequest.fare.priceGuarantee to the following supported values:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+priceGuarantee
+ |
+Identifies how system treats Category 31.
+ |
+FlightReshopRequest.fare.priceGuarantee
+ |
+
+Supported values:
+
+Value |
+Description |
+
+Always
+ |
+Returns options determined by the automated Voluntary Changes (Cat 31) category of the originally ticketed fare.
+ |
+
+Never
+ |
+Returns options not determined by Cat 31. Pricing uses simplified logic: current fares when the first coupon changes, historical fares when it does not. Penalties are not included.
+ |
+
+Never With Fee
+ |
+Same as Never, but the exchange fee is obtained from Category 16.
+ |
+
+Auto-Redirect
+ |
+Attempts Cat 31 pricing first. If no Cat 31 options are available, automatically returns options priced without Cat 31.
+ |
+
+Auto-Redirect With Fee
+ |
+Same as Auto-Redirect, but the exchange fee is obtained from Category 16 for offers where isPriceGuaranteed is false.
+ |

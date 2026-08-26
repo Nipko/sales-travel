@@ -1,0 +1,426 @@
+Refund Flight Tickets – Error List
+
+Error list
+
+Below is a full list of possible errors returned by Refund Flight Tickets:
+
+Error type |
+Error category |
+Description |
+
+AUTOMATED_REFUNDS_INACTIVE
+ |
+UNAUTHORIZED
+ |
+Unable to refund. The Automated Refunds feature is inactive for your PCC. For activation, please place an order in Sabre Central.
+ |
+
+REFUND_RETRY_FAILED
+ |
+WARNING
+ |
+Temporary unable to process refund request for ticketNumber=%s.
+ |
+
+LCC_SEGMENTS_PARTIALLY_FULFILLED_WARNING
+ |
+WARNING
+ |
+There are some unfulfilled LCC segments. Only fulfilled segments were processed.
+ |
+
+TOO_MANY_DOCUMENTS
+ |
+BAD_REQUEST
+ |
+Currently a maximum of %s documents is supported.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains duplicate printer objects. Please request only one printer profile.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains an invalid combination of printer profile and manual printer designation. Please request either printer profile designation or submit a list of printers for manual designation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Properties confirmationId and tickets cannot be combined. Use tickets property to indicate specific tickets for check/void/refund operation or confirmationId to process all tickets present in the reservation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains multiple types of printers in a single printer address object. The printer address object can contain only one printer type.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains a printer designation without a recognizable printer type. Verify the printer address object details against the API schema.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains too many notification options. Select email or queuePlacement.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of refunding ticket failed.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Response is empty
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The ticket does not match the segments selected for cancellation. Review flights selection or refund using /v1/trip/orders/refundFlightTickets.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The current status of the selected ticket prevents the execution of the selected operation. Verify ticket status by using the Get Booking method.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Ticket is not eligible for refund. No coupon of the document is open.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Ticket is not eligible for automated refund. The ticket was exchanged from %s. A refund might be processed through manual Refunds and Exchanges.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Ticket is not eligible for automated refund. The ticket was issued with a miscellaneous form of payment. A refund might be processed through manual Refunds and Exchanges.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Document is not eligible for automated refund. The document is an EMD and currently not supported.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Segment contains no tickets.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Order contains no tickets.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The request refers to a NDC issued document and refund is currently not supported. Please contact the NDC-issuing airline for further assistance.
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of refunding ticket failed
+ |
+
+UNABLE_TO_REFUND_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Coupon Status ACTL - Coupons[%s] of the document are currently under airport control. Verify with the carrier if the desired operation is allowed and proceed with the manual change.
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Ticket is not found in reservation
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+The booking does not contain tickets.
+ |
+
+SINGLE_RESERVATION_TICKETS_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Only tickets within one reservation can be refunded.
+ |
+
+DESIGNATE_PRINTER_FAILED
+ |
+APPLICATION_ERROR
+ |
+Operation of printer designation failed
+ |
+
+UNDESIGNATE_PRINTER_FAILED
+ |
+APPLICATION_ERROR
+ |
+Operation of printer undesignation failed
+ |
+
+INVALID_VALUE
+ |
+INVALID_DATA
+ |
+The sum of tax breakdown exceeds the tax amount. Specify an amount smaller or equal to %s.
+ |
+
+NDC_NOT_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Unable to refund the ticket. The request refers to an NDC order. Tickets might be refunded together with the order using cancelBooking.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains invalid combination of refund qualifiers. Choose either commissionAmount or commissionPercentage.
+ |
+
+INVALID_TICKET_NUMBER
+ |
+BAD_REQUEST
+ |
+Validation Failed: must match \"^[0-9A-Z]{13}$\"
+ |
+
+INVALID_VALUE
+ |
+INVALID_DATA
+ |
+Unable to refund the ticket. The requested number of refund amounts not matching the number of forms of payment from original ticket. Amounts applied to the refund have to match the original forms of payment from the ticket.
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+PNR %s not found for specified ticket
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Ticket is not eligible for automated refund. The ticket was issued with a miscellaneous form of payment. A refund might be processed through manual Refunds and Exchanges.
+ |
+
+NO_TICKETS_REFUNDED
+ |
+WARNING
+ |
+No tickets refunded
+ |
+
+UNKNOWN_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+Operation of view order content failed
+ |
+
+TICKET_NUMBER_MISMATCH
+ |
+CANCELLATION_ERROR
+ |
+Ticket number mismatch
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Response is empty
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Operation of checking ticket failed
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+TICKET_NUMBER_MISSING
+ |
+BAD_REQUEST
+ |
+Ticket number is missing in the request.
+ |
+
+LCC_SEGMENTS_MISMATCH
+ |
+BAD_REQUEST
+ |
+The flight segments of airline %s do not match the booking data. A refund is possible only for all segments of a particular airline.
+ |
+
+SYSTEM_PROVIDER_MISSING
+ |
+APPLICATION_ERROR/WARNING
+ |
+The refund operation could not be processed because the system provider for the selected document is missing. Please retry.
+ |
+
+INVALID_DOCUMENT_TYPE
+ |
+BAD_REQUEST
+ |
+Validation failed: documentsType does not match the type of the submitted document. Verify and retry.
+ |
+
+QUALIFIERS_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+No qualifiers are available for Infini (1F) customers.
+ |
+
+INVALID_REFUND_QUALIFIER_FOR_AN_EMD
+ |
+BAD_REQUEST
+ |
+Validation failed: property %s cannot be combined with an EMD document number.
+ |
+
+EMD_STATUS_INVALID
+ |
+BAD_REQUEST
+ |
+EMD refund not allowed for a refunded or voided document.
+ |
+
+MISSING_EMD_NUMBER
+ |
+BAD_REQUEST
+ |
+The EMD number parameter is missing. Verify and retry.
+ |
+
+INVALID_EMD_NUMBER
+ |
+BAD_REQUEST
+ |
+The EMD number is wrong. Verify and retry.
+ |
+
+INVALID_COMMISSION_AMOUNT
+ |
+BAD_REQUEST
+ |
+Maximum commission amount is 9999.99. Verify and retry.
+ |
+
+INVALID_COMMISSION_PERCENTAGE
+ |
+BAD_REQUEST
+ |
+Maximum commission percentage is 99.99. Verify and retry.
+ |
+
+DOCUMENT_IS_NOT_AN_EMD
+ |
+BAD_REQUEST
+ |
+Submitted document is not an EMD. Verify and retry.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Validation Failed: must only contain unique elements.
+ |
+
+ |
+
+The variable %s contains information returned dynamically by the downline service.
+ |
+
+Refund Flight Tickets can also return errors stemming directly from downline services. Below is a list of these scenarios:
+
+Error type |
+Error category |
+Downline service |
+
+DESIGNATE_PRINTER_PROBLEM
+ |
+WARNING
+ |
+DesignatePrinterLLSRQ
+ |
+
+UNDESIGNATE_PRINTER_PROBLEM
+ |
+WARNING
+ |
+DesignatePrinterLLSRQ
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+TKT_ElectronicDocumentServicesRQ
+ |
+
+REFUND_TICKET_PROBLEM
+ |
+WARNING
+ |
+RefundTicketLLSRQ
+ |

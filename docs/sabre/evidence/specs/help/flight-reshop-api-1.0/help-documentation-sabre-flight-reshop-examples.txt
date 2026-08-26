@@ -1,0 +1,185 @@
+Sabre Flight Reshop – Examples
+
+Below are some common use cases related to the reshop process.
+
+For additional usage scenarios, see our Postman Collection.
+
+Reshop offers for a single ticket (ATPCO)
+
+To ensure a successful reshop, pass a valid electronic document in the tickets array and the desired trip information in the journeys array.
+
+{
+	"journeys": [
+		{
+			"departureLocation": {
+				"cityCode": "DFW"
+			},
+			"arrivalLocation": {
+				"cityCode": "LON"
+			},
+			"departureDate": "2026-11-05"
+		}
+	],
+	"source": {
+		"distributionModel": "ATPCO"
+	},
+	"tickets": [
+		{
+			"number": "0012972100825"
+		}
+	]
+}
+
+Reshop offers for multiple tickets with a retain flight (ATPCO)
+
+To ensure a successful reshop, pass valid electronic documents in the tickets array and the desired trip information in the journeys array.
+
+When specifying retain flight details in the retainFlights array, you can provide data manually using the flightDetails object:
+
+{
+    "bookingId": "QNXRIE",
+    "journeys": [
+        {
+            "departureLocation": {
+                "cityCode": "LAX"
+            },
+            "arrivalLocation": {
+                "cityCode": "DFW"
+            },
+            "departureDate": "2026-08-02",
+            "retainFlights": [
+                {
+                    "flightDetails": {
+                        "marketingFlightNumber": 2490,
+                        "marketingAirlineCode": "AA",
+                        "operatingAirlineCode": "AA",
+                        "departureAirportCode": "LAX",
+                        "arrivalAirportCode": "DFW",
+                        "departureDate": "2026-08-02",
+                        "departureTime": "23:54",
+                        "arrivalDate": "2026-08-03",
+                        "arrivalTime": "05:06",
+                        "bookingClassCode": "Q",
+                        "flightStatusCode": "HK",
+                        "creationDate": "2026-07-03",
+                        "creationTime": "01:42"
+                    }
+                }
+            ]
+        },
+        {
+            "departureLocation": {
+                "cityCode": "DFW"
+            },
+            "arrivalLocation": {
+                "cityCode": "LAX"
+            },
+            "departureDate": "2026-10-15",
+            "departureTimeWindow": {
+                "startTime": "15:45",
+                "endTime": "21:45"
+            }
+        }
+    ],
+    "tickets": [
+        {
+            "number": "0012972100825"
+        },
+        {
+            "number": "0012972100826"
+        }
+    ],
+    "source": {
+        "distributionModel": "ATPCO"
+    }
+}
+
+Instead of providing flightDetails, you may refer to a flight based on its existing ID. You can obtain the ID by using the Get Booking method of the Booking Management API:
+
+{
+    "bookingId": "QNXRIE",
+    "journeys": [
+        {
+            "departureLocation": {
+                "cityCode": "LAX"
+            },
+            "arrivalLocation": {
+                "cityCode": "DFW"
+            },
+            "departureDate": "2026-08-02",
+            "retainFlights": [
+                {
+                    "flightItemId": "26"
+                }
+            ]
+        },
+        {
+            "departureLocation": {
+                "cityCode": "DFW"
+            },
+            "arrivalLocation": {
+                "cityCode": "LAX"
+            },
+            "departureDate": "2026-10-15",
+            "departureTimeWindow": {
+                "startTime": "15:45",
+                "endTime": "21:45"
+            }
+        }
+    ],
+    "tickets": [
+        {
+            "number": "0012972100825"
+        },
+        {
+            "number": "0012972100826"
+        }
+    ],
+    "source": {
+        "distributionModel": "ATPCO"
+    }
+}
+
+ |
+
+When using flight retention based on the flight ID, you must provide a reference to the booking within bookingId.
+ |
+
+Reshop offers for an order (NDC)
+
+To ensure a successful reshop, pass a valid bookingId value and the desired trip information in the journeys array.
+
+{
+	"bookingId": "1SXXXC7MZ2J7D",
+	"journeys": [
+		{
+			"departureLocation": {
+				"cityCode": "SIN"
+			},
+			"arrivalLocation": {
+				"cityCode": "SYD"
+			},
+			"departureDate": "2026-11-21",
+			"departureTimeWindow": {
+				"startTime": "19:30",
+				"endTime": "19:30"
+			}
+		},
+		{
+			"departureLocation": {
+				"cityCode": "SYD"
+			},
+			"arrivalLocation": {
+				"cityCode": "SIN"
+			},
+			"departureDate": "2026-12-05",
+			"departureTimeWindow": {
+				"startTime": "15:20",
+				"endTime": "15:20"
+			}
+		}
+	],
+	"source": {
+		"distributionModel": "NDC"
+	}
+}

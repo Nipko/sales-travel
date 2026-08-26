@@ -1,0 +1,23 @@
+Use Original Pricing
+
+This feature streamlines the exchange shopping process by automatically applying the original ticket's pricing parameters to reshop offers.
+
+ |
+
+The feature applies to ATPCO content only and requires that the original ticket contains the pricing qualifiers to be retrieved.
+ |
+
+Applying original pricing
+
+Set FlightReshopRequest.fare.useOriginalPricing to true to activate automatic pricing qualifier retrieval.
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+useOriginalPricing
+ |
+If true, the original ticket pricing parameters (negotiated and corporate codes, passenger type overrides, and retailer rules) are automatically applied to reshop offers. Default is false.
+ |
+FlightReshopRequest.fare.useOriginalPricing
+ |

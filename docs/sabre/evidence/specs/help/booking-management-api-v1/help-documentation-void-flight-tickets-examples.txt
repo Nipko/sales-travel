@@ -1,0 +1,437 @@
+Void Flight Tickets – Examples
+
+Below are some common use cases on how to void flight tickets:
+
+Void a single document
+
+To ensure a successful void of the requested document, add the following parameters to your request:
+
+tickets (a 13-digit electronic document number)
+
+{
+  "tickets": [
+    "0721237725987"
+  ]
+}
+
+Void a conjunctive document
+
+To ensure a successful void of the requested document, add the following parameters to your request:
+
+tickets (a full conjunctive document number or a 13-digit electronic number of the main document)
+
+{
+  "tickets": [
+    "1606802005008/09"
+  ]
+}
+
+or
+
+{
+  "tickets": [
+    "1606802005008"
+  ]
+}
+
+Void all documents of a booking
+
+To ensure a successful void of all documents within a booking, your request should contain:
+
+confirmationId (PNR Locator or Sabre Order ID)
+
+{
+  "confirmationId": "ABCDEF"
+}
+
+Void a single document, change context, and designate printer profile
+
+To ensure a successful void of the requested document, switch from the current Pseudo City Code (PCC) to the target PCC where the transaction should be executed and apply a previously defined printer profile for the transaction. Your request should contain:
+
+tickets (a 13-digit electronic document number)
+
+targetPcc (the PCC where the void transaction of the ticket should be executed)
+
+designatePrinters
+
+profileNumber (the previously defined printer profile number)
+
+{
+  "tickets": [
+    "0721237725987"
+  ],
+  "targetPcc": "XYZ1",
+  "designatePrinters": [
+    {
+      "profileNumber": 1
+    }
+  ]
+}
+
+Void multiple documents and allow partial errors
+
+To ensure a successful void of multiple documents, add the following parameters to your request:
+
+tickets (a 13-digit electronic document number)
+
+set errorHandlingPolicy to ALLOW_PARTIAL_CANCEL
+
+{
+  "tickets": [
+    "0721237725987",
+    "0721237725988",
+    "0721237725989"
+  ],
+  "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL"
+}
+
+ |
+
+The default value for errorHandlingPolicy is HALT_ON_ERROR.
+ |
+
+Use cases
+
+The use cases below have been compiled to better illustrate the logical flow of Void Flight Tickets.
+
+Use case 1 – Void a single flight ticket
+
+This use case is based on a reservation (PNR RECLOC: BYOKLY) for one traveler. The segment was booked as traditional Sabre air content:
+
+*BYOKLY*IA«
+ 1 UA  27Y 26APR 1 DENLHR HK1  1735  0940   27APR 2
+                                               /DCUA*HBMER8 /E
+
+The ticket was issued without any additional documents:
+
+*BYOKLY*T«
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 0167497725933-AT CANCE/J G7RE*APP 0445/11AUG*
+
+To execute the void flight ticket operation, determine the desired document number.
+
+For example, the request to void the document could be:
+
+{
+  "tickets": [
+    "0167497725933"
+  ]
+}
+
+The response does not contain errors:
+
+{
+  "request": {
+    "tickets": [
+      "0167497725933"
+    ]
+  },
+  "voidedTickets": [
+    "0167497725933"
+  ]
+}
+
+The reservation was updated and the ticket voided:
+
+*BYOKLY*T«
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 0167497725933-AT CANCE/J G7RE*APP 0445/11AUG*
+    TV 0167497725933-AT  *VOID* G7RE*AWZ 0449/11AUG*E
+
+Use case 2 – Void a single flight ticket and a miscellaneous document (EMD)
+
+This use case is based on a reservation (PNR RECLOC: BZHDUU) for one traveler. The segments were booked as traditional Sabre air content:
+
+*BZHDUU*I*AE*T«
+ 1 EY  20Y 10OCT 6 LHRAUH HK1  1450  0055   11OCT 7
+                                               /DCEY*BZHDDU /E
+ 2 EY  17Y 18OCT 7 AUHLHR HK1  1410  1845  /DCEY*BZHDDU /E
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 6077497725936-AT CANCE/J G7RE*APP 0722/11AUG*
+  3.ME 6074577562476-AT CANCE/J G7RE*APP 0722/11AUG*A
+ANCILLARY SERVICES
+  1.UPTO33LB 15KG BAGGAGE            1.1 CANCELTICKET/JOSEPH
+    STATUS - HI1/FULFILLED
+    AMOUNT - 399.00USD
+    TOTAL  - 399.00USD
+    FLIGHT - EY0020Y10OCTLHRAUH
+    DOC/CF - 6074577562476           CPN - 01
+
+As we can see, there were two documents issued; a flight ticket and an EMD.
+
+To void both documents, the request to Void Flight Tickets should be:
+
+{
+  "tickets": [
+    "6077497725936",
+    "6074577562476"
+  ]
+}
+
+No errors are returned in the response:
+
+{
+  "request": {
+    "tickets": [
+      "6077497725936",
+      "6074577562476"
+    ]
+  },
+  "voidedTickets": [
+    "6077497725936",
+    "6074577562476"
+  ]
+}
+
+The reservation was updated as expected:
+
+*BZHDUU*T«
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 6077497725936-AT CANCE/J G7RE*APP 0722/11AUG*
+  3.ME 6074577562476-AT CANCE/J G7RE*APP 0722/11AUG*A
+    TV 6077497725936-AT  *VOID* G7RE*AWZ 0727/11AUG*E
+    MV 6074577562476-AT  *VOID* G7RE*AWZ 0727/11AUG*A
+
+Use case 3 – Void multiple documents
+
+Below is an example of a simple round-trip air itinerary (PNR RECLOC: BXMHJB). These segments are booked as traditional Sabre air content:
+
+*IA«
+ 1 GF  16Y 10NOV 2 FRABAH HK2  1130  1825  /DCGF*KWYSDP /E
+ 2 GF  17Y 16NOV 1 BAHFRA HK2  0055  0615  /DCGF*KWYSDP /E
+
+Tickets were issued for both travelers. Additionally, Air Extras were sold for the outbound flight and EMDs were issued:
+
+*AES«
+ANCILLARY SERVICES
+  1.EXCESS PIECE                     1.1 CANCELTICKET/JOE
+    GROUP    - BG                    SSR - ASVC
+    RFIC     - C                     RFISC - 0H8
+    EMD TYPE - 2                     WAIVE -
+    ETKT     - 0727497725931         CPN - 01
+    REFUND   - R                     COMMISSION - N
+    SEAT PDC    -
+    TRAVEL DATE - 01JAN80 TO 31DEC99 GUARANTEED - T
+    PURCHASE BY - 09NOV20/2359       TKT - N
+    TAX EXEMPT - N
+    MKT/OP CARRIER - GF/GF
+    FEE OWNER - GF                   INTERLINE - N
+  2.EXCESS PIECE                     2.1 CANCELTICKET/HEIDI
+    GROUP    - BG                    SSR - ASVC
+    RFIC     - C                     RFISC - 0H8
+    EMD TYPE - 2                     WAIVE -
+    ETKT     - 0727497725932         CPN - 01
+    REFUND   - R                     COMMISSION - N            ‡
+MD«
+    SEAT PDC    -                                              ‡
+    TRAVEL DATE - 01JAN80 TO 31DEC99 GUARANTEED - T
+    PURCHASE BY - 09NOV20/2359       TKT - N
+    TAX EXEMPT - N
+    MKT/OP CARRIER - GF/GF
+    FEE OWNER - GF                   INTERLINE - N
+*T«
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 0727497725931-AT CANCE/J G7RE*APP 0144/11AUG*
+  3.TE 0727497725932-AT CANCE/H G7RE*APP 0144/11AUG*
+  4.ME 0724577562224-AT CANCE/J G7RE*APP 0145/11AUG*A
+  5.ME 0724577562475-AT CANCE/H G7RE*APP 0145/11AUG*A
+
+To execute the void flight ticket operation, determine the desired document numbers.
+
+For example, the request to void all documents could be:
+
+{
+  "errorHandlingPolicy": "HALT_ON_ERROR",
+  "tickets": [
+    "0727497725931",
+    "0727497725932",
+    "0724577562224",
+    "0724577562475"
+  ]
+}
+
+The application will now validate the details of each document and reorder them to create context-related buckets:
+
+Bucket 1:
+
+Ticket: 0727497725931
+
+EMD associated with the ticket: 0724577562224
+
+Bucket 2:
+
+Ticket: 0727497725932
+
+EMD associated with the ticket: 0724577562475
+
+The documents will be voided in the above order, which might differ from the order sent in the request.
+
+ |
+
+The error handling policy HALT_ON_ERROR will stop the flow at any point where an error occurs. As the void operation is irreversible, previously processed documents might be voided already.
+ |
+
+After the successful void transactions, the reservation will be updated accordingly:
+
+*BXMHJB*T«
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 0727497725931-AT CANCE/J G7RE*APP 0144/11AUG*
+  3.TE 0727497725932-AT CANCE/H G7RE*APP 0144/11AUG*
+  4.ME 0724577562224-AT CANCE/J G7RE*APP 0145/11AUG*A
+  5.ME 0724577562475-AT CANCE/H G7RE*APP 0145/11AUG*A
+    TV 0727497725931-AT  *VOID* G7RE*AWZ 0248/11AUG*E
+    MV 0724577562224-AT  *VOID* G7RE*AWZ 0248/11AUG*A
+    TV 0727497725932-AT  *VOID* G7RE*AWZ 0248/11AUG*E
+    MV 0724577562475-AT  *VOID* G7RE*AWZ 0248/11AUG*A
+
+Use case 4 – Coupon validation fails (negative scenario)
+
+This use case will illustrate the application behavior when errors occur. The following scenario is given:
+
+*BZHDUU*I*T«
+ 1 EY  20Y 10OCT 6 LHRAUH HK1  1450  0055   11OCT 7
+                                               /DCEY*BZHDDU /E
+ 2 EY  17Y 18OCT 7 AUHLHR HK1  1410  1845  /DCEY*BZHDDU /E
+TKT/TIME LIMIT
+  1.T-11AUG-G7RE*APP
+  2.TE 6077497725936-AT CANCE/J G7RE*APP 0722/11AUG*
+  3.ME 6074577562476-AT CANCE/J G7RE*APP 0722/11AUG*A
+    TV 6077497725936-AT  *VOID* G7RE*AWZ 0727/11AUG*E
+    MV 6074577562476-AT  *VOID* G7RE*AWZ 0727/11AUG*A
+
+Both documents are voided already and we can assume that coupon validation will fail in the Void Flight Tickets flow.
+
+Default "errorHandlingPolicy": "HALT_ON_ERROR"
+
+The request is:
+
+{
+  "tickets": [
+    "6077497725936",
+    "6074577562476"
+  ]
+}
+
+In this case, the application will stop when the first error occurs. In our case, the coupon validation fails and is received in the response:
+
+{
+  "request": {
+    "tickets": [
+      "6077497725936",
+      "6074577562476"
+    ]
+  },
+  "errors": [
+    {
+      "category": "WARNING",
+      "type": "NO_TICKETS_VOIDED",
+      "description": "No tickets voided"
+    },
+    {
+      "category": "CANCELLATION_ERROR",
+      "type": "UNABLE_TO_VOID_TICKET",
+      "description": "Coupon Status VOID - Coupons[1,2] of the document were voided already",
+      "fieldPath": "cancelTicketsRequest.tickets[0]",
+      "fieldValue": "6077497725936"
+    }
+  ]
+}
+
+"errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL"
+
+Overriding the default errorHandlingPolicy means that the application can accept the error. Errors will be returned as a warning.
+
+For example, the request is:
+
+{
+  "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL",
+  "tickets": [
+    "6077497725936",
+    "6074577562476"
+  ]
+}
+
+As we see in the response, the application validated both documents:
+
+{
+  "request": {
+    "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL",
+    "tickets": [
+      "6077497725936",
+      "6074577562476"
+    ]
+  },
+  "errors": [
+    {
+      "category": "WARNING",
+      "type": "NO_TICKETS_VOIDED",
+      "description": "No tickets voided"
+    },
+    {
+      "category": "WARNING",
+      "type": "UNABLE_TO_VOID_TICKET",
+      "description": "Coupon Status VOID - Coupons[1,2] of the document were voided already",
+      "fieldPath": "cancelTicketsRequest.tickets[0]",
+      "fieldValue": "6077497725936"
+    },
+    {
+      "category": "WARNING",
+      "type": "UNABLE_TO_VOID_TICKET",
+      "description": "Coupon Status VOID - Coupon[1] of document=[6074577562476] was voided already",
+      "fieldPath": "cancelTicketsRequest.tickets[1]",
+      "fieldValue": "6074577562476"
+    }
+  ]
+}
+
+Use case 5 – Sign the change with a specific value (receivedFrom option)
+
+This use case can be considered an extension of all the use cases above. The following scenario is given:
+
+*UCTSAA*I*T
+ 1 EY   2Y 10MAR W FRAAUH HK1  1045A  800P /DCEY*VNHJAA /E
+TKT/TIME LIMIT
+  1.T-19NOV-G7RE*AWX
+  2.TE 6077531644511-AT CANCE/T AB12*AWX 0511/19NOV*
+  3.ME 6074578566012-AT CANCE/T AB12*AWX 0512/19NOV*A
+
+The request to the service, including a custom signature, would be:
+
+{
+  "tickets": [
+    "6077531644511",
+    "6074578566012"
+  ],
+  "receivedFrom": "CUSTOMER APP"
+}
+
+The expected response would be:
+
+{
+  "request": {
+    "tickets": [
+      "6077531644511",
+      "6074578566012"
+    ],
+    "receivedFrom": "CUSTOMER APP"
+  },
+  "voidedTickets": [
+    "6077531644511",
+    "6074578566012"
+  ]
+}
+
+When checking the booking history, we see that the changes were signed with the specified value:
+
+*H
+UAX  UPTO33LB 15KG BAGGAGE/HD1/OPTSTAT-HI/EY0002Y10MARFRAAUH-CA
+     NCELMY/TICKET
+A7  TV 6077531644511-AT  *VOID* AB12*AWX 0517/19NOV*E
+A7   MV 6074578566012-AT  *VOID* AB12*AWX 0517/19NOV*A
+R-   CUSTOMER APP

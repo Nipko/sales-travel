@@ -1,0 +1,246 @@
+Create Booking
+
+Overview
+
+The Create Booking method is designed for booking various content exposed by Sabre, and provides the capability to create Sabre Orders (refer to the New Distribution Capability page). Alternatively, the method can also create a Sabre PNR that includes traditional air (ATPCO) or low-cost carrier (LCC) content, book hotel content, book a combination of flight and hotel content, or book car content.
+
+The hotel booking options include:
+
+Book an aggregator hotel as a CSL segment
+
+Book a Sabre GDS hotel as a CSL segment
+
+ |
+
+Refer to Content Services For Lodging for more information.
+ |
+
+Car booking options include:
+
+Book car content via booking key.
+
+The Booking Management API flow consists of a number of internal calls to individual product domains (PNR, Pricing, Profiles, Order) with added business logic that aims for simple implementation.
+
+Technical overview
+
+Create Booking is available in RPC/JSON format.
+
+This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+Create Booking will attempt to create a Sabre PNR that contains either a Sabre Order or traditional air content (including LCC). If, during the orchestration process, a failure of a domain service call prevents the API from completing a booking, the system will stop processing and pass an error.
+
+Flight status retry logic
+
+Create Booking has flight status retry logic in place for the traditional ATPCO content. The application verifies the status of booked flights before remaining steps of the booking creation process are executed. If the flight status is NN, Create Booking waits 1000ms before checking the flight status once again to verify if it has changed. This retry check is performed up to five (5) times with a progressive delay (increased by an additional 1000ms each time) before processing stops.
+
+LCC bookings are excluded from this logic as the NN status plays a different role in the LCC booking creation process.
+
+ |
+
+Flight status retry logic is executed regardless of whether the NN status is included in the flightDetails.haltOnFlightStatusCodes array or not.
+ |
+
+Internal orchestration
+
+The APIs orchestrated in Create Booking include:
+
+ContextChangeLLSRQ
+
+EPS_EXT_ProfileToPNRRQ
+
+EPS_EXT_ProfileReadRQ
+
+GetReservationRQ
+
+Order Management
+
+UpdateReservationRQ
+
+PassengerDetailsRQ
+
+SabreCommandLLSRQ
+
+OTA_AirBookLLSRQ
+
+OTA_AirPriceLLSRQ
+
+EnhancedHotelBookRQ
+
+EnhancedVehBookRQ
+
+EnhancedEndTransactionRQ
+
+Create Booking request structure
+
+Since this method supports both types of air content (NDC or traditional) you can choose the following mandatory request parameters:
+
+flightOffer is used to pass details of a chosen NDC offer to be booked and populates chosen offerID and selectedOfferItems returned by the Offer Price API. Seats selected using the Get Seats API can be added upon order creation in seatOffers.
+
+flightDetails is used to pass full details for a traditional air booking. It is necessary to provide all information on chosen flights and, if needed, define the air booking error strategy and/or chosen pricing options. The pricing options include price validation (priceComparison) and a plethora of optional qualifiers that may affect the final price for the booking.
+
+Passing traveler information
+
+Another mandatory step requires you to pass traveler information. Choose the travelers request element to pass details for each person. You may also expand on the travelers’ details with information about their travel documents (identityDocuments) and/or loyalty programs (loyaltyPrograms). It is possible to request additional ancillary services (ancillaries), as well as send a special service request(s) to the airline (specialServices). Contact information (emails and phones) and remarks associated with a name can also be specified under a traveler object.
+
+ |
+
+Ancillary services are currently not supported for NDC bookings.
+ |
+
+Create Booking also uses automatic special service request (SSR) logic for infant travelers. When infant traveler information is provided, the API automatically creates an associated INFT or INST SSR.
+
+Instead of passing traveler information, the API can populate the data from Sabre profiles (including travel documents and/or loyalty programs) by using profiles array. This is applicable for both types of air content.
+
+Optional
+
+The remaining parameters are optional and allow for more granular control over the new booking:
+
+errorHandlingPolicy allows you to define the API’s behavior in the event of an error. Available options are:
+
+HALT_ON_ERROR (default): Stop processing upon encountering any error from downline APIs.
+
+DO_NOT_HALT_ON_IDENTITY_DOCUMENT_WARNING do not stop if orders/create returns an identity document related warning (only NDC bookings).
+
+DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR: Continue upon encountering a pricing error (only ATPCO/traditional booking).
+
+DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR: Continue upon encountering a hotel booking error.
+
+DO_NOT_HALT_ON_CAR_BOOKING_ERROR: Continue upon encountering a car booking error.
+
+DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR: Continue upon encountering an ancillary booking error.
+
+DO_NOT_HALT_ON_SEAT_BOOKING_ERROR: Continue upon encountering a seat booking error.
+
+HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR: Stop if the minimum connecting time between the flights is not met (only ATPCO/traditional booking).
+
+targetPcc changes the context to a desired pseudo city code. This is particularly useful for agencies that separate their booking, fulfillment, and shopping across different pseudo city codes (PCCs).
+
+receivedFrom is an optional property that passes information on the entity that authorized the creation of the booking.
+
+asynchronousUpdateWaitTime allows you to specify desired wait time in milliseconds that is applied to asynchronous updates related to booking creation. Mainly used for the redisplay operation of NDC bookings.
+
+agency is used to pass agency details such as the agency address, email, or the selected ticketing policy.
+
+contactInfo is used to pass contact information for the booking, like e-mail address (or addresses) or phone number (or phone numbers).
+
+payment is mainly used to associate different forms of payment to the booking. These can be chosen as a booking method during pricing (flightDetails.flightPricing.qualifiers.payment).
+
+remarks is used to add various booking related remarks.
+
+notification contains actions that are to be performed after the booking has been completed, such as sending itinerary information to an e-mail address.
+
+otherServices contains other service information (OSI) sent to an airline. It is not possible to send other service request to a hotel chain and/or car rental vendor.
+
+retentionEndDate is used to pass the retention date of the booking.
+
+retentionLabel is used to specify the label associated with the retention date.
+
+travelersEmployers is used to specify details of the travelers' employers.
+
+sendLoyaltiesToAllAirlines is used to indicate the loyalty programs to be submitted to all carriers in the booking.
+
+Booking hotel content
+
+If you wish to use this method to book hotel content, choose from the following request elements:
+
+agency is used to pass agency-related information, such as agency address. Agency information is required to complete hotel bookings.
+
+travelers is used to pass details for each traveler.
+
+hotel.useCsl defines if the booking should be made as CSL hotel or legacy GDS content.
+
+ |
+
+Legacy content has been blocked in Sabre due to the migration to CSL content only.
+ |
+
+hotel.bookingKey is a required value obtained as part of the response of the Hotel Price Check API. createBooking will automatically decode the booking key, obtain the hotel property ID, rate details, and determine the source (GDS or Aggregator) in order to execute the booking through the appropriate vendor.
+
+hotel.rooms defines the rooms to be booked and assign them to travelers.
+
+hotel.formOfPayment defines the form of payment to complete the booking.
+
+Starting in v1.9 of the Booking Management API, the Create Booking method supports Payment Service Directive 2 (PSD2) compliant Strong Customer Authentication (SCA) for payment cards. When using payment cards for hotel bookings, specify SCA information under the request element: payment.formsOfPayment.authentications
+
+Booking car content
+
+The car.bookingKey is returned in the Vehicle Price Check API response and is a mandatory value to book cars with the Booking Management API.
+
+Create Booking response structure
+
+The Create Booking response is mainly comprised of the response structure found in Get Booking and contains details of the newly made booking.
+
+booking contains the details of the booking. Refer to the Get Booking section for detailed information.
+
+request includes a copy of the request sent to the API.
+
+errors includes all errors/warnings returned by the API.
+
+Error handling
+
+This section illustrates the current error handling logic for Create Booking:
+
+Error structure
+
+Field |
+Type |
+Description |
+
+category
+ |
+String
+ |
+Indicates error category.
+ |
+
+description
+ |
+String
+ |
+Provides detailed description.
+ |
+
+type
+ |
+String
+ |
+Indicates error type.
+ |
+
+fieldPath
+ |
+String
+ |
+Request’s field path if error caused by bad request.
+ |
+
+fieldName
+ |
+String
+ |
+Request’s field name if error caused by bad request.
+ |
+
+fieldValue
+ |
+String
+ |
+Request’s field value if error caused by bad request.
+ |
+
+Error codes
+
+In the event an error(s) occurs, Create Booking returns a non-empty errors list. Each item in the collection contains three fields with the following possible values:
+
+type
+
+category
+
+description
+
+ |
+
+Refer to Create Booking – Error List for additional details on possible errors returned by Create Booking.
+ |

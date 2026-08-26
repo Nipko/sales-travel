@@ -1,0 +1,3974 @@
+Modify Booking – Examples
+
+CSL hotel booking – add a new corporate ID number
+
+To ensure a successful booking modification, a request to add a new corporate ID number should contain the information below:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+paymentPolicy.
+
+{
+  "bookingSignature": "0a52276659a660d3b7b1ba04e46bd03764638302bd183a25a3a35a55ca49d3abeb640be09f5f50822f0abd652bf58e7a5f7c4ad467d291f6f78d2170e8ace7ff",
+  "confirmationId": "BFJXWT",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "23",
+        "checkInDate": "2022-05-20",
+        "checkOutDate": "2022-05-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "23",
+        "checkInDate": "2022-05-20",
+        "checkOutDate": "2022-05-23",
+        "corporateDiscountCode": 6878700,
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request ("retrieveBooking": true), a normalized view of the reservation is returned in the response. In this scenario, a new property "corporateDiscountCode": 6878700, is added to the hotel booking.
+
+CSL hotel booking – change the check-in and/or checkout date
+
+A request to modify the check-in and/or checkout date should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+paymentPolicy.
+
+{
+  "bookingSignature": "8240f793f1f3e3a7748e925835b0b7ae2ab6e191faf02d18cafafcd73796040b2770353ba38934c92e11c4c62f180a2db472b843e19c7ac7a15b7166b7e617ee",
+  "confirmationId": "KNSNZC",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "23",
+        "checkInDate": "2022-05-20",
+        "checkOutDate": "2022-05-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "23",
+        "checkInDate": "2022-05-21",
+        "checkOutDate": "2022-05-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the value of the checkInDate is modified to 2022-05-21 in the hotel booking.
+
+Date modification outside of the original date range requires an additional re-shop step.
+Add a valid bookingKey for any such changes.
+Modify Booking automatically verifies whether this parameter is mandatory and present in the request. If it is missing, you will receive an error in the response:
+
+{
+  "errors": [
+    {
+      "category": "BAD_REQUEST",
+      "type": "MANDATORY_DATA_MISSING",
+      "description": "The request is missing mandatory data.",
+      "fieldPath": "ModifyBookingRequest.after.hotels[0]",
+      "fieldName": "bookingKey"
+    }
+  ],
+  "request": {
+    "bookingSignature": "9a53b216ea712016e5639dcb5895413dab8792cc026336eec9284d2a9565e930475a1747e1622c0b7bdfe01721ae164fc57256154d0f1e8b619b72e2345a6c9a",
+    "confirmationId": "KNSNZC",
+    "retrieveBooking": false,
+    "receivedFrom": "Modify Booking",
+    "before": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "82",
+          "checkInDate": "2022-05-21",
+          "checkOutDate": "2022-05-23",
+          "leadTravelerIndex": 1,
+          "room": {
+            "travelerIndices": [
+              1
+            ]
+          },
+          "numberOfGuests": 1,
+          "paymentPolicy": "GUARANTEE"
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "VI",
+            "cardNumber": "4487971000000006",
+            "expiryDate": "2022-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+123456"
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "82",
+          "checkInDate": "2022-05-24",
+          "checkOutDate": "2022-05-28",
+          "leadTravelerIndex": 1,
+          "room": {
+            "travelerIndices": [
+              1
+            ]
+          },
+          "numberOfGuests": 1,
+          "paymentPolicy": "GUARANTEE"
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "VI",
+            "cardNumber": "4487971000000006",
+            "expiryDate": "2022-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+123456"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+A proper request that requires a re-shop operation should be built as shown below:
+
+{
+  "bookingSignature": "9a53b216ea712016e5639dcb5895413dab8792cc026336eec9284d2a9565e930475a1747e1622c0b7bdfe01721ae164fc57256154d0f1e8b619b72e2345a6c9a",
+  "confirmationId": "KNSNZC",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "82",
+        "checkInDate": "2022-05-21",
+        "checkOutDate": "2022-05-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "82",
+        "bookingKey": "42d24a3b-04f7-494f-a362-a385bbd8d62c",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the values of checkInDate and checkOutDate are modified to 2022-05-24 and 2022-05-28 respectively in the hotel booking.
+
+CSL hotel booking – change the room type
+
+A request to modify the room type requires an additional re-shop operation. To perform it, you will need the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking data by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+A valid bookingKey as well as a new room productCode.
+
+paymentPolicy.
+
+A proper request that requires a re-shop operation should be built as shown below:
+
+{
+  "bookingSignature": "7a53b216ea712659e5639dcb5895413dab8792cc026336eec9284d2a9565e930475a1747e1622c0b7bdfe01721ae164fc57256154d0f1e8b619b72e2345a6c9a",
+  "confirmationId": "BGSNTM",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "JOHN@SMITH.FAMILY.PRIV"
+        ],
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "25",
+        "checkInDate": "2024-09-21",
+        "checkOutDate": "2024-09-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "quantity": 1,
+          "travelerIndices": [
+            1
+          ],
+          "productCode": "AP7D00"
+        },
+        "paymentPolicy": "DEPOSIT",
+        "numberOfGuests": 1
+      }
+    ]
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "JOHN@SMITH.FAMILY.PRIV"
+        ],
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "25",
+        "bookingKey": "3c3478ba-0b19-4f9a-8ff5-bf4d13e9ab7c",
+        "checkInDate": "2024-09-21",
+        "checkOutDate": "2024-09-23",
+        "leadTravelerIndex": 1,
+        "room": {
+          "quantity": 1,
+          "travelerIndices": [
+            1
+          ],
+          "productCode": "XMID00"
+        },
+        "paymentPolicy": "GUARANTEE",
+        "numberOfGuests": 1,
+        "formOfPaymentIndex": 1
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "cardSecurityCode": "123",
+          "expiryDate": "2024-10",
+          "cardHolder": {
+            "givenName": "John",
+            "surname": "Smith",
+            "email": "john@smith.family.priv",
+            "phone": "+1-555-123-4567",
+            "address": {
+              "street": "1230 Ellen Ave, apt 10",
+              "city": "Dallas",
+              "stateProvince": "TX",
+              "postalCode": "75063",
+              "countryCode": "US"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the value of productCode is modified to XMID00 in the hotel booking.
+
+CSL hotel booking – delete guest loyalty information
+
+A request to delete guest loyalty information should contain the information below:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+paymentPolicy.
+
+{
+  "bookingSignature": "4a5a421ada0a2e782967bfca19b646534b8654e89be43f4bec29b1d07179564dfa16159cd3f0c7789b3453bfa8e64b0401da6d63ad1087d30d6090a85ef0ee94",
+  "confirmationId": "WVLRLA",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "programType": "LOYALTY_ID",
+            "programNumber": "987654321"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the loyaltyPrograms array is removed from the hotel booking.
+
+CSL hotel booking – change the number of guests
+
+A request to modify the number of guests should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+paymentPolicy.
+
+A valid bookingKey for changes that require a re-shop step.
+
+Scenario 1: Change the number of guests without altering guest personal information
+
+Update the numberOfGuests value to reflect information stored in the newly generated bookingKey.
+
+{
+  "bookingSignature": "2ec155861bda798b84c731784088b5309fca3e772bef655976f5780d3f5a309eef4a8c492784f392da583911d78f5d3f4c48501f40fd7a82deafb99036ed4666",
+  "confirmationId": "WVLRLA",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "79",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "programType": "LOYALTY_ID",
+            "programNumber": "987654321"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "79",
+        "bookingKey": "16cbceaf-4bc4-4835-8b7b-5d86f164c01b",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 2,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, numberOfGuests is changed from 1 to 2.
+
+Scenario 2: Change the number of guests and modify guest personal information
+
+Update the numberOfGuests value to reflect information stored in the newly generated bookingKey. To modify hotel guest association, use the travelerIndices array.
+
+The sample presented below shows how to perform the following operations in a single request:
+
+increase the number of guests
+
+alter traveler details
+
+change the lead guest
+
+add new loyalty information
+
+update typos in the original traveler name
+
+{
+  "bookingSignature": "9ee349dccc46231954b80367fabb9f7c644f9226ec6dff9079906262b9a24f8f995f3db63e0ed47a31e291cb9256e9237e8ad7969ccfb249f1be69af73f2d9d1",
+  "confirmationId": "BGLGVG",
+  "retrieveBooking": true,
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITHHH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "programType": "LOYALTY_ID",
+            "programNumber": "987654321"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "bookingKey": "e3ce2acd-4e09-4223-ab7c-f982f0013163",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 2,
+        "room": {
+          "travelerIndices": [
+            1,
+            2
+          ]
+        },
+        "numberOfGuests": 2,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT"
+      },
+      {
+        "givenName": "MARY",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+676767"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "programType": "LOYALTY_ID",
+            "programNumber": "4455667"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  }
+}
+
+The expected response is structured as follows:
+
+{
+  "booking": {
+    "startDate": "2022-05-24",
+    "endDate": "2022-05-28",
+    "isTicketed": false,
+    "agencyCustomerNumber": "1234567",
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2022-05-16",
+      "creationTime": "07:07",
+      "agencyIataNumber": "63211116",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "phones": [
+        "123456"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "type": "ADULT",
+        "passengerCode": "ADT"
+      },
+      {
+        "givenName": "MARY",
+        "surname": "SMITH",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+676767"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "programType": "LOYALTY_ID",
+            "programNumber": "4455667"
+          }
+        ]
+      }
+    ],
+    "remarks": [
+      {
+        "type": "FORM_OF_PAYMENT",
+        "text": "VI4XXXXXXXXXXX0006¥10/22"
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "79",
+        "confirmationId": "3253513908-",
+        "hotelName": "THE WALDORF HILTON LONDON",
+        "address": {
+          "street": "ALDWYCH",
+          "city": "LONDON",
+          "postalCode": "WC2B 4DD",
+          "countryCode": "GB"
+        },
+        "checkInDate": "2022-05-24",
+        "checkInTime": "00:00",
+        "checkOutDate": "2022-05-28",
+        "checkOutTime": "00:00",
+        "leadTravelerIndex": 2,
+        "room": {
+          "quantity": 1,
+          "description": "QUEEN GUEST ROOM DOUBLE BED IN CONTEMPORY SETTING PLASMA TV RAINDROP SHOWER MODEM POINT ROOM ONLY, STRICTER THAN STANDARD CXL POLICY. SEE TERMS AND CONDITIONS FOR CXL POLICY. 326.01 PER NIGHT STARTING 24MAY22 395.01 PER NIGHT STARTING 25MAY22 326.01 PER NIGHT STARTING 27MAY22 TAXES AND SERVICE CHARGES INCLUDED",
+          "roomRate": {
+            "amount": "395.01",
+            "currencyCode": "GBP"
+          },
+          "travelerIndices": [
+            1,
+            2
+          ]
+        },
+        "isRefundable": true,
+        "refundPenalties": [
+          {
+            "applicableFromDate": "2022-05-16T12:09:39.716666",
+            "applicableToDate": "2022-05-21T00:00:00",
+            "penalty": {
+              "amount": "0.00",
+              "currencyCode": "GBP"
+            }
+          },
+          {
+            "applicableFromDate": "2022-05-21T00:00:00",
+            "applicableToDate": "2022-05-28T00:00:00",
+            "penalty": {
+              "amount": "0.00",
+              "currencyCode": "GBP"
+            }
+          }
+        ],
+        "hotelStatusCode": "HK",
+        "hotelStatusName": "Confirmed",
+        "chainCode": "HL",
+        "chainName": "HiltonHotels",
+        "propertyId": "100020146",
+        "contactInfo": {
+          "phones": [
+            "44-207-8362400"
+          ],
+          "faxes": [
+            "44-207-8367244"
+          ]
+        },
+        "guaranteeTypeCode": 5,
+        "guaranteeTypeName": "Credit card",
+        "paymentPolicy": "GUARANTEE",
+        "payment": {
+          "subtotal": "1442.03",
+          "total": "1442.03",
+          "currencyCode": "GBP"
+        },
+        "numberOfGuests": 2,
+        "sourceTypeCode": 100,
+        "sourceTypeName": "Sabre GDS"
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "79",
+        "type": "HOTEL",
+        "text": "3253513908-",
+        "vendorCode": "HL",
+        "locationCode": "LHR",
+        "address": {
+          "street": "ALDWYCH",
+          "city": "LONDON",
+          "postalCode": "WC2B 4DD",
+          "countryCode": "GB"
+        },
+        "startDate": "2022-05-24",
+        "startTime": "00:00",
+        "endDate": "2022-05-28",
+        "endTime": "00:00"
+      }
+    ],
+    "payments": {
+      "hotelTotals": [
+        {
+          "subtotal": "1442.03",
+          "total": "1442.03",
+          "currencyCode": "GBP"
+        }
+      ],
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4XXXXXXXXXXX0006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    },
+    "otherServices": [
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL HL 12451 ARR24MAY CXL 3 DAYS PRIOR TO AR"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL HL 12451 ARR24MAY CREDIT CARD GUARANTEE"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D SEMI-FLEX"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  C CANCEL 3 DAY PRIOR TO ARRIVA"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D QUEEN GUEST ROOM DOUBLE BED"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D IN CONTEMPORY SETTING PLASMA"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  TP 1442.03 GBP APPROX. TTL PRI"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  TD INCLUDES TAXES AND SURCHARG"
+      }
+    ]
+  },
+  "request": {
+    "bookingSignature": "9ee349dccc46231954b80367fabb9f7c644f9226ec6dff9079906262b9a24f8f995f3db63e0ed47a31e291cb9256e9237e8ad7969ccfb249f1be69af73f2d9d1",
+    "confirmationId": "BGLGVG",
+    "retrieveBooking": true,
+    "receivedFrom": "Modify Booking",
+    "before": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "22",
+          "checkInDate": "2022-05-24",
+          "checkOutDate": "2022-05-28",
+          "leadTravelerIndex": 1,
+          "room": {
+            "travelerIndices": [
+              1
+            ]
+          },
+          "numberOfGuests": 1,
+          "paymentPolicy": "GUARANTEE"
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "VI",
+            "cardNumber": "4487971000000006",
+            "expiryDate": "2022-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITHHH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+123456"
+            }
+          ],
+          "loyaltyPrograms": [
+            {
+              "programType": "LOYALTY_ID",
+              "programNumber": "987654321"
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "22",
+          "bookingKey": "e3ce2acd-4e09-4223-ab7c-f982f0013163",
+          "checkInDate": "2022-05-24",
+          "checkOutDate": "2022-05-28",
+          "leadTravelerIndex": 2,
+          "room": {
+            "travelerIndices": [
+              1,
+              2
+            ]
+          },
+          "numberOfGuests": 2,
+          "paymentPolicy": "GUARANTEE"
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "VI",
+            "cardNumber": "4487971000000006",
+            "expiryDate": "2022-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITH",
+          "passengerCode": "ADT"
+        },
+        {
+          "givenName": "MARY",
+          "surname": "SMITH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+676767"
+            }
+          ],
+          "loyaltyPrograms": [
+            {
+              "programType": "LOYALTY_ID",
+              "programNumber": "4455667"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+ |
+
+It is not possible to remove travelers originally stored in the PNR. This operation is allowed exclusively on the condition that a particular traveler is part of the lodging guest list only. You may still update their name or surname though.
+ |
+
+CSL hotel booking – modify the form of payment
+
+A request to alter the form of payment should include the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+paymentPolicy.
+
+{
+  "bookingSignature": "bb805c0eb824257aa7c866e6c2f0af8ed895702a2f3e7c6e2fb9f11f8a48fd83e0e8bf13b71d488718d74605945014c7ee270500767b4f77628d566db1243076",
+  "confirmationId": "LFNNIT",
+  "retrieveBooking": true,
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE"
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4487971000000006",
+          "expiryDate": "2022-10"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "hotels": [
+      {
+        "itemId": "22",
+        "checkInDate": "2022-05-24",
+        "checkOutDate": "2022-05-28",
+        "leadTravelerIndex": 1,
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "paymentPolicy": "GUARANTEE",
+        "formOfPaymentIndex": 1
+      }
+    ],
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "CA",
+          "cardNumber": "5105105105105100",
+          "expiryDate": "2023-10",
+          "cardSecurityCode": "123"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, formsOfPayment is updated and lists new credit card information.
+
+The expected response is presented below:
+
+{
+  "booking": {
+    "startDate": "2022-05-24",
+    "endDate": "2022-05-28",
+    "isTicketed": false,
+    "agencyCustomerNumber": "1234567",
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2022-05-16",
+      "creationTime": "08:34",
+      "agencyIataNumber": "63211116",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "phones": [
+        "123456"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "+123456"
+          }
+        ]
+      }
+    ],
+    "remarks": [
+      {
+        "type": "FORM_OF_PAYMENT",
+        "text": "CA5XXXXXXXXXXX5100¥10/23"
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "77",
+        "confirmationId": "3251136737-",
+        "hotelName": "THE WALDORF HILTON LONDON",
+        "address": {
+          "street": "ALDWYCH",
+          "city": "LONDON",
+          "postalCode": "WC2B 4DD",
+          "countryCode": "GB"
+        },
+        "checkInDate": "2022-05-24",
+        "checkInTime": "00:00",
+        "checkOutDate": "2022-05-28",
+        "checkOutTime": "00:00",
+        "leadTravelerIndex": 1,
+        "room": {
+          "quantity": 1,
+          "description": "QUEEN GUEST ROOM DOUBLE BED IN CONTEMPORY SETTING PLASMA TV RAINDROP SHOWER MODEM POINT ROOM ONLY, STRICTER THAN STANDARD CXL POLICY. SEE TERMS AND CONDITIONS FOR CXL POLICY. 326.01 PER NIGHT STARTING 24MAY22 395.01 PER NIGHT STARTING 25MAY22 326.01 PER NIGHT STARTING 27MAY22 TAXES AND SERVICE CHARGES INCLUDED",
+          "roomRate": {
+            "amount": "395.01",
+            "currencyCode": "GBP"
+          },
+          "travelerIndices": [
+            1
+          ]
+        },
+        "isRefundable": true,
+        "refundPenalties": [
+          {
+            "applicableFromDate": "2022-05-16T13:35:08.582138",
+            "applicableToDate": "2022-05-21T00:00:00",
+            "penalty": {
+              "amount": "0.00",
+              "currencyCode": "GBP"
+            }
+          },
+          {
+            "applicableFromDate": "2022-05-21T00:00:00",
+            "applicableToDate": "2022-05-28T00:00:00",
+            "penalty": {
+              "amount": "0.00",
+              "currencyCode": "GBP"
+            }
+          }
+        ],
+        "hotelStatusCode": "HK",
+        "hotelStatusName": "Confirmed",
+        "chainCode": "HL",
+        "chainName": "HiltonHotels",
+        "propertyId": "100020146",
+        "contactInfo": {
+          "phones": [
+            "44-207-8362400"
+          ],
+          "faxes": [
+            "44-207-8367244"
+          ]
+        },
+        "guaranteeTypeCode": 5,
+        "guaranteeTypeName": "Credit card",
+        "paymentPolicy": "GUARANTEE",
+        "payment": {
+          "subtotal": "1442.03",
+          "total": "1442.03",
+          "currencyCode": "GBP"
+        },
+        "numberOfGuests": 1,
+        "sourceTypeCode": 100,
+        "sourceTypeName": "Sabre GDS"
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "77",
+        "type": "HOTEL",
+        "text": "3251136737-",
+        "vendorCode": "HL",
+        "locationCode": "LHR",
+        "address": {
+          "street": "ALDWYCH",
+          "city": "LONDON",
+          "postalCode": "WC2B 4DD",
+          "countryCode": "GB"
+        },
+        "startDate": "2022-05-24",
+        "startTime": "00:00",
+        "endDate": "2022-05-28",
+        "endTime": "00:00"
+      }
+    ],
+    "payments": {
+      "hotelTotals": [
+        {
+          "subtotal": "1442.03",
+          "total": "1442.03",
+          "currencyCode": "GBP"
+        }
+      ],
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "CA",
+          "cardNumber": "5XXXXXXXXXXX5100",
+          "expiryDate": "2023-10"
+        }
+      ]
+    },
+    "otherServices": [
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL HL 12451 ARR24MAY CXL 3 DAYS PRIOR TO AR"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL HL 12451 ARR24MAY CREDIT CARD GUARANTEE"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D SEMI-FLEX"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  C CANCEL 3 DAY PRIOR TO ARRIVA"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D QUEEN GUEST ROOM DOUBLE BED"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  D IN CONTEMPORY SETTING PLASMA"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  TP 1442.03 GBP APPROX. TTL PRI"
+      },
+      {
+        "chainCode": "HL",
+        "serviceMessage": "HHL 100020146 A03DN8  TD INCLUDES TAXES AND SURCHARG"
+      }
+    ]
+  },
+  "request": {
+    "bookingSignature": "bb805c0eb824257aa7c866e6c2f0af8ed895702a2f3e7c6e2fb9f11f8a48fd83e0e8bf13b71d488718d74605945014c7ee270500767b4f77628d566db1243076",
+    "confirmationId": "LFNNIT",
+    "retrieveBooking": true,
+    "receivedFrom": "Modify Booking",
+    "before": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "22",
+          "checkInDate": "2022-05-24",
+          "checkOutDate": "2022-05-28",
+          "leadTravelerIndex": 1,
+          "room": {
+            "travelerIndices": [
+              1
+            ]
+          },
+          "numberOfGuests": 1,
+          "paymentPolicy": "GUARANTEE"
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "VI",
+            "cardNumber": "4487971000000006",
+            "expiryDate": "2022-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+123456"
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "creationDetails": {
+        "agencyIataNumber": "63211116"
+      },
+      "hotels": [
+        {
+          "itemId": "22",
+          "checkInDate": "2022-05-24",
+          "checkOutDate": "2022-05-28",
+          "leadTravelerIndex": 1,
+          "room": {
+            "travelerIndices": [
+              1
+            ]
+          },
+          "numberOfGuests": 1,
+          "paymentPolicy": "GUARANTEE",
+          "formOfPaymentIndex": 1
+        }
+      ],
+      "payments": {
+        "formsOfPayment": [
+          {
+            "type": "PAYMENTCARD",
+            "cardTypeCode": "CA",
+            "cardNumber": "5105105105105100",
+            "cardSecurityCode": "123",
+            "expiryDate": "2023-10"
+          }
+        ]
+      },
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "SMITH",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "+123456"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+CSL hotel booking – modify a form of payment in a booking that contains multiple FOPs
+
+Starting from the release of BM API v1.24, it is possible to provide obfuscated payment card details in the modification request and use them as placeholders for payment data if the agency does not have access to full card details at the time of modification.
+
+A request to alter a form of payment should include the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Hotel details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+The hotel itemId to indicate the item to modify.
+
+Traveler data in the travelers array, associated with the hotel booking (travelerIndices, leadTravelerIndex, numberOfGuests) to fulfill requirements regarding lead guest information.
+
+List of forms of payment (formsOfPayment) stored in the booking.
+
+paymentPolicy.
+
+{
+  "bookingSignature": "fadf941ebb8247832362d73b50b9cd98db6185a8d9e79f7d2e174ffd59f14ab482e8612c5ad55477d2776a00ab475c0aeb24a09dc297f3d49f2f1fe1e35c5f99",
+  "confirmationId": "ORIZGX",
+  "before": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "agencyCustomerNumber": "1234567",
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "birthDate": "1970-01-23",
+        "passengerCode": "ADT"
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "27",
+        "checkInDate": "2024-08-28",
+        "checkOutDate": "2024-09-04",
+        "leadTravelerIndex": 1,
+        "paymentPolicy": "DEPOSIT",
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "formOfPaymentIndex": 1
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4XXXXXXXXXXX0006",
+          "expiryDate": "2034-06"
+        },
+        {
+          "cardTypeCode": "AX",
+          "cardNumber": "3XXXXXXXXXX8431",
+          "expiryDate": "2034-06",
+          "type": "PAYMENTCARD"
+        }
+      ]
+    }
+  },
+  "after": {
+    "creationDetails": {
+      "agencyIataNumber": "63211116"
+    },
+    "agencyCustomerNumber": "1234567",
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "SMITH",
+        "birthDate": "1970-01-23",
+        "passengerCode": "ADT"
+      }
+    ],
+    "hotels": [
+      {
+        "itemId": "27",
+        "checkInDate": "2024-08-28",
+        "checkOutDate": "2024-09-04",
+        "leadTravelerIndex": 1,
+        "paymentPolicy": "DEPOSIT",
+        "room": {
+          "travelerIndices": [
+            1
+          ]
+        },
+        "numberOfGuests": 1,
+        "formOfPaymentIndex": 1
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "4111111111111111",
+          "expiryDate": "2034-06"
+        },
+        {
+          "cardTypeCode": "AX",
+          "cardNumber": "3XXXXXXXXXX8431",
+          "expiryDate": "2034-06",
+          "type": "PAYMENTCARD"
+        }
+      ]
+    }
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, formsOfPayment is updated and lists a new payment card (the first FOP was changed from 4XXXXXXXXXXX0006 to 4111111111111111) alongside an unchanged obfuscated card (the second FOP: 3XXXXXXXXXX8431).
+
+The expected response is presented below:
+
+{
+  "bookingId": "ORIZGX",
+  "startDate": "2024-08-28",
+  "endDate": "2024-09-04",
+  "isTicketed": false,
+  "agencyCustomerNumber": "1234567",
+  "creationDetails": {
+    "creationUserSine": "AWU",
+    "creationDate": "2024-07-29",
+    "creationTime": "08:23",
+    "agencyIataNumber": "63211116",
+    "userWorkPcc": "U9PK",
+    "userHomePcc": "U9PK",
+    "primeHostId": "1S"
+  },
+  "contactInfo": {
+    "emails": [
+      "TRAVEL@SABRE.COM"
+    ],
+    "phones": [
+      "123456"
+    ]
+  },
+  "travelers": [
+    {
+      "givenName": "JOHN",
+      "surname": "SMITH",
+      "type": "ADULT",
+      "passengerCode": "ADT",
+      "nameAssociationId": "1",
+      "phones": [
+        {
+          "number": "123456"
+        }
+      ]
+    }
+  ],
+  "remarks": [
+    {
+      "type": "FORM_OF_PAYMENT",
+      "text": "VI4XXXXXXXXXXX1111¥06/34"
+    },
+    {
+      "type": "FORM_OF_PAYMENT",
+      "text": "*AX3XXXXXXXXXX8431¥07/34"
+    }
+  ],
+  "hotels": [
+    {
+      "itemId": "109",
+      "confirmationId": "74041408-",
+      "hotelName": "BULGARI HOTEL MILAN",
+      "address": {
+        "street": "VIA PRIVATA FRATELLI GABBA 7B",
+        "city": "MILAN",
+        "postalCode": "20121",
+        "countryCode": "IT",
+        "cityCode": "LIN"
+      },
+      "checkInDate": "2024-08-28",
+      "checkInTime": "00:00",
+      "checkOutDate": "2024-09-04",
+      "checkOutTime": "00:00",
+      "leadTravelerIndex": 1,
+      "room": {
+        "quantity": 1,
+        "description": "PREPAY NON-REFUNDABLE, PREPAY IN FULL, DELUXE, GUEST ROOM, 2 QUEEN MAX OCCUPANCY- 2 GUESTS DELUXE ROOM WITH 2 QUEEN BEDS, 2 QUEEN, 40SQM/430SQFT, WIRELESS INTERNET, FOR A FEE, WIRED INTERNET, FOR A FEE, COFFEE/TEA MAKER A CREDIT CARD IS REQUIRED FOR PAYMENT TO GUARANTEE THE PREPAY NON-REFUNDABLE RATE. PREPAY RATES WILL BE CHARGED THE FULL COST OF THE RESERVATION WITHIN 24 HOURS OF MAKING THE RESERVATION. THE CREDIT CARD USED AT THE TIME OF MAKING THE RESERVATION MUST BE VALID FOR THE ENTIRE STAY. IF PAYMENT IS UNSUCCESSFUL WITHIN 48 HOURS OF MAKING THE RESERVATION, THE HOTEL RESERVES THE RIGHT TO CANCEL THE RESERVATION. DATE CHANGES TO THE RESERVATION ARE ALLOWED THROUGH 3PM ITALY TIME, 3 DAYS BEFORE ARRIVAL. DATE CHANGES AFTER 3 DAYS BEFORE ARRIVAL ARE NOT ALLOWED. DATE CHANGES MAY RESULT IN A CHANGE TO THE OVERALL COST OF THE RESERVATION. A CHANGE RESULTING IN A HIGHER COST WILL RECEIVE AN ADDITIONAL PREPAYMENT CHARGE FOR THE DIFFERENCE FROM ORIGINAL PREPAYMENT AMOUNT.",
+        "productCode": "SM3C00",
+        "roomRate": {
+          "amount": "2618.00",
+          "currencyCode": "EUR"
+        },
+        "travelerIndices": [
+          1
+        ]
+      },
+      "isRefundable": false,
+      "hotelStatusCode": "HK",
+      "hotelStatusName": "Confirmed",
+      "chainCode": "BG",
+      "chainName": "Bulgari Hotels And Resorts",
+      "propertyId": "100082558",
+      "contactInfo": {
+        "phones": [
+          "39-02-8058051"
+        ],
+        "faxes": [
+          "39-02-805805222"
+        ]
+      },
+      "guaranteeTypeCode": 5,
+      "guaranteeTypeName": "Credit card",
+      "paymentPolicy": "DEPOSIT",
+      "payment": {
+        "subtotal": "14790.00",
+        "taxes": "1514.00",
+        "total": "16304.00",
+        "currencyCode": "EUR"
+      },
+      "numberOfGuests": 1,
+      "sourceTypeCode": 100,
+      "sourceTypeName": "Sabre GDS"
+    }
+  ],
+  "allSegments": [
+    {
+      "id": "109",
+      "type": "HOTEL",
+      "text": "74041408-",
+      "vendorCode": "BG",
+      "locationCode": "LIN",
+      "address": {
+        "street": "VIA PRIVATA FRATELLI GABBA 7B",
+        "city": "MILAN",
+        "postalCode": "20121",
+        "countryCode": "IT"
+      },
+      "startDate": "2024-08-28",
+      "startTime": "00:00",
+      "endDate": "2024-09-04",
+      "endTime": "00:00"
+    }
+  ],
+  "payments": {
+    "hotelTotals": [
+      {
+        "subtotal": "14790.00",
+        "taxes": "1514.00",
+        "total": "16304.00",
+        "currencyCode": "EUR"
+      }
+    ],
+    "formsOfPayment": [
+      {
+        "cardTypeCode": "VI",
+        "cardNumber": "4XXXXXXXXXXX1111",
+        "expiryDate": "2034-06",
+        "type": "PAYMENTCARD",
+        "useType": "Unknown",
+        "tripType": "Unknown"
+      },
+      {
+        "cardTypeCode": "AX",
+        "cardNumber": "3XXXXXXXXXX8431",
+        "expiryDate": "2034-07",
+        "type": "PAYMENTCARD",
+        "useType": "Unknown",
+        "tripType": "Unknown"
+      }
+    ]
+  },
+  "otherServices": [
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL BG 1360.00 28AUG 1768.00 29AUG 2618.00 3"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL BG 2322.00 01SEP 2052.00 02SEP"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  D PREPAY NONREF"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  C UP TO 01 DAYS AFTER BOOKING"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  D PREPAY NON-REFUNDABLE, PREPA"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  D Y IN FULL, DELUXE, GUEST ROO"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  TTX 1514.00 TTL TAX"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  TX 35.00 CITY / MUNICIPAL TAX"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  TX 1479.00 VAT VALUE ADDED TAX"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  TP 16304.00 EUR APPROX. TTL PR"
+    },
+    {
+      "chainCode": "BG",
+      "serviceMessage": "HHL 100082558 SM3C00  TD INCLUDES TAXES AND SURCHARG"
+    }
+  ],
+  "timestamp": "2024-07-29T13:31:17",
+  "bookingSignature": "3ed1b06566b683541fc695855c19546855ecdab9930e15b91ebfdab7c8496530548c02e6578678fdb0168e36eb583648329dcff9e5bdb20720c61bb93d725e18",
+  "request": {
+    "confirmationId": "ORIZGX"
+  }
+}
+
+Group booking – modify traveler details
+
+A request to change traveler details should provide the following details:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Traveler data in the travelers array, associated with the group (isGrouped: true).
+
+{
+  "bookingSignature": "f9b562810a6b8797794ab882318a8f31c011c46851edbeb4a78b0bf097a7e8f3b3da4bc705d779e1ccdc0a21151b14daacc66b70435fad09ca0c4d48bff6af1b",
+  "confirmationId": "AULKIH",
+  "retrieveBooking": true,
+  "receivedFrom": "Modify Booking",
+  "before": {
+    "travelers": [
+      {
+        "givenName": "JOE",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "isGrouped": true,
+        "phones": [
+          {
+            "number": "817-555-1212",
+            "label": "H"
+          }
+        ]
+      },
+      {
+        "givenName": "JANE",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "isGrouped": true
+      },
+      {
+        "givenName": "JILL",
+        "surname": "DOE",
+        "birthDate": "2022-03-04",
+        "passengerCode": "INF",
+        "isGrouped": true
+      }
+    ]
+  },
+  "after": {
+    "travelers": [
+      {
+        "givenName": "JOE",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "isGrouped": true,
+        "phones": [
+          {
+            "number": "666-555-1212",
+            "label": "H"
+          }
+        ]
+      },
+      {
+        "givenName": "JANE",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "isGrouped": true
+      },
+      {
+        "givenName": "MEG",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "isGrouped": true
+      },
+      {
+        "givenName": "JILL",
+        "surname": "DOE",
+        "passengerCode": "INF",
+        "birthDate": "2022-03-04",
+        "isGrouped": true
+      },
+      {
+        "givenName": "PATTRICK",
+        "surname": "DOE",
+        "passengerCode": "INF",
+        "birthDate": "2022-03-05",
+        "isGrouped": true
+      }
+    ]
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the travelers array lists new adult and infant traveler details. Additionally, the phone number of the first traveler is updated.
+
+The following sample presents the expected response:
+
+{
+  "booking": {
+    "startDate": "2022-11-11",
+    "endDate": "2022-11-11",
+    "isTicketed": false,
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2022-09-19",
+      "creationTime": "05:30",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "emails": [
+        "TEST.EMAIL@SABRE.COM"
+      ],
+      "phones": [
+        "666-555-1212-H-1.1"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "JOE",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "isGrouped": true,
+        "phones": [
+          {
+            "number": "666-555-1212",
+            "label": "H"
+          }
+        ]
+      },
+      {
+        "givenName": "JANE",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "isGrouped": true
+      },
+      {
+        "givenName": "MEG",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "isGrouped": true
+      },
+      {
+        "givenName": "JILL",
+        "surname": "DOE",
+        "type": "INFANT",
+        "passengerCode": "INF",
+        "isGrouped": true
+      },
+      {
+        "givenName": "PATTRICK",
+        "surname": "DOE",
+        "type": "INFANT",
+        "passengerCode": "INF",
+        "isGrouped": true
+      }
+    ],
+    "travelersGroup": {
+      "itemId": "3",
+      "name": "GROUP A",
+      "numberOfTravelers": 3,
+      "numberOfTravelersRemaining": 0
+    },
+    "flights": [
+      {
+        "itemId": "13",
+        "sourceType": "ATPCO",
+        "flightNumber": 309,
+        "airlineCode": "BA",
+        "operatingFlightNumber": 309,
+        "operatingAirlineCode": "BA",
+        "fromAirportCode": "CDG",
+        "toAirportCode": "LHR",
+        "departureDate": "2022-11-11",
+        "departureTime": "11:50:00",
+        "departureTerminalName": "AEROGARE 2 TERMINAL A",
+        "departureGate": "2A",
+        "arrivalDate": "2022-11-11",
+        "arrivalTime": "12:10:00",
+        "arrivalTerminalName": "TERMINAL 5",
+        "arrivalGate": "5",
+        "numberOfSeats": 3,
+        "cabinTypeName": "ECONOMY",
+        "cabinTypeCode": "Y",
+        "aircraftTypeCode": "320",
+        "bookingClass": "Y",
+        "meals": [
+          {
+            "code": "G",
+            "description": "Food and beverage for purchase"
+          }
+        ],
+        "flightStatusCode": "GK",
+        "flightStatusName": "Confirmed",
+        "durationInMinutes": 80,
+        "distanceInMiles": 216,
+        "travelerIndices": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    ],
+    "journeys": [
+      {
+        "firstAirportCode": "CDG",
+        "departureDate": "2022-11-11",
+        "departureTime": "11:50",
+        "lastAirportCode": "LHR",
+        "numberOfFlights": 1
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "13",
+        "type": "FLIGHT",
+        "text": "309",
+        "vendorCode": "BA",
+        "startDate": "2022-11-11",
+        "startTime": "11:50:00",
+        "startLocationCode": "CDG",
+        "endDate": "2022-11-11",
+        "endTime": "12:10:00",
+        "endLocationCode": "LHR"
+      }
+    ]
+  },
+  "request": {
+    "bookingSignature": "f9b562810a6b8797794ab882318a8f31c011c46851edbeb4a78b0bf097a7e8f3b3da4bc705d779e1ccdc0a21151b14daacc66b70435fad09ca0c4d48bff6af1b",
+    "confirmationId": "AULKIH",
+    "retrieveBooking": true,
+    "receivedFrom": "Modify Booking",
+    "before": {
+      "travelers": [
+        {
+          "givenName": "JOE",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "isGrouped": true,
+          "phones": [
+            {
+              "number": "817-555-1212",
+              "label": "H"
+            }
+          ]
+        },
+        {
+          "givenName": "JANE",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "isGrouped": true
+        },
+        {
+          "givenName": "JILL",
+          "surname": "DOE",
+          "birthDate": "2022-03-04",
+          "passengerCode": "INF",
+          "isGrouped": true
+        }
+      ]
+    },
+    "after": {
+      "travelers": [
+        {
+          "givenName": "JOE",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "isGrouped": true,
+          "phones": [
+            {
+              "number": "666-555-1212",
+              "label": "H"
+            }
+          ]
+        },
+        {
+          "givenName": "JANE",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "isGrouped": true
+        },
+        {
+          "givenName": "MEG",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "isGrouped": true
+        },
+        {
+          "givenName": "JILL",
+          "surname": "DOE",
+          "birthDate": "2022-03-04",
+          "passengerCode": "INF",
+          "isGrouped": true
+        },
+        {
+          "givenName": "PATTRICK",
+          "surname": "DOE",
+          "birthDate": "2022-03-05",
+          "passengerCode": "INF",
+          "isGrouped": true
+        }
+      ]
+    }
+  }
+}
+
+ATPCO booking – add a new special service request (SSR)
+
+A request to add a new SSR should comprise the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Special service data (specialServices) .
+
+{
+  "bookingSignature": "caf89a8912f39cfa88fe00cd3a2136898c5f116569eeb2a103a48cd5cbe2cb9ef964c21329f055965abee1026924356089e36e8a9e9e2764c2403119a5a36a00",
+  "confirmationId": "AXAXTN",
+  "retrieveBooking": true,
+  "receivedFrom": "Modify Booking",
+  "before": {
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "1-555-123-4567",
+            "label": "M"
+          }
+        ]
+      }
+    ]
+  },
+  "after": {
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "passengerCode": "ADT",
+        "phones": [
+          {
+            "number": "1-555-123-4567",
+            "label": "M"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "supplierCode": "BA",
+            "programType": "FREQUENT_FLYER",
+            "programNumber": "7654325643",
+            "tierLevel": "1",
+            "receiverCode": "BA"
+          }
+        ],
+        "emails": [
+          "john.doe@sabre.com"
+        ]
+      }
+    ],
+    "specialServices": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "BLND"
+      },
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "WCHR",
+        "flightIndices": [
+          1
+        ]
+      }
+    ]
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the specialServices array lists new SSR details. Additionally, traveler information is updated with an email address and frequent flyer program data.
+
+The expected response is shown below:
+
+{
+  "booking": {
+    "startDate": "2022-12-23",
+    "endDate": "2022-12-28",
+    "isTicketed": false,
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2022-09-19",
+      "creationTime": "06:07",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "emails": [
+        "TRAVEL@SABRE.COM"
+      ],
+      "phones": [
+        "123456",
+        "1-555-123-4567-M-1.1"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "JOHN.DOE@SABRE.COM"
+        ],
+        "phones": [
+          {
+            "number": "1-555-123-4567",
+            "label": "M"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "supplierCode": "BA",
+            "programType": "FREQUENT_FLYER",
+            "programNumber": "7654325643",
+            "receiverCode": "BA"
+          }
+        ]
+      }
+    ],
+    "flights": [
+      {
+        "itemId": "13",
+        "confirmationId": "SURTM9",
+        "sourceType": "ATPCO",
+        "flightNumber": 456,
+        "airlineCode": "BA",
+        "operatingFlightNumber": 456,
+        "operatingAirlineCode": "BA",
+        "fromAirportCode": "LHR",
+        "toAirportCode": "MAD",
+        "departureDate": "2022-12-23",
+        "departureTime": "06:05:00",
+        "departureTerminalName": "TERMINAL 5",
+        "departureGate": "5",
+        "arrivalDate": "2022-12-23",
+        "arrivalTime": "09:40:00",
+        "arrivalTerminalName": "TERMINAL 4S",
+        "arrivalGate": "4S",
+        "numberOfSeats": 1,
+        "cabinTypeName": "ECONOMY",
+        "cabinTypeCode": "Y",
+        "aircraftTypeCode": "320",
+        "bookingClass": "Y",
+        "meals": [
+          {
+            "code": "G",
+            "description": "Food and beverage for purchase"
+          }
+        ],
+        "flightStatusCode": "HK",
+        "flightStatusName": "Confirmed",
+        "durationInMinutes": 155,
+        "distanceInMiles": 774,
+        "travelerIndices": [
+          1
+        ]
+      },
+      {
+        "itemId": "14",
+        "confirmationId": "SURTM9",
+        "sourceType": "ATPCO",
+        "flightNumber": 457,
+        "airlineCode": "BA",
+        "operatingFlightNumber": 457,
+        "operatingAirlineCode": "BA",
+        "fromAirportCode": "MAD",
+        "toAirportCode": "LHR",
+        "departureDate": "2022-12-28",
+        "departureTime": "10:45:00",
+        "departureTerminalName": "TERMINAL 4S",
+        "departureGate": "4S",
+        "arrivalDate": "2022-12-28",
+        "arrivalTime": "12:15:00",
+        "arrivalTerminalName": "TERMINAL 5",
+        "arrivalGate": "5",
+        "numberOfSeats": 1,
+        "cabinTypeName": "ECONOMY",
+        "cabinTypeCode": "Y",
+        "aircraftTypeCode": "320",
+        "bookingClass": "Y",
+        "meals": [
+          {
+            "code": "G",
+            "description": "Food and beverage for purchase"
+          }
+        ],
+        "flightStatusCode": "HK",
+        "flightStatusName": "Confirmed",
+        "durationInMinutes": 150,
+        "distanceInMiles": 774,
+        "travelerIndices": [
+          1
+        ]
+      }
+    ],
+    "journeys": [
+      {
+        "firstAirportCode": "LHR",
+        "departureDate": "2022-12-23",
+        "departureTime": "06:05",
+        "lastAirportCode": "MAD",
+        "numberOfFlights": 1
+      },
+      {
+        "firstAirportCode": "MAD",
+        "departureDate": "2022-12-28",
+        "departureTime": "10:45",
+        "lastAirportCode": "LHR",
+        "numberOfFlights": 1
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "13",
+        "type": "FLIGHT",
+        "text": "456",
+        "vendorCode": "BA",
+        "startDate": "2022-12-23",
+        "startTime": "06:05:00",
+        "startLocationCode": "LHR",
+        "endDate": "2022-12-23",
+        "endTime": "09:40:00",
+        "endLocationCode": "MAD"
+      },
+      {
+        "id": "14",
+        "type": "FLIGHT",
+        "text": "457",
+        "vendorCode": "BA",
+        "startDate": "2022-12-28",
+        "startTime": "10:45:00",
+        "startLocationCode": "MAD",
+        "endDate": "2022-12-28",
+        "endTime": "12:15:00",
+        "endLocationCode": "LHR"
+      }
+    ],
+    "specialServices": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "BLND",
+        "name": "Blind Passenger",
+        "statusCode": "NN",
+        "statusName": "On Request"
+      },
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "WCHR",
+        "name": "Wheelchair - R for Ramp (Passenger can ascend/descend steps and make own way to/from cabin seat but requires wheelchair for distance to/from aircraft)",
+        "statusCode": "NN",
+        "statusName": "On Request"
+      }
+    ]
+  },
+  "request": {
+    "bookingSignature": "caf89a8912f39cfa88fe00cd3a2136898c5f116569eeb2a103a48cd5cbe2cb9ef964c21329f055965abee1026924356089e36e8a9e9e2764c2403119a5a36a00",
+    "confirmationId": "AXAXTN",
+    "retrieveBooking": true,
+    "receivedFrom": "Modify Booking",
+    "before": {
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "phones": [
+            {
+              "number": "1-555-123-4567",
+              "label": "M"
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "specialServices": [
+        {
+          "travelerIndices": [
+            1
+          ],
+          "code": "BLND"
+        },
+        {
+          "travelerIndices": [
+            1
+          ],
+          "code": "WCHR"
+        }
+      ],
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "emails": [
+            "john.doe@sabre.com"
+          ],
+          "phones": [
+            {
+              "number": "1-555-123-4567",
+              "label": "M"
+            }
+          ],
+          "loyaltyPrograms": [
+            {
+              "supplierCode": "BA",
+              "programType": "FREQUENT_FLYER",
+              "programNumber": "7654325643",
+              "tierLevel": 1,
+              "receiverCode": "BA"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+ATPCO booking – modify identity document details (PASSPORT)
+
+A request to update PASSPORT identity document details should contain the information listed below:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Passport information (travelers.identityDocuments).
+
+ |
+
+Identity documents are updated using the travelers.identityDocuments properties. The corresponding special service request (specialServices) is changed automatically. A direct modification of the DOCO, DOCA, and DOCO SSRs is not allowed.
+ |
+
+{
+  "bookingSignature": "0606d8125e90bfc2ea0fd2daf2876a889cb79434afaa2a42f5a257f5676eae5bbe28f0eaab060d4a4dff4c603baaabca291d8513dd1518808aad3f1ef64d69bf",
+  "confirmationId": "OFGBRU",
+  "before": {
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "identityDocuments": [
+          {
+            "documentNumber": "0123456789",
+            "documentType": "PASSPORT",
+            "expiryDate": "2024-07-09",
+            "issuingCountryCode": "US",
+            "residenceCountryCode": "POL",
+            "givenName": "JOHN",
+            "middleName": "JACK",
+            "surname": "SMITH",
+            "birthDate": "1970-01-23",
+            "gender": "MALE",
+            "isPrimaryDocumentHolder": false
+          }
+        ]
+      }
+    ],
+    "specialServices": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "DOCS",
+        "name": "API-Passenger Travel Document",
+        "message": "/P/US/0123456789/POL/23JAN1970/M/09JUL2024/SMITH/JOHN/JACK",
+        "statusCode": "HK",
+        "statusName": "Confirmed"
+      },
+      {
+        "code": "OTHS",
+        "message": "MISSING SSR CTCM MOBILE OR SSR CTCE EMAIL OR SSR CTCR NON-CONSENT FOR BA"
+      }
+    ]
+  },
+  "after": {
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "identityDocuments": [
+          {
+            "documentNumber": "987765452",
+            "documentType": "PASSPORT",
+            "expiryDate": "2024-07-09",
+            "issuingCountryCode": "US",
+            "residenceCountryCode": "GB",
+            "givenName": "JOHN",
+            "surname": "DOE",
+            "birthDate": "1970-01-23",
+            "gender": "MALE",
+            "isPrimaryDocumentHolder": false
+          }
+        ]
+      }
+    ],
+    "specialServices": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "DOCS",
+        "name": "API-Passenger Travel Document",
+        "message": "/P/US/0123456789/POL/23JAN1970/M/09JUL2024/SMITH/JOHN/JACK",
+        "statusCode": "HK",
+        "statusName": "Confirmed"
+      },
+      {
+        "code": "OTHS",
+        "message": "MISSING SSR CTCM MOBILE OR SSR CTCE EMAIL OR SSR CTCR NON-CONSENT FOR BA"
+      }
+    ]
+  },
+  "retrieveBooking": true,
+  "receivedFrom": "Booking Management API testing"
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the identityDocuments array lists new PASSPORT document details.
+
+The expected response is presented by the following snippet:
+
+{
+  "timestamp": "2023-03-21T14:22:05",
+  "booking": {
+    "startDate": "2023-09-23",
+    "endDate": "2023-09-23",
+    "isTicketed": false,
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2023-03-20",
+      "creationTime": "09:57",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "phones": [
+        "123456"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "JOHN",
+        "surname": "DOE",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "identityDocuments": [
+          {
+            "documentNumber": "987765452",
+            "documentType": "PASSPORT",
+            "expiryDate": "2024-07-09",
+            "issuingCountryCode": "US",
+            "residenceCountryCode": "GB",
+            "givenName": "JOHN",
+            "surname": "DOE",
+            "birthDate": "1970-01-23",
+            "gender": "MALE",
+            "isPrimaryDocumentHolder": false,
+            "itemId": "a6dfc58e0b9ba95cb83d41ba92160ad9d559278fb6f7e1c69aba6c90945a435f17c3384ed39373a9d95a87ac8e25c9bc5d3fdfd01d9f411389c33c8334a89ef9"
+          }
+        ]
+      }
+    ],
+    "flights": [
+      {
+        "itemId": "11",
+        "confirmationId": "T89AA5",
+        "sourceType": "ATPCO",
+        "flightNumber": 458,
+        "airlineCode": "BA",
+        "operatingFlightNumber": 458,
+        "operatingAirlineCode": "BA",
+        "fromAirportCode": "LHR",
+        "toAirportCode": "MAD",
+        "departureDate": "2023-09-23",
+        "departureTime": "07:45:00",
+        "departureTerminalName": "TERMINAL 5",
+        "departureGate": "5",
+        "arrivalDate": "2023-09-23",
+        "arrivalTime": "11:10:00",
+        "arrivalTerminalName": "TERMINAL 4S",
+        "arrivalGate": "4S",
+        "numberOfSeats": 1,
+        "cabinTypeName": "ECONOMY",
+        "cabinTypeCode": "Y",
+        "aircraftTypeCode": "320",
+        "aircraftTypeName": "AIRBUS",
+        "bookingClass": "Y",
+        "meals": [
+          {
+            "code": "G",
+            "description": "Food and beverage for purchase"
+          }
+        ],
+        "flightStatusCode": "HK",
+        "flightStatusName": "Confirmed",
+        "durationInMinutes": 145,
+        "distanceInMiles": 774,
+        "travelerIndices": [
+          1
+        ],
+        "identityDocuments": [
+          {
+            "itemId": "a6dfc58e0b9ba95cb83d41ba92160ad9d559278fb6f7e1c69aba6c90945a435f17c3384ed39373a9d95a87ac8e25c9bc5d3fdfd01d9f411389c33c8334a89ef9",
+            "status": "Confirmed"
+          }
+        ]
+      }
+    ],
+    "journeys": [
+      {
+        "firstAirportCode": "LHR",
+        "departureDate": "2023-09-23",
+        "departureTime": "07:45",
+        "lastAirportCode": "MAD",
+        "numberOfFlights": 1
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "11",
+        "type": "FLIGHT",
+        "text": "458",
+        "vendorCode": "BA",
+        "startDate": "2023-09-23",
+        "startTime": "07:45:00",
+        "startLocationCode": "LHR",
+        "endDate": "2023-09-23",
+        "endTime": "11:10:00",
+        "endLocationCode": "MAD"
+      }
+    ],
+    "specialServices": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "code": "DOCS",
+        "name": "API-Passenger Travel Document",
+        "message": "/P/US/987765452/GB/23JAN1970/M/09JUL2024/DOE/JOHN",
+        "statusCode": "HK",
+        "statusName": "Confirmed"
+      },
+      {
+        "code": "OTHS",
+        "message": "MISSING SSR CTCM MOBILE OR SSR CTCE EMAIL OR SSR CTCR NON-CONSENT FOR BA"
+      }
+    ]
+  },
+  "request": {
+    "bookingSignature": "0606d8125e90bfc2ea0fd2daf2876a889cb79434afaa2a42f5a257f5676eae5bbe28f0eaab060d4a4dff4c603baaabca291d8513dd1518808aad3f1ef64d69bf",
+    "confirmationId": "OFGBRU",
+    "retrieveBooking": true,
+    "receivedFrom": "Booking Management API testing",
+    "before": {
+      "specialServices": [
+        {
+          "travelerIndices": [
+            1
+          ],
+          "code": "DOCS",
+          "message": "/P/US/0123456789/POL/23JAN1970/M/09JUL2024/SMITH/JOHN/JACK"
+        },
+        {
+          "code": "OTHS",
+          "message": "MISSING SSR CTCM MOBILE OR SSR CTCE EMAIL OR SSR CTCR NON-CONSENT FOR BA"
+        }
+      ],
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "identityDocuments": [
+            {
+              "documentNumber": "0123456789",
+              "documentType": "PASSPORT",
+              "expiryDate": "2024-07-09",
+              "issuingCountryCode": "US",
+              "residenceCountryCode": "POL",
+              "givenName": "JOHN",
+              "middleName": "JACK",
+              "surname": "SMITH",
+              "birthDate": "1970-01-23",
+              "gender": "MALE",
+              "isPrimaryDocumentHolder": false
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "specialServices": [
+        {
+          "travelerIndices": [
+            1
+          ],
+          "code": "DOCS",
+          "message": "/P/US/0123456789/POL/23JAN1970/M/09JUL2024/SMITH/JOHN/JACK"
+        },
+        {
+          "code": "OTHS",
+          "message": "MISSING SSR CTCM MOBILE OR SSR CTCE EMAIL OR SSR CTCR NON-CONSENT FOR BA"
+        }
+      ],
+      "travelers": [
+        {
+          "givenName": "JOHN",
+          "surname": "DOE",
+          "passengerCode": "ADT",
+          "identityDocuments": [
+            {
+              "documentNumber": "987765452",
+              "documentType": "PASSPORT",
+              "expiryDate": "2024-07-09",
+              "issuingCountryCode": "US",
+              "residenceCountryCode": "GB",
+              "givenName": "JOHN",
+              "surname": "DOE",
+              "birthDate": "1970-01-23",
+              "gender": "MALE",
+              "isPrimaryDocumentHolder": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+ATPCO booking – modify seat details
+
+A request to update seats details should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes. You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Seat details within the flights array (flights.seats).
+
+Seat-to-traveler association is determined based on the order of array items. The first seat is associated with the first traveler, the second seat – with the second traveler, and so on. The null value indicates lack of seat assignation for a particular traveler.
+
+ |
+
+For NDC orders, we recommend that the preceding Get Booking call has the extraFeatures.returnEmptySeatObjects parameter set to false. Empty objects are not allowed within the Modify Booking service.
+ |
+
+{
+    "bookingSignature": "0856d8125e90bfc2ea0fd2daf2876a889cb79434afaa2a42f5a257f5676eae5bbe28f0eaab060d4a4dff4c603baaabca291d8513dd1518808aad3f1ef64d69cd",
+    "confirmationId": "MOLBUN",
+    "before": {
+        "travelers": [
+            {
+                "givenName": "JOHN",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "JACK",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "JILL",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            }
+        ],
+        "flights": [
+            {
+                "seats": [
+                    {
+                        "number": "14B"
+                    },
+                    null,
+                    {
+                        "number": "9A"
+                    }
+                ]
+            }
+        ]
+    },
+    "after": {
+        "travelers": [
+            {
+                "givenName": "JOHN",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "JACK",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "JILL",
+                "surname": "DOE",
+                "passengerCode": "ADT"
+            }
+        ],
+        "flights": [
+            {
+                "seats": [
+                    {
+                        "number": "14C"
+                    },
+                    {
+                        "number": "14A"
+                    },
+                    null
+                ]
+            }
+        ]
+    }
+    "retrieveBooking": true,
+    "receivedFrom": "Booking Management API testing"
+}
+
+A successful operation results in no errors. If specified in the request ("retrieveBooking": true), a normalized view of the reservation is returned in the response. In this scenario, the first traveler has their seat changed from 14B to 14C, the second traveler has a new seat added (14A), and the third traveler has their seat removed.
+
+ATPCO booking – modify a form of payment
+
+A request to change form of payment information in an ATPCO booking should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes. You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Form of payment details within the formsOfPayment array (payments.formsOfPayment).
+
+{
+  "bookingSignature": "a31fd133f2ad50f659c49a7ba07bfc437e92eb3a6b4fda293eb77c09d4da287ea9e423f9779bff2e99d2e4dc1551cccd8e00e7ce9b774d88ecca0744ef86556a",
+  "confirmationId": "SKDQCJ",
+  "extraFeatures": {
+    "returnWalletFormsOfPayment": true
+  },
+  "before": {
+    "payments": {
+      "formsOfPayment": [
+        {
+          "cardTypeCode": "VI",
+          "cardNumber": "4XXXXXXXXXXX0006",
+          "expiryDate": "2034-11",
+          "type": "PAYMENTCARD",
+          "useType": "Unknown",
+          "tripType": "Unknown",
+          "useTypes": [
+            "Unknown"
+          ],
+          "tripTypes": [
+            "Unknown"
+          ]
+        },
+        {
+          "type": "INVOICE",
+          "invoiceDescription": "INVOICE",
+          "useType": "Unknown",
+          "tripType": "Unknown",
+          "useTypes": [
+            "Unknown"
+          ],
+          "tripTypes": [
+            "Unknown"
+          ]
+        }
+      ]
+    }
+  },
+  "after": {
+    "payments": {
+      "formsOfPayment": [
+        {
+          "cardTypeCode": "VI",
+          "cardNumber": "4XXXXXXXXXXX0006",
+          "expiryDate": "2034-11",
+          "type": "PAYMENTCARD",
+          "useType": "Unknown",
+          "tripType": "Unknown",
+          "useTypes": [
+            "Unknown"
+          ],
+          "tripTypes": [
+            "Unknown"
+          ]
+        },
+        {
+          "type": "INVOICE",
+          "invoiceDescription": "INVOICE",
+          "useType": "Unknown",
+          "tripType": "Unknown",
+          "useTypes": [
+            "Unknown"
+          ],
+          "tripTypes": [
+            "Unknown"
+          ]
+        },
+        {
+          "type": "DOCKET",
+          "docketDescription": "testDocket"
+        }
+      ]
+    }
+  },
+  "retrieveBooking": true,
+  "receivedFrom": "Booking Management API testing"
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the formsOfPayment array lists updated payment details: A DOCKET form of payment has been added. Get Booking and Modify Booking requests require the same extraFeatures flags to ensure an uniform bookingSignature.
+A similar request structure applies to NDC content. For more details, check the Booking Management Postman collection.
+
+NDC booking – modify traveler information
+
+A request to change traveler information in an NDC booking should contain the following information:
+
+confirmationId (PNR Locator or NDC Order ID) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes.
+
+ |
+
+You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+ |
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Expected traveler information, including loyalty program details (travelers, loyaltyPrograms).
+
+{
+  "bookingSignature": "c9b122810a6b8797794fb882568a8f31c011c46851edbeb4a78b0bf097a7e8f3b3da4bc705d779e1ccdc0a21151b14daacb12b70435fad09ca0c4d48bff6abdb",
+  "confirmationId": "BDTHRF",
+  "retrieveBooking": true,
+  "receivedFrom": "Modify Booking",
+  "before": {
+    "travelers": [
+      {
+        "givenName": "John",
+        "surname": "Smith",
+        "birthDate": "1970-01-23",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "john@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "123456"
+          }
+        ]
+      },
+      {
+        "givenName": "Jane",
+        "surname": "Smith",
+        "birthDate": "1972-04-21",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "jane@sabre.com"
+        ]
+      },
+      {
+        "givenName": "Bob",
+        "surname": "Smith",
+        "birthDate": "1973-06-27",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "bob@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "786953",
+            "label": "M"
+          }
+        ]
+      }
+    ]
+  },
+  "after": {
+    "travelers": [
+      {
+        "givenName": "John",
+        "surname": "Smith",
+        "birthDate": "1970-01-23",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "john@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "76575675"
+          }
+        ]
+      },
+      {
+        "givenName": "Jane",
+        "surname": "Smith",
+        "birthDate": "1972-04-21",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "janeNew@sabre.com"
+        ]
+      },
+      {
+        "givenName": "Bob",
+        "surname": "Smith",
+        "birthDate": "1973-06-27",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "bob@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "786953",
+            "label": "M"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "supplierCode": "LO",
+            "programType": "FREQUENT_FLYER",
+            "programNumber": "987654321"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+A successful operation results in no errors. If specified in the request, a normalized view of the reservation is returned in the response. In this scenario, the travelers array lists updated traveler details: modified phone number and email address. Additionally, a new loyalty program is added for the last traveler.
+
+The expected response:
+
+{
+  "timestamp": "2023-09-15T09:02:45",
+  "booking": {
+    "startDate": "2023-10-15",
+    "endDate": "2023-10-15",
+    "isTicketed": false,
+    "creationDetails": {
+      "creationUserSine": "AWV",
+      "creationDate": "2023-09-15",
+      "creationTime": "03:55",
+      "userWorkPcc": "U9PK",
+      "userHomePcc": "U9PK",
+      "primeHostId": "1S"
+    },
+    "contactInfo": {
+      "emails": [
+        "BOB@SABRE.COM",
+        "JANENEW@SABRE.COM",
+        "JOHN@SABRE.COM"
+      ],
+      "phones": [
+        "76575675",
+        "786953-M"
+      ]
+    },
+    "travelers": [
+      {
+        "givenName": "John",
+        "surname": "Smith",
+        "birthDate": "1970-01-23",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "john@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "76575675"
+          }
+        ]
+      },
+      {
+        "givenName": "Jane",
+        "surname": "Smith",
+        "birthDate": "1972-04-21",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "janeNew@sabre.com"
+        ]
+      },
+      {
+        "givenName": "Bob",
+        "surname": "Smith",
+        "birthDate": "1973-06-27",
+        "type": "ADULT",
+        "passengerCode": "ADT",
+        "emails": [
+          "bob@sabre.com"
+        ],
+        "phones": [
+          {
+            "number": "786953",
+            "label": "M"
+          }
+        ],
+        "loyaltyPrograms": [
+          {
+            "supplierCode": "LO",
+            "programType": "FREQUENT_FLYER",
+            "programNumber": "987654321"
+          }
+        ]
+      }
+    ],
+    "flights": [
+      {
+        "itemId": "16",
+        "confirmationId": "L9LR6Q",
+        "sourceType": "NDC",
+        "flightNumber": 1,
+        "airlineCode": "QF",
+        "airlineName": "QANTAS AIRWAYS",
+        "operatingFlightNumber": 1,
+        "operatingAirlineCode": "QF",
+        "fromAirportCode": "SYD",
+        "toAirportCode": "SIN",
+        "departureDate": "2023-10-15",
+        "departureTime": "16:10:00",
+        "departureTerminalName": "1",
+        "arrivalDate": "2023-10-15",
+        "arrivalTime": "21:30:00",
+        "arrivalTerminalName": "1",
+        "numberOfSeats": 3,
+        "cabinTypeName": "ECONOMY",
+        "cabinTypeCode": "Y",
+        "bookingClass": "S",
+        "flightStatusCode": "HK",
+        "flightStatusName": "Confirmed",
+        "durationInMinutes": 500,
+        "distanceInMiles": 3912,
+        "travelerIndices": [
+          1
+        ]
+      }
+    ],
+    "journeys": [
+      {
+        "firstAirportCode": "SYD",
+        "departureDate": "2023-10-15",
+        "departureTime": "16:10",
+        "lastAirportCode": "SIN",
+        "numberOfFlights": 1
+      }
+    ],
+    "fareOffers": [
+      {
+        "travelerIndices": [
+          1
+        ],
+        "flights": [
+          {
+            "itemId": "16"
+          }
+        ],
+        "cabinBaggageAllowance": {
+          "baggagePieces": [
+            {
+              "numberOfPieces": 1
+            }
+          ]
+        },
+        "checkedBaggageAllowance": {
+          "baggagePieces": [
+            {
+              "maximumWeightInKilograms": 30
+            }
+          ]
+        }
+      }
+    ],
+    "fares": [
+      {
+        "creationDetails": {
+          "creationDate": "2023-09-15",
+          "creationTime": "08:55"
+        },
+        "isNegotiatedFare": false,
+        "travelerIndices": [
+          1
+        ],
+        "fareConstruction": [
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          }
+        ],
+        "taxBreakdown": [
+          {
+            "taxCode": "YR",
+            "taxAmount": {
+              "amount": "53.99",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "AU",
+            "taxAmount": {
+              "amount": "166.27",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "WY",
+            "taxAmount": {
+              "amount": "88.93",
+              "currencyCode": "PLN"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1735.00",
+          "taxes": "309.19",
+          "total": "2044.19",
+          "currencyCode": "PLN"
+        }
+      },
+      {
+        "creationDetails": {
+          "creationDate": "2023-09-15",
+          "creationTime": "08:55"
+        },
+        "isNegotiatedFare": false,
+        "travelerIndices": [
+          2
+        ],
+        "fareConstruction": [
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          }
+        ],
+        "taxBreakdown": [
+          {
+            "taxCode": "YR",
+            "taxAmount": {
+              "amount": "53.99",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "AU",
+            "taxAmount": {
+              "amount": "166.27",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "WY",
+            "taxAmount": {
+              "amount": "88.93",
+              "currencyCode": "PLN"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1735.00",
+          "taxes": "309.19",
+          "total": "2044.19",
+          "currencyCode": "PLN"
+        }
+      },
+      {
+        "creationDetails": {
+          "creationDate": "2023-09-15",
+          "creationTime": "08:55"
+        },
+        "isNegotiatedFare": false,
+        "travelerIndices": [
+          3
+        ],
+        "fareConstruction": [
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          },
+          {
+            "fareBasisCode": "SLOSAS",
+            "baseRate": {
+              "amount": "409.98",
+              "currencyCode": "NUC"
+            },
+            "brandFareCode": "ECSV",
+            "brandFareName": "Economy Saver",
+            "brandAttributes": [
+              {
+                "description": "Qantas Points and Status Credit"
+              }
+            ]
+          }
+        ],
+        "taxBreakdown": [
+          {
+            "taxCode": "YR",
+            "taxAmount": {
+              "amount": "53.99",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "AU",
+            "taxAmount": {
+              "amount": "166.27",
+              "currencyCode": "PLN"
+            }
+          },
+          {
+            "taxCode": "WY",
+            "taxAmount": {
+              "amount": "88.93",
+              "currencyCode": "PLN"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1735.00",
+          "taxes": "309.19",
+          "total": "2044.19",
+          "currencyCode": "PLN"
+        }
+      }
+    ],
+    "allSegments": [
+      {
+        "id": "16",
+        "type": "FLIGHT",
+        "text": "1",
+        "vendorCode": "QF",
+        "startDate": "2023-10-15",
+        "startTime": "16:10:00",
+        "startLocationCode": "SYD",
+        "endDate": "2023-10-15",
+        "endTime": "21:30:00",
+        "endLocationCode": "SIN"
+      }
+    ],
+    "payments": {
+      "flightTotals": [
+        {
+          "subtotal": "5205.00",
+          "taxes": "927.57",
+          "total": "6132.57",
+          "currencyCode": "PLN"
+        }
+      ]
+    },
+    "futureTicketingPolicy": {
+      "ticketingDate": "2023-09-30",
+      "ticketingTime": "00:59"
+    }
+  },
+  "request": {
+    "bookingSignature": "c9b122810a6b8797794fb882568a8f31c011c46851edbeb4a78b0bf097a7e8f3b3da4bc705d779e1ccdc0a21151b14daacb12b70435fad09ca0c4d48bff6abdb",
+    "confirmationId": "BDTHRF",
+    "retrieveBooking": true,
+    "receivedFrom": "Booking Management API testing",
+    "before": {
+      "travelers": [
+        {
+          "givenName": "John",
+          "surname": "Smith",
+          "birthDate": "1970-01-23",
+          "passengerCode": "ADT",
+          "emails": [
+            "john@sabre.com"
+          ],
+          "phones": [
+            {
+              "number": "123456"
+            }
+          ]
+        },
+        {
+          "givenName": "Jane",
+          "surname": "Smith",
+          "birthDate": "1972-04-21",
+          "passengerCode": "ADT",
+          "emails": [
+            "jane@sabre.com"
+          ]
+        },
+        {
+          "givenName": "Bob",
+          "surname": "Smith",
+          "birthDate": "1973-06-27",
+          "passengerCode": "ADT",
+          "emails": [
+            "bob@sabre.com"
+          ],
+          "phones": [
+            {
+              "number": "786953",
+              "label": "M"
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "travelers": [
+        {
+          "givenName": "John",
+          "surname": "Smith",
+          "birthDate": "1970-01-23",
+          "passengerCode": "ADT",
+          "emails": [
+            "john@sabre.com"
+          ],
+          "phones": [
+            {
+              "number": "76575675"
+            }
+          ]
+        },
+        {
+          "givenName": "Jane",
+          "surname": "Smith",
+          "birthDate": "1972-04-21",
+          "passengerCode": "ADT",
+          "emails": [
+            "janeNew@sabre.com"
+          ]
+        },
+        {
+          "givenName": "Bob",
+          "surname": "Smith",
+          "birthDate": "1973-06-27",
+          "passengerCode": "ADT",
+          "emails": [
+            "bob@sabre.com"
+          ],
+          "phones": [
+            {
+              "number": "786953",
+              "label": "M"
+            }
+          ],
+          "loyaltyPrograms": [
+            {
+              "supplierCode": "LO",
+              "programType": "FREQUENT_FLYER",
+              "programNumber": "987654321"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+NDC booking – modify seat details
+
+A request to update seats details should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes. You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+Seat details within flights array (flights.identityDocuments). To modify or add a seat, it is necessary to include the offerItemId obtained from the Get Seats API.
+
+Seat-to-traveler association is determined based on the order of array items. The first seat is associated with the first traveler, the second seat – with the second traveler, and so on. The null value indicates lack of seat assignation for a particular traveler.
+
+ |
+
+For NDC orders, we recommend that the preceding Get Booking call has the extraFeatures.returnEmptySeatObjects parameter set to false. Empty objects are not allowed within the Modify Booking service.
+ |
+
+{
+    "bookingSignature": "0346d8125e90bfc2ea0fd2daf2876a889cb79434afaa2a42f5a257f5676eae5bbe28f0eaab060d4a4dff4c603baaabca291d8513dd1518808aad3f1ef64d87dd",
+    "confirmationId": "BUUJKN",
+    "before": {
+        "travelers": [
+            {
+                "givenName": "John",
+                "surname": "Doe",
+                "birthDate": "1970-01-23",
+                "passengerCode": "ADT",
+                "emails": [
+                    "travel@sabre.com"
+                ],
+                "phones": [
+                    {
+                        "number": "123456"
+                    }
+                ]
+            },
+            {
+                "givenName": "Jack",
+                "surname": "Doe",
+                "birthDate": "1971-02-23",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "Jill",
+                "surname": "Doe",
+                "birthDate": "1971-02-23",
+                "passengerCode": "ADT"
+            }
+        ],
+        "flights": [
+            {
+                "seats": [
+                    {
+                        "number": "5C"
+                    },
+                    {
+                        "number": "5B"
+                    },
+                    null
+                ]
+            }
+        ]
+    },
+    "after": {
+        "travelers": [
+            {
+                "givenName": "John",
+                "surname": "Doe",
+                "birthDate": "1970-01-23",
+                "passengerCode": "ADT",
+                "emails": [
+                    "travel@sabre.com"
+                ],
+                "phones": [
+                    {
+                        "number": "123456"
+                    }
+                ]
+            },
+            {
+                "givenName": "Jack",
+                "surname": "Doe",
+                "birthDate": "1971-02-23",
+                "passengerCode": "ADT"
+            },
+            {
+                "givenName": "Jill",
+                "surname": "Doe",
+                "birthDate": "1971-02-23",
+                "passengerCode": "ADT"
+            }
+        ],
+        "flights": [
+            {
+                "seats": [
+                    {
+                        "number": "5E",
+                        "offerItemId": "ce05db774d9bj795jm1hkgwqm0-1"
+                    },
+                    null,
+                    {
+                        "number": "5A",
+                        "offerItemId": "ce05db774d9bj795jm1hkgwqm0-9"
+                    }
+                ]
+            }
+        ]
+    },
+    "retrieveBooking": true,
+    "receivedFrom": "Booking Management API testing"
+}
+
+A successful operation results in no errors. If specified in the request ("retrieveBooking": true), a normalized view of the reservation is returned in the response. In this scenario, the first traveler has their seat changed from 5C to 5E, the second traveler has their seat removed, and the third traveler has a new seat added (5A).
+
+ATPCO booking – delete fare
+
+A request to delete fare details should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes. You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+recordId in the fares array (fares.recordId). If a recordId of a particular fare is missing in the after section, it means the fare is to be deleted.
+
+{
+    "bookingSignature": "0346d8125e90bfc2ea0fd2daf2876a889cb79434afaa2a42f5a257f5676eae5bbe28f0eaab060d4a4dff4c603baaabca291d8513dd1518808aad3f1ef64d87dd",
+    "confirmationId": "BUUJKN",
+    "before": {
+        "fares": [
+            {
+                "recordId": "1"
+            },
+            {
+                "recordId": "2"
+            },
+            {
+                "recordId": "3"
+            }
+        ]
+    },
+    "after": {
+        "fares": [
+            {
+                "recordId": "2"
+            }
+        ]
+    },
+    "retrieveBooking": true,
+    "receivedFrom": "Booking Management API testing"
+}
+
+A successful operation results in no errors. If specified in the request ("retrieveBooking": true), a normalized view of the reservation is returned in the response. In this scenario, fares with recordId 1 and 3 were removed.
+
+NDC booking – add ancillary
+
+A request to add ancillaries items should contain the following information:
+
+confirmationId (PNR Locator) and bookingSignature to verify the booking status and prevent the introduction of any unexpected changes. You can obtain the bookingSignature value and other booking details by using the Get Booking method.
+
+Booking details provided under the before (original booking data) and after (target booking data) objects to determine the scope of change.
+
+offerId in the ancillaries array (travelers.ancillaries). Some carriers require to append description.
+
+{
+            "bookingSignature": "d40cf0ca7e013c973500d62f199f780d2ed2d293875c68653274423137248c624b95754f5ff789799d9afcf7bb8915f4e91f49e600759044313bc3a21b83cc63",
+            "confirmationId": "TJGEUX",
+            "retrieveBooking": true,
+            "receivedFrom": "Booking Management API testing",
+            "before": {
+                "travelers": [
+                    {
+                        "givenName": "John",
+                        "surname": "Smith",
+                        "birthDate": "1975-09-01",
+                        "passengerCode": "ADT",
+                        "emails": [
+                            "Smith@SABRE.COM"
+                        ],
+                        "phones": [
+                            {
+                                "number": "1231231"
+                            }
+                        ],
+                        "identityDocuments": [
+                            {
+                                "documentType": "SECURE_FLIGHT_PASSENGER_DATA",
+                                "birthDate": "1975-09-01",
+                                "gender": "MALE"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "after": {
+                "remarks": [
+                    {
+                        "type": "HISTORICAL",
+                        "text": "NDC SEGMENT ADDED"
+                    }
+                ],
+                "travelers": [
+                    {
+                        "givenName": "John",
+                        "surname": "Smith",
+                        "birthDate": "1975-09-01",
+                        "passengerCode": "ADT",
+                        "emails": [
+                            "Smith@SABRE.COM"
+                        ],
+                        "phones": [
+                            {
+                                "number": "1231231"
+                            }
+                        ],
+                        "identityDocuments": [
+                            {
+                                "documentType": "SECURE_FLIGHT_PASSENGER_DATA",
+                                "birthDate": "1975-09-01",
+                                "gender": "MALE"
+                            }
+                        ],
+                        "ancillaries": [
+                            {
+                                "offerId": "ce7fbcf64965jtpwxmj88zoj70-1"
+                            }
+                        ]
+                    }
+                ]
+            }
+}
+
+A successful operation results in no errors. If specified in the request ("retrieveBooking": true), a normalized view of the reservation is returned in the response. In this scenario, a single ancillary was added.

@@ -1,0 +1,28 @@
+Postman Collection
+
+Overview
+
+A Postman collection has been created for Sabre’s Booking Management API to enable you to quickly get familiar with the different ways to make requests and manage content.
+
+Collection version |
+Comments |
+
+Booking Management API
+ |
+Booking Management API sample collection
+ |
+
+We also maintain a broader Sabre API Postman collection that contains examples across all of Sabre’s API portfolio; this collection has been updated to include the above examples:
+
+Collection version |
+Comments |
+
+Sabre APIs
+ |
+Incorporates version upgrades and samples for the Booking Management API
+ |
+
+ |
+
+Valid Sabre API credentials are required to successfully test the APIs in the above collections.
+ |

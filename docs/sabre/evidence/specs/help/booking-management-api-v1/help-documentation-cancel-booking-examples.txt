@@ -1,0 +1,1107 @@
+Cancel Booking – Examples
+
+Below are some common use cases on how to cancel a booking.
+
+Cancel an entire reservation
+
+To ensure a successful cancellation of an entire reservation, the request should contain:
+
+a confirmationId (PNR Locator or Order ID)
+
+cancelAll set to true
+
+{
+  "confirmationId": "XXXXXX",
+  "cancelAll": true
+}
+
+Cancel an entire reservation and void corresponding flight tickets (ATPCO)
+
+To ensure a successful cancellation of an entire reservation and void all corresponding tickets, the request should contain:
+
+a confirmationId (PNR Locator or Order ID)
+
+cancelAll set to true
+
+flightTicketOperation set to VOID
+
+ |
+
+Cancel Booking will perform end transactions within the process. For the best user experience, it is recommended that the TJR-Settings AUTO-END and AUTO-ER are inactive.
+ |
+
+{
+  "confirmationId": "XXXXXX",
+  "cancelAll": true,
+  "flightTicketOperation": "VOID"
+}
+
+Cancel an entire reservation and void (or refund) corresponding flight tickets (NDC)
+
+To ensure a successful cancellation of an entire reservation and void all corresponding tickets:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Set cancelAll to true.
+
+Add offerItemId.
+
+ |
+
+offerItemId can be retrieved from CheckTicketsResponse.cancelOffer.offerItemId or
+by means of /v1/offers/reshop/cancelOrder API.
+ |
+
+{
+  "confirmationId": "XXXXXX",
+  "cancelAll": true,
+  "offerItemId": "XXXXXXXXXXXXXXXXXXXXXXXXXX-X"
+}
+
+Cancel specific flights, hotels, or cars
+
+To ensure a successful cancellation of specific flights, hotels, or cars:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add a list of cars, flights, or hotels including the itemId of the products to cancel.
+
+The itemId can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.(flights|cars|hotels).itemId
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@id
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@Id
+
+{
+  "confirmationId": "XXXXXX",
+  "cars": [
+    {
+      "itemId": "22"
+    }
+  ],
+  "flights": [
+    {
+      "itemId": "12"
+    }
+  ],
+  "hotels": [
+    {
+      "itemId": "42"
+    }
+  ]
+}
+
+Cancel specific segments by ID or sequence
+
+To ensure a successful cancellation of specific flights, hotels, or cars:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add a list of segments including the id or sequence to use.
+
+id can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.(flights|cars|hotels).itemId
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@id
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@Id
+
+sequence can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.allSegments[`n]`
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@sequence
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@SegmentNumber
+
+ |
+
+Even though Cancel Booking supports cancelling products via a combination of segments and sequence values, there is a risk that the desired product(s) to be cancelled may not be in the exact segment`+sequence` as seen in a previously executed PNR read API call. This option is not recommended and has been enabled primarily for familiarity, since cancelling a segment position is the traditional method for cancelling Sabre products.
+ |
+
+The examples below contain possible configurations using segments combined with id and/or sequence:
+
+{
+  "confirmationId": "XXXXXX",
+  "segments": [
+    {
+      "id": "12"
+    },
+    {
+      "id": "22"
+    },
+    {
+      "id": "42"
+    }
+  ]
+}
+
+Cancel specific segments by ID or sequence and void corresponding flight tickets (ATPCO)
+
+To ensure a successful cancellation of specific flights and to void the corresponding flight tickets:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add a list of segments including the id or sequence to use.
+
+Set flightTicketOperation to VOID.
+
+ |
+
+Even though Cancel Booking supports cancelling products via a combination of segments and sequence values, there is a risk that the desired product(s) to be canceled may not be in the exact segment`+sequence` as seen in a previously executed PNR read API call. This option is not recommended and has been enabled primarily for familiarity, since cancelling a segment position is the traditional method for cancelling Sabre products.
+ |
+
+The examples below contain possible configurations using segments combined with id and/or sequence:
+
+{
+  "confirmationId": "XXXXXX",
+  "flightTicketOperation": "VOID",
+  "segments": [
+    {
+      "id": "12"
+    },
+    {
+      "id": "22"
+    },
+    {
+      "id": "42"
+    }
+  ]
+}
+
+{
+  "confirmationId": "XXXXXX",
+  "flightTicketOperation": "VOID",
+  "segments": [
+    {
+      "sequence": 1
+    },
+    {
+      "sequence": 2
+    },
+    {
+      "sequence": 3
+    }
+  ]
+}
+
+{
+  "confirmationId": "XXXXXX",
+  "flightTicketOperation": "VOID",
+  "segments": [
+    {
+      "sequence": 1
+    },
+    {
+      "sequence": 3
+    },
+    {
+      "id": "42"
+    }
+  ]
+}
+
+Cancel and retrieve a booking
+
+To ensure a successful cancellation of a booking and to display the state of the booking after cancellation:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add and set retrieveBooking to true.
+
+{
+  "confirmationId": "XXXXXX",
+  "retrieveBooking": true,
+  "flights": [
+    {
+      "itemId": "2"
+    }
+  ]
+}
+
+Cancel and add a retention date (OTH segment)
+
+To ensure a successful cancellation of a booking and to add a retention date to the booking after cancellation:
+
+Add confirmationId (PNR Locator or Order ID).
+
+Set cancelAll to true.
+
+Set retentionEndDate.
+
+ |
+
+The retention date value is subject to restrictions. Refer to the Finder page for more details.
+ |
+
+{
+  "confirmationId": "XXXXXX",
+  "cancelAll": true,
+  "retentionEndDate": "2024-01-30",
+}
+
+Cancel with an &#8220;allow partial cancel&#8221; error policy
+
+To ensure a successful cancellation of a reservation with the option to allow a partial cancel (continue processing in case of an error):
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add and set errorHandlingPolicy to ALLOW_PARTIAL_CANCEL.
+
+{
+  "confirmationId": "XXXXXX",
+  "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL",
+  "flights": [
+    {
+      "itemId": "2"
+    }
+  ],
+  "hotels": [
+    {
+      "itemId": "12"
+    }
+  ]
+}
+
+Cancel with a &#8220;halt on error&#8221; policy
+
+To ensure no changes are applied to the reservation upon encountering any errors (rollback):
+
+Add confirmationId (PNR Locator or Order ID).
+
+Add and set errorHandlingPolicy to HALT_ON_ERROR (this is the default behavior).
+
+{
+  "confirmationId": "XXXXXX",
+  "errorHandlingPolicy": "HALT_ON_ERROR",
+  "flights": [
+    {
+      "itemId": "2"
+    }
+  ],
+  "hotels": [
+    {
+      "itemId": "12"
+    }
+  ]
+}
+
+Use cases
+
+The use cases below have been compiled to better illustrate the logical flow between reading and cancelling products in reservations.
+
+The read step is depicted using GetReservationRQ samples, since that is what most of our users execute to read reservations. Different content sources are also visible in the response.
+
+ |
+
+Similar use-cases can be achieved by making calls to either Get Booking or TravelItineraryReadRQ.
+ |
+
+Use case 1 – Cancel traditional content
+
+Below is an example of a simple round-trip air itinerary (PNR RECLOC: IRMPKB). These segments are booked as traditional Sabre air content:
+
+*IRMPKB*I«
+ 1 DL2151E 20MAR 5 MIALGA HK1  0700  1003  /DCDL*HTDHAT /E
+ 2 DL2190E 26MAR 4 JFKMIA HK1  0755  1112  /DCDL*HTDHAT /E
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see that the first segment contains:
+
+sequence="1" & id="5"
+
+While the second segment contains:
+
+sequence="2" & id="6"
+
+GetReservationRQ response snippet:
+
+<stl19:Segment sequence="1" id="5">
+    <stl19:Air id="5" sequence="1" segmentAssociationId="2" isPast="false" DayOfWeekInd="5" CodeShare="false" SpecialMeal="false" StopQuantity="00" SmokingAllowed="false" ResBookDesigCode="E" Code="DL">
+        <stl19:DepartureAirport>MIA</stl19:DepartureAirport>
+        <stl19:ArrivalAirport>LGA</stl19:ArrivalAirport>
+        <stl19:OperatingFlightNumber>2151</stl19:OperatingFlightNumber>
+        <stl19:MarketingAirlineCode>DL</stl19:MarketingAirlineCode>
+        <stl19:MarketingFlightNumber>2151</stl19:MarketingFlightNumber>
+        <stl19:MarketingClassOfService>E</stl19:MarketingClassOfService>
+        ...
+<stl19:Segment sequence="2" id="6">
+    <stl19:Air id="6" sequence="2" segmentAssociationId="3" isPast="false" DayOfWeekInd="4" CodeShare="false" SpecialMeal="false" StopQuantity="00" SmokingAllowed="false" ResBookDesigCode="E" Code="DL">
+        <stl19:DepartureAirport>JFK</stl19:DepartureAirport>
+        <stl19:ArrivalAirport>MIA</stl19:ArrivalAirport>
+        <stl19:OperatingFlightNumber>2190</stl19:OperatingFlightNumber>
+        <stl19:MarketingAirlineCode>DL</stl19:MarketingAirlineCode>
+        <stl19:MarketingFlightNumber>2190</stl19:MarketingFlightNumber>
+        <stl19:MarketingClassOfService>E</stl19:MarketingClassOfService>
+        ...
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all
+
+{
+  "confirmationId": "IRMPKB",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID
+
+{
+  "confirmationId": "IRMPKB",
+  "segments": [
+    {
+      "id": "5"
+    },
+    {
+      "id": "6"
+    }
+  ]
+}
+
+Cancel Booking – cancel by flight product ID
+
+{
+  "confirmationId": "IRMPKB",
+  "flights": [
+    {
+      "itemId": "5"
+    },
+    {
+      "itemId": "6"
+    }
+  ]
+}
+
+Use case 2 – Cancel NDC content
+
+Below is an example of a simple one-way trip air itinerary (PNR RECLOC: KLVHQD). This segment has been booked as NDC air content:
+
+*KLVHQD*I«
+ 1 QF 499E 02APR Q SYDMEL HK1  2205  2340  /NDQF*W2BU5K/QF0817650D7A5
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see that the segment is identified as an NDC segment (ProductType=AIR_NDC) and contains:
+
+sequence="1" & id=12"
+
+GetReservationRQ response snippet:
+
+<stl19:Product sequence="1" id="12" IsPast="false">
+    <or114:ProductBase>
+        <or114:ProductType>AIR_NDC</or114:ProductType>
+        <or114:VendorCode>QF</or114:VendorCode>
+        <or114:StartPoint>SYD</or114:StartPoint>
+        <or114:StartDateTime>2020-04-05T22:05:00</or114:StartDateTime>
+        <or114:EndPoint>MEL</or114:EndPoint>
+        <or114:EndDateTime>2020-04-05T22:05:00</or114:EndDateTime>
+        <or114:Text>/NDQF*WIGSPC</or114:Text>
+        <or114:Text>/QF08115FFBC32</or114:Text>
+    </or114:ProductBase>
+    ...
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all
+
+{
+  "confirmationId": "KLVHQD",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID:
+
+{
+  "confirmationId": "KLVHQD",
+  "segments": [
+    {
+      "id": "12"
+    }
+  ]
+}
+
+Cancel Booking – cancel by flight product ID:
+
+{
+  "confirmationId": "IRMPKB",
+  "flights": [
+    {
+      "itemId": "12"
+    }
+  ]
+}
+
+Use case 3 – Cancel CSL content
+
+Below is an example of a hotel reservation (PNR RECLOC: VCWZEI).
+
+This segment has been booked as a CSL segment:
+
+*VCWZEI*I«
+ 1  HHL HI HK1 MOB IN25DEC F-OUT26DEC   1NT   72378 HO    /DCHI
+LIDAY INN MOBILE  12QNTSA -5/  139.00USD/RC-TSA-TSA-X/CMN-C/CMT
+-COMMISSIONABLE/AGT28760686/GVIXXXXXXXXXXXX1111EXP XXXXX-SASSE/
+CD-100860774/NM-TEST PERRY/C01D/SI-CF-42141434-
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see that the segment is identified as a CSL segment (productCategory=AGTLCSSEGMENT) and contains:
+
+sequence="1" & id="36"
+
+GetReservationRQ response snippet:
+
+<stl19:Product sequence="1" id="36">
+    <or114:ProductBase>
+        <or114:SegmentReference>36</or114:SegmentReference>
+    </or114:ProductBase>
+    <or114:ProductDetails productCategory="AGTLCSSEGMENT" productType="HHL" vendorCode="HI" statusCode="HK" startPoint="MOB" startDateTime="2020-12-25T00:00:00" endPoint="MOB" endDateTime="2020-12-26T00:00:00">
+        <or114:ProductName type="HHL">Lodging</or114:ProductName>
+        <or114:Lodging>
+        ...
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all
+
+{
+  "confirmationId": "VCWZEI",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID:
+
+{
+  "confirmationId": "VCWZEI",
+  "segments": [
+    {
+      "id": "36"
+    }
+  ]
+}
+
+Cancel Booking – cancel by hotel product ID:
+
+{
+  "confirmationId": "VCWZEI",
+  "hotels": [
+    {
+      "itemId": "36"
+    }
+  ]
+}
+
+Use case 4 – Cancel traditional & NDC content
+
+Below is an example of a round trip air itinerary (PNR RECLOC: GHMABV), where one segment has been booked as an NDC segment (defined by the /ND tag) and the other is a traditional Sabre air segment:
+
+*GHMABV*I«
+ 1 QF 499E 05APR S SYDMEL HK1  2205  2340  /NDQF*WIGSPC/QF08115FFBC32
+ 2 QF 444Q 10APR 5 MELSYD HK1  1300  1425  /DCQF*J3WEYL /E
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see that the first segment is identified as an NDC segment (ProductType=AIR_NDC) and the corresponding IDs are:
+
+sequence="1" & id=2
+
+sequence="2" & id=12
+
+GetReservationRQ response snippet:
+
+<stl19:Segment sequence="1" id="2">
+    <stl19:Product sequence="1" id="2" IsPast="false">
+        <or114:ProductBase>
+            <or114:ProductType>AIR_NDC</or114:ProductType>
+            <or114:VendorCode>QF</or114:VendorCode>
+            <or114:StartPoint>SYD</or114:StartPoint>
+            <or114:StartDateTime>2020-04-05T22:05:00</or114:StartDateTime>
+            <or114:EndPoint>MEL</or114:EndPoint>
+            <or114:EndDateTime>2020-04-05T22:05:00</or114:EndDateTime>
+            <or114:Text>/NDQF*WIGSPC</or114:Text>
+            <or114:Text>/QF08115FFBC32</or114:Text>
+        </or114:ProductBase>
+        ...
+<stl19:Segment sequence="2" id="12">
+    <stl19:Air id="12" sequence="2" segmentAssociationId="4" isPast="false" DayOfWeekInd="5" CodeShare="false" SpecialMeal="false" StopQuantity="00" SmokingAllowed="false" ResBookDesigCode="Q" Code="QF">
+        <stl19:DepartureAirport>MEL</stl19:DepartureAirport>
+        <stl19:ArrivalAirport>SYD</stl19:ArrivalAirport>
+        <stl19:MarketingAirlineCode>QF</stl19:MarketingAirlineCode>
+        <stl19:MarketingFlightNumber>0444</stl19:MarketingFlightNumber>
+        <stl19:MarketingClassOfService>Q</stl19:MarketingClassOfService>
+        ...
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all
+
+{
+  "confirmationId": "GHMABV",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID:
+
+{
+  "confirmationId": "GHMABV",
+  "segments": [
+    {
+      "id": "2"
+    },
+    {
+      "id": "12"
+    }
+  ]
+}
+
+Cancel Booking – cancel by flight product ID:
+
+{
+  "confirmationId": "GHMABV",
+  "flights": [
+    {
+      "itemId": "2"
+    },
+    {
+      "itemId": "12"
+    }
+  ]
+}
+
+Use case 5 – Cancel a mix of different content types/sources
+
+Below is an example of a complex trip (PNR RECLOC: DLPLZC), which contains both NDC & traditional air content, a car segment, and two hotel segments (one traditional and one CSL):
+
+*DLPLZC*I«
+ 1 UA4260B 13APR M ORDCLT HK1  0615  0916  /NDUA*OP6VZX/UA016975D3D32
+ 2 UA9260B 13APR M CLTMUC HK1  1830  0905  /NDUA*OP6VZX/UA016975D3D32
+ 3 UA9426B 14APR T MUCLEJ HK1  1055  1150  /NDUA*OP6VZX/UA016975D3D32
+ 4  HHL EA HK1 ORD IN25APR J-OUT28APR   3NT   45432 EX    /DCEA
+TENDEDSTAYDELUXE  1A07AYH -1/  76.49USD/CMN-C/CMT-AGENT COMMISS
+ION 10.00 PERCENT/AGT99999999/GDPSTVIXXXXXXXXXXXX1111EXP XXXXX-
+CANCELBOOKING/NM-CANCELBOOKING TEST/C12M/SI-CF-2113249722-
+ 5  HHL CY HK1 ORD IN28APR T-OUT29APR   1NT    5237 COURTYARD E
+LMHURST  1APFD00 -1/RR137.00USD/RC-¤¤¤-¤¤¤-R/CMN-C/CMT-COMMISSI
+ONABLE/AA/GDPSTVIXXXXXXXXXXXX1111EXP XXXXX-POWER/CNOR/SI-CF-421
+3298762-
+ 6  CAR ZR 29APR W HK1  MIA/01MAY/ECAR/ARR-0313/RET-0313/PH-866
+-434-2226/CF-
+ 7 UA1665E 01MAY 5 MIAORD HK1  1215  1439  /DCUA*OQE6V2 /E
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see the mapping for each individual segment/product, where we see a mix of NDC/non-NDC air content, CSL/non-CSL hotel content, and car content. The corresponding IDs for these are:
+
+sequence="1" & id="2" (air NDC)
+
+sequence="2" & id="3" (air NDC)
+
+sequence="3" & id="4" (air NDC)
+
+sequence="4" & id="25" (hotel CSL)
+
+sequence="5" & id="220" (hotel traditional)
+
+sequence="6" & id="77" (car)
+
+sequence="7" & id="88" (air traditional)
+
+GetReservationRQ response snippet:
+
+<stl19:Segment sequence="1" id="2">
+    <stl19:Product sequence="1" id="2" IsPast="false">
+        <or114:ProductBase>
+            <or114:ProductType>AIR_NDC</or114:ProductType>
+
+<stl19:Segment sequence="2" id="3">
+    <stl19:Product sequence="2" id="3" IsPast="false">
+        <or114:ProductBase>
+            <or114:ProductType>AIR_NDC</or114:ProductType>
+
+<stl19:Segment sequence="3" id="4">
+    <stl19:Product sequence="3" id="4" IsPast="false">
+        <or114:ProductBase>
+            <or114:ProductType>AIR_NDC</or114:ProductType>
+
+<stl19:Segment sequence="4" id="25">
+    <stl19:Hotel id="25" sequence="4" isPast="false">
+        <or114:ProductDetails productCategory="AGTLCSSEGMENT" productType="HHL" ...>
+
+<stl19:Segment sequence="5" id="220">
+    <stl19:Hotel id="220" sequence="5" isPast="false">
+        <or114:ProductDetails ...>
+            <or114:ProductName type="HHL"/>
+
+<stl19:Segment sequence="6" id="77">
+    <stl19:Vehicle ...>
+
+<stl19:Segment sequence="7" id="88">
+    <stl19:Air ...>
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all
+
+{
+  "confirmationId": "DLPLZC",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID
+
+{
+  "confirmationId": "DLPLZC",
+  "segments": [
+    {
+      "id": "2"
+    },
+    {
+      "id": "3"
+    },
+    {
+      "id": "4"
+    },
+    {
+      "id": "25"
+    },
+    {
+      "id": "77"
+    },
+    {
+      "id": "88"
+    },
+    {
+      "id": "220"
+    }
+  ]
+}
+
+Cancel Booking – cancel by flight/hotels/cars product ID
+
+{
+  "confirmationId": "DLPLZC",
+  "cars": [
+    {
+      "itemId": "77"
+    }
+  ],
+  "flights": [
+    {
+      "itemId": "2"
+    },
+    {
+      "itemId": "3"
+    },
+    {
+      "itemId": "4"
+    },
+    {
+      "itemId": "88"
+    }
+  ],
+  "hotels": [
+    {
+      "itemId": "25"
+    },
+    {
+      "itemId": "220"
+    }
+  ]
+}
+
+ |
+
+It is also possible to delete fragments of air content (either all air NDC content or selected traditional air segments).
+ |
+
+Cancel Booking – cancel all air NDC content by flight ID
+
+{
+  "confirmationId": "DLPLZC",
+  "flights": [
+    {
+      "itemId": "2"
+    },
+    {
+      "itemId": "3"
+    },
+    {
+      "itemId": "4"
+    }
+  ]
+}
+
+Cancel Booking – cancel selected traditional air content by flight ID
+
+{
+  "confirmationId": "DLPLZC",
+  "flights": [
+    {
+      "itemId": "88"
+    }
+  ]
+}
+
+Use case 6 – Cancel all flights and void the corresponding tickets (ATPCO)
+
+Below is an example of a round trip (PNR RECLOC: MTDXXB), which contains traditional air content (ATPCO) and the ticket was issued:
+
+*IA*T«
+ 1 EY   2L 10OCT J FRAAUH HK1  1120A  740P /DCEY*XYZABC /E
+ 2 EY   7V 15OCT Q AUHFRA HK1   940A  225P /DCEY*XYZABC /E
+TKT/TIME LIMIT
+  1.T-16JUL-AB12*AAA
+  2.TE 6071237610171-AT USE/C AB12*AAA 0715/16JUL*
+
+In order to cancel the itinerary and void the related ticket, define how to execute the cancel operation via Cancel Booking.
+
+Cancel Booking – cancel all – flight ticket operation void
+
+{
+    "confirmationId": "MTDXXB",
+    "cancelAll": true,
+    "flightTicketOperation": "VOID",
+}
+
+The application will now retrieve the booking and validate the following before processing starts:
+
+Checks status of the ticket and the coupon status (expected status is open)
+
+Checks if the ticket belongs to the PNR submitted as confirmationId
+
+Checks if the ticket is within the void period
+
+If the validation was passed successfully, the ticket will be voided before the segments are cancelled.
+
+Use case 7 – Cancel all flights and void the corresponding tickets + EMDs (ATPCO)
+
+This scenario is an extension of use case 6. Additionally, the behavior when the booking contains EMDs displays as follows:
+
+*IA*T*AE«
+ 1 EY   2Y 10NOV 2 FRAAUH HK1  1045  2000  /DCEY*WDBABC /E
+ 2 EY   7Y 17NOV 2 AUHFRA HK1  0915  1325  /DCEY*WDBABC /E
+TKT/TIME LIMIT
+  1.T-20JUL-AB12*APP
+  2.TE 6071237703374-AT TEST/P G7RE*APP 0652/20JUL*
+  3.ME 6071237560445-AT TEST/P G7RE*APP 0653/20JUL*A
+  4.ME 6071237560446-AT TEST/P G7RE*APP 0653/20JUL*A
+ANCILLARY SERVICES
+  1.UPTO33LB 15KG BAGGAGE            1.1 TEST/PAUL
+    STATUS - HI1/FULFILLED
+    AMOUNT - 399.00USD
+    TOTAL  - 399.00USD
+    FLIGHT - EY0002Y10NOVFRAAUH
+    DOC/CF - 6071237560445           CPN - 01
+  2.UPTO33LB 15KG BAGGAGE            1.1 TEST/PAUL
+    STATUS - HI1/FULFILLED
+    AMOUNT - 399.00USD
+    TOTAL  - 399.00USD
+    FLIGHT - EY0007Y17NOVAUHFRA
+    DOC/CF - 6071237560446           CPN - 01
+
+To proceed with the cancellation, submit the request to Cancel Booking.
+
+Cancel Booking – cancel all – flight ticket operation void – HALT_ON_ERROR policy
+
+{
+  "confirmationId": "MFKUYN",
+  "cancelAll": true,
+  "flightTicketOperation": "VOID",
+  "errorHandlingPolicy": "HALT_ON ERROR"
+}
+
+The application will retrieve the booking and validate the following before processing starts:
+
+Checks status of the ticket, including coupon status (expected status is open)
+
+Checks if the ticket belongs to the PNR submitted as confirmationId
+
+Checks if the ticket is within the void period
+
+Sorts the documents
+
+Group 1: Tickets without associated EMDs
+
+Group 2: Ticket(s) which are parent to at least 1 EMD + all associated EMDs
+
+Group 3: Standalone EMDs
+
+Expected response:
+
+{
+  "request": {
+    "confirmationId": "MFKUYN",
+    "retrieveBooking": false,
+    "flightTicketOperation": "VOID",
+    "cancelAll": true
+  },
+  "voidedTickets": [
+    "6071237703374",
+    "6071237560445",
+    "6071237560446"
+  ]
+}
+
+Segments are cancelled and documents are voided:
+
+*IA«
+‡NO ITIN‡
+*T«
+TKT/TIME LIMIT
+  1.T-20JUL-AB12*APP
+  2.TE 6071237703374-AT TEST/P AB12*APP 0652/20JUL*
+  3.ME 6071237560445-AT TEST/P AB12*APP 0653/20JUL*A
+  4.ME 6071237560446-AT TEST/P AB12*APP 0653/20JUL*A
+    TV 6071237703374-AT  *VOID* AB12*AWZ 0656/20JUL*E
+    MV 6071237560445-AT  *VOID* AB12*AWZ 0656/20JUL*A
+    MV 6071237560446-AT  *VOID* AB12*AWZ 0656/20JUL*A
+
+Use case 8 – Cancel selected flights and void the corresponding tickets (ATPCO)
+
+This scenario illustrates how to cancel selected segments and void the corresponding tickets to these segments. The given scenario is (PNR RECLOC: MFLSHG):
+
+*IA«
+ 1 BA 845Y 10NOV 2 DUBLHR HK1  1035  1205  /DCBA*WENABC /E
+ 2 EY  20Y 10NOV 2 LHRAUH HK1  1405  0105   11NOV 3
+                                               /DCEY*MUAXYZ /E
+ 3 EY  17Y 17NOV 2 AUHLHR HK1  1340  1745  /DCEY*MUAXYZ /E
+ 4 BA5977Y 17NOV 2 LHRDUB HK1  1945  2105  /DCBA*WENABC /E
+*T«
+TKT/TIME LIMIT
+  1.T-20JUL-AB12*APP
+  2.TE 6071237703375-AT TEST/S AB12*APP 0708/20JUL*
+  3.TE 1251237703376-AT TEST/S AB12*APP 0712/20JUL*
+
+The ticket association is:
+
+Ticket Number |
+S1 BA845 |
+S2 EY20 |
+S3 EY17 |
+S4 BA5977 |
+
+6071237703375
+ |
+n/a
+ |
+itemId &#8220;7&#8221;
+ |
+itemId &#8220;8&#8221;
+ |
+n/a
+ |
+
+1251237703376
+ |
+itemId &#8220;18&#8221;
+ |
+n/a
+ |
+n/a
+ |
+itemId &#8220;19&#8221;
+ |
+
+In addition to the validations mentioned in uses cases 6 & 7, the application will match the segments and tickets. Only tickets fully covered by the selected segments will be considered for voiding.
+
+In this scenario, two requests with selected segments will succeed:
+
+Cancel Booking – cancel itemId 18 & 19 – flight ticket operation void
+
+{
+  "confirmationId": "MFLSHG",
+  "flightTicketOperation": "VOID",
+  "flights": [
+    {
+      "itemId": "18"
+    },
+    {
+      "itemId": "19"
+    }
+  ]
+}
+
+Cancel Booking – cancel itemId 7 & 8 – flight ticket operation void
+
+{
+  "confirmationId": "MFLSHG",
+  "flightTicketOperation": "VOID",
+  "flights": [
+    {
+      "itemId": "7"
+    },
+    {
+      "itemId": "8"
+    }
+  ]
+}
+
+When trying to call the service with an invalid combination of segments, an error will be returned:
+
+Cancel Booking – cancel itemId 7 & 19 – flight ticket operation void – HALT_ON_ERROR policy
+
+{
+  "confirmationId": "MFLSHG",
+  "flightTicketOperation": "VOID",
+  "flights": [
+    {
+      "itemId": "7"
+    },
+    {
+      "itemId": "19"
+    }
+  ]
+}
+
+Response:
+
+{
+  "request": {
+    "confirmationId": "MFLSHG",
+    "retrieveBooking": false,
+    "flightTicketOperation": "VOID",
+    "cancelAll": false,
+    "flights": [
+      {
+        "itemId": "7"
+      },
+      {
+        "itemId": "19"
+      }
+    ]
+  },
+  "errors": [
+    {
+      "category": "WARNING",
+      "type": "NO_ITEMS_CANCELLED",
+      "description": "Nothing was cancelled - cancellation was interrupted due to errors"
+    },
+    {
+      "category": "CANCELLATION_ERROR",
+      "type": "UNABLE_TO_VOID_TICKET",
+      "description": "The ticket does not match the segments selected for cancellation. Review flights selection or void using /v1/trip/orders/cancelFlightTicket.",
+      "fieldPath": "cancelBookingRequest.flights",
+      "fieldName": "itemId",
+      "fieldValue": "[1251237703376, 6071237703375]"
+    }
+  ]
+}
+
+Use case 9 – Cancel all flights and sign the change with a specific value (receivedFrom option)
+
+This scenario can be considered as an extension of all above use cases. The logic of the cancellation flow will not be changed. Only the last step of signing the change is different.
+
+1 EY   2Y 10FEB W FRAAUH HK1  1045A  800P /DCEY /E
+2 EY   1Y 17FEB W AUHFRA HK1   245A  645A /DCEY /E
+
+To proceed with the cancellation submit the request to Cancel Booking.
+
+Cancel Booking – cancel all – received from CUSTOMER APP – HALT_ON_ERROR policy
+
+{
+  "confirmationId": "KFZHAA",
+  "cancelAll": true,
+  "receivedFrom": "CUSTOMER APP",
+  "errorHandlingPolicy": "HALT_ON ERROR"
+}
+
+The application will now perform all regular steps. For the final step of ending the booking, the default value for the signature will be replaced with the specified one in the request.
+
+Expected response:
+
+{
+  "request": {
+    "confirmationId": "KFZHAA",
+    "retrieveBooking": false,
+    "receivedFrom": "CUSTOMER APP",
+    "errorHandlingPolicy": "HALT_ON_ERROR",
+    "cancelAll": true
+  }
+}
+
+The segments are cancelled and the history now shows our specified value:
+
+*I«
+
+    ¥NO ITIN¥
+
+*HI«
+
+    XS   EY   2Y 10FEB FRAAUH NN/HK1  1045A  800P /DCEY*QAWBEC/E
+    XS   EY   1Y 17FEB AUHFRA NN/HK1   245A  645A /DCEY*QAWBEC/E
+    R-   CUSTOMER APP
+    AB12 AB12*AWX 0500/19NOV20
+
+Use case 10 – Cancel all flights for a low-cost airline (non-ATPCO) and refund the booking with the airline
+
+The Sabre reservation prior to cancellation and refund:
+
+ 1 U28019Y 02JUN 1 LGWMAD HK1  0600  0930  /RCU2*9HZQ2S
+ 2  OTH U2 04JUL F GK1  LGW/EASYJET/CONFO K9HZQ2S-A
+
+The booking is verified with Check Flight Tickets:
+
+{
+  "flightRefunds": [
+    {
+      "airlineCode": "U2",
+      "confirmationId": "K9HZQ2S",
+      "refundTotals": {
+        "total": "66.00",
+        "currencyCode": "PLN"
+      }
+    }
+  ]
+}
+
+Booking cancellation and refund are requested:
+
+{
+  "confirmationId": "{{pnr}}",
+  "flightTicketOperation": "REFUND",
+  "cancelAll": true,
+  "designatePrinters": [
+    {
+      "hardcopy": {
+        "address": "{{address}}"
+      }
+    },
+    {
+      "ticket": {
+        "countryCode": "{{country_code}}"
+      }
+    }
+  ]
+}
+
+The reservation is successfully cancelled and only the retention line information is stored:
+
+{
+  "flightRefunds": [
+    {
+      "airlineCode": "U2",
+      "confirmationId": "K9HZQ2S",
+      "refundTotals": {
+        "total": "66.00",
+        "currencyCode": "PLN"
+      }
+    }
+  ]
+}
+
+*I«
+ 1  OTH U2 04JUL F GK1  LGW/EASYJET/CONFO K9HZQ2S-A

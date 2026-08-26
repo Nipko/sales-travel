@@ -1,0 +1,369 @@
+Overview
+
+What is it?
+
+The Booking Management API lets you manage your Sabre reservations/bookings in a more efficient way by providing a normalized set of services that manage both Sabre Passenger Name Records (PNRs) and Sabre Orders. These implementations are simplified to ensure that both experts and novices alike can integrate and adopt Sabre APIs in the most seamless way possible.
+
+Currently, this API contains eight methods:
+
+Get Booking
+
+Create Booking
+
+Cancel Booking
+
+Modify Booking
+
+Fulfill Flight Tickets
+
+Check Flight Tickets
+
+Void Flight Tickets
+
+Refund Flight Tickets
+
+Get Booking
+
+Get Booking provides a normalized view of reservations by combining both PNRs and orders.
+
+This is achieved by executing internal calls to the PNR and Order domains respectively, and then consolidating the information into a single normalized response.
+
+Additionally, this API sources extra content from other Sabre internal domains (Ticketing, Pricing, etc.) to provide a holistic view of Sabre reservations and to support traveler-oriented use cases (for example, &#8220;can I change my ticket?&#8221;).
+
+Create Booking
+
+Create Booking provides a single, unified service to create a booking for different content sources (NDC, ATPCO, LCC, CSL hotels, cars). This is achieved by executing internal calls to the PNR, Order, Pricing, Hotel and Car domains respectively. The newly created Order and/or Sabre Passenger Name Record (PNR) information is then consolidated into a single normalized response.
+
+ |
+
+As a prerequisite, the &#8220;Store Passenger Type In PNR&#8221; option in your Travel Journal Record (TJR) must be enabled.
+ |
+
+Cancel Booking
+
+Cancel Booking provides a single, unified service to cancel the entire reservation, or a part of the reservation, irrespective of what it contains (flight, hotel, car, others) and where it is created (NDC, Sabre, CSL, LCC). This includes an option to void or refund corresponding electronic documents for flights (ATPCO), orders (NDC), and nonelectronic documents (ATPCO). On top of that, you can also cancel and refund bookings with low-cost airlines (LCC).
+
+Modify Booking
+
+Modify Booking provides a single, unified service to modify a booking for different content sources. The current release supports modification of the following types of content:
+
+CSL hotel bookings
+
+group bookings
+
+ATPCO content (limited functionality)
+
+NDC content (limited functionality)
+
+hybrid CSL + NDC and CSL + ATPCO content (limited functionality)
+
+To update booking details, Modify Booking executes separate internal calls to appropriate domains (for example PNRs, hotels). Modified Sabre Passenger Name Record (PNR) information is then consolidated into a single normalized response by an internal Get Booking call.
+
+Fulfill Flight Tickets
+
+Fulfill Flight Tickets facilitates the process of normalized document issuance in a single, seamless API call. This includes electronic tickets and electronic miscellaneous documents (EMD). Operations on different types of content are supported, such as ATPCO ticket and EMD issuance or NDC order fulfillment (limited functionality).
+
+Check Flight Tickets
+
+Check Flight Tickets provides a single, unified service to verify voidability and refundability for a list of electronic documents (ATPCO) or the entire reservation using a confirmationId (ATPCO/NDC/LCC). The ability to check for refunds is currently limited to electronic tickets.
+
+Void Flight Tickets
+
+Void Flight Tickets provides a single, unified service to void a list of electronic documents (ATPCO). This includes electronic tickets and electronic miscellaneous documents (EMD).
+
+Refund Flight Tickets
+
+Refund Flight Tickets provides a single, unified service to refund a list of electronic documents (ATPCO). The service allows you to specify refund qualifiers for electronic tickets.
+
+Why use it?
+
+With the recent introduction of new content types such as NDC and CSL in the Sabre system, the Booking Management API will call the appropriate API for managing reservations/bookings within the Sabre portfolio.
+
+Get Booking
+
+Simplifies the booking retrieval process by removing the need to use individual/granular APIs to retrieve a reservation.
+
+Retrieves a normalized view of the reservation regardless of the content sources (PNR, NDC Order).
+
+Provides additional data relevant for travelers (e.g. fare rules) as well as data elements that are not stored in the Sabre PNR (e.g. ticket details and more).
+
+Retrieves reservation in a stateless way.
+
+Create Booking
+
+Simplifies the booking process by removing the need to use individual/granular APIs to create a reservation.
+
+Completes the reservation regardless of the air content sources (PNR, NDC Order).
+
+Completes the reservation for the hotel content.
+
+Completes the reservation for the car content.
+
+Retrieves a normalized view of the new booking regardless of the content sources (PNR, NDC Order).
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) for booking creation.
+
+Generates a booking in a stateless way.
+
+Cancel Booking
+
+Simplifies the cancellation process by removing the need to use individual/granular APIs to cancel a reservation.
+
+Cancels any content from the reservation.
+
+Cancels the entire reservation.
+
+Cancels and refunds bookings with low-cost airlines (non-ATPCO).
+
+Voids or refunds corresponding electronic documents for flights and optionally paper tickets.
+
+Cancels the reservation in a stateless way.
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) for the cancellation of the PNR.
+
+Adds capability to define the API’s behavior when encountering errors (halt on error or allow partial cancel).
+
+Allows the assignment of a printer profile or dedicated printers for the transaction.
+
+Modify Booking
+
+Simplifies the modification process by removing the need to use individual/granular APIs to modify a reservation.
+
+Validates the current state of the booking prior to introducing any changes.
+
+Allows the execution of multiple operation types (add/modify/delete) in a single call.
+
+Modifies bookings with CSL hotel content, group bookings, bookings with ATPCO or NDC content (limited functionality), and hybrid bookings with CSL + flight content (traditional ATPCO or NDC; limited functionality).
+
+Retrieves a normalized view of the modified booking regardless of content sources.
+
+Adds the capability to specify a different target city (Pseudo City Code, or PCC) for booking modification.
+
+Modifies a booking in a stateless way.
+
+Fulfill Flight Tickets
+
+Simplifies the fulfillment process by removing the need to use individual/granular APIs depending on the type of content (ATPCO or NDC bookings).
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) for the issuance of the electronic document.
+
+Retrieves a normalized view of the issued documents regardless of content sources.
+
+Adds capability to define the API’s behavior when encountering errors (via errorHandlingPolicy).
+
+Generates tickets and EMDs in a stateless way.
+
+Check Flight Tickets
+
+Simplifies the ticket validation process by removing the need to use individual/granular APIs to validate options for void or refund of an electronic document.
+
+Checks for multiple electronic documents (up to 12) from one reservation in a single call.
+
+Checks whether a low-cost airline booking (non-ATPCO) can be refunded and returns applicable amounts.
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) for the validation of the electronic document.
+
+Supports refund qualifiers to price specific refund options.
+
+Adds capability to define the API’s behavior when encountering errors (halt on error or allow partial cancel).
+
+Void Flight Tickets
+
+Simplifies the ticket cancellation process by removing the need to use individual/granular APIs to void an electronic document.
+
+Cancels multiple electronic documents (up to 12) from one reservation in a single call.
+
+Voids electronic documents and updates the reservation in a stateless way.
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) and post-processing options (email or queue placement) for the refund of the electronic document.
+
+Adds capability to define the API’s behavior when encountering errors (halt on error or allow partial cancel).
+
+Allows the assignment of a printer profile or dedicated printers for the transaction.
+
+Refund Flight Tickets
+
+Simplifies the ticket refund process by removing the need to use individual/granular APIs to refund an electronic document.
+
+Refunds multiple electronic documents (up to 12) from one reservation in a single call.
+
+Refunds electronic documents and updates the reservation in a stateless way.
+
+Adds capability to specify a different target city (Pseudo City Code, or PCC) and post-processing options (email or queue placement) for the refund of the electronic document.
+
+Supports refund qualifiers to price specific refund options.
+
+Adds capability to define the API’s behavior when encountering errors (halt on error or allow partial cancel).
+
+Allows the assignment of a printer profile or dedicated printers for the transaction.
+
+How it works
+
+Get Booking
+
+Get Booking executes the following steps to display a booking:
+
+Retrieves reservation data by the given confirmationID (PNR locator and Order ID).
+
+Calls proper downline services to retrieve additional data.
+
+Maps retrieved data to a normalized data model.
+
+Create Booking
+
+Create Booking executes the following steps to complete the creation of a booking:
+
+Populates traveler information based on the request payload or profile data.
+
+Calls proper downline booking creation services.
+
+Creates an NDC air order and/or a traditional PNR for ATPCO, LCC air content.
+
+Creates a hotel booking irrespective of content (CSL or legacy GDS).
+
+Creates a car booking by the use of a booking key.
+
+Maps the newly created booking data to a normalized data model.
+
+Cancel Booking
+
+Cancel Booking executes the following steps in order to complete the cancellation process of a specific product:
+
+Retrieves reservation data by the given confirmationID (PNR locator and Order ID).
+
+Validates the cancel request against reservation content.
+
+Calls proper cancellation downline services.
+
+Finalizes (commits) the transaction in the event of success or partial success.
+
+Retrieves booking details after cancellation (optional).
+
+Additionally, the following steps are executed when using VOID for flightTicketOperation:
+
+Retrieves all electronic documents contained in the PNR or Order.
+
+Matches the coupons of each document to the correct segment(s).
+
+Validates the coupon status.
+
+Validates the void period.
+
+Calls the Void Air Ticket downline service. Implements a recovery strategy in the case of failure.
+
+Finalizes (commits) the transaction in the event of success or partial success.
+
+Continues with the steps above.
+
+Additionally, the following steps are executed when using REFUND for flightTicketOperation:
+
+Validates the coupon status.
+
+Validates the void period.
+
+Supports additional refund qualifiers.
+
+Calls the Automated Refunds downline service. Implements a recovery strategy in the case of failure.
+
+Finalizes (commits) the transaction in the event of success or partial success.
+
+Additionally, the following step is executed when using offerItemId:
+
+Forwards the ID to the orders/cancel request
+
+ |
+
+This is applicable only to NDC orders.
+
+The ID determines which action should be taken on the tickets related to the order.
+
+ |
+
+Modify Booking
+
+Modify Booking executes the following steps to modify a booking:
+
+Retrieves reservation data for the requested confirmationID (PNR locator).
+
+Calls proper downline services to retrieve booking data.
+
+Validates booking status based on the given bookingSignature.
+
+Determines the scope of changes based on the before and after content.
+
+Calls proper downline services to update booking data.
+
+Maps the modified booking data to a normalized data model.
+
+ |
+
+Modification prerequisites include Get Booking call to verify the booking status by means of bookingSignature property.
+ |
+
+Fulfill Flight Tickets
+
+Populates fulfillment information based on the request payload.
+
+Calls proper downline ticket and/or EMD creation services.
+
+Creates electronic documents for an NDC air order or a traditional PNR for an ATPCO order.
+
+Maps the data from the issued document to a normalized data model.
+
+Check Flight Tickets
+
+Retrieves all electronic documents for the requested document number or confirmationId.
+
+Validates the coupon status.
+
+Validates the void period.
+
+Validates refundablity and amounts.
+
+Supports additional refund qualifiers for ATPCO tickets.
+
+Calls the Void Air Ticket downline service. Implements a recovery strategy in the case of failure.
+
+Calls the Automated Refunds downline service. Implements a recovery strategy in the case of failure.
+
+Void Flight Tickets
+
+Retrieves all electronic documents for the requested document number or confirmationId.
+
+Validates the coupon status.
+
+Validates the void period.
+
+Calls the Void Air Ticket downline service. Implements a recovery strategy in the case of failure.
+
+Finalizes (commits) the transaction in the event of success or partial success.
+
+Refund Flight Tickets
+
+Retrieves all electronic documents for the requested document number or confirmationId.
+
+Validates the coupon status.
+
+Validates the void period.
+
+Supports additional refund qualifiers.
+
+Calls the Automated Refunds downline service. Implements a recovery strategy in the case of failure.
+
+Finalizes (commits) the transaction in the event of success or partial success.
+
+How to use
+
+Start with an authentication token
+
+You must provide an authentication token to all endpoints within the Booking Management API. Tokens can be generated in two ways:
+
+Using the Create Access Token API for scenarios with a stateless token (ATK). Once you obtain a successful response from the API (TokenCreateRS), locate the BinarySecurityToken element, which contains an ATK token.
+
+Using the Create Session service for scenarios with a stateful token (ATH). The response from this session generation service (SessionCreateRS) also contains the BinarySecurityToken element with an authorization token.
+
+For more information, go to the blog post titled A Deep Dive into E2E NDC Reservation Management with the Booking Management API.
+
+Examples
+
+Refer to the Help section for more information. Each of the available Booking Management methods has a dedicated example page covering the most common business use cases, for instance Create Booking – Examples. For additional usage scenarios, see our Postman Collection.

@@ -1,0 +1,28 @@
+Jump Cabin Logic
+
+Overview
+
+The Jump Cabin Capabilities (FlightReshopRequest.fare.cabin) provide a better control of requested cabin preference. By default, if the requested cabin isn't offered or available, Sabre Flight Reshop guarantees that exchange offers can be returned for a higher cabin only for the main segment per each journey.
+To apply Jump Cabin Capabilities (FlightReshopRequest.fare.cabin.logic), a preferred cabin must be specified in the request.
+
+logic supports the following options in the request:
+
+Jump Cabin: Disables the Jump Cabin logic. If the requested cabin is not offered or not available, exchange offers can be returned in any of the other available cabins. Jump up or down for the whole itinerary or some flights.
+
+You can choose to Avoid Cabin Downgrade to ensure that a lower cabin class won’t be applied within a single shopping offer. There are two modes:
+
+Avoid Cabin Downgrade - All Flights: If the requested cabin isn't offered or available, exchange offers can be returned in a higher cabin only for the whole itinerary.
+
+Avoid Cabin Downgrade - Main Flight: If the requested cabin isn't offered or available, exchange options can be returned in a higher cabin only for the main flight per each journey.
+
+Keep Same Cabin: Guarantees that all segments within a single shopping offer belong to the requested cabin.
+
+Cabin selection
+
+Cabin for entire itinerary
+
+A specific cabin can be requested for the entire journey by using FlightReshopRequest.fare.cabin.name.
+
+Specify cabin per journey
+
+Cabin preferences can be specified per journey by including multiple entries in the FlightReshopRequest.fare.cabin.preferences array. Each item should include a journey association using the FlightReshopRequest.fare.cabin.preferences.journeyIndices array and a cabin selection defined by the FlightReshopRequest.fare.cabin.preferences.name parameter. The journey indices refer to items in the FlightReshopRequest.journeys array for which the specified cabin preference should apply.

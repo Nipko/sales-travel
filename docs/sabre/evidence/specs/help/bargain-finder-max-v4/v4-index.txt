@@ -1,0 +1,32 @@
+Overview
+
+What is it?
+
+Your search for the best airfare starts and ends here. Bargain Finder Max computes a vast array of airline schedules and fares across multiple dates to derive the best itinerary offers in seconds.
+
+ |
+
+This service requires activation. Contact your Sabre Account Representative for assistance. Air Shopping is the science of computing a vast array of airline schedules and fares to derive best itinerary options.
+ |
+
+Why use it?
+
+Instant results
+
+Whether for business or pleasure, find the best options in less than two seconds.
+
+Precisely tailored
+
+Customize shopping for your customers and tailor search results for the most relevant fares based on itinerary preferences, diversity controls, and more.
+
+Increase conversion
+
+Build greater customer value, leading to increased bookings and higher revenues.
+
+Diverse content
+
+Access all of Sabre’s air content, including traditional ATPCO, NDC (New-Distribution-Capability), and LCC (low-cost-carrier).
+
+How it works
+
+Bargain Finder Max, an API with a unique approach of combining fare-led and schedule-led algorithms, delivers the most relevant offers and solutions personalized to your travelers’ needs. With features like highly customizable search criteria designed to tailor specific results to all of your business’ or traveler requirements, Bargain Finder Max provides your travelers with what they want most; smart travel options.

@@ -1,0 +1,27 @@
+Postman Collection
+
+Overview
+
+A Postman collection has been created for Flight Reshop API scenarios to help you quickly become familiar with various use cases.
+
+It's available for download here.
+
+We also maintain broader Postman collections that contain examples across Sabre’s entire API portfolio:
+
+Collection version |
+Comments |
+
+Booking Management API
+ |
+Booking Management API sample collection
+ |
+
+Sabre APIs
+ |
+Incorporates version upgrades and samples for the Booking Management API
+ |
+
+ |
+
+Valid Sabre API credentials are required to successfully test the APIs in the above collections.
+ |

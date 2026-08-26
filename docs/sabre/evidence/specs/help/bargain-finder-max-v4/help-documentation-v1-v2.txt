@@ -1,0 +1,695 @@
+v1 to v2
+
+Why are we sunsetting older versions?
+
+The Bargain Finder Max API is constantly being updated and enhanced with improvements or new shopping capabilities. Therefore, it often requires a new endpoint release. Since the original release of v1 (28th March, 2019) several enhancements have been developed, released, and wait for the customers to adopt them.
+
+Thus, it is no longer efficient to support all previous versions of the service as the new ones offer the same content, and of course - much more.
+
+Apart from the few exceptions listed in the ‘How to migrate from previous version?’ section of the guide, the migration does not require any significant effort from the customer side.
+
+What's new in v2?
+
+There is a new REST endpoint version of the service, offering the same functionalities as v1 and some new content which is not always backward compatible with v1.
+
+All new capabilities are listed below – any customer planning to consume new capabilities is required to analyze and adapt accordingly to the new feature requirements. This step is optional.
+
+All the changes from v1 which are no more compatible, are listed in the next section of the migration guide. This step is obligatory to consume the service through the higher endpoint versions. See release notes for further details.
+
+The Bargain Finder Max request has been enhanced with the following changes:
+
+New Distribution Capability (NDC) - New parameters introduced to the Shopping request to support the new functionality:
+
+A new section ‘NDC Indicators’ is now available and includes MaxNumberOfUpsells - allows you to display additional upsells for the journey.
+
+New processing of the AccountCodes for NDC Carriers is available under CarrierSpecificQualifiers in the NDC Indicators section.
+
+ABN and QCI qualifiers are now available under Qualifier and CarrierSpecificQualifiers in the NDC Indicators section.
+
+New attribute MultipleSourcePerItinerary allows you to handle scenarios when the same journey is returned from ATPCO and NDC channel.
+
+New attributes SingleBrandedFare, MultipleBrandedFares and ParityMode enabling branded fare shopping on NDC path.
+
+Other Request level changes applicable for ATPCO path:
+
+Flight type (A: Air Segment, K: ARUNK, O: Open Segment) has been changed from required to optional.
+
+Deleted Passenger Type Code. NOTE: The below optional parameter is no longer available for our customers with version 5.2.0 or later: PassengerType/@Code - more information available in SAN 15673 from 10th SEP 2019.
+
+Shelves - New Airline Storefront is an enchantment to Bargain Finder Max (BFM) which enables the ability to create a modernized storefront, to display all relevant offers from the same or different airlines, for easy comparison to travelers by a defined combination of specific attribute levels, e.g. exchangeability, refundability, baggage allowance, cabin, seat comfort. New attributes in the request. NAS (Sabre’s New Airline Storefront) and NGS (ATPCO Next Gen Storefront™) Modes.
+
+Pre-Reserved Seat Selection - Enables to return pre-reserved seat data and capability to filter by free pre-reserved seat
+
+TN Exchange & Refund - New attributes available on the Shopping Exchange path; KeepBookingCode & KeepOriginalBrand.
+
+Stopover section enhancement enables indicating the amount of nights between the connections. It is possible to indicate the min. and max. timeframes (hours).
+
+Functional update for the existing parameters: Qualifier & DepartureDateTime.
+
+Bargain Finder Max GIR Response has been enhanced with the new parameters and other changes listed below:
+
+New Distribution Capability (NDC) - New parameters introduced to the Shopping GIR response to support the new functionality:
+
+OfferItemId and ServiceId are now present also at the passenger information level.
+
+TTL parameter name changed to TimeToLive, and the value is now displayed in seconds.
+
+ElapsedTime attribute has been added at the ScheduleDesc and LegDesc levels.
+
+New parameters and other changes applicable for ATPCO content or both - ATPCO and NDC content:
+
+The MandatoryInd indicates mandatory Offer Items that cannot be removed from the Offer. Added at the Fare and Passenger Information levels.
+
+New attribute LastTicketTime added at FareType level.
+
+Ancillaries Baggage information - For carriers migrated to new ATPCO baggage processing, new ancillaryTypeCode value "C" will occur, along with new optional elements: "subgroup", "description1", "description2", "firstOccurrence", "lastOccurrence".
+
+The Parameters FareAmount and FareCurrency at FareComponentDesc level have been changed to optional.
+
+The Operating Carrier Code has been changed from required to optional.
+
+Shelves - new attributes in the response. NAS (Sabre’s New Airline Storefront) and NGS (ATPCO Next Gen Storefront™) Modes.
+
+Flight Amenities - Seat type. Changes to the response schema to support flight amenities information regarding Seat type and Seat pitch when Shelves are requested.
+
+Pre reserved seat selection - changes to the response schema to support pre-reserved seat information.
+
+How to migrate from v1 to v2 version?
+
+Bargain Finder Max v2 is backward compatible with previous version (v1) with the following exceptions (changes, updates or new elements which are not backward compatible):
+
+v1 |
+v2 |
+
+RQ changes for migration:
+ |
+RQ changes for migration:
+ |
+
+Before the MaxNumberOfUpsells release, customer could request these options using ATPCO part of the schema – MultibrandedFares & UpsellLimit:
+
+{
+
+   "PriceRequestInformation": {
+
+      "TPA_Extensions": {
+
+         "BrandedFareIndicators": {
+
+            "MultipleBrandedFares": "true",
+
+            "SingleBrandedFare": "true",
+
+            "UpsellLimit": 3
+
+         }
+
+      },
+
+  }
+ |
+
+MaxNumberOfUpsells dedicated for NDC options present now under the new section NDC Indicators (ATPCO part remains unchanged):
+
+{
+
+"TravelPreferences": {
+
+    "TPA_Extensions": {
+
+        "DataSources": {
+
+            "ATPCO": "Disable",
+
+            "LCC": "Disable",
+
+            "NDC": "Enable"
+
+        },
+
+        "NDCIndicators": {
+
+            "MaxNumberOfUpsells": {
+
+                "Value": 5
+
+            }
+
+        }
+
+    }
+
+},
+
+ |
+
+NDC Account Codes – previously processed under standard ATPCO path of the schema:
+
+{
+
+   "TravelerInfoSummary": {
+
+      "AirTravelerAvail": {
+
+         "PassengerTypeQuantity": {
+
+            "Code": "ADT",
+
+            "Quantity": "1"
+
+         }
+
+      },
+
+      "PriceRequestInformation": {
+
+         "AccountCode": [
+
+            {
+
+               "Code": "FLX50"
+
+            },
+
+            {
+
+               "Code": "FLX50"
+
+            }
+
+         ]
+
+      }
+
+   }
+
+}
+
+ |
+
+NDC Account Codes – now a dedicated section under NDCIndicators provides space to input NDC-specific qualifiers such as Account Codes, Corporate ID etc.:
+
+"NDCIndicators": {
+
+       "CarrierSpecificQualifiers": [
+
+              {
+
+                     "CarrierCode": "QF",
+
+                     "AccountCode": {
+
+                           "Code": "FLX50"
+
+                     }
+
+              }
+
+       ]
+
+}
+
+ |
+
+Branded fare shopping for NDC options in v1.
+
+ {
+
+   "PriceRequestInformation": {
+
+      "TPA_Extensions": {
+
+         "BrandedFareIndicators": {
+
+            "MultipleBrandedFares": "true",
+
+            "SingleBrandedFare": "true",
+
+            "ParityMode": "Itin",
+
+            "UpsellLimit": 3
+
+         }
+
+      },
+ |
+Parameters enabling branded fare shopping on NDC path.
+
+"NDCIndicators": {
+
+       "MaxNumberOfUpsells": {
+
+              "Value": 15
+
+       },
+
+       "SingleBrandedFare": {
+
+              "Value": true
+
+       },
+
+       "MultipleBrandedFares": {
+
+              "Value": true
+
+       },
+
+       "CarrierSpecificQualifiers": [
+
+              {
+
+                     "CarrierCode": "QF",
+
+                     "AccountCode": {
+
+                           "Code": "FLX50"
+
+                     }
+
+ |
+
+Parameter DepartureDateTime required:
+
++
+"TPA_Extensions": {
+
+       "DateFlexibility": {
+
+              "NbrOfDays": "0"
+
+       },
+
+       "Stopover": {
+
+              "DepartureDateTime": "2026-02-16T00:00:00",
+
+              "StopoverPoint": {
+
+                     "LocationCode": "AUH",
+
+                     "LocationType": "A"
+
+              },
+
+              "Stay": {
+
+                     "Nights": "3"
+
+              }
+
+       }
+
+}
+
+ |
+Parameter DepartureDateTime changed to optional:
+
++
+"TPA_Extensions": {
+
+       "DateFlexibility": {
+
+              "NbrOfDays": "0"
+
+       },
+
+       "Stopover": {
+
+              "DepartureDateTime": "2026-02-16T00:00:00",
+
+              "StopoverPoint": {
+
+                     "LocationCode": "AUH",
+
+                     "LocationType": "A"
+
+              },
+
+              "Stay": {
+
+                     "Nights": "3"
+
+              }
+
+       }
+
+}
+ |
+
+Parameter Flight type (A: Air Segment, K: ARUNK, O: Open Segment) required:
+
++
+"Flight": [
+
+       {
+
+              "ClassOfService": "S",
+
+              "Number": 705,
+
+              "DepartureDateTime": "2026-04-15T23:55:00",
+
+              "ArrivalDateTime": "2026-04-16T08:35:00",
+
+              "Type": "A",
+
+              "Flown": false,
+
+              "OriginLocation": {
+
+                     "LocationCode": "MAD"
+
+              },
+
+              "DestinationLocation": {
+
+                     "LocationCode": "SCL"
+
+ |
+Parameter Flight type (A: Air Segment, K: ARUNK, O: Open Segment) changed to optional:
+
++
+"Flight": [
+
+       {
+
+              "ClassOfService": "S",
+
+              "Number": 705,
+
+              "DepartureDateTime": "2026-04-15T23:55:00",
+
+              "ArrivalDateTime": "2026-04-16T08:35:00",
+
+              "Type": "A",
+
+              "Flown": false,
+
+              "OriginLocation": {
+
+                     "LocationCode": "MAD"
+
+              },
+
+              "DestinationLocation": {
+
+                     "LocationCode": "SCL"
+ |
+
+ |
+ |
+
+GIR RS changes for migration:
+ |
+GIR RS changes for migration:
+ |
+
+OfferItemId and ServiceId in v1 are returned at the passenger information level.
+
++
+ {
+
+    "PricedItineraries": {
+
+        "PricedItinerary": {
+
+            "AirItineraryPricingInfo": {
+
+                "Offer": {
+
+                    "OfferItemId": "do3385fr4jsvz1el50-2-1",
+
+                    "ServiceId": "do3385fr4jsvz1el50-2-1-1"
+
+                }
+
+            }
+
+        }
+
+    }
+
+}
+ |
+OfferItemId and ServiceId in v2 are now present also at the passenger information level.
+
++
+"fare": {
+
+   "validatingCarrierCode": "",
+
+   "eTicketable": true,
+
+   "passengerInfoList": [
+
+     {
+
+      "passengerInfo": {
+
+        "offerItemId": "db0b984bd6684brnfk1hvupcc0-2-1",
+
+        "mandatoryInd": true,
+
+        "serviceId": "db0b984bd6684brnfk1hvupcc0-2-1-1",
+
+        "passengerType": "ADT",
+
+        "passengerNumber": 1,
+
+        "fareComponents": [
+
+          {
+ |
+
+TTL parameter in v1:
+
++
+"pricingInformation": [
+
+    {
+
+        "pricingSubsource": "NDC_CONNECTOR",
+
+        "offer": {
+
+            "offerId": "dg069c668cf5jknfhk6l4h6m80-2",
+
+            "TTL": 900,
+
+            "source": "NDC"
+
+        }
+ |
+Renamed to TimeToLive in v2:
+
++
+"pricingInformation": [
+
+    {
+
+        "pricingSubsource": "NDC_CONNECTOR",
+
+        "offer": {
+
+            "offerId": "dg069c668cf5jknfhk6l4h6m80-2",
+
+            "timeToLive": 900,
+
+            "source": "NDC"
+
+        }
+ |
+
+ |
+The MandatoryInd indicates mandatory Offer Items that cannot be removed from the Offer. Added at the Fare and Passenger Information levels.
+
++
+{
+
+"fare": {
+
+       "offerItemId": "cg5fd74bdf9fwtwjsk6kloyuh0-1-1",
+
+       "mandatoryInd": true,
+
+       "serviceId": "cg5fd74bdf9fwtwjsk6kloyuh0-1-1-1",
+
+       "validatingCarrierCode": "SQ",
+
+       "vita": true,
+
+       "eTicketable": true,
+
+       "governingCarriers": "SQ",
+
+       "passengerInfoList": [
+
+              {
+
+                     "passengerInfo": {
+
+                            "offerItemId": "cg5fd74bdf9fwtwjsk6kloyuh0-7-1",
+
+                            "mandatoryInd": true,
+
+                            "serviceId": "cg5fd74bdf9fwtwjsk6kloyuh0-7-1-1",
+
+                            "passengerType": "ADT",
+
+                            "passengerNumber": 1,
+
+                            "fareComponents": [
+
+                                  {
+ |
+
+Parameter required:
+
++
+"fareComponentDescs": [
+
+    {
+
+        "id": 2,
+
+        "governingCarrier": "SQ",
+
+        "fareAmount": 509.00,
+
+        "fareCurrency": "USD",
+
+        "fareBasisCode": "N15USOBA",
+
+        "farePassengerType": "ADT",
+
+        "publishedFareAmount": 509.00,
+
+        "oneWayFare": true,
+
+        "directionality": "FROM",
+
+        "direction": "PA",
+
+        "notValidBefore": "2020-02-28",
+
+        "notValidAfter": "2020-02-28",
+
+        "applicablePricingCategories": "3 4 5 6 7 8 9 10 12 15 16 18 23",
+
+        "vendorCode": "ATP",
+
+        "fareTypeBitmap": "00",
+
+        "fareType": "XOX",
+
+        "fareTariff": "3",
+
+        "fareRule": "UW11",
+
+        "segments": [
+
+            {
+ |
+Parameter changed to optional:
+
++
+"fareComponentDescs": [
+
+    {
+
+        "id": 2,
+
+        "governingCarrier": "SQ",
+
+        "fareAmount": 509.00,
+
+        "fareCurrency": "USD",
+
+        "fareBasisCode": "N15USOBA",
+
+        "farePassengerType": "ADT",
+
+        "publishedFareAmount": 509.00,
+
+        "oneWayFare": true,
+
+        "directionality": "FROM",
+
+        "direction": "PA",
+
+        "notValidBefore": "2020-02-28",
+
+        "notValidAfter": "2020-02-28",
+
+        "applicablePricingCategories": "3 4 5 6 7 8 9 10 12 15 16 18 23",
+
+        "vendorCode": "ATP",
+
+        "fareTypeBitmap": "00",
+
+        "fareType": "XOX",
+
+        "fareTariff": "3",
+
+        "fareRule": "UW11",
+
+        "segments": [
+
+            {
+ |
+
+Parameter required:
+
++
+"carrier": {
+
+    "marketing": "HA",
+
+    "marketingFlightNumber": 452,
+
+    "operating": "HA",
+
+    "operatingFlightNumber": 452,
+
+    "equipment": {
+
+        "code": "332",
+
+        "typeForFirstLeg": "W",
+
+        "typeForLastLeg": "W"
+
+    }
+
+}
+
+ |
+Parameter changed to optional:
+
++
+* For the NDC offers, the operating carrier value is optional and very often might not appear in the response.
+
++
+"carrier": {
+
+    "marketing": "HA",
+
+    "marketingFlightNumber": 452,
+
+    "operating": "HA",
+
+    "operatingFlightNumber": 452,
+
+    "equipment": {
+
+        "code": "332",
+
+        "typeForFirstLeg": "W",
+
+        "typeForLastLeg": "W"
+
+    }
+
+}
+ |

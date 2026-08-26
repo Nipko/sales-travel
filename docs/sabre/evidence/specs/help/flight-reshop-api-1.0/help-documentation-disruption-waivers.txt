@@ -1,0 +1,73 @@
+Disruption Waivers
+
+Overview
+
+The Disruption Waivers feature automates waiver-rule handling during exchange shopping scenarios, helping streamline rebooking after operational disruptions.
+
+When an itinerary matches an airline disruption rule, the system bypasses standard Category 31 pricing validations and processes the exchange as a full waiver. In these cases, no new market validation or fare basis assignment is applied.
+
+For API users, this means you can:
+
+Receive full waiver-qualified exchange offers directly in Flight Reshop results.
+
+Identify which returned options include waiver benefits.
+
+Continue normal exchange processing when no waiver is available.
+
+ |
+
+Before using this capability, ensure that your Pseudo City Code (PCC) has Disruption Waivers enabled in Travel Journal Record (TJR). Contact your account manager for details regarding the Disruption Waiver activation process.
+ |
+
+Requesting waiver information
+
+ |
+
+No separate waiver API call or any additional attribute in the request is required from the customer side.
+ |
+
+Response with waiver information
+
+When a waiver is applicable, the offer item returns a dedicated waiver object instead of standard fare details.
+
+Main response structure difference:
+
+Standard offer item: offers.items.fares
+
+Disruption Waiver offer item: offers.items.waiver
+
+Expected waiver-specific object elements:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+code
+ |
+Waiver code returned for the eligible disrupted exchange item.
+ |
+FlightReshopResponse.offers.items.waiver.code
+ |
+
+type
+ |
+Waiver type applied to the exchange item (for example Full Exchange Waiver).
+ |
+FlightReshopResponse.offers.items.waiver.type
+ |
+
+placement
+ |
+Indicates where waiver-related information should be placed (for example Tour Code).
+ |
+FlightReshopResponse.offers.items.waiver.placement
+ |
+
+otherServiceMessage
+ |
+Additional waiver-related message returned for the exchange item.
+ |
+FlightReshopResponse.offers.items.waiver.otherServiceMessage
+ |
+
+If FlightReshopResponse.offers.items.waiver is absent in an offer item, treat that option as a standard (non-waiver) exchange offer.

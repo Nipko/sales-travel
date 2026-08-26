@@ -1,0 +1,118 @@
+Single Branded Fare and Multiple Branded Fares
+
+Request brand ID
+
+The Flight Reshop API allows you to target specific resulting fares using a brand ID code. The request can include one brand ID or multiple brand IDs that can be applied to the entire itinerary or per journey.
+
+ |
+
+By default, the Sabre Flight Reshop method is configured for single brand capabilities.
+ |
+
+Unique brand ID for the entire itinerary
+
+A unique brand ID can be requested for the entire journey as an item in the FlightReshopRequest.retailing.brandedFareFilters.brandCodes array, without specifying any journey association using FlightReshopRequest.retailing.brandedFareFilters.journeyIndices.
+
+This retrieve fare offers that match the requested brand.
+
+Multiple brand IDs for the entire itinerary
+
+Multiple brand IDs can be requested for the entire journey by including multiple items in the FlightReshopRequest.retailing.brandedFareFilters.brandCodes array, without specifying any journey association using FlightReshopRequest.retailing.brandedFareFilters.journeyIndices.
+
+This retrieves offers that include fares in any of the requested brands.
+
+Unique brand ID per journey
+
+A unique brand ID can be requested per journey by combining an item in the FlightReshopRequest.retailing.brandedFareFilters.brandCodes array with a journey association specified using the FlightReshopRequest.retailing.brandedFareFilters.journeyIndices array. These indices indicate items from the FlightReshopRequest.journeys array for which the desired brand should be used.
+
+This retrieves offers using fares in the requested brand for each referenced journey.
+
+Multiple brand IDs per journey
+
+Multiple brand IDs can be requested per journey by combining multiple items in the FlightReshopRequest.retailing.brandedFareFilters.brandCodes array with a journey association specified using the FlightReshopRequest.retailing.brandedFareFilters.journeyIndices array. These indices indicate items from the FlightReshopRequest.journeys array for which the desired brand should be used.
+
+This retrieves offers using any fare in the requested brands for each defined journey.
+
+ |
+
+It's not advisable to combine brand IDs per journey with brand IDs for the entire itinerary within one request.
+ |
+
+Keep existing brand ID for retain journeys
+
+To keep the existing brand for any retain journeys in the itinerary, specify FlightReshopRequest.journeys.retainFlights.flightDetails.brandCode when passing retain flight information.
+
+Avoid brand downgrade
+
+The API may return branded fares of a lower tier or brand than the originally ticketed fare. This enhancement ensures that only branded fares of the same or higher quality are offered during the exchange process, respecting the passenger's original choice and potentially avoiding unexpected cost increases due to a less desirable brand.
+
+Setting avoid brand downgrade
+
+This functionality can be enabled by using the FlightReshopRequest.retailing.avoidBrandDowngrade Boolean flag:
+
+If true, only branded fares of the same or higher quality than the originally ticketed fare are returned. If no such fares exist, the response indicates that no suitable exchanges are available.
+
+Otherwise, the default behavior is maintained, allowing the API to return branded fares of any quality.
+
+Keep original booking code and brand
+
+Keep original booking code for retain journeys
+
+The API allows you to force retain the original booking code for retain journeys. Previously, even if you specified the details of unchanged segments in +FlightReshopRequest.journeys.retainFlights, the API might have altered your booking codes while searching for the lowest exchange solution.
+
+The request parameter FlightReshopRequest.journeys.retainFlights.flightDetails.keepBookingClass allows you to indicate that you wish to prevent the API from changing the booking code of the retain air segments.
+
+ |
+
+keepBookingClass must be set to true across all retain segments within a retain journey.
+ |
+
+Keep original brand for retain journeys
+
+The API allows you to force retain the originally ticketed brand for retain journeys. Previously, the API might have altered your originally ticketed brand while searching for the lowest exchange solution. The FlightReshopRequest.retailing.retainOriginalBrand parameter set to true allows you to indicate that you wish to prevent the API from changing the originally ticketed brand for the retain air segments.
+
+Additional provisions:
+
+If a brand isn't specified for the shopped journey, the API returns the lowest applicable fare with the corresponding brand.
+
+If a retain journey is different from the fare market on the original ticket, the logic is ignored.
+
+It's not necessary to send FlightReshopRequest.journeys.retainFlights.flightDetails.brandCode as the API automatically validates brands for retain flights.
+
+If you send retainOriginalBrand set to true as well as FlightReshopRequest.journeys.retainFlights.flightDetails.brandCode, the retain flight brand information takes precedence.
+
+The API returns an error message &#8220;UNABLE TO FIND ORIGINALLY TICKETED BRAND&#8221; if it cannot find a brand for fares that exist on the original ticket. If it finds at least one brand associated to any fare on original ticket, it will proceed and validate if a retainOriginalBrand setting exists.
+
+If the API cannot properly match new fare markets with the existing ones, it returns the error &#8216;NO_COMBINABLE_FARES_FOUND'.
+
+If the API cannot find the original brand for the flown fare components, it returns the error &#8216;NO_COMBINABLE_FARES_FOUND'.
+
+If the original fare component is partially flown, the API ignores the retainOriginalBrand setting if the solution contains the same fare breaks in terms of fare markets. If the original fare markets and fare breaks are not maintained (broken into separate fares), the error &#8216;NO_COMBINABLE_FARES_FOUND' is returned.
+
+Multiple branded fares
+
+Overview
+
+The multiple branded fares functionality (+FlightReshopRequest.retailing.returnAdditionalOffers+) is combinable with brand filters and other brand parameters, including the option to keep the original booking code and brand.
+
+If PNR split inhibiting is set as an internal rule, the API returns all passengers in the same booking code and brand.
+
+If such a rule isn't set, the API can return a splitBooking indicator, meaning that different passenger types are in different booking codes.
+
+Brand filters
+
+Brand filters may be requested for the entire itinerary as an item in the FlightReshopRequest.fare.brandedFareFilters array, without specifying any journey association using FlightReshopRequest.retailing.brandedFareFilters.journeyIndices.
+
+As an alternative, brand filters can be used for a specific journey under the FlightReshopRequest.retailing.brandedFareFilters.journeyIndices array. These indices indicate items from the FlightReshopRequest.journeys array for which the desired brand filter should be used.
+
+You can either specify to prefer specific brand IDs by using the FlightReshopRequest.fare.brandedFareFilters.brandCodes array or filter out specific brand IDs by selecting FlightReshopRequest.fare.brandedFareFilters.excludeBrandCodes.
+
+Keep original booking code and brand
+
+You can choose to keep the original booking code by leaving a specific part of the itinerary unchanged under FlightReshopRequest.journeys.retainFlights.flightDetails.keepBookingClass.
+
+To keep the original brand, use FlightReshopRequest.retailing.retainOriginalBrand.
+
+Require split booking
+
+If the booking needs to be split, the response returns FlightReshopResponse.offers[].splitBooking set to true.

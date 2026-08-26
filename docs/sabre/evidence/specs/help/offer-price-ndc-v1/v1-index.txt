@@ -1,0 +1,64 @@
+Overview
+
+What is it?
+
+Pricing is the second step after shopping in the NDC booking process. It is a mandatory stage of the ticketing flow. The Offer Price API verifies the price of an itinerary offer and provides details required to create an order.
+For some carriers, it is possible to price various one-way shopping results by creating a single offer out of outbound and inbound offer items generated in separate shopping transactions.
+
+Why use it?
+
+Makes it possible to create an order at the subsequent step.
+
+Allows you to provide passenger information, including frequent flyer number and form of payment, which may affect the price.
+
+Returns detailed information about the offer, price components, and included services.
+
+Combines outbound and inbound options obtained separately in the shopping step into a single offer (applicable to carriers that support this feature).
+
+How it works
+
+Processing flow
+
+This service performs the following steps to price a requested offer:
+
+Authorizes the user.
+
+Retrieves previously shopped offer data from the offer store service.
+
+Validates the request by checking its consistency with the offer.
+
+Updates passenger information from the offer with the data provided in the request.
+
+Builds and sends a request to the airline via the IATA’s NDC Offer/Price API.
+
+Creates and stores offers based on the response from the IATA’s NDC Offer/Price API. These offers have their time-to-live specified in the response.
+
+Creates warning messages based on the airline’s response or configuration (e.g., messages informing about a possible price increase if the form of payment was not provided).
+
+Builds and returns an offer price response with offer details.
+
+If you decide to proceed with the order using the Orders/Create API (Order Management API), the selected offerItemID must be included in the request to create the order.
+
+Optionally, the offer returned may be priced again using the newly created offerItemId(s).
+
+ |
+
+Changing passenger types or quantity is not supported.
+
+Pricing multiple offers (outbound and inbound offers generated in separate shopping transactions) is available for carriers that support this feature.
+
+ |
+
+How to use
+
+Prerequisites
+
+For detailed information on the steps required to complete before using this API, refer to the NDC Reservation Management blog article. To begin making calls to the Offer Price API, you need:
+
+A valid offerItemID generated in the shopping step.
+
+An authorization token: the one provided during shopping, a different one generated for the same EPR, or one with branch access.
+
+Repricing an offer
+
+To receive a response with available itinerary options and pricing, send a request containing at least one offerItemId and an authorization header with a security token.

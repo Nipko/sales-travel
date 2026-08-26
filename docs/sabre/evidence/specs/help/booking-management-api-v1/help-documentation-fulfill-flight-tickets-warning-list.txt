@@ -1,0 +1,58 @@
+Fulfill Flight Tickets – warning List
+
+Warning list
+
+Below are all possible warnings returned by the Fulfill Flight Tickets endpoint:
+
+Warning type |
+Warning category |
+Description |
+
+EMAIL_NOT_FOUND
+ |
+MISSING_DATA
+ |
+The email notification has not been sent due to a missing email in the booking.
+ |
+
+DOWNLINE_SERVICE_WARNING
+ |
+PROCESSING_WARNING
+ |
+The AirTicketRQ returned a warning message: (%s).
+ |
+
+FULFILLMENT_NOT_CONFIRMED
+ |
+PROCESSING_WARNING
+ |
+The fulfillment operation cannot be confirmed. No new tickets were found in the booking.
+ |
+
+PARTIAL_FULFILLMENT
+ |
+PROCESSING_WARNING
+ |
+At least one fulfillment operation was not processed correctly. Ticket issuance was unsuccessful due to a missing form of identification (FOID).
+ |
+
+PRICE_CHANGE
+ |
+PROCESSING_WARNING
+ |
+The price change occurred. The new total price: %s.
+ |
+
+UNABLE_TO_RETRIEVE_TICKETS
+ |
+PROCESSING_WARNING
+ |
+The fulfillment process has not been completed in the requested time. Verify booking details and/or audit trail reports (DQB) whether tickets were issued successfully (confirmationId: %s).
+ |
+
+FUNCTIONALITY_NOT_APPLICABLE
+ |
+IGNORED_DETAILS
+ |
+The selected functionality cannot be applied within the ATPCO fulfillment workflow.
+ |

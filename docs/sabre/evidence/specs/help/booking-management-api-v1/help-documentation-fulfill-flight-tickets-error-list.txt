@@ -1,0 +1,455 @@
+Fulfill Flight Tickets – Error List
+
+Error list
+
+Below is a full list of possible errors returned by Fulfill Flight Tickets.
+
+Error type |
+Error category |
+Description |
+
+DUPLICATE_ID
+ |
+BAD_REQUEST
+ |
+Verify provided IDs. Duplicate IDs are not permitted.
+ |
+
+DUPLICATE_PRINTER_DESIGNATION
+ |
+BAD_REQUEST
+ |
+The request contains duplicate printer objects. Please request only one printer profile.
+ |
+
+FLIGHT_SEQUENCE_INVALID
+ |
+BAD_REQUEST
+ |
+Verify provided flight IDs. The array of flights must contain a sequence of items.
+ |
+
+HYBRID_CONTENT_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The fulfillment operation is not supported for hybrid bookings, containing both traditional and NDC flights.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s must be combined with: %s.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s cannot be combined with: %s.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: Primary form of payment cannot be set as: %s type.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: Secondary form of payment cannot be set as: %s type.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: Secondary form of payment cannot be set as a reference for the %s type.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Type: %s must not be set as a primary and secondary form of payment at the same time.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: Primary form of payment type: %s cannot be combined with secondary form of payment.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: The selected penalty type must be used individually.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Duplicated penalties of the same type are not permitted.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: NDC booking cannot be fulfilled with: %s form of payment.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: primaryFormOfPaymentReference cannot be combined with: [%s].
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: customPaymentCode cannot be combined with form of payment type: %s.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: Form of payment type %s does not support combining referenceId with other parameters.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Type: %s with the same customPaymentCode must not be set as a primary and secondary form of payment at the same time.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: cardHolder cannot be combined with form of payment type: %s.
+ |
+
+INVALID_COMBINATION_PRINTER_PROFILE_AND_MANUAL_DESIGNATION
+ |
+BAD_REQUEST
+ |
+The request contains an invalid combination of printer profile and manual printer designation.
+ |
+
+INVALID_PAYMENT_CARD_NUMBER
+ |
+BAD_REQUEST
+ |
+Provided card number is invalid. Payment card must meet "^[0-9]{12,19}$" pattern.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Provided card number is invalid. Payment card must meet "^[0-9]{12,19}$" pattern.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Provided record number is invalid. Verify Price Quote (PQ) information using the Get Booking method and try again.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: %s requires: %s.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: formOfPayment %s requires: %s.
+ |
+
+MULTIPLE_PAYMENT_TYPES_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Multiple forms of payment are currently not supported in the fulfillment process of the NDC Order.
+ |
+
+MULTIPLE_PRINTER_TYPES
+ |
+BAD_REQUEST
+ |
+The request contains multiple types of printers in a single printer address object. The printer address object can contain only one printer type.
+ |
+
+NO_PRINTER_TYPE
+ |
+BAD_REQUEST
+ |
+The request contains a printer designation without a recognizable printer type. Verify the printer address object details against the API schema.
+ |
+
+OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The multiple fulfillment operations are currently not supported for NDC bookings. Only a single fulfillment for the whole order is acceptable.
+ |
+
+PAYMENT_DUPLICATE_REFERENCE
+ |
+BAD_REQUEST
+ |
+Validation failed: Primary and secondary forms of payment cannot reference the same payment. Use a single form of payment instead.
+ |
+
+PAYMENT_INDEX_OUT_OF_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify payment association within the fulfillment settings. The payment index must be specified within forms of payment list bounds.
+ |
+
+TRAVELER_DATA_MISMATCH
+ |
+BAD_REQUEST
+ |
+The traveler data does not match the information stored in the booking. Verify the traveler information using the Get Booking method.
+ |
+
+TRAVELER_DUPLICATE_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify travelers association. Duplicate association is not permitted.
+ |
+
+TRAVELER_INDEX_OUT_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify travelers association. At least one traveler index is out of travelers list bounds.
+ |
+
+ANCILLARY_NOT_FOUND
+ |
+INVALID_DATA
+ |
+The ancillary item with provided item ID cannot be found in the booking.
+ |
+
+MISSING_TICKET_ASSIGNATION
+ |
+APPLICATION_ERROR
+ |
+The issuance of an Electronic Miscellaneous Document requires association with the electronic ticket. Verify selected ancillary items or consider ticket issuance and retry.
+ |
+
+FLIGHT_NOT_FOUND
+ |
+INVALID_DATA
+ |
+The flight with provided item ID cannot be found in the booking.
+ |
+
+PAYMENT_NOT_FOUND
+ |
+INVALID_DATA
+ |
+The item ID of the referenced form of payment cannot be found in the booking.
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Booking cannot be found.
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The orders/change service returned an error: (code: [%s] message: [%s]).
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The AirTicketRQ service returned an error: (%s).
+ |
+
+BOOKING_FULFILLED
+ |
+APPLICATION_ERROR
+ |
+The fulfillment operation cannot be processed. The booking is already fulfilled.
+ |
+
+SECURE_FLIGHT_PASSENGER_DATA_MISSING
+ |
+APPLICATION_ERROR
+ |
+The fulfillment operation cannot be processed. The booking is missing mandatory Secure Flight Passenger Data.
+ |
+
+PAYMENT_CARD_CVV_INVALID
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to an invalid CVV code of the payment card. Verify specified payment information or contact the card issuer bank.
+ |
+
+PAYMENT_CARD_DECLINED
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to declined payment card. Verify specified payment information or contact the card issuer bank.
+ |
+
+PAYMENT_CARD_EXPIRATION_DATE_INVALID
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to an invalid expiration date of the payment card. Verify specified payment information or contact the card issuer bank.
+ |
+
+PAYMENT_CARD_ISSUE
+ |
+APPLICATION_ERROR
+ |
+At least one fulfillment operation was not processed correctly. The transaction was declined due to an invalid card number. Verify specified payment card information or contact the card issuer bank.
+ |
+
+PRICE_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to the price change (new total price: %s). Update retained price (%s) in the booking and repeat fulfillment operation.
+ |
+
+PRINTER_NOT_ASSIGNED
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to a lack of ticket printer assignation. Designate a required printer and repeat fulfillment operation.
+ |
+
+PAYMENT_REQUIRED
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to a lack of payment information. Add a form of payment information and repeat fulfillment operation.
+ |
+
+PRICE_QUOTE_RECORD_NUMBER_INVALID
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to invalid price quote record number specified in the request.
+ |
+
+PRICE_QUOTE_REISSUE_RECORD_NUMBER_INVALID
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to invalid price quote reissue record number specified in the request.
+ |
+
+UNABLE_TO_RETRIEVE_TICKETS
+ |
+APPLICATION_ERROR
+ |
+Tickets might have been issued successfully but application could not retrieve them. Verify booking details and/or audit trail reports (DQB) whether tickets were issued successfully (confirmationId: %s).
+ |
+
+AIR_TICKET_VALIDATING_AIRLINE_MISSING
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to a lack of validating airline in the booking. Verify the booking details using the Get Booking method.
+ |
+
+MINIMUM_CONNECT_TIME_NOT_VALID
+ |
+APPLICATION_ERROR
+ |
+The fulfillment process cannot be continued due to invalid connect time between flights. Verify itinerary against minimum connecting time requirements.
+ |
+
+PAYMENT_CARD_CVV_MISSING
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued because the CVV code of the payment card could not be found. Verify the provided payment information and retry.
+ |
+
+INTERNAL_SERVER_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued. Call to internal service timed out.
+ |
+
+INTERNAL_SERVER_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+The downline ticketing service exceeded its processing time and the request timed out. Please retry the fulfillment attempt.
+ |
+
+PENDING_PAYMENT
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to pending payment. Verify the provided payment information and retry.
+ |
+
+MISSING_PRICE_QUOTE_AIR_EXTRAS_DETAILS
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to missing air extras in the stored price quote (PQ). Reprice the booking and retry.
+ |
+
+FAILED_PAYMENT
+ |
+APPLICATION_ERROR
+ |
+No new tickets have been issued due to failed payment. Verify the provided payment information and retry.
+ |
+
+CARDHOLDER_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires cardholder details for successful fulfillment within the provided PAYMENTCARD.
+ |
+
+PAYER_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires payer details for successful fulfillment.
+ |
+
+ |
+
+The variable %s contains information returned dynamically by the downline service.
+ |

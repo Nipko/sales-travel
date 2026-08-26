@@ -1,0 +1,2266 @@
+swagger: "2.0"
+info:
+  version: "v3"
+  title: Get Hotel Avail
+  description: Gets a list of all properties within a specified area. Basic information about the property is included in the response.
+host: api.cert.platform.sabre.com
+basePath: /
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /v3.0.0/get/hotelavail:
+    post:
+      operationId: getHotelAvail
+      tags:
+        - Get Hotel Availability
+      parameters:
+        - name: getHotelAvailRequest
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/GetHotelAvailRequest"
+        - name: Application-ID
+          in: header
+          required: false
+          type: string
+          description: The customer's Application ID.
+      responses:
+        '200':
+          schema:
+            $ref: "#/definitions/GetHotelAvailResponse"
+          description: Success
+              
+        '400':
+          description: |
+            Bad Request
+  
+            - Invalid format for request.
+          
+        '404':
+          description: |
+            Not Found
+
+            - No results were found.
+
+definitions:
+  GetHotelAvailRequest:
+    type: object
+    properties:
+      GetHotelAvailRQ:
+        type: object
+        required:
+          - SearchCriteria
+        properties:
+          POS:
+            type: object
+            required:
+             - Source
+            properties:
+              Source:
+                description: Shop in an authorized branch location PCC.
+                required:
+                  - PseudoCityCode
+                properties:
+                  PseudoCityCode:
+                    type: string
+                    description: Four-character pseudo city code (PCC) of authorized branch location.
+                    pattern: '^[a-zA-Z0-9]{4}$'
+                    example: "TM61"        
+          SearchCriteria:
+            type: object
+            required:
+              - RateInfoRef
+            properties:
+              OffSet:
+                type: integer
+                description: Indicates the page number.
+                minimum: 1
+                default: 1
+                example: 1
+              SortBy:
+                type: string
+                description: Indicates the criteria to sort properties by.
+                default: 'TotalRate'
+                enum:
+                  - TotalRate
+                  - DistanceFrom
+                  - SabreRating
+              SortOrder:
+                type: string
+                description: "Indicates whether results should be sorted in ascending or descending order. This attribute takes a default value based on `SortBy`. `TotalRate`:`ASC` | `DistanceFrom`:`ASC` | `SabreRating`:`DESC`"
+                example: 'ASC'
+                enum:
+                  - ASC
+                  - DESC
+              PageSize:
+                type: integer
+                description: Specifies the number of properties seen per page.
+                minimum: 1
+                maximum: 200
+                default: 200
+                example: 50
+              TierLabels:
+                type: boolean
+                description: If true, the `TierLabel` value is visible for preferenced properties in the response.
+                default: true
+                example: false
+              ShopKey:
+                type: string
+                description: Encrypted key used to fetch rates for a set of properties matching the `SearchCriteria` object. When used, only `Offset` is considered to fetch the page number - all other parameters in the request are ignored.
+                minLength: 0
+                maxLength: 240
+                example: "48ff454e-b83d-4c4f-aeb9-1bc9f3df8794"  
+              RateDetailsInd:
+                type: boolean
+                description: Controls whether only properties with rates should be returned in the response.
+                default: true
+                example: false
+              GeoSearch:
+                type: object
+                description: Contains parameters to search properties by geographic information. Use either `GeoSearch` OR `HotelRefs` to search, but not both.
+                required:
+                  - GeoRef
+                properties:
+                  GeoRef:
+                    type: object
+                    required:
+                      - Radius
+                      - UOM
+                    description: Contains parameters to search properties by geographic information.
+                    properties:
+                      Radius:
+                        type: number
+                        description: Radius to be included in the search from the search point.
+                        example: 200
+                      UOM:
+                        type: string
+                        description: Identifies the unit of measure in either `KM` for kilometers, or `MI` for miles.
+                        example: "MI"
+                        enum:
+                          - KM
+                          - MI
+                      GeoCode:
+                        type: object
+                        description: Contains parameters to search by `Latitude` and `Longitude`. Use only ONE of `GeoCode` / `RefPoint` / `AddressRef` to search.
+                        required:
+                          - Latitude
+                          - Longitude
+                        properties:
+                          Latitude:
+                            type: number
+                            description: Latitude to search by.
+                            minimum: -90  
+                            maximum: 90
+                            example: 32.758
+                          Longitude:
+                            type: number
+                            description: Longitude to search by.
+                            minimum: -180
+                            maximum: 180                            
+                            example: -97.080
+                      RefPoint:
+                        type: object
+                        description: Contains parameters to search by reference point, such as airport code. Use only ONE of `GeoCode` / `RefPoint` / `AddressRef` to search.
+                        required:
+                          - Value
+                          - ValueContext
+                          - RefPointType
+                        properties:
+                          Value:
+                            type: string
+                            description: Value of the reference point.
+                            minLength: 3
+                            maxLength: 50
+                            example: "DFW"
+                          ValueContext:
+                            type: string
+                            description: Identifies the type of information entered into `Value`.
+                            enum:
+                              - NAME
+                              - CODE
+                            example: "CODE"
+                          RefPointType:
+                            type: string
+                            description: OTA (Online Travel Agency) code for the point of reference.
+                            enum:
+                              - "5"
+                              - "6"
+                              - "7"
+                              - "11"
+                              - "16"
+                              - "18"
+                              - "37"
+                            example: "6"
+                          StateProv:
+                            type: string
+                            description: State or province of the reference point.
+                            minLength: 2
+                            maxLength: 50
+                            example: "TX"
+                          CountryCode:
+                            type: string
+                            description: Country code of the reference point.
+                            minLength: 2
+                            maxLength: 50
+                            example: "US"
+                      AddressRef:
+                        type: object
+                        required:
+                          - CountryCode
+                        description: Contains parameters to search by address. Use only ONE of `GeoCode` / `RefPoint` / `AddressRef` to search.
+                        properties:
+                          Street:
+                            type: string
+                            description: The street name of the address.
+                            minLength: 0
+                            maxLength: 50                            
+                            example: "Hidden Ridge"
+                          City:
+                            type: string
+                            description: The city name of the address.
+                            minLength: 0
+                            maxLength: 50                            
+                            example: "Irving"
+                          County:
+                            type: string
+                            description: The county name of the address.
+                            minLength: 0
+                            maxLength: 50                            
+                            example: "Dallas County"
+                          PostalCode:
+                            type: string
+                            description: The postal code of the address.
+                            minLength: 0
+                            maxLength: 50
+                            example: "75038"
+                          StateProv:
+                            type: string
+                            description: The state or province of the address.
+                            minLength: 0
+                            maxLength: 50                            
+                            example: "TX"
+                          CountryCode:
+                            type: string
+                            description: The country code of the address.
+                            minLength: 0
+                            maxLength: 50                            
+                            example: "US"
+                  GeoAttributes:
+                    type: object
+                    description: Contains hotel list filters based on neighborhoods returned by `GeoRef`. The filter is applied only when a search is done using `RefPoint` with `RefPointType` as `37` (Polygon Search).
+                    properties:
+                      Attributes:
+                        type: array
+                        maxItems: 10
+                        description: Lists properties to filter by `Name` and `Value`.
+                        items:
+                          type: object
+                          required:
+                            - Name
+                            - Value
+                          properties:
+                            Name:
+                              type: string
+                              description: Filters the property by name. Can only be `LOCALAREA`.
+                              example: "LOCALAREA"
+                            Value:
+                              type: string
+                              description: Filters the response to only include hotels inside a specified area when `LOCALAREA` is present in `Name`.
+                              example: "KRAKOW AREA"
+              HotelRefs:
+                type: object
+                description: Contains parameters to search by hotel information. Use either `GeoSearch` OR `HotelRefs` to search, but not both.
+                required:
+                  - HotelRef
+                properties:
+                  HotelRef:
+                    type: array
+                    description: Lists hotels by code.
+                    maxItems: 200
+                    items:
+                      type: object
+                      required:
+                        - HotelCode
+                      properties:
+                        HotelCode:
+                          type: string
+                          description: The code by which a hotel is identified.
+                          minLength: 1
+                          maxLength: 20
+                          example: "100072188"
+                        CodeContext:
+                          type: string
+                          description: Identifies whether the given `HotelCode` is a Sabre property ID or a global property ID.
+                          default: SABRE
+                          enum:
+                            - SABRE
+                            - GLOBAL
+                          example: "GLOBAL"
+              RateInfoRef:
+                type: object
+                description: Contains rate information for the search.
+                required:
+                  - CurrencyCode
+                  - StayDateRange
+                  - Rooms
+                  - BestOnly
+                properties: 
+                  CurrencyCode:
+                    type: string
+                    description: The three-letter ISO 4217 currency code.
+                    pattern: '^[A-Z]{3}$'
+                    example: 'USD'
+                  BestOnly:
+                    type: string
+                    description: "Identifies whether the lowest rates across sources or lowest rates for each source will be returned. 1: Lowest of all sources | 2: Lowest from each source | 3: Best rate from each source, along with the lowest negotiated/contractual rate."
+                    enum:
+                      - "1"
+                      - "2"
+                      - "3"
+                    example: "1"
+                  PrepaidQualifier:
+                    type: string
+                    description: Identifies whether you want to see both Prepaid and postpaid, only prepaid, or only postpaid rates. Currently, all GDS and Booking.com rates are treated as post paid and all Bedsonline rates are treated as pre-paid.
+                    example: 'IncludePrepaid'
+                    default: 'IncludePrepaid'
+                    enum:
+                      - IncludePrepaid
+                      - PrepaidOnly
+                      - ExcludePrepaid
+                  RefundableOnly:
+                    type: boolean
+                    description: If true, displays only refundable rates in the response.
+                    default: false
+                    example: true
+                  ConvertedRateInfoOnly:
+                    type: boolean
+                    description: If true, displays rates only in the requested currency. If false, displays rates with both the requested currency and the hotel accepted currency in the response.
+                    default: true
+                    example: true
+                  StayDateRange:
+                    type: object
+                    description: Contains information regarding the stay duration.
+                    required:
+                      - StartDate
+                      - EndDate
+                    properties:
+                      StartDate:
+                        type: string
+                        format: date
+                        example : '2024-02-20'
+                        description: The check-in date in YYYY-MM-DD format.
+                      EndDate:
+                        type: string
+                        format: date
+                        example : '2024-02-23'
+                        description: The checkout date in YYYY-MM-DD format.
+                  RateRange:
+                    type: object
+                    description: Contains Min/Max limits for the nightly rates to be returned.
+                    properties:
+                      Min:
+                        type: number
+                        multipleOf: 0.01
+                        description: Hotels with average nightly rates greater than this value will be returned in the response.
+                        example: 100.05
+                      Max:
+                        type: number
+                        multipleOf: 0.01
+                        description: Hotels with average nightly rates lower than this value will be returned in the response.
+                        example: 1013.05
+                  Rooms:
+                    type: object
+                    description: Contains room parameters to search by.
+                    required:
+                      - Room
+                    properties:
+                      Room: 
+                        type: array
+                        description: Lists room information.
+                        minItems: 1
+                        items:
+                          type: object
+                          required:
+                            - Index
+                            - Adults
+                          properties:
+                            Index:
+                              type: integer
+                              minimum: 1
+                              description: Index number of the room.
+                              example: 1
+                            Adults:
+                              type: integer
+                              minimum: 1
+                              description: Number of adults to stay in the room.
+                              example: 1
+                            Children:
+                              type: integer
+                              minimum: 0
+                              description: Number of children to stay in the room.
+                              example: 1
+                            ChildAges:
+                              type: string
+                              example: '10'
+                              description: Age of children staying in the room.
+                  RatePlanCandidates:
+                    type: object
+                    description: Contains a max of 11 `RatePlanCandidate` tags to match IRAC.
+                    required:
+                      - RatePlanCandidate
+                    properties:
+                      ExactMatchOnly:
+                        type: boolean
+                        description: If true, indicates the response message should only return rates that are an exact match to the requested `RatePlanCandidate` criteria.
+                        default: false
+                        example : false
+                      RatePlanCandidate:
+                        type: array
+                        description: Lists properties that are candidates for specific rate plans.
+                        maxItems: 11
+                        items:
+                          type: object
+                          properties:
+                            RatePlanType:
+                              type: string
+                              pattern: '^[0-9]{1,2}$'
+                              enum:
+                               - '1'
+                               - '2'
+                               - '3'
+                               - '4'
+                               - '5'
+                               - '6'
+                               - '7'
+                               - '8'
+                               - '9'
+                               - '10'
+                               - '11'
+                               - '12'
+                               - '13'
+                               - '14'
+                               - '15'
+                               - '16'
+                               - '17'
+                               - '18'
+                               - '19'
+                               - '20'
+                               - '21'
+                               - '22'
+                               - '23'
+                               - '24'
+                               - '25'
+                               - '26'
+                               - '27'
+                               - '28'
+                               - '29'
+                               - '30'
+                               - '31'
+                               - '32'
+                               - '33'
+                              description: Identifies a specific rate type. Allows a query to specify the rate category type, and provides major categories for comparison across brands. Refer to OpenTravel Code List Rate Plan Type (RPT).
+                              example: '11'
+                            RatePlanCode:
+                              type: string
+                              description: A particular code or ID associated with a specific rate type. Use this if the traveler qualifies for a specific rate, such as AARP, AAA, a corporate rate, etc., or to specify a negotiated code as the result of a negotiated rate.
+                              example: 'ABC'
+                  LoyaltyIds:
+                    type: object
+                    description: Contains the traveler's loyality numbers, if applicable.
+                    required:
+                      - LoyaltyId
+                    properties:
+                      LoyaltyId:
+                        type: array
+                        minItems: 1
+                        maxItems: 10
+                        description: Lists loyalty numbers by ID.
+                        example: ["YX1123","MC1234"]
+                        items:
+                          type: string
+
+                  FrequentFlyerNumber:
+                    type: string
+                    description: The traveler's frequent flyer number, if available.
+                    example: 'AQ1234'
+                  CorpDiscount:
+                    type: string
+                    pattern: '^[0-9a-zA-Z]{1,20}$'
+                    description: The traveler's corporate discount code, if available.
+                    example: '9876'
+                  InfoSource:
+                    type: string
+                    description: Specifies the sources to be checked for rates. When blank, all allowed rate sources are used to fetch the rates.
+                    example: '100,111,112,110,113'                
+              HotelPref:
+                type: object
+                description: Contains search filter criteria.
+                properties:
+                  HotelName:
+                    type: string
+                    pattern: '^[0-9a-zA-Z .\/-]{3,100}$'
+                    minLength: 3
+                    maxLength: 100
+                    description: The full name of the hotel.
+                    example: "Inn"
+                  BrandCodes:
+                    type: object
+                    description: Contains a list of brand codes. Properties must belong to at least 1 brand code from this list to be shown in the response.
+                    required:
+                      - BrandCode
+                    properties:
+                      BrandCode:
+                        type: array
+                        description: Lists hotel brand codes associated with the property.
+                        maxItems: 20
+                        example: ["10008","10009"]
+                        items:
+                          type: string
+                          pattern: "^[0-9a-zA-Z ]{1,20}$"
+                          minLength: 1
+                          maxLength: 20
+                          description: Hotel brand code.
+                          example: "10008"
+                  ChainCodes:
+                    type: object
+                    description: Contains a list of chain codes. Properties must belong to at least 1 chain code from this list to be shown in the response.
+                    required:
+                      - ChainCode
+                    properties:
+                      ChainCode:
+                        type: array
+                        description: Lists chain codes associated with the property.
+                        maxItems: 20
+                        items:
+                          type: string
+                          pattern: "^[0-9a-zA-Z]{2}$"
+                          minLength: 1
+                          maxLength: 20
+                          description: Two-character code used to identify the hotel chain.
+                          example: "YX"
+                        example: ["MC","YX"]
+                  AmenityCodes:
+                    type: object
+                    description: Contains a list of amenity codes. Properties must have 1 or all of the amenities from this list to be shown in the response, depending on the value of `Inclusive` - true (must have all amenities) or false (must have at least 1 amenity).
+                    required:
+                      - AmenityCode
+                    properties:
+                      Inclusive:
+                        type: boolean
+                        description: If true, the returned properties must have all the requested amenity codes. If false, the returned properties must have at least one of the requested codes.
+                        default: false
+                        example: false
+                      AmenityCode:
+                        type: array
+                        description: Lists amenity codes associated with the property.
+                        maxItems: 20
+                        items:
+                          type: integer
+                          minimum: 1
+                          example: 15
+                          description: The amenity code, mapped to the OTA code `HAC`.
+                        example: [15,16]
+                  SecurityFeatureCodes:
+                    type: object
+                    description: Contains a list of security feature codes. Properties must have 1 or all of the security features from this list to be shown in the response, depending on the value of `Inclusive` - true (must have all security features) or false (must have at least 1 security features).
+                    required:
+                      - SecurityFeatureCode
+                    properties:
+                      Inclusive:
+                        type: boolean
+                        description: If true, the returned properties must have all the requested security feature codes. If false, the returned properties must have at least one of the requested codes.
+                        default: false
+                        example: false
+                      SecurityFeatureCode:
+                        type: array
+                        description: Lists security feature codes associated with the property.
+                        maxItems: 20
+                        items:
+                          type: integer
+                          minimum: 1
+                          example: 15
+                          description: The amenity code, mapped to the OTA code `SEC`.
+                  PropertyTypeCodes:
+                    type: object
+                    description: Contains a list of property type codes. Properties must belong to at least 1 or all of the property types from this list to be shown in the response, depending on the value of `Inclusive` - true (must fall under all property types ) or false (must fall under at least 1 property type).
+                    required:
+                      - PropertyTypeCode
+                    properties:
+                      Inclusive:
+                        type: boolean
+                        description: If true, the returned properties must belong to all the property type codes. If false, the returned properties must belong to at least one of the requested property type codes.
+                        default: false
+                        example: false
+                      PropertyTypeCode:
+                        type: array
+                        maxItems: 20
+                        items:
+                          type: integer
+                          minimum: 1
+                          example: 15
+                          description: The property type code, mapped to the OTA code `PCT`.
+                        example: [15,16]                  
+                  SabreRating:
+                    type: object
+                    description: Contains filters for all properties to ensure that their ratings fall between a specified `Min` / `Max` rating.
+                    properties:
+                      Min:
+                        type: string
+                        pattern: "^[1-4]{1}\\.[0,5]{0,1}|[5]{1}\\.[0]{1}|[1-5]{1}$" 
+                        description: Properties returned in the response will have a rating greater than this value. Defaults to 0 if `Max` is specified but `Min` is not.
+                        example: "1.5"
+                      Max:
+                        type: string
+                        pattern: "^[1-4]{1}\\.[0,5]{0,1}|[5]{1}\\.[0]{1}|[1-5]{1}$" 
+                        description: Properties returned in the response will have a rating lower than this value. Defaults to 5 if `Min` is specified but `Max` is not.
+                        example: "4.5"
+              ImageRef:
+                type: object
+                description: Contains hotel image details.
+                properties:
+                  Type:
+                    type: string
+                    description: Identifies the image type to be returned in the response.
+                    default: THUMBNAIL
+                    enum: 
+                      - ORIGINAL
+                      - THUMBNAIL
+                      - SMALL
+                      - MEDIUM
+                      - LARGE
+                    example: "MEDIUM"
+                  CategoryCode:
+                    type: integer
+                    description: Category of the image being requested, mapped to the OTA `PIC` table.
+                    minimum: 1
+                    example: 3
+                  LanguageCode:
+                    type: string
+                    description: The two-letter ISO 639-1 language code.
+                    pattern: "^([a-z][a-z][_][A-Z][A-Z])|([a-zA-Z]{2})$"
+                    example: "EN"
+        example:
+          POS:
+            Source:
+              PseudoCityCode: "TM51"
+          SearchCriteria:
+            OffSet: 1
+            SortBy: "TotalRate"
+            SortOrder: "ASC"
+            PageSize: 40
+            TierLabels: true
+            GeoSearch:
+              GeoRef:
+                Radius: 200
+                UOM: MI
+                RefPoint:
+                  Value: "DFW"
+                  ValueContext: "CODE"
+                  RefPointType: "6"
+                  StateProv: "TX"
+                  CountryCode: "US"
+            RateInfoRef:
+              CurrencyCode: "USD"
+              BestOnly: "2"
+              PrepaidQualifier: "IncludePrepaid"
+              RefundableOnly: false
+              ConvertedRateInfoOnly: true
+              StayDateRange:
+                StartDate: "2026-06-20"
+                EndDate: "2026-06-21"
+              Rooms:
+                Room:
+                  - Index: 1
+                    Adults: 1
+            HotelPref:
+              ChainCodes:
+                ChainCode:
+                  - "HY"
+                  - "MC"
+            ImageRef:
+              Type: "THUMBNAIL"
+              LanguageCode: "en"
+                  
+  GetHotelAvailResponse:
+    type: object
+    properties:
+      GetHotelAvailRS:
+        type: object
+        properties:
+          ApplicationResults:
+            type: object
+            description: Contains the results of the search. `ApplicationResults` can be used anywhere where `Results` is referenced, specifically as the contents of a Sabre SOAP fault/detail element.
+            properties:
+              status:
+                type: string
+                example: Complete
+                description: The status of the search.
+                enum:
+                  - Complete
+                  - Incomplete
+                  - NotProcessed
+                  - Unknown
+              Success:
+                $ref: '#/definitions/GetHotelAvailRS.ApplicationResults.ElementStructure'
+              Error:
+                $ref: '#/definitions/GetHotelAvailRS.ApplicationResults.ElementStructure'
+              Warning:
+                $ref: '#/definitions/GetHotelAvailRS.ApplicationResults.ElementStructure'
+                
+          HotelAvailInfos:  
+            type: object
+            description: Contains hotel availability details for all properties found.
+            properties:
+              OffSet:
+                type: integer
+                description: Denotes the current page number.
+                minimum: 1
+                example: 2
+              MaxSearchResults:
+                type: integer
+                description: Denotes the maximum number of property results. The number of pages can be derived using this integer and the number of hotels per page (`PageSize` from the request).
+                minimum: 0
+                example: 763
+              ShopKey:
+                type: string
+                description: An encrypted key used to fetch rates for the next set of properties matching `SearchCriteria`.
+                minLength: 0
+                maxLength: 240
+                example: '48ff454e-b83d-4c4f-aeb9-1bc9f3df8794'
+              HotelAvailInfo:
+                type: array
+                description: Lists basic hotel, rate, and image information.
+                items:
+                  type: object
+                  required:
+                    - HotelInfo
+                  properties:
+                    HotelInfo:
+                      type: object
+                      description: Contains basic hotel information.
+                      required:
+                        - HotelCode
+                        - CodeContext
+                      properties:
+                        HotelCode:
+                          type: string
+                          description: The hotel code / property ID.
+                          minLength: 1
+                          maxLength: 20
+                          example: '100072188'
+                        CodeContext:
+                          type: string
+                          description: Identifies what kind of hotel code is represented by `HotelCode`.
+                          enum:
+                            - SABRE
+                            - GLOBAL
+                          example: 'GLOBAL'
+                        SabreHotelCode:
+                          type: string
+                          minLength: 1
+                          maxLength: 20
+                          description: Sabre property ID for the Global ID. This is populated only if the request was made for a Global ID and it is mapped to a Sabre ID
+                          example: "8315"
+                        HotelName:
+                          type: string
+                          description: Full name of the hotel property.
+                          minLength: 0
+                          maxLength: 500
+                          example: "Hyatt Regency Tulsa"
+                        ChainCode:
+                          type: string
+                          minLength: 0
+                          maxLength: 20
+                          description: The chain code the hotel belongs to.
+                          example: "HY"
+                        ChainName:
+                          type: string
+                          description: The full name of the hotel chain.
+                          minLength: 0
+                          maxLength: 500
+                          example: "Hyatt Hotels And Resorts"
+                        BrandCode:
+                          type: string
+                          description: The code associated with the hotel brand name.
+                          minLength: 0
+                          maxLength: 50
+                          example: "10008"
+                        BrandName:
+                          type: string
+                          description: The hotel brand name.
+                          minLength: 0
+                          maxLength: 500
+                          example: "Hyatt"
+                        Distance:
+                          type: number
+                          multipleOf: 0.01
+                          description: Distance of the hotel from the search point.
+                          example: 23.45
+                        Direction:
+                          type: string
+                          description: Direction of the hotel from the search point.
+                          example: "S"
+                        UOM:
+                          type: string
+                          description: Unit of measure in `MI` for miles, or `KM` for kilometer.
+                          enum:
+                          - MI
+                          - KM
+                          example: "MI"
+                        Logo:
+                          type: string
+                          format: uri
+                          description: URL belonging to the hotel's logo image.
+                          example: 'http://vcmp-hotels.cert.sabre.com/image/upload/t_vcmp_thumb/hotel/i/1/jdbkyzhiy4tmmm0a30e3.jpg'
+                        SabreRating:
+                          type: string
+                          description: The star rating of the property.
+                          minLength: 0
+                          maxLength: 10
+                          example: "3.5"
+                        CurrencyCode:
+                          type: string
+                          description: Three-letter ISO 4217 code of the currency accepted by the hotel.
+                          pattern: "^[A-Z]{3}$"
+                          example: "USD"
+                        Ordinal:
+                          type: integer
+                          description: Displays position at which properties are shown in the response.
+                          example: 1
+                        TierLabels:
+                          type: object
+                          description: Contains agency or corporate labels assigned to the property.
+                          properties:
+                            TierLabel:
+                              type: array
+                              description: Lists all agency or corporate labels assigned to the property.
+                              minItems: 0
+                              maxItems: 5
+                              items:
+                                type: object
+                                properties:
+                                  Type:
+                                    type: string
+                                    minLength: 0
+                                    maxLength: 500
+                                    description: Type of the tier label.
+                                    example: 'Agency'
+                                  Value:
+                                    type: string
+                                    minLength: 0
+                                    maxLength: 500
+                                    description: Value assigned to the tier level.
+                                    example: 'Platinum'
+                                  ProgramId:
+                                    type: string
+                                    pattern: '^[0-9]{1,10}$'
+                                    description: Preferencing program to which the `TierLabel` belongs.
+                                    example: '1082'
+                        LocationInfo:
+                          type: object
+                          description: Contains location information for a hotel.
+                          properties:
+                            Latitude:
+                              type: string
+                              minLength: 0
+                              maxLength: 20
+                              example: '36.154800'
+                              description: Geographical latitude of the hotel location.
+                            Longitude:
+                              type: string
+                              minLength: 0
+                              maxLength: 20
+                              example: '-95.990356'
+                              description: Geographical longitude of the hotel location.
+                            Address:
+                              type: object
+                              description: Contains address information for a hotel.
+                              required:
+                                - AddressLine1
+                                - CityName
+                                - CountryName
+                              properties:
+                                AddressLine1:
+                                  type: string
+                                  minLength: 0
+                                  maxLength: 255
+                                  description: The first line of the address.
+                                  example: '50 N MARTINGALE RD'
+                                AddressLine2:
+                                  type: string
+                                  minLength: 0
+                                  maxLength: 255
+                                  description: The second line of the address.
+                                  example: 'Pointer Square'
+                                AddressLine3:
+                                  type: string
+                                  minLength: 0
+                                  maxLength: 255
+                                  description: The third line of the address.
+                                  example: 'Orlando'
+                                CityName:
+                                  type: object
+                                  properties:
+                                    CityCode:
+                                      type: string
+                                      pattern: "^([A-Z0-9]{0,5})$"
+                                      description: The three letter IATA city code.
+                                      example: 'TUL'
+                                    value:
+                                      type: string
+                                      minLength: 0
+                                      maxLength: 50
+                                      description: The full city name.
+                                      example: 'Tulsa'
+                                StateProv:
+                                  type: object
+                                  description: Contains the hotel's state and providence details.
+                                  properties:
+                                    StateCode:
+                                      type: string
+                                      minLength: 0
+                                      maxLength: 10
+                                      description: The hotel's state or province code.
+                                      example: 'OK'
+                                    value:
+                                      type: string
+                                      description: The name of the state or province.
+                                      example: 'Oklahoma'
+                                PostalCode:
+                                  type: string
+                                  description: The hotel's postal code information.
+                                  minLength: 0
+                                  maxLength: 20
+                                  example: '60173'
+                                CountryName:
+                                  type: object
+                                  description: Contains country name information associated with the hotel.
+                                  properties:
+                                    Code:
+                                      type: string
+                                      description: The 0-3 letter country code.
+                                      pattern: "^([A-Z0-9]{0,3})$"
+                                      example: 'US'
+                                    value:
+                                      type: string
+                                      description: The full name of the country.
+                                      example: 'United States'
+                            Neighborhoods:
+                              type: object
+                              description: Contains neighborhood polygons, such as MSA/Area/Hood, under which the property location falls.
+                              properties:
+                                Neighborhood:
+                                  type: array
+                                  description: Lists information about neighborhood polygons, such as MSA/Area/Hood, under which the property location falls.
+                                  maxItems: 10
+                                  items:
+                                    type: object
+                                    properties:
+                                      Id:
+                                        type: string
+                                        minLength: 0
+                                        maxLength: 20
+                                        description: Polygon ID of the neighborhood.
+                                        example: '90000092'
+                                      value: 
+                                        type: string
+                                        description: The name of the polygon.
+                                        example: 'Tulsa OK'
+                            Contact: 
+                              type: object
+                              description: Contains the contact details for the hotel.
+                              properties:
+                                Phone:
+                                  type: string
+                                  description: The hotel's phone number.
+                                  minLength: 0
+                                  maxLength: 50
+                                  example: '999-222-1111'
+                                Fax:
+                                  type: string
+                                  minLength: 0
+                                  maxLength: 20
+                                  description: The hotel's fax number.
+                                  example: '999-222-1110'                        
+                        Amenities:
+                          type: object
+                          description: Contains the amenities offered by the hotel.
+                          properties:
+                            Amenity:
+                              type: array
+                              description: Lists all hotel amenities.
+                              items:
+                                type: object
+                                properties:
+                                  Code:
+                                    type: integer
+                                    minimum: 1
+                                    description: Numeric OTA code for the amenity from the `HAC` OTA table.
+                                    example: 5
+                                  Description:
+                                    type: string
+                                    minLength: 0
+                                    maxLength: 255
+                                    description: A description of the amenity offered.
+                                    example: 'Parking'
+                                  ComplimentaryInd:
+                                    type: boolean
+                                    description: If true, the mentioned amenity is included in the booking. If false, an additional charge is required.
+                                    example: false
+                                  value:
+                                    type: string
+                                    example: "Ask at reception for car park charges"
+                        SecurityFeatures:
+                          type: object
+                          properties:
+                            SecurityFeature:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  Code:
+                                    type: integer
+                                    minimum: 1
+                                    example: 15
+                                    description: The OTA Code mapped to the SEC OTA Code
+                                  Description:
+                                    type: string
+                                    example: "Complies with Local/State/Federal fire laws"
+                                    description: A description of the OTA Code.
+                                  value:
+                                    type: string
+                                    description: Text-based information regarding the security item.
+                                    example: "Fire safety law compliant"
+                        PropertyTypeInfo:
+                          type: object
+                          description: Contains details of the property class type, which is mapped to the `PCT` OTA code.
+                          properties:
+                            PropertyType:
+                              type: array
+                              description: Lists the property type.
+                              items:
+                                type: object
+                                properties:
+                                  Code:
+                                    type: integer
+                                    minimum: 1
+                                    description: The OTA code of the property class, mapped to the `PCT` OTA code.
+                                    example: 1
+                                  Description:
+                                    type: string
+                                    minLength: 0
+                                    maxLength: 255
+                                    description: Description of the property class.
+                                    example: 'All Suite'
+                    HotelRateInfo:
+                      type: object
+                      required:
+                        - Rooms
+                        - RateInfos
+                      properties:
+                        RateInfos:
+                          type: object
+                          description: Contains hotel room rate information.
+                          properties:
+                            RateInfo:
+                              $ref: '#/definitions/GetHotelAvailRS.RateInfos.RateInfo'
+                            ConvertedRateInfo:
+                              $ref: '#/definitions/GetHotelAvailRS.RateInfos.RateInfo'
+                        Rooms:
+                          type: object
+                          description: Contains hotel room information.
+                          required:
+                            - Room
+                          properties:
+                            Room:
+                              $ref: '#/definitions/GetHotelAvailRS.Room'
+                    HotelImageInfo:
+                      type: object
+                      description: Contains image information for a hotel.
+                      properties:
+                        ImageItem:
+                          type: object
+                          required:
+                            - Id
+                            - Ordinal
+                            - Format
+                            - LastModifedDate
+                            - Image
+                            - Category
+                            - AdditionalInfo
+                          description: Contains image information for a hotel.
+                          properties:
+                            Id:
+                              type: string
+                              description: The media item ID.
+                              minLength: 0
+                              maxLength: 255
+                              example: '1377631'
+                            Ordinal:
+                              type: number
+                              description: The priority of the media item. The lower the number, the higher the priority.    
+                              minimum: 0
+                              example: 2
+                            LastModifedDate:
+                              type: string
+                              format: date
+                              description: Date when the media item was last updated/changed in YYYY-MM-DD format.
+                              minLength: 0
+                              maxLength: 255
+                              example: '2024-06-28'
+                            Format:
+                              type: string
+                              description: Indicates the format of the media returned.
+                              example: 'JPG'
+                              enum:
+                                - BMP
+                                - GIF
+                                - ICO
+                                - JPG
+                                - PNG
+                                - TIFF
+                                - WEBP
+                            Image:
+                              type: object
+                              required:
+                                - Url
+                                - Type
+                                - Height
+                                - Width
+                              description: Contains details of the hotel image.
+                              properties:
+                                Url:
+                                  type: string
+                                  description: The image URL.
+                                  format: uri
+                                  example: 'http://vcmp-hotels.cert.sabre.com/image/upload/t_vcmp_thumb/hotel/i/1276/uvitpha0qioacl6c2tin.jpg'
+                                Height:
+                                  type: integer
+                                  description: Height of the image in pixels.
+                                  minimum: 0
+                                  example: 100
+                                Width:
+                                  type: integer
+                                  description: Width of the image in pixels.
+                                  minimum: 0
+                                  example: 150
+                                Type:
+                                  type: string
+                                  description: Indicates the image type by size or original/thumbnail.
+                                  enum:
+                                    - ORIGINAL
+                                    - MEDIUM
+                                    - LARGE
+                                    - THUMBNAIL
+                                    - SMALL
+                            Category:
+                              type: object
+                              description: Contains the category the image item belongs to. This is mapped to the `PCI` OTA code.
+                              required:
+                                - Description
+                              properties:
+                                CategoryCode:
+                                  type: number
+                                  minimum: 1
+                                  example: 3
+                                  description: Image category code, mapped to the `PCI` OTA code.
+                                Description:
+                                  type: object
+                                  description: Contains image description details.
+                                  properties:
+                                    Text:
+                                      type: array
+                                      description: Lists descriptions in all requested language codes.
+                                      items:
+                                        type: object
+                                        properties:
+                                          Language:
+                                            type: string
+                                            pattern: '^([a-z][a-z][_][A-Z][A-Z])|([a-zA-Z]{2})$'
+                                            example: 'en'
+                                            description: The ISO 639-1 two-letter language code.
+                                          value:
+                                            type: string
+                                            description: Language Code
+                                            example: The text description of the image.
+                            AdditionalInfo:
+                              type: object
+                              description: Contains any additional information related to the media item.
+                              properties:
+                                Info:
+                                  type: array
+                                  maxItems: 10
+                                  description: Lists additional information, like caption, in the response.
+                                  items:
+                                    type: object
+                                    required:
+                                      - Type
+                                      - Description
+                                    properties:
+                                      Type:
+                                        type: string
+                                        description: Identifies the type of additional information present.
+                                        example: 'CAPTION'
+                                        enum:
+                                          - CAPTION
+                                      Description:
+                                        type: object
+                                        description: Contains the description for the chosen additional info parameter.
+                                        properties:
+                                          Text:
+                                            type: array
+                                            description: Lists the language the description is in, and text describing the additional information.
+                                            items:
+                                              type: object
+                                              properties:
+                                                Language:
+                                                  type: string
+                                                  pattern: '^([a-z][a-z][_][A-Z][A-Z])|([a-zA-Z]{2})$'
+                                                  description: The ISO 639-1 two-letter language code.
+                                                  example: 'en'
+                                                value:
+                                                  type: string
+                                                  description: Text describing the additional information.
+                                                  example: 'Guestroom'
+        
+  GetHotelAvailRS.ApplicationResults.ElementStructure:
+      type: array
+      description: Lists the results of the application's search, as well as any errors that may have occured.
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            description: An indication of the source of error when processing the request.
+          timeStamp:
+            type: string
+            description: Contains current application server time stamp.
+          SystemSpecificResults:
+            type: array
+            description: Lists the application response status.
+            items:
+              type: object
+              properties:
+                timeStamp:
+                  type: string
+                  description: Contains current application server time stamp.
+                reference:
+                  type: string
+                  description: If present, provides the name of the field for which the results apply.
+                ShortText:
+                  type: object
+                  description: Contains an abbreviated version of the error in text format.
+                Element:
+                  type: object
+                  description: Contains the identity of the unknown or misspelled tag that caused the processing error.
+                RecordID:
+                  type: object
+                  description: Contains the identity of the record that failed among a group of records. This value may contain a concatenation of a unique failed transaction ID with specific record(s) associated with that transaction.
+                DocURL:
+                  type: object
+                  description: Contains an online description of the error that occurred.
+                HostCommand:
+                  type: object
+                  description: Contains the host system common run to create the result.
+                  properties:
+                    LNIATA:
+                      type: string
+                      description: The Line Number Interchange Address Terminal Address (LNIATA) number.
+                Message:
+                  type: array
+                  description: Lists application-specific codes and messages. A textual description to provide more information about the specific condition, warning, or error with the code attribute as a numeric value.
+                  items:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        description: The code, if returned, for an error or warning.
+                        example: ERR.0381
+                      value:
+                        type: string
+                        description: The message associated to the above code.
+                        example: "Invalid check-in date"
+                      
+  GetHotelAvailRS.RateInfos.RateInfo:
+    type: array
+    description: Lists all rate information for a given hotel.
+    minItems: 0
+    items:
+      type: object
+      required:
+        - RateKey
+        - RateSource
+      properties:
+        StartDate:
+          type: string
+          format: date
+          example: '2024-01-16'
+          description: The check-in date in YYYY-MM-DD format.
+        EndDate:
+          type: string
+          format: date
+          example: '2024-01-22'
+          description: The checkout date in YYYY-MM-DD format.
+        AmountBeforeTax:
+          type: number
+          multipleOf: 0.01
+          example: 923.12
+          description: The total amount chargeable for booking, exclusive of taxes.
+        AmountAfterTax:
+          type: number
+          multipleOf: 0.01
+          example: 1023.12
+          description: The total amount chargeable for booking, inclusive of taxes.
+        AverageNightlyRate:
+          type: number
+          multipleOf: 0.01
+          example: 170.52
+          description: The calculated avarage nightly rate.
+        CurrencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: 'AUD'
+          description: The three-letter ISO 4217 currency code.
+        AdditionalFeesInclusive:
+          type: boolean
+          example: true
+          description: If true, all additional fees are included in the returned rate.
+        TaxInclusive:
+          type: boolean
+          example: true
+          description: If true, all taxes are included in the returned rate.
+        LocalFeesInclusive:
+          type: boolean
+          example: true
+          description: If true, all local fees are included in the returned rate.
+        IncidentalsInclusive:
+          type: boolean
+          example: true
+          description: If true, all incidentals are included in the returned rate.
+        RateSource:
+          type: string
+          example: '100'
+          description: The supplier code from which the rates are returned.
+        RateKey:
+          type: string
+          example: 'NFZ6Y/BZlGHH9RhcPEBtCN6zQTOAckUn8C11PGKuz9BaSMsJXduJuKzEeFe7t24KvAItmy9bNxc1kL3b6g31NPQGvihdWaZCsVfLg6f/Qe4KgDhaUpTYQj+xMd/8l49JTQRreXBUK4EqtYhVkY0aqA5WIxCfzOrYgIdZkKNtngnbjkr4IvmCmKu+MVMNFKgpADA3rjwPCaxFM5MY1s5NYEBHdP2LnMHNvmuLxp1kYoBNIUlAPYFdUh9fQZe1RkYSPcCUaPYJMH5RgC9FyW6E2cu+TefaO1YkzIy4zJXrdnNBDuU/imR3O4FA0n8R0Vb+d8hZZL3Q/+vNfbxzRLX3CQ=='
+          description: The unique key belonging to the returned rate.
+        LoyaltyId:
+          type: string
+          example: 'MC1123'
+          description: The loyalty ID of the rate.
+        Commission:
+          type: object
+          description: Contains rate commission information.
+          properties:
+            Percent:
+              type: number
+              multipleOf: 0.01
+              example: 12.01
+              description: Percent of the commission.
+            Amount:
+              type: number
+              minimum: 0
+              multipleOf: 0.01
+              example: 82.41
+              description: Amount of the commission.
+            CurrencyCode:
+              type: string
+              pattern: '^[A-Z]{3}$'
+              example: 'AUD'
+              description: The three-letter ISO 4217 currency code.
+            Type:
+              type: string
+              example: 'Variable'
+              description: The type of commission.
+            CommissionDescription:
+              type: object
+              description: Contains text describing the commission.
+              required:
+                - Text
+              properties:
+                Text:
+                  type: string
+                  example: '30 percent'
+                  description: A text description of the commission information. 
+                  
+  GetHotelAvailRS.Room:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      description: Contains the price check.
+      required:
+        - RoomIndex
+        - RatePlans
+      properties:
+        RoomIndex:
+          type: integer
+          minimum: 1
+          example: 3
+          description: The indexed value of the room.
+        RoomType:
+          type: string
+          example: Suite
+          description: The type of the room.
+        RoomTypeCode:
+          type: string
+          example: 'A1K'
+          description: The code attributed to the specific type of the room.
+        RoomCategory:
+          type: string
+          example: Suite
+          description: The category to which the room belongs.
+        RoomID:
+          type: string
+          example: B11
+          description: The property specific ID of the room.
+        Floor:
+          type: integer
+          example: 5
+          description: The floor of the hotel where the room is.
+        RoomViewCode:
+          type: integer
+          minimum: 1
+          example: 1
+          description: The room code required to view its interior. Mapped to RVT OTA Code
+        NonSmoking:
+          type: boolean
+          example: true
+          description: If true, the room does not allow smoking inside of it.
+        SharedRoomInd:
+          type: boolean
+          example: true
+          description: If true, the room can be shared.
+        GuestRoomInfo:
+          type: integer
+          minimum: 1
+          example: 4
+          description: Information concerning the guest room status, mapped to the GRI OTA Code.
+        BedTypes:
+          type: object
+          required:
+            - BedType
+          properties:
+            BedType:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  Code:
+                    type: integer
+                    minimum: 1
+                    description: This is mapped to the BED OTA code.
+                    example: 1
+                  Count:
+                    type: integer
+                    minimum: 0
+                    description:  The number of the corresponding beds available in the room.
+                    example: 2
+        RoomDescription:
+          type: object
+          properties:
+            Name:
+              type: string
+              example: Suite
+              description: The name of the room.
+            Text:
+              type: array
+              minItems: 0
+              items:
+                type: string
+                description: The text-based description of the room.
+                example: The room is a cozy two person place with its own kitchen and a shower.
+        AdditionalDetails:
+          type: object
+          required:
+            - AdditionalDetail
+          properties:
+            AdditionalDetail:
+              type: array
+              description: Lists all additional details associated with the room.
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  Code:
+                    type: integer
+                    minimum: 1
+                    example: 13
+                    description: The OTA Code mapped to the ADT table.
+                  Amount:
+                    type: number
+                    multipleOf: 0.01
+                    example: 23.12
+                    description: The total value of the additional details rates.
+                  CurrencyCode:
+                    type: string
+                    pattern: '^[A-Z]{3}$'
+                    example: AUD
+                    description: Specifies the currency code of the returned rates.
+                  Text:
+                    type: array
+                    minItems: 0
+                    items:
+                      type: string
+                      description: A description of the room and any additional details it has.
+                      example: The room has several additions, such as an extra bathroom and two beds more than the usual.
+        Amenities:
+          type: object
+          required:
+            - Amenity
+          properties:
+            Amenity:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  Code:
+                    type: integer
+                    minimum: 1
+                    example: 15
+                    description: The OTA Code mapped to the RMA OTA Code.
+                  Description:
+                    type: string
+                    example: Car rental desk
+                    description: A description of the OTA Code.
+                  ComplimentaryInd:
+                    type: boolean
+                    example: false
+                    description: If true, the amenity mentioned is free of charge.
+                  value:
+                    type: string
+                    example: Ask at reception for car rental charges.
+        Occupancy:
+          type: object
+          description: Contains the minimum and maximum occupancy of the room.
+          properties:
+            Min:
+              type: integer
+              example: 1
+              description: The minimum occupancy of the room.
+            Max:
+              type: integer
+              example: 6
+              description: The maximum occupancy of the room.
+        RatePlans:
+          type: object
+          required:
+            - RatePlan
+          properties:
+            RatePlan:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required:
+                  - PrepaidIndicator
+                  - RateSource
+                  - RateKey
+                properties:
+                  RatePlanName:
+                    type: string
+                    example: Single Bed Room with Breakfast
+                    description: The name of the plan associated with the rate.
+                  RatePlanCode:
+                    type: string
+                    example: LES
+                    description: The code associated specifically with the plan of the rate.
+                  RatePlanType:
+                    type: string
+                    pattern: '^([0-9]{1,2})$'
+                    enum:
+                      - '1'
+                      - '2'
+                      - '3'
+                      - '4'
+                      - '5'
+                      - '6'
+                      - '7'
+                      - '8'
+                      - '9'
+                      - '10'
+                      - '11'
+                      - '12'
+                      - '13'
+                      - '14'
+                      - '15'
+                      - '16'
+                      - '17'
+                      - '18'
+                      - '19'
+                      - '20'
+                      - '21'
+                      - '22'
+                      - '23'
+                      - '24'
+                      - '25'
+                      - '26'
+                      - '27'
+                      - '28'
+                      - '29'
+                      - '30'
+                      - '31'
+                      - '32'
+                      - '33'
+                    example: '10'
+                    description: Identifies if the rate is merchant standard, a merchant package, or is a direct agency rate. Mapped to the RPT OTA Code.
+                  PrepaidIndicator:
+                    type: boolean
+                    example: true
+                    description: If true, the rate can be prepaid in advance. Currently, this field will always be populated as 'false' for GDS and Booking.com rates and 'true' for BedsOnline rates.
+                  AvailableQuantity:
+                    type: integer
+                    example: 3
+                    description: The available quantity of rates.
+                  LimitedAvailability:
+                    type: string
+                    example: "true"
+                    description: Describes whether the rate is of limited availability.
+                  RateSource:
+                    type: string
+                    example: '100'
+                    description: Specifies the source of the rate.
+                  RateKey:
+                    type: string
+                    example: NFZ6Y/BZlGHH9RhcPEBtCN6zQTOAckUn8C11PGKuz9BaSMsJXduJuKzEeFe7t24KvAItmy9bNxc1kL3b6g31NPQGvihdWaZCsVfLg6f/Qe4KgDhaUpTYQj+xMd/8l49JTQRreXBUK4EqtYhVkY0aqA5WIxCfzOrYgIdZkKNtngnbjkr4IvmCmKu+MVMNFKgpADA3rjwPCaxFM5MY1s5NYEBHdP2LnMHNvmuLxp1kYoBNIUlAPYFdUh9fQZe1RkYSPcCUaPYJMH5RgC9FyW6E2cu+TefaO1YkzIy4zJXrdnNBDuU/imR3O4FA0n8R0Vb+d8hZZL3Q/+vNfbxzRLX3CQ==
+                    description: The specific key associated with the rate.
+                  ClientId:
+                    type: string
+                    example: "AMX"
+                    description: The ID associated with the rate plan.
+                  ProductCode:
+                    type: string
+                    description: The Inventory Block Code of the room. This is populated only for the GDS products
+                    example: "A1KRAC"
+                  RatePlanDescription:
+                    type: object
+                    required:
+                      - Text
+                    properties:
+                      Text:
+                        type: string
+                        example: Junior Suite
+                        description: The description of the rate plan, such as which suite type it is for, etc.
+                  RatePlanInclusions:
+                    type: object
+                    required:
+                      - RatePlanInclusionDescription
+                    properties:
+                      RatePlanInclusionDescription:
+                        type: array
+                        minItems: 1
+                        items:
+                          type: object
+                          properties:
+                            Name:
+                              type: string
+                              example: Free Parking
+                              description: The name of the rate plan.
+                            Code:
+                              type: integer
+                              minimum: 1
+                              example: 12
+                              description: The code associated with the specific rate plan.
+                            Text:
+                              type: array
+                              minItems: 0
+                              items:
+                                type: string
+                                description: A text-based description of the room.
+                                example: Free Parking
+                  MealsIncluded:
+                    type: object
+                    description: Contains the different types of meals included as part of the rate plan.
+                    properties:
+                      BreakFast:
+                        type: boolean
+                        example: true
+                        description: If true, breakfast is included in the plan.
+                      Lunch:
+                        type: boolean
+                        example: true
+                        description: If true, lunch is included in the plan.
+                      Dinner:
+                        type: boolean
+                        example: true
+                        description: If true, dinner is included in the plan.
+                      MealPlanIndicator:
+                        type: boolean
+                        example: true
+                        description: If true, a meal plan is included.
+                      MealPlanCode:
+                        type: integer
+                        minimum: 1
+                        example: 11
+                        description: An OTA code mapped to the MPT OTA table that is associated with the meal plan.
+                      GuestCount:
+                        type: integer
+                        minimum: 0
+                        example: 2
+                        description: Number of guests included in the MealPlan
+                  RateInfo:
+                    $ref: '#/definitions/GetHotelAvailRS.Room.RateInfo'                
+                  ConvertedRateInfo:
+                    $ref: '#/definitions/GetHotelAvailRS.Room.RateInfo'                
+                    
+  GetHotelAvailRS.Room.RateInfo:
+    type: object
+    properties:
+      StartDate:
+        type: string
+        format: date
+        example: '2024-01-16'
+        description: The date of the traveler's check in.
+      EndDate:
+        type: string
+        format: date
+        example: '2024-01-22'
+        description: The date of the traveler's check out.
+      AmountBeforeTax:
+        type: number
+        multipleOf: 0.01
+        example: 923.12
+        description: The total amount to be paid for the booking before taxes are included.
+      AmountAfterTax:
+        type: number
+        multipleOf: 0.01
+        example: 1023.12
+        description:  The total amount to be paid for the booking, with taxes included.
+      AverageNightlyRate:
+        type: number
+        multipleOf: 0.01
+        example: 953.12
+        description: The average per night rate of the traveler's entire stay.
+      CurrencyCode:
+        type: string
+        pattern: '^[A-Z]{3}$'
+        example: AUD
+        description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+      AdditionalFeesInclusive:
+        type: boolean
+        example: true
+        description: If true, additional fees are included in the rate.
+      TaxInclusive:
+        type: boolean
+        example: true
+        description: If true, taxes are included in the rate.
+      LocalFeesInclusive:
+        type: boolean
+        example: true
+        description: If true, any local fees are included in the rate.
+      IncidentalsInclusive:
+        type: boolean
+        example: true
+        description: If true, incidentals are included in the rate.
+      Rates:
+        type: object
+        required:
+          - Rate
+        properties:
+          Rate:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              properties:
+                StartDate:
+                  type: string
+                  format: date
+                  example: '2024-02-20'
+                  description: The date from which rate is applicable.
+                EndDate:
+                  type: string
+                  format: date
+                  example: '2024-02-22'
+                  description: The date to which rate is applicable.
+                AmountBeforeTax:
+                  type: number
+                  minimum: 0
+                  multipleOf: 0.01
+                  example: 1253.12
+                  description: The total amount to be paid for the booking before taxes are included.
+                AmountAfterTax:
+                  type: number
+                  minimum: 0
+                  multipleOf: 0.01
+                  example: 1475.23
+                  description: The total amount to be paid for the booking, with taxes included.
+                CurrencyCode:
+                  type: string
+                  pattern: '^[A-Z]{3}$'
+                  example: AUD
+                  description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+      Taxes:
+        type: object
+        description: Contains tax information.
+        properties: 
+          Amount:
+            type: number
+            minimum: 0
+            multipleOf: 0.01
+            example: 22.46
+            description: Specifies the total tax amount.
+          CurrencyCode:
+            type: string
+            pattern: '^[A-Z]{3}$'
+            example: 'AUD'
+            description: The currency code of the returned rates.
+          Tax:
+            type: array
+            minItems: 0
+            items:
+              type: object
+              required:
+                - Amount
+                - CurrencyCode
+              properties:
+                StartDate:
+                  type: string
+                  format: date
+                  description: Date from which the corresponding tax amount is applied.
+                  example: "2024-09-20"
+                EndDate:
+                  type: string
+                  format: date
+                  description: Date till which the corresponding Tax amount is applied.
+                  example: "2024-09-22"
+                Amount:
+                  type: number
+                  minimum: 0
+                  multipleOf: 0.01
+                  example: 11.23
+                  description: The tax amount in the given date range.
+                CurrencyCode:
+                  type: string
+                  pattern: '^([A-Z]{3})$'
+                  example: "AUD"
+                  description:  The currency code of the tax.
+          TaxGroups:
+            type: object
+            description: Contains a breakup of the different types of taxes.
+            required:
+              - TaxGroup
+            properties:
+              TaxGroup:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                    - Code
+                    - Amount
+                    - CurrencyCode
+                  properties:
+                    Code:
+                      type: integer
+                      minimum: 1
+                      description: This is mapped to the FTT OTA code.
+                      example: 36
+                    Amount:
+                      type: number
+                      minimum: 0
+                      multipleOf: 0.01
+                      example: 22.46
+                      description: The tax amount of the given tax type.
+                    CurrencyCode:
+                      pattern: '^([A-Z]{3})$'
+                      type: string
+                      description: Specifies the currency code of the tax.
+                      example: "AUD"
+                    TaxDescription:
+                      type: object
+                      required:
+                        - Text
+                      properties:
+                        Text:
+                          type: array
+                          minItems: 1
+                          items:
+                            type: string
+                            description: A text description of the tax.
+                            example: Value Added Tax.
+      Fees:
+        type: object
+        description: Contains information about the fee.
+        properties: 
+          Amount:
+            type: number
+            minimum: 0
+            multipleOf: 0.01
+            example: 22.46
+            description: Specifies the total fee amount.
+          CurrencyCode:
+            type: string
+            pattern: '^[A-Z]{3}$'
+            example: 'AUD'
+            description:  Specifies the currency code of the returned rates.
+          Fee:
+            type: array
+            minItems: 0
+            items:
+              type: object
+              required:
+                - Amount
+                - CurrencyCode
+              properties:
+                StartDate:
+                  type: string
+                  format: date
+                  description: Date from which corresponding fee amount is applied.
+                  example: "2024-09-20"
+                EndDate:
+                  type: string
+                  format: date
+                  description: The date till which corresponding fee amount is applied.
+                  example: "2024-09-22"
+                Amount:
+                  type: number
+                  minimum: 0
+                  multipleOf: 0.01
+                  example: 11.23
+                  description: The fee amount in the given date range.
+                CurrencyCode:
+                  type: string
+                  pattern: '^([A-Z]{3})$'
+                  example: "AUD"
+                  description: Specifies the currency code of the fee.
+          FeeGroups:
+            type: object
+            description: Contains a breakup of different types of fee.
+            required:
+              - FeeGroup
+            properties:
+              FeeGroup:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                    - Code
+                    - Amount
+                    - CurrencyCode
+                  properties:
+                    Code:
+                      type: integer
+                      minimum: 1
+                      description: This is mapped to the FTT OTA code.
+                      example: 12
+                    Amount:
+                      type: number
+                      minimum: 0
+                      multipleOf: 0.01
+                      example: 22.46
+                      description: The fee amount of the given fee type.
+                    CurrencyCode:
+                      pattern: '^([A-Z]{3})$'
+                      type: string
+                      description: Specifies the currency code of the fee.
+                      example: "AUD"
+                    FeeDescription:
+                      type: object
+                      required:
+                        - Text
+                      properties:
+                        Text:
+                          type: array
+                          minItems: 1
+                          items:
+                            type: string
+                            description: A text description of the fee.
+                            example: "Resort Fee"
+
+      RoomExtras:
+        type: object
+        required:
+          - RoomExtra
+        properties:
+          RoomExtra:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              properties:
+                Code:
+                  type: integer
+                  minimum: 1
+                  example: 196
+                  description: The Room Extra's code, mapped to the RMA OTA table.
+                Amount:
+                  type: number
+                  minimum: 0
+                  multipleOf: 0.01
+                  example: 145.23
+                  description: The amount to be paid for the room's extras.
+                CurrencyCode:
+                  type: string
+                  pattern: '^[A-Z]{3}$'
+                  example: AUD
+                  description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+                Text:
+                  type: string
+                  example: Extra Adult charge
+                  description: Describes the room extra and what it applies to.
+      CancelPenalties:
+        type: object
+        properties:
+          CancelPenalty:
+            type: array
+            minItems: 0
+            items:
+              type: object
+              required:
+                - Refundable
+              properties:
+                Refundable:
+                  type: boolean
+                  example: true
+                  description: If true, the cancel penalty is refundable.
+                Deadline:
+                  type: object
+                  properties:
+                    AbsoluteDeadline:
+                      type: string
+                      format: date-time
+                      example: '2024-07-01T23:59:00'
+                      description: The time and date of the final deadline for cancellation.
+                    OffsetTimeUnit:
+                      type: string
+                      example: Day
+                      description: The unit of time used for the deadline.
+                    OffsetUnitMultiplier:
+                      type: integer
+                      minimum: 1
+                      example: 2
+                      description: The multipler of `OffsetTimeUnit`.
+                    OffsetDropTime:
+                      type: string
+                      enum:
+                        - BeforeArrival
+                        - AfterBooking
+                        - AfterConfirmation
+                        - AfterArrival
+                        - AfterDeparture
+                      description: Identifies the point of reference in the journey of the traveler from when the deadline is implemented.
+                AmountPercent:
+                  type: object
+                  properties:
+                    TaxInclusive:
+                      type: boolean
+                      example: true
+                      description: If true, all taxes are included in the returned rate.
+                    FeesInclusive:
+                      type: boolean
+                      example: true
+                      description: If true, all fees are included in the returned rate.
+                    NmbrOfNights:
+                      type: integer
+                      example: 12
+                      description: The number of nights that are to be spent in the property.
+                    BasisType:
+                      type: string
+                      example: Basis Type
+                      description: Provides the basis for how the amount of the guarantee is calculated, such as nights spent in the property.
+                    Percent:
+                      type: number
+                      multipleOf: 0.01
+                      example: 12.01
+                      description: The percentage used to calculate the amount of the cancel fee.
+                    Amount:
+                      type: number
+                      minimum: 0
+                      multipleOf: 0.01
+                      example: 84.12
+                      description: The total amount of the cancel fee.
+                    CurrencyCode:
+                      type: string
+                      pattern: '^[A-Z]{3}$'
+                      example: AUD
+                      description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+                    ApplyAs:
+                      type: string
+                      example: Apply As
+                      description: Used to specify how the amount needs to be applied with respect to the stay.
+                PenaltyDescription:
+                  type: object
+                  required:
+                    - Text
+                  properties:
+                    Text:
+                      type: string
+                      example: |
+                        We understand that sometimes your travel plans change. We do not charge a change or cancel fee. However, this property (Donnington Valley Hotel and Spa) imposes the following penalty to its customers that we are required to pass on: Cancellations or changes made after 11:59 PM ((GMT+01:00)) on Jul 1, 2018, or no-shows, are subject to a 1 Night Room & Tax penalty.
+                      description: A text-based description of the cancellation penalty.
+      Guarantee:
+        type: object
+        required:
+          - GuaranteesAccepted
+        properties:
+          GuaranteeType:
+            type: string
+            example: GUAR
+            description: The type of the guarantee associated with the rate.
+          GuaranteesAccepted:
+            type: object
+            required:
+              - GuaranteeAccepted
+            properties:
+              GuaranteeAccepted:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  properties:
+                    GuaranteeTypeCode:
+                      type: integer
+                      minimum: 1
+                      example: 5
+                      description: The code of the guarantee type, mapped to the OTA PMT table.
+                    PaymentCards:
+                      type: object
+                      required:
+                        - PaymentCard
+                      properties:
+                        PaymentCard:
+                          type: array
+                          minItems: 1
+                          items:
+                            type: object
+                            required:
+                              - CardCode
+                            properties:
+                              CardCode:
+                                type: string
+                                example: "AX"
+                                description: The code associated with the payment card used for the transaction.
+                              value:
+                                type: string
+                                example: "American Express"
+                                description: The value of the payment card used for the transaction.
+          Deadline:
+            type: object
+            properties:
+              AbsoluteDeadline:
+                type: string
+                format: date-time
+                example: '2024-07-01T23:59:00'
+                description: The time and date of the deadline.
+              OffsetTimeUnit:
+                type: string
+                example: Day
+                description: The unit of time type used for the deadline.
+              OffsetUnitMultiplier:
+                type: integer
+                minimum: 1
+                example: 2
+                description: The multiplier of `OffsetTimeUnit`.
+              OffsetDropTime:
+                type: string
+                enum:
+                  - BeforeArrival
+                  - AfterBooking
+                  - AfterConfirmation
+                  - AfterArrival
+                  - AfterDeparture
+                description: The point of reference in the traveler's journey from when the deadline is implemented.
+          AmountPercent:
+            type: object
+            properties:
+              TaxInclusive:
+                type: boolean
+                example: true
+                description: If true, all taxes are included in the returned rate.
+              FeesInclusive:
+                type: boolean
+                example: true
+                description: If true, all fees are included in the returned rate.
+              NmbrOfNights:
+                type: integer
+                example: 12
+                description: The total amount of nights that will be spent at the property.
+              BasisType:
+                type: string
+                example: Basis Type
+                description: Provides the basis for how the amount of the guarantee is calculated, such as the amount of nights spent at the property.
+              Percent:
+                type: number
+                multipleOf: 0.01
+                example: 12.01
+                description: The percentage used to calculate the amount of the guarantee.
+              Amount:
+                type: number
+                minimum: 0
+                multipleOf: 0.01
+                example: 84.12
+                description: The total value of the guarantee.
+              CurrencyCode:
+                type: string
+                pattern: '^[A-Z]{3}$'
+                example: AUD
+                description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+              ApplyAs:
+                type: string
+                example: Apply As
+                description: Specifies how the amount needs to be applied with respect to the stay of the traveler.
+          GuaranteeDescription:
+            type: object
+            required:
+              - Text
+            properties:
+              Text:
+                type: array
+                minItems: 1
+                items:
+                  type: string
+                  description: The description of the guarantee used for the stay.
+                  example: A pre-arrival deposit that is given back to the traveler after a completed stay.
+      AdditionalDetails:
+        type: object
+        required:
+          - AdditionalDetail
+        properties:
+          AdditionalDetail:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              properties:
+                Code:
+                  type: integer
+                  minimum: 1
+                  example: 8
+                  description: The code of the additional details, mapped to the OTA ADT table.
+                Amount:
+                  type: number
+                  multipleOf: 0.01
+                  example: 67.09
+                  description: The total amount of the additional detail payment.
+                CurrencyCode:
+                  type: string
+                  pattern: '^[A-Z]{3}$'
+                  example: AUD
+                  description: Specifies the IATA (ISO 4217) currency code of the returned rates.
+                Text:
+                  type: array
+                  minItems: 0
+                  items:
+                    type: string
+                    example: >-
+                      '<p><b>National Rating</b> <br />This establishment has received its official star rating from VisitEngland, the National Tourist Board for England.</p><p><b>Know Before You Go</b> <br /><ul>  <li>Reservations are required for golf tee times, massage services, and spa treatments. Reservations can be made by contacting the hotel prior to arrival, using the contact information on the booking confirmation. </li><li>Only registered guests are allowed in the guestrooms. </li> <li>The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. </li><li>This property allows pets in specific rooms only (surcharges apply and can be found in the Fees section). Guests can request one of these rooms by contacting the property directly, using the contact information on the booking confirmation. </li>  </ul></p><p><b>Fees</b> <br /><p>The following fees and deposits are
+                      charged by the property at time of service, check-in, or check-out. </p> <ul> <li>Fee for full breakfast: GBP 15.00 for adults and GBP 7.50 for children (approximately)</li>             <li>Pet fee: GBP 30 per pet, per night</li> <li>An early check-in fee will be charged</li>  <li>A late check-out fee will be charged</li>               </ul> <p>The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. </p></p><p><b>Mandatory Fees and Taxes</b> <br /><p>You will be asked to pay the following charges at the property:</p> <ul><li>Deposit: GBP 50.00 per stay</li></ul> <p>We have included all charges provided to us by the property. However, charges can vary, for example, based on length of stay or the room you book. </p></p>'
+                    description: The description of any additional information.
+
+securityDefinitions:
+  oauth2_authentication:
+    type: oauth2
+    tokenUrl: 'https://api.cert.platform.sabre.com/v2/auth/token'
+    flow: application
+    x-base64-encode-client-credentials: true
+security:
+  - oauth2_authentication: []

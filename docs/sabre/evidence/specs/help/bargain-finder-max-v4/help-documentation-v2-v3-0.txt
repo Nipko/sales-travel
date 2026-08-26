@@ -1,0 +1,150 @@
+v2 to v3
+
+What's New
+
+There is a new REST endpoint version of the service available (v3), offering the same functionalities as v2 and some new content. There is only one non-backward
+
+compatible change which is listed in the next section.
+
+All new capabilities are listed below – any customer planning to consume new capabilities is required to analyze and adapt accordingly to the new feature requirements.
+
+This step is optional. See release notes for further details.
+
+The Bargain Finder Max Request (v3) has been enhanced with the following changes:
+
+Flight Amenities - distribute ATPCO Routehappy rich content via BargainFinderMax.
+
+Shop by Carry-On baggage - two new attributes added into existing baggage sections.
+
+Bargain Finder Max GIR Response (v3) has been enhanced with the new parameters and other changes listed below:
+
+Shop by Carry-On baggage - new elements in the shopping response.
+
+Flight Amenities - new ATPCO Route happy rich content in the shopping response.
+
+Pre reserved seat selection - changes to the response schema to support pre-reserved seat information.
+
+How to migrate from the v2 version to v3 version?
+
+Bargain Finder Max v3 is backward compatible with the previous version (v6.2.0) with the following exceptions (changes, updates, or new elements which are not backward compatible):
+
+v6.2.0 |
+v3 |
+
+GIR RS changes for migration:
+ |
+GIR RS changes for migration:
+ |
+
+EquivalentAmount and EquivalentCurrency – required parameters:
+
+"baggageChargeDescs": [{
+
+        "id": 1,
+
+        "equivalentAmount": 100,
+
+        "equivalentCurrency": "EUR",
+
+        "description1": "UP TO 70 POUNDS/32 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }, {
+
+        "id": 2,
+
+        "equivalentAmount": 100,
+
+        "equivalentCurrency": "EUR",
+
+        "description1": "UP TO 70 POUNDS/32 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }, {
+
+        "id": 3,
+
+        "firstPiece": 1,
+
+        "description1": "UP TO 18 POUNDS/8 KILOGRAMS",
+
+        "description2": "UP TO 46 LINEAR INCHES/118 LINEAR CENTIMETERS",
+
+        "noChargeNotAvailable": "X"
+
+    }, {
+
+        "id": 4,
+
+        "equivalentAmount": 150,
+
+        "equivalentCurrency": "EUR",
+
+        "firstPiece": 1,
+
+        "description1": "UP TO 50 POUNDS/23 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }
+
+],
+ |
+EquivalentAmount *and *EquivalentCurrency – changed to optional:
+
+"baggageChargeDescs": [{
+
+        "id": 1,
+
+        "equivalentAmount": 100,
+
+        "equivalentCurrency": "EUR",
+
+        "description1": "UP TO 70 POUNDS/32 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }, {
+
+        "id": 2,
+
+        "equivalentAmount": 100,
+
+        "equivalentCurrency": "EUR",
+
+        "description1": "UP TO 70 POUNDS/32 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }, {
+
+        "id": 3,
+
+        "firstPiece": 1,
+
+        "description1": "UP TO 18 POUNDS/8 KILOGRAMS",
+
+        "description2": "UP TO 46 LINEAR INCHES/118 LINEAR CENTIMETERS",
+
+        "noChargeNotAvailable": "X"
+
+    }, {
+
+        "id": 4,
+
+        "equivalentAmount": 150,
+
+        "equivalentCurrency": "EUR",
+
+        "firstPiece": 1,
+
+        "description1": "UP TO 50 POUNDS/23 KILOGRAMS",
+
+        "description2": "UP TO 62 LINEAR INCHES/158 LINEAR CENTIMETERS"
+
+    }
+
+],
+ |

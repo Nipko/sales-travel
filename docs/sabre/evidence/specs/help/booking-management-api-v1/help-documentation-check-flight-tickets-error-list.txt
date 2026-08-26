@@ -1,0 +1,286 @@
+Check Flight Tickets – Error List
+
+Error list
+
+Below is a full list of possible errors returned by Check Flight Tickets:
+
+Error type |
+Error category |
+Description |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s must be combined with: %s.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Properties confirmationId and tickets cannot be combined. Use tickets property to indicate specific tickets for check/void/refund operation or confirmationId to process all tickets present in the reservation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains invalid combination of refund qualifiers. Choose either commissionAmount or commissionPercentage.
+ |
+
+INVALID_VALUE
+ |
+INVALID_DATA
+ |
+The sum of tax breakdown exceeds the XF tax amount. Specify an amount smaller or equal to %s.
+ |
+
+ORDER_NOT_FULFILLED
+ |
+CHECK_ERROR
+ |
+Unable to check the booking. The order is not fulfilled.
+ |
+
+ORDER_VOIDED
+ |
+CHECK_ERROR
+ |
+Unable to check the booking. The order was voided.
+ |
+
+ORDER_REFUNDED
+ |
+CHECK_ERROR
+ |
+Unable to check the booking. The order was refunded.
+ |
+
+SCENARIO_NOT_SUPPORTED
+ |
+CHECK_ERROR
+ |
+Unable to check the booking. The order contains content from NDC and ATPCO.
+ |
+
+BOOKING_NOT_FULFILLED
+ |
+CHECK_ERROR
+ |
+Unable to check the booking. There are no tickets to be checked.
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Ticket is not found in reservation
+ |
+
+SINGLE_RESERVATION_TICKETS_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Only tickets within one reservation can be checked.
+ |
+
+TICKET_NUMBER_MISMATCH
+ |
+CANCELLATION_ERROR
+ |
+Ticket number mismatch
+ |
+
+TICKET_NOT_SUPPORTED
+ |
+WARNING
+ |
+Tickets of type NDC EMD are not supported by the system and will be ignored during processing.
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+WARNING
+ |
+Document cannot be checked. The document is an EMD and currently not supported.
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Response is empty
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Operation of checking ticket failed
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Coupon Status ACTL - Coupons[%s] of the document are currently under airport control. Ticket refund eligibility cannot be verified.
+ |
+
+TOO_MANY_DOCUMENTS
+ |
+BAD_REQUEST
+ |
+Currently a maximum of %s documents is supported.
+ |
+
+INVALID_TICKET_NUMBER
+ |
+BAD_REQUEST
+ |
+Validation Failed: must match \"^[0-9A-Z]{13}$\"
+ |
+
+INVALID_VALUE
+ |
+INVALID_DATA
+ |
+Unable to refund the ticket. The requested number of refund amounts not matching the number of forms of payment from original ticket. Amounts applied to the refund have to match the original forms of payment from the ticket.
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+PNR %s not found for specified ticket
+ |
+
+SABRE_BOOKING_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+Booking not found in the Sabre database.
+ |
+
+UNKNOWN_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+GeneralCheckTicketsError occurred: %s
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+GET_FARE_RULES_PROBLEM
+ |
+WARNING
+ |
+Resource cannot be fetched.
+ |
+
+TICKETS_NOT_FULFILLED
+ |
+WARNING
+ |
+There are no ATPCO tickets to be checked. Only LCC segments were processed.
+ |
+
+INTERNAL_SERVER_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Request to the supplier airline %s has timed out.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Unable to check low-cost airline %s booking. Refund quote operation has failed.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Unable to check low-cost airline booking. Refund quote operation has failed.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Refund quote operation for low-cost airline %s is currently not supported.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Unable to retrieve refund totals for %s booking.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Reservation contains unfulfilled low-cost flights which cannot be checked.
+ |
+
+UNABLE_TO_CHECK_BOOKING
+ |
+CHECK_ERROR/WARNING
+ |
+Refund operation is currently pending with the airline. Please retry the transaction later.
+ |
+
+BOOKING_ALREADY_CANCELED
+ |
+WARNING
+ |
+%s booking has already been canceled by the airline.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Validation Failed: must only contain unique elements.
+ |
+
+ |
+
+The %s variable contains information returned dynamically by the downline service.
+ |
+
+Check Flight Tickets may also return errors stemming directly from downline services:
+
+Error type |
+Error category |
+Downline service |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+TKT_ElectronicDocumentServicesRQ
+ |
+
+GET_TICKET_DETAILS_PROBLEM
+ |
+WARNING
+ |
+TKT_ElectronicDocumentServicesRQ
+ |
+
+CHECK_TICKET_PROBLEM
+ |
+WARNING
+ |
+RefundTicketLLSRQ
+ |

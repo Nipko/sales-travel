@@ -1,0 +1,1813 @@
+Create Booking – Error List
+
+Error list
+
+Below is a full list of possible errors returned by Create Booking:
+
+Error type |
+Error category |
+Description |
+
+TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+No response from service provider (service ActionCode).
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+General problem with (service ActionCode) service.
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The (service ActionCode) service returned an error: (code: [%s] message: [%s])
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The (service ActionCode) service returned an error: %s.
+ |
+
+ATH_TOKEN_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Unable to create ATH session token. Please retry the transaction.
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+PROFILE_DATA_INSUFFICIENT
+ |
+APPLICATION_ERROR
+ |
+Profile contains insufficient data to create a booking. Mandatory values: Name/Surname/PassengerType are missing.
+ |
+
+UNABLE_TO_RETRIEVE_SESSION_DATA
+ |
+APPLICATION_ERROR
+ |
+General problem with GetReservationRQ service.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+General problem with OTA_AirBookLLSRQ service.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_CHECK_DATES
+ |
+BAD_REQUEST
+ |
+Flight booking failed due to invalid flight dates.
+ |
+
+UNABLE_TO_BOOK_LCC_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+General problem with booking Low Cost Carrier flights.
+ |
+
+UNABLE_TO_BOOK_PASSIVE_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+The (service ActionCode) service returned an error: (code: [%s] message: [%s])
+ |
+
+UNABLE_TO_BOOK_HOTEL
+ |
+APPLICATION_ERROR
+ |
+General problem with EnhancedHotelBookRQ service.
+ |
+
+UNABLE_TO_BOOK_HOTEL_NO_DATA_FOR_BOOKING_KEY
+ |
+APPLICATION_ERROR
+ |
+The hotel booking key contains no data. Generate the new booking key by means of HotelPriceCheck API.
+ |
+
+UNABLE_TO_BOOK_HOTEL_CANNOT_DECRYPT_BOOKING_KEY
+ |
+APPLICATION_ERROR
+ |
+The hotel booking key cannot be decrypted. Generate the new booking key by means of HotelPriceCheck API.
+ |
+
+UNABLE_TO_BOOK_HOTEL_MATCHING_RATE_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+The decoded booking key does not contain a matching GDS rate. Generate the new booking key by means of HotelPriceCheck API.
+ |
+
+UNABLE_TO_BOOK_HOTEL_WRONG_STATUS_CODE
+ |
+APPLICATION_ERROR
+ |
+The booking has not been confirmed by the property. The hotel segment contains unsuccessful status code.
+ |
+
+UNABLE_TO_BOOK_HOTEL_CONFIRMATION_NUMBER_MISSING
+ |
+APPLICATION_ERROR
+ |
+The booking has not been confirmed by the property. The confirmation number is missing.
+ |
+
+UNABLE_TO_BOOK_HOTEL_CHILD_AGE_MISSING
+ |
+BAD_REQUEST
+ |
+It is mandatory to pass child/infant guest age when booking a hotel.
+ |
+
+UNABLE_TO_BOOK_HOTEL_CONNECTIVITY_ISSUE
+ |
+APPLICATION_ERROR
+ |
+Hotel booking failed due to supplier connectivity issue.
+ |
+
+UNABLE_TO_BOOK_HOTEL_PAYMENT_CARD_NOT_ACCEPTED
+ |
+APPLICATION_ERROR
+ |
+The hotel property does not accept the card type.
+ |
+
+UNABLE_TO_BOOK_HOTEL_PAYMENT_CARD_ISSUE
+ |
+BAD_REQUEST
+ |
+The payment card has invalid expiration date.
+ |
+
+UNABLE_TO_BOOK_HOTEL_LOYALTY_ID_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+The loyaltyID could not be found in the database. Check whether the loyaltyID is valid.
+ |
+
+UNABLE_TO_BOOK_HOTEL_DEPOSIT_NOT_ACCEPTED
+ |
+BAD_REQUEST
+ |
+The hotel property does not accept the deposit payment policy.
+ |
+
+UNABLE_TO_BOOK_HOTEL_ROOM_EXTRAS_NOT_ACCEPTED
+ |
+BAD_REQUEST
+ |
+The hotel property does not accept requesting room extras.
+ |
+
+UNABLE_TO_BOOK_HOTEL_WRONG_PAYMENT_POLICY
+ |
+APPLICATION_ERROR
+ |
+The hotel property requires deposit payment policy.
+ |
+
+UNABLE_TO_BOOK_HOTEL_FORM_OF_PAYMENT_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The hotel property does not support selected form of payment.
+ |
+
+UNABLE_TO_BOOK_HOTEL_INVALID_ROOM_EXTRA_TYPE
+ |
+APPLICATION_ERROR
+ |
+The hotel property does not accept selected room extra type.
+ |
+
+UNABLE_TO_BOOK_HOTEL_EXPIRED_BOOKING_KEY
+ |
+APPLICATION_ERROR
+ |
+The hotel booking key is expired.
+ |
+
+UNABLE_TO_BOOK_HOTEL_OCCUPANCY_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+The specified guest details do not match the number of guests in provided hotel booking key. Create a valid booking key or correct guest information.
+ |
+
+UNABLE_TO_BOOK_HOTEL_LATE_PAYMENT_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The selected late payment policy is not supported by the hotel.
+ |
+
+UNABLE_TO_BOOK_HOTEL_FORM_OF_PAYMENT_MISSING
+ |
+APPLICATION_ERROR
+ |
+The form of payment details is missing. Verify if payment information is specified in the request.
+ |
+
+UNABLE_TO_BOOK_HOTEL_INVALID_FORM_OF_PAYMENT
+ |
+APPLICATION_ERROR
+ |
+The form of payment is not valid for the selected rate. Use one of the accepted payment types returned in the hotel shopping response.
+ |
+
+UNABLE_TO_BOOK_HOTEL_PRICE_CHANGED
+ |
+APPLICATION_ERROR
+ |
+The booking has not been confirmed by the property due to price change. The hotel segment contains unsuccessful status code. Use one of the accepted payment types returned in the hotel shopping response.
+ |
+
+UNABLE_TO_BOOK_INVALID_PROFILE_FILTER
+ |
+APPLICATION_ERROR
+ |
+The profile filter association is invalid. Verify and retry.
+ |
+
+UNABLE_TO_BOOK_INVALID_PROFILE_STATUS
+ |
+APPLICATION_ERROR
+ |
+The profile status code is invalid. Verify and retry.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_CHECK_CLASS
+ |
+BAD_REQUEST
+ |
+The booking class for one of the flights is invalid.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_CHECK_FLIGHT_NUMBER
+ |
+BAD_REQUEST
+ |
+The flight number for one of the flights is invalid.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_CHECK_BOARD_POINT
+ |
+BAD_REQUEST
+ |
+The departure airport for one of the flights is invalid.
+ |
+
+UNABLE_TO_BOOK_NDC_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+The requested offer contains unavailable flight with the waitlist closed. Please select another offer from the shopping response.
+ |
+
+UNABLE_TO_BOOK_NDC_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+The requested offer contains unavailable codeshare flight. Please select another offer from the shopping response.
+ |
+
+UNABLE_TO_BOOK_NDC_UNAVAILABLE_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+The requested offer contains at least one unavailable flight. Please select another offer from the shopping response.
+ |
+
+NO_PROFILE_DATA
+ |
+APPLICATION_ERROR
+ |
+No profile data was moved to the session. Profile information could not be retrieved. (error_code) + The following values mentioned in the description ( &#8220;66&#8221;, &#8220;1413&#8221;, &#8220;949&#8221;, &#8220;1158&#8221;, &#8220;1124&#8221;, &#8220;501&#8221;, &#8220;500&#8221;, &#8220;684&#8221;, &#8220;32&#8221; ) indicate error codes coming from ProfileToPNR service.
+ |
+
+NO_PROFILE_DATA_MOVED_PROFILE_NAME
+ |
+APPLICATION_ERROR
+ |
+The profileName is not unique and cannot be retrieved.
+ |
+
+NO_PROFILE_DATA_MOVED_FILTER_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+The filterId was not found.
+ |
+
+NO_PROFILE_DATA_MOVED_FILTER_NOT_ASSOCIATED
+ |
+BAD_REQUEST
+ |
+The filterId is not associated with the uniqueId.
+ |
+
+NO_PROFILE_DATA_MOVED_WRONG_PROFILE_TYPE
+ |
+BAD_REQUEST
+ |
+Provided profile type code is incorrect. Supported codes: TVL, AGT, AGY, CRP, OPX, ALC, GRP.
+ |
+
+NO_PROFILE_DATA_MOVED_DUPLICATED_ID
+ |
+BAD_REQUEST
+ |
+More than one profile contains the same uniqueId.
+ |
+
+NO_PROFILE_DATA_MOVED_WRONG_PROFILE_NUMBER
+ |
+BAD_REQUEST
+ |
+Number of profiles with profileTypeCode TVL does not match the number of travelers.
+ |
+
+MAXIMUM_NUMBER_OF_PROFILES_EXCEEDED
+ |
+BAD_REQUEST
+ |
+Maximum up to 9 traveler profiles are allowed, including associated profiles. Verify number of profiles and retry.
+ |
+
+UNABLE_TO_END_TRANSACTION
+ |
+APPLICATION_ERROR
+ |
+General problem with EnhancedEndTransactionRQ service.
+ |
+
+UNABLE_TO_END_TRANSACTION_NO_ITINERARY_CREATED
+ |
+APPLICATION_ERROR
+ |
+No PNR present in work area. No itinerary was created.
+ |
+
+UNABLE_TO_END_TRANSACTION_MODIFY_TICKETING_TIME_LIMIT
+ |
+BAD_REQUEST
+ |
+Incorrect time limit.
+ |
+
+UNABLE_TO_END_TRANSACTION_ADD_AGENCY_PHONE
+ |
+BAD_REQUEST
+ |
+Missing agency phone in request.
+ |
+
+UNABLE_TO_END_TRANSACTION_INFANT_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+Infant traveler cannot be processed for this booking.
+ |
+
+UNABLE_TO_END_TRANSACTION_TRAVELER_NOT_ELIGIBLE_FOR_PREMIUM_SEATS
+ |
+APPLICATION_ERROR
+ |
+Certain travelers are not eligible to select premium seats in the specified section of the aircraft.
+ |
+
+UNABLE_TO_END_TRANSACTION_ADD_AGENCY_CUSTOMER_IDENTIFIER
+ |
+APPLICATION_ERROR
+ |
+Missing agency customer identifier in the request.
+ |
+
+UNABLE_TO_END_TRANSACTION_DUPLICATE_NAMES
+ |
+BAD_REQUEST
+ |
+Verify travelers data. Duplicate names are not allowed.
+ |
+
+UNABLE_TO_ADD_TRAVELER_OR_AGENCY
+ |
+APPLICATION_ERROR
+ |
+General problem with PassengerDetailsRQ service.
+ |
+
+UNABLE_TO_ADD_TRAVELER_TYPE_NOT_VALID
+ |
+BAD_REQUEST
+ |
+Passenger type is not valid.
+ |
+
+UNABLE_TO_ADD_TRAVELER_TOO_MANY_INFANTS
+ |
+BAD_REQUEST
+ |
+There are too many infants associated to an adult traveler. Only one infant traveler can be associated to an adult traveler.
+ |
+
+UNABLE_TO_ADD_TRAVELER_INFANT_IN_WRONG_ORDER
+ |
+BAD_REQUEST
+ |
+The first traveler cannot be an infant.
+ |
+
+AGENCY_CONTACT_DETAILS_MISSING
+ |
+BAD_REQUEST
+ |
+Travel agency contact details, phone and/or email address, are missing. Verify and retry.
+ |
+
+TRAVELER_PHONE_MISSING
+ |
+BAD_REQUEST
+ |
+The traveler’s phone information is required. Verify the travelers list and include missing phone details.
+ |
+
+TRAVELER_TYPE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Infant traveler type (INY, INS, INF, ITS, ITF, INE, JNF) currently not supported for NDC booking.
+ |
+
+TRAVELER_TYPE_MISMATCH
+ |
+BAD_REQUEST
+ |
+Traveler type in the request does not match the one from priced offer.
+ |
+
+GENDER_VALUES_MISMATCH
+ |
+BAD_REQUEST
+ |
+Gender values under traveler and identityDocument differ/mismatch. Verify and retry.
+ |
+
+WRONG_TRAVELER_FOR_CORPORATE_LOYALTY_PROGRAM
+ |
+BAD_REQUEST
+ |
+CORPORATE_LOYALTY_ID loyaltyProgram can be submitted only for first traveler.
+ |
+
+WRONG_NUMBER_OF_CORPORATE_LOYALTY_PROGRAMS
+ |
+BAD_REQUEST
+ |
+Only one loyaltyProgram with programType CORPORATE_LOYALTY_ID is allowed for booking.
+ |
+
+UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED
+ |
+APPLICATION_ERROR
+ |
+Activate the &#8220;Store Passenger Type In PNR&#8221; option in your Travel Journal Record (TJR).
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_MISSING_MESSAGE
+ |
+BAD_REQUEST
+ |
+Special service message is required by the airline.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_INVALID_CODE
+ |
+BAD_REQUEST
+ |
+Verify special service code. Provided code is not recognized.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_CODE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Verify special service code. Provided code is not supported by the airline.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_CODE_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+Special services related to identity documents (code starting with DOC) are not allowed. Use identityDocuments property instead.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_INVALID_MESSAGE
+ |
+BAD_REQUEST
+ |
+Verify special service message. Provided message contains an invalid text.
+ |
+
+UNABLE_TO_ADD_TRAVELER_NAME_TOO_LONG
+ |
+BAD_REQUEST
+ |
+Verify traveler’s given name and surname. Sabre system accepts up to 63 characters.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH
+ |
+BAD_REQUEST
+ |
+Verify ancillary fee and/or flight assignation. Ancillary price doesn’t match Air Extras field in the reservation.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_AIRLINE_CODE
+ |
+BAD_REQUEST
+ |
+Verify airline code. Selected airline code doesn’t match ancillary offer details.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_SUBCODE
+ |
+BAD_REQUEST
+ |
+Verify reason for issuance sub-code. Selected sub-code doesn’t match ancillary offer details
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_CURRENCY_CODE
+ |
+BAD_REQUEST
+ |
+Verify currency code. Selected currency code doesn’t match ancillary offer details.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_APPLICABILITY_TYPE
+ |
+BAD_REQUEST
+ |
+The ancillary applicability type is missing or it doesn’t match ancillary offer details.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_COMMERCIAL_NAME
+ |
+BAD_REQUEST
+ |
+The ancillary commercial name is missing or it doesn’t match ancillary offer details.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INVALID_VENDOR_CODE
+ |
+BAD_REQUEST
+ |
+The ancillary vendor code is missing or it doesn’t match ancillary offer details.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION
+ |
+APPLICATION_ERROR
+ |
+General problem with UpdateReservationRQ service.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_NO_LOYALTY_AGREEMENT
+ |
+APPLICATION_ERROR
+ |
+Unable to add loyalty information due to lack of frequent flyer agreement between airlines.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_WRONG_LOYALTY_DATA
+ |
+APPLICATION_ERROR
+ |
+Verify frequent flyer data. Traveler name and owner of frequent traveler number do not match.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_LOYALTY_NOT_ACCEPTED
+ |
+APPLICATION_ERROR
+ |
+Frequent flyer number is not accepted by the airline.
+ |
+
+UNABLE_TO_CREATE_ORDER
+ |
+APPLICATION_ERROR
+ |
+General problem with orders/create service.
+ |
+
+INTERNAL_PROCESSING_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+The application flow was interrupted due to an unexpectedly long processing time of the downline %s service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT
+ |
+APPLICATION_ERROR
+ |
+General problem with ContextChangeLLSRQ service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE
+ |
+APPLICATION_ERROR
+ |
+System could not revert context.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_PLEASE_WAIT
+ |
+APPLICATION_ERROR
+ |
+System is still processing the transaction.
+ |
+
+UNABLE_TO_CREATE_ORDER_ID_NOT_CREATED
+ |
+APPLICATION_ERROR
+ |
+orders/create returned success, but Order ID was not generated.
+ |
+
+UNABLE_TO_CREATE_ORDER_NO_LOYALTY_AGREEMENT
+ |
+APPLICATION_ERROR
+ |
+Unable to add loyalty information due to lack of frequent flyer agreement between airlines.
+ |
+
+UNABLE_TO_CREATE_ORDER_LOYALTY_NOT_ACCEPTED
+ |
+APPLICATION_ERROR
+ |
+Frequent flyer number is not accepted by the airline.
+ |
+
+UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER
+ |
+BAD_REQUEST
+ |
+Invalid or Expired Offer. Use offers/price to reprice the offer.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires information about the country where the VISA document is valid.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires information about the issue date of the VISA document.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: %s requires: %s.
+ |
+
+UNABLE_TO_CREATE_ORDER_OFFER_NOT_PRICED
+ |
+BAD_REQUEST
+ |
+The &#8220;offerId&#8221; has not been priced. Use offers/price to reprice the offer.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS
+ |
+APPLICATION_ERROR
+ |
+General problem with OTA_AirPriceLLSRQ service.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NO_COMBINABLE_FARES
+ |
+APPLICATION_ERROR
+ |
+There are no available fares to price the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NO_TICKETING_AGREEMENT
+ |
+APPLICATION_ERROR
+ |
+There is no ticketing agreement between airlines.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_ALLOWANCE_EXCEEDED
+ |
+APPLICATION_ERROR
+ |
+Baggage allowance exceeded.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_CHECK_PASSENGER_CODE
+ |
+BAD_REQUEST
+ |
+Verify the number of travelers and their codes.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_CONTINUITY_OF_FLIGHTS
+ |
+BAD_REQUEST
+ |
+Flights are not in date/time order.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NO_FARES_VALID
+ |
+APPLICATION_ERROR
+ |
+There are no private or public fares available to price the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_BRAND_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify the brand code and retry the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_INVALID_BREAK_FARE
+ |
+BAD_REQUEST
+ |
+Modify break in fare.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NO_CORPORATE_NEGOTIATED_FARES
+ |
+APPLICATION_ERROR
+ |
+There are no corporate fares available to price the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_WRONG_FLIGHT_SELECTED
+ |
+BAD_REQUEST
+ |
+Applicable flight: \{{number}} does not exist.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_CABIN_CODE_INVALID
+ |
+BAD_REQUEST
+ |
+Cabin code is not valid.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_AGENCY_RETAILER_NOT_ENABLED
+ |
+APPLICATION_ERROR
+ |
+Contact your Sabre Account Director to request Agency Retailer.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_EXEMPT_TAXES_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify tax codes.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_FORCE_CONNECTION_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify indexes which may be out of range flights to book list.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_FORCE_STOP_OVER_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify indexes which may be out of range flights to book list.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NAME_SELECTION_ISSUE
+ |
+BAD_REQUEST
+ |
+There are too many values set in name selection than defined for the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_OVERRIDE_BREAK_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify override break values.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NET_FARE_TICKETING_NOT_ENABLED
+ |
+APPLICATION_ERROR
+ |
+Contact you Sabre Account Director to request Net Fare Ticketing.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_RETAILER_RULE_QUALIFIER_ISSUE
+ |
+APPLICATION_ERROR
+ |
+There are no retailer rule qualifier fares to price the booking.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_INVALID_SIDE_TRIP
+ |
+BAD_REQUEST
+ |
+Verify side trip.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_FARE_UNAVAILABLE
+ |
+BAD_REQUEST
+ |
+Verify the fare basis code.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_INSTALLMENTS_ISSUE
+ |
+APPLICATION_ERROR
+ |
+Verify if the agency has enabled the INSTALLMENTS payment type.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_NETFARE_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify flightPricing.qualifiers that were combined with useNetFare.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_APPROVAL_CODE_MISSING
+ |
+BAD_REQUEST
+ |
+&#8216;manualApprovalCode' is required to complete flight pricing.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_PASSENGER_STATUS_ISSUE
+ |
+BAD_REQUEST
+ |
+Verify passenger status.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_TWO_FORMS_OF_PAYMENT_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+The agency does not participate in two forms of payment ticketing.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_COMPARISON_ISSUE
+ |
+APPLICATION_EROR
+ |
+The price for the booking cannot be determined.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_COMMISSION_PERCENTAGE_REQUIRED
+ |
+BAD_REQUEST
+ |
+The commission percentage is required to complete flight pricing.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_INVALID_VALIDATING_AIRLINE
+ |
+BAD_REQUEST
+ |
+The validating airline does not participate in the settlement method for the market.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_TOO_MANY_PRICING_QUALIFIERS
+ |
+BAD_REQUEST
+ |
+There are too many pricing qualifiers specified in the request.
+ |
+
+UNABLE_TO_PRICE_BREAKFARE_ISSUE
+ |
+APPLICATION_ERROR
+ |
+Cannot process break in fare for chosen flight.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_WRONG_STATUS_CODE
+ |
+APPLICATION_ERROR
+ |
+At least one segment contains unsuccessful status code for the flight.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_CHECK_SCHEDULE
+ |
+BAD_REQUEST
+ |
+The flight does not operate on the given departure date or the flight number is invalid.
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_BOOKING_CLASS_INVALID
+ |
+BAD_REQUEST
+ |
+Verify booking class for the chosen flight(s).
+ |
+
+UNABLE_TO_BOOK_FLIGHTS_DUPLICATE_SEGMENT
+ |
+BAD_REQUEST
+ |
+Verify itinerary details. The request contains duplicate flights.
+ |
+
+UNABLE_TO_PLACE_BOOKING_ON_QUEUE
+ |
+APPLICATION_ERROR
+ |
+Booking cannot be placed on a PNR queue.
+ |
+
+UNABLE_TO_BOOK_SEATS
+ |
+APPLICATION_ERROR
+ |
+General problem with booking seats.
+ |
+
+UNABLE_TO_BOOK_SEATS_CHECK_ASSIGNMENT
+ |
+BAD_REQUEST
+ |
+More than one seat per passenger were assigned on a single flight.
+ |
+
+UNABLE_TO_BOOK_SEATS_CHECK_TRAVELERS
+ |
+BAD_REQUEST
+ |
+&#8216;travelerIndex' does not match the applicable item in the travelers array.
+ |
+
+UNABLE_TO_BOOK_SEATS_TRAVELERS_ISSUE
+ |
+APPLICATION_ERROR
+ |
+There are more travelers than permitted by the airline for pre-reserved seats.
+ |
+
+UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE
+ |
+APPLICATION_ERROR
+ |
+One or some of the seats are not available. Choose different seats.
+ |
+
+UNABLE_TO_BOOK_SEATS_AREA_PREFERENCE_NOT_ACCEPTED
+ |
+APPLICATION_ERROR
+ |
+The airline does not accept generic seat requests. Choose specific seats.
+ |
+
+QUEUE_PLACE_INVALID_QUEUE
+ |
+BAD_REQUEST
+ |
+Selected queue is not valid.
+ |
+
+QUEUE_PLACE_MODIFY_TICKETING_TIME_LIMIT
+ |
+BAD_REQUEST
+ |
+Verify ticketing time limit.
+ |
+
+SABRE_COMMAND_FAILED
+ |
+APPLICATION_ERROR
+ |
+General problem with SabreCommandLLSRQ service.
+ |
+
+MINIMUM_CONNECT_TIME_NOT_VALID
+ |
+APPLICATION_ERROR
+ |
+Invalid connect time between flights.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE
+ |
+APPLICATION_ERROR
+ |
+General problem with sending special service request/information or adding identity documents.
+ |
+
+UNABLE_TO_ADD_IDENTITY_DOCUMENT_INVALID_COUNTRY_CODE
+ |
+BAD_REQUEST
+ |
+Verify issuingCountryCode and/or residenceCountryCode. Two or three letter country code is accepted.
+ |
+
+UNABLE_TO_ADD_IDENTITY_DOCUMENT_INFANT_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Documents cannot be associated to infant traveler.
+ |
+
+UNABLE_TO_ADD_IDENTITY_DOCUMENT_INVALID_ISSUING_COUNTRY_CODE
+ |
+BAD_REQUEST
+ |
+Verify issuingCountryCode. Special characters are not accepted.
+ |
+
+UNABLE_TO_ADD_IDENTITY_DOCUMENT_INVALID_LENGTH
+ |
+BAD_REQUEST
+ |
+Verify identity document. The document number contains too many characters.
+ |
+
+UNABLE_TO_ADD_REMARKS
+ |
+APPLICATION_ERROR
+ |
+General problem with adding remarks.
+ |
+
+UNABLE_TO_ADD_REMARKS_CHECK_TEXT
+ |
+BAD_REQUEST
+ |
+The remark text is too long.
+ |
+
+UNABLE_TO_ADD_OTHER_SERVICES_CHECK_TEXT
+ |
+BAD_REQUEST
+ |
+The other service message is too long.
+ |
+
+UNABLE_TO_PRICE_FLIGHTS_THRESHOLD_EXCEEDED
+ |
+APPLICATION_ERROR
+ |
+The actual price is over/under the specified limit set by PriceComparison.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Incorrect request data provided.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+The residence country information in identity documents for NDC booking is limited to two-letter code.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+The expiry date of the identity document cannot be in the past.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Provided card number is invalid. Payment card must meet &#8220;footnote:[0-9]\{12,19}$&#8221; pattern.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Incorrect request data provided. Wrong combination of fields.
+ |
+
+UNABLE_TO_CREATE_ORDER_BIRTH_DATE_MISSING
+ |
+BAD_REQUEST
+ |
+Missing passenger birthdate in the request.
+ |
+
+NDC_PCC_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+The Pseudo City Code (PCC) information from the NDC offer does not match Pseudo City Code (PCC) information used for NDC order creation.
+ |
+
+HEADER_DATA_MISSING_TARGET_PCC
+ |
+BAD_REQUEST
+ |
+Target PCC was defined but header data is missing. Please complete X-Sabre-Group (ATK) or X-Sabre-Current-City (ATH).
+ |
+
+PROFILE_READ_LACK_OF_PHONE_NUMBER
+ |
+APPLICATION_ERROR
+ |
+Profile contains insufficient data to create a booking. Traveler’s phone number is missing.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Request is missing mandatory data.
+ |
+
+UNABLE_TO_ADD_FORM_OF_PAYMENT_EXPIRY_DATE
+ |
+BAD_REQUEST
+ |
+Validate the form of payment information. Check the payment card expiry date.
+ |
+
+UNABLE_TO_ADD_FORM_OF_PAYMENT_CHECK_CODE
+ |
+BAD_REQUEST
+ |
+Validate the form of payment information. Check whether &#8216;cardCode',&#8216;cardNumber' or &#8216;miscellaneousCreditCode' is valid.
+ |
+
+UNABLE_TO_ADD_FORM_OF_PAYMENT_EXTENDED_PAYMENT
+ |
+BAD_REQUEST
+ |
+Extended payment is not allowed. Check your agency settings.
+ |
+
+UNABLE_TO_ADD_FORM_OF_PAYMENT_INVALID_CARD_NUMBER
+ |
+BAD_REQUEST
+ |
+Invalid credit card number. Validate the form of payment information.
+ |
+
+UNABLE_TO_ADD_FORM_OF_PAYMENT_INVALID_CARD_NUMBER_LENGTH
+ |
+BAD_REQUEST
+ |
+Validate the form of payment information. Check credit card number length.
+ |
+
+AGENCY_PHONE_MISSING
+ |
+BAD_REQUEST
+ |
+Agency phone is needed to complete traditional booking.
+ |
+
+AGENCY_ADDRESS_MISSING
+ |
+BAD_REQUEST
+ |
+Agency address is needed to complete traditional booking.
+ |
+
+AGENCY_EMAIL_ISSUE
+ |
+BAD_REQUEST
+ |
+The airline requires agency email information to proceed with the booking creation. Verify agency email information and retry.
+ |
+
+DUPLICATED_AGENCY_ADDRESS
+ |
+BAD_REQUEST
+ |
+Agency address can be submitted either in request payload or in a profile. Verify and retry.
+ |
+
+EMAIL_METHOD_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Email notifications other than DEFAULT are currently not supported.
+ |
+
+INVALID_CHARACTERS_OR_WRONG_FORMAT
+ |
+BAD_REQUEST
+ |
+Verify request format. Special characters are not accepted.
+ |
+
+INVALID_TRAVELER_INDEX
+ |
+BAD_REQUEST
+ |
+The selected traveler index does not match any given traveler.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s must be combined with: %s.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s cannot be combined with: %s.
+ |
+
+TEXT_INPUT_TOO_LONG
+ |
+BAD_REQUEST
+ |
+The text is too long.
+ |
+
+INTERNAL_SERVER_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+Unexpected and unknown error.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+When invalid/expired ATK token is used.
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING
+ |
+WARNING
+ |
+Booking was created successfully but could not be retrieved. (confirmationId)
+ |
+
+EPS_EXT_ProfileToPNRRQ_PROBLEM
+ |
+WARNING
+ |
+General problem with ProfileToPNRRQ service.
+ |
+
+INCOMPLETE_PROFILE_DATA_MOVED
+ |
+WARNING
+ |
+General problem with ProfileToPNRRQ service. Verify if complete profile data was moved to the booking.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Some resource cannot be populated for given reservation. Details are returned in fieldName, fieldPath and fieldValue.
+ |
+
+PARTIAL_SEAT_ASSIGNMENT
+ |
+WARNING
+ |
+The flight does not have seat assignment for all travelers. Contact the airline to verify seat assignment guidelines.
+ |
+
+HOTEL_BOOKING_WITH_NDC_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+NDC flights cannot be booked with hotel. This functionality is currently not supported.
+ |
+
+UNABLE_TO_BOOK_CAR
+ |
+APPLICATION_ERROR
+ |
+General problem with EnhancedVehBookRQ service.
+ |
+
+UNABLE_TO_BOOK_CAR_INVALID_BOOKING_KEY
+ |
+APPLICATION_ERROR
+ |
+The car booking key cannot be decoded. Generate the new booking key by means of VehPriceCheckRQ API.
+ |
+
+UNABLE_TO_BOOK_CAR_INVALID_POSTAL_CODE
+ |
+BAD_REQUEST
+ |
+The postal code for collection and/or delivery address is invalid. The postal code must be 1-10 characters.
+ |
+
+UNABLE_TO_BOOK_CAR_DELIVERY_AND_COLLECTION_NOT_AVAILABLE
+ |
+APPLICATION_ERROR
+ |
+Home delivery and collection are not available to the address specified in the request.
+ |
+
+UNABLE_TO_BOOK_CAR_INCOMPLETE_ADDRESS
+ |
+BAD_REQUEST
+ |
+The address for delivery or collection is incomplete.
+ |
+
+UNABLE_TO_BOOK_CAR_DELIVERY_AND_COLLECTION_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The supplier does not support certain delivery and collection information. Verify with the supplier which non-supported details should be removed.
+ |
+
+UNABLE_TO_BOOK_CAR_POSTAL_CODE_MISSING
+ |
+BAD_REQUEST
+ |
+The postal code is required for collection and/or delivery address.
+ |
+
+UNABLE_TO_BOOK_CAR_INVALID_CARD_NUMBER_LENGTH
+ |
+BAD_REQUEST
+ |
+Validate the form of payment information. Check credit card number length.
+ |
+
+UNABLE_TO_BOOK_CAR_INVALID_CARD_NUMBER
+ |
+BAD_REQUEST
+ |
+Validate the form of payment information. Check credit card number.
+ |
+
+UNABLE_TO_BOOK_CAR_INVALID_STREET_ADDRESS
+ |
+BAD_REQUEST
+ |
+The street address for collection and/or delivery address is invalid. The street address must be 1-60 characters and cannot contain special characters.
+ |
+
+UNABLE_TO_BOOK_CAR_DEPOSIT_NOT_ACCEPTED
+ |
+BAD_REQUEST
+ |
+The car vendor does not accept the deposit payment policy.
+ |
+
+UNABLE_TO_BOOK_CAR_WRONG_STATUS_CODE
+ |
+APPLICATION_ERROR
+ |
+The booking has not been confirmed by the vendor. The car segment contains unsuccessful status code.
+ |
+
+UNABLE_TO_BOOK_CAR_DELIVERY_COLLECTION_ISSUE
+ |
+APPLICATION_ERROR
+ |
+The delivery/collection is not allowed at the selected location.
+ |
+
+UNABLE_TO_BOOK_CAR_EMAIL_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The car vendor does not support email information. Remove email details or activate the &#8220;Car Traveler Email Address&#8221; option in your Travel Journal Record (TJR).
+ |
+
+INFANT_EMAIL_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The email information cannot be associated with the infant passenger type.
+ |
+
+FLIGHT_INDEX_DUPLICATE_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify flight association within the pricing qualifiers. Duplicate association is not permitted.
+ |
+
+FLIGHT_INDEX_OUT_OF_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify flight association within the pricing qualifiers. At least one flight index is out of flights list bounds.
+ |
+
+SPECIFIC_FARE_INVALID_SEGMENT_SELECTION
+ |
+BAD_REQUEST
+ |
+Incorrect usage of segment selection. Use the flightIndices property under the SpecificFare object instead.
+ |
+
+BRANDED_FARE_INVALID_SEGMENT_SELECTION
+ |
+BAD_REQUEST
+ |
+Incorrect usage of segment selection. Use the flightIndices property under the BrandedFare object instead.
+ |
+
+INVALID_TRAVELER_ID
+ |
+BAD_REQUEST
+ |
+Traveler id(s) doesn’t match passenger id(s) in the NDC offer.
+ |
+
+PROGRAM_TYPE_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The selected loyalty program type is currently not supported.
+ |
+
+RETENTION_DATE_MISSING
+ |
+BAD_REQUEST
+ |
+The date is required to create retention line in the booking.
+ |
+
+INVALID_RETENTION_DATE
+ |
+BAD_REQUEST
+ |
+The retention date cannot be in the past.
+ |
+
+INVALID_RETENTION_DATE_RANGE
+ |
+BAD_REQUEST
+ |
+The retention date exceeds the acceptable date range. Select the date no later than %s.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The date of birth information is required for non-adult travelers.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Traveler date of birth information is required.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: property docketIssuingAgentInitials requires: [docketPrefix, docketNumber]
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: formOfPayment DOCKET requires: [docketPrefix, docketNumber] or [docketDescription] standalone
+ |
+
+TRAVELER_NAME_INVALID
+ |
+BAD_REQUEST
+ |
+The traveler’s name contains unsupported characters. Verify the travelers list and remove special characters from the givenName or surname properties.
+ |
+
+EXTERNAL_SERVER_ERROR
+ |
+EXTERNAL_SERVER_ERROR
+ |
+The request was unsuccessful due to the timeout within the external airline vendor infrastructure. Please retry.
+ |
+
+SPECIAL_SERVICE_INDEX_OUT_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify special service association. The specialServiceIndex is out of special services list bounds.
+ |
+
+WRONG_CORPORATE_ID
+ |
+BAD_REQUEST
+ |
+The corporate ID number must be 1-25 alphanumeric characters long. Verify corporate ID number and retry.
+ |
+
+WRONG_FORM_OF_PAYMENT_INDEX
+ |
+BAD_REQUEST
+ |
+Verify form of payment association. Specified index is out of form of payment list bounds.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+The useType: Interface Record is only allowed for payment type: PAYMENTCARD. Validate and retry.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+The useType: Interface Record cannot be combined with other useTypes. Verify and retry.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: seats.areaPreferences cannot be combined with: changeOfGaugeSeats.number in the case of a change of gauge flight.
+ |
+
+PRICING_TRAVELER_TYPE_MISSING
+ |
+BAD_REQUEST
+ |
+The pricing operation cannot be executed due to insufficient passenger type correlation. Add the missing passenger type or perform name selection using the PricingQualifiers.travelerIndices parameter.
+ |
+
+INVALID_EMPLOYER_INDEX
+ |
+BAD_REQUEST
+ |
+The selected employer index does not match any given employer.
+ |
+
+INVALID_PASSENGER_CODE
+ |
+BAD_REQUEST
+ |
+Employer cannot be associated to a traveler with this passengerCode.
+ |
+
+INVALID_EMPLOYER_ID_TYPE
+ |
+BAD_REQUEST
+ |
+Employer idType is wrong. Verify and retry.
+ |
+
+EMPLOYER_INDEX_MISSING
+ |
+BAD_REQUEST
+ |
+Traveler’s employer requires respective index associated to at least one traveler. Verify and retry.
+ |
+
+TRAVELER_INDEX_OUT_OF_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify travelers association. At least one traveler index is out of travelers list bounds.
+ |
+
+TRAVELER_DUPLICATE_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify travelers association. Duplicate association is not permitted.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: infantTravelerIndex must refer to infant traveler type.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: infantTravelerIndex parameters must be used to set the association for all infant travelers stored in the booking.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: infantTravelerIndex can be used only within the adult traveler.
+ |
+
+SERVICE_MESSAGE_MISSING
+ |
+BAD_REQUEST
+ |
+Service message is empty or missing, verify and retry.
+ |
+
+AIRCRAFT_CHANGE
+ |
+WARNING
+ |
+Seat selection has been partially completed. Change of gauge flights require seat selection for both the arriving and departing aircraft.
+ |
+
+DUPLICATE_TITLE_DETAILS
+ |
+WARNING
+ |
+Duplicate title value detected within traveler details.
+ |
+
+INVALID_COUNTRY_CODE
+ |
+BAD_REQUEST
+ |
+The country code must be provided as a three-letter ISO 3166 code.
+ |
+
+CITIZENSHIP_COUNTRY_CODE_MISSING
+ |
+APPLICATION_ERROR
+ |
+Citizenship country code is required under identity document for this carrier.
+ |
+
+INVALID_IDENTITY_DOCUMENT
+ |
+APPLICATION_ERROR
+ |
+Carrier does not support this identity document type. Verify and retry.
+ |
+
+SEATS_OFFER_UNAVAILABLE
+ |
+APPLICATION_ERROR
+ |
+The requested seat offer is not available for the selected traveler. Verify offer details and retry.
+ |
+
+SEATS_ASSIGNMENT_INVALID
+ |
+BAD_REQUEST
+ |
+At least one of the selected seats does not have the appropriate association with the traveler. Verify traveler number and retry.
+ |
+
+SEATS_OFFER_ID_MISSING
+ |
+BAD_REQUEST
+ |
+At least one of the selected seats of the NDC flights does not have the required offer ID. Add seat offer ID and retry.
+ |
+
+SEATS_OFFER_INVALID
+ |
+APPLICATION_ERROR
+ |
+The requested seat offer is invalid. Verify offer details and retry.
+ |
+
+DUPLICATE_SEAT_ASSIGNMENT
+ |
+BAD_REQUEST
+ |
+Duplicate seats assigned to a single traveler for a flight. Verify offer details and retry.
+ |
+
+SEATS_DUPLICATE_ASSOCIATION
+ |
+APPLICATION_ERROR
+ |
+The requested seat cannot be assigned multiple times. Verify seat details and retry.
+ |
+
+UNABLE_TO_CREATE_ORDER_BIRTH_DATE_INVALID
+ |
+BAD_REQUEST
+ |
+Invalid passenger birth date in the request. Verify the date format and retry.
+ |
+
+MAXIMUM_NUMBER_OF_LOYALTIES_EXCEEDED
+ |
+BAD_REQUEST
+ |
+A maximum of five frequent renter loyalty programs is allowed per car booking. Verify and retry.
+ |
+
+UNABLE_TO_ADD_SPECIAL_SERVICE_CODE_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+Special services related to loyalty programs are not allowed. Use the loyaltyPrograms parameter instead.
+ |
+
+NOTIFICATION_CONTACT_TYPE_REQUIRED
+ |
+BAD_REQUEST
+ |
+The traveler’s contact information is required to be set as notification type. Verify the travelers list and include any missing contact type details.
+ |
+
+PHONE_COUNTRY_CODE_REQUIRED
+ |
+BAD_REQUEST
+ |
+The country code must be provided in the phone details. Ensure that phone numbers follow the required format: +(country code)-(phone number). Verify and retry.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s must only be combined with: %s.
+ |
+
+INVALID_QUEUE_TEXT_LENGTH_EXCEEDED
+ |
+APPLICATION_ERROR
+ |
+Maximum characters in Recurrent Queue Place exceeded. Verify and retry.
+ |
+
+INVALID_RECURRENT_QUEUE_IDENTIFIER_NUMBER
+ |
+BAD_REQUEST
+ |
+The selected queue is invalid. Please select a queue number between 0 and 511.
+ |
+
+ |
+
+Variable %s contains information returned dynamically by the downline service.
+ |

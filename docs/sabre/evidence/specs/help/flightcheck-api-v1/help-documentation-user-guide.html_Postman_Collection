@@ -1,0 +1,1264 @@
+<article class="doc">
+<h1 class="page">Sabre Flight Check API User Guide</h1>
+<div class="sect1">
+<h2 id="Key_Introduction"><a class="anchor" href="#Key_Introduction"></a>Introduction</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <strong>Sabre Flight Check API</strong> allows you to complete fully live transactions that convert cached itineraries into bookable offers. It&#8217;s a mandatory step in the workflow, limited to a single itinerary. This API is especially useful when there&#8217;s a good chance that cached itineraries can be converted into bookings, meaning the traveler has made their final decision.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Key_Features"><a class="anchor" href="#Key_Features"></a>Key Features</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_validation_based_on_payload"><a class="anchor" href="#_validation_based_on_payload"></a>Validation based on payload</h3>
+<div class="paragraph">
+<p>The API can revalidate fares and availability for single offers using <strong>payload itinerary details</strong> as input.
+Offer revalidation takes place when the source is known, and the current price and availability need to be checked before the required details are used to create an order.</p>
+</div>
+<div class="paragraph">
+<p>For ATPCO content, this means the API completes the following steps:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Revalidates an itinerary offer without decrementing or holding airline inventory. This was previously orchestrated using the <a href="../../../revalidate-itinerary/v5/index.html" class="xref page">Revalidate Itinerary API</a>.</p>
+</li>
+<li>
+<p>Validates the availability of the itinerary (RBD).</p>
+</li>
+<li>
+<p>Returns an offer price response with full offer details (marriage group indicators) to proceed with the order using Sabre Order or the <a href="../../../booking-management-api/v1/index.html" class="xref page">Booking Management API</a>.</p>
+</li>
+<li>
+<p>Returns response flags that indicate if the API matched the offer or if an alternative offer was provided.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_validation_based_on_offeritemid"><a class="anchor" href="#_validation_based_on_offeritemid"></a>Validation based on <code>offerItemID</code></h3>
+<div class="paragraph">
+<p>The API may validate the price of an offer using a valid <code>offerItemID</code>.</p>
+</div>
+<div class="paragraph">
+<p>For NDC content, this means the API completes the following steps:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Verifies the price of an itinerary offer (can be orchestrated using the Offer Price flow):</p>
+<div class="olist loweralpha">
+<ol class="loweralpha" type="a">
+<li>
+<p>Validates the request by checking its consistency with the offer.</p>
+</li>
+<li>
+<p>Updates passenger information from the offer with the data provided in the request.</p>
+</li>
+<li>
+<p>Builds and sends a request to the airline via the IATA&#8217;s NDC Offer/Price API.</p>
+</li>
+<li>
+<p>Creates and stores offers based on the response from the IATA&#8217;s NDC Offer/Price API. These offers have their time-to-live specified in the response.</p>
+</li>
+<li>
+<p>Creates warning messages based on the airline&#8217;s response or configuration (e.g., messages informing about a possible price increase if the form of payment wasn&#8217;t provided).</p>
+</li>
+<li>
+<p>Builds and returns an offer price response with offer details.</p>
+</li>
+</ol>
+</div>
+</li>
+<li>
+<p>Returns a normalized offer price response with offer details and data necessary for subsequent order creation using the Orders/Create API (Order Management API).</p>
+</li>
+<li>
+<p>Returns messages from the airline informing about both successes and errors.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_other_validation_scenarios"><a class="anchor" href="#_other_validation_scenarios"></a>Other validation scenarios</h3>
+<div class="paragraph">
+<p>If both types of input are provided in the request, that is, <code>offeritemID</code> (NDC content) and payload data (ATPCO content), the API proceeds as follows:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Gives precedence to the payload input.</p>
+</li>
+<li>
+<p>Ignores the <code>offeritemID</code>.</p>
+</li>
+<li>
+<p>Processes the payload input.</p>
+</li>
+<li>
+<p>Displays an error message (e.g.: “offeritemID not supported”).</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>If only one type of input is provided in the request, yet additional requested attributes are not supported, the API behaves as follows:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ignores the unsupported features for the path.</p>
+</li>
+<li>
+<p>Processes as normal.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_passenger_information"><a class="anchor" href="#_passenger_information"></a>Passenger information</h3>
+<div class="paragraph">
+<p>The API accepts input within the <code>travelers</code> array. This allows you to provide passenger information, including the frequent-flyer number, as shown in the code snippet below.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">"travelers": [
+	{
+		"passengerTypeCode": "ADT",
+		"givenName": "John",
+		"surname": "Smith",
+		"loyaltyPrograms": [
+			{
+				"supplierCode": "AA",
+				"programNumber": "11233"
+			}
+		]
+	},
+	{
+		"passengerTypeCode": "CNN"
+	}
+],</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Support for the form of payment (NDC) is optional, which may affect the price.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_processing_related_features"><a class="anchor" href="#_processing_related_features"></a>Processing-related features</h3>
+<div class="paragraph">
+<p>To enable special features of offer generation, use <code>processingOptions</code> in your request:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>pseudoCityCode</code>: The Point of Sale identifier. Applicable to ATPCO.</p>
+</li>
+<li>
+<p><code>configurationId</code>: Triggers the desired shopping profile and service.</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">"processingOptions": {
+	"pseudoCityCode": "27M7",
+	"configurationId": "abc12345",
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_retailing_and_fare_parameters"><a class="anchor" href="#_retailing_and_fare_parameters"></a>Retailing and fare parameters</h3>
+<div class="paragraph">
+<p>To price the desired fare for an offer to revalidate, the Flight Check API allows you to provide already existing Flight Shop fares and retailing parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Supports price by cabin preferences, currency code, forced pax types, and validation.</p>
+</li>
+<li>
+<p>Returns offer inclusion decorations (<code>Baggage</code>, <code>FlexibilityRule</code>, carbon emissions).</p>
+</li>
+<li>
+<p>Revalidates the fare for specified account codes and offer inclusions (<code>hasFreeBaggage</code>, <code>hasFreeRefund</code>).</p>
+</li>
+<li>
+<p>Returns additional upsells (for ATPCO and LCC in the first phase of development).</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_full_offer_details"><a class="anchor" href="#_full_offer_details"></a>Full offer details</h3>
+<div class="paragraph">
+<p>The API returns the following offer data in the response:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>normalized offer details (price)</p>
+</li>
+<li>
+<p>detailed information about the offer, price components, and included services</p>
+</li>
+<li>
+<p>full offer fare details (<code>fareComponents</code>, <code>fareBasis</code> codes, brand ID, etc.)</p>
+</li>
+<li>
+<p>baggage information</p>
+</li>
+<li>
+<p>refund and change information</p>
+</li>
+<li>
+<p>tax breakdown</p>
+</li>
+<li>
+<p>ticketing endorsements</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Support for OB Fees is planned for the next development phase.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_response_flags"><a class="anchor" href="#_response_flags"></a>Response flags</h3>
+<div class="paragraph">
+<p>For EDIFACT (ATPCO) offers, the API returns the following response flags for price and availability validation:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>bookingClassCodeValidation</code> set to <code>matched</code> if the itinerary can be offered in the provided booking code (RBD).</p>
+</li>
+<li>
+<p><code>bookingClassCodeValidation</code> set to <code>same_cabin</code> if there&#8217;s an alternative pricing solution for the offer in the same cabin.</p>
+</li>
+<li>
+<p><code>bookingClassCodeValidation</code> set to <code>none</code> if the offer couldn&#8217;t be validated. No offer is returned.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_messages_from_ndc_airline"><a class="anchor" href="#_messages_from_ndc_airline"></a>Messages from NDC airline</h3>
+<div class="paragraph">
+<p>The API returns messages from airlines from NDC Offer Price. The snippet below shows how such a message can be structured in the response:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">"itinerary": [
+   {
+   "messages": [
+      {
+       "type", "WARNING",
+        "message": "Invalid form of payment reference"
+      }
+   ]
+  }
+ ],</code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The response will include all messages returned from the airline, for both successful and error results.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Workflow"><a class="anchor" href="#Workflow"></a>Booking &amp; Servicing Workflow</h2>
+<div class="sectionbody">
+<div class="imageblock">
+<div class="content">
+<img src="_images/booking%20and%20servicing%20workflow.png" alt="workflow">
+</div>
+</div>
+<div class="paragraph">
+<p><strong>Sabre Cache</strong>: A new multi-source content-agnostic GCP-based cache. Capable of storing content from any provider and exposing it to shopping APIs such as Sabre Flight Shop.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Search</strong>: An API designed to inspire travel. Enables you to make open origin or destination and date searches across multi-source flight content from cache, including public cache, pre-charged, and API subscribers' private content.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Refresh</strong>: An API for high-volume itinerary validation workflows. Empowers cache-based platforms to validate multiple offers simultaneously against Sabre inventory. Checks the availability of offers returned from client-side caches.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Shop</strong>: An API that retrieves the best flight offers for travelers across different air sources, data providers and distribution models. Supports Sabre EDIFACT, NDC and LCC content, as well as pre-computed offers stored in the Sabre Cache.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Shop Lite</strong>: A lite version of the Sabre Flight Shop API. Finds the best offers across different content sources. Has fewer capabilities than the full Flight Shop API and is therefore available at a lower price point.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Check</strong>: Once an offer has been selected for purchase, this API revalidates the price, checks availability, and provides upsell capabilities of the offer across content sources. It allows you to recreate valid offers from cached itineraries for checkout.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Policy Display</strong>: An API that allows you to request specific fare rule information and have it returned in a structured format. It&#8217;s a standalone API that can be used after pricing, shopping, ticketing, or even after the ticket is used or exchanged.</p>
+</div>
+<div class="paragraph">
+<p><strong>Flight Reshop</strong>: A next-generation, multi-source API that enables seamless exchange shopping across a wide range of air content, including multi-GDS tickets and multi-source offers.</p>
+</div>
+<div class="paragraph">
+<p><strong>Order Management API</strong>: A powerful, orchestrated API designed to streamline and unify the booking and post-booking processes across multiple travel content sources (air, lodging). Provides a normalized, Sabre-agnostic interface that abstracts the complexity of diverse content providers, enabling seamless orchestration of order-related business services.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Example_Use_Cases"><a class="anchor" href="#Example_Use_Cases"></a>Example Use Cases</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="Scenario_1"><a class="anchor" href="#Scenario_1"></a>Payload-based validation</h3>
+<div class="paragraph">
+<p>To perform offer validation by using flight details, provide them in the request payload.</p>
+</div>
+<div class="paragraph">
+<p>The following snippet presents an example of such a request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">{
+  "journeys": [
+    {
+      "flights": [
+        {
+          "departureAirportCode": "DXB",
+          "departureDate": "2026-07-26",
+          "departureTime": "06:30",
+          "arrivalAirportCode": "AMM",
+          "arrivalDate": "2026-07-26",
+          "arrivalTime": "09:00",
+          "operatingAirlineCode": "RJ",
+          "operatingFlightNumber": 613,
+          "marketingAirlineCode": "RJ",
+          "marketingFlightNumber": 613,
+          "segmentDetails": {
+            "bookingClassCode": "M"
+          }
+        },
+        {
+          "departureAirportCode": "AMM",
+          "departureDate": "2026-07-27",
+          "departureTime": "12:00",
+          "arrivalAirportCode": "LHR",
+          "arrivalDate": "2026-07-27",
+          "arrivalTime": "15:20",
+          "operatingAirlineCode": "RJ",
+          "operatingFlightNumber": 111,
+          "marketingAirlineCode": "RJ",
+          "marketingFlightNumber": 111,
+          "segmentDetails": {
+            "bookingClassCode": "M"
+          }
+        }
+      ]
+    },
+    {
+      "flights": [
+        {
+          "departureAirportCode": "LHR",
+          "departureDate": "2026-07-30",
+          "departureTime": "06:30",
+          "arrivalAirportCode": "AMM",
+          "arrivalDate": "2026-07-30",
+          "arrivalTime": "09:00",
+          "operatingAirlineCode": "RJ",
+          "operatingFlightNumber": 112,
+          "marketingAirlineCode": "RJ",
+          "marketingFlightNumber": 112,
+          "segmentDetails": {
+            "bookingClassCode": "M"
+          }
+        },
+        {
+          "departureAirportCode": "AMM",
+          "departureDate": "2026-07-30",
+          "departureTime": "12:00",
+          "arrivalAirportCode": "DXB",
+          "arrivalDate": "2026-07-30",
+          "arrivalTime": "15:20",
+          "operatingAirlineCode": "RJ",
+          "operatingFlightNumber": 610,
+          "marketingAirlineCode": "RJ",
+          "marketingFlightNumber": 610,
+          "segmentDetails": {
+            "bookingClassCode": "M"
+          }
+        }
+      ]
+    }
+  ],
+  "fare": {
+    "currencyCode": "USD",
+    "cabin": {
+      "logic": "Jump Cabin",
+      "name": "Economy"
+    },
+    "forcePassengerType": false,
+    "validateInterlineTicketingAgreement": false,
+    "validatingAirlineCodes": [
+      "RJ"
+    ],
+    "programs": [
+      {
+        "distributionModels": [
+          "ATPCO"
+        ],
+        "type": "Account Code",
+        "values": [
+          "ACC33"
+        ],
+        "companyIdType": "ABN",
+        "airlineCode": "RJ"
+      }
+    ],
+    "returnTaxBreakdown": false
+  },
+  "retailing": {
+    "returnOfferAttributes": [
+      "Baggage",
+      "Carbon Emissions"
+    ],
+    "filterByOfferAttributes": {
+      "hasFreeBaggage": true,
+      "hasFreeCarryOnBaggage": true,
+      "hasFreeRefund": true,
+      "hasFreeChange": true,
+      "isRefundAllowed": true,
+      "isChangeAllowed": true
+    },
+    "returnAdditionalOffers": {
+      "numberOfAdditionalOffers": 4
+    }
+  },
+  "travelers": [
+    {
+      "passengerTypeCode": "ADT",
+      "givenName": "John",
+      "surname": "Smith",
+      "loyaltyPrograms": [
+        {
+          "supplierCode": "RJ",
+          "programNumber": "11233"
+        }
+      ]
+    }
+  ],
+  "processingOptions": {
+    "pseudoCityCode": "ABC1",
+    "configurationId": "abc12345"
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The response from the API may look as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">{
+  "timestamp": "2019-09-09T09:09:09Z",
+  "warnings": [
+    {
+      "category": "NDC_WARNING",
+      "type": "EXTERNAL_PROVIDER_WARNING",
+      "description": "Card Payment fees ranging between AUD 1.40 and 9.70 may apply depending on card type. An IIN/BIN can be sent in the request to get a specific fee or a full list of fees can be displayed via the Service List."
+    },
+    {
+      "category": "NDC_WARNING",
+      "type": "EXTERNAL_PROVIDER_WARNING",
+      "description": "Qantas Frequent Flyers could earn Qantas Points and Status Credits for this booking. &lt;a href=\"https://www.qantas.com/fflyer/dyn/program/terms\" target=\"_blank\"&gt;Terms and conditions apply.&lt;/a&gt;"
+    }
+  ],
+  "flights": [
+    {
+      "id": "bf74c8ee-393a-45c8-8f15-a27fa6395050",
+      "departureAirportCode": "DFW",
+      "departureDate": "2026-01-26",
+      "departureTime": "17:55",
+      "arrivalAirportCode": "FRA",
+      "arrivalDate": "2026-01-26",
+      "arrivalTime": "15:00",
+      "operatingAirlineCode": "AA",
+      "operatingFlightNumber": 1001,
+      "marketingAirlineCode": "AA",
+      "marketingFlightNumber": 1001,
+      "disclosureAirlineCode": "AA",
+      "aircraftTypeCode": "346",
+      "durationInMinutes": 90,
+      "hiddenStops": [
+        {
+          "airportCode": "DFW",
+          "arrivalDate": "2026-01-26",
+          "arrivalTime": "15:00",
+          "departureDate": "2026-01-26",
+          "departureTime": "17:55",
+          "durationInMinutes": 90,
+          "hasChangeOfGauge": false,
+          "aircraftTypeCode": "346"
+        }
+      ]
+    }
+  ],
+  "journeys": [
+    {
+      "id": "ccc04ff0-d5ce-4314-9cbc-f01ec6bb91ab",
+      "flightRefs": [
+        "bf74c8ee-393a-45c8-8f15-a27fa6395050"
+      ],
+      "requestedJourneyIndex": 0
+    }
+  ],
+  "taxItems": [
+    {
+      "id": "7af78393-6d45-3d22-856d-3f6c515d6652",
+      "taxCode": "QX",
+      "amount": "16.04",
+      "currencyCode": "USD",
+      "publishedAmount": "15.54",
+      "publishedCurrencyCode": "EUR",
+      "taxDescription": "PASSENGER SERVICE CHARGE INTERNATIONAL",
+      "airportCode": "CDG",
+      "taxCountry": "FR"
+    }
+  ],
+  "offers": [
+    {
+      "type": "FlightOffer",
+      "id": "123eww324",
+      "createdAt": "2020-10-28T11:11:21.125Z",
+      "validUntil": "2020-10-28T11:11:21.125Z",
+      "source": {
+        "provider": "Sabre",
+        "supplier": "Supplier identifier",
+        "distributionModel": "API",
+        "commercialModel": "Connect"
+      },
+      "totalPrice": {
+        "amount": "33.30",
+        "currencyCode": "USD"
+      },
+      "items": [
+        {
+          "type": "FlightOfferItem",
+          "id": "123eww324-1-1",
+          "isMandatory": true,
+          "fares": [
+            {
+              "travelers": [
+                {
+                  "id": "Passenger1",
+                  "passengerTypeCode": "ADT",
+                  "requestedTravelerIndex": 0
+                }
+              ],
+              "fareTotal": {
+                "equivalentFare": "16.74",
+                "taxAmount": "16.56",
+                "amount": "33.30",
+                "currencyCode": "USD"
+              },
+              "privateFare": "Has Program Code",
+              "validatingAirlineCode": "AA",
+              "fareComponents": [
+                {
+                  "amount": "1.86",
+                  "currencyCode": "USD",
+                  "publishedAmount": "1.86",
+                  "publishedCurrencyCode": "USD",
+                  "exchangeRate": "1.00000",
+                  "fareBasisCode": "W7C1V2",
+                  "accountCode": "ACC33",
+                  "corporateIds": [
+                    "ACC33"
+                  ],
+                  "segmentDetails": [
+                    {
+                      "flightRef": "bf74c8ee-393a-45c8-8f15-a27fa6395050",
+                      "bookingClassCode": "M",
+                      "cabinName": "Economy",
+                      "checkedBaggageRef": "df58f912-7c38-416b-b97b-d73a8676f52c",
+                      "carryOnBaggageRef": "75af09b1-ca5e-4b9b-a754-3297f516d147",
+                      "carbonEmissionsInGramsPerPassenger": 667557,
+                      "availabilityBreak": true
+                    }
+                  ],
+                  "brand": {
+                    "code": "BASICECON",
+                    "name": "BASIC ECONOMY",
+                    "programId": 372463
+                  },
+                  "markups": [
+                    {
+                      "type": "Cat35",
+                      "amount": "15.00",
+                      "fareAmountAfterMarkup": "1215.00",
+                      "currencyCode": "USD"
+                    }
+                  ],
+                  "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+                  "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa"
+                }
+              ],
+              "commissions": [
+                {
+                  "type": "Cat35",
+                  "percentage": "1.00",
+                  "amount": "43.24",
+                  "currencyCode": "SGD"
+                }
+              ],
+              "taxItemRefs": [
+                "7af78393-6d45-3d22-856d-3f6c515d6652"
+              ],
+              "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+              "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa"
+            }
+          ],
+          "isPartial": false
+        }
+      ],
+      "paymentTimeLimit": "2026-10-28T11:11:21.125Z",
+      "applicableToPseudoCityCodes": [
+        "KF8C"
+      ],
+      "journeyRefs": [
+        "ccc04ff0-d5ce-4314-9cbc-f01ec6bb91ab"
+      ],
+      "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+      "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+      "additionalOffersRefs": [
+        "123eww323"
+      ]
+    }
+  ],
+  "offerValidationResults": [
+    {
+      "bookingClassCodeValidation": "Matched",
+      "offerRef": "123eww323"
+    },
+    {
+      "bookingClassCodeValidation": "Same cabin",
+      "offerRef": "123eww324"
+    }
+  ],
+  "offerAttributes": {
+    "checkedBaggageItems": [
+      {
+        "id": "df58f912-7c38-416b-b97b-d73a8676f52c",
+        "allowances": [
+          {
+            "numberOfPieces": 1,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "maximumWeightInKilograms": 30,
+            "maximumWeightInPounds": 30,
+            "airlineCode": "AA"
+          }
+        ],
+        "charges": [
+          {
+            "firstPiece": 1,
+            "lastPiece": 2,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "amount": "128.00",
+            "currencyCode": "USD",
+            "airlineCode": "AA"
+          }
+        ]
+      }
+    ],
+    "carryOnBaggageItems": [
+      {
+        "id": "df58f912-7c38-416b-b97b-d73a8676f52c",
+        "allowances": [
+          {
+            "numberOfPieces": 1,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "maximumWeightInKilograms": 30,
+            "maximumWeightInPounds": 30,
+            "airlineCode": "AA"
+          }
+        ],
+        "charges": [
+          {
+            "firstPiece": 1,
+            "lastPiece": 2,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "amount": "128.00",
+            "currencyCode": "USD",
+            "airlineCode": "AA"
+          }
+        ]
+      }
+    ],
+    "refundabilityItems": [
+      {
+        "id": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+        "beforeDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        },
+        "afterDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        }
+      }
+    ],
+    "changeItems": [
+      {
+        "id": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+        "beforeDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        },
+        "afterDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        }
+      }
+    ]
+  }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="Scenario_2"><a class="anchor" href="#Scenario_2"></a><code>offerItemID</code>-based validation</h3>
+<div class="paragraph">
+<p>To validate flight offer details by <code>offerItemID</code>, include a list of IDs in your request under the <code>offerItemIds</code> array:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">{
+  "offerItemIds": [
+    "qwertyuion-1-1"
+  ],
+  "formOfPayment": {
+    "type": "Credit or Debit Card",
+    "cardDetails": {
+      "code": "MC",
+      "binNumber": "545250"
+    }
+  },
+  "fare": {
+    "programs": [
+      {
+        "distributionModels": [
+          "NDC"
+        ],
+        "type": "Account Code",
+        "values": [
+          "ACC33"
+        ],
+        "companyIdType": "ABN",
+        "airlineCode": "RJ"
+      }
+    ],
+    "returnTaxBreakdown": false
+  },
+  "retailing": {
+    "returnOfferAttributes": [
+      "Baggage",
+      "Carbon Emissions"
+    ]
+  },
+  "travelers": [
+    {
+      "passengerTypeCode": "ADT",
+      "givenName": "John",
+      "surname": "Smith",
+      "loyaltyPrograms": [
+        {
+          "supplierCode": "RJ",
+          "programNumber": "11233"
+        }
+      ]
+    }
+  ],
+  "processingOptions": {
+    "pseudoCityCode": "PC18",
+    "configurationId": "abc12345"
+  }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The API returns a normalized offer price response with full offer details:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">{
+  "timestamp": "2019-09-09T09:09:09Z",
+  "warnings": [
+    {
+      "category": "NDC_WARNING",
+      "type": "EXTERNAL_PROVIDER_WARNING",
+      "description": "Card Payment fees ranging between AUD 1.40 and 9.70 may apply depending on card type. An IIN/BIN can be sent in the request to get a specific fee or a full list of fees can be displayed via the Service List."
+    },
+    {
+      "category": "NDC_WARNING",
+      "type": "EXTERNAL_PROVIDER_WARNING",
+      "description": "Qantas Frequent Flyers could earn Qantas Points and Status Credits for this booking. &lt;a href=\"https://www.qantas.com/fflyer/dyn/program/terms\" target=\"_blank\"&gt;Terms and conditions apply.&lt;/a&gt;"
+    }
+  ],
+  "flights": [
+    {
+      "id": "bf74c8ee-393a-45c8-8f15-a27fa6395050",
+      "departureAirportCode": "DFW",
+      "departureDate": "2026-01-26",
+      "departureTime": "17:55",
+      "arrivalAirportCode": "FRA",
+      "arrivalDate": "2026-01-26",
+      "arrivalTime": "15:00",
+      "operatingAirlineCode": "AA",
+      "operatingFlightNumber": 1001,
+      "marketingAirlineCode": "AA",
+      "marketingFlightNumber": 1001,
+      "disclosureAirlineCode": "AA",
+      "aircraftTypeCode": "346",
+      "durationInMinutes": 90,
+      "hiddenStops": [
+        {
+          "airportCode": "DFW",
+          "arrivalDate": "2026-01-26",
+          "arrivalTime": "15:00",
+          "departureDate": "2026-01-26",
+          "departureTime": "17:55",
+          "durationInMinutes": 90,
+          "hasChangeOfGauge": false,
+          "aircraftTypeCode": "346"
+        }
+      ]
+    }
+  ],
+  "journeys": [
+    {
+      "id": "ccc04ff0-d5ce-4314-9cbc-f01ec6bb91ab",
+      "flightRefs": [
+        "bf74c8ee-393a-45c8-8f15-a27fa6395050"
+      ],
+      "requestedJourneyIndex": 0
+    }
+  ],
+  "taxItems": [
+    {
+      "id": "7af78393-6d45-3d22-856d-3f6c515d6652",
+      "taxCode": "QX",
+      "amount": "16.04",
+      "currencyCode": "USD",
+      "publishedAmount": "15.54",
+      "publishedCurrencyCode": "EUR",
+      "taxDescription": "PASSENGER SERVICE CHARGE INTERNATIONAL",
+      "airportCode": "CDG",
+      "taxCountry": "FR"
+    }
+  ],
+  "offers": [
+    {
+      "type": "FlightOffer",
+      "id": "123eww324",
+      "createdAt": "2020-10-28T11:11:21.125Z",
+      "validUntil": "2020-10-28T11:11:21.125Z",
+      "source": {
+        "provider": "Sabre",
+        "supplier": "Supplier identifier",
+        "distributionModel": "API",
+        "commercialModel": "Connect"
+      },
+      "totalPrice": {
+        "amount": "33.30",
+        "currencyCode": "USD"
+      },
+      "items": [
+        {
+          "type": "FlightOfferItem",
+          "id": "123eww324-1-1",
+          "isMandatory": true,
+          "fares": [
+            {
+              "travelers": [
+                {
+                  "id": "Passenger1",
+                  "passengerTypeCode": "ADT",
+                  "requestedTravelerIndex": 0
+                }
+              ],
+              "fareTotal": {
+                "equivalentFare": "16.74",
+                "taxAmount": "16.56",
+                "amount": "33.30",
+                "currencyCode": "USD"
+              },
+              "privateFare": "Has Program Code",
+              "validatingAirlineCode": "AA",
+              "fareComponents": [
+                {
+                  "amount": "1.86",
+                  "currencyCode": "USD",
+                  "publishedAmount": "1.86",
+                  "publishedCurrencyCode": "USD",
+                  "exchangeRate": "1.00000",
+                  "fareBasisCode": "W7C1V2",
+                  "accountCode": "ACC33",
+                  "corporateIds": [
+                    "ACC33"
+                  ],
+                  "segmentDetails": [
+                    {
+                      "flightRef": "bf74c8ee-393a-45c8-8f15-a27fa6395050",
+                      "bookingClassCode": "M",
+                      "cabinName": "Economy",
+                      "checkedBaggageRef": "df58f912-7c38-416b-b97b-d73a8676f52c",
+                      "carryOnBaggageRef": "75af09b1-ca5e-4b9b-a754-3297f516d147",
+                      "carbonEmissionsInGramsPerPassenger": 667557,
+                      "availabilityBreak": true
+                    }
+                  ],
+                  "brand": {
+                    "code": "BASICECON",
+                    "name": "BASIC ECONOMY",
+                    "programId": 372463
+                  },
+                  "markups": [
+                    {
+                      "type": "Cat35",
+                      "amount": "15.00",
+                      "fareAmountAfterMarkup": "1215.00",
+                      "currencyCode": "USD"
+                    }
+                  ],
+                  "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+                  "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa"
+                }
+              ],
+              "commissions": [
+                {
+                  "type": "Cat35",
+                  "percentage": "1.00",
+                  "amount": "43.24",
+                  "currencyCode": "SGD"
+                }
+              ],
+              "taxItemRefs": [
+                "7af78393-6d45-3d22-856d-3f6c515d6652"
+              ],
+              "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+              "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa"
+            }
+          ],
+          "isPartial": false
+        }
+      ],
+      "paymentTimeLimit": "2026-10-28T11:11:21.125Z",
+      "applicableToPseudoCityCodes": [
+        "KF8C"
+      ],
+      "journeyRefs": [
+        "ccc04ff0-d5ce-4314-9cbc-f01ec6bb91ab"
+      ],
+      "refundabilityRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+      "changeRef": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+      "additionalOffersRefs": [
+        "123eww323"
+      ]
+    }
+  ],
+  "offerValidationResults": [
+    {
+      "bookingClassCodeValidation": "Matched",
+      "offerRef": "123eww323"
+    },
+    {
+      "bookingClassCodeValidation": "Same cabin",
+      "offerRef": "123eww324"
+    }
+  ],
+  "offerAttributes": {
+    "checkedBaggageItems": [
+      {
+        "id": "df58f912-7c38-416b-b97b-d73a8676f52c",
+        "allowances": [
+          {
+            "numberOfPieces": 1,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "maximumWeightInKilograms": 30,
+            "maximumWeightInPounds": 30,
+            "airlineCode": "AA"
+          }
+        ],
+        "charges": [
+          {
+            "firstPiece": 1,
+            "lastPiece": 2,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "amount": "128.00",
+            "currencyCode": "USD",
+            "airlineCode": "AA"
+          }
+        ]
+      }
+    ],
+    "carryOnBaggageItems": [
+      {
+        "id": "df58f912-7c38-416b-b97b-d73a8676f52c",
+        "allowances": [
+          {
+            "numberOfPieces": 1,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "maximumWeightInKilograms": 30,
+            "maximumWeightInPounds": 30,
+            "airlineCode": "AA"
+          }
+        ],
+        "charges": [
+          {
+            "firstPiece": 1,
+            "lastPiece": 2,
+            "bagDefinition": {
+              "weightInKilograms": 23,
+              "weightInPounds": 50,
+              "sizeInInches": 18,
+              "sizeInCentimeters": 45,
+              "lengthInInches": 18,
+              "lengthInCentimeters": 45,
+              "heightInInches": 14,
+              "heightInCentimeters": 35,
+              "widthInInches": 8,
+              "widthInCentimeters": 20,
+              "description": [
+                "UP TO 50 POUNDS/23 KILOGRAMS"
+              ]
+            },
+            "amount": "128.00",
+            "currencyCode": "USD",
+            "airlineCode": "AA"
+          }
+        ]
+      }
+    ],
+    "refundabilityItems": [
+      {
+        "id": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+        "beforeDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        },
+        "afterDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        }
+      }
+    ],
+    "changeItems": [
+      {
+        "id": "c693e9b2-1782-45f9-82f6-73f8cdd13cfa",
+        "beforeDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        },
+        "afterDeparture": {
+          "isPermitted": true,
+          "maxCharge": "14.00",
+          "minCharge": "7.00",
+          "currencyCode": "USD"
+        }
+      }
+    ]
+  }
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Postman_Collection"><a class="anchor" href="#Postman_Collection"></a>Postman Collection</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_overview"><a class="anchor" href="#_overview"></a>Overview</h3>
+<div class="paragraph">
+<p>A <a href="https://www.postman.com/">Postman</a> collection has been created for Sabre MS Flight APIs to help you quickly become familiar with various use cases.<br>
+It&#8217;s available for download <a href="_attachments/postman_collection.json" class="xref attachment">here</a>.</p>
+</div>
+<div class="paragraph">
+<p>We also maintain broader Postman collections that contain examples across Sabre’s entire API portfolio:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Collection version</th>
+<th class="tableblock halign-left valign-top">Comments</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="https://github.com/SabreDevStudio/postman-collections/tree/master/Booking-Management">Booking Management API</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Booking Management API sample collection</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="https://github.com/SabreDevStudio/postman-collections/tree/master/Sabre-APIs">Sabre APIs</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorporates version upgrades and samples for the Booking Management API</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Valid Sabre API credentials are required to successfully test the APIs in the above collections.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+</article>

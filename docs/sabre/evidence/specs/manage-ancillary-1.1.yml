@@ -1,0 +1,1437 @@
+openapi: '3.0.0'
+info:
+  description: 'The Manage Ancillary API is used to add, delete, and exchange pre-reserved seats and associated ancillaries and/or add/delete other ancillaries in a PNR-based reservation.'
+  version: '1.1'
+  title: Manage Ancillary
+servers:
+  - url: https://{environment}.sabre.com{basePath}
+    variables:
+      environment:
+        default: 'api.cert.platform'
+        enum:
+          - 'api.int.platform' # Public Test Server
+          - 'api.cert.platform' # Public Certification Server
+          - 'api.platform' # Public Production Server
+      basePath:
+        default: /v1/ancillaries
+x-lingo-api-type: rpc
+tags:
+  - name: Add Ancillaries
+    description: 'Allows you to add pre-reserved seats and associated ancillaries and/or other ancillaries to a booking.'
+  - name: Remove Ancillaries
+    description: 'Allows you to remove pre-reserved seats and associated ancillaries and/or other ancillaries from a booking.'
+  - name: Exchange Ancillaries
+    description: 'Allows you to exchange pre-reserved seats and associated ancillaries in a booking.'
+paths:
+  /add:
+    post:
+      description: 'Creates pre-reserved seats and associated ancillaries and/or other ancillaries in a PNR-based reservation.'
+      operationId: addAncillaries
+      tags:
+        - Add Ancillaries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddAncillariesRequest'
+            examples:
+              1. Add Ancillaries with seat:
+                $ref: '#/components/examples/AddAncillariesWithSeatRequest'
+              2. Add non seat Ancillaries:
+                $ref: '#/components/examples/AddNonSeatAncillariesRequest'
+              3. Add Ancillaries with seat and non-seats:
+                $ref: '#/components/examples/AddAncillariesWithSeatAndNonSeatRequest'
+              4. Add Ancillaries with non-seats without productText or details:
+                $ref: '#/components/examples/AddAncillariesWithoutProductTextInfoRequest'
+      responses:
+        '200':
+          description: 'A successful response, unless errors are returned.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddAncillariesResponse'
+              examples:
+                1. Add ancillaries with seat [Success]:
+                  $ref: '#/components/examples/AddAncillariesWithSeatResponse'
+                2. Add non seat ancillaries [Success]:
+                  $ref: '#/components/examples/AddNonSeatAncillariesResponse'
+                3. Add ancillaries with seat and non-seats [Success]:
+                  $ref: '#/components/examples/AddAncillariesWithSeatAndNonSeatResponse'
+                4. Add ancillaries error [Error]:
+                  $ref: '#/components/examples/AddAncillariesErrorResponse'
+  /remove:
+    post:
+      description: 'Creates space to add new pre-reserved seats and associated ancillaries by removing requested seats and/or other ancillaries from a PNR-based reservation.'
+      operationId: removeAncillaries
+      tags:
+        - Remove Ancillaries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveAncillariesRequest'
+            examples:
+              1. Remove Ancillaries:
+                $ref: '#/components/examples/RemoveAncillariesRequest'
+              2. Remove Ancillaries with seat:
+                $ref: '#/components/examples/RemoveAncillariesWithSeatsRequest'
+              3. Remove Seats:
+                $ref: '#/components/examples/RemoveSeatsRequest'
+      responses:
+        '200':
+          description: 'A successful response, unless errors are returned.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveAncillariesResponse'
+              examples:
+                1. Remove Ancillaries [Success]:
+                  $ref: '#/components/examples/RemoveAncillariesResponse'
+                2. Remove Ancillaries [Error]:
+                  $ref: '#/components/examples/RemoveAncillariesErrorResponse'
+                3. Remove Ancillaries with seat [Success]:
+                  $ref: '#/components/examples/RemoveAncillariesWithSeatsResponse'
+                4. Remove Seats [Success]:
+                  $ref: '#/components/examples/RemoveSeatsResponse'
+  /exchange:
+    post:
+      description: 'Creates exchanged pre-reserved seats and associated ancillaries in a PNR-based reservation.'
+      operationId: exchangeAncillaries
+      tags:
+        - Exchange Ancillaries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeAncillariesRequest'
+            examples:
+              1. Exchange Ancillaries:
+                $ref: '#/components/examples/ExchangeAncillariesRequest'
+      responses:
+        '200':
+          description: 'A successful response, unless errors are returned.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeAncillariesResponse'
+              examples:
+                1.1 Exchange Ancillaries [Success]:
+                  $ref: '#/components/examples/ExchangeAncillariesResponse'
+                1.2 Exchange Ancillaries [Error]:
+                  $ref: '#/components/examples/ExchangeAncillariesErrorResponse'
+components:
+  examples:
+    AddAncillariesWithSeatRequest:
+      description: |
+        ##### Scenario
+        The **Add Ancillaries** example presents a simple use-case for the **Manage Ancillaries API**. We will request ancillaries for a specified passenger by using an `offerItemId`.
+        ##### Instruction
+        To add ancillaries, we need to provide the following parameters:
+        
+        | Property | Description |
+        | :--- | ---: |
+        | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+        | `offerItemId` | The offer item ID of an ancillary obtained from the [Get Seats API](https://developer.sabre.com/rest-api/get-seats) response during shopping.|
+        | `passengerRef` | The passenger `id` serving as a reference. |
+        | `row` | The row number of the seat to book. |
+        | `column` | The column letter of the seat to book. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "seats": [ {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2",
+            "passengerRef": "1.1",
+            "row": 8,
+            "column": "B"
+          }, {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10",
+            "passengerRef": "2.1",
+            "row": 19,
+            "column": "B"
+          } ]
+        }
+    AddAncillariesWithSeatResponse:
+      description: |
+        ##### Summary
+        Ancillaries have been added to the reservation from the request. In a successful response from the API, we receive details of the added seats and/or associated ancillaries.
+        
+        ##### Next Steps
+        If necessary, you may choose to perform additional operations on the ancillaries added to the reservation. It is possible to remove seats and/or ancillaries, add new seats and/or ancillaries for another passenger, or exchange seats and/or ancillaries using this API.
+      value:
+        {
+          "ancillaryDetails": {
+            "pnrLocator": "PAFDQX",
+            "ancillaries": [ {
+              "id": 10,
+              "seatId": 15,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "1.1",
+              "segmentRefs": [ 2 ],
+              "selectedSeat": {
+                "row": 8,
+                "column": "B",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2"
+            }, {
+              "id": 12,
+              "seatId": 16,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "2.1",
+              "segmentRefs": [ 3 ],
+              "selectedSeat": {
+                "row": 19,
+                "column": "B",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10"
+            } ],
+            "passengerNames": [ {
+              "id": "1.1",
+              "givenName": "JOHN",
+              "surname": "SMITH",
+              "type": "ADULT"
+            },{
+              "id": "2.1",
+              "givenName": "Mike",
+              "surname": "Rafel",
+              "type": "ADULT"
+            } ],
+            "airSegments": [ {
+              "id": 2,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1093,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1092,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-09-20T09:55:00",
+              "arrivalDateTime": "2026-09-20T10:50:00",
+              "departureAirport": "GRU",
+              "arrivalAirport": "GIG",
+              "statusCode": "HK"
+            }, {
+              "id": 3,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1094,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1699,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-10-04T07:15:00",
+              "arrivalDateTime": "2026-10-04T08:25:00",
+              "departureAirport": "GIG",
+              "arrivalAirport": "GRU",
+              "statusCode": "HK"
+            } ]
+          }
+        }
+    AddNonSeatAncillariesRequest:
+      description: |
+        ##### Scenario
+        The **Add Ancillaries** example presents a simple use-case for the **Manage Ancillaries API**. We will request other ancillaries for a specified passenger by using an `offerItemId`.
+        ##### Instruction
+        To add ancillaries, we need to provide the following parameters:
+        
+        | Property | Description |
+        | :--- | ---: |
+        | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+        | `offerItemId` | The offer item ID of an ancillary obtained from the [Get Ancillary Offers](https://developer.sabre.com/soap-api/get-ancillary-offers-for-airlines) response during shopping.|
+        | `passengerRef` | The passenger `id` serving as a reference. |
+        | `numberOfItems` | The quantity of an ancillary. |
+        | `productText or productTextDetails` | The product text or details of an autoSSR. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "ancillaries": [ {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2",
+            "passengerRef": "1.1",
+            "numberOfItems": 2,
+            "productText": "free text"
+          }, {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10",
+            "passengerRef": "2.1",
+            "numberOfItems": 5,
+            "productTextDetails": [{
+              "itemName" : "WEIGHT",
+              "itemValue" : "10"
+            },{
+              "itemName": "HEIGHT",
+              "itemValue": "30"
+            }]
+          }]
+        }
+    AddNonSeatAncillariesResponse:
+      description: |
+        ##### Summary
+        Ancillaries and or associated SSRs or child ancillaries have been added to the reservation from the request. In a successful response from the API, we receive details of the added ancillaries and/or associated SSRs.
+        
+        ##### Next Steps
+        If necessary, you may choose to perform additional operations on the ancillaries added to the reservation. It is possible to remove ancillaries, add new ancillaries for a passenger using this API.
+      value:
+        {
+          "ancillaryDetails": {
+            "pnrLocator": "PAFDQX",
+            "ancillaries": [ {
+              "id": 10,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "1.1",
+              "segmentRefs": [ 2 ],
+              "commercialName": "EXCESS BAGGAGE",
+              "ssrCode": "XBAG",
+              "groupCode": "BG",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0C3",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2"
+            }, {
+              "id": 12,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "2.1",
+              "segmentRefs": [ 3 ],
+              "commercialName": "PET IN CABIN",
+              "ssrCode": "PETC",
+              "groupCode": "PT",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0C1",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10"
+            } ],
+            "passengerNames": [ {
+              "id": "1.1",
+              "givenName": "JOHN",
+              "surname": "SMITH",
+              "type": "ADULT"
+            },{
+              "id": "2.1",
+              "givenName": "Mike",
+              "surname": "Rafel",
+              "type": "ADULT"
+            } ],
+            "airSegments": [ {
+              "id": 2,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1093,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1092,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-09-20T09:55:00",
+              "arrivalDateTime": "2026-09-20T10:50:00",
+              "departureAirport": "GRU",
+              "arrivalAirport": "GIG",
+              "statusCode": "HK"
+            }, {
+              "id": 3,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1094,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1699,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-10-04T07:15:00",
+              "arrivalDateTime": "2026-10-04T08:25:00",
+              "departureAirport": "GIG",
+              "arrivalAirport": "GRU",
+              "statusCode": "HK"
+            } ]
+          }
+        }
+    AddAncillariesWithoutProductTextInfoRequest:
+      description: |
+        ##### Scenario
+        The **Add Ancillaries** example presents a simple use-case for the **Manage Ancillaries API**. We will request other ancillaries for a specified passenger by using an `offerItemId`.
+        ##### Instruction
+        To add ancillaries, we need to provide the following parameters:
+
+        | Property | Description |
+        | :--- | ---: |
+        | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+        | `offerItemId` | The offer item ID of an ancillary obtained from the [Get Ancillary Offers](https://developer.sabre.com/soap-api/get-ancillary-offers-for-airlines) response during shopping. |
+        | `passengerRef` | The passenger `id` serving as a reference. |
+        | `numberOfItems` | The quantity of an ancillary. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "ancillaries": [ {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2",
+            "passengerRef": "1.1",
+            "numberOfItems": 2
+          }, {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10",
+            "passengerRef": "2.1",
+            "numberOfItems": 5
+          } ]
+        }
+    AddAncillariesWithSeatAndNonSeatRequest:
+      description: |
+        ##### Scenario
+        The **Add Ancillaries** example presents a seat & non-seat use-case for the **Manage Ancillaries API**. We will request ancillaries for a specified passenger by using an `offerItemId`.
+        ##### Instruction
+        To add ancillaries, we need to provide the following parameters:
+        
+        | Property | Description |
+        | :--- | ---: |
+        | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+        | `offerItemId` | The offer item ID of an ancillary obtained from the [Get Seats API](https://developer.sabre.com/rest-api/get-seats) or [Get Ancillary Offers](https://developer.sabre.com/soap-api/get-ancillary-offers-for-airlines) response during shopping. |
+        | `passengerRef` | The passenger `id` serving as a reference. |
+        | `row` | The row number of the seat to book. |
+        | `column` | The column letter of the seat to book. |
+        | `numberOfItems` | The quantity of an ancillary. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "seats": [ {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2",
+            "passengerRef": "1.1",
+            "row": 8,
+            "column": "B"
+          }, {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10",
+            "passengerRef": "2.1",
+            "row": 19,
+            "column": "B"
+          } ],
+          "ancillaries": [ {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-3",
+            "passengerRef": "1.1",
+            "numberOfItems": 2,
+            "productText": "free text"
+          }, {
+            "offerItemId": "dd677fd5f549rctpzlm4jn38s0-11",
+            "passengerRef": "2.1",
+            "numberOfItems": 5,
+            "productTextDetails": [ {
+              "itemName": "WEIGHT",
+              "itemValue": "10"
+            },{
+              "itemName": "HEIGHT",
+              "itemValue": "30"
+            } ]
+          } ]
+        }
+    AddAncillariesWithSeatAndNonSeatResponse:
+      description: |
+        ##### Summary
+        Ancillaries have been added to the reservation from the request. In a successful response from the API, we receive details of the added seats and/or associated ancillaries.
+
+        ##### Next Steps
+        If necessary, you may choose to perform additional operations on the ancillaries added to the reservation. It is possible to remove seats and/or ancillaries, add new seats and/or ancillaries for another passenger, or exchange seats and/or ancillaries using this API.
+      value:
+        {
+          "ancillaryDetails": {
+            "pnrLocator": "PAFDQX",
+            "ancillaries": [ {
+              "id": 10,
+              "seatId": 15,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "1.1",
+              "segmentRefs": [ 2 ],
+              "selectedSeat": {
+                "row": 8,
+                "column": "B",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-2"
+            }, {
+              "id": 12,
+              "seatId": 16,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "2.1",
+              "segmentRefs": [ 3 ],
+              "selectedSeat": {
+                "row": 19,
+                "column": "B",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549rctpzlm4jn38s0-10"
+            } ,
+              {
+                "id": 11,
+                "offerSource": "QPX",
+                "price": {
+                  "baseAmount": {
+                    "amount": "12.00",
+                    "code": "USD"
+                  },
+                  "totalAmount": {
+                    "amount": "12.00",
+                    "code": "USD"
+                  }
+                },
+                "status": "Payment Required",
+                "passengerRef": "1.1",
+                "segmentRefs": [ 2 ],
+                "commercialName": "EXCESS BAGGAGE",
+                "ssrCode": "XBAG",
+                "groupCode": "BG",
+                "vendorCode": "QPX",
+                "reasonForIssuanceCode": "A",
+                "reasonForIssuanceSubCode": "0C3",
+                "owningAirlineCode": "G3",
+                "offerItemId": "dd677fd5f549rctpzlm4jn38s0-3"
+              }, {
+                "id": 13,
+                "offerSource": "QPX",
+                "price": {
+                  "baseAmount": {
+                    "amount": "12.00",
+                    "code": "USD"
+                  },
+                  "totalAmount": {
+                    "amount": "12.00",
+                    "code": "USD"
+                  }
+                },
+                "status": "Payment Required",
+                "passengerRef": "2.1",
+                "segmentRefs": [ 3 ],
+                "commercialName": "PET IN CABIN",
+                "ssrCode": "PETC",
+                "groupCode": "PT",
+                "vendorCode": "QPX",
+                "reasonForIssuanceCode": "A",
+                "reasonForIssuanceSubCode": "0C1",
+                "owningAirlineCode": "G3",
+                "offerItemId": "dd677fd5f549rctpzlm4jn38s0-11"
+              } ],
+            "passengerNames": [ {
+              "id": "1.1",
+              "givenName": "JOHN",
+              "surname": "SMITH",
+              "type": "ADULT"
+            },{
+              "id": "2.1",
+              "givenName": "Mike",
+              "surname": "Rafel",
+              "type": "ADULT"
+            } ],
+            "airSegments": [ {
+              "id": 2,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1093,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1092,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-09-20T09:55:00",
+              "arrivalDateTime": "2026-09-20T10:50:00",
+              "departureAirport": "GRU",
+              "arrivalAirport": "GIG",
+              "statusCode": "HK"
+            }, {
+              "id": 3,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1094,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1699,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-10-04T07:15:00",
+              "arrivalDateTime": "2026-10-04T08:25:00",
+              "departureAirport": "GIG",
+              "arrivalAirport": "GRU",
+              "statusCode": "HK"
+            } ]
+          }
+        }
+    AddAncillariesErrorResponse:
+      description: |
+        ##### Summary
+        Ancillaries could not be added in the reservation from the request due to processing errors. The response returns corresponding error details that can help debug the problem. Failed added transactions should not impact the PNR in any way.
+
+        ##### Next Steps
+        To send a successful call, correct your request as instructed in the returned error details and retry your call to the API.
+
+      value:
+        {
+          "errors": [ {
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while adding the seat",
+            "fieldValue": "CANNOT ASSIGN SEAT"
+          },{
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while adding the seat",
+            "fieldValue": "CANNOT ASSIGN SEAT"
+          } ]
+        }
+    ExchangeAncillariesRequest:
+      description: |
+        ##### Scenario
+          In this example called **Exchange Ancillaries**, we will send a request to exchange ancillaries booked for a particular passenger by using a preexisting `seatId` and an `offerItemId`.
+          ##### Instruction
+          To exchange ancillaries, we need to provide the following parameters:
+
+          | Property | Description |
+          | :--- | ---: |
+          | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+          | `seatId` | The ID of the pre-reserved seat to exchange. |
+          | `offerItemId` | The offer item ID of the ancillary. |
+          | `passengerRef` | The passenger `id` serving as a reference. |
+          | `row` | The row number of the target seat to add to the booking. |
+          | `column` | The column letter of the target seat to add to the booking. |
+      value:
+        {
+          "pnrLocator": "PADLZK",
+          "seats": [ {
+            "seatId": 10,
+            "offerItemId": "dd677fd5f549mgjnjlm4jlunm0-1",
+            "passengerRef": "1.1",
+            "row": 1,
+            "column": "E"
+          },
+            {
+              "seatId": 12,
+              "offerItemId": "dd677fd5f549mgjnjlm4jlunm2-1",
+              "passengerRef": "2.1",
+              "row": 2,
+              "column": "D"
+            } ]
+        }
+    ExchangeAncillariesResponse:
+      description: |
+        ##### Summary
+        Ancillaries have been exchanged in the reservation from the request. In a successful response from the API, we receive details of the exchanged seats and/or associated ancillaries.
+        
+        ##### Next Steps
+        If necessary, you may choose to perform additional operations on the ancillaries in the reservation. It is possible to remove seats and/or ancillaries, add new seats and/or ancillaries for another passenger, or exchange seats and/or ancillaries using this API.
+      value:
+        {
+          "ancillaryDetails": {
+            "pnrLocator": "PAFDQX",
+            "ancillaries": [ {
+              "id": 20,
+              "seatId": 22,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "12.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "1.1",
+              "segmentRefs": [ 2 ],
+              "selectedSeat": {
+                "row": 1,
+                "column": "E",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549mgjnjlm4jlunm0-2"
+            }, {
+              "id": 24,
+              "seatId": 30,
+              "offerSource": "QPX",
+              "price": {
+                "baseAmount": {
+                  "amount": "20.00",
+                  "code": "USD"
+                },
+                "totalAmount": {
+                  "amount": "20.00",
+                  "code": "USD"
+                }
+              },
+              "status": "Payment Required",
+              "passengerRef": "2.1",
+              "segmentRefs": [ 3 ],
+              "selectedSeat": {
+                "row": 2,
+                "column": "D",
+                "characteristics": [ "CH", "LS", "FC" ]
+              },
+              "commercialName": "ASSENTO PADRAO",
+              "groupCode": "SA",
+              "vendorCode": "QPX",
+              "reasonForIssuanceCode": "A",
+              "reasonForIssuanceSubCode": "0B5",
+              "owningAirlineCode": "G3",
+              "offerItemId": "dd677fd5f549mgjnjlm4jlunm2-1"
+            } ],
+            "passengerNames": [ {
+              "id": "1.1",
+              "givenName": "JOHN",
+              "surname": "SMITH",
+              "type": "ADULT"
+            },{
+              "id": "2.1",
+              "givenName": "Mike",
+              "surname": "Rafel",
+              "type": "ADULT"
+            } ],
+            "airSegments": [ {
+              "id": 2,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1093,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1092,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-09-20T09:55:00",
+              "arrivalDateTime": "2026-09-20T10:50:00",
+              "departureAirport": "GRU",
+              "arrivalAirport": "GIG",
+              "statusCode": "HK"
+            }, {
+              "id": 3,
+              "operatingAirlineCode": "ET",
+              "operatingFlightNumber": 1094,
+              "bookingAirlineCode": "G3",
+              "bookingFlightNumber": 1699,
+              "bookingClassCode": "Y",
+              "departureDateTime": "2026-10-04T07:15:00",
+              "arrivalDateTime": "2026-10-04T08:25:00",
+              "departureAirport": "GIG",
+              "arrivalAirport": "GRU",
+              "statusCode": "HK"
+            } ]
+          }
+        }
+    ExchangeAncillariesErrorResponse:
+      description: |
+        ##### Summary
+        Ancillaries could not be exchanged in the reservation from the request due to processing errors. The response returns corresponding error details that can help debug the problem. Failed exchange transactions should not impact the PNR in any way.
+        
+        ##### Next Steps
+        To send a successful call, correct your request as instructed in the returned error details and retry your call to the API.
+      value:
+        {
+          "errors": [ {
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while exchanging the seat",
+            "fieldValue": "DUPLICATE AE DATA, actionId = 27904125"
+          },{
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while exchanging the seat",
+            "fieldValue": "LREC NOT FOUND"
+          } ]
+        }
+    RemoveAncillariesWithSeatsRequest:
+      description: |
+        ##### Scenario
+          The **Remove Ancillaries** example presents a request to delete ancillaries from a reservation for a specified passenger by using the IDs of the seats and other ancillaries.
+          ##### Instruction
+          To remove ancillaries, we need to provide the following parameters:
+
+          | Property | Description |
+          | :--- | ---: |
+          | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+          | `seats` | A list of seats to remove from the booking. |
+          | `ancillaries` | A list of other ancillaries to remove from the booking. |
+
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "seats": [ 15 , 16 ],
+          "ancillaries": [20 , 22]
+        }
+    RemoveAncillariesWithSeatsResponse:
+      description: |
+        ##### Summary
+        Ancillaries have been successfully removed from the reservation. We receive an empty response; no errors are returned.
+        
+        ##### Next Steps
+        If required, you may add a new seat and/or ancillary for the same passenger by sending another request.
+      value:
+        { }
+    RemoveSeatsRequest:
+      description: |
+        ##### Scenario
+          The **Remove Ancillaries** example presents a request to delete ancillaries from a reservation for a specified passenger by using the IDs of the seats.
+          ##### Instruction
+          To remove ancillaries, we need to provide the following parameters:
+
+          | Property | Description |
+          | :--- | ---: |
+          | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+          | `seats` | A list of seats to remove from the booking. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "seats": [ 15 , 16 ]
+        }
+    RemoveSeatsResponse:
+      description: |
+        ##### Summary
+        Ancillaries have been successfully removed from the reservation. We receive an empty response; no errors are returned.
+
+        ##### Next Steps
+        If required, you may add a new seat and/or ancillary for the same passenger by sending another request.
+      value:
+        { }
+    RemoveAncillariesRequest:
+      description: |
+        ##### Scenario
+          The **Remove Ancillaries** example presents a request to delete ancillaries from a reservation for a specified passenger by using the IDs of the seats.
+          ##### Instruction
+          To remove ancillaries, we need to provide the following parameters:
+        
+          | Property | Description |
+          | :--- | ---: |
+          | `pnrLocator` | The PNR locator of the passenger in the GDS/CRS system. |
+          | `ancillaries` | A list of ancillaries to remove from the booking. |
+      value:
+        {
+          "pnrLocator": "PAFDQX",
+          "ancillaries": [ 15 , 16 ]
+        }
+    RemoveAncillariesResponse:
+       description: |
+        ##### Summary
+        Ancillaries have been successfully removed from the reservation. We receive an empty response; no errors are returned.
+
+        ##### Next Steps
+        If required, you may add a new ancillary for any passenger by sending another request.
+       value:
+        { }
+    RemoveAncillariesErrorResponse:
+      description: |
+        ##### Summary
+        Ancillaries could not be removed from the reservation indicated in the request due to processing errors. The response returns corresponding error details that can help debug the problem.
+        
+        ##### Next Steps
+        To send a successful call, correct your request as instructed in the returned error details and retry your call to the API.
+      value:
+        {
+          "errors": [ {
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while removing the seat",
+            "fieldValue": "Seat delete id 15 failed with error: UNABLE TO PROCESS"
+          },{
+            "category": "APPLICATION_ERROR",
+            "type": "PROCESSING_ERROR",
+            "description": "Error while removing the seat",
+            "fieldValue": "Seat delete id 16 failed with error: UNABLE TO PROCESS"
+          } ]
+        }
+  securitySchemes:
+    oauth2_authentication:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: 'https://api.cert.platform.sabre.com/v2/auth/token'
+          scopes:
+            oauth2: oauth2
+      x-base64-encode-client-credentials: true
+  schemas:
+    ExchangeAncillariesResponse:
+      type: object
+      description: 'Contains a response to a request sent to the `/exchange` endpoint.'
+      properties:
+        errors:
+          type: array
+          description: 'Lists errors returned while processing the request.'
+          items:
+            $ref: '#/components/schemas/Error'
+        ancillaryDetails:
+          $ref: '#/components/schemas/AncillaryDetails'
+          description: 'Contains details of the new ancillary that the previous one was exchanged for.'
+    RemoveAncillariesResponse:
+      type: object
+      description: 'Contains a response to a request sent to the `/remove` endpoint.'
+      properties:
+        errors:
+          type: array
+          description: 'Lists errors returned while processing the request.'
+          items:
+            $ref: '#/components/schemas/Error'
+    AddAncillariesResponse:
+      type: object
+      description: 'Contains a response to a request sent to the `/add` endpoint.'
+      properties:
+        errors:
+          type: array
+          description: 'Lists errors returned while processing the request.'
+          items:
+            $ref: '#/components/schemas/Error'
+        ancillaryDetails:
+          $ref: '#/components/schemas/AncillaryDetails'
+          description: 'Contains details of the new ancillary that was added to the booking.'
+    AncillaryDetails:
+      type: object
+      description: 'Contains details of ancillaries added to the reservation from the request, including pre-reserved seats.'
+      properties:
+        pnrLocator:
+          description: 'The PNR locator.'
+          $ref: '#/components/schemas/PnrLocator'
+        ancillaries:
+          type: array
+          description: 'Lists ancillaries added to the booking.'
+          items:
+            $ref: '#/components/schemas/Ancillary'
+        passengerNames:
+          type: array
+          description: 'Lists passengers associated with the ancillaries added to the booking.'
+          items:
+            $ref: '#/components/schemas/PassengerName'
+        airSegments:
+          type: array
+          description: 'Lists air segments associated with the ancillaries added to the booking.'
+          items:
+            $ref: '#/components/schemas/AirSegment'
+    AirSegment:
+      type: object
+      description: 'Contains an air segment associated with a particular set of ancillaries.'
+      properties:
+        id:
+          type: integer
+          description: 'The unique identifier of the segment.'
+          example: 2
+        operatingAirlineCode:
+          type: string
+          pattern: '^([A-Z0-9]{2}|[A-Z]{3})$'
+          example: 'EY'
+          description: "The IATA code of the airline that operates the flight and transports the passengers in a codeshare scenario."
+        bookingAirlineCode:
+          type: string
+          pattern: '^([A-Z0-9]{2}|[A-Z]{3})$'
+          example: 'AA'
+          description: "The IATA code of the airline that provides the passenger's booking or reservation."
+        operatingFlightNumber:
+          type: number
+          format: int32
+          minimum: 1
+          maximum: 9999
+          example: 5260
+          description: 'The flight number of the airline that operates the flight and transports the passengers in a codeshare scenario.'
+        bookingFlightNumber:
+          type: number
+          format: int32
+          minimum: 1
+          maximum: 9999
+          example: 5260
+          description: The flight number of the airline that provides the passenger's booking or reservation.
+        bookingClassCode:
+          type: string
+          pattern: '^[A-Z]{1,2}$'
+          example: 'Y'
+          description: 'The Reservation Booking Designator (RBD) code used in reservation transactions to identify the booking class.'
+        departureDateTime:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$'
+          example: '2024-03-28T09:30:00'
+          description: The scheduled date and time of departure, provided in ISO 8601 format and in the departure airport's local time zone.
+        arrivalDateTime:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$'
+          example: '2024-03-28T09:30:00'
+          description: The scheduled date and time of arrival, provided in ISO 8601 format and in the arrival airport's local time zone.
+        departureAirport:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: LAX
+          description: 'The three-letter [IATA](https://www.iata.org/publications/Pages/code-search.aspx) departure 
+            airport code.'
+        arrivalAirport:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: NYC
+          description: 'The three-letter [IATA](https://www.iata.org/publications/Pages/code-search.aspx) arrival 
+            airport code.'
+        statusCode:
+          type: string
+          description: 'The current status code of the air segment. Specifies whether the segment is confirmed or rejected.'
+          example: HK
+    PassengerName:
+      type: object
+      description: 'Contains name details of a passenger.'
+      properties:
+        id:
+          type: string
+          example: '1.1'
+          description: The unique identifier of the passenger's name.
+        givenName:
+          type: string
+          example: 'John'
+          description: The passenger's given name.
+        surname:
+          type: string
+          example: 'Smith'
+          description: The passenger's surname.
+        passengerTypeCode:
+          description: 'The three-letter Passenger Type Code (PTC), typically used to drive pricing values.'
+          type: string
+          pattern: '^[0-9A-Z]{3}$'
+          example: ADT
+    AmountCurrency:
+      type: object
+      description: 'Contains monetary information.'
+      properties:
+        amount:
+          type: string
+          format: number
+          example: '100.00'
+          description: 'The monetary amount.'
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: 'USD'
+          description: 'The three-letter [ISO 4217](https://www.iso.org/iso-4217-currency-codes.html) currency code.'
+    Ancillary:
+      type: object
+      description: 'Contains details of an ancillary.'
+      properties:
+        id:
+          type: integer
+          description: 'The unique identifier of the ancillary.'
+          example: 5
+        seatId:
+          description: 'The unique identifier of a pre-reserved seat.'
+          $ref: '#/components/schemas/SeatId'
+        offerSource:
+          description: 'Identifies the source of the ancillary offer.'
+          $ref: '#/components/schemas/OfferItemSourceEnum'
+        price:
+          $ref: '#/components/schemas/Price'
+          description: 'Contains the price of the ancillary.'
+        taxBreakdowns:
+          description: 'Lists taxes applied to the ancillary price.'
+          type: array
+          items:
+            $ref: '#/components/schemas/Tax'
+        status:
+          description: 'Identifies the status of the ancillary.'
+          $ref: '#/components/schemas/AncillaryStatusEnum'
+        passengerRef:
+          $ref: '#/components/schemas/PassengerRef'
+          description: 'The passenger `id` serving as a reference.'
+        segmentRefs:
+          type: array
+          description: 'Lists the IDs of associated air segments.'
+          items:
+            $ref: '#/components/schemas/SegmentRef'
+        selectedSeat:
+          $ref: '#/components/schemas/SelectedSeat'
+          description: 'Contains information about a selected seat.'
+        commercialName:
+          type: string
+          description: 'The commercial name of the ancillary.'
+          example: 'PRE RESERVED SEAT ASSIGNMENT'
+        groupCode:
+          description: 'The ATPCO code of the group to which the ancillary belongs.'
+          type: string
+          pattern: '^[0-9A-Z]{2}$'
+          example: 'SA'
+        ssrCode:
+          description: 'The SSR code associated to an ancillary.'
+          type: string
+          pattern: '^[A-Z]{4}$'
+          example: 'XBAG'
+        groupName:
+          description: 'The ATPCO group name.'
+          type: string
+          example: 'SEAT'
+        vendorCode:
+          description: 'The fare or ancillary vendor code.'
+          type: string
+          pattern: '^[0-9A-Z]{1,5}$'
+          example: 'ATP'
+        reasonForIssuance:
+          description: 'Identifies the reason for issuing the EMD for the service defined by `reasonForIssuanceSubCode`.'
+          $ref: '#/components/schemas/ReasonForIssuanceEnum'
+        reasonForIssuanceCode:
+          description:
+            "The internal code specifying the reason for issuing the EMD for the service defined by `reasonForIssuanceSubCode`. For more information, refer to the PADIS code set data element 4183: Special condition. Can be `A` (Air transportation), `B` (Surface transportation / Non-air services), `C` (Baggage), `D` (Financial impact), `E` (Airport services), `F` (Merchandise), `G` (In-flight services), `H` (Reserved for future ATPCO use), or `I` (Reserved for individual airline use)."
+          type: string
+          pattern: '^[ABCDEFGHI]$'
+          example: 'A'
+        reasonForIssuanceSubCode:
+          description: 'The sub-code either used across the industry or defined by the carrier, identifying a specific type of service.'
+          type: string
+          pattern: '^[0-9A-Z]{3}$'
+          example: '0B5'
+        owningAirlineCode:
+          type: string
+          description: 'The code of the carrier that owns the ancillary.'
+          example: 'VA'
+        offerItemId:
+          $ref: '#/components/schemas/OfferItemId'
+          description: 'The offer item ID of the ancillary.'
+    AncillaryStatusEnum:
+      type: string
+      description: 'Identifies the status of the ancillary.'
+      enum:
+        - Payment Required
+        - Requested
+        - Confirmed
+        - No AE
+        - Pending Confirmation
+        - Fulfilled
+    ReasonForIssuanceEnum:
+      description: 'Identifies the reason for issuing the EMD for the service defined by `reasonForIssuanceSubCode`. For more information, refer to the PADIS code set data element 4183: Special condition.'
+      type: string
+      enum:
+        - Air Transportation
+        - Surface Transportation / Non Air Services
+        - Baggage
+        - Financial Impact
+        - Airport Services
+        - Merchandise
+        - In-Flight Services
+        - Individual Airline Use
+        - Unknown
+      default: 'Unknown'
+    OfferItemSourceEnum:
+      type: string
+      description: 'Identifies the source of the ancillary offer.'
+      enum:
+        - LCC
+        - ATPCO
+        - NDC
+        - SSG
+        - QPX
+        - Other
+    Price:
+      type: object
+      description: 'Contains the price of the ancillary.'
+      properties:
+        baseAmount:
+          description: 'The base price of the ancillary.'
+          $ref: '#/components/schemas/AmountCurrency'
+        equivalentAmount:
+          description: 'The equivalent of the `baseAmount` provided in the local currency of the point of sale.'
+          $ref: '#/components/schemas/AmountCurrency'
+        unitTotalAmount:
+          description: 'The total price of a singular ancillary item including tax.'
+          $ref: '#/components/schemas/AmountCurrency'
+        totalAmount:
+          description: 'The `UnitTotalAmount` value multiplied by the number of items.'
+          $ref: '#/components/schemas/AmountCurrency'
+    SelectedSeat:
+      type: object
+      description: 'Contains information about a booked seat.'
+      properties:
+        row:
+          type: integer
+          description: 'The row where the booked seat is located.'
+          example: 2
+        column:
+          type: string
+          description: 'The column where the booked seat is located.'
+          example: C
+        characteristics:
+          description: 'Lists all characteristic codes associated with the seat.'
+          type: array
+          items:
+            description: 'A seat characteristic code. Refer to the IATA PADIS code list data element 9825 for a full list of values.'
+            type: string
+            pattern: '^[A-Z0-9]{1,2}$'
+            example: CH
+    Tax:
+      type: object
+      description: 'Contains information about a tax.'
+      properties:
+        amount:
+          description: 'The monetary tax amount.'
+          type: string
+          format: number
+          example: '10.00'
+        taxCode:
+          description: 'The tax code.'
+          type: string
+          pattern: '^[A-Z0-9]{2,3}$'
+          example: "GB"
+    AddAncillariesRequest:
+      type: object
+      description: 'Contains all parameters required to send a request to add ancillaries to a booking.'
+      required:
+        - pnrLocator
+      properties:
+        pnrLocator:
+          description: 'The PNR locator.'
+          $ref: '#/components/schemas/PnrLocator'
+        seats:
+          description: 'Lists seats to add to the booking.'
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AddSeat'
+        ancillaries:
+          description: 'Lists ancillaries to add to the booking.'
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AddAncillary'
+    RemoveAncillariesRequest:
+      type: object
+      required:
+        - pnrLocator
+      properties:
+        pnrLocator:
+          description: 'The PNR locator.'
+          $ref: '#/components/schemas/PnrLocator'
+        seats:
+          description: 'Lists seats to remove from the booking.'
+          minItems: 1
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatId'
+        ancillaries:
+          description: 'Lists ancillaries to remove from the booking.'
+          minItems: 1
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/AncillaryId'
+    ExchangeAncillariesRequest:
+      type: object
+      description: 'Contains all parameters required to send a request to exchange ancillaries in a booking.'
+      required:
+        - pnrLocator
+        - seats
+      properties:
+        pnrLocator:
+          description: 'The PNR locator.'
+          $ref: '#/components/schemas/PnrLocator'
+        seats:
+          description: 'Lists seats to exchange in the booking.'
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ExchangeSeat'
+    AddAncillary:
+      type: object
+      required:
+        - offerItemId
+        - passengerRef
+      description: 'Contains information required to book an ancillary.'
+      properties:
+        offerItemId:
+          description: 'The offer item ID of the ancillary.'
+          $ref: '#/components/schemas/OfferItemId'
+        passengerRef:
+          description: 'The passenger `id` serving as a reference.'
+          $ref: '#/components/schemas/PassengerRef'
+        numberOfItems:
+          type: integer
+          description: 'The number of items of an ancillary.'
+          default: 1
+          example: 2
+        productText:
+          type: string
+          description: 'The product text of an associated SSR.'
+          example: 'A/0BV/STANDBY'
+        productTextDetails:
+          type: array
+          description: 'The Product text details of an associated SSR.'
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ProductTextDetailsItem'
+    AddSeat:
+      type: object
+      description: 'Contains information required to book a seat.'
+      properties:
+        offerItemId:
+          description: 'The offer item ID of the ancillary.'
+          $ref: '#/components/schemas/OfferItemId'
+        passengerRef:
+          description: 'The passenger `id` serving as a reference.'
+          $ref: '#/components/schemas/PassengerRef'
+        row:
+          type: integer
+          description: 'The row number of the seat to book.'
+          example: 33
+        column:
+          type: string
+          description: 'The column letter of the seat to book.'
+          example: 'F'
+    ExchangeSeat:
+      type: object
+      description: 'Contains information required to exchange a seat.'
+      properties:
+        seatId:
+          description: The ID of the pre-reserved seat to exchange.
+          $ref: '#/components/schemas/SeatId'
+        offerItemId:
+          description: 'The offer item ID of the ancillary.'
+          $ref: '#/components/schemas/OfferItemId'
+        passengerRef:
+          description: 'The passenger `id` serving as a reference.'
+          $ref: '#/components/schemas/PassengerRef'
+        row:
+          type: integer
+          description: 'The row number of the target seat to add to the booking.'
+          example: 33
+        column:
+          type: string
+          description: 'The column letter of the target seat to add to the booking.'
+          example: 'F'
+    SeatId:
+      type: integer
+      example: 10
+      description: 'The unique identifier of a pre-reserved seat obtained from the [Retrieve Itinerary API](https://developer.sabre.com/soap-api/retrieve-itinerary) response.'
+    AncillaryId:
+      type: integer
+      example: 10
+      description: 'The Unique identifier of an ancillary.'
+    ProductTextDetailsItem:
+      type: object
+      properties:
+        itemName:
+          type: string
+          example: 'LENGTH'
+          description: 'The product text detail item name.'
+        itemValue:
+          type: string
+          example: '10'
+          description: 'The product text detail item value.'
+    PnrLocator:
+      type: string
+      pattern: '^[A-Z0-9]{1,8}$'
+      example: 'DPGQNK'
+      description: 'The PNR locator in the GDS/CRS system.'
+    OfferItemId:
+      type: string
+      description: 'The seat offer item ID obtained from the [Get Seats API](https://developer.sabre.com/rest-api/get-seats) response during shopping.'
+      pattern: '^[a-zA-Z_][a-zA-Z0-9_\-\.]*-[1-9]{1}\d*$'
+      example: dx71wzhgpjxpvmuy80-1
+    PassengerRef:
+      type: string
+      description: 'The passenger `id` serving as a reference.'
+      example: '1.1'
+    SegmentRef:
+      type: integer
+      description: 'The `id` of the air segment serving as a reference.'
+      example: 2
+    Error:
+      type: object
+      description: 'Contains details of a request processing error.'
+      required:
+        - category
+        - type
+      properties:
+        category:
+          type: string
+          example: 'BAD_REQUEST'
+          description: 'A high-level grouping of errors indicating what kind of (client-side or server-side) problem 
+            occurred.'
+        type:
+          type: string
+          example: 'REQUIRED_FIELD_MISSING'
+          description: 'An application-specific error type, or one from the list of typical Sabre API errors.'
+        description:
+          type: string
+          example: 'Client did not provide required data. See fieldName for the item expected in the request.'
+          description: 'A human-readable description of what went wrong with enough information that a software developer can use to debug the problem.'
+        fieldName:
+          type: string
+          example: 'currencyCode'
+          description: 'Specific additional information to help debug the error. For example the name of property missing from a request payload.'
+        fieldPath:
+          type: string
+          example: 'currencyCode'
+          description: 'Specific additional information to help debug the error. For example the name of property missing from a request payload.'
+        fieldValue:
+          type: string
+          example: 'field value'
+          description: 'The source of the error.'
+security:
+  - oauth2_authentication: [ oauth2 ]

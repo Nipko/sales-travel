@@ -1,0 +1,264 @@
+Get Booking
+
+Overview
+
+The Get Booking method is designed to provide a normalized view of a Sabre reservation by combining both the Sabre PNR and the Sabre Order (see New Distribution Capability) views within a single response.
+
+This is achieved by executing internal calls to the individual product domains (PNR & Order) and then consolidating the information into a single normalized response.
+
+Additionally, this API sources extra content from other internal Sabre domains (Ticketing, Pricing) to provide a more holistic view of the Sabre reservation to better support traveler-oriented use cases. For example, &#8220;Can I change my ticket?&#8221;
+
+Technical overview
+
+Get Booking is available in RPC/JSON format.
+This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+Independent of the desired way to consume the Get Booking API (RPC), the underlying implementations are very similar and are described further in the sections below.
+
+General logic
+
+Get Booking contains internal logic that determines when to call specific downstream APIs based on request qualifiers or the content present in the Sabre reservation.
+
+Example: If no tickets are present within a reservation, the API will not make an additional call to the Ticket Display API.
+
+Internal orchestration
+
+The APIs orchestrated in Get Booking include:
+
+GetReservationRQ
+
+Order Management
+
+VerifyFlightDetailsLLSRQ
+
+OTA_VehLocDetailLLSRQ
+
+StructureFareRulesRQ
+
+GetAncillaryOffersRQ
+
+TKT_ElectronicDocumentServicesRQ
+
+Leg Detection
+
+RPC/JSON
+
+The RPC/JSON format follows the same pattern as other REST APIs in the Sabre portfolio, allowing users to either retrieve the reservation:
+
+In full
+
+or
+
+Via a pre-defined set of subsections of the reservation (flights, hotels, penalties, remarks, etc.), ensuring flexibility for your application.
+
+Get Booking request structure
+
+The Get Booking method can be used to display previously created reservations. There is only one mandatory element in the request structure, which is the unique id of the reservation to display.
+
+The remaining elements are optional and allow for a more granular control of the response:
+
+confirmationId represents the booking reference ID as shown in the source supplier/vendor system. For SABRE, this is the PNR Record Locator (RECLOC) value or Sabre Order ID.
+
+bookingSource is an optional element that specifies the source of booking. Defaults to SABRE.
+
+targetPcc changes the context to a desired pseudo city code.
+
+givenName is the traveler’s first name (optional).
+
+middleName is the traveler’s middle initial (optional).
+
+surname is the traveler’s last name (optional).
+
+These data elements (givenName, middleName, & surname) have been introduced to perform an extra security validation step when retrieving a reservation, ensuring the traveler data provided matches with the provided Confirmation ID.
+
+returnOnly is an optional list of segments returned only in a service response. If this list is empty or is not provided at all, the full structure is returned.
+
+ |
+
+The returnOnly option may cause the application to exclude or simplify calls of downline APIs, which usually results in a significant performance boost.
+ |
+
+extraFeatures contains a set of additional features whose usage requires explicit indication to maintain backward compatibility.
+
+ |
+
+The functionalities available under extraFeatures will be seamlessly incorporated into a future major version of the Booking Management API.
+ |
+
+ |
+
+forceHotelUpdate is an optional extra feature used to force a live refresh of hotel booking data from the supplier, which may increase the Get Booking request execution time.
+ |
+
+unmaskPaymentCardNumbers is an option to unmask payment card information stored in the booking if set to true.
+
+ |
+
+The unmaskPaymentCardNumbers option works only if the Employee Profile Record (EPR) includes the CCVIEW keyword. For more information contact your Account Representative.
+ |
+
+Get Booking response structure
+
+The Get Booking response structure is composed of an orchestration of different Sabre API calls to provide a comprehensive view of the Sabre booking (refer to Internal Orchestration for additional references).
+
+ |
+
+The list of APIs orchestrated by Get Booking is expected to grow/evolve as we continue iterating on the design.
+ |
+
+All APIs in the orchestration are not called upon every execution of a Get Booking request. Internal logic is in place to determine in which case to call each API. For example, when there is no Sabre NDC Order content, Get Booking does not call the Order Management API.
+
+Additionally, you may encounter that two or more orchestrated APIs reference the same data elements. In these cases, there is pre-defined priority logic to ensure we always prioritize Sabre Order data over Sabre PNR data. The traveler’s phone number is a good example of this, as it is likely available in both data structures.
+
+Below is a list of some of the most relevant elements that are part of a Get Booking call (the full list is available in the Reference tab of this API):
+
+bookingId: The booking reference ID as shown in the source supplier/vendor system. For SABRE, this is the PNR Locator or NDC orderId value, depending on content type.
+
+startDate: The start date of the booking in ISO 8601 format.
+
+endDate: The end date of the booking in ISO 8601 format.
+
+isCancelable: If true, the booking is cancelable in full or in segments. Refer to the refundPenalties elements for more information.
+
+isTicketed: If true, a ticket(s) was issued for the booking.
+
+agencyCustomerNumber: The travel agency customer identifier, also known as the customer number or DK number.
+
+creationDetails: User, date, and time regarding the creation of the booking.
+
+contactInfo: Lists all contact info data associated with the booking.
+
+travelers: Lists all traveler(s) associated with the booking.
+
+emails: Lists all email addresses of the traveler.
+
+phones: Lists all phone numbers associated with the traveler.
+
+remarks: Lists all remarks associated with the traveler.
+
+address: Contains the traveler’s address information.
+
+identityDocuments: Lists all documents associated with the traveler.
+
+loyaltyPrograms: Lists all loyalty programs like the frequent flyer program associated with the traveler.
+
+ancillaries: Lists the details of NDC and ATPCO ancillary services.
+
+travelersGroup: Contains information about the group the travelers belong to.
+
+flights: Lists all flights associated with the booking in chronological order.
+
+journeys: Lists all journeys associated with the booking. For one-way, this is a single element list. For a round-trip, this array contains two journeys. For multi-destination, there are more than two journeys.
+
+fareRules: Lists fare rule information displayed at the time of purchase.
+
+fareOffers: Lists ancillary offers for selected flights identified by itemId flight references.
+
+fares: Lists fare details information based on the active price quotes in the booking.
+
+remarks: Lists all remarks associated with the booking.
+
+hotels: Lists all hotel reservations associated with the booking.
+
+cars: Lists all car rentals associated with the booking.
+
+trains: Lists all train reservations associated with the booking.
+
+cruises: Lists all cruise reservations associated with the booking.
+
+allSegments: Lists all segments in the reservation using a generic model.
+
+flightTickets: Lists all flight tickets associated with the booking.
+
+payments: Contains all total payment amounts across flights and ancillaries, hotels, cars, and trains.
+
+otherServices: Lists Other Service Information (OSI) to/from a specific vendor.
+
+futureTicketingPolicy: Contains a detailed ticket arrangement for a future date.
+
+specialServices: Lists special services for a traveler.
+
+retentionEndDate: The retention date of the booking.
+
+retentionLabel: The label associated with the retention date.
+
+accountingItems: Lists accounting items from the booking.
+
+nonElectronicTickets: Lists non-electronic tickets from the booking.
+
+travelersEmployers: Lists details of the travelers' employers.
+
+profiles: Lists profiles used in the booking.
+
+bookingSignature: The unique ID of the Get Booking response.
+
+request: Includes a copy of the request sent to the API.
+
+errors: Includes all errors/warnings returned by the API.
+
+Error handling
+
+This section illustrates the current error handling logic for Get Booking:
+
+Error structure
+
+Field |
+Type |
+Description |
+
+category
+ |
+String
+ |
+Indicates error category.
+ |
+
+description
+ |
+String
+ |
+Provides detailed description.
+ |
+
+type
+ |
+String
+ |
+Indicates error type.
+ |
+
+fieldPath
+ |
+String
+ |
+Field path of the error caused by a bad request.
+ |
+
+fieldName
+ |
+String
+ |
+Field name of the error caused by a bad request.
+ |
+
+fieldValue
+ |
+String
+ |
+Field value of the error caused by a bad request.
+ |
+
+Error codes
+
+In the event an error(s) occurs, Get Booking returns a non-empty errors list. Each item in the collection contains three fields with possible values:
+
+type
+
+category
+
+description
+
+ |
+
+Refer to the Get Booking – Error List section for additional details on possible errors returned by Get Booking.
+ |

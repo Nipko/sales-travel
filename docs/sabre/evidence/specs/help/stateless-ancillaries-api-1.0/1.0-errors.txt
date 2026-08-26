@@ -1,0 +1,185 @@
+Errors
+
+Common errors (/shop, /add, /remove)
+
+Error Type |
+Error Category |
+Description |
+
+INVALID_HEADER
+ |
+BAD_REQUEST
+ |
+Required header 'Authorization' is invalid.
+ |
+
+INVALID_HEADER
+ |
+BAD_REQUEST
+ |
+Required header 'Authorization' is missing.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Validation Failed: [specific description]
+ |
+
+TOKEN_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+Could not obtain session token.
+ |
+
+TOKEN_DETAILS_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+Could not obtain session token details.
+ |
+
+CONTEXT_CHANGE_FAILED
+ |
+BUSINESS_ERROR
+ |
+[Errors retrieved from downline service]
+ |
+
+DUTY_CODE_CONTEXT_CHANGE_FAILED
+ |
+BUSINESS_ERROR
+ |
+[Errors retrieved from downline service]
+ |
+
+CONTEXT_CHANGE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+An error occurred while invoking an internal service.
+ |
+
+RESERVATION_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+An error occurred while invoking an internal service.
+ |
+
+RESERVATION_SERVICE_FAILED
+ |
+BUSINESS_ERROR
+ |
+[Errors retrieved from downline service]
+ |
+
+Common errors (/add, /remove)
+
+Error Type |
+Error Category |
+Description |
+
+RESERVATION_SERVICE_FAILED
+ |
+BUSINESS_ERROR
+ |
+Required fields missing in the response.
+ |
+
+/shop
+
+Error Type |
+Error Category |
+Description |
+
+OFFER_CACHE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+An error occurred while invoking an internal service.
+ |
+
+OFFER_NOT_FOUND
+ |
+BUSINESS_ERROR
+ |
+Offer not found in cache.
+ |
+
+OFFER_ITEM_NOT_FOUND
+ |
+BUSINESS_ERROR
+ |
+Offer item %s not found in cache.
+ |
+
+OFFER_DATA_NOT_FOUND
+ |
+BUSINESS_ERROR
+ |
+Offer data not found in cache.
+ |
+
+GET_ANCILLARY_OFFERS_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+An error occurred while invoking an internal service.
+ |
+
+ANCILLARY_SHOP_FAILED
+ |
+BUSINESS_ERROR
+ |
+[Errors retrieved from downline service]
+ |
+
+INTERNAL_SERVER_ERROR
+ |
+APPLICATION_ERROR
+ |
+Shop ancillary request failed.
+ |
+
+/add
+
+Error Type |
+Error Category |
+Description |
+
+INTERNAL_SERVER_ERROR
+ |
+APPLICATION_ERROR
+ |
+Add ancillary request failed.
+ |
+
+/remove
+
+Error Type |
+Error Category |
+Description |
+
+SABRE_COMMAND_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+An error occurred while invoking an internal service.
+ |
+
+SABRE_COMMAND_SERVICE_FAILED
+ |
+BUSINESS_ERROR
+ |
+[Errors retrieved from downline service]
+ |
+
+INTERNAL_SERVER_ERROR
+ |
+APPLICATION_ERROR
+ |
+Remove ancillary request failed.
+ |

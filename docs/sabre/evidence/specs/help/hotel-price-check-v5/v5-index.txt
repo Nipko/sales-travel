@@ -1,0 +1,90 @@
+Overview
+
+What is it?
+
+The Hotel Price Check API is a step between Shopping and Booking that ensures the price returned while shopping for a chosen product is still applicable and the lowest possible just prior to booking.
+
+Why use it?
+
+You can use this API to verify whether the rate you are seeing is the latest rate sent by our supply source.
+
+Because the rate is verified, there is no need to maintain information at the user’s end.
+
+Hotel Price Check is a mandatory step you need to take before you can proceed with booking a product.
+
+How it works
+
+The API accepts only a single input parameter, a rateKey that is unique to Sabre. This Rate Key is returned in the Get Hotel Availability and/or the Get Hotel Details response.
+
+The rateKey is decrypted to find the original availability request with all of its original parameters, and is then sent to the correct supply source to fetch the latest rates for the chosen product.
+
+The latest rate is compared against the previously displayed rate, and the user is accurately shown whether the rate has increased or decreased in value.
+
+he rateKey returned in shopping responses does not expire, so it can be used in the Hotel Price Check request at any time. The rate may have expired, which will be reflected in the Hotel Price Check response.
+
+How to use
+
+Create an availability request for a hotel using either the Get Hotel Availability API or the Get Hotel Details API before selecting a product to run the PriceCheck API for.
+
+Take the encrypted rateKey from the availability response and pass it to the Hotel Price Check request in the payload.
+
+Modify the StayDateTimeRange and the Rooms element if required and pass into the request payload.
+
+Start with an authentication token
+
+You must provide an authentication token to all endpoints within the Hotel Price Check API. Tokens can be generated in two ways:
+
+Using the Create Access Token API for scenarios with a stateless token (ATK). Once you obtain a successful response from the API (TokenCreateRS), locate the BinarySecurityToken element, which contains an ATK token.
+
+Using the Create Session service for scenarios with a stateful token (ATH). The response from this session generation service (SessionCreateRS) also contains the BinarySecurityToken element with an authorization token.
+
+Example response with ATK token (TOKENCREATERS)
+
+<SOAP-ENV:Envelope>
+...
+<wsse:BinarySecurityToken  valueType="String"  EncodingType="wsse:Base64Binary">T1RLAQKv...UhrH6gQg**</wsse:BinarySecurityToken>
+...
+</SOAP-ENV:Envelope>
+
+Example response with ATH token (SESSIONCREATERS)
+
+<SOAP-ENV:Envelope>
+...
+<wsse:BinarySecurityToken  valueType="String"  EncodingType="wsse:Base64Binary">  Shared/IDL:IceSess...!380374!0</wsse:BinarySecurityToken>
+...
+</SOAP-ENV:Envelope>
+
+Authorization setup template
+
+Authorization: Bearer  <BinarySecurityToken>
+
+Once the token has been generated, its value should be added in the bearer authorization header of your request to the Get Hotel Price Check API.
+
+Authorization setup with ATK token
+
+Authorization: Bearer T1RLAQKv...UhrH6gQg**
+
+For the example ATK token value shown earlier, the corresponding authorization header is presented above.
+
+Authorization setup with ATH token
+
+Authorization: Bearer Shared/IDL:IceSess...!380374!0
+
+In case the ATH token is used, the authorization setup is shown in the example above.
+
+ |
+
+Although the shopping step takes place in the branch location PCC provided in the request, the underlying session or token used to authenticate or call this API remains unchanged. This is different from how AAA branch shopping worked before in the legacy versions, where the underlying session itself was granted authorized access to the branch location.
+ |
+
+CurrencyCode
+
+The 3 converted price attributes are always populated in the response.
+
+In case no currency was added in the initial request OR the requested currency was the same as the currency returned by the supplier, these fields will have the exact same values as PriceChange, PriceDifference and CurrencyCode respectively.
+
+If the currency requested in the initial request was different from the currency returned by the supplier, the ConvertedPriceChange, ConvertedPriceDifference and ConvertedCurrencyCode will be populated based on the requested currency.
+
+Resources
+
+HotelPriceCheck v5.0 Resources

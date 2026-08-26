@@ -1,0 +1,182 @@
+NDC Offers
+
+ |
+
+Requires NDC content to be activated for the PCC.
+ |
+
+Overview
+
+This capability returns NDC exchange shopping content in the Sabre Flight Reshop response.
+
+Use this capability to:
+
+request exchange offers from the NDC distribution source.
+
+consume NDC-specific offer behavior while keeping a consistent Flight Reshop response structure.
+
+Recommended handling:
+
+Handle NDC offers and ATPCO offers separately based on FlightReshopResponse.offers.source.distributionModel.
+
+Evaluate FlightReshopResponse.offers.isSellable before booking.
+
+If FlightReshopResponse.offers.isSellable is true, proceed with rebooking.
+
+If FlightReshopResponse.offers.isSellable is false, treat the response as informational and call offers/reshop/price before booking.
+
+For NDC offers, airline-supplied content is returned and the response reflects the carrier's available data.
+
+ |
+
+Some offer properties are not returned for NDC offers.
+ |
+
+Requesting NDC offers
+
+Use the standard Flight Reshop request format and set the distribution source to NDC.
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+distributionModel
+ |
+Identifies the downstream distribution source to use for exchange shopping. For this feature, set the value to NDC.
+ |
+FlightReshopRequest.source.distributionModel
+ |
+
+Response with NDC offers
+
+For NDC distribution source, the response includes offer and offer item data from the downstream NDC exchange shopping response returned from the carrier.
+
+The following parameters may be returned in the API response:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+id
+ |
+Unique identifier of the normalized offer or offer item.
+ |
+FlightReshopResponse.offers.id
+
+FlightReshopResponse.offers.items.id
+ |
+
+distributionModel
+ |
+Indicates the source of the returned offer. For this feature, the value is NDC.
+ |
+FlightReshopResponse.offers.source.distributionModel
+ |
+
+createdAt
+ |
+UTC timestamp indicating when the offer was created.
+ |
+FlightReshopResponse.offers.createdAt
+ |
+
+validUntil
+ |
+UTC timestamp indicating when the offer expires.
+ |
+FlightReshopResponse.offers.validUntil
+ |
+
+paymentTimeLimit
+ |
+Local payment deadline for the offer, when provided by the NDC source.
+ |
+FlightReshopResponse.offers.paymentTimeLimit
+ |
+
+isSellable
+ |
+Indicates whether offers in the Reshop response are valid for booking or returned as informational content only.
+ |
+FlightReshopResponse.offers.isSellable
+ |
+
+type
+ |
+Indicates the total price difference type for the offer. Can be Even, Add collect, Refund, or Unknown. For fare-level NDC price difference, the default returned value is Unknown.
+ |
+FlightReshopResponse.offers.totalPriceDifference.type
+
+FlightReshopResponse.offers.items.fares.priceDifference.type
+ |
+
+subtotalBeforeFee
+ |
+For NDC content, this value represents the amount due to the passenger. The amount can be zero or negative and may include refundable taxes.
+ |
+FlightReshopResponse.offers.totalPriceDifference.subtotalBeforeFee
+
+FlightReshopResponse.offers.items.fares.priceDifference.subtotalBeforeFee
+ |
+
+grandTotal
+ |
+For NDC content, this value represents the amount due from the passenger if the new offer is accepted.
+ |
+FlightReshopResponse.offers.totalPriceDifference.grandTotal
+
+FlightReshopResponse.offers.items.fares.priceDifference.grandTotal
+ |
+
+totalFee
+ |
+Penalty fee amount returned for the offer price difference, when available.
+ |
+FlightReshopResponse.offers.totalPriceDifference.totalFee
+ |
+
+totalTaxOnFee
+ |
+Tax amount calculated on top of the penalty fee, when available.
+ |
+FlightReshopResponse.offers.totalPriceDifference.totalTaxOnFee
+
+FlightReshopResponse.offers.items.fares.priceDifference.totalTaxOnFee
+ |
+
+fees
+ |
+Lists the penalty fee entries returned for the fare price difference.
+ |
+FlightReshopResponse.offers.items.fares.priceDifference.totalFee.fees
+ |
+
+amount
+ |
+Penalty fee amount or tax amount, depending on the returned structure.
+ |
+FlightReshopResponse.offers.items.fares.priceDifference.totalFee.fees.amount
+
+FlightReshopResponse.offers.items.fares.priceDifference.taxes.amount
+ |
+
+taxes
+ |
+Lists tax details returned for the fare price difference.
+ |
+FlightReshopResponse.offers.items.fares.priceDifference.taxes
+ |
+
+taxCode
+ |
+Tax code returned for the fare price difference.
+ |
+FlightReshopResponse.offers.items.fares.priceDifference.taxes.taxCode
+ |
+
+isPaid
+ |
+Indicates whether the tax amount has been collected.
+ |
+FlightReshopResponse.offers.items.fares.priceDifference.taxes.isPaid
+ |

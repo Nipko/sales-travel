@@ -1,0 +1,339 @@
+v3 to v4
+
+What's new in v4?
+
+There is a new REST endpoint version of the service, offering the same functionalities as v3 and some new content that is not always backward compatible with v3.
+
+All new capabilities are listed below – any customer planning to consume new capabilities is required to analyze and adapt accordingly to the new feature requirements. This step is optional.
+
+All the changes from v3 which are no longer compatible, are listed in the next section of the migration guide. This step is obligatory to consume the service through the higher endpoint versions. See release notes for further details.
+
+Bargain Finder Max request has no schema changes from the previous version.
+
+Bargain Finder Max GIR Response has been enhanced with new parameters and other changes listed below:
+
+Shelves - the response structure of the Shelves Definitions has been modified compared to the last V3 release. The new design is simplified and more flexible for customers to adopt the functionality and start consuming new content without the need to upgrade to a new schema version when a new attribute is added.
+
+New shelves definition design considers a flexible set of attributes, including: “exchange/exchanges, refund/refunds, baggage, seat selection, seat type, seat pitch, and carryOn". Other attributes like priority boarding may be considered in the next releases as well.
+
+Currently, it is possible to receive Exchange/Refund and Exchanges/Refunds as a Type. Therefore, you should be able to consume both phrases. Seat type naming will be considered in the next releases to be returned as in Route Happy content. Possible types returned:
+
+standard legroom,
+
+below average legroom
+
+above average legroom
+
+recliner seat
+
+cradle recliner
+
+angle flat seat
+
+full flat seat
+
+full flat pod
+
+middle seat free
+
+skycouch
+
+recliner seat
+
+cradle recliner
+
+angle flat seat
+
+private suite.
+
+How to migrate from the v3 version to v4 version?
+
+Bargain Finder Max v4 is backwards compatible with the previous version (v3) with the following exceptions (changes, updates, or new elements which are not backward compatible):
+
+v3 |
+v4 |
+
+RS changes for migration:
+ |
+RS changes for migration:
+ |
+
+"shelves": {
+
+   "mode": "NAS"
+
+  },
+
+  "shelfDescs": [
+
+   {
+
+    "id": 1,
+
+    "refunds": "allowed"
+
+   },
+
+   {
+
+    "id": 2,
+
+    "exchanges": "allowed",
+
+    "refunds": "allowed",
+
+    "seats": [
+
+     {
+
+      "type": "standard"
+
+     },
+
+     {
+
+      "type": "standard"
+
+     }
+
+    ]
+
+   },
+
+   {
+
+    "id": 3,
+
+    "exchanges": "allowed",
+
+    "refunds": "allowed",
+
+    "seatSelection": "free",
+
+    "seats": [
+
+     {
+
+      "type": "standard"
+
+     },
+
+     {
+
+      "type": "standard"
+
+     }
+
+    ]
+
+   },
+
+   {
+
+    "id": 4,
+
+    "exchanges": "allowed",
+
+    "refunds": "allowed",
+
+    "seatSelection": "free",
+
+    "seats": [
+
+     {
+
+      "type": "standard"
+
+     }
+
+    ]
+
+   },
+
+   {
+
+    "id": 5,
+
+    "exchanges": "free",
+
+    "refunds": "allowed",
+
+    "freeBaggagePieces": 1,
+
+    "seatSelection": "free",
+
+    "seats": [
+
+     {
+
+      "type": "recliner"
+
+     },
+
+     {
+
+      "type": "recliner"
+
+     },
+
+     {
+
+      "type": "flat"
+
+     },
+
+     {
+
+      "type": "flat"
+
+     },
+
+     {
+
+      "type": "flat"
+
+     }
+
+    ]
+
+   }
+
+  ],
+
+ |
+
+With the new schema version v4, the Shelf Definitions in the response have been simplified by removing all attributes except id:
+
+"shelves": { +
+ "mode": "NAS" +
+}, +
+"shelfDescs": [ +
+ { +
+  #"id": 1,# +
+  #"attributes": [# +
+   #{# +
+    #"name": "Penalty",# +
+    #"value": "Allowed",# +
+    #"type": "Refunds"# +
+   #}# +
+  #]# +
+ #},# +
+ #{# +
+  "id": 2, +
+  "attributes": [ +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    "type": #"Exchange"# +
+   }, +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    "type": #"Refund"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "standard legroom"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "below average legroom"# +
+   } +
+  ] +
+ }, +
+ { +
+  "id": 3, +
+  "attributes": [ +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    "type": #"Exchanges"# +
+   }, +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    "type": #"Refunds"# +
+   }, +
+   { +
+    "name": "SeatSelection", +
+    "value": "Free" +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "standard legroom"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "below average legroom"# +
+   } +
+  ] +
+ }, +
+ { +
+  "id": 4, +
+  "attributes": [ +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    #"type": "Exchanges"# +
+   }, +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    #"type": "Refunds"# +
+   }, +
+   { +
+    "name": "SeatSelection", +
+    "value": "Free" +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "above average legroom"# +
+   } +
+  ] +
+ }, +
+ { +
+  "id": 5, +
+  "attributes": [ +
+   { +
+    "name": "Penalty", +
+    "value": "Free", +
+    #"type": "Exchanges"# +
+   }, +
+   { +
+    "name": "Penalty", +
+    "value": "Allowed", +
+    #"type": "Refunds"# +
+   }, +
+   { +
+    "name": "FreeBaggagePieces", +
+    "value": "1" +
+   }, +
+   { +
+    "name": "SeatSelection", +
+    "value": "Free" +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "recliner seat"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "cradle recliner"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "angle flat seat"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "full flat seat"# +
+   }, +
+   { +
+    "name": "Seat", +
+    #"type": "full flat pod"# +
+   } +
+  ] +
+ } +
+],
+
+ |

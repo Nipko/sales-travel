@@ -1,0 +1,43 @@
+Overview
+
+What is it?
+
+The Get Hotel Availability API provides multiple location resolution methods (or a specific property search) for a specific stay period and occupancy. It has multiple advanced search filter options based on property/image content, and enables customization of the availability response. It returns up to 200 hotels per page, sorted on one of three user-selectable criteria: Rate, Distance, and Rating.
+
+Why use it?
+
+You can use this API to see an orchestrated response that includes a list of properties with their leading image, static content (such as amenities offered and location information), and the lowest rate available for each property through multiple channels.
+
+How it works
+
+Hotels falling within a user’s search location are retrieved using the Geo Search API.
+
+User requested filters, such as Rating, are applied to the list of hotels.
+
+Static information, a default image, and the lowest rate for each source, are then fetched for the filtered list of hotels.
+
+The Get Hotel Availability API then orchestrates all this information in its response.
+
+How to use
+
+Search for hotels in a general location using any of the following location formats:
+
+Latitude and Longitude
+
+Address of the location
+
+Airport Codes
+
+Nearest point(s) of interest
+
+If you already know the HotelCodes you want to shop for, you can also input these directly.
+
+Decide on filtering criteria if you wish to apply any filters to the response.
+
+Specify the stay period and occupancy.
+
+With all required parameters complete, make a call to the /v4.0.0/get/hotelavail endpoint.
+
+Resources
+
+GetHotelAvail v4.0 Resources

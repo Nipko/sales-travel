@@ -1,0 +1,715 @@
+Modify Booking
+
+Overview
+
+The Modify Booking method is designed for modifying various content exposed by Sabre. The current version supports modification of the following types of content:
+
+CSL hotel bookings
+
+NDC bookings (limited functionality)
+
+traditional content:
+
+group bookings
+
+ATPCO content (limited functionality)
+
+hybrid bookings (limited functionality):
+
+CSL hotel bookings with traditional ATPCO flights
+
+CSL hotel bookings with NDC flights
+
+The service executes internal calls to individual product domains (PNR, Hotels) and then consolidates updated information into a single normalized response.
+
+Technical overview
+
+Modify Booking is available in the RPC/JSON format.
+This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH) tokens. If a call is made via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+Modify Booking contains internal logic that determines when to call specific downstream APIs based on request qualifiers. During the orchestration process, if a failure of a domain service call prevents the API from modifying a booking, the system will stop processing and return an error.
+
+Modify Booking allows you to execute multiple types of operations at once, such as addition, modification, and deletion, depending on the information specified in your request:
+
+The before object is used to pass details regarding the original state of a chosen booking.
+
+The after object is used to pass information about the target state of the booking, after changes are applied.
+
+ |
+
+The Modify Booking request is designed based on the preexisting Get Booking and Create Booking structures, which makes it possible to easily construct modification instructions.
+ |
+
+Prior to applying any changes to a booking, the service verifies the booking status using the value specified under the bookingSignature parameter. It is a mandatory step that requires you to execute a Get Booking call to obtain this information.
+
+The purpose of the bookingSignature property is to check if any unexpected updates have been made to the booking in the short timeframe between the reading call (Get Booking) and the modification request (Modify Booking). This guarantees that the API introduces requested changes only on the condition that it is working with an up-to-date booking.
+
+ |
+
+To obtain a valid bookingSignature value, you must make a Get Booking call without the returnOnly parameter.
+ |
+
+To ensure a smooth modification process, it is essential to include valid data in the before and after objects. This way the application can identify the set of desired changes and act accordingly.
+
+Modify Booking also uses automatic special service request (SSR) logic for infant travelers. When infant traveler information is modified, the API automatically creates an associated INFT SSR.
+
+ |
+
+This functionality does not apply to seat-occupying infants for whom SSR INST is used. In such scenarios, manual SSR modification within the specialServices list is the recommended approach.
+ |
+
+Internal orchestration
+
+The APIs orchestrated in Modify Booking include:
+
+ContextChangeLLSRQ
+
+AirSeatLLSRQ
+
+AirSeatCancelLLSRQ
+
+GetReservationRQ
+
+UpdateReservationRQ
+
+EnhancedEndTransactionRQ
+
+Order Management
+
+Supported operations
+
+The table below presents the capabilities of the Modify Booking method related to updating information within CSL bookings:
+
+Information |
+Addition |
+Modification |
+Deletion |
+
+flight arrival/departure details
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+check-in/checkout date outside date range
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+check-in/checkout date within date range
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+corporate ID number
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+form of payment
+ |
+Supported
+ |
+Supported
+ |
+N/A
+ |
+
+frequent traveler number
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+guest loyalty ID
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+guest number
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+IATA number
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+lead guest
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+special instructions
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+room product code
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+ |
+
+Modification of the bolded data above requires an additional re-shop step. Use one of the CSL shopping APIs, REST or SOAP, followed by the Hotel Price Check API, REST or SOAP. Once you obtain a new booking key, provide it in your call to Modify Booking.
+ |
+
+ |
+
+It is possible to modify only those bookings that have been previously committed and confirmed.
+ |
+
+The following table presents the capabilities of the Modify Booking method in terms of updating information within traditional bookings:
+
+Information |
+Addition |
+Modification |
+Deletion |
+
+traveler details
+ |
+N/A
+ |
+Supported
+ |
+N/A
+ |
+
+traveler details: group bookings
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+associated phones/emails
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+frequent traveler number
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+identity documents
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+travel agency customer identifier (DK number)
+ |
+Supported
+ |
+Supported
+ |
+N/A
+ |
+
+remarks
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+seats
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+special services
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+retention date
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+form of payment
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+fares
+ |
+N/A
+ |
+N/A
+ |
+Supported
+ |
+
+ancillaries
+ |
+Supported
+ |
+N/A
+ |
+Supported
+ |
+
+ |
+
+Modification of the bolded details above may be limited due to airline policies.
+NOTE: Ancillaries can be added and deleted for low-cost carrier bookings as well.
+ |
+
+For NDC bookings, the Modify Booking method supports the following types of operations:
+
+Information |
+Addition |
+Modification |
+Deletion |
+
+traveler details (e.g. date of birth)
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+associated phones/emails
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+loyalty programs
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+identity documents
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+remarks
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+seats
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+form of payment
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+ancillaries
+ |
+Supported
+ |
+N/A
+ |
+Supported
+ |
+
+Modification of NDC orders may be limited due to specific airline policies.
+
+ |
+
+For NDC orders, we recommend that the preceding Get Booking call has the extraFeatures.returnEmptySeatObjects parameter set to false. Empty objects are not allowed within the Modify Booking service.
+ |
+
+Hybrid bookings (CSL hotels + traditional ATPCO flights or CSL hotels + NDC flights) are now enabled in the Modify Booking endpoint. The primary focus is to allow updates of CSL hotel content when flight data is also present in the booking. The modification capabilities are similar to those for CSL hotel content. However, potential limitations may arise on changes to common data elements shared between both content types within the booking due to restrictive content rules (e.g., some NDC carriers do not allow modifications to contact information).
+
+Forms of payment modifications
+
+NDC form of payment |
+Addition |
+Modification |
+Deletion |
+
+Payment card
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Cash
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+ATPCO form of payment |
+Addition |
+Modification |
+Deletion |
+
+Payment card
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Cash
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Check
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Miscellaenous
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Installments
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Docket
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Invoice
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+On account
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+CSL form of payment |
+Addition |
+Modification |
+Deletion |
+
+Agency name
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Agency IATA
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Corporate
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Company name
+ |
+Supported
+ |
+Supported
+ |
+Supported
+ |
+
+Virtual card
+ |
+N/A
+ |
+N/A
+ |
+N/A
+ |
+
+ |
+
+For complete support of all forms of payment, you must set the returnWalletFormsOfPayment parameter in the extraFeatures section.
+ |
+
+Limitations
+
+Limitations regarding CSL hotel content:
+
+Modification of hotel bookings containing child or infant guests is currently not supported.
+
+Form of payment changes to a virtual payment are currently restricted.
+
+Only payment card information is saved after booking modification when used as the desired hotel payment method. The remaining forms of payment supported by the hotel are passed to the hotel vendor &#8220;on the fly.&#8221;
+
+Limitations regarding hybrid bookings:
+
+Modifications to common data shared between both content types within the booking may be restricted due to more stringent content rules (e.g., changes to contact information for some NDC carriers).
+
+Limitations regarding NDC bookings:
+
+NDC ancillaries deletion cannot be combined with other updates in a single Modify Booking call.
+
+Request
+
+Modify Booking can be used to add, modify, or delete information stored in an existing booking. To successfully introduce desired changes, the following mandatory elements should be included in your request:
+
+bookingSignature: A unique booking identifier obtained via the Get Booking method. Used to verify the state of the booking prior to a modification.
+
+confirmationId: Represents the booking reference ID as shown in the source supplier/vendor system. For SABRE, this is the PNR Record Locator (RECLOC) value.
+
+bookingSource: Identifies the source of the booking. Defaults to SABRE.
+
+ |
+
+Modify Booking currently only supports PNRs that contain CSL bookings.
+ |
+
+before: Contains the original booking details present before the requested modification.
+
+after: Contains desired booking details after finalized modification.
+
+Since the Modify Booking structure is dependent on other Booking Management methods, you may recycle majority of the elements from a Get Booking response. For example, the travelers array can be copied and pasted with all details. Alternatively, you may also adjust your Modify Booking request to minimize its size and keep only those properties that are currently supported. To check the current structure of the Modify Booking method, go to the &#8220;Reference documentation&#8221; tab.
+
+The parameters listed below are optional and allow for a more granular control of the call:
+
+retrieveBooking specifies if full booking details should be included in the response.
+
+receivedFrom passes information on the entity that authorized the creation of the booking.
+
+targetPcc changes the context to a desired pseudo city code (PCC). It may be particularly useful for agencies that separate their booking flow across different PCCs.
+
+unmaskPaymentCardNumbers unmasks payment card information stored in the booking if set to true.
+
+ |
+
+The unmaskPaymentCardNumbers feature works only on the condition that the Employee Profile Record (EPR) includes the CCVIEW keyword. For more information, contact your Account Representative.
+ |
+
+extraFeatures contains a set of additional features whose usage requires explicit indication to maintain backward compatibility.
+
+ |
+
+The functionalities available under extraFeatures will be seamlessly incorporated into a future major version of the Booking Management API. Get Booking and Modify Booking requests require the same extraFeatures flags to ensure a uniform bookingSignature.
+ |
+
+Response
+
+The Modify Booking response is mainly composed of the response structure found in Get Booking and provides the following data:
+
+booking: Contains details of the modified booking. Refer to the Get Booking section for more information.
+
+errors: Includes all errors returned by the API. This array is not displayed in successful responses.
+
+request: A copy of the original request sent to the API.
+
+Error handling
+
+This section illustrates the current error handling logic for Modify Booking.
+Errors are structured as demonstrated in the table below:
+
+Field |
+Type |
+Description |
+
+category
+ |
+String
+ |
+Indicates the error category.
+ |
+
+description
+ |
+String
+ |
+Provides a detailed error description.
+ |
+
+type
+ |
+String
+ |
+Indicates the error type.
+ |
+
+fieldPath
+ |
+String
+ |
+The request field path if the error has been caused by a bad request.
+ |
+
+fieldName
+ |
+String
+ |
+The request field name if the error has been caused by a bad request.
+ |
+
+fieldValue
+ |
+String
+ |
+The request field value if the error has been caused by a bad request.
+ |
+
+Error codes
+
+If an error occurs, Modify Booking returns a non-empty errors list. Each item in the list contains three fields:
+
+category
+
+description
+
+type
+
+To view a complete list errors returned by Modify Booking, go to the Modify Booking – Error List section.

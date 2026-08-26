@@ -1,0 +1,131 @@
+Check Flight Tickets
+
+Overview
+
+The Check Flight Tickets method is designed to facilitate the process of checking flight ticket options (void, refund, or exchange) in a single, seamless API call.
+
+Technical Overview
+
+The Check Flight Tickets method is part of the larger Booking Management API, available in RPC/JSON format and designed to operate in a stateless way.
+
+While this API is designed to operate in a stateless way, it accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General Logic
+
+The logic executed by Check Flight Tickets is defined by the submitted electronic documents or confirmationId. The application retrieves details for the entire booking (which can contain either ATPCO or NDC tickets or low-cost carrier (non-ATPCO) or NDC-ATPCO hybrid bookings) or NDC order, and then validates if the requirements for the check procedure are met. This includes pricing the refundable amounts or generating an offer to refund/void an NDC order.
+
+In the second step, the application checks exchange eligibility for a list of ATPCO or NDC tickets. Potential exchange cost (exchange penalties, no-show cost – if applicable) is determined based on the ticket details for which internal coupon status verification is successful.
+
+Next, the application verifies void requirements for ATPCO tickets or cancel requirements for NDC tickets. This analysis includes checking the void period, coupon status, and determining if all of the documents belong to the same reservation.
+
+For hybrid bookings, NDC and ATPCO validations and checks are being combined in a dedicated, single flow. Hybrids can be retrieved by the means of PNR locator.
+
+Submitting the tickets list triggers the above steps in an adjusted sequence, resulting in the same dataset being displayed. The list may contain ATPCO, NDC or both document types.
+
+Finally, if the booking contains a reservation made with a low-cost airline (non-ATPCO) or airlines, the service will then connect with the vendor and return applicable refundable amounts.
+
+ |
+
+Support for refund pricing depends on the participation of the issuing carrier and market.
+ |
+
+Orchestration
+
+The APIs orchestrated by Check Flight Tickets include:
+
+ContextChangeLLSRQ
+
+DesignatePrinterLLSRQ
+
+GetReservationRQ
+
+TKT_ElectronicDocumentServicesRQ
+
+TKT_RefundRQ
+
+StructureFareRulesRQ
+
+VoidTicketLLSRQ
+
+SabreCommandLLSRQ
+
+legDetection
+
+ProcessEligibilityRules
+
+/v1/offers/reshop/cancelOrder
+
+FullCancelQueryRQ (internal service)
+
+Check Flight Tickets Request Structure
+
+The Check Flight Tickets method checks airline reservations as specified below. It also allows you to submit a list of up to 12 documents from the same reservation to be checked.
+
+targetPCC is used to specify which city (PCC) should change context using ContextChange (AAA). If empty, or equals the current city, the context does not change.
+
+tickets is an array used to provide a list of 12 tickets to be checked. 1 to 12 elements are accepted.
+
+number is the 13-digits electronic document number of the ticket.
+
+refundQualifiers allows you to specify your request with additional parameters. This might override the automated pricing logic and is at your own responsibility.
+
+overrideCancelFee is used to set a specific cancel fee agreed with the issuing carrier.
+
+overrideTaxes allows you to override any refundable tax amount from the ticket. For XF tax, the airport code where its collected is required.
+
+commissionAmount is used to set a total commission amount to be collected. This cannot be combined with commissionPercentage.
+
+commissionPercentage is used to set a relative commission. This cannot be combined with commissionAmount.
+
+commissionOnPenalty is used to collect the commission from the applicable penalty for the refund.
+
+waiverCode is used to specify the max 14 characters waiver code.
+
+tourCode is used to specify the max 15 characters tour code.
+
+splitRefundAmounts specifies split refund amounts. This requires more than one form of payment when issuing tickets. Values of zero are accepted.
+
+journeyTypeCode specifies the journey code in the markets where required.
+
+confirmationId is used to specify the PNR Locator or Sabre Order ID. Alternatively, tickets can be defined.
+
+Check Flight Tickets Response Structure
+
+The Check Flight Tickets response contains:
+
+errors: Contains errors and warnings (if applicable).
+
+request: Contains the request sent to the API.
+
+tickets: Contains detailed information about voidability and refundability of each ticket.
+
+cancelOffers: Contains detailed information about voidability and refundability of an NDC order.
+
+flightRefunds: Contains detailed information about refundability of a booking (or bookings) made with a low-cost airline (non-ATPCO).
+
+Limitations
+
+Only an entire NDC order can be checked. Partial voids or refunds are currently not supported.
+
+A maximum of 12 documents is supported.
+
+All documents must belong to the same reservation (PNR).
+
+EMDs are supported, although their response structure is currently limited.
+
+If a booking contains an ATPCO reservation/booking with a low-cost airline (NON-ATPCO), a SCENARIO_NOT_SUPPORTED error is returned.
+
+If a hybrid booking containing NDC and ATPCO segments is retrieved with NDC order id, a SCENARIO_NOT_SUPPORTED error is returned. PNR locator should be used instead.
+
+Error Handling
+
+This section illustrates the current error handling logic for Check Flight Tickets:
+
+ |
+
+Please access the Check Flight Tickets – Error List section for additional details on possible errors returned by Check Flight Tickets.
+ |
+
+Errors/Warnings returned by downstream services
+
+The Check Flight Tickets response contains errors and warnings returned by downstream APIs and are always returned as a WARNING.

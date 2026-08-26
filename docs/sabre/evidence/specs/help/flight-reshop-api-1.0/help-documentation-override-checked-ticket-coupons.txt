@@ -1,0 +1,25 @@
+Override Checked in Ticket Coupons
+
+This API functionality allows you to search for alternative flight solutions even if the passenger is already at the airport or has checked in.
+Use the check-in status override parameter that can be found under FlightReshopRequest.tickets.overrideCheckedInTicketCoupons.
+
+Consider the following example: The passenger has a one-way ticket with only one flight from A to B, and they have already checked in.
+
+Behavior without check-in status override
+
+Coupons in CKIN status are treated as flown unless the optional overrideCheckedInTicketCoupons parameter is present for a specific document. When requesting a different date from A to B, the API automatically includes the flown portion of travel.
+
+If a ticket with all coupons in CKIN status is sent to the API, you receive the following INVALID_TICKET_COUPONS error:
+
+At least one coupon status must be open for exchange. Ticket %ticket_number is not valid for exchange. Please submit a valid document and try again.
+
+Behavior with check-in status override
+
+Coupons in CKIN status are treated as open. When requesting a different date from A to B, the API shops only for that Origin and Destination (O&D) without adding any flown portion of travel.
+
+Example: A-B Shopped (without the flown portion)
+
+ |
+
+The actual status of ticket coupons remains unchanged on the ticket.
+ |

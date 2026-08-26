@@ -1,0 +1,911 @@
+Get Seats Payload (2pax 2seg)
+
+Examples of Get Seats request and response on Payload path with 1 passenger and 1 segment.
+
+Get Seats Payload provides map with ATPCO, LCC, and UA content.
+
+Request
+
+{
+  "requestType": "payload",
+  "request": {
+    "paxSegmentRefIds": [
+      "segment_ancs_1",
+      "segment_ancs_2"
+    ],
+    "isMapWithoutPrices": false,
+    "originDest": {
+      "paxJourney": {
+        "paxSegments": [
+          {
+            "paxSegmentId": "segment_ancs_1",
+            "departure": {
+              "locationCode": "SYD",
+              "aircraftScheduledDate": {
+                "date": "2026-04-20",
+                "time": "18:15:00"
+              }
+            },
+            "arrival": {
+              "locationCode": "PER",
+              "aircraftScheduledDate": {
+                "date": "2026-04-20",
+                "time": "21:30:00"
+              }
+            },
+            "marketingCarrierInfo": {
+              "bookingCode": "J",
+              "carrierCode": "VA",
+              "carrierFlightNumber": "567"
+            },
+            "operatingCarrierInfo": {
+              "carrierCode": "VA",
+              "carrierFlightNumber": "567"
+            },
+            "taxOnly": false
+          },
+          {
+            "paxSegmentId": "segment_ancs_2",
+            "departure": {
+              "locationCode": "PER",
+              "aircraftScheduledDate": {
+                "date": "2026-04-30",
+                "time": "23:55:00"
+              }
+            },
+            "arrival": {
+              "locationCode": "SYD",
+              "aircraftScheduledDate": {
+                "date": "2026-05-01",
+                "time": "06:15:00"
+              }
+            },
+            "marketingCarrierInfo": {
+              "bookingCode": "C",
+              "carrierCode": "VA",
+              "carrierFlightNumber": "572"
+            },
+            "operatingCarrierInfo": {
+              "carrierCode": "VA",
+              "carrierFlightNumber": "572"
+            },
+            "taxOnly": false
+          }
+        ]
+      }
+    },
+    "paxes": [
+      {
+        "paxID": "passenger_passenger_1",
+        "ptc": "ADT",
+        "givenName": "GOLD",
+        "surname": "SABRE",
+        "fareComponentsAndSegmentId": [
+          {
+            "segmentRefId": "segment_ancs_1",
+            "fareComponentRefId": "fare_1"
+          },
+          {
+            "segmentRefId": "segment_ancs_2",
+            "fareComponentRefId": "fare_2"
+          }
+        ],
+        "loyaltyProgramAccount": [
+          {
+            "airline": "VA",
+            "accountNumber": "7570011066",
+            "tierNumber": "3",
+            "tierTag": "GLD",
+            "programName": "GOLD"
+          }
+        ]
+      },
+      {
+        "paxID": "passenger_passenger_2",
+        "ptc": "ADT",
+        "givenName": "SILVER",
+        "surname": "SABRE",
+        "fareComponentsAndSegmentId": [
+          {
+            "segmentRefId": "segment_ancs_1",
+            "fareComponentRefId": "fare_3"
+          },
+          {
+            "segmentRefId": "segment_ancs_2",
+            "fareComponentRefId": "fare_4"
+          }
+        ],
+        "loyaltyProgramAccount": [
+          {
+            "airline": "VA",
+            "accountNumber": "3250011685",
+            "tierNumber": "4",
+            "tierTag": "SLV",
+            "programName": "SILVER"
+          }
+        ]
+      }
+    ],
+    "fareComponents": [
+      {
+        "fareComponentId": "fare_1",
+        "fareBasis": {
+          "fareBasisCode": "JZBU0"
+        },
+        "brand": {
+          "code": "BU"
+        },
+        "fareDetail": {
+          "fareRule": "1DTR"
+        }
+      },
+      {
+        "fareComponentId": "fare_2",
+        "fareBasis": {
+          "fareBasisCode": "CZBU0"
+        },
+        "brand": {
+          "code": "BU"
+        },
+        "fareDetail": {
+          "fareRule": "1DTR"
+        }
+      },
+      {
+        "fareComponentId": "fare_3",
+        "fareBasis": {
+          "fareBasisCode": "JZBU0"
+        },
+        "brand": {
+          "code": "BU"
+        },
+        "fareDetail": {
+          "fareRule": "1DTR"
+        }
+      },
+      {
+        "fareComponentId": "fare_4",
+        "fareBasis": {
+          "fareBasisCode": "CZBU0"
+        },
+        "brand": {
+          "code": "BU"
+        },
+        "fareDetail": {
+          "fareRule": "1DTR"
+        }
+      }
+    ],
+    "currency": "AUD",
+    "freePaidSeatsOnPricingError": false
+  },
+  "requestMode": "BOOKING",
+  "calculateDiscount": true
+}
+
+Response
+
+{
+    "payloadAttributes": {
+        "timeStamp": "2026-01-20T09:29:29.869005689",
+        "transactionID": "af4d0ac6-9a6c-4647-a7c7-477254d7a6f4",
+        "correlationID": "af4d0ac6-9a6c-4647-a7c7-477254d7a6f4"
+    },
+    "response": {
+        "aLaCarteOffer": {
+            "offerId": "ce7fbcf64965ht9xhmkme7bvg0",
+            "ownerCode": "VA",
+            "aLaCarteOfferItems": [
+                {
+                    "offerItemID": "ce7fbcf64965ht9xhmkme7bvg0-1",
+                    "source": "ATPCO",
+                    "unitPrice": {},
+                    "service": {
+                        "serviceId": "sd-1-service-1",
+                        "serviceDefinitionRefID": "SERVICE_DEFINITION-1"
+                    },
+                    "eligibility": {
+                        "paxRefIDs": [
+                            "passenger_passenger_1"
+                        ],
+                        "flightAssociations": {
+                            "paxSegmentRefID": [
+                                "segment_ancs_2"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "offerItemID": "ce7fbcf64965ht9xhmkme7bvg0-2",
+                    "source": "ATPCO",
+                    "unitPrice": {},
+                    "service": {
+                        "serviceId": "sd-1-service-1",
+                        "serviceDefinitionRefID": "SERVICE_DEFINITION-1"
+                    },
+                    "eligibility": {
+                        "paxRefIDs": [
+                            "passenger_passenger_2"
+                        ],
+                        "flightAssociations": {
+                            "paxSegmentRefID": [
+                                "segment_ancs_2"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "offerItemID": "ce7fbcf64965ht9xhmkme7bvg0-3",
+                    "source": "ATPCO",
+                    "unitPrice": {},
+                    "service": {
+                        "serviceId": "sd-1-service-1",
+                        "serviceDefinitionRefID": "SERVICE_DEFINITION-1"
+                    },
+                    "eligibility": {
+                        "paxRefIDs": [
+                            "passenger_passenger_1"
+                        ],
+                        "flightAssociations": {
+                            "paxSegmentRefID": [
+                                "segment_ancs_1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "offerItemID": "ce7fbcf64965ht9xhmkme7bvg0-4",
+                    "source": "ATPCO",
+                    "unitPrice": {},
+                    "service": {
+                        "serviceId": "sd-1-service-1",
+                        "serviceDefinitionRefID": "SERVICE_DEFINITION-1"
+                    },
+                    "eligibility": {
+                        "paxRefIDs": [
+                            "passenger_passenger_2"
+                        ],
+                        "flightAssociations": {
+                            "paxSegmentRefID": [
+                                "segment_ancs_1"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        "dataLists": {
+            "originDests": [
+                {
+                    "originDestID": "O-1",
+                    "originCode": "SYD",
+                    "destCode": "PER",
+                    "paxJourneyRefIDs": [
+                        "F-1"
+                    ]
+                },
+                {
+                    "originDestID": "O-2",
+                    "originCode": "PER",
+                    "destCode": "SYD",
+                    "paxJourneyRefIDs": [
+                        "F-2"
+                    ]
+                }
+            ],
+            "paxSegments": [
+                {
+                    "paxSegmentID": "segment_ancs_1",
+                    "departure": {
+                        "iataLocationCode": "SYD",
+                        "aircraftScheduledDateTime": "2026-04-20T18:15:00"
+                    },
+                    "arrival": {
+                        "iataLocationCode": "PER",
+                        "aircraftScheduledDateTime": "2026-04-20T21:30:00"
+                    },
+                    "marketingCarrierInfo": {
+                        "carrierDesignatorCode": "VA",
+                        "marketingCarrierFlightNumberText": "567",
+                        "rbdCode": "J"
+                    },
+                    "operatingCarrierInfo": {
+                        "carrierDesignationCode": "VA",
+                        "operatingCarrierFlightNumberText": "567"
+                    },
+                    "datedOperatingLegs": [
+                        {
+                            "datedOperatingLegID": "0",
+                            "carrierAircraftType": {
+                                "carrierAircraftTypeCode": "7M8"
+                            },
+                            "departure": {
+                                "iataLocationCode": "SYD",
+                                "aircraftScheduledDateTime": "2026-04-20T18:15:00"
+                            },
+                            "arrival": {
+                                "iataLocationCode": "PER"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "paxSegmentID": "segment_ancs_2",
+                    "departure": {
+                        "iataLocationCode": "PER",
+                        "aircraftScheduledDateTime": "2026-04-30T23:55:00"
+                    },
+                    "arrival": {
+                        "iataLocationCode": "SYD",
+                        "aircraftScheduledDateTime": "2026-05-01T06:15:00"
+                    },
+                    "marketingCarrierInfo": {
+                        "carrierDesignatorCode": "VA",
+                        "marketingCarrierFlightNumberText": "572",
+                        "rbdCode": "C"
+                    },
+                    "operatingCarrierInfo": {
+                        "carrierDesignationCode": "VA",
+                        "operatingCarrierFlightNumberText": "572"
+                    },
+                    "datedOperatingLegs": [
+                        {
+                            "datedOperatingLegID": "0",
+                            "carrierAircraftType": {
+                                "carrierAircraftTypeCode": "7M8"
+                            },
+                            "departure": {
+                                "iataLocationCode": "PER",
+                                "aircraftScheduledDateTime": "2026-04-30T23:55:00"
+                            },
+                            "arrival": {
+                                "iataLocationCode": "SYD"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "paxJourneys": [
+                {
+                    "paxJourneyID": "F-1",
+                    "paxSegmentRefIDs": [
+                        "segment_ancs_1"
+                    ]
+                },
+                {
+                    "paxJourneyID": "F-2",
+                    "paxSegmentRefIDs": [
+                        "segment_ancs_2"
+                    ]
+                }
+            ],
+            "paxs": [
+                {
+                    "paxID": "passenger_passenger_1",
+                    "ptc": "ADT",
+                    "loyaltyProgramAccount": [
+                        {
+                            "airline": "VA",
+                            "accountNumber": "7570011066",
+                            "programName": "GOLD"
+                        }
+                    ]
+                },
+                {
+                    "paxID": "passenger_passenger_2",
+                    "ptc": "ADT",
+                    "loyaltyProgramAccount": [
+                        {
+                            "airline": "VA",
+                            "accountNumber": "3250011685",
+                            "programName": "SILVER"
+                        }
+                    ]
+                }
+            ],
+            "serviceDefinitions": [
+                {
+                    "serviceDefinitionID": "SERVICE_DEFINITION-1",
+                    "ownerCode": "VA",
+                    "name": "FREE SEATING",
+                    "descriptions": [
+                        {
+                            "descriptionID": "DESCRIPTION-1",
+                            "descriptionText": "FREE SEATING"
+                        }
+                    ]
+                }
+            ]
+        },
+        "seatMaps": [
+            {
+                "paxSegmentRefID": "segment_ancs_1",
+                "datedOperatingLegRefID": "0",
+                "cabinCompartments": [
+                    {
+                        "deckCode": "M",
+                        "firstRow": 1,
+                        "lastRow": 2,
+                        "cabinType": {
+                            "cabinTypeCode": "BUSINESS",
+                            "cabinTypeName": "BUSINESS",
+                            "cabinTypeIataCode": "J"
+                        },
+                        "cabinLayout": {
+                            "columns": [
+                                {
+                                    "id": "A",
+                                    "position": "W"
+                                },
+                                {
+                                    "id": "C",
+                                    "position": "A"
+                                },
+                                {
+                                    "id": "D",
+                                    "position": "A"
+                                },
+                                {
+                                    "id": "F",
+                                    "position": "W"
+                                }
+                            ],
+                            "rows": {
+                                "firstRow": 1,
+                                "lastRow": 2
+                            },
+                            "seatCount": 8,
+                            "facilities": [
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "A",
+                                            "F"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "L",
+                                            "R"
+                                        ],
+                                        "positionCode": "L"
+                                    },
+                                    "facilityType": "D"
+                                },
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "D"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "R"
+                                        ],
+                                        "positionCode": "R"
+                                    },
+                                    "facilityType": "LA"
+                                },
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "C",
+                                            "D"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "L",
+                                            "R"
+                                        ],
+                                        "positionCode": "L"
+                                    },
+                                    "facilityType": "G"
+                                }
+                            ]
+                        },
+                        "seatRows": [
+                            {
+                                "row": 1,
+                                "seats": [
+                                    {
+                                        "column": "A",
+                                        "occupationStatusCode": "R",
+                                        "characteristics": [
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "column": "C",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    },
+                                    {
+                                        "column": "D",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    },
+                                    {
+                                        "column": "F",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            },
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "row": 2,
+                                "seats": [
+                                    {
+                                        "column": "A",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    },
+                                    {
+                                        "column": "C",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    },
+                                    {
+                                        "column": "D",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    },
+                                    {
+                                        "column": "F",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            },
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-3",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-4"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "paxSegmentRefID": "segment_ancs_2",
+                "datedOperatingLegRefID": "0",
+                "cabinCompartments": [
+                    {
+                        "deckCode": "M",
+                        "firstRow": 1,
+                        "lastRow": 2,
+                        "cabinType": {
+                            "cabinTypeCode": "BUSINESS",
+                            "cabinTypeName": "BUSINESS",
+                            "cabinTypeIataCode": "J"
+                        },
+                        "cabinLayout": {
+                            "columns": [
+                                {
+                                    "id": "A",
+                                    "position": "W"
+                                },
+                                {
+                                    "id": "C",
+                                    "position": "A"
+                                },
+                                {
+                                    "id": "D",
+                                    "position": "A"
+                                },
+                                {
+                                    "id": "F",
+                                    "position": "W"
+                                }
+                            ],
+                            "rows": {
+                                "firstRow": 1,
+                                "lastRow": 2
+                            },
+                            "seatCount": 8,
+                            "facilities": [
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "A",
+                                            "F"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "L",
+                                            "R"
+                                        ],
+                                        "positionCode": "L"
+                                    },
+                                    "facilityType": "D"
+                                },
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "D"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "R"
+                                        ],
+                                        "positionCode": "R"
+                                    },
+                                    "facilityType": "LA"
+                                },
+                                {
+                                    "location": {
+                                        "beginRow": "1",
+                                        "endRow": "1",
+                                        "columnPositions": [
+                                            "C",
+                                            "D"
+                                        ],
+                                        "orientation": "F",
+                                        "positionCodeList": [
+                                            "L",
+                                            "R"
+                                        ],
+                                        "positionCode": "L"
+                                    },
+                                    "facilityType": "G"
+                                }
+                            ]
+                        },
+                        "seatRows": [
+                            {
+                                "row": 1,
+                                "seats": [
+                                    {
+                                        "column": "A",
+                                        "occupationStatusCode": "R",
+                                        "characteristics": [
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "column": "C",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    },
+                                    {
+                                        "column": "D",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    },
+                                    {
+                                        "column": "F",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            },
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "row": 2,
+                                "seats": [
+                                    {
+                                        "column": "A",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    },
+                                    {
+                                        "column": "C",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "LS",
+                                                "description": "LeftSideOfAircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    },
+                                    {
+                                        "column": "D",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "A",
+                                                "description": "AisleSeat"
+                                            },
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    },
+                                    {
+                                        "column": "F",
+                                        "occupationStatusCode": "F",
+                                        "characteristics": [
+                                            {
+                                                "code": "RS",
+                                                "description": "RightSideOf Aircraft"
+                                            },
+                                            {
+                                                "code": "W",
+                                                "description": "Window"
+                                            }
+                                        ],
+                                        "offerItemRefIDs": [
+                                            "ce7fbcf64965ht9xhmkme7bvg0-1",
+                                            "ce7fbcf64965ht9xhmkme7bvg0-2"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

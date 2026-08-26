@@ -1,0 +1,85 @@
+Finding Cheaper Flights With Alternate Airports
+
+This feature allows you to search for flights using multiple airports near your specified origin and destination. It's ideal if nearby airports offer cheaper flights.
+
+Supported itinerary types
+
+One-Way (OW) itineraries
+
+Round-trip itineraries: Supported for a maximum of two (2) legs.
+
+Open-jaw itineraries: Allowed only if one leg is not shopped or flown.
+
+How to use
+
+This feature requires you to modify your flight search request by using specific parameters. These parameters must be added to your existing Sabre Flight Reshop request.
+
+1. Specify alternate locations
+
+You can define up to four (4) alternate locations for both your outbound (departure) and inbound (return) journeys. This limit is in addition to the original airport, resulting in a maximum of five (5) locations per direction (1 original + 4 alternates).
+
+Each location must be specified using one of the following identifiers:
+
+cityCode: A three-letter IATA city code (e.g., LON or NYC).
+
+airportCode: A three-letter IATA airport code (e.g., JFK or LHR).
+
+This configuration enables up to 25 unique round-trip combinations (5 outbound × 5 inbound), offering broader search coverage while maintaining system constraints.
+
+Where to add alternate location parameters
+
+Alternate location parameters should be added within the journey structure of the request:
+
+FlightReshopRequest.journeys.departureLocation.locationVariant.alternateLocations
+
+FlightReshopRequest.journeys.arrivalLocation.locationVariant.alternateLocations
+
+ |
+
+Add each alternate location as a separate item in the alternateLocations array. Don't exceed four (4) alternate items per direction.
+ |
+
+2. Specify the search radius (mileage)
+
+Define a search radius (up to 100 miles) around your departure and arrival cities. This expands your search to include airports within that radius.
+
+Where to add radius parameters
+
+FlightReshopRequest.journeys.departureLocation.radius.inMiles
+
+FlightReshopRequest.journeys.arrivalLocation.radius.inMiles
+
+ |
+
+inMiles represents the radius from the location measured in miles, e.g., 50.
+ |
+
+3. Control cross-border searches
+
+When using a mileage radius, define whether the search should cross national borders.
+
+Where to add cross-border parameters
+
+FlightReshopRequest.journeys.departureLocation.radius.returnOnlyWithinSameCountry
+
+FlightReshopRequest.journeys.arrivalLocation.radius.returnOnlyWithinSameCountry
+
+ |
+
+Setting returnOnlyWithinSameCountry to true restricts the search to the same country as the original selection. A value of false allows cross-border searches. The default value is true.
+ |
+
+Understanding your search results
+
+Itinerary Type: Only round-trip itineraries with a maximum of two (2) legs are supported. Open-jaw itineraries are only allowed if one leg is not shopped or flown.
+
+Search Combinations: Defining up to five (5) locations per direction (including the original origin and destination) results in up to 25 round-trip combinations. The API may return up to 50 priced options based on these combinations.
+
+ |
+
+Increasing the number of alternate locations significantly expands the search space and may lead to longer processing times.
+ |
+
+Return Airport Changes: The ability to return to a different airport than your initial destination depends on the airline's fare rules and whether they allow changes. If the airline doesn't allow changes to fare breaks or rerouting, the API stays within your chosen origin and destination cities.
+
+By strategically using the Alternate Airports feature and its parameters, you can significantly improve your chances of finding the best flight deals.

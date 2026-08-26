@@ -1,0 +1,3412 @@
+Get Seats NDC - Order ID
+
+Examples of Get Seats NDC request and response on Order ID path.
+
+Request
+
+{
+  "orderId" : "1SXXXIJ62FWMO"
+}
+
+Response
+
+{
+  "response": {
+    "offerId": "ih5d79946bb5sp4lsmljb0ht00",
+    "segments": [
+      {
+        "id": "FS1",
+        "bookingAirlineCode": "BA",
+        "bookingFlightNumber": 15,
+        "departureAirportCode": "LHR",
+        "arrivalAirportCode": "SYD",
+        "departureDate": "2026-05-13",
+        "bookingClassCode": "L",
+        "departureTime": "21:20",
+        "arrivalDate": "2026-05-15",
+        "arrivalTime": "05:05",
+        "cabinCode": "5",
+        "flightLegs": [
+          {
+            "id": "SABRE_NDCC_LEG_ID_1",
+            "departureAirportCode": "LHR",
+            "departureScheduledDateTime": "2026-05-13T21:20:00Z",
+            "arrivalAirportCode": "SYD",
+            "aircraftCode": "789"
+          }
+        ]
+      }
+    ],
+    "passengers": [
+      {
+        "id": "Passenger1",
+        "passengerType": "ADT",
+        "givenName": "Edmunt",
+        "surname": "Kolodziej"
+      }
+    ],
+    "serviceDefinitions": [
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-1-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-2-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-3-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-4-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-5-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-6-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-7-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-8-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      },
+      {
+        "id": "SEATAVAILABILITY-SEAT-PRICE-9-BA0015",
+        "serviceCode": "0B5",
+        "airlineCode": "BA",
+        "commercialName": "SEAT",
+        "groupCode": "SA"
+      }
+    ],
+    "priceDefinitions": [
+      {
+        "id": "1",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 266.0
+        }
+      },
+      {
+        "id": "2",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 138.0
+        }
+      },
+      {
+        "id": "3",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 112.0
+        }
+      },
+      {
+        "id": "4",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 118.0
+        }
+      },
+      {
+        "id": "5",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 162.0
+        }
+      },
+      {
+        "id": "6",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 195.0
+        }
+      },
+      {
+        "id": "7",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 132.0
+        }
+      },
+      {
+        "id": "8",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 162.0
+        }
+      },
+      {
+        "id": "9",
+        "currencyCode": "AUD",
+        "totalPrice": {
+          "amount": 144.0
+        }
+      }
+    ],
+    "offerItems": [
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-1-BA0015",
+        "priceDefinitionRef": "1",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-1"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-2-BA0015",
+        "priceDefinitionRef": "2",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-2"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-3-BA0015",
+        "priceDefinitionRef": "3",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-3"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-4-BA0015",
+        "priceDefinitionRef": "4",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-4"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-5-BA0015",
+        "priceDefinitionRef": "5",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-5"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-6-BA0015",
+        "priceDefinitionRef": "6",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-6"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-7-BA0015",
+        "priceDefinitionRef": "7",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-7"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-8-BA0015",
+        "priceDefinitionRef": "8",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-8"
+      },
+      {
+        "serviceDefinitionRef": "SEATAVAILABILITY-SEAT-PRICE-9-BA0015",
+        "priceDefinitionRef": "9",
+        "segmentRefs": [
+          "FS1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih5d79946bb5sp4lsmljb0ht00-9"
+      }
+    ],
+    "seatMaps": [
+      {
+        "segmentRef": "FS1",
+        "cabinCompartments": [
+          {
+            "firstRow": 30,
+            "lastRow": 46,
+            "cabinCode": "M",
+            "cabinName": "Economy",
+            "cabinLayout": {
+              "columns": [
+                {
+                  "id": "A",
+                  "position": [
+                    "W"
+                  ]
+                },
+                {
+                  "id": "B",
+                  "position": [
+                    "C"
+                  ]
+                },
+                {
+                  "id": "C",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "D",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "E",
+                  "position": [
+                    "C"
+                  ]
+                },
+                {
+                  "id": "F",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "H",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "J",
+                  "position": [
+                    "C"
+                  ]
+                },
+                {
+                  "id": "K",
+                  "position": [
+                    "W"
+                  ]
+                }
+              ],
+              "rows": {
+                "firstRow": 30,
+                "lastRow": 46
+              },
+              "exitRowPosition": [
+                {
+                  "firstRow": 30,
+                  "lastRow": 30
+                }
+              ]
+            },
+            "seatRows": [
+              {
+                "row": 30,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-5"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "K",
+                        "description": "BulkheadSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "B",
+                        "description": "SeatWithBassinetFacility"
+                      },
+                      {
+                        "code": "K",
+                        "description": "BulkheadSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "K",
+                        "description": "BulkheadSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-1"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-1"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-5"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 31,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 32,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 33,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 34,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-8"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-9"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 35,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "O",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 36,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 37,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 38,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-4"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-2"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 39,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 40,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 41,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 42,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  },
+                  {
+                    "column": "K",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-7"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 43,
+                "seats": [
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "AT",
+                        "description": "SeatAdjacentToTable"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-6"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "AT",
+                        "description": "SeatAdjacentToTable"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-6"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "H",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "AT",
+                        "description": "SeatAdjacentToTable"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-6"
+                    ]
+                  },
+                  {
+                    "column": "J",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "AT",
+                        "description": "SeatAdjacentToTable"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-6"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 44,
+                "seats": [
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CC",
+                        "description": "CenterSectionSeat(S)"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih5d79946bb5sp4lsmljb0ht00-3"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

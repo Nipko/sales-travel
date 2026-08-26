@@ -1,0 +1,509 @@
+Sabre Flight Reshop – Error List
+
+Below are all possible errors returned by the Sabre Flight Reshop endpoint:
+
+Error type |
+Error category |
+Description |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process your request at this time.
+ |
+
+TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+No response from service provider (%s).
+ |
+
+ATH_TOKEN_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Unable to create an ATH session token. Please retry the transaction.
+ |
+
+BOOKING_NOT_FULFILLED
+ |
+APPLICATION_ERROR
+ |
+The booking must be completed before the exchange.
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+General problem with (service ActionCode) service.
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Missing response from (service ActionCode) service.
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The %s service returned an error: %s.
+ |
+
+DOWNLINE_SERVICE_VALIDATION_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Message validation failure (< %s >). (\< %s \>).
+ |
+
+DUPLICATE_JOURNEYS
+ |
+APPLICATION_ERROR
+ |
+Duplicate journeys are not allowed. Verify the journey details and retry.
+ |
+
+FLIGHT_DETAILS_MISSING
+ |
+APPLICATION_ERROR
+ |
+Flight details could not be found in the NDC order. Please verify that the flight exists within the order.
+ |
+
+FLIGHT_DETAILS_MISSING
+ |
+APPLICATION_ERROR
+ |
+The flight associated with the specified item ID could not be found in the NDC order. Please verify that the item ID is correct and that the flight exists within the order.
+ |
+
+FLIGHT_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+The flight associated with the specified item ID cannot be found. Please verify that the item ID is correct and that the flight exists in the booking.
+ |
+
+INFANT_NEEDS_ACCOMPANIMENT
+ |
+APPLICATION_ERROR
+ |
+Ticket exchange for an infant cannot be processed alone. An accompanying passenger with a booked seat is required.
+ |
+
+INSUFFICIENT_RETENTION_DETAILS
+ |
+APPLICATION_ERROR
+ |
+The flight retention details cannot be determined based on the available order services data.
+ |
+
+INVALID_SEGMENT_TYPE
+ |
+APPLICATION_ERROR
+ |
+The segment associated with the specified item ID was found, but it has an invalid type. Only air segments are allowed.
+ |
+
+INVALID_TICKET_COUPONS
+ |
+APPLICATION_ERROR
+ |
+At least one coupon status must be open for exchange. Ticket %s is not valid for exchange. Please submit a valid document and try again.
+ |
+
+INVALID_TICKET_TYPE
+ |
+APPLICATION_ERROR
+ |
+Document %s is not valid for exchange as it belongs to an NDC order. Please provide a document that is valid for exchange and try again. For NDC order exchange, use the order ID instead.
+ |
+
+INTERNAL_PROCESSING_ERROR
+ |
+APPLICATION_ERROR
+ |
+The reshop operation failed due to an internal processing error. Retry or contact support if the issue persists.
+ |
+
+FLIGHT_STATUS_INVALID
+ |
+APPLICATION_ERROR
+ |
+At least one of the retained flights has status %s that is not eligible for the exchange process. Verify the flight status and retry.
+ |
+
+MIXED_TICKETS
+ |
+APPLICATION_ERROR
+ |
+Coupon details must match between tickets. Please submit valid documents and retry.
+ |
+
+MAXIMUM_FARE_COMBINATIONS_EXCEEDED
+ |
+APPLICATION_ERROR
+ |
+The total number of possible fare combinations exceeds the system maximum processing capacity. Check the search parameters and retry.
+ |
+
+NO_AVAILABILITY
+ |
+APPLICATION_ERROR
+ |
+No availability for the specified search criteria. The issue may be related to customer configuration. Please retry or verify credential settings with your account manager.
+ |
+
+NO_COMBINABLE_FARES_FOUND
+ |
+APPLICATION_ERROR
+ |
+No combinable fares matching the specified search criteria are available. Check the search parameters and retry.
+ |
+
+NO_FLIGHT_SCHEDULES_FOUND
+ |
+APPLICATION_ERROR
+ |
+No available flight schedules matching the specified search criteria. Check the search parameters and retry.
+ |
+
+NO_OFFERS_FOUND
+ |
+APPLICATION_ERROR
+ |
+No available reshop offers matching the specified search criteria. Check the search parameters and retry.
+ |
+
+ORDER_EXCHANGE_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+The provider does not permit exchanges for the specified NDC order.
+ |
+
+TICKET_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+At least one electronic document was not found in the airline database.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT
+ |
+APPLICATION_ERROR
+ |
+General problem with ContextChangeLLSRQ service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED
+ |
+APPLICATION_ERROR
+ |
+You are not authorized to change context for the specified PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+You are not authorized to change context for the desired PCC.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+The security token is either expired or invalid.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+The service %s returned an authorization failure. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+RESOURCE_RESTRICTED
+ |
+Access to the selected booking is restricted. Verify the credentials used and the Travel Journal Record settings with your account manager.
+ |
+
+VOLUNTARY_CHANGE_RULES_FAILED
+ |
+APPLICATION_ERROR
+ |
+The change does not comply with fare rules provided by the airline. Verify fare rules and retry.
+ |
+
+CABIN_CONTROL_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+The airline %s does not permit cabin control.
+ |
+
+CABIN_NUMBER_EXCEEDED
+ |
+BAD_REQUEST
+ |
+Only one cabin preference is allowed per journey. Verify and retry.
+ |
+
+CONNECTIONS_LIMIT_EXCEEDED
+ |
+BAD_REQUEST
+ |
+The number of connection locations within a single journey exceeds the allowed limit of 9. Please update your request and retry.
+ |
+
+DATE_RANGE_LIMIT_EXCEEDED
+ |
+BAD_REQUEST
+ |
+The specified date range exceeds the allowed limit. Please update your request and retry.
+ |
+
+DATE_RANGE_NUMBER_EXCEEDED
+ |
+BAD_REQUEST
+ |
+Only one date range is allowed per journey. Please update your request and retry.
+ |
+
+DUPLICATE_ID
+ |
+BAD_REQUEST
+ |
+Verify provided IDs. Duplicate IDs are not permitted.
+ |
+
+DUPLICATE_JOURNEY_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify journey association. Duplicate association is not permitted.
+ |
+
+HYBRID_CONTENT_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The exchange operation is not supported for hybrid bookings containing both traditional and NDC flights.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: bookingId cannot be combined with: tickets for NDC bookings. Please amend your request and retry.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: forceRetailerRule must be combined with: programs of type Retailer Rule Code.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: restrictToProgramCodes must be combined with: programs of type Account Code or Corporate Id.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s must be combined with: %s.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: %s cannot be combined with: %s.
+ |
+
+INVALID_FILTER_COMBINATION
+ |
+BAD_REQUEST
+ |
+A single journey cannot have both exclusion and inclusion brand filters applied simultaneously. Verify and retry.
+ |
+
+INVALID_GLOBAL_FILTER_COMBINATION
+ |
+BAD_REQUEST
+ |
+Global brand filters cannot contain both exclusion and inclusion filter types simultaneously. Verify and retry.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: at least one journey cannot retain flight details that fully match the journey information to successfully perform an exchange offer search.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: at least one journey cannot retain flight details to successfully perform an exchange offer search.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: endTime must be equal to startTime for an NDC exchange.
+ |
+
+JOURNEY_INDEX_OUT_OF_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify journey association. At least one journey index is out of bounds of the journeys array.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: returnMultipleOffers requires setting date flexibility parameters.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: retained flight details require: [operatingAirlineCode, flightStatusCode, creationDate and creationTime].
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: the journey requires a departure time for this request.
+ |
+
+MISSING_BOOKING_ID
+ |
+BAD_REQUEST
+ |
+The exchange operation requires NDC booking ID for a successful offer search.
+ |
+
+MISSING_EXCHANGE_INFORMATION
+ |
+BAD_REQUEST
+ |
+The exchange operation requires ticket or booking details for a successful offer search.
+ |
+
+MISSING_TICKET_INFORMATION
+ |
+BAD_REQUEST
+ |
+The exchange operation requires ticket details for a successful offer search.
+ |
+
+MULTIPLE_RETAILER_RULES_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+Only one program of type Retailer Rule Code is allowed when using the forceRetailerRule parameter. Verify and retry.
+ |
+
+PROGRAMS_LIMIT_EXCEEDED
+ |
+BAD_REQUEST
+ |
+The specified number of programs exceeds the allowed limit. Verify and retry.
+ |
+
+RETAILER_RULES_LIMIT_EXCEEDED
+ |
+BAD_REQUEST
+ |
+The specified number of programs of type Retailer Rule Code exceeds the allowed limit. Verify and retry.
+ |
+
+RETAINED_JOURNEY_DESTINATION_MISMATCH
+ |
+BAD_REQUEST
+ |
+The journey's destination (%s - %s) does not match the arrival airport (%s) of the last retained segment. Please update your request and try again.
+ |
+
+RETAINED_JOURNEY_ORIGIN_MISMATCH
+ |
+BAD_REQUEST
+ |
+The journey's origin (%s - %s) does not match the departure airport (%s) of the first retained segment. Please update your request and try again.
+ |
+
+RETAINED_JOURNEY_MISMATCH
+ |
+BAD_REQUEST
+ |
+The journey's origin and destination (%s - %s) do not match the departure airport (%s) of the first retained segment and the arrival airport (%s) of the last retained segment. Please update your request and try again.
+ |
+
+TRAVELER_INDEX_OUT_OF_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify traveler association. At least one traveler index is out of bounds of the travelers array.
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Booking cannot be found.
+ |
+
+RETAINED_FLIGHT_JOURNEY_MISMATCH
+ |
+DATA_INTEGRITY
+ |
+The journey information does not align with the retained flight details, which may result in duplicated travel portions in the returned exchange offers.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: %s requires one of: %s.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: %s requires %s.
+ |
+
+DUPLICATE_TICKET_DATA
+ |
+BAD_REQUEST
+ |
+Validation Failed: tickets must only contain unique elements.
+ |
+
+ |
+
+The variable %s contains information returned dynamically by the downline service.
+ |

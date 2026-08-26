@@ -1,0 +1,229 @@
+Overview
+
+What is it?
+
+The Get Hotel Availability API provides multiple hotel options for a defined stay period and occupancy or performs a search for a specific property. It offers advanced search filter options depending on the property or image content, and also enables customization of the response. Up to 200 hotels per page may be returned and sorted by rate, distance, or rating.
+
+Why use it?
+
+Use this API to receive an orchestrated response that includes:
+
+A list of available properties with their leading image
+
+Static content, such as amenities and location
+
+The lowest rate offered for each property among all rates retrieved from multiple channels
+
+How it works
+
+Retrieves hotels within the requested search location by using the Geo Search API.
+
+Applies requested filter criteria, such as property rating, to the list of hotels to refine search results.
+
+Fetches static information, the default image, and the lowest rate from each data source for every item in the filtered list of hotels.
+
+Orchestrates all retrieved data into a single response and returns it.
+
+How to use
+
+Start with an authentication token
+
+You must provide an authentication token to all endpoints within the Get Hotel Avail API. Tokens can be generated in two ways:
+
+Using the OAuth Token Create API for scenarios with a stateless token (ATK). Once you obtain a successful response from the API, locate the access_token parameter, which returns an ATK token.
+
+If, for any reason, you need to use a session based token (ATH) with the API, use the Create Session API.
+
+Example response with ATK token (OAuth Token Create API)
+
+{
+  "access_token": "T1R6our4IiNS18i*********+CtL0CJhi5gPXkmBLq6TZjs7zNxfUg**",
+  "token_type": "bearer",
+  "expires_in": 604800
+}
+
+Authorization setup template
+
+Authorization: Bearer  <BinarySecurityToken>
+
+Once the token has been generated, its value should be added in the bearer authorization header of your request to the Get Hotel Avail API.
+
+Authorization setup with ATK token
+
+Authorization: Bearer T1RLAQKv&#8230;&#8203;UhrH6gQg**
+
+For the example ATK token value shown earlier, the corresponding authorization header is presented above.
+
+Authorization setup with ATH token
+
+Authorization: Bearer Shared/IDL:IceSess&#8230;&#8203;!380374!0
+
+In case an ATH token is used, the authorization setup is shown in the example above.
+
+ |
+
+Although the shopping step takes place in the branch location PCC provided in the request, the underlying session or token used to authenticate or call this API remains unchanged. This is different from how AAA branch shopping worked before in the legacy versions, where the underlying session itself was granted authorized access to the branch location.
+ |
+
+Request
+
+Search for hotels in a general location by including any of the following location formats in your request:
+
+Latitude and longitude
+
+Address
+
+Airport code(s)
+
+Nearest point(s) of interest
+
+Hotel codes: If you already know the properties you want to shop, you can also input these directly.
+
+Once the location has been provided, complete the following steps:
+
+If you wish to filter the results returned in the response, decide on appropriate filtering criteria.
+
+Specify the stay period and occupancy.
+
+Make your call to the Get Hotel Avail API.
+
+Request and response samples are available under this link.
+
+Sorting rates
+
+To sort the rates returned in the response according to your particular needs, use the SortBy parameter in your request. Available SortBy values are:
+
+NegotiatedRateAvailability: Applicable only if the request contains either client IDs or rate codes for negotiated or contractual (N/X) rates. Identifies hotel properties linked to chains with the relevant N/X rate codes defined and displays these properties first in the response.
+
+DistanceFrom: Returned properties are sorted by distance from the point of search. Applies across all response pages.
+
+SabreRating: Returned properties are sorted by their Sabre rating value. Applies across all response pages.
+
+AverageNightlyRate or AverageNightlyRateBeforeTax: Sorts results by the average nightly rate after or before tax. Applies to one requested page, so all hotel properties returned on that page are sorted. However, properties with cheaper rates may also be displayed on later pages.
+
+Note that any preferencing setup takes precedence over the selected SortBy value. Irrespective of the SortBy option you choose, the final order of the properties in the response is as follows:
+
+Properties promoted by the agency or supplier
+
+Regular properties
+
+Demoted properties
+
+Rate filters
+
+If multiple rate filters are set in the request, they are treated as an OR condition rather than an AND condition.
+For instance, if you make a request that includes the following filters for both Commission and RateType:
+1. Exclude non-commissionable rates
+2. Exclude government rates
+
+Rates are excluded from the response if they are either non-commissionable OR government rates. More example scenarios:
+
+<RateFilter Type="RateCode" Value="AAA,GOV" Action="Exclude"/>: If Type="RateCode", rates from hotel suppliers that match any of the requested comma-separated rate codes are filtered out from the response. Applies to the RateCode returned from the supplier, and NOT the client ID that you may have requested. This is the only supported feature of Action="Exclude" in this case. If you wish to only receive rates matching a specific RateCode, use ExactMatchOnly instead.
+
+<RateFilter Type="RateType" Value="8,9" Action="Exclude"/>: If Type="RateType", rates from hotel suppliers that match any of the requested comma-separated rate types are filtered out from the response. This is the only supported feature of Action="Exclude" in this case. If you wish to only receive rates matching a specific RateType, use ExactMatchOnly instead.
+
+<RateFilter Type="Commission" Value="NC" Action="Exclude"/>: If Type="Commission", the value can be either C (commissionable) or NC (non-commissionable).
+
+If Action="Exclude", rates with the requested Value are removed from the response.
+
+If Action="Include", rates with the requested Value are returned in the response and other rates are not returned.
+
+For example, a request including Type="Commission" Value="NC" Action="Include" retrieves only non-commissionable rates.
+
+RatePlanCandidate
+
+The RatePlanCandidate array is used in the request to define rate
+search criteria. It accepts maximum three (3) items with the
+RatePlanType attribute and maximum eight (8) items with the
+RatePlanCode attribute.
+
+RatePlanCandidate can hold three (3) formats. You may use a
+combination of these three formats as long as they adhere to the
+following rules:
+
+First format: Only a RatePlanType is requested. This condition is
+equivalent to RC-G, a legacy format used in requests for government
+rates.
+
+Second format: Rates are requested for the client ID AMX. Client IDs
+are internally converted to rate codes based on the agency HST tables or
+Hotel Program Manager setup (a UI service used in lodging), and then
+sent to the suppliers to fetch rates for a particular rate code.
+
+Third format: Negotiated rates are requested using the rate code
+IBM. The only RatePlanType values available for this format are 10
+(N) and 22 (X).
+
+The following code sample presents an example of a RatePlanCandidate
+array:
+
+RatePlanCandidate: [
+    {
+        "RatePlanType": "8"
+    },
+    {
+        "RatePlanCode": "AMX"
+    },
+    {
+       "RatePlanType": "10",
+       "RatePlanCode": "IBM"
+    }
+]
+
+ConvertedRateInfoOnly
+
+The ConvertedRateInfoOnly request parameter allows you to return hotel
+rates under ConvertedRateInfo in the response when set to true or
+not populated. If false, rates are returned under both
+ConvertedRateInfo and RateInfos.RateInfo.
+
+The currency to convert rate amounts to can be provided in the
+request.
+
+If the requested rate currency is different from the currency returned
+by the supplier, ConvertedRateInfo contains rates converted to the
+currency provided in the request and RateInfo contains rates in the
+currency retrieved from the supplier.
+
+If the requested rate currency is the same as the currency returned by
+the supplier, both RateInfo and ConvertedRateInfo contain rates in
+that currency.
+
+Booking multiple rooms
+
+To book multiple rooms for a singular PNR segment, it is recommended to
+make a call to the
+Hotel
+Price Check API first, and then initiate (not commit) a sale for the
+reservation. For an additional room, send a second request to the Hotel
+Price Check API to generate a new BookingKey, and then add another
+segment into the same PNR session. Once both segments are confirmed,
+store your changes (ET - commit) made to the reservation.
+
+LoyaltyId
+
+The LoyaltyId array can be used in hotel availability calls to list a
+traveler’s loyalty IDs with different hotel chains. Depending on their
+CRS capabilities, some hotel chains may return special member rates if a
+loyalty ID is provided in the request. Loyalty IDs passed when shopping
+are automatically applied during booking as well, and displayed in the
+PNR. However, it is recommended to include loyalty IDs manually in the
+booking request once again after shopping, without a preceding hotel
+chain code.
+
+The response includes a unique code for each rate, which can be used to
+book rates later on. These rate keys do not expire, and may be sent in a
+request to the Hotel Price Check API at any time. In case the rate
+associated with a rate key is no longer available, this information is
+reflected in the Hotel Price Check response.
+
+ |
+
+The rate key that you plan to use must be referenced in the
+Hotel
+Price Check API.
+ |
+
+Resources
+
+GetHotelAvail v5 Resources

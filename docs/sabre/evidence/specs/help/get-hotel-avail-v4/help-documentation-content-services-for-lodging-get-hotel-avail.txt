@@ -1,0 +1,220 @@
+Content Services for Lodging: Get Hotel Availability
+
+Introduction
+
+We offer an API called Get Hotel Avail to help you find properties that meet your travelers’ needs. Through using the API, in one request, your application:
+
+Shops for lodging from multiple supplier sources
+
+Filters using simple or advanced search criteria
+
+Receives property information: amenities, ratings, lead price, and a hero image
+
+This is the second generation of our API. It is improved to deliver more content from multiple sources. There are a lot of channels of distribution for lodging and this API helps you avoid the pain of searching through multiple sites.
+
+Because all of that data might look different across suppliers, we designed the API to put all of the rate, description, and other information into a standardized data structure. We refer to that consistent organization as &#8220;normalization.&#8221;
+
+The goal is empowering you to build solutions that will help your travelers find dream offers.
+
+More power, less programming
+
+An &#8220;orchestrated service&#8221; like Get Hotel Avail is designed to make the developer experience easier. It bundles together several actions typically performed as part of an app’s user workflow. More information may be requested with less code written. This helps make code easier to reason about, and more maintainable.
+
+Requesting content is an important step in a typical shop-and-book workflow. You’ll find that the sample app accompanying this article demonstrates how to call the Get Hotel Avail API, parse the results, and display its contents. Our goal is providing developers a quick start for using the API
+
+You will find this article provides additional context and extra resources to help you understand the sample app source code. Source code for the sample app is stored in a repo on our GitHub account. If you do not know about GitHub, it is a popular hosting provider for storing code using the git revision control system. Accessing our source code is free and easy.
+
+SOAP and REST, orchestrated and granular
+
+Get Hotel Avail supports two API designs: SOAP/XML and REST/JSON. Although this article concentrates on the REST edition of the API as a matter of focus, you will find the SOAP edition of the API has the same features and capabilities.
+
+This API architecture bundles together several actions at once. We offer a set of granular APIs if those better match your needs. Please refer to the documentation to learn more about them.
+
+How it works
+
+The sample app associated with this article is text driven on the command-line. Its basic flow is:
+
+Read search criteria from a config file
+
+Authenticate to receive an access token
+
+Make a request to Get Hotel Avail API
+
+Store the response
+
+Parse through the results and display them
+
+Choosing a simple, clean, text-based user interface is meant to focus the learning for an audience of software developers.
+
+Find the source code repo here:
+
+https://github.com/SabreDevStudio/get-hotel-avail-v2-sample-nodejs
+
+Take advantage of the sample app code. Experiment with it, change the search criteria file, modify the request model, alter the display view, and generally use it as a foundation for your development &#8220;pre-work.&#8221;
+
+Setting-up the sample app
+
+There are a few one-time-only steps for installing pre-requisites listed below.
+
+Cloning with Git
+
+Take a copy of the source code from our repo stored on Github. When you browse the Get Hotel Avail sample app you will find the green button labeled &#8220;Clone or download&#8221;. Clicking it reveals the URL to &#8220;git clone&#8221; when first copying down the source code from the server to your development machine.
+
+Installing project dependencies
+
+The sample app is written in NodeJS. You will need to have its run-time installed on your local development computer.
+
+Once you have that installed and have pulled down a copy of the sample app source code, you will need to install the app’s open-source dependencies. Run this command in your local copy of the source code:
+
+npm install
+
+The npm (Node Package Manager) tool will pull down copies of all open-source code this app refers to. File transfers might take a few minutes depending on network connections.
+
+Getting Sabre credentials
+
+For this sample app, which demonstrates the REST version of Get Hotel Avail, you will need your Sabre API CERT-environment credentials. They are used by the sample app as part of the authentication flow to call Get Hotel Avail.
+
+Encoding credentials
+
+Using the APIs requires entering a secret credential so that the app can find it during the initial authentication process. Part of its logic is requesting a token in order to properly call the Get Hotel Availability API. Tokens are gained in part from using the private credential.
+
+Simply open up the app’s source code and look at the file named config.js to find where the secret is declared. There is one attribute called userSecret where you can copy in the hard-coded string.
+
+const APIConfig = {
+  userSecret: process.env.SWS_API_SECRET || '',
+};
+
+Alternatively, the secret value can be picked-up from the O/S environment variable that you can create on your local development machine.
+
+An environment variable is preferred because it keeps the actual value hidden. Hiding your app secret from code is good practice because all files are publicly visible in revision control, and that is not a good place for private/secret information.
+
+userSecret is a base64-encoded string computed from steps you can read more about.
+
+Running the sample app
+
+Once you have copied down and set up the sample is ready to run using these steps:
+
+Launch your command-line prompt app.
+
+Navigate to the local copy of the sample app source code.
+
+Enter this command to run: npm start
+
+When this works normally the app renders a list of hotels found. What you will see should look very similar to the image found in this article above. Results are matching an airport IATA code.
+
+Sabre APIs used
+
+Sample apps like this one are meant to highlight how a software developer might use particular APIs in real-world conditions. Two Sabre APIs are featured in this sample: Get Hotel Avail and Authentication.
+
+Get Hotel Avail API
+
+The sample app features the Get Hotel Avail API. App code demonstrates setting up and making a request. Then it demonstrates how to parse through the response to display parts of it.
+
+For more information on the Get Hotel Avail API, check out:
+
+Get Hotel Avail - REST
+
+Get Hotel Avail - SOAP
+
+Content Services for Lodging
+
+Authentication API
+
+Most APIs are protected in some manner. For example, they require authentication, and that a valid token is sent up as part of the header for every request. Sabre REST APIs have this feature.
+
+The sample app demonstrates how to call the Authentication API with private account information (secret) to receive an access token in reply. The token is sent along subsequent REST API calls to prove the request is valid.
+
+For more information on the authentication process, refer to the How to get a token guide.
+
+Updating the search criteria config file
+
+Changing the airport code to find hotels around is simple. Open the app’s source code and look at the file named searchCriteria.js to find the information used to find a hotel.
+
+const SearchCriteria = {
+  location: {
+    airportCode: 'ORD',
+  },
+  date: {
+    checkIn: '2019-07-01',
+    checkOut: '2019-07-05',
+  },
+};
+
+Occasionally the search is prevented because the checkIn and checkOut dates are in the past.
+
+Radius to an airport code is the search criteria shown here. Several other search methods exist:
+
+Latitude/Longitude
+
+Street Address, City, State, Country, Postal Code
+
+Polygon Region
+
+Changing the sample app code to support additional search criteria might be an effective way to gain experience.
+
+Changing supplier sources
+
+Changing the information source means reading lodging data from any or all of a number of content aggregators. You will see how it is requested in the file named hotelAvailabilityModel.js in the requestPayload variable. Source id-numbers match the value/provider table seen below.
+
+When you read through the code you will see a request element named RateInfoRef.InfoSource . That is a comma-delimited string listing all of the supplier codes you want information from.
+
+Responses from the API will contain consistent data structures no matter what the original content source is. This helps you compare data that looks similar in nature when presenting it to your app’s users.
+
+Decoding the rate source
+
+Getting access to our content partners unlocks your ability to read details about a hotel property from a collection of millions of options.
+
+Look for the RateSource attribute in response data to determine precisely which information source produced the content. Here is a table mapping values to content sources:
+
+Value |
+Provider |
+
+100
+ |
+Sabre GDS
+ |
+
+110
+ |
+Expedia Partner Solutions
+ |
+
+112
+ |
+Bedsonline
+ |
+
+113
+ |
+Booking.com
+ |
+
+Look for RateKey in the response
+
+You will notice an attribute named RateKey in the response. It might appear multiple times and that is normal. There is one RateKey for each room rate returned by every supplier.
+
+RateKey is a type of identifier used in subsequent hotel-related API calls. A good example is using it as part of calling Hotel Price Check.
+
+Look for HotelCode in the response
+
+You will notice an attribute named HotelCode in the response. It will appear once per hotel entry. The number of content suppliers used does not affect that.
+
+HotelCode is a type of identifier used in subsequent hotel-related API calls. For example you could use it when calling Get Hotel Details to read more information about a particular property.
+
+cachedResponse for debugging
+
+A file called cachedResponse.json is created every time the sample app is run. The app saves whatever response is returned from the Get Hotel Avail API request. Consider this file to be a convenient debugging tool. Use it to take a detailed look at all of the information returned and see what is available for use in your software application.
+
+Next steps
+
+Make use of this sample app as a testing tool. It is a simple, flexible, jumping-off point for learning how to use Sabre APIs in general, and Get Hotel Avail in particular.
+
+Look up the docs and discover all that it can do:
+
+Get Hotel Avail - REST
+
+Get Hotel Avail - SOAP
+
+Discover something interesting? Call it by changing the request attribute values found in the hotelAvailabilityModel.js. Save the file and run the app to see how your updates perform.
+
+Get in touch with us. GitHub allows communication through its repo-level issues and pull request channels. Use the built-in issues section.

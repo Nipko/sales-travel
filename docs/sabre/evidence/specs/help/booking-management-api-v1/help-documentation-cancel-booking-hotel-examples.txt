@@ -1,0 +1,171 @@
+Cancel Booking – Hotel Examples
+
+Cancel Booking provides a single, unified service to cancel the entire reservation or a part of the reservation irrespective of what it contains.
+It allows to cancel CSL/Legacy Hotels at the same time by providing either itemId or sequence number.
+
+Cancel an entire reservation
+
+To ensure the successful cancellation of an entire reservation, the request should contain:
+
+Add confirmationId (PNR Locator or Order ID)
+
+Set cancelAll to true
+
+{
+  "confirmationId": "XXXXXX",
+  "cancelAll": true
+}
+
+Cancel specific hotels
+
+To ensure the successful cancellation of specific hotels, the request should contain:
+
+Add confirmationId (PNR Locator or Order ID)
+
+Add list of hotels including the specific itemId of the product to be canceled.
+
+The itemId can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.(flights|cars|hotels).itemId
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@id
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@Id
+
+{
+  "confirmationId": "XXXXXX",
+  "hotels": [
+    {
+      "itemId": "12"
+    },
+    {
+      "itemId": "22"
+    },
+    {
+      "itemId": "42"
+    }
+  ]
+}
+
+Cancel specific segments by ID or sequence
+
+To ensure the successful cancellation of specific hotels, the request should contain the below information:
+
+Add confirmationId (PNR Locator or Order ID)
+
+Add list of segments including the id or sequence to be used.
+
+id can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.(flights|cars|hotels).itemId
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@id
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@Id
+
+sequence can be retrieved from the response of the following APIs:
+
+Get Booking – JSONPath: GetBookingResponse.allSegments[`n]`
+
+GetReservationRQ – XPath: GetReservationRS/Reservation/PassengerReservation/Segments/Segment/Product/@sequence
+
+TravelItineraryReadRQ – XPath: TravelItineraryReadRS/TravelItinerary/ItineraryInfo/ReservationItems/Item/(FlightSegment|Vehicle|Hotel)/@SegmentNumber
+
+ |
+
+Even though Cancel Booking supports cancelling products via a combination of segments and sequence values, as this API behaves in a stateless way, there is a risk that the desired product(s) to be cancelled may not be in the exact segment`+sequence` as seen in a previously executed PNR read API call. This option is not recommended and has been enabled primarily for familiarity, since cancelling a segment position is the traditional method for cancelling Sabre products.
+ |
+
+The examples below contain possible configurations using segments combined with id and/or sequence:
+
+{
+  "confirmationId": "XXXXXX",
+  "segments": [
+    {
+      "id": "12"
+    },
+    {
+      "id": "22"
+    },
+    {
+      "id": "42"
+    }
+  ]
+}
+
+{
+  "confirmationId": "XXXXXX",
+  "segments": [
+    {
+      "sequence": 1
+    },
+    {
+      "sequence": 2
+    },
+    {
+      "sequence": 3
+    }
+  ]
+}
+
+Use case – Cancel CSL
+
+Below is an example of a hotel reservation (PNR RECLOC: VCWZEI).
+
+This segment has been booked as a CSL segment:
+
+*VCWZEI*I«
+ 1  HHL HI HK1 MOB IN25DEC F-OUT26DEC   1NT   72378 HO    /DCHI
+LIDAY INN MOBILE  12QNTSA -5/  139.00USD/RC-TSA-TSA-X/CMN-C/CMT
+-COMMISSIONABLE/AGT28760686/GVIXXXXXXXXXXXX1111EXP XXXXX-SASSE/
+CD-100860774/NM-TEST PERRY/C01D/SI-CF-42141434-
+
+In order to execute the cancel operation, determine the desired &#8220;key&#8221; to use; both sequence and id are returned in the GetReservationRQ response body.
+
+In the snippet below, we can see that the segment is identified as a CSL segment (productCategory=AGTLCSSEGMENT) and contains:
+
+sequence="1" & id="36"
+
+GetReservationRQ response snippet:
+
+<stl19:Product sequence="1" id="36">
+    <or114:ProductBase>
+        <or114:SegmentReference>36</or114:SegmentReference>
+    </or114:ProductBase>
+    <or114:ProductDetails productCategory="AGTLCSSEGMENT" productType="HHL" vendorCode="HI" statusCode="HK" startPoint="MOB" startDateTime="2020-12-25T00:00:00" endPoint="MOB" endDateTime="2020-12-26T00:00:00">
+        <or114:ProductName type="HHL">Lodging</or114:ProductName>
+        <or114:Lodging>
+        ...
+
+With this information, you can now define how to execute the cancel operation via Cancel Booking.
+
+The below examples depict 3 possible options:
+
+Cancel Booking – cancel all:
+
+{
+  "confirmationId": "VCWZEI",
+  "cancelAll": true
+}
+
+Cancel Booking – cancel by segment ID:
+
+{
+  "confirmationId": "VCWZEI",
+  "segments": [
+    {
+      "id": "36"
+    }
+  ]
+}
+
+Cancel Booking – cancel by hotel product ID:
+
+{
+  "confirmationId": "VCWZEI",
+  "hotels": [
+    {
+      "itemId": "36"
+    }
+  ]
+}

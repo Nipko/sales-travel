@@ -1,0 +1,594 @@
+Cancel Booking – Error List
+
+Error list
+
+Below is the full list of possible errors returned by Cancel Booking:
+
+Error type |
+Error category |
+Description |
+
+SECURITY_TOKEN_CONTEXT_ERROR
+ |
+BAD_REQUEST
+ |
+Security context not initialized. Nothing was cancelled.
+ |
+
+SECURITY_TOKEN_CONTEXT_ERROR
+ |
+BAD_REQUEST
+ |
+Invalid authentication token. Nothing was cancelled.
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+CancelAll flag and list of flights/hotels/cars/cruises/trains/segments cannot be combined.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Unable to cancel the booking. Combination of offerItemId and flightTicketOperation is not supported. Change request to use either offerItemId or flightTicketOperation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains too many notification options. Select queueName or queueNumber.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains too many notification options. Select email or queuePlacement.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Flag cancelAll cannot be combined with notification email. Sending notification requires itinerary is in the booking.
+ |
+
+CANCEL_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected ticket-related operation cannot be processed for the mixed traditional and NDC content. This functionality is currently not supported for hybrid bookings.
+ |
+
+CANCEL_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+No cancel data provided. Nothing was cancelled.
+ |
+
+INVALID_FLIGHT_ID
+ |
+INVALID_DATA
+ |
+Invalid segment type - it’s not a flight
+ |
+
+INVALID_HOTEL_ID
+ |
+INVALID_DATA
+ |
+Invalid segment type - it’s not a hotel
+ |
+
+INVALID_CAR_ID
+ |
+INVALID_DATA
+ |
+Invalid segment type - it’s not a car
+ |
+
+INVALID_TRAIN_ID
+ |
+INVALID_DATA
+ |
+Invalid segment type - it’s not a train
+ |
+
+INVALID_CRUISE_ID
+ |
+INVALID_DATA
+ |
+Invalid segment type - it’s not a cruise
+ |
+
+NDC_ORDER_PARTIAL_CANCEL
+ |
+REQUEST_NOT_ALLOWED
+ |
+Partial cancellation of NDC segments is not supported. Specify all NDC segments.
+ |
+
+SEGMENT_NOT_FOUND
+ |
+INVALID_DATA
+ |
+Segment does not exist
+ |
+
+SEGMENT_NOT_FOUND
+ |
+INVALID_DATA
+ |
+Reservation does not contain any segments
+ |
+
+DUPLICATED_SEGMENT_ID_FOUND
+ |
+APPLICATION_ERROR
+ |
+The cancellation operation was unsuccessful due to the fact the booking contains multiple segments with the same id=%s.
+ |
+
+INCONSISTENT_SEGMENT_IDS
+ |
+INVALID_DATA
+ |
+Product Id and Sequence are not consistent
+ |
+
+BOOKING_DETAILS_UNAVAILABLE
+ |
+WARNING
+ |
+Booking details are unavailable due to system slow down.
+ |
+
+NDC_NOT_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Cancel of NDC content is not supported.
+ |
+
+MISSING_NDC_SEGMENTS
+ |
+REQUEST_NOT_ALLOWED
+ |
+Cancel of NDC is allowed only when cancel all NDC flights.
+ |
+
+RETENTION_CONDITION_ISSUE
+ |
+REQUEST_NOT_ALLOWED
+ |
+The retention details can be added only if this type of information doesn’t already exist in the booking. Use cancelAll property or select all retention segments for the cancellation in combination with the new retention details.
+ |
+
+INVALID_RETENTION_DATE
+ |
+BAD_REQUEST
+ |
+The retention date cannot be in the past.
+ |
+
+RETENTION_DATE_MISSING
+ |
+BAD_REQUEST
+ |
+The date is required for the retention line in the booking.
+ |
+
+INVALID_RETENTION_DATE_RANGE
+ |
+BAD_REQUEST
+ |
+The retention date exceeds the acceptable date range. Select the date no later than %s.
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of ending transaction failed
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of cancel Sabre content failed
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Response is empty
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of saving price quote failed
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of cancel CSL content failed
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of cancel NDC content failed
+ |
+
+CONTEXT_CHANGE_FAILED
+ |
+APPLICATION_ERROR
+ |
+Operation of context change failed
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING
+ |
+WARNING
+ |
+Problem occurred when booking data fetched.
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING
+ |
+WARNING
+ |
+API Gateway cannot process the booking retrieval at this time.
+ |
+
+QUEUE_PLACE_FAILED
+ |
+APPLICATION_ERROR
+ |
+Retrying limit exceeded
+ |
+
+QUEUE_PLACE_FAILED
+ |
+APPLICATION_ERROR
+ |
+The booking could not be placed on the requested queue. The Queue Placement service returned an error: [%s].
+ |
+
+QUEUE_PLACE_FAILED
+ |
+APPLICATION_ERROR
+ |
+Response is empty
+ |
+
+SYSTEM_SLOW_DOWN
+ |
+APPLICATION_ERROR
+ |
+Operation aborted due to system slow down.
+ |
+
+SYSTEM_SLOW_DOWN
+ |
+APPLICATION_ERROR
+ |
+Operation aborted due to system slow down. %s operation can be potentially partially completed. Please verify ticket(s) status.
+ |
+
+NO_ITEMS_CANCELLED
+ |
+WARNING
+ |
+Nothing was cancelled - cancellation was interrupted due to errors
+ |
+
+END_TRANSACTION_PROBLEM
+ |
+WARNING
+ |
+Email was not sent. There is no email address present in the booking.
+ |
+
+END_TRANSACTION_PROBLEM
+ |
+WARNING
+ |
+The cancellation was sent to the vendor. Confirmation is pending. Redisplay the booking to verify the status.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains duplicate printer objects. Please request only one printer profile.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains an invalid combination of printer profile and manual printer designation. Please request either printer profile designation or submit a list of printers for manual designation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains multiple types of printers in a single printer address object. The printer address object can contain only one printer type.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains a printer designation without a recognizable printer type. Verify the printer address object details against the API schema.
+ |
+
+INTERNAL_PROCESSING_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Repeated request for ticket information failed. Get Electronic Document Service request timed out. Document can not be canceled as coupon status is unknown.
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Ticket details cannot be retrieved cause of errors
+ |
+
+SEND_SABRE_COMMAND_WARNING
+ |
+WARNING
+ |
+Empty response
+ |
+
+END_TRANSACTION_PROBLEM
+ |
+WARNING
+ |
+Email was not sent. The booking contains no itinerary data which could be used to generate an email.
+ |
+
+OFFER_CANCEL_ORDER_PROBLEM
+ |
+WARNING
+ |
+Unable to map refund values for ReshopOffer with ID=%s.
+ |
+
+OFFER_CANCEL_ORDER_PROBLEM
+ |
+WARNING
+ |
+Response is empty
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+Electronic document details could not be retrieved. The service Get Electronic Document API (TKT_ElectronicDocumentServicesRQ) is available to Sabre travel agency subscribers only. Please verify the used credentials with your account manager.
+ |
+
+FLIGHT_ID_MISSING
+ |
+APPLICATION_ERROR
+ |
+The selected ticket-related operation was unsuccessful. An existing ticket(s) cannot be associated with the current flights stored in the booking.
+ |
+
+BOOKING_ALREADY_CANCELED
+ |
+CANCELLATION_ERROR/WARNING
+ |
+%s booking has already been canceled by the airline.
+ |
+
+UNABLE_TO_PRICE_REFUND
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Unable to retrieve refund totals for %s booking.
+ |
+
+INTERNAL_SERVER_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Request to the supplier airline %s has timed out.
+ |
+
+UNABLE_TO_REFUND_BOOKING
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Refund operation for low-cost airline %s is currently not supported.
+ |
+
+UNABLE_TO_REFUND_BOOKING
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Refund operation has failed for low-cost airline %s booking.
+ |
+
+UNABLE_TO_REFUND_BOOKING
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Reservation contains unfulfilled low-cost flights which cannot be refunded.
+ |
+
+UNABLE_TO_REFUND_BOOKING
+ |
+CANCELLATION_ERROR
+ |
+Refund operation has failed for low-cost airlines.
+ |
+
+UNABLE_TO_REFUND_BOOKING
+ |
+CANCELLATION_ERROR
+ |
+Refund operation is currently pending with the airline. Please retry the transaction later.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION
+ |
+WARNING
+ |
+Response is empty.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION
+ |
+WARNING
+ |
+General problem with %s service.
+ |
+
+INVALID_DOCUMENT_TYPE
+ |
+BAD_REQUEST
+ |
+Validation failed: documentsType does not match the type of the submitted document. Verify and retry.
+ |
+
+ |
+
+Variable %s contains information returned dynamically by the downline service.
+ |
+
+Cancel Booking can also return errors stemming directly from downline services:
+
+Error type |
+Error category |
+Downline service |
+
+CONTEXT_CHANGE_PROBLEM
+ |
+WARNING
+ |
+ContextChangeLLSRQ
+ |
+
+UNABLE_TO_CANCEL
+ |
+CANCELLATION_ERROR/WARNING
+ |
+ContextChangeLLSRQ
+ |
+
+OTA_CANCEL_PROBLEM
+ |
+WARNING
+ |
+OTA_CancelLLSRQ
+ |
+
+CSL_CANCEL_PROBLEM
+ |
+WARNING
+ |
+UpdateReservationRS
+ |
+
+NDC_CANCEL_PROBLEM
+ |
+WARNING
+ |
+Orders/Cancel
+ |
+
+END_TRANSACTION_PROBLEM
+ |
+WARNING
+ |
+EnhancedEndTransactionRQ
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+GetReservationRQ
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING_WARNING
+ |
+WARNING
+ |
+Get Booking
+ |
+
+UNABLE_TO_CALL_ORDER_VIEW
+ |
+WARNING
+ |
+Orders/View
+ |
+
+CLOSE_SESSION_WARNING
+ |
+WARNING
+ |
+SessionCloseRQ
+ |
+
+QUEUE_PLACE_FAILED
+ |
+APPLICATION_ERROR
+ |
+QueuePlaceLLSRQ
+ |
+
+AIR_PRICE_PROBLEM
+ |
+WARNING
+ |
+OTA_AirPriceLLSRQ
+ |
+
+END_TRANSACTION_PROBLEM
+ |
+WARNING
+ |
+OTA_AirPriceLLSRQ
+ |
+
+NDC_RESHOP_PROBLEM
+ |
+WARNING
+ |
+Offers/Reshop/CancelOrder
+ |
+
+SEND_SABRE_COMMAND_WARNING
+ |
+WARNING
+ |
+SabreCommandLLSRQ
+ |

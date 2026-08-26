@@ -1,0 +1,35 @@
+Date Flexibility
+
+Overview
+
+To receive the cheapest solutions per date combination, you may specify a particular date range under FlightReshopRequest.departureDateFlexibility.
+
+Currently, the date range is limited to six (6) days from the original departure date. When you send a request with date flexibility included, the API returns different departure date options for the requested journey.
+
+Date range
+
+Date flexibility defines a search window in days before and/or after the requested travel date:
+
+FlightReshopRequest.departureDateFlexibility.plusMinusDays defines the number of days before and after the requested travel date.
+
+FlightReshopRequest.departureDateFlexibility.minusDays defines the number of days before the requested travel date.
+
+FlightReshopRequest.departureDateFlexibility.plusDays defines the number of days after the requested travel date.
+
+Main date
+
+The API searches for up to 50 different results for your main travel date. This gives you a wide range of choices to consider and helps you find the most convenient and affordable options.
+
+ |
+
+If multiple brands are specified in a request, the API returns multiple brands for the main date only.
+ |
+
+Alternate dates
+
+For each alternate date, the API searches for one cheapest offer that best fits your request parameters.
+
+ |
+
+If multiple brands (FlightReshopRequest.retailing.returnAdditionalOffers) are specified in a request, the API returns a single brand option for each alternate date pair.
+ |

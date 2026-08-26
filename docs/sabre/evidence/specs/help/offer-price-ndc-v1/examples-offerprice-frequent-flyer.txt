@@ -1,0 +1,651 @@
+OfferPrice Frequent Flyer
+
+Frequent Flyer Request
+
+Scenario
+
+The Frequent Flyer example presents a use-case with passenger details required for frequent flyer processing. This type of information must be provided within the passengers array.
+
+Instruction
+
+To send a frequent flyer request, we need to provide the following information:
+
+Property |
+Description |
+
+query.offerItemId
+ |
+The ID of an offer item selected from a shopping response.
+ |
+
+passengers.id
+ |
+The unique ID of a passenger. Should be the same as the one returned in an earlier shopping step.
+ |
+
+passengers.personName.givenName
+ |
+The given name of a frequent flyer passenger.
+ |
+
+passengers.personName.surname
+ |
+The surname of a frequent flyer passenger.
+ |
+
+passengers.frequentFlyer.airline
+ |
+The IATA carrier designator code.
+ |
+
+passengers.frequentFlyer.accountNumber
+ |
+The loyalty program account number.
+ |
+
+Example Value
+
+{
+  "query": [
+    {
+      "offerItemId": [
+        "ce5b4fd69b46x4qh9lrrr5ihh0-1-1"
+      ]
+    }
+  ],
+  "passengers": [
+    {
+      "id": "Passenger1",
+      "personName": {
+        "givenName": "JORDAN",
+        "surname": "LOYTEST"
+      },
+      "frequentFlyer": [
+        {
+          "airline": "VA",
+          "accountNumber": "123456789"
+        },
+        {
+          "airline": "QF",
+          "accountNumber": "1380227"
+        }
+      ]
+    }
+  ]
+}
+
+Frequent Flyer Response
+
+Summary
+
+As a response to our Frequent Flyer request, the API returned a priced offer with the requested frequent flyer information contained within the frequentFlyer array.
+
+Next Steps
+
+The Offer Price API is the second step in the New Distribution Capability (NDC) Workflow. Go to the NDC Workflow Guide for more information.
+
+Example Value
+
+{
+  "payloadAttributes": {
+    "timeStamp": "2024-01-24T12:30:53.033659735Z",
+    "trxID": "e3218628-774c-4f6f-815a-753cd9261844",
+    "host": "offer-price-tn-green-895dcbc6-cgfp4",
+    "baseline": "offer-price-tn-550-20240115-091335-0.2.0-20231218.093704-55-e71b787"
+  },
+  "messages": [
+    {
+      "type": "WARNING",
+      "message": "Card Payment fees ranging between AUD 0.60 and 1.80 may apply depending on card type. An IIN/BIN can be sent in the request to get a specific fee or a full list of fees can be displayed via the Service List.",
+      "service": "NDC_CONNECTOR"
+    },
+    {
+      "type": "WARNING",
+      "message": "Qantas Frequent Flyers could earn Qantas Points and Status Credits for this booking. <a href=\"https://www.qantas.com/fflyer/dyn/program/terms\" target=\"_blank\">Terms and conditions apply.</a>",
+      "service": "NDC_CONNECTOR"
+    }
+  ],
+  "id": "ce5b4fd69b46js222lrrrj5ri5",
+  "version": "v1.0.0",
+  "response": {
+    "offers": [
+      {
+        "id": "ce5b4fd69b46js222lrrrj5ri5-1",
+        "ttl": 1200,
+        "source": "NDC",
+        "offerExpirationDateTime": "2024-01-24T12:50:49Z",
+        "paymentTimeLimitText": "2024-01-24T23:59:00",
+        "journeys": [
+          {
+            "segmentRefIds": [
+              "Isgm0100817b1004a"
+            ],
+            "priceClassRefId": "Ppc47y379dn208lv"
+          }
+        ],
+        "offerItems": [
+          {
+            "id": "ce5b4fd69b46js222lrrrj5ri5-1-1",
+            "mandatoryInd": true,
+            "passengers": [
+              {
+                "id": "Passenger1",
+                "ptc": "ADT",
+                "requestedPtc": "ADT",
+                "passengerDescription": {
+                  "givenName": "JORDAN",
+                  "surname": "LOYTEST"
+                },
+                "frequentFlyer": [
+                  {
+                    "airline": "QF",
+                    "accountNumber": "1380227"
+                  }
+                ],
+                "baggage": [
+                  {
+                    "type": "CheckedBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": [
+                      "Isgm0100817b1004a"
+                    ],
+                    "details": [
+                      {
+                        "quantity": 1,
+                        "constrains": [
+                          {
+                            "max": 23,
+                            "unit": "KG"
+                          },
+                          {
+                            "max": 50,
+                            "unit": "LBS"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CarryOnBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": [
+                      "Isgm0100817b1004a"
+                    ],
+                    "details": [
+                      {
+                        "quantity": 2
+                      }
+                    ]
+                  }
+                ],
+                "price": {
+                  "totalAmount": {
+                    "amount": "175.23",
+                    "curCode": "AUD"
+                  },
+                  "baseAmount": {
+                    "amount": "132.59",
+                    "curCode": "AUD"
+                  },
+                  "taxes": {
+                    "total": {
+                      "amount": "42.64",
+                      "curCode": "AUD"
+                    },
+                    "breakdown": [
+                      {
+                        "amount": {
+                          "amount": "10.29",
+                          "curCode": "AUD"
+                        },
+                        "nation": "AU",
+                        "taxCode": "QR",
+                        "description": "PASSENGER SERVICE CHARGE DOMESTIC DEPARTURE"
+                      },
+                      {
+                        "amount": {
+                          "amount": "6.20",
+                          "curCode": "AUD"
+                        },
+                        "nation": "AU",
+                        "taxCode": "QR",
+                        "description": "PASSENGER SERVICE CHARGE DOMESTIC ARRIVAL"
+                      },
+                      {
+                        "amount": {
+                          "amount": "13.26",
+                          "curCode": "AUD"
+                        },
+                        "nation": "AU",
+                        "taxCode": "UO",
+                        "description": "GOODS AND SERVICES TAX  GST"
+                      },
+                      {
+                        "amount": {
+                          "amount": "2.67",
+                          "curCode": "AUD"
+                        },
+                        "nation": "AU",
+                        "taxCode": "UO",
+                        "description": "GOODS AND SERVICES TAX  GST"
+                      },
+                      {
+                        "amount": {
+                          "amount": "10.22",
+                          "curCode": "AUD"
+                        },
+                        "nation": "AU",
+                        "taxCode": "WG",
+                        "description": "SAFETY AND SECURITY CHARGE  DEPARTURE"
+                      }
+                    ]
+                  }
+                },
+                "fareComponents": [
+                  {
+                    "price": {
+                      "baseAmount": {
+                        "amount": "132.59",
+                        "curCode": "AUD"
+                      },
+                      "taxes": {
+                        "total": {
+                          "amount": "42.64",
+                          "curCode": "AUD"
+                        },
+                        "breakdown": [
+                          {
+                            "amount": {
+                              "amount": "10.29",
+                              "curCode": "AUD"
+                            },
+                            "nation": "AU",
+                            "taxCode": "QR",
+                            "description": "PASSENGER SERVICE CHARGE DOMESTIC DEPARTURE"
+                          },
+                          {
+                            "amount": {
+                              "amount": "6.20",
+                              "curCode": "AUD"
+                            },
+                            "nation": "AU",
+                            "taxCode": "QR",
+                            "description": "PASSENGER SERVICE CHARGE DOMESTIC ARRIVAL"
+                          },
+                          {
+                            "amount": {
+                              "amount": "13.26",
+                              "curCode": "AUD"
+                            },
+                            "nation": "AU",
+                            "taxCode": "UO",
+                            "description": "GOODS AND SERVICES TAX  GST"
+                          },
+                          {
+                            "amount": {
+                              "amount": "2.67",
+                              "curCode": "AUD"
+                            },
+                            "nation": "AU",
+                            "taxCode": "UO",
+                            "description": "GOODS AND SERVICES TAX  GST"
+                          },
+                          {
+                            "amount": {
+                              "amount": "10.22",
+                              "curCode": "AUD"
+                            },
+                            "nation": "AU",
+                            "taxCode": "WG",
+                            "description": "SAFETY AND SECURITY CHARGE  DEPARTURE"
+                          }
+                        ]
+                      }
+                    },
+                    "fareBasis": {
+                      "fareBasisCode": "OSQ21A",
+                      "fareDescription": "Published fare",
+                      "fareCode": "70J",
+                      "fareBasisCityPair": "SYDMELQF",
+                      "rbd": "O",
+                      "cabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "ECONOMY"
+                      },
+                      "sabreCabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "Economy"
+                      }
+                    },
+                    "fareRules": {
+                      "penalty": {
+                        "cancelFeeInd": false,
+                        "changeFeeInd": true,
+                        "refundableInd": false,
+                        "applicableFeeRemarks": [
+                          {
+                            "value": "No fees apply where you are entitled to a refund or alternative flight under the <a href=\"https://www.qantas.com/au/en/book-a-trip/flights/rights-under-the-acl.html\" target=\"_blank\">Australian Consumer Law</a>, equivalent local law or <a href=\"https://www.qantas.com/au/en/book-a-trip/flights/conditions-of-carriage.html\" target=\"_blank\">Conditions of Carriage</a>."
+                          }
+                        ],
+                        "details": [
+                          {
+                            "penaltyType": "Cancel",
+                            "metadata": [
+                              {
+                                "ruleId": "Cancel",
+                                "values": [
+                                  {
+                                    "instruction": "Not Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "penaltyType": "Change",
+                            "metadata": [
+                              {
+                                "ruleId": "Change",
+                                "values": [
+                                  {
+                                    "instruction": "Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "penaltyType": "Change",
+                            "application": "2",
+                            "amounts": [
+                              {
+                                "currencyAmountValue": {
+                                  "amount": "99.00",
+                                  "curCode": "AUD",
+                                  "taxable": true
+                                },
+                                "amountApplication": "MIN",
+                                "applicableFeeRemarks": [
+                                  {
+                                    "value": "Restrictions apply. Fare difference may also be payable."
+                                  }
+                                ]
+                              },
+                              {
+                                "currencyAmountValue": {
+                                  "amount": "99.00",
+                                  "curCode": "AUD",
+                                  "taxable": true
+                                },
+                                "amountApplication": "MAX",
+                                "applicableFeeRemarks": [
+                                  {
+                                    "value": "Restrictions apply. Fare difference may also be payable."
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "penaltyType": "Change",
+                            "application": "3",
+                            "amounts": [
+                              {
+                                "currencyAmountValue": {
+                                  "amount": "99.00",
+                                  "curCode": "AUD",
+                                  "taxable": true
+                                },
+                                "amountApplication": "MIN",
+                                "applicableFeeRemarks": [
+                                  {
+                                    "value": "Restrictions apply. Fare difference may also be payable."
+                                  }
+                                ]
+                              },
+                              {
+                                "currencyAmountValue": {
+                                  "amount": "99.00",
+                                  "curCode": "AUD",
+                                  "taxable": true
+                                },
+                                "amountApplication": "MAX",
+                                "applicableFeeRemarks": [
+                                  {
+                                    "value": "Restrictions apply. Fare difference may also be payable."
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "segments": [
+                      {
+                        "id": "Isgm0100817b1004a",
+                        "rbd": "O",
+                        "flightNumber": "411",
+                        "marketingCarrier": "QF",
+                        "marketingCarrierName": "Qantas Airways",
+                        "cabinType": {
+                          "cabinTypeCode": "Y",
+                          "cabinTypeName": "ECONOMY"
+                        },
+                        "departure": {
+                          "airport": "SYD",
+                          "date": "2024-11-20T08:20:00",
+                          "terminal": "3"
+                        },
+                        "hiddenConnections": [
+                          {
+                            "departure": {
+                              "airport": "SYD",
+                              "date": "2024-11-20T08:20:00",
+                              "terminal": "3"
+                            },
+                            "arrival": {
+                              "airport": "BNE",
+                              "date": "2024-11-20T09:50:00"
+                            },
+                            "equipment": "388"
+                          },
+                          {
+                            "departure": {
+                              "airport": "BNE",
+                              "date": "2024-11-20T10:10:00"
+                            },
+                            "arrival": {
+                              "airport": "MEL",
+                              "date": "2024-11-20T11:55:00"
+                            }
+                          }
+                        ],
+                        "arrival": {
+                          "airport": "MEL",
+                          "date": "2024-11-20T11:55:00"
+                        },
+                        "duration": "PT3H35M",
+                        "equipment": "388",
+                        "distanceInMiles": 456
+                      }
+                    ],
+                    "brand": {
+                      "code": "DEAL",
+                      "brandName": "RED eDeal",
+                      "descriptions": [
+                        {
+                          "text": "1. Changes:"
+                        },
+                        {
+                          "text": "Before day of scheduled departure:"
+                        },
+                        {
+                          "text": "- Permitted at a charge of AUD99.00, inclusive of GST"
+                        },
+                        {
+                          "text": "- New fare must be of equal or higher value"
+                        },
+                        {
+                          "text": "- No show results in loss of fare"
+                        },
+                        {
+                          "text": "Day of departure:"
+                        },
+                        {
+                          "text": "- Changes not permitted and results in loss of fare"
+                        },
+                        {
+                          "text": "- No show results in loss of fare"
+                        },
+                        {
+                          "text": "2. Cancellations:"
+                        },
+                        {
+                          "text": "- Non-refundable"
+                        },
+                        {
+                          "text": "- Ticket value can be held in credit, change fee applies"
+                        },
+                        {
+                          "text": "- No show results in loss of fare"
+                        },
+                        {
+                          "text": "3. Name changes:"
+                        },
+                        {
+                          "text": "- Permitted with a name change fee of AUD99.00, inclusive of GST"
+                        },
+                        {
+                          "text": "- New fare must be Economy Flex fare or higher"
+                        },
+                        {
+                          "text": "- Fare difference and change fee applies"
+                        },
+                        {
+                          "text": "4. Inclusions on Qantas operated flights:"
+                        },
+                        {
+                          "text": "- Included bags"
+                        },
+                        {
+                          "text": "- Carry On Baggage Allowance - All classes, one piece up to 10kgs and up to 7kgs Dash 8 services"
+                        },
+                        {
+                          "text": "- Complimentary standard seat selection"
+                        },
+                        {
+                          "text": "- Complimentary food and beverage"
+                        },
+                        {
+                          "text": "- Complimentary in-flight entertainment where available"
+                        },
+                        {
+                          "text": "5.Qantas Frequent Flyer benefits:"
+                        },
+                        {
+                          "text": "Points:"
+                        },
+                        {
+                          "text": "- Earn category is discounted economy"
+                        },
+                        {
+                          "text": "- Minimum points guarantee applies"
+                        },
+                        {
+                          "text": "Status Credits:"
+                        },
+                        {
+                          "text": "- Earn category is discounted economy"
+                        },
+                        {
+                          "text": "- Minimum Status Credits earnt is 10"
+                        },
+                        {
+                          "text": "Upgrade eligibility:"
+                        },
+                        {
+                          "text": "- Eligible for upgrade"
+                        },
+                        {
+                          "text": "- Subject to availability"
+                        },
+                        {
+                          "text": "Lounge access:"
+                        },
+                        {
+                          "text": "- May be applicable based on Tier"
+                        },
+                        {
+                          "text": "Baggage included"
+                        },
+                        {
+                          "text": "Complimentary Standard Seat Selection"
+                        },
+                        {
+                          "text": "Eligible for Upgrade through Qantas.com with Qantas Points"
+                        },
+                        {
+                          "text": "Lounge Access may apply"
+                        },
+                        {
+                          "text": "No fees apply when you are entitled to a refund or alternative flight under the Australian Consumer Law or Conditions of Carriage"
+                        },
+                        {
+                          "text": "You may be entitled to a refund or alternative flight under the Australian Consumer Law or Conditions of Carriage"
+                        }
+                      ]
+                    },
+                    "voluntaryChangeInformation": [
+                      {
+                        "type": "Cancel",
+                        "isAllowed": false,
+                        "hasFee": false
+                      },
+                      {
+                        "type": "Change",
+                        "isAllowed": true,
+                        "hasFee": true,
+                        "feeAmount": "99.00",
+                        "feeCurrencyCode": "AUD",
+                        "applicabilityList": [
+                          "Before Departure"
+                        ]
+                      },
+                      {
+                        "type": "Change",
+                        "isAllowed": true,
+                        "hasFee": true,
+                        "feeAmount": "99.00",
+                        "feeCurrencyCode": "AUD",
+                        "applicabilityList": [
+                          "After Departure"
+                        ]
+                      },
+                      {
+                        "type": "Refund",
+                        "isAllowed": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "price": {
+              "totalAmount": {
+                "amount": "175.23",
+                "curCode": "AUD"
+              }
+            }
+          }
+        ],
+        "totalPrice": {
+          "totalAmount": {
+            "amount": "175.23",
+            "curCode": "AUD"
+          }
+        }
+      }
+    ]
+  }
+}

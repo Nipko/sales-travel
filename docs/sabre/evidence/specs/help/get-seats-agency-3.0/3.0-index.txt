@@ -1,0 +1,117 @@
+Overview
+
+What is it?
+
+The Get Seats API displays seat maps, information on seat availability, free of charge seats, and prices for chargeable seats. This API provides different content in certain flows, as outlined below:
+
+NDC content in a stateless flow
+
+ATPCO content in a payload flow
+
+Low Cost Carrier (LCC) content in a payload flow
+
+ |
+
+This API is intended for use by Agencies. There is an equivalent spec aimed at use by Airlines Get Seats - Airline API
+ |
+
+ |
+
+The API is REST-like and JSON-based but is not a fully RESTful API in its architecture.
+
+The GetSeats API supports ATK and ATH session tokens.
+
+ |
+
+Why use it?
+
+Use this service to display seat map details such as
+
+seat availability
+
+actual seat locations (defined by row and column numbers)
+
+seat characteristics
+
+information on non-chargeable seats
+
+prices for chargeable seats (defined by OfferItemId grouped based on a standard set of characteristics).
+
+How it works
+
+For NDC content, the Get Seats method connects to external NDC enabled carriers.
+
+There is one OfferID given per SeatAvailability response, which can contain multiple seat maps.
+
+There is one OfferItemID given for individual seat prices and the set of seat characteristics.
+
+For ATPCO content, the Get Seats method connects to the ATPCO database and processes content in accordance with ATPCO standards.
+
+For Low Cost Carrier (LCC) content, the Get Seats method connects to Low Cost systems.
+
+In all flows, seat attributes obtained from all data sources follow standard seat characteristics, as defined in the Passenger and Airport Data Interchange Standards (PADIS) code set.
+
+How to use
+
+Follow one of the flows to obtain NDC, ATPCO, or LCC content:
+
+GetSeats with request type OfferID
+
+Dedicated to display a seat map for an NDC carrier.
+
+Prerequisites:
+Shop for an NDC itinerary Offer using BargainFinderMax REST API.
+Price an NDC Offer using the OfferPrice REST API.
+
+Create a Get Seats OfferID request to display the seat map information for the referenced Offer. The response will display seat maps for all segments associated with the provided OfferId.
+
+ |
+
+The seat map may be displayed using the OfferID from a shopping response, but the seats are not bookable because the prices displayed on the map are not guaranteed until the Offer for the air fare has been priced. Therefore, the seat map is displayed with a view only indicator (sellable: false). If an attempt is made to book a seat at this stage, an error about &#8220;invalid or expired offer&#8221; is returned.
+
+Seats will be bookable from a seat map displayed after pricing.
+
+The Point of Sale application or PCC might not be authorized to sell seats for one or more carriers. In that case, seat selection will not be available.
+
+ |
+
+GetSeats with request type OrderID
+
+Prerequisites: Create and save an NDC Order using the Order Management API.
+
+Create a Get Seats Order ID request to display the seat map information for the referenced order. The response will display seat maps for all segments associated with the provided OrderId.
+
+ |
+
+To further book and fulfill a seat, use the Change Order method (/orders/change) of the Order Management API.
+
+The Point of Sale application or PCC might not be authorized to sell seats for one or more carriers. In that case, selecting a seat will not be available.
+
+ |
+
+GetSeats Payload request type
+
+Display a seat map for either an ATPCO carrier or for a Low Cost Carrier (LCC):
+
+Prerequisites: None.
+
+Create a Get Seats Payload request by providing all required information, such as paxSegmentRefIds (indicates segment for which map is requested), originDest details and paxes.
+
+Include non-required information (which may influence on the price of the offer) such as fare details (fareComponents), ptc (passenger type code), currency or Frequent Flyer details whenever these data are known.
+
+Please note that it is no longer required to provide PCC in travelAgency element as this information is read from ATK/ATH session.
+
+ |
+
+To book a seat, use the PassengerDetails API or 4G command.
+ |
+
+GetSeats Stateless request type
+
+NOT SUPPORTED YET
+
+Display a seat map for either an ATPCO carrier or for a Low Cost Carrier (LCC):
+
+Prerequisites: Created pnr locator.
+
+Create a Get Seats Stateless request by providing pnrLocator.

@@ -1,0 +1,195 @@
+Fee Flexibility and Refundability Information (Voluntary Changes)
+
+This API functionality allows you to retrieve information about maximum and minimum fees for changes and refunds. It's also possible to search for fares within a specific fee limit.
+
+ |
+
+The Sabre system uses this information to determine the feasibility and cost of voluntary changes. However, the availability of a change is not guaranteed, even if the data suggests a cost. Carrier rules and other restrictions may prevent a change due to the lack of actual new itinerary, despite penalty details being returned.
+ |
+
+Penalty information source
+
+To determine penalties, Sabre primarily uses Automated Categories 31 (Voluntary Changes) and 33 (Voluntary Refunds). If a carrier doesn't provide this information (Categories 31 and 33 are missing), Sabre assumes that changes and refunds are free as per the ATPCO system assumption.
+
+Maximum penalty calculation
+
+The API calculates the maximum penalty by considering all possible combinations of all changed fare components (Record 3s) and returning the highest penalty according to the instructions from Categories 33 or 31, regardless of restriction date ranges.
+
+Exceptions:
+
+Totally Non-Refundable or Non-Changeable: If all combinations indicate a fare is non-refundable or non-changeable, those combinations are ignored if at least one combination allows a refund or change.
+
+Example From Category 31 Coding: The API interprets rules provided by the carrier (such as those in Category 31) to determine penalties. These rules may be interpreted as shown in the following examples:
+
+Example 1 (With Fee): &#8220;CHARGE USD 170.00 FOR REISSUE OR HIGHEST FEE OF ALL CHANGED FARE COMPONENTS…&#8221; indicates a potential fee.
+
+Example 2 (No Change Allowed): &#8220;CHANGES NOT PERMITTED TO THE FARE COMPONENT&#8221; is a non-changeable indication.
+
+Example 3 (A Single Fare With Two Conditions):
+
+With Fee: &#8220;CHARGE USD 170.00 FOR REISSUE OR HIGHEST FEE OF ALL CHANGED FARE COMPONENTS…&#8221; indicates a potential fee.
+
+No Change Allowed: &#8220;CHANGES NOT PERMITTED TO THE FARE COMPONENT&#8221; is a non-changeable indication.
+
+ |
+
+Such a combination results in a fee.
+ |
+
+Only Non-Refundable Combination: If only one combination exists and it states that all fare components are non-refundable, the API responds that the entire ticket is non-refundable.
+
+Minimum penalty calculation
+
+The minimum penalty assumes only the cheapest fare component is changed.
+
+Requesting information on Voluntary Changes
+
+The following parameters can be used to request voluntary changes for new offers:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+returnOfferAttributes
+ |
+Lists offer attributes to include in the response. Each item identifies the type of offer attribute whose details should be included in the returned offers.
+ |
+FlightReshopRequest.retailing.returnOfferAttributes
+ |
+
+Specifying flexibility filters
+
+You can apply filters based on specific offer conditions related to refund and change policies. The table below lists filter parameters supported by the API:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+hasFreeRefund
+ |
+If true, returns only fare options that include a free refund.
+ |
+FlightReshopRequest.retailing.filterByOfferAttributes.hasFreeRefund
+ |
+
+hasFreeChange
+ |
+If true, returns only fare options that include a free exchange.
+ |
+FlightReshopRequest.retailing.filterByOfferAttributes.hasFreeChange
+ |
+
+isRefundAllowed
+ |
+If true, returns only fare options that include refund capabilities.
+ |
+FlightReshopRequest.retailing.filterByOfferAttributes.isRefundAllowed
+ |
+
+isChangeAllowed
+ |
+If true, returns only fare options that include exchange capabilities.
+ |
+FlightReshopRequest.retailing.filterByOfferAttributes.isChangeAllowed
+ |
+
+Flexibility for new offers
+
+The following flexibility parameters may be returned in the API response:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+refundabilityItems
+ |
+Lists information about refund charges.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems
+ |
+
+changeItems
+ |
+Lists information about change charges.
+ |
+FlightReshopResponse.offerAttributes.changeItems
+ |
+
+id
+ |
+The ID of the refund or change charges used as a reference within the offer context.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.id
+
+FlightReshopResponse.offerAttributes.changeItems.id
+ |
+
+beforeDeparture
+ |
+Contains conditions of Voluntary Changes or Refunds and fees applicable before departure.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.beforeDeparture
+
+FlightReshopResponse.offerAttributes.changeItems.beforeDeparture
+ |
+
+afterDeparture
+ |
+Contains conditions of Voluntary Changes or Refunds and fees applicable after departure.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.afterDeparture
+
+FlightReshopResponse.offerAttributes.changeItems.afterDeparture
+ |
+
+isPermitted
+ |
+If true, ticket change or refund is permitted for a given fare.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.beforeDeparture.isPermitted
+
+FlightReshopResponse.offerAttributes.changeItems.beforeDeparture.isPermitted
+
+FlightReshopResponse.offerAttributes.refundabilityItems.afterDeparture.isPermitted
+
+FlightReshopResponse.offerAttributes.changeItems.afterDeparture.isPermitted
+ |
+
+maxCharge
+ |
+The maximum costs of a ticket change or refund in a given fare.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.beforeDeparture.maxCharge
+
+FlightReshopResponse.offerAttributes.changeItems.beforeDeparture.maxCharge
+
+FlightReshopResponse.offerAttributes.refundabilityItems.afterDeparture.maxCharge
+
+FlightReshopResponse.offerAttributes.changeItems.afterDeparture.maxCharge
+ |
+
+minCharge
+ |
+The minimum costs of a ticket change or refund in a given fare.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.beforeDeparture.minCharge
+
+FlightReshopResponse.offerAttributes.changeItems.beforeDeparture.minCharge
+
+FlightReshopResponse.offerAttributes.refundabilityItems.afterDeparture.minCharge
+
+FlightReshopResponse.offerAttributes.changeItems.afterDeparture.minCharge
+ |
+
+currencyCode
+ |
+The three-letter ISO 4217 currency code.
+ |
+FlightReshopResponse.offerAttributes.refundabilityItems.beforeDeparture.currencyCode
+
+FlightReshopResponse.offerAttributes.changeItems.beforeDeparture.currencyCode
+
+FlightReshopResponse.offerAttributes.refundabilityItems.afterDeparture.currencyCode
+
+FlightReshopResponse.offerAttributes.changeItems.afterDeparture.currencyCode
+ |

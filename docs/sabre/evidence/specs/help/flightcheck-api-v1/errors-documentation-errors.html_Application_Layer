@@ -1,0 +1,504 @@
+<article class="doc">
+<h1 class="page">Errors</h1>
+<div class="sect1">
+<h2 id="Introduction"><a class="anchor" href="#Introduction"></a>Introduction</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This API follows the Remote Procedure Call (RPC) programming pattern. To understand the root cause and the solution to a problem, it&#8217;s important to identify the layer to which the error belongs.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Transport_Layer"><a class="anchor" href="#Transport_Layer"></a>Transport Layer</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Transport oriented errors are returned as HTTP statuses and can be accompanied by more details in the response to the JSON message.</p>
+</div>
+<div class="sect2">
+<h3 id="_error_object"><a class="anchor" href="#_error_object"></a>Error Object</h3>
+<div class="paragraph">
+<p>The <code>Error</code> object contains the following parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>status</code>: The status of the error, indicating whether the request was processed or not.</p>
+</li>
+<li>
+<p><code>type</code>: An application-specific error type, or one from the list of typical Sabre API errors.</p>
+</li>
+<li>
+<p><code>errorCode</code>: A specific code representing the error.</p>
+</li>
+<li>
+<p><code>timeStamp</code>: Provides the exact point in time, expressed in UTC, when the response was generated.</p>
+</li>
+<li>
+<p><code>message</code>: A human-readable description of what went wrong.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="http_4xx"><a class="anchor" href="#http_4xx"></a>HTTP Status 4XX</h3>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HTTP Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>400</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NotProcessed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Validation</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ErrorCode</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ERR.2SG.SCHEMA.INVALID</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Message</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The request couldn&#8217;t be understood by the server due to malformed syntax.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Invalid request format or missing required parameters.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Verify the request format and ensure all required parameters are included.</p></td>
+</tr>
+</tbody>
+</table>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HTTP Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>401</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NotProcessed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Validation</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ErrorCode</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ERR.2SG.SEC.MISSING_CREDENTIALS</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Message</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Authentication data is missing.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Missing or invalid authentication token.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Provide a valid authentication token.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="http_5xx"><a class="anchor" href="#http_5xx"></a>HTTP Status 5XX</h3>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HTTP Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>500</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NotProcessed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server Error</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ErrorCode</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">n/a</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Message</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">n/a</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">API encountered an unexpected condition that prevented it from fulfilling the client&#8217;s request.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Wait at least 500 milliseconds and resend the request.</p></td>
+</tr>
+</tbody>
+</table>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HTTP Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>503</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NotProcessed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Service Unavailable</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ErrorCode</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">n/a</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Message</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server is currently unavailable. Please try again later and report if the problem persists.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server is down or under maintenance.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Wait at least 500 milliseconds and resend the request.</p></td>
+</tr>
+</tbody>
+</table>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>HTTP Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>504</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Status</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NotProcessed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Gateway Timeout</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>ErrorCode</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">n/a</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Message</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server timed out trying to fulfill the request. Please try again later and report if the problem persists.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Server is down or under maintenance.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Wait at least 500 milliseconds and resend the request.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Application_Layer"><a class="anchor" href="#Application_Layer"></a>Application Layer</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Application oriented errors are returned as HTTP status <code>200</code> and will always be accompanied by more details in the response to the JSON message.</p>
+</div>
+<div class="sect2">
+<h3 id="_error_structure"><a class="anchor" href="#_error_structure"></a>Error Structure</h3>
+<div class="ulist">
+<ul>
+<li>
+<p><code>timestamp</code>: Provides the exact point in time, expressed in UTC, when the response was generated.</p>
+</li>
+<li>
+<p><code>errors</code>: An array listing detailed error information. Each item in the array is an <code>Error</code> object.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_error_object_2"><a class="anchor" href="#_error_object_2"></a>Error Object</h3>
+<div class="paragraph">
+<p>The <code>Error</code> object contains the following parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>category</code>: A high-level grouping of errors indicating what kind of (client-side or server-side) problem occurred.</p>
+</li>
+<li>
+<p><code>type</code>: An application-specific error type, or one from the list of typical Sabre API errors.</p>
+</li>
+<li>
+<p><code>description</code>: A human-readable description of what went wrong with enough information that a software developer can use to debug the problem.</p>
+</li>
+<li>
+<p><code>fieldName</code>: Additional information to help debug the error. For example, the name of a parameter missing from a request payload.</p>
+</li>
+<li>
+<p><code>fieldPath</code>: Additional information to help debug the error. For example, the name of a parameter missing from a request payload.</p>
+</li>
+<li>
+<p><code>fieldValue</code>: The source of the error.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="Bad_Request"><a class="anchor" href="#Bad_Request"></a>Category: BAD_REQUEST</h3>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>REQUIRED_FIELD_MISSING</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Description</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client did not provide required data. See <code>fieldName</code> for the item expected in the <code>/flightCheck</code> request.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Missing required parameter in API request.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Ensure proper values are provided in the request body.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Example</strong></p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-JSON hljs" data-lang="JSON">{
+  "errors":
+    [
+      {
+        "category": "BAD_REQUEST",
+        "type": "REQUIRED_FIELD_MISSING",
+        "description": "Client did not provide required data. See fieldName for the item expected in the request.",
+        "fieldName": "currencyCode"
+      }
+    ]
+}</code></pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>INCONSISTENT_BUSINESS_DATA</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Description</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorrect request data provided.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorrect value provided in the requested parmeter.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the allowed values in the API documentation.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Example</strong></p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-JSON hljs" data-lang="JSON">{
+  "timestamp" : "2026-07-03T07:29:11.347Z",
+  "errors" : [ {
+    "category" : "BAD_REQUEST",
+    "type" : "INVALID_VALUE",
+    "description" : "Incorrect request data provided.",
+    "fieldName" : "Size must be between 1 and 25.",
+    "fieldPath" : "fare.programs[0].values",
+    "fieldValue" : "[AAA123], []"
+  } ]
+}</code></pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>REQUIRED_FIELD_MISSING</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Description</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The request is missing mandatory data.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorrect request data provided.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the required parameters in the API documentation.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Example</strong></p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-JSON hljs" data-lang="JSON">{
+  "timestamp" : "2026-07-03T07:29:10.911Z",
+  "errors" : [ {
+    "category" : "BAD_REQUEST",
+    "type" : "REQUIRED_FIELD_MISSING",
+    "description" : "The request is missing mandatory data.",
+    "fieldName" : "Must not be null.",
+    "fieldPath" : "journeys[0].departureDate"
+  } ]
+}</code></pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="Invalid_Data"><a class="anchor" href="#Invalid_Data"></a>Category: INVALID_DATA</h3>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>INCONSISTENT_BUSINESS_DATA</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Description</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Account codes used in the NDC distribution model must contain <code>airlineCode</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorrect request data provided.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the required parameters in the API documentation.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Example</strong></p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-JSON hljs" data-lang="JSON">{
+  "timestamp" : "2026-07-03T07:29:05.915Z",
+  "errors" : [ {
+    "category" : "INVALID_DATA",
+    "type" : "INCONSISTENT_BUSINESS_DATA",
+    "description" : "Account Codes for use in distribution model NDC must contain airlineCode.",
+    "fieldName" : "airlineCode",
+    "fieldPath" : "programs[]"
+  } ]
+}</code></pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="Forbidden"><a class="anchor" href="#Forbidden"></a>Category: FORBIDDEN</h3>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 80%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Type</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>FORBIDDEN_CUSTOMER_CODE</strong></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Description</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Client provided a wrong customer code in the request.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Root Cause</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Incorrect request data provided.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Solution</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the allowed values in the API documentation.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Example</strong></p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-JSON hljs" data-lang="JSON">{
+  "timestamp" : "2026-07-03T07:29:10.737Z",
+  "errors" : [ {
+    "category" : "FORBIDDEN",
+    "type" : "FORBIDDEN_CUSTOMER_CODE",
+    "description" : "Client provided wrong customer code in the request.",
+    "fieldName" : "pseudoCityCode",
+    "fieldPath" : "processingOptions.pseudoCityCode",
+    "fieldValue" : "ABC1"
+  } ]
+}</code></pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="Support"><a class="anchor" href="#Support"></a>Support</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you have any questions or need help, visit the <a href="https://central.sabre.com/">Sabre Central</a> page.</p>
+</div>
+</div>
+</div>
+</article>

@@ -1,0 +1,1474 @@
+Create Booking – Examples
+
+Below are some common use cases related to booking creation.
+
+Create an NDC booking (order)
+
+To ensure a successful booking, pass a valid offerID, selectedOfferItems, and the traveler id returned by the Offer Price API.
+
+{
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id}}",
+      "givenName": "John",
+      "surname": "Kowalski",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT"
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "123456"
+    ]
+  }
+}
+
+Create an NDC booking (order) and use profile information to populate traveler data
+
+To ensure a successful booking, the traveler profile must contain the traveler’s first name, surname, and passenger type.
+
+{
+  "profiles": [
+    {
+      "profileName": "TESTPROFILE",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    }
+  ],
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id}}"
+    }
+  ]
+}
+
+Create an NDC booking (order) using multiple traveler profiles
+
+To ensure a successful booking, the traveler profiles must contain the traveler’s first name, surname, and passenger type.
+
+{
+  "profiles": [
+    {
+      "profileId": "123456789",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    },
+    {
+      "profileId": "987654321",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    }
+  ],
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id}}"
+    },
+    {
+      "id": "{{price_passenger_id2}}"
+    }
+  ]
+}
+
+Create an NDC booking (order) with Secure Flight Passenger Data details
+
+To ensure a successful booking, pass a valid offerID, selectedOfferItems, and the traveler id returned by the Offer Price API.
+
+{
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id1}}",
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "age": 53,
+      "phones": [
+        {
+          "number": "678999",
+          "label": "M"
+        }
+      ],
+      "emailAddresses": [
+        {
+          "address": "john@travel.com"
+        }
+      ],
+      "identityDocuments": [
+        {
+          "documentType": "SECURE_FLIGHT_PASSENGER_DATA",
+          "gender": "MALE"
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "123456"
+    ]
+  }
+}
+
+Create an NDC booking (order) for multiple travelers (identity documents and loyalty programs included)
+
+To ensure a successful booking, pass a valid offerID, selectedOfferItems, and the traveler id returned by the Offer Price API.
+
+{
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id1}}",
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "age": 53,
+      "phones": [
+        {
+          "number": "678999",
+          "label": "M"
+        }
+      ],
+      "emailAddresses": [
+        {
+          "address": "john@travel.com"
+        }
+      ],
+      "loyaltyPrograms": [
+        {
+          "supplierCode": "AA",
+          "programType": "FREQUENT_FLYER",
+          "programNumber": "{{AA_program_number_1}}",
+          "tierLevel": 3,
+          "receiverCode": "AA"
+        }
+      ],
+      "identityDocuments": [
+        {
+          "documentNumber": "{{document_number_1}}",
+          "documentType": "PASSPORT",
+          "expiryDate": "2024-07-09",
+          "issuingCountryCode": "US",
+          "residenceCountryCode": "DE",
+          "givenName": "John",
+          "surname": "Smith",
+          "birthDate": "1970-01-23",
+          "gender": "MALE"
+        }
+      ]
+    },
+    {
+      "id": "{{price_passenger_id2}}",
+      "givenName": "Jill",
+      "surname": "Smith",
+      "birthDate": "1971-02-23",
+      "passengerCode": "ADT",
+      "age": 52,
+      "loyaltyPrograms": [
+        {
+          "supplierCode": "AA",
+          "programType": "FREQUENT_FLYER",
+          "programNumber": "{{AA_program_number_1}}",
+          "tierLevel": 3,
+          "receiverCode": "AA"
+        }
+      ]
+    },
+    {
+      "id": "{{price_passenger_id3}}",
+      "givenName": "Jack",
+      "surname": "Smith",
+      "birthDate": "1972-03-23",
+      "passengerCode": "ADT",
+      "age": 51,
+      "emailAddresses": [
+        {
+          "address": "jack@travel.com"
+        }
+      ],
+      "identityDocuments": [
+        {
+          "documentNumber": "{{document_number_2}}",
+          "documentType": "VISA",
+          "hostCountryCode": "US",
+          "residenceCountryCode": "DE",
+          "placeOfBirth": "NYC",
+          "birthDate": "1972-03-23",
+          "placeOfIssue": "DE",
+          "issueDate": "2021-12-02",
+          "expiryDate": "2050-07-09",
+          "gender": "UNDEFINED",
+          "givenName": "Jack",
+          "surname": "Smith"
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "123456"
+    ]
+  }
+}
+
+Create an NDC booking (order) for a single traveler (corporate loyalty program included)
+
+To ensure a successful booking, pass a valid offerID, selectedOfferItems, and the traveler id returned by the Offer Price API.
+
+ |
+
+Remember that only one corporate loyalty program is allowed. Corporate loyalty details should be submitted for the first traveler only.
+ |
+
+{
+  "asynchronousUpdateWaitTime": 4000,
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id}}",
+      "givenName": "John",
+      "surname": "Doe",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "customerNumber": "1234567",
+      "loyaltyPrograms": [
+        {
+          "supplierCode": "AA",
+          "programNumber": "{{AA_program_number_1}}",
+          "programType": "CORPORATE_LOYALTY_ID"
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "123456"
+    ]
+  }
+}
+
+Create an Air Canada NDC booking (order)
+
+To ensure a successful booking, pass a valid offerId, selectedOfferItems, and the traveler id returned by the Offer Price API. Moreover, Air Canada requires providing an agency email address (agency.contactInfo.emails) and the traveler’s gender.
+
+{
+  "agency": {
+    "contactInfo": {
+      "emails": [
+        "agency@sabre.com"
+      ]
+    }
+  },
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": [
+      "{{price_offer_item_id}}"
+    ]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id1}}",
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "gender": "MALE",
+      "phones": [
+        {
+          "number": "678999",
+          "label": "M"
+        }
+      ],
+      "emailAddresses": [
+        {
+          "address": "john@travel.com"
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "123456"
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) and use profile information to populate traveler data
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "ticketingPolicy": "TODAY"
+  },
+  "profiles": [
+    {
+      "uniqueId": "228159893",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    }
+  ],
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 463,
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "2021-03-30",
+        "departureTime": "16:55",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      },
+      {
+        "flightNumber": 462,
+        "airlineCode": "EY",
+        "fromAirportCode": "AUH",
+        "toAirportCode": "MEL",
+        "departureDate": "2021-04-15",
+        "departureTime": "09:00",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) using multiple profiles to populate traveler and agency data
+
+{
+  "profiles": [
+    {
+      "uniqueId": "228159893",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    },
+    {
+      "uniqueId": "228159894",
+      "profileTypeCode": "AGY",
+      "domainId": "G7RE"
+    }
+  ],
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 463,
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "2021-03-30",
+        "departureTime": "16:55",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      },
+      {
+        "flightNumber": 462,
+        "airlineCode": "EY",
+        "fromAirportCode": "AUH",
+        "toAirportCode": "MEL",
+        "departureDate": "2021-04-15",
+        "departureTime": "09:00",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) with an additional request to price the reservation
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    }
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Kowalski",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT"
+    },
+    {
+      "givenName": "Little",
+      "surname": "Kowalski",
+      "birthDate": "2021-01-23",
+      "passengerCode": "INF"
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com",
+      "travel2@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 463,
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "2021-03-31",
+        "departureTime": "16:55",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      },
+      {
+        "flightNumber": 462,
+        "airlineCode": "EY",
+        "fromAirportCode": "AUH",
+        "toAirportCode": "MEL",
+        "departureDate": "2021-04-16",
+        "departureTime": "09:00",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ],
+    "flightPricing": [
+      {}
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) with an additional pricing request
+
+Perform an extra validation of the resulting price against a defined price threshold:
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT"
+    },
+    {
+      "givenName": "Jane",
+      "surname": "Smith",
+      "birthDate": "2015-01-23",
+      "passengerCode": "CNN"
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com",
+      "travel2@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 463,
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "2021-03-30",
+        "departureTime": "16:55",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      },
+      {
+        "flightNumber": 462,
+        "airlineCode": "EY",
+        "fromAirportCode": "AUH",
+        "toAirportCode": "MEL",
+        "departureDate": "2021-04-15",
+        "departureTime": "09:00",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ],
+    "flightPricing": [
+      {
+        "priceComparisons": [
+          {
+            "desiredAmount": "5300.00",
+            "comparisonType": "INCREASE_BY_AMOUNT",
+            "amount": "30.00"
+          },
+          {
+            "desiredAmount": "5300.00",
+            "comparisonType": "DECREASE_BY_AMOUNT",
+            "amount": "30.00"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) with additional information on traveler documents
+
+Add a request to price the booking using the chosen form of payment (extended form of payment details are optional):
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "identityDocuments": [
+        {
+          "documentNumber": "0123456789",
+          "documentType": "PASSPORT",
+          "expiryDate": "2024-07-09",
+          "issuingCountryCode": "US",
+          "residenceCountryCode": "US",
+          "givenName": "John",
+          "middleName": "Jack",
+          "surname": "Smith",
+          "birthDate": "1980-12-02",
+          "gender": "MALE"
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com",
+      "travel2@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 463,
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "2021-03-30",
+        "departureTime": "16:55",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      },
+      {
+        "flightNumber": 462,
+        "airlineCode": "EY",
+        "fromAirportCode": "AUH",
+        "toAirportCode": "MEL",
+        "departureDate": "2021-04-15",
+        "departureTime": "09:00",
+        "bookingClass": "Y",
+        "marriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ],
+    "flightPricing": [
+      {
+        "qualifiers": {
+          "payment": {
+            "primaryFormOfPayment": 1
+          }
+        }
+      }
+    ]
+  },
+  "payment": {
+    "billingAddress": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US"
+    },
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4005111111111136",
+        "expiryDate": "2024-07",
+        "cardHolder": {
+          "address": {
+            "city": "Dallas",
+            "countryCode": "US",
+            "postalCode": "1230 Ellen Ave, apt 10",
+            "street": "1230 Ellen Ave, apt 10"
+          },
+          "email": "john.smith@sabre.com",
+          "givenName": "John",
+          "phone": "737747767",
+          "surname": "Smith"
+        },
+        "isAgencyPaymentCard": false,
+        "useType": "Bus/Ground Transportation",
+        "tripType": "Family",
+        "useTypes": [
+          "Bus/Ground Transportation",
+          "Car"
+        ],
+        "tripTypes": [
+          "Family",
+          "Leisure"
+        ]
+      }
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) with an additional request to book ancillary (with mandatory SSR details)
+
+To ensure a successful booking, pass valid ancillary details returned by Get Ancillary Offers. Verify if the airline requires SSR information for the selected ancillary item:
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "specialServices": [
+        {
+          "code": "FBAG"
+        }
+      ],
+      "ancillaries": [
+        {
+          "reasonForIssuance": "BAGGAGE",
+          "subcode": "0CC",
+          "airlineCode": "LH",
+          "electronicMiscellaneousDocumentType": "FLIGHT_COUPON_ASSOCIATED",
+          "basePrice": "137.00",
+          "currencyCode": "PLN",
+          "groupCode": "BG",
+          "flightIndices": [
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 809,
+        "airlineCode": "LH",
+        "fromAirportCode": "ARN",
+        "toAirportCode": "FRA",
+        "departureDate": "2021-11-30",
+        "departureTime": "06:15",
+        "bookingClass": "Y",
+        "flightStatusCode": "NN"
+      }
+    ],
+    "flightPricing": [
+      {}
+    ]
+  }
+}
+
+Create an ATPCO booking (PNR) with an additional flag to send all loyalty programs to all marketing carriers in the PNR
+
+The value of sendLoyaltiesToAllAirlines has to be set to true.
+
+{
+    "receivedFrom": "Create Booking",
+    "asynchronousUpdateWaitTime": 0,
+    "agency": {
+        "ticketingPolicy": "TODAY",
+        "agencyCustomerNumber": "1234567",
+        "address": {
+            "street": "1230 Ellen Ave, apt 10",
+            "city": "Dallas",
+            "stateProvince": "TX",
+            "postalCode": "75063",
+            "countryCode": "US",
+            "name": "John Smith",
+            "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+        }
+    },
+    "flightDetails": {
+        "flights": [
+            {
+                "flightNumber": 4925,
+                "airlineCode": "LO",
+                "fromAirportCode": "KRK",
+                "toAirportCode": "FRA",
+                "departureDate": "2025-12-21",
+                "departureTime": "22:30",
+                "bookingClass": "Y",
+                "flightStatusCode": "NN"
+            },
+            {
+                "flightNumber": 1598,
+                "airlineCode": "TK",
+                "fromAirportCode": "FRA",
+                "toAirportCode": "IST",
+                "departureDate": "2025-12-26",
+                "departureTime": "22:30",
+                "bookingClass": "Y",
+                "flightStatusCode": "NN"
+            },
+            {
+                "flightNumber": 391,
+                "airlineCode": "SQ",
+                "fromAirportCode": "IST",
+                "toAirportCode": "SIN",
+                "departureDate": "2025-12-31",
+                "departureTime": "22:30",
+                "bookingClass": "Y",
+                "flightStatusCode": "NN"
+            }
+        ],
+        "flightPricing": [
+            {
+                "qualifiers": {
+                    "validatingAirlineCode": "LO",
+                    "flightIndices": [
+                        1
+                    ],
+                    "priceWithTaxes": true
+                }
+            },
+            {
+                "qualifiers": {
+                    "validatingAirlineCode": "TK",
+                    "flightIndices": [
+                        2
+                    ],
+                    "priceWithTaxes": true
+                }
+            },
+            {
+                "qualifiers": {
+                    "validatingAirlineCode": "SQ",
+                    "flightIndices": [
+                        3
+                    ],
+                    "priceWithTaxes": true
+                }
+            }
+        ]
+    },
+    "travelers": [
+        {
+            "givenName": "John",
+            "surname": "Kowalski",
+            "birthDate": "1970-01-23",
+            "passengerCode": "ADT",
+            "identityDocuments": [
+                {
+                    "documentNumber": "0123456789",
+                    "documentType": "PASSPORT",
+                    "expiryDate": "2030-07-09",
+                    "issuingCountryCode": "US",
+                    "residenceCountryCode": "US",
+                    "givenName": "John",
+                    "middleName": "Jack",
+                    "surname": "Kowalski",
+                    "birthDate": "1980-12-02",
+                    "gender": "MALE"
+                }
+            ],
+            "loyaltyPrograms": [
+                {
+                    "supplierCode": "LO",
+                    "programType": "FREQUENT_FLYER",
+                    "programNumber": "002001557133728",
+                    "receiverCode": "LO"
+                },
+                {
+                    "supplierCode": "OM",
+                    "programType": "FREQUENT_FLYER",
+                    "programNumber": "002001557133723",
+                    "receiverCode": "OM"
+                }
+            ]
+        },
+        {
+            "givenName": "All",
+            "surname": "Mrozicki",
+            "birthDate": "2000-01-23",
+            "passengerCode": "ADT",
+            "identityDocuments": [
+                {
+                    "documentNumber": "0123456788",
+                    "documentType": "PASSPORT",
+                    "expiryDate": "2030-07-09",
+                    "issuingCountryCode": "US",
+                    "residenceCountryCode": "US",
+                    "givenName": "All",
+                    "middleName": "Jack",
+                    "surname": "Mrozicki",
+                    "birthDate": "1980-10-02",
+                    "gender": "MALE"
+                }
+            ]
+        },
+        {
+            "givenName": "Oga",
+            "surname": "Doe",
+            "birthDate": "2023-01-23",
+            "passengerCode": "INF"
+        }
+    ],
+    "contactInfo": {
+        "emails": [
+            "travel@sabre.com",
+            "travel2@sabre.com"
+        ],
+        "phones": [
+            "+123456"
+        ]
+    },
+    "payment": {
+        "billingAddress": {
+            "street": "1230 Ellen Ave, apt 10",
+            "city": "Dallas",
+            "stateProvince": "TX",
+            "postalCode": "75063",
+            "countryCode": "US",
+            "name": "John Smith"
+        }
+    },
+    "sendLoyaltiesToAllAirlines": true
+}
+
+Sample response with ancillaries stored under all travelers except for infants (excerpt):
+
+{
+    "timestamp": "2025-10-29T10:17:18",
+    "confirmationId": "PYMUEZ",
+    "booking": {
+        "bookingId": "PYMUEZ",
+        "startDate": "2025-12-21",
+        "endDate": "2026-01-01",
+        "isCancelable": true,
+        "isTicketed": false,
+        "agencyCustomerNumber": "1234567",
+        "creationDetails": {
+            "creationUserSine": "AWV",
+            "creationDate": "2025-10-29",
+            "creationTime": "05:17",
+            "userWorkPcc": "U9PK",
+            "userHomePcc": "U9PK",
+            "primeHostId": "1S"
+        },
+        "contactInfo": {
+            "emails": [
+                "TRAVEL2@SABRE.COM",
+                "TRAVEL@SABRE.COM"
+            ],
+            "phones": [
+                "123456"
+            ]
+        },
+        "travelers": [
+            {
+                "givenName": "JOHN",
+                "surname": "KOWALSKI",
+                "type": "ADULT",
+                "passengerCode": "ADT",
+                "nameAssociationId": "1",
+                "identityDocuments": [
+                    {
+                        "documentNumber": "0123456789",
+                        "documentType": "PASSPORT",
+                        "expiryDate": "2030-07-09",
+                        "issuingCountryCode": "US",
+                        "residenceCountryCode": "US",
+                        "givenName": "JOHN",
+                        "middleName": "JACK",
+                        "surname": "KOWALSKI",
+                        "birthDate": "1980-12-02",
+                        "gender": "MALE",
+                        "isPrimaryDocumentHolder": false,
+                        "itemId": "b5e4d96e13756d22f0f4291debe6f40e2d6c103c0764c5373e5e8a08baa580af4e975a6b61013a839a99925f78b7c7a9be15b33967ca2e7c439f6a714f2eb252"
+                    }
+                ],
+                "loyaltyPrograms": [
+                    {
+                        "supplierCode": "LO",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133728",
+                        "receiverCode": "LO"
+                    },
+                    {
+                        "supplierCode": "LO",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133728",
+                        "receiverCode": "TK"
+                    },
+                    {
+                        "supplierCode": "LO",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133728",
+                        "receiverCode": "SQ"
+                    },
+                    {
+                        "supplierCode": "OM",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133723",
+                        "receiverCode": "OM"
+                    }
+                ]
+            },
+            {
+                "givenName": "ALL",
+                "surname": "MROZICKI",
+                "type": "ADULT",
+                "passengerCode": "ADT",
+                "nameAssociationId": "2",
+                "identityDocuments": [
+                    {
+                        "documentNumber": "0123456788",
+                        "documentType": "PASSPORT",
+                        "expiryDate": "2030-07-09",
+                        "issuingCountryCode": "US",
+                        "residenceCountryCode": "US",
+                        "givenName": "ALL",
+                        "middleName": "JACK",
+                        "surname": "MROZICKI",
+                        "birthDate": "1980-10-02",
+                        "gender": "MALE",
+                        "isPrimaryDocumentHolder": false,
+                        "itemId": "7a9301e1182281cc50397fc143aa135ddc8800cc1aff13d97141edffb50e1e07a4675ed3287e88ba347586da5f80680a4254abbd993ad6b759e5dea3007198c8"
+                    }
+                ],
+                "loyaltyPrograms": [
+                    {
+                        "supplierCode": "LO",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133728",
+                        "receiverCode": "TK"
+                    },
+                    {
+                        "supplierCode": "LO",
+                        "programType": "FREQUENT_FLYER",
+                        "programNumber": "002001557133728",
+                        "receiverCode": "SQ"
+                    }
+                ]
+            },
+            {
+                "givenName": "OGA",
+                "surname": "DOE",
+                "birthDate": "2023-01-23",
+                "type": "INFANT",
+                "passengerCode": "INF",
+                "nameAssociationId": "3"
+            }
+        ]
+    }
+}
+
+Create booking for hotel content
+
+To ensure a successful booking, pass valid travelers information (givenName, surname, passengerCode, age - if the traveler is a child/infant), agency address, and bookingKey returned by Hotel Price Check.
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Kowalski",
+      "passengerCode": "ADT"
+    },
+    {
+      "givenName": "Junior",
+      "surname": "Kowalski",
+      "passengerCode": "INF",
+      "age": 3
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com",
+      "travel2@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "hotel": {
+    "bookingKey": "{{bookingKey}}",
+    "rooms": [
+      {
+        "travelerIndices": [
+          1,
+          2
+        ]
+      }
+    ],
+    "paymentPolicy": "DEPOSIT",
+    "formOfPayment": 1
+  },
+  "payment": {
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4487971000000006",
+        "cardSecurityCode": "123",
+        "expiryDate": "2022-10",
+        "cardHolder": {
+          "givenName": "John",
+          "surname": "Smith",
+          "email": "john@smith.family.priv",
+          "phone": "+1-555-123-4567",
+          "address": {
+            "street": "1230 Ellen Ave, apt 10",
+            "city": "Dallas",
+            "stateProvince": "TX",
+            "postalCode": "75063",
+            "countryCode": "US"
+          }
+        }
+      }
+    ]
+  }
+}
+
+Create booking for hotel content with Strong Customer Authentication (SCA) details
+
+To ensure a successful booking, pass valid travelers information (givenName, surname, passengerCode, age - if the traveler is a child/infant), agency address, and bookingKey returned by Hotel Price Check).
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Kowalski",
+      "passengerCode": "ADT"
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "hotel": {
+    "bookingKey": "{{bookingKey}}",
+    "rooms": [
+      {
+        "travelerIndices": [
+          1
+        ]
+      }
+    ],
+    "paymentPolicy": "DEPOSIT",
+    "formOfPayment": 1
+  },
+  "payment": {
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4487971000000006",
+        "cardSecurityCode": "123",
+        "expiryDate": "2022-10",
+        "authentications": [
+          {
+            "secureTransactionId": "ABCDEFGHI123456789012!.1234567890123",
+            "issuesCode": "AO",
+            "channelCode": "SC",
+            "resultCode": "OK",
+            "electronicCommerceIndicator": "AB",
+            "cardNumberCollectionCode": "K",
+            "exemptionTypeCode": "EC",
+            "mandateTypeCode": "NS",
+            "originalPaymentReference": "1234547839012345",
+            "merchantName": "TEST CREDIT CARD",
+            "secureAuthenticationValue": "ABC123455533533444455555678",
+            "updatedDateTime": "2019-08-19T09:35:10",
+            "amount": "1234.56",
+            "currencyCode": "USD",
+            "tokenAuthenticationValue": "ABC3434334343556677487312567",
+            "verificationResultCode": "PASS",
+            "version": 120
+          }
+        ],
+        "cardHolder": {
+          "givenName": "John",
+          "surname": "Smith",
+          "email": "john@smith.family.priv",
+          "phone": "+1-555-123-4567",
+          "address": {
+            "street": "1230 Ellen Ave, apt 10",
+            "city": "Dallas",
+            "stateProvince": "TX",
+            "postalCode": "75063",
+            "countryCode": "US"
+          }
+        }
+      }
+    ]
+  }
+}
+
+Create booking for hotel content and use profile information to populate traveler data
+
+To ensure a successful booking, pass a valid agency address and bookingKey returned by Hotel Price Check. The traveler profile must contain the traveler’s name, surname, and birth date:
+
+{
+  "profiles": [
+    {
+      "uniqueId": "231448659",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    },
+    {
+      "uniqueId": "231448673",
+      "profileTypeCode": "TVL",
+      "domainId": "G7RE"
+    }
+  ],
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    }
+  },
+  "hotel": {
+    "bookingKey": "{{bookingKey}}",
+    "rooms": [
+      {
+        "travelerIndices": [
+          1,
+          2
+        ]
+      }
+    ],
+    "paymentPolicy": "DEPOSIT",
+    "formOfPayment": 1
+  },
+  "payment": {
+    "formsOfPayment": [
+      {
+        "type": "AGENCY_NAME",
+        "agencyAddress": {
+          "name": "John Smith",
+          "street": "1230 Ellen Ave, apt 10",
+          "city": "Dallas",
+          "stateProvince": "TX",
+          "postalCode": "75063",
+          "countryCode": "US"
+        }
+      }
+    ]
+  }
+}
+
+Create booking for car content
+
+To ensure a successful booking, pass a valid bookingKey returned by the Vehicle Price Check API.
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Kowalski",
+      "passengerCode": "ADT"
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "car": {
+    "bookingKey": "{{carBookingKey}}",
+    "formOfPayment": 1
+  },
+  "payment": {
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4487971000000006",
+        "cardSecurityCode": "123",
+        "expiryDate": "2022-10",
+        "cardHolder": {
+          "givenName": "John",
+          "surname": "Smith",
+          "email": "john@smith.family.priv",
+          "phone": "+1-555-123-4567",
+          "address": {
+            "street": "1230 Ellen Ave, apt 10",
+            "city": "Dallas",
+            "stateProvince": "TX",
+            "postalCode": "75063",
+            "countryCode": "US"
+          }
+        }
+      }
+    ]
+  }
+}
+
+Create an LCC booking (PNR) with an additional request to book an ancillary
+
+To ensure a successful booking, pass valid ancillary details returned by Get Ancillary Offers. LCC ancillaries also require specifying associated SSR details. Use the specialServices array to define them and reference this information via specialServiceIndex within the appropriate ancillary item.
+
+ |
+
+If returned by Get Ancillary Offers, provide the correct flightApplicabilityType in your request, especially for ancillary items with the OTHER_THAN_EMD fulfillment type.
+ |
+
+{
+  "agency": {
+    "address": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US",
+      "freeText": "John Smith\n1230 Ellen Ave, apt 10\nDallas, TX 75063\nUS"
+    },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Smith",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "specialServices": [
+        {
+          "code": "CBBG"
+        }
+      ],
+      "ancillaries": [
+        {
+          "commercialName": "LARGE CABIN BAG - SPEEDY PBRD",
+          "reasonForIssuance": "BAGGAGE",
+          "subcode": "0NO",
+          "airlineCode": "U2",
+          "vendorCode": "U2",
+          "electronicMiscellaneousDocumentType": "OTHER_THAN_EMD",
+          "basePrice": "80.00",
+          "currencyCode": "PLN",
+          "specialServiceIndex": 1,
+          "groupCode": "BG",
+          "flightApplicabilityType": "Single",
+          "flightIndices": [
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "contactInfo": {
+    "emails": [
+      "travel@sabre.com"
+    ],
+    "phones": [
+      "+123456"
+    ]
+  },
+  "flightDetails": {
+    "flights": [
+      {
+        "flightNumber": 8821,
+        "airlineCode": "U2",
+        "fromAirportCode": "LGW",
+        "toAirportCode": "KRK",
+        "departureDate": "2024-08-28",
+        "departureTime": "07:00",
+        "bookingClass": "Y",
+        "flightStatusCode": "NN",
+        "source": "LCC"
+      }
+    ],
+    "flightPricing": [
+      {}
+    ]
+  },
+  "payment": {
+    "billingAddress": {
+      "name": "John Smith",
+      "street": "1230 Ellen Ave, apt 10",
+      "city": "Dallas",
+      "stateProvince": "TX",
+      "postalCode": "75063",
+      "countryCode": "US"
+    },
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4111111111111111",
+        "cardSecurityCode": "123",
+        "expiryDate": "2030-03"
+      }
+    ]
+  }
+}

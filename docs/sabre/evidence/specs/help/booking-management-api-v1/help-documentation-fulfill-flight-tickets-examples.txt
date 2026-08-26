@@ -1,0 +1,617 @@
+Fulfill Flight Tickets – Examples
+
+Below are some common use cases for using the Fulfill Flight Tickets method to fulfill a booking.
+
+Traditional ATPCO booking fulfillment based on PQ data and with PAYMENTCARD form of payment
+
+To ensure the successful fulfillment, your request should contain the following information:
+
+confirmationId (PNR Locator).
+
+Supported form of payment data inside the formsOfPayment object.
+
+fulfillments details with required ticketingQualifiers and a form of payment selected (the payment parameter).
+
+Necessary printers within the designatePrinters array.
+
+{
+  "confirmationId": "ABCDEF",
+  "fulfillments": [
+    {
+      "ticketingQualifiers": {
+        "priceQuoteRecordIds": [
+          "1",
+          "2"
+        ]
+      },
+      "payment": {
+        "primaryFormOfPayment": 1
+      }
+    }
+  ],
+  "designatePrinters": [
+    {
+      "hardcopy": {
+        "address": "B18BG1"
+      }
+    },
+    {
+      "ticket": {
+        "countryCode": "AT"
+      }
+    }
+  ],
+  "formsOfPayment": [
+    {
+      "type": "PAYMENTCARD",
+      "cardTypeCode": "VI",
+      "cardNumber": "4487971000000006",
+      "expiryDate": "2025-07"
+    }
+  ]
+}
+
+A successful operation results in no errors. In this scenario, a normalized tickets array containing the issued documents is returned in the response and stored in the booking:
+
+{
+  "timestamp": "2024-04-15T07:51:07",
+  "tickets": [
+    {
+      "isCommitted": true,
+      "number": "0016802004096",
+      "date": "2024-04-15",
+      "travelerGivenName": "JACK",
+      "travelerSurname": "DRAKE",
+      "payment": {
+        "total": "2964.53",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "E9E7"
+    },
+    {
+      "isCommitted": true,
+      "number": "0016802004097",
+      "date": "2024-04-15",
+      "travelerGivenName": "JOHN",
+      "travelerSurname": "DRAKE",
+      "payment": {
+        "total": "2964.53",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "E9E7"
+    }
+  ],
+  "request": {
+    "confirmationId": "ABCDEF",
+    "retainAccounting": false,
+    "fulfillments": [
+      {
+        "ticketingQualifiers": {
+          "priceWithTaxes": true,
+          "returnFareFlexibilityDetails": false,
+          "priceQuoteRecordIds": [
+            "1",
+            "2"
+          ],
+          "isNetFareCommission": false
+        },
+        "payment": {
+          "primaryFormOfPayment": 1
+        }
+      }
+    ],
+    "receivedFrom": "Fulfill Flight Tickets",
+    "designatePrinters": [
+      {
+        "hardcopy": {
+          "address": "B18BG1"
+        }
+      },
+      {
+        "ticket": {
+          "countryCode": "AT"
+        }
+      }
+    ],
+    "formsOfPayment": [
+      {
+        "type": "PAYMENTCARD",
+        "cardTypeCode": "VI",
+        "cardNumber": "4487971000000006",
+        "expiryDate": "2025-07"
+      }
+    ],
+    "generateSingleInvoice": false,
+    "acceptNegotiatedFare": true,
+    "acceptPriceChanges": true,
+    "backDatePriceQuoteMethod": "Reprice",
+    "priceQuoteExpirationMethod": "Reprice"
+  }
+}
+
+Traditional ATPCO booking fulfillment with CASH form of payment
+
+To ensure the successful fulfillment, your request should contain the following information:
+
+confirmationId (PNR Locator).
+
+Supported form of payment data inside the formsOfPayment object.
+
+fulfillments details with a form of payment selected (the payment parameter) and ticketingQualifiers if necessary.
+
+Necessary printers within the designatePrinters array.
+
+{
+  "confirmationId": "ABCDEF",
+  "fulfillments": [
+    {
+      "payment": {
+        "primaryFormOfPayment": 1
+      }
+    }
+  ],
+  "designatePrinters": [
+    {
+      "hardcopy": {
+        "address": "B18BG1"
+      }
+    },
+    {
+      "ticket": {
+        "countryCode": "AT"
+      }
+    }
+  ],
+  "formsOfPayment": [
+    {
+      "type": "CASH"
+    }
+  ]
+}
+
+A successful operation results in no errors. In this scenario, a normalized tickets array containing the issued documents is returned in the response and stored in the booking:
+
+{
+  "timestamp": "2024-04-10T13:53:25",
+  "tickets": [
+    {
+      "isCommitted": true,
+      "number": "0016802004060",
+      "date": "2024-04-10",
+      "travelerGivenName": "JOHN",
+      "travelerSurname": "DRAKE",
+      "payment": {
+        "total": "2340.68",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "E9E7"
+    }
+  ],
+  "request": {
+    "confirmationId": "ABCDEF",
+    "retainAccounting": false,
+    "fulfillments": [
+      {
+        "payment": {
+          "primaryFormOfPayment": 1
+        }
+      }
+    ],
+    "receivedFrom": "Fulfill Flight Tickets",
+    "designatePrinters": [
+      {
+        "hardcopy": {
+          "address": "498BF1"
+        }
+      },
+      {
+        "ticket": {
+          "countryCode": "AT"
+        }
+      }
+    ],
+    "formsOfPayment": [
+      {
+        "type": "CASH"
+      }
+    ],
+    "generateSingleInvoice": false,
+    "acceptNegotiatedFare": true,
+    "acceptPriceChanges": true,
+    "backDatePriceQuoteMethod": "Reprice",
+    "priceQuoteExpirationMethod": "Reprice"
+  }
+}
+
+Traditional ATPCO booking and ancillary fulfillment (EMD issuance) with PAYMENTCARD form of payment
+
+To ensure the successful fulfillment, your request should contain the following information:
+
+confirmationId (PNR Locator).
+
+Supported form of payment data inside the formsOfPayment object.
+
+fulfillments details with the IDs of each ticket and EMD (within the ancillaryIds array) and a form of payment (the payment parameter).
+
+ |
+
+The ID of an ancillary is returned as the itemId in the Get Booking response.
+ |
+
+Necessary printers within the designatePrinters array.
+
+{
+  "confirmationId": "ABCDEF",
+  "fulfillments": [
+    {
+      "payment": {
+        "primaryFormOfPayment": 1
+      }
+    },
+    {
+      "ancillaryIds": [
+        "17",
+        "19"
+      ],
+      "payment": {
+        "primaryFormOfPayment": 1
+      }
+    }
+  ],
+  "designatePrinters": [
+    {
+      "hardcopy": {
+        "address": "498BF1"
+      }
+    },
+    {
+      "ticket": {
+        "countryCode": "AT"
+      }
+    }
+  ],
+  "formsOfPayment": [
+    {
+      "type": "PAYMENTCARD",
+      "cardTypeCode": "VI",
+      "cardNumber": "4487971000000006",
+      "expiryDate": "2025-07"
+    }
+  ]
+}
+
+A successful operation results in no errors. In this scenario, a normalized tickets array containing the issued documents (tickets and EMDs) is returned in the response and stored in the booking:
+
+{
+    "timestamp": "2024-04-10T10:49:40",
+    "tickets": [
+        {
+            "isCommitted": true,
+            "number": "0801806412388",
+            "date": "2024-04-10",
+            "travelerGivenName": "JILL",
+            "travelerSurname": "DRAKE",
+            "payment": {
+                "total": "150.00",
+                "currencyCode": "USD"
+            },
+            "ticketStatusName": "Issued",
+            "ticketStatusCode": "ME",
+            "ticketingPcc": "E9E7"
+        },
+        {
+            "isCommitted": true,
+            "number": "0801806412387",
+            "date": "2024-04-10",
+            "travelerGivenName": "NATHAN",
+            "travelerSurname": "DRAKE",
+            "payment": {
+                "total": "150.00",
+                "currencyCode": "USD"
+            },
+            "ticketStatusName": "Issued",
+            "ticketStatusCode": "ME",
+            "ticketingPcc": "E9E7"
+        },
+        {
+            "isCommitted": true,
+            "number": "0806802004064",
+            "date": "2024-04-10",
+            "travelerGivenName": "NATHAN",
+            "travelerSurname": "DRAKE",
+            "payment": {
+                "total": "1188.85",
+                "currencyCode": "USD"
+            },
+            "ticketStatusName": "Issued",
+            "ticketStatusCode": "TE",
+            "ticketingPcc": "E9E7"
+        },
+        {
+            "isCommitted": true,
+            "number": "0806802004065",
+            "date": "2024-04-10",
+            "travelerGivenName": "JILL",
+            "travelerSurname": "DRAKE",
+            "payment": {
+                "total": "1188.85",
+                "currencyCode": "USD"
+            },
+            "ticketStatusName": "Issued",
+            "ticketStatusCode": "TE",
+            "ticketingPcc": "E9E7"
+        }
+    ],
+    "request": {
+        "confirmationId": "ABCDEF",
+        "retainAccounting": false,
+        "fulfillments": [
+            {
+                "payment": {
+                    "primaryFormOfPayment": 1
+                }
+            },
+            {
+                "ancillaryIds": [
+                    "17",
+                    "19"
+                ],
+                "payment": {
+                    "primaryFormOfPayment": 1
+                }
+            }
+        ],
+        "receivedFrom": "Fulfill Flight Tickets",
+        "designatePrinters": [
+            {
+                "hardcopy": {
+                    "address": "498BF1"
+                }
+            },
+            {
+                "ticket": {
+                    "countryCode": "AT"
+                }
+            }
+        ],
+        "formsOfPayment": [
+            {
+                "type": "PAYMENTCARD",
+                "cardTypeCode": "VI",
+                "cardNumber": "4487971000000006",
+                "expiryDate": "2025-07"
+            }
+        ],
+        "generateSingleInvoice": false,
+        "acceptNegotiatedFare": true,
+        "acceptPriceChanges": true,
+        "backDatePriceQuoteMethod": "Reprice",
+        "priceQuoteExpirationMethod": "Reprice"
+    }
+}
+
+Traditional ATPCO booking fulfillment based on PQR data
+
+To ensure the successful fulfillment, your request should contain the following information:
+
+confirmationId (PNR Locator).
+
+fulfillments details with the IDs of selected PQR record (priceQuoteReissueRecordId) parameter.
+
+ |
+
+The ID of a PQR is returned as the recordId in the Get Booking response.
+ |
+
+Necessary printers within the designatePrinters array.
+
+{
+	"confirmationId": "ABCDEF",
+	"fulfillments": [
+		{
+			"ticketingQualifiers": {
+				"priceQuoteReissueRecordId": "4"
+			}
+		}
+	],
+	"designatePrinters": [
+		{
+			"hardcopy": {
+				"address": "498BF1"
+			}
+		},
+		{
+			"ticket": {
+				"countryCode": "AT"
+			}
+		}
+	],
+	"formsOfPayment": [
+		{
+			"type": "CASH"
+		}
+	]
+}
+
+A successful operation results in no errors. In this scenario, a normalized tickets array containing the issued documents is returned in the response and stored in the booking:
+
+{
+	"timestamp": "2026-05-27T05:10:39",
+	"tickets": [
+		{
+			"isCommitted": true,
+			"number": "1251934576908",
+			"date": "2026-05-27",
+			"travelerGivenName": "JOHN",
+			"travelerSurname": "SMITH",
+			"payment": {
+				"total": "10268.32",
+				"currencyCode": "PLN"
+			},
+			"ticketStatusName": "Issued",
+			"ticketStatusCode": "ME",
+			"ticketingPcc": "U9PK"
+		},
+		{
+			"isCommitted": true,
+			"number": "1255840965934",
+			"date": "2026-05-27",
+			"travelerGivenName": "JOHN",
+			"travelerSurname": "SMITH",
+			"payment": {
+				"total": "0.00",
+				"currencyCode": "PLN"
+			},
+			"ticketStatusName": "Issued",
+			"ticketStatusCode": "TE",
+			"ticketingPcc": "U9PK"
+		}
+	],
+	"request": {
+		"confirmationId": "ABCDEF",
+		"retainAccounting": false,
+		"fulfillments": [
+			{
+				"ticketingQualifiers": {
+					"priceWithTaxes": true,
+					"returnFareFlexibilityDetails": false,
+					"priceQuoteReissueRecordId": "4",
+					"isNetFareCommission": false
+				}
+			}
+		],
+		"receivedFrom": "Fulfill Flight Tickets",
+		"designatePrinters": [
+			{
+				"hardcopy": {
+					"address": "498BF1"
+				}
+			},
+			{
+				"ticket": {
+					"countryCode": "AT"
+				}
+			}
+		],
+		"formsOfPayment": [
+			{
+				"type": "CASH"
+			}
+		],
+		"generateSingleInvoice": false,
+		"commitTicketToBookingWaitTime": 0,
+		"acceptNegotiatedFare": true,
+		"acceptPriceChanges": true,
+		"backDatePriceQuoteMethod": "Reprice",
+		"priceQuoteExpirationMethod": "Reprice"
+	},
+	"warnings": [
+		{
+			"category": "PROCESSING_WARNING",
+			"type": "DOWNLINE_SERVICE_WARNING",
+			"description": "The AirTicketRQ service returned a warning message: (EndTransactionLLSRQ: *PAC TO VERIFY CORRECT NBR OF ACCTG LINES - THEN ET TO CONTINUE)."
+		}
+	]
+}
+
+NDC booking fulfillment with PAYMENTCARD form of payment
+
+To ensure the successful fulfillment, your request should contain the following information:
+
+confirmationId (PNR Locator or Order ID).
+
+Supported form of payment data inside the formsOfPayment object.
+
+fulfillments details with a form of payment selected (the payment parameter).
+
+{
+  "confirmationId": "1SXXXCI666890",
+  "fulfillments": [
+    {
+      "payment": {
+        "primaryFormOfPayment": 1
+      }
+    }
+  ],
+  "formsOfPayment": [
+    {
+      "cardTypeCode": "AX",
+      "cardNumber": "345678000000007",
+      "expiryDate": "2030-12",
+      "type": "PAYMENTCARD",
+      "authentications": [
+        {
+          "channelCode": "MO"
+        }
+      ]
+    }
+  ]
+}
+
+A successful operation results in no errors. In this scenario, a normalized tickets array containing the issued documents is returned in the response and stored in the booking:
+
+{
+  "timestamp": "2024-04-15T07:57:29",
+  "tickets": [
+    {
+      "number": "0015752129518",
+      "date": "2024-04-15",
+      "travelerGivenName": "John",
+      "travelerSurname": "Drake",
+      "payment": {
+        "total": "1708.23",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TO"
+    },
+    {
+      "number": "0015752129519",
+      "date": "2024-04-15",
+      "travelerGivenName": "Jill",
+      "travelerSurname": "Drake",
+      "payment": {
+        "total": "1708.23",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TO"
+    }
+  ],
+  "request": {
+    "confirmationId": "1SXXXCI666890",
+    "retainAccounting": false,
+    "fulfillments": [
+      {
+        "payment": {
+          "primaryFormOfPayment": 1
+        }
+      }
+    ],
+    "receivedFrom": "Fulfill Flight Tickets",
+    "formsOfPayment": [
+      {
+        "cardTypeCode": "AX",
+        "cardNumber": "345678000000007",
+        "expiryDate": "2030-12",
+        "type": "PAYMENTCARD",
+        "authentications": [
+          {
+            "channelCode": "MO"
+          }
+        ]
+      }
+    ],
+    "generateSingleInvoice": false,
+    "acceptNegotiatedFare": true,
+    "acceptPriceChanges": true,
+    "backDatePriceQuoteMethod": "Reprice",
+    "priceQuoteExpirationMethod": "Reprice"
+  }
+}

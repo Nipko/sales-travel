@@ -1,0 +1,229 @@
+Flight Reshop API User Guide
+
+This guide provides information about the types of transactions supported by the Flight Reshop API. It also includes definitions of essential terms associated with the transactions referenced throughout this document.
+
+ |
+
+This API is currently in beta version. Development of NDC exchange capabilities is actively in progress, which is why this User Guide is limited to ATPCO content only.
+ |
+
+Requirements
+
+System requirements
+
+This is a premium product. As such, special activation (OffersFlightReshopUser ICE attribute) is required in the production environment. Reach out to your Account Manager for assistance.
+
+ |
+
+Testing in the certification environment doesn't require any additional activation.
+ |
+
+Eligible documents
+
+The API supports flight tickets only, and it's not intended for non-flight documents such as Electronic Miscellaneous Documents (EMD) or Miscellaneous Charge Orders (MCO).
+
+Only one flight document per passenger is allowed.
+
+Voluntary Changes (Category 31) rules must be filed for all fares on the ticket presented for exchange. If Category 31 rules aren't available for all ticketed fares, the request fails.
+
+Itineraries
+
+The API supports online, interline, one-way, round-trip, open-jaw, and circle-trip itineraries, as well as itineraries including a maximum of one side trip.
+
+Supported segment status codes: BK, HK, IK, RR, and SS.
+
+The new itinerary may have a maximum of 16 segments, including flown flights and surface sectors (ARNKs).
+
+Passengers
+
+The request may include up to nine (9) tickets.
+
+A combination of up to four (4) different passenger type codes (PTCs) is supported (e.g., 2 ADT + 2 CNN).
+
+Requests for multiple passengers are only supported for the same fulfilled itinerary (marketing carrier, flight number, booking class, board and off cities, travel date, coupon status, and currency). This applies to all flown and unflown coupons on the ticket.
+
+All available passenger type codes (PTCs) are supported, except ASB, BUD, AST, NSB, CSB, YSB, SDB, MSB, YCB, CMA, and CMP.
+
+Individual requests for infants without a seat (INF) are not supported. An infant without a seat must be included in a request with an accompanying adult.
+
+Returned offers
+
+The API returns up to 50 reshop offers, excluding all upsell options.
+
+The returned offers may be in different booking classes or cabins. They are flagged accordingly in the response.
+
+Requests for multiple passengers return the same new itinerary options for all passengers.
+
+Seat availability is always checked for the total number of passengers in the request.
+
+If the request includes infants (INF), the response may include an INF fare option in a booking class that isn't available, since INF passengers don't occupy a seat.
+
+If requested, the returned offers may optionally include available offer attributes.
+
+Definitions
+
+Journey
+
+A journey (FlightReshopRequest.journeys) represents the complete travel path between an origin and destination, which may include one or more segments (flights) and connections.
+
+In this User Guide, a journey may also be referred to as a portion of travel or O&D (Origin and Destination).
+
+The minimum connection time between two (2) journeys is 120 min for international and domestic travel.
+
+Example 1 – Single Flight Journeys
+
+The following itinerary has two journeys with single flights:
+
+Journey1: 18 JAN from SVO to MRV
+
+Journey2: 23 JAN from MRV to SVO
+
+1 U01304Y 18JAN J SVOMRV HK1 840A 1050A /E
+
+2 U05371Y 23JAN Q MRVSVO HK1 640A 905A /E
+
+Example 2 – Multiple Flight Journeys
+
+The following itinerary has two journeys with multiple flights:
+
+Journey1: 23 JAN from LED to JFK
+
+Journey2: 29 JAN from JFK to LED
+
+1 U0 13Y 23JAN Q* LEDSVO HK1 1220P 135P /E
+
+2 U0 102Y 23JAN Q SVOJFK HK1 340P 510P /E
+
+3 U0 101Y 29JAN W JFKSVO HK1 210P 820A 30JAN Q /E
+
+4 U0 12Y 30JAN Q SVOLED HK1 1005A 1130A /E
+
+There are three (3) mandatory parameters for each journey:
+
+Key |
+Description |
+Sabre Flight Reshop Path |
+
+departureLocation
+ |
+Departure city or airport of this portion of travel. Three-letter city or airport code.
+ |
+FlightReshopRequest.journeys.departureLocation
+ |
+
+arrivalLocation
+ |
+Arrival city or airport of this portion of travel. Three-letter city or airport code.
+ |
+FlightReshopRequest.journeys.arrivalLocation
+ |
+
+departureDate
+ |
+Date of given portion of travel. For journeys that retain flights, the recommendation is to use the departure date. For shopped journeys, use the date or date and optional time window search criteria.
+ |
+FlightReshopRequest.journeys.departureDate
+
+FlightReshopRequest.journeys.departureTimeWindow
+
+FlightReshopRequest.journeys.arrivalTimeWindow
+ |
+
+NOTE:
+
+Depending on the added search parameters and if a journey is shopped, flight information may also be required. For more information, see "Flight" below.
+
+If there are multiple journeys in the request, journeys and flights must be sent in chronological order. If flights aren't in chronological order, an error message is returned, and the transaction is terminated.
+
+Flight
+
+A flight is an air segment that's part of a journey.
+
+Example 1 – Single Segment Legs
+
+There are two journeys in the following itinerary, each consisting of one flight:
+
+1 U01304Y 18JAN J SVOMRV HK1 840A 1050A /E
+
+2 U05371Y 23JAN Q MRVSVO HK1 640A 905A /E
+
+Journey 1 (FlightReshopRequest.journeys[0]): start location at SVO, end location in MRV, and departure date on 18 JAN
+
+Flight 1: U0 1304 Y 18JAN SVOMRV HK 840A 1050A
+
+Journey 2(FlightReshopRequest.journeys[1]): start location in MRV, end location in SVO, and departure date on 23 JAN
+
+Flight 2: U0 5371 Y 23JAN MRVSVO HK 640A 905A
+
+Example 2 – Single Flight Journeys Within One Day
+
+The following itinerary has two journeys with single flights, within one day:
+
+Journey1: 10 DEC from MEL to SYD
+
+Journey2: 10 DEC from SYD to MEL
+
+1 VA 811Y 10DEC W MELSYD HK1 700A 825A /E
+
+2 VA 832Y 10DEC W SYDMEL HK1 1030A 1205P /E
+
+Journey 1 (FlightReshopRequest.journeys[0]): start location at MEL, end location at SYD, and departure date on 10 DEC
+
+Flight 1: VA 811Y 10DEC MELSYD HK1 700A 825A
+
+Journey 2 (FlightReshopRequest.journeys[1]): start location at SYD, end location at MEL, and departure date on 10 DEC
+
+Flight 2: VA 832Y 10DEC SYDMEL HK1 1030A 1205P
+
+Example 3 – Multiple Flight Journeys
+
+There are two journeys in the following itinerary, each consisting of two flights (connecting flights):
+
+1 U0 13Y 23JAN Q* LEDSVO HK1 1220P 135P /E
+
+2 U0 102Y 23JAN Q SVOJFK HK1 340P 510P /E
+
+3 U0 101Y 29JAN W JFKSVO HK1 210P 820A 30JAN Q /E
+
+4 U0 12Y 30JAN Q SVOLED HK1 1005A 1130A /E
+
+Journey 1 (FlightReshopRequest.journeys[0]): start location at LED, end location at JFK, and departure date on 23 JAN
+
+Flight 1: U0 13Y 23JAN LEDSVO HK 1220P 135P
+Flight 2: U0 102Y 23JAN SVOJFK HK1 340P 510P
+
+Journey 2 (FlightReshopRequest.journeys[1]): start location at JFK, end location at LED, and departure date on 29 JAN
+
+Flight 1: U0 101Y 29JAN JFKSVO HK 210P 820A 30JAN
+Flight 2: U0 12Y 30JAN SVOLED HK 1005A 1130A
+
+Journey shopped vs. journey retain (formally known as not-shopped)
+
+The terms &#8220;shopped&#8221; and &#8220;retain&#8221; (not shopped) are used to indicate if alternate itinerary options should be searched for the entire itinerary or only for a specific portion of travel. Retain (not shopped) journeys are portions of the itinerary that shall remain unchanged - in the Sabre Flight Reshop request, this is reflected by the FlightReshopRequest.journeys.retainFlights array, which contains the retain flights
+
+Example
+
+1 U01304Y 18JAN J SVOMRV HK1 0840 1050 /E
+
+2 U05371Y 23JAN Q MRVSVO HK1 0640 0905 /E
+
+The passenger wants to return 1 day earlier (22 JAN), however the outbound flight (SVO-MRV) remains unchanged.
+
+ |
+
+If a journey is retained (not shopped), full information about the booked flights is required.
+ |
+
+In this scenario, the request contains two journeys:
+
+Journey 1 (FlightReshopRequest.journeys[0]): SVO-MRV departing on 18 JAN
+
+Flight 1 (FlightReshopRequest.journeys[0].retainFlights[0]): U01304Y 18JAN SVOMRV HK 840A 1050A
+
+Journey 2 (FlightReshopRequest.journeys[1]): MRV-SVO departing on 22 JAN
+
+The option to retain segments applies only to flight details.
+
+The bookingClassCode for a retain segment may change based on the pricing solution returned by the API.
+
+To avoid changing the bookingClassCode, use the keepBookingClass parameter set to true.

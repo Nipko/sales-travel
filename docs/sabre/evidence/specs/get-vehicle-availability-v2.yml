@@ -1,0 +1,1213 @@
+openapi: 3.0.0
+info:
+  title: Get Vehicle Availability
+  version: v2
+  description: |
+    The Get Vehicle Availability API is used to request information regarding car rental location(s), available car types at the location(s), and the rates of those cars.
+    * A specific car supplier at a specific location
+    * One to all car suppliers that serve a specific airport
+    * One to all car suppliers around a specific point for a variable distance
+    Get Vehicle Availability responses include:vehicle rates, vehicle types, legal number of occupants, number of bags.
+security:
+  - oauth2_authentication: []
+servers:
+- url: https://api.cert.platform.sabre.com/
+paths:
+  /v2.0.0/get/vehavail:
+    post:
+      operationId: getRentalLocation
+      requestBody:
+        description: The Get Vehicle Availability RQ API is used to request information
+          regarding car rental location(s), available car types at the location(s)
+          with rates respectively.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetVehAvailRQ'
+        required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetVehAvailRS'
+        '400':
+          description: Bad Request - The request was not valid.
+          content: {}
+        '404':
+          description: Not Found - No results were found.
+          content: {}
+      x-codegen-request-body-name: GetVehAvailRQ
+components:
+  securitySchemes:
+    oauth2_authentication:
+      type: oauth2
+      x-base64-encode-client-credentials: true
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token
+          scopes: {}
+  schemas:
+    VehLocPolicyInfos:
+      required:
+      - VehLocPolicyinfo
+      type: object
+      properties:
+        VehLocPolicyinfo:
+          minItems: 1
+          type: array
+          items:
+            $ref: '#/components/schemas/VehLocPolicyInfo'
+    OperationTime:
+      type: object
+      properties:
+        Start:
+          type: string
+        End:
+          type: string
+        DayOfTheWeek:
+          maxLength: 1
+          minLength: 1
+          type: string
+      description: Provides operating times of a facility.
+    GetVehAvailRQ:
+      type: object
+      description: Contains request information about car rental location or locations,the car type available and the rates for those cars at specific locations. Sample request can be seen in the how_to_use.md file.      
+      properties:
+        GetVehAvailRQ:
+          type: object
+          properties:
+            POS:
+              description: This should only be inputted if different than the PCC used to get Token
+                if used Contains point of sale information from which the rate should be fetched that
+                the Token PCC is allowed to access.
+              type: object
+              required:
+                - Source
+              properties:
+                Source:
+                  description: Price in an authorized branch location PCC.
+                  required:
+                      - PseudoCityCode
+                  properties:
+                      PseudoCityCode:
+                        description: The four-character pseudo city code (PCC) of the authorized branch location.
+                        type: string
+                        pattern: '^[a-zA-Z0-9]{4}$'
+                        example: "TM61"
+            SearchCriteria:
+              $ref: '#/components/schemas/SearchCriteria'
+            version:
+              type: string
+              example: 2.0.0
+          description: Contains request information about car rental location or locations,
+            the car type available and the rates for those cars at specific locations.
+            Sample request can be seen in the how_to_use.md file.
+    SearchCriteria:
+      type: object
+      properties:
+        RentalLocRef: 
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RentalLocRef'
+        AirportRef:
+          $ref: '#/components/schemas/AirportRef'
+        CarExtrasPrefs:
+          $ref: '#/components/schemas/CarExtrasPrefs'
+        GeoRef:
+          $ref: '#/components/schemas/GeoRef'
+        ImageRef:
+          $ref: '#/components/schemas/ImagesRef'
+        LocPolicyRef:
+          $ref: '#/components/schemas/LocPolicyRef'
+        PickUpDate:
+          type: string
+          description: The pickup date attribute is mandatory and must be in year
+            month day format
+          example: 2024-01-11
+        PickUpTime:
+          type: string
+          description: The pickup time attribute is mandatory and must be in the 24-hour
+            clock format.
+          example: 08:15
+        RatePrefs:
+          $ref: '#/components/schemas/RatePrefs'
+        ReturnDate:
+          type: string
+        ReturnTime:
+          type: string
+        SortBy:
+          type: string
+          description: "Sort By is optional. If present it must be Distance, Price,\
+            \ Preferred, Vendor, CarType. \n* If SortBy is Preferred, it should be\
+            \ omitted, as it is the default. The default is different depending on\
+            \ the type of entry. \n* If SortBy is not present and RentalLocRef is\
+            \ used, then display is ordered by Car Supplier.\n* If SortBy is not present\
+            \ and AirportRef used, then display is ordered by Price. \n* If SortBy\
+            \ is not present and GeoRef used, then display is ordered by Distance.\n\
+            * If RentalLocRef is used, then SortBy Cartype or Price \n* If AirportRef\
+            \ is used, then SortBy Vendor, Cartype, or Price \n* If GeoRef used, then\
+            \ SortBy Distance, Vendor, Cartype, or Price.\n"
+          example: Price
+          enum:
+          - Preferred
+          - Distance
+          - Price
+          - Vendor
+          - CarType
+        SortOrder:
+          type: string
+          enum:
+          - ASC
+          - DESC
+        VehPrefs:
+          $ref: '#/components/schemas/VehPrefs'
+        VendorPrefs:
+          $ref: '#/components/schemas/VendorPrefs'
+      description: Search Criteria is used to describe the pickup and return date/time
+        as well as any sort criteria.
+    LocPolicyRef:
+      type: object
+      properties:
+        Include:
+          type: boolean
+      description: Refers to the location's preferred policy.
+    RatePrefs:
+      type: object
+      properties:
+        Commission:
+          type: boolean
+          description: If true, the suppliers return the commission information. It
+            is an optional field.
+        ConvertedRateInfoOnly:
+          type: boolean
+          description: ConvertedRateInfoOnly is used to request only suppliers that
+            return converted rate information. ConvertedRateInfoOnly is optional.
+            If used, it must contain true. If false, it is usually omitted.
+        SupplierCurrencyOnly:
+          type: boolean
+          description: The Supplier Currency Only is optional, if not inputted, then
+            'true' is assumed.The Supplier Currency Only if used, must contain 'true'
+            or 'false'.
+        CurrencyCode:
+          type: string
+          example: USD
+        CustLoyalty:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustLoyalty'
+        GuaranteePrepaid:
+          type: object
+          properties:
+            Type:
+              type: string
+              description: The indicator is 1-3 alpha, guarantee or prepaid or restricted.
+              example: G
+              enum:
+              - G
+              - P
+              - R
+              - GP
+              - GR
+              - PR
+              - PG
+              - RG
+              - RP
+              - GPR
+              - GRP
+              - PGR
+              - PRG
+              - RPG
+              - RGP
+          description: |
+            Guarantee prepaid is optional. If omitted, guarantee and prepay rates may be returned, but usually only retail rates are returned. If used, the guarantee prepaid element must be one of the following 
+            * G -  guaranteed only rates 
+            * P -  prepaid only rates 
+            * GP - guarantee and/or prepaid rates only 
+            * GR - guarantee and/or retail rates only 
+            * PR - prepaid and/or retail rates only 
+            * GPR - guarantee, prepaid, and/or retail rates.
+          example: G
+        RateAssured:
+          type: boolean
+          example: true
+        RateCategory:
+          type: string
+          description: Rate category is used to request types of a rate. Rate category
+            if used, must contain S,P,G,A,I,C,U,B,V,R,K,L,N.
+        RateRule: 
+            type: array
+            items: 
+                type: object
+                properties: 
+                    RateCode: 
+                        $ref: '#/components/schemas/StringLength2to6'
+                    VendorCode: 
+                        type: string
+                        pattern: ^([A-Z]2,2)$
+                        example: ZI
+                description: Rate code is a car supplier specific 2-6 alpha numeric code
+                  that is tied to the available rate. This is similar to Airline fares codes.
+        RatePlan:
+          type: string
+          description: |
+            Rate plan is mandatory. This field is 1 alpha and is used to
+            generally describe the  length of rental for rates. 
+
+            The list of possible rate plans are:
+            * D - Daily rates
+            * W - Weekly rates
+            * E - Weekend rates
+            * M - Monthly rates
+            * B - Bundled rates (length of rental)
+            
+            For most plans, this field is determined
+            by the length of the car rental based on the number of days and hours,
+            the difference between pickup date/time, and the return date/time.
+          example: D
+      description: Rate preferences is optional. If used, then at least one of the
+        following attributes is required such as 'RateAssured', 'RateCategory', 'RatePlan'.
+    GuaranteePrepaid:
+      type: object
+      properties:
+        Amount:
+          type: string
+          example: 10.00
+        AmountPercentage:
+          type: string
+        CurrencyCode:
+          type: string
+          example: USD
+        Ind:
+          type: string
+          example: G
+        CancellationRefundAmount:
+          type: array
+          maxLength: 4
+          items:
+            $ref: '#/components/schemas/CancellationRefundAmount'
+    CancellationRefundAmount:
+      type: object
+      properties:
+          Amount:
+            type: string
+            example: 100.00
+          DaysPrior:
+            type: string
+            example: 500
+      description: Contains either a monetary or a percentage amount. This amount
+          is always the cancellation amount.
+    CustLoyalty:
+      type: object
+      required:
+      - MembershipId
+      - MembershipType
+      properties:
+        MembershipCode:
+          type: string
+          example: HOT1
+        MembershipId:
+          maxLength: 27
+          minLength: 2
+          pattern: ^([A-Z]{0,2}[0-9A-Za-z]{1,25})$
+          type: string
+          example: ZE
+        MembershipType:
+          type: string
+          enum:
+          - PC
+          - CD
+          - ID
+          - IT
+          - FT
+          example: PC
+    RentalLocRef:
+      type: object
+      properties:
+        PickUpLocation:
+          required:
+          - LocationCode
+          type: array
+          minItems: 1
+          maxLength: 5
+          items:
+            type: object
+            properties:
+              ExtendedLocationCode:
+                pattern: ^([A-Z0-9]{2,4})$
+                type: string
+                example: DFW
+              LocationCode:
+                pattern: ^([A-Z]{3})$
+                type: string
+                example: DFW
+        ReturnLocation:
+          required:
+          - LocationCode
+          type: object
+          properties:
+            ExtendedLocationCode:
+              pattern: ^([A-Z0-9]{2,4})$
+              type: string
+              example: DFW
+            LocationCode:
+              pattern: ^([A-Z]{3})$
+              type: string
+              example: DFW
+      description: RentalLoc Reference is used when there is a single airport location
+        code. If this option is used, then AirportRef and GeoRef cannot be used.      
+    AirportRef:
+      type: object
+      properties:
+        PickUpLocation:
+          type: object
+          properties:
+            LocationCode: 
+              pattern: ^([A-Z]{3})$
+              type: string
+              example: DFW
+        ReturnLocation:
+          type: object
+          properties:
+            LocationCode: 
+              pattern: ^([A-Z]{3})$
+              type: string
+              example: DFW
+      description: Airport Reference is used when there is a single airport location
+        code. If this option is used, then RentalLocRef and GeoRef cannot be used.
+        When the airport code is entered as AirportRef it will get car rental locations
+        that offer airport service. This will NOT get car rental locations around
+        the Geo Point of the airport.
+    GeoRef:
+      type: object
+      properties:
+        Direction:
+          type: string
+          description: Direction attribute is mandatory, if request contains.
+            If used, it must be N-north, S-south, E-east, W-west, or combined NE,
+            NW, SE, SW.  If direction is NA-Not Available, it means the latitude
+            and longitude is not exact.
+          example: NE
+          enum:
+          - E
+          - N
+          - S
+          - W
+          - NE
+          - NW
+          - SW
+          - SE
+        MaxLocations:
+          type: integer
+          format: int32
+          example: 5
+        PickUpLocRef:
+          $ref: '#/components/schemas/GeoLocRef'
+        Radius:
+          type: integer
+          format: int32
+          example: 10
+        ReturnLocRef:
+          $ref: '#/components/schemas/GeoLocRef'
+        UOM:
+          type: string
+          description: Unit of measure is optional, if not input it will default to
+            miles. Unit of measure, if used must be MI-miles or KM-kilometers. The
+            default is miles, so it should be omitted for miles and used if the distance
+            searched is in kilometers.
+          example: MI
+          enum:
+          - MI
+          - KM
+      description: Represents Geo Reference from the request.
+    GeoLocRef:
+      type: object
+      properties:
+        AddressRef:
+          $ref: '#/components/schemas/AddressRef'
+        GeoCode:
+          $ref: '#/components/schemas/GeoCode'
+        RefPoint:
+          $ref: '#/components/schemas/RefPoint'
+      description: Geo Location Reference
+    RefPoint:
+      type: object
+      properties:
+        CityName:
+          type: string
+          example: Southlake
+        CountryCode:
+          type: string
+          description: Country Code is mandatory.It is 2-50 characters, but usually
+            has the 2 character country code abbreviation.
+          example: US
+        PostalCode:
+          type: string
+          example: 76092
+        RefPointType:
+          type: string
+          description: The reference point type is attribute mandatory. The reference
+            point type describes the type of data in the 'Value' attribute. The only
+            valid code numbers are 6-Airport and 11-Hotel, the rest is for future use. 
+          enum:
+          - "5"
+          - "6"
+          - "7"
+          - "11"
+          - "16"
+          - "18"
+        StateProv:
+          type: string
+          description: The State Province is 1-50 characters, but it's usually a 2-3
+            character abbreviation for the state or province code.
+          example: NY
+        Value:
+          type: string
+        ValueContext:
+          type: string
+          enum:
+          - NAME
+          - CODE
+      description: RefPoint is optional. If this option is used, then GeoCode and
+        AddressRef cannot be used.
+    GeoCode:
+      type: object
+      properties:
+        Latitude:
+          type: number
+          description: Contains the geographic reference for a location. Latitude
+            and Longitude attributes are the most common method to supply the API
+            with pickup or drop off search criteria.
+          format: double
+          example: -12.123456
+        Longitude:
+          type: number
+          description: Contains the geographic reference for a location. Latitude
+            and Longitude attributes are the most common method to supply the API
+            with pickup or drop off search criteria.
+          format: double
+          example: -12.123456
+      description: Contains geocode information
+    AddressRef:
+      required:
+      - CountryCode
+      type: object
+      properties:
+        Street:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The street name of the address.
+          example: Hidden Ridge
+        City:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The city name of the address.
+          example: Irving
+        County:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The county name of the address.
+          example: Dallas County
+        PostalCode:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The postal code of the address.
+          example: "75038"
+        StateProv:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The state or province of the address.
+          example: TX
+        CountryCode:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The country code of the address.
+          example: US
+      description: Contains parameters to search by address. Use only ONE of 'GeoCode'
+        / 'RefPoint' / 'AddressRef' to search.
+    GetVehAvailRS:
+      title: GetVehAvailRS
+      type: object
+      properties:
+        GetVehAvailRS:
+          type: object
+          properties:
+            version:
+              maxLength: 255
+              minLength: 1
+              type: string
+            ApplicationResults:
+              $ref: '#/components/schemas/ApplicationResults'
+            VehLocPolicyInfos:
+              $ref: '#/components/schemas/VehLocPolicyInfos'
+            VehAvailInfos:
+              $ref: '#/components/schemas/VehAvailInfos'
+            LocationInfos:
+              $ref: '#/components/schemas/LocationInfos'
+    VehPrefs:
+      type: object
+      properties:
+        CarShopAll:
+          type: boolean
+          description: If true, it allows users to shop all car rates.
+        SeatBeltsAndBagsInfo:
+          $ref: '#/components/schemas/SeatBeltsAndBagsInfo'
+        VehPref:
+          $ref: '#/components/schemas/VehPref'
+      description: Vehicle Preferences is mandatory for response
+    VehPref:
+      type: object
+      properties:
+        VehType:
+          type: array
+          items: 
+            pattern: ^([A-Za-z]{2})$
+            type: string
+            example: ECAR
+      description: Vehicle Preferences is optional on the request, if inputted then the type
+        of vehicle or vehicles, its seat belts, and bag info. If a VehPrefs
+        is used, then VehPref, or SeatBeltsAndBagsInfo must be input.
+        The Vehicle Preferences element is mandatory on the Response. It is used
+        to describe the type of vehicle, seat belts, and bag size and quantity if available. 
+    SeatBeltsAndBagsInfo:
+      type: object
+      properties:
+        BagsInfo:
+          $ref: '#/components/schemas/BagsInfoReq'
+        SeatBelts:
+          $ref: '#/components/schemas/SeatBelts'
+      description: SeatBeltsAndBagsInfo is optional on request. If it is input, then SeatBelts
+        or BagsInfo must be used. If SeatBeltsAndBagsInfo is used, then VehPref cannot
+        be used.
+        SeatBeltsAndBagsInfo is optional on response, but almost always returned SeatBelts
+        and/or BagsInfo is returned. 
+    BagsInfoReq:
+      type: object
+      properties:
+        Bags:
+          $ref: '#/components/schemas/Bags'
+    Bags:
+      type: object
+      properties:
+        Quantity:
+          type: integer
+          format: int32
+          example: 1
+        Size:
+          type: string
+          enum:
+          - Small
+          - Large
+      description: Object to contains Bag Quantity and Bag Size
+    LocationInfos:
+      required:
+      - LocationInfo
+      type: object
+      properties:
+        LocationInfo:
+          minItems: 1
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationInfo'
+      description: Location Information for Pickup or Return location information
+        about the location requested to assist the customer - Current Usage----
+        Similar Name List response will allow Geo to return , if there are multiple
+        addresses matches the request - THIS IS FOR FUTURE USE
+    BagsInfoRes:
+      type: object
+      properties:
+        Bags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bags'
+    CarExtrasPrefs:
+      type: object
+      properties:
+        CarExtrasPref:
+          type: array
+          items:
+            required:
+            - Type
+            type: object
+            properties:
+              Type:
+                maxLength: 3
+                minLength: 3
+                pattern: ^([0-9A-Z]{3,3})$
+                type: string
+                example: NAV
+      description: Contains Special Equipment or Car Extras add on to the vehicle, e.g.  NAV - Navigation Equipment or CDW - Collision Damage Wavier Insurance   
+    Images:
+      type: object
+      properties:
+        Image:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+      description: Contains image elements
+    Image:
+      required:
+      - Height
+      - Type
+      - Url
+      - Width
+      type: object
+      properties:
+        Height:
+          $ref: '#/components/schemas/positiveInteger'
+        Type:
+          $ref: '#/components/schemas/ImageTypes'
+        Url:
+          $ref: '#/components/schemas/anyURI'
+        Width:
+          $ref: '#/components/schemas/positiveInteger'
+      description: Image attributes description
+    ImagesRef:
+      required:
+      - Image
+      type: object
+      properties:
+        Image:
+          minItems: 1
+          type: array
+          items:
+            type: object
+            properties:
+              Type:
+                $ref: '#/components/schemas/ImageTypes'
+      description: Specifies the reference of the vehicle images provided by Car Supplier
+    ImageTypes:
+      type: string
+      description: Image types - the size of the image returned if available
+      enum:
+      - ORIGINAL
+      - THUMBNAIL
+      - SMALL
+      - MEDIUM
+      - LARGE
+    VendorPrefs:
+      required:
+      - VendorPref
+      type: object
+      properties:
+        VendorPref:
+          minItems: 1
+          type: array
+          items:
+            required:
+            - Code
+            type: object
+            properties:
+              Code:
+                maxLength: 2
+                minLength: 2
+                pattern: ^([A-Z]{2,2})$
+                type: string
+                example: ZI
+            description: Information on the car supplier/vendor associated with this rental location
+      description: Car Supplier/Vendor Information
+    ReturnLocation:
+      required:
+      - LocationCode
+      type: object
+      properties:
+        Direction:
+          type: string
+        Distance:
+          type: string
+        ExtendedLocationCode:
+          $ref: '#/components/schemas/StringLength3to4'
+        Latitude:
+          type: string
+        LocationCode:
+          $ref: '#/components/schemas/StringLength3to4'
+        Longitude:
+          type: string
+        PolicyRef:
+          $ref: '#/components/schemas/StringLength2to10'
+        UOM:
+          type: string
+      description: ReturnLocation is used to represent drop-off location in the
+        response, usually only inputted if different than the pickup location. 
+        This should be used only for one-way rentals on the request.
+        On response it is mandatory and will repeat PickUpLocation if the Vehicle is returned to the same location.
+    VehAvailInfos:
+      type: object
+      properties:
+        PickUpDate:
+          type: string
+        PickUpTime:
+          pattern: ^(([0-1][0-9]|[2][0-3])(:([0-5][0-9])){1,2})$
+          type: string
+        RentalDays:
+          type: string
+        RentalHours:
+          type: string
+        ReturnDate:
+          type: string
+        ReturnTime:
+          pattern: ^(([0-1][0-9]|[2][0-3])(:([0-5][0-9])){1,2})$
+          type: string
+        VehAvailInfo:
+          minItems: 0
+          type: array
+          items:
+            $ref: '#/components/schemas/VehAvailInfo'
+    VehAvailInfo:
+      required:
+      - PickUpLocation
+      type: object
+      properties:
+        VehRentalRate:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehRentalRate'
+        ConvertedVehRentalRate:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehRentalRate'
+        ReturnLocation:
+          $ref: '#/components/schemas/ReturnLocation'
+        Vendor:
+          $ref: '#/components/schemas/Vendor'
+        PickUpLocation:
+          $ref: '#/components/schemas/PickUpLocation'
+    VehRentalRate:
+      required:
+      - Vehicle
+      type: object
+      properties:
+        AvailabilityStatus:
+          type: string
+        Category:
+          type: string
+        GuaranteeInd:
+          type: string
+        Ordinal:
+          type: number
+        PrepayDeposit:
+          type: string
+        RateAssured:
+          type: string
+        RateCode:
+          type: string
+        RateKey:
+          type: string
+        RatePlanChangeIndicator:
+          type: string
+        RatePlanRequested:
+          type: string
+        RatePlanReturned:
+          type: string
+        SellGuaranteeReq:
+          type: string
+        SupplierCurrency:
+          type: boolean
+        CarExtraCharges:
+          $ref: '#/components/schemas/CarExtraCharges'
+        Commission:
+            $ref: '#/components/schemas/Commission'
+        GuaranteePrepaid:
+            $ref: '#/components/schemas/GuaranteePrepaid'
+        Vehicle:
+          $ref: '#/components/schemas/Vehicle'
+        VehicleCharges:
+          $ref: '#/components/schemas/VehicleCharges'
+    Address:
+      type: object
+      properties:
+        AddressLine1:
+          $ref: '#/components/schemas/StringLength0to255'
+        AddressLine2:
+          $ref: '#/components/schemas/StringLength0to255'
+        AddressLine3:
+          $ref: '#/components/schemas/StringLength0to255'
+        CityName:
+          $ref: '#/components/schemas/CityName'
+        CountryName:
+          $ref: '#/components/schemas/CountryName'
+        Name:
+          type: string
+          description: Address details for the Car Rental Location
+        PostalCode:
+          $ref: '#/components/schemas/StringLength0to10'
+        StateProv:
+          $ref: '#/components/schemas/StateProv'
+      description: Address details for the Car Rental Location.
+    CityName:
+      type: object
+      properties:
+        $:
+          type: string
+        CityCode:
+          type: string
+      description: ' City Name of Car Rental Location '
+    CountryName:
+      type: object
+      properties:
+        $:
+          type: string
+        Code:
+          $ref: '#/components/schemas/StringLength0to2'
+      description: ' Country Name of Car Rental Location '
+    StateProv:
+      type: object
+      properties:
+        $:
+          type: string
+        StateCode:
+          $ref: '#/components/schemas/StringLength0to2'
+      description: State or Province of the Car Rental Location if available
+    VehLocPolicyInfo:
+      required:
+      - CounterLocation
+      - LocationOwner
+      - OperationSchedule
+      type: object
+      properties:
+        CounterLocation:
+          type: string
+        DeliveryCollectionInfo:
+          $ref: '#/components/schemas/DeliveryCollectionInfo'
+        ExtendedLocationCode:
+          type: string
+        LocationCode:
+          type: string
+        LocationName:
+          $ref: '#/components/schemas/StringLength0to55'
+        LocationOwner:
+          $ref: '#/components/schemas/StringLength1to1'
+        LocationType:
+          type: string
+        PolicyRef:
+          $ref: '#/components/schemas/StringLength2to10'
+        LocationInfo:
+          $ref: '#/components/schemas/LocationInfo'
+        OperationSchedule:
+          $ref: '#/components/schemas/OperationSchedule'
+        VendorDetails:
+          $ref: '#/components/schemas/VendorDetails'
+    LocationInfo:
+      type: object
+      properties:
+        Latitude:
+          $ref: '#/components/schemas/StringLength0to20'
+        Longitude:
+          $ref: '#/components/schemas/StringLength0to20'
+        Address:
+          $ref: '#/components/schemas/Address'
+      description: Location and Address details for the Car Rental Location.
+    OperationSchedule:
+      required:
+      - OperationTimes
+      type: object
+      properties:
+        OperationTimes:
+          $ref: '#/components/schemas/OperationTimes'
+        StartDate:
+          type: string
+    OperationTimes:
+      required:
+      - OperationTime
+      type: object
+      properties:
+        OperationTime:
+          maxItems: 7
+          minItems: 1
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationTime'
+    VendorDetails:
+      type: object
+      properties:
+        Code:
+          type: string
+        Name:
+          type: string
+      description: Vendor Details
+    SeatBelts:
+      required:
+      - Quantity
+      type: object
+      properties:
+        Quantity:
+          maximum: 99
+          minimum: 1
+          type: integer
+          example: 2
+      description: SeatBelts is used to represent number of SeatBelts(The Legal Passenger capacity)
+    PickUpLocation:
+      required:
+      - LocationCode
+      type: object
+      properties:
+        Direction:
+          type: string
+        Distance:
+          type: string
+        ExtendedLocationCode:
+          $ref: '#/components/schemas/StringLength3to4'
+        Latitude:
+          type: string
+        LocationCode:
+          $ref: '#/components/schemas/StringLength3to4'
+        Longitude:
+          type: string
+        PolicyRef:
+          $ref: '#/components/schemas/StringLength2to10'
+        UOM:
+          type: string
+      description: PickUpLocation is used to represent pick-up location in the response
+    DeliveryCollectionInfo:
+      type: string
+      description: 'Rental Location Delivery/Collection availability. This is for FUTURE USE ONLY'
+      enum:
+      - Delivery
+      - Collection
+      - Delivery and Collection
+      - Not Available
+    StringLength2to6:
+      maxLength: 6
+      minLength: 2
+      type: string
+      description: Used for Character Strings, length 2 to 6
+    StringLength0to10:
+      maxLength: 10
+      minLength: 0
+      type: string
+      description: Used for Character Strings, length 0 to 10
+    StringLength0to2:
+      pattern: ^([0-9A-Z]{2,2})$
+      type: string
+      description: Used for Character String length 0 to 2.
+    StringLength0to20:
+      maxLength: 20
+      minLength: 0
+      type: string
+      description: Used for Character Strings, length 0 to 20.
+    StringLength0to255:
+      maxLength: 255
+      minLength: 0
+      type: string
+      description: Used for Character Strings, length 0 to 255
+    StringLength0to55:
+      maxLength: 55
+      minLength: 0
+      type: string
+      description: Used for Character Strings, length 0 to 55.
+    StringLength1to1:
+      maxLength: 1
+      minLength: 1
+      type: string
+      description: Used for Character Strings, length 1 to 1.
+    StringLength2:
+      pattern: ^([A-Z]{2,2})$
+      type: string
+      description: Used for Character Strings, length 3 to 4.
+    StringLength2to10:
+      pattern: ^([0-9A-Z]{2,10})$
+      type: string
+      description: Used for Character Strings, length 2 to 10.
+    StringLength3to4:
+      pattern: ^([0-9A-Z]{3,4})$
+      type: string
+      description: Used for Character Strings, length 3 to 4.
+    positiveInteger:
+      minimum: 1
+      type: integer
+    anyURI:
+      type: string
+    CarExtraCharges:
+      type: object
+      properties:
+        TotalAmount:
+          type: string
+        CarExtra:
+          type: array
+          maxLength: 10
+          items:
+            type: object
+            properties:
+              BaseAmount:
+                type: string
+              Code:
+                type: string
+              Plan:
+                type: string
+              Status:
+                type: string
+            description: Used to return rate and other information for a particular
+              car extras
+      description: List of rates for car extras related information
+    Commission:
+      type: object
+      properties:
+        Amount:
+          type: string
+        Fixed:
+          type: string
+        Percent:
+          type: string
+      description: Commission related Information if applicable
+    Vehicle:
+      required:
+      - Images
+      - VehType
+      type: object
+      properties:
+        VehMakeAndModel:
+          type: string
+        VehNumOfDoors:
+          type: string
+        VehType:
+          type: string
+        Images:
+          $ref: '#/components/schemas/Images'
+        SeatBeltsAndBagsInfo:
+          type: object
+          properties:
+            BagsInfo:
+              $ref: '#/components/schemas/BagsInfoRes'
+            SeatBelts:
+              $ref: '#/components/schemas/SeatBelts'
+          description: SeatBeltsAndBagsInfo holds all the elements and attributes
+            required for SeatBelts and Bags information
+      description: Vehicle holds all the elements and attributes required for vehicle
+        information
+    VehicleCharges:
+      type: object
+      properties:
+        VehicleCharge:
+          minItems: 0
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleCharge'
+    VehicleCharge:
+        required:
+        - Amount
+        - ChargeType
+        - CurrencyCode
+        type: object
+        properties:
+          Amount:
+            type: string
+          ChargeType:
+            type: string
+            enum:
+            - DropOffCharge
+            - ExtraDay
+            - ExtraHour
+            - BaseRateTotal
+            - SubtotalExcludingMandatoryCharges
+            - DailyChargesTotal
+            - HourlyChargesTotal
+            - MandatoryCharges
+            - MandatoryChargesTotal
+            - ApproximateTotalPrice
+            - CarExtraTotalCharge
+          CurrencyCode:
+            type: string
+          ExtraMileageCharge:
+            type: string
+          MileageAllowance:
+            type: string
+          UOM:
+            type: string
+        description: VehicleCharges is used to return the applicable vehicle charge
+    Vendor:
+      type: object
+      properties:
+        Code:
+          $ref: '#/components/schemas/StringLength2'
+        Logo:
+          type: string
+        Name:
+          type: string
+      description: Vendor element provides all the information of Car Vendor
+    ApplicationResults:
+      required:
+      - status
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/CompletionCodes'
+        Success:
+          maxItems: 99
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemInformation'
+        Error:
+          maxItems: 99
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemInformation'
+        Warning:
+          maxItems: 99
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemInformation'
+    ProblemInformation:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/ErrorType'
+        TimeStamp:
+          type: string
+          format: date-time
+        SystemSpecificResults:
+            type: array
+            items:
+                $ref: '#/components/schemas/SystemSpecificResults'
+    CompletionCodes:
+      type: string
+      enum:
+      - Complete
+      - Incomplete
+      - NotProcessed
+      - Unknown
+    ErrorType:
+      type: string
+      enum:
+      - Transport
+      - Validation
+      - Application
+      - BusinessLogic
+    SystemSpecificResults:
+      type: object
+      properties:
+        timeStamp:
+          type: string
+          format: date-time
+        reference:
+          type: string
+        Message:
+          maxItems: 99
+          type: array
+          items:
+            $ref: '#/components/schemas/ResultMessage'
+        ShortText:
+          $ref: '#/components/schemas/Text.Short'
+        Element:
+          $ref: '#/components/schemas/Text.Long'
+    ResultMessage:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/Text.Long'
+        code:
+          type: string
+    Text.Long:
+      maxLength: 4096
+      type: string
+    Text.Short:
+      maxLength: 128
+      minLength: 1
+      type: string

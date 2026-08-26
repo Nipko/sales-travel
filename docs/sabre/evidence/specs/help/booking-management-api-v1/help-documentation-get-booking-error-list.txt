@@ -1,0 +1,390 @@
+Get Booking – Error List
+
+Below are all possible errors returned by the Get Booking endpoint:
+
+Error type |
+Error category |
+Description |
+
+INVALID_MESSAGE
+ |
+APPLICATION_ERROR
+ |
+Incorrect booking request
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+The fareOffers could not be retrieved. The service GetAncillaryOffersRQ returned an authorization failure. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+The fareRules could not be retrieved. The service StructureFareRulesRQ returned an authorization failure. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+The journeys could not be retrieved. The service Leg Detection returned an authorization failure. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+Electronic document details could not be retrieved. The service Get Electronic Document API (TKT_ElectronicDocumentServicesRQ) is available to Sabre travel agency subscribers only. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+Expired or invalid security token
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+Invalid security token.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+Booking cannot be retrieved due to authorization issues in the security systems. Please verify the used credentials with your account manager.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+RESOURCE_RESTRICTED
+ |
+Access to selected booking is restricted. Verify the used credentials and Travel Journal Record settings with your account manager.
+ |
+
+FORBIDDEN_ACCESS
+ |
+FORBIDDEN
+ |
+Booking details could not be retrieved. The downline service returned a forbidden access. Please retry or verify the used credentials with your account manager.
+ |
+
+INTERNAL_SERVER_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+Exception while processing –> %s%s
+ |
+
+INTERNAL_SERVER_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Call to internal service timed out.
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Booking cannot be found
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Some resource cannot be populated for given reservation. Details are returned in fieldName, fieldPath and fieldValue.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Resource cannot be populated. There is no pricing information saved in the booking for passengerCode`%s` [%s] for the trip`%s` between [%s].
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Resource cannot be populated. Details not available for manually generated pricing information saved in the booking.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Resource cannot be populated. The flight status of one or more segments is invalid for the trip between [%s-%s].
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Unable to provide ticketStatusName. The supported ticketStatusCodes are: %s.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Details for ticket with number: %s cannot be populated.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Cannot populate some data for flight.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+fareRules.isRefundable cannot be populated for fareRules.passengerCode:
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+aircraftTypeCode, meals, durationInMinutes & distanceInMiles cannot be populated for flight:
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Car location details for code: %s cannot be populated.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Unable to populate additional data for %s: %s
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules can not be populated because the ticket is voided, refunded or exchanged.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules can not be populated because the Price Quote %s is invalid.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules can not be populated because the Price Quotes %s are invalid.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules can not be populated for this passengerCode. There’s no valid Ticket present in the booking.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules can not be populated for this passengerCode for part of the booking. There’s no valid Ticket present in the booking for flights[%s].
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Hotel chainName cannot be populated based on the chainCode: %s
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+AircraftTypeName cannot be populated based on the aircraftTypeCode: %s
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Baggage Allowance cannot be returned for NDC flights.
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+Fare.travelerIndices not populated: Traveler with nameId=%s not found in reservation
+ |
+
+RESOURCE_UNAVAILABLE
+ |
+WARNING
+ |
+FareRules cannot be populated because no Price Quote or Ticket is present in the booking
+ |
+
+JOURNEY_DATA_UNAVAILABLE
+ |
+APPLICATION_ERROR
+ |
+Journey details cannot be determined due to missing Pseudo City Code (PCC) information.
+ |
+
+JOURNEY_DATA_MISSING
+ |
+WARNING
+ |
+Journey details cannot be determined due to Leg Detection service failure.
+ |
+
+BOOKING_RETRIEVAL
+ |
+APPLICATION_ERROR
+ |
+Booking cannot be retrieved
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Invalid filtering option. Available options are:
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Validation Failed:
+ |
+
+UNPARSEABLE_REQUEST
+ |
+BAD_REQUEST
+ |
+Validation error
+ |
+
+UNPARSEABLE_REQUEST
+ |
+BAD_REQUEST
+ |
+Invalid Syntax
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+General problem with %s service
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Cannot connect to underlying system
+ |
+
+LEG_DETECTION_SERVICE_FAILURE
+ |
+WARNING
+ |
+Cannot connect to underlying system.
+ |
+
+LEG_DETECTION_SERVICE_TIMEOUT
+ |
+WARNING
+ |
+No response from the Leg Detection service provider.
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+INVALID_JOURNEYS
+ |
+WARNING
+ |
+The journey information can not be populated for this booking. Verify itinerary details against duplicated flight routes or incorrect dates.
+ |
+
+INTERNAL_PROCESSING_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Penalty information was not obtained due to the unexpectedly long processing time of the %s service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE
+ |
+APPLICATION_ERROR
+ |
+System could not revert context. Manually finish or ignore the transaction, then revert context to the original pseudo city code.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_PLEASE_WAIT
+ |
+APPLICATION_ERROR
+ |
+System is still processing the transaction. Please wait and manually revert context to the original pseudo city code.
+ |
+
+TRANSACTION_PROCESSING_TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+Unable to initiate a stateful transaction due to the unexpectedly long processing time of the %v service.
+ |
+
+UNDETERMINED_FLIGHT_STATUS_CODE
+ |
+WARNING
+ |
+The flight status code is not recognized or cannot be determined based on the available order services data.
+ |
+
+ |
+
+The variable %s contains information returned dynamically by the downline service.
+ |

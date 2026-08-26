@@ -1,0 +1,121 @@
+Booking Management API User Guide
+
+Overview
+
+With the introduction of additional content types in Sabre systems (New Distribution Capability & Content Services for Lodging), you may be thinking, which Sabre API should I use for managing bookings?
+
+We’ve got you covered.
+
+Booking Management facilitates the booking process through Sabre by providing a normalized set of methods within a single API that covers common scenarios.
+
+ |
+
+Check out this blog article to learn about some of the capabilities possible with the Booking Management API!
+ |
+
+Guiding Principles
+
+APIs as a Product
+
+This API serves a business purpose, and as a result, will have an evolving life cycle, with a heavy focus on you, the developer.
+
+Developed following API-first design principles
+
+The API serves as a user interface (UI) to the Sabre platform, and thus it defines and limits the kinds of interactions it supports.
+
+Planning, design, and customer validation come first. Once these are all in order, development begins.
+
+Adheres to &#8220;One Sabre&#8221; guidelines, with a consistent API interface across all domains and end-to-end workflows.
+
+Usability
+
+Designed to be consumable by API Developers of all skill levels and all levels of familiarity with the travel industry.
+
+DX-Focused
+
+Focus on Developer Experience (DX) with plenty of supporting documentation (guides, Postman collections, etc.).
+
+Simple Versioning
+
+Simplified versioning (separate implementation from the contract).
+
+The Booking Management API follows the Sabre RPC Protocol Specification.
+
+Current Features
+
+Method |
+Description |
+Endpoint |
+Type |
+
+Get Booking
+ |
+Normalized view of a Sabre booking.
+ |
+/trip/orders/getBooking
+ |
+RPC/JSON
+ |
+
+Create Booking
+ |
+Unified API to create an air booking for different content sources (NDC, ATPCO, LCC). Evolved version of the Create Passenger Name Record API.
+ |
+/trip/orders/createBooking
+ |
+RPC/JSON
+ |
+
+Cancel Booking
+ |
+Normalized cancel of Sabre products within a booking. Supports voiding/refunding NDC Tickets.
+ |
+/trip/orders/cancelBooking
+ |
+RPC/JSON
+ |
+
+Modify Booking
+ |
+Unified API to modify an existing booking. It allows for modification of CSL hotels, group bookings, and traditional ATPCO and NDC content (limited functionality).
+ |
+/trip/orders/modifyBooking
+ |
+RPC/JSON
+ |
+
+Fulfill Flight Tickets
+ |
+Unified API to issue tickets and electronic miscellaneous documents (EMD). Different types of content are supported: ATPCO ticket and EMD issuance, and NDC order fulfillment (limited functionality).
+ |
+/trip/orders/fulfillFlightTickets
+ |
+RPC/JSON
+ |
+
+Check Flight Tickets
+ |
+Unified API to verify voidability, refundability, and exchangeability for a list of electronic documents (ATPCO) or a Sabre Order (NDC). Refund checks are currently to limited electronic tickets.
+ |
+/trip/orders/checkFlightTickets
+ |
+RPC/JSON
+ |
+
+Void Flight Tickets
+ |
+Unified API to void a list of electronic documents (ATPCO). This includes electronic tickets as well as electronic miscellaneous documents (EMDs).
+ |
+/trip/orders/voidFlightTickets
+ |
+RPC/JSON
+ |
+
+Refund Flight Tickets
+ |
+Unified API to refund a list of electronic documents (ATPCO). It allows you to specify refund qualifiers, and is currently limited to electronic tickets.
+ |
+/trip/orders/refundFlightTickets
+ |
+RPC/JSON
+ |

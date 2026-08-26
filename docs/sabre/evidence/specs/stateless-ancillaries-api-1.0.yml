@@ -1,0 +1,1908 @@
+swagger: '2.0'
+info:
+  title: Stateless Ancillaries API
+  description: Stateless Ancillaries API is used to retrieve available ancillary offers by providing a PNR or by offerPayload or by providing passenger and segment information or by offerId. This API also has the ability to add an ancillary required by the airline to a PNR or remove an ancillary from a PNR as well.
+  version: '1.0'
+x-lingo-api-type: rpc
+tags:
+  - name: Ancillary
+    description: Shop, add and remove ancillaries for the selected itinerary.
+host: api.cert.platform.sabre.com
+basePath: /v1/dc/ancillaries
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+securityDefinitions:
+  oauth2_authentication:
+    type: oauth2
+    tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token
+    scopes: {}
+    flow: application
+    x-base64-encode-client-credentials: true
+security:
+  - oauth2_authentication: []
+paths:
+  /shop:
+    post:
+      operationId: shopAncillaries
+      tags:
+        - Ancillary
+      description: Ancillaries shop for requested passenger with provided ancillary criteria.
+      parameters:
+        - $ref: '#/parameters/RequestHeader'
+        - in: body
+          name: AncillaryShopRequest
+          required: true
+          description: Ancillaries shopping request.
+          schema:
+            $ref: '#/definitions/AncillaryShopRequest'
+      responses:
+        '200':
+          description: Successful response unless 'errors' element is returned.
+          schema:
+            $ref: '#/definitions/AncillaryShopResponse'
+  /add:
+    post:
+      operationId: addAncillaries
+      tags:
+        - Ancillary
+      description: Adds available ancillary offers to the PNR. This also supports an option to override the amount of an ancillary.
+      parameters:
+        - $ref: '#/parameters/RequestHeader'
+        - in: body
+          name: AncillaryAddRequest
+          required: true
+          description: Ancillary add request.
+          schema:
+            $ref: '#/definitions/AncillaryAddRequest'
+      responses:
+        '200':
+          description: Successful response unless 'errors' element is returned.
+          schema:
+            $ref: '#/definitions/AncillaryAddResponse'
+  /remove:
+    post:
+      operationId: removeAncillaries
+      tags:
+        - Ancillary
+      description: Removes previously added ancillary for a particular passenger for a flight segment. Multiple ancillaries if present in a PNR can be removed with a single request. It is required to provide airExtraId in order for the ancillary to be deleted from the PNR.
+      parameters:
+        - $ref: '#/parameters/RequestHeader'
+        - in: body
+          name: AncillaryRemoveRequest
+          required: true
+          description: Ancillary remove request.
+          schema:
+            $ref: '#/definitions/AncillaryRemoveRequest'
+      responses:
+        '200':
+          description: Successful response unless 'errors' element is returned.
+          schema:
+            $ref: '#/definitions/AncillaryRemoveResponse'
+parameters:
+  RequestHeader:
+    in: header
+    type: string
+    name: x-request-id
+    description: Request id to track flow level transactions.
+definitions:
+  AncillaryRequest:
+    type: object
+    description: Abstract request which is a base for all ancillary requests.
+    properties:
+      clientContext:
+        $ref: '#/definitions/ClientContext'
+        description: Client psuedo city or office accounting code details.
+  AncillaryShopRequest:
+    allOf:
+      - $ref: '#/definitions/AncillaryRequest'
+      - type: object
+        description: Ancillary shop request which retrieves ancillary offers by PNR locator or by offer payload or offer Id with passenger, segment and ancillary criteria.
+        properties:
+          pnrLocator:
+            $ref: '#/definitions/PnrLocator'
+            description: The booking reference ID in the carrier's system.
+          isAwardPricing:
+            type: boolean
+            example: true
+            description: If set to true, indicates that pricing with award fares is requested otherwise revenue prices will be returned.
+          itinerary:
+            $ref: '#/definitions/Itinerary'
+            description: Itinerary details that contains references to itineraryParts.
+          itineraryParts:
+            type: array
+            minItems: 1
+            maxItems: 8
+            description: List of itinerary part details that contains references to segments.
+            items:
+              $ref: '#/definitions/ItineraryPart'
+          segments:
+            type: array
+            minItems: 1
+            maxItems: 16
+            description: List of segment details for ancillary shopping.
+            items:
+              $ref: '#/definitions/Segment'
+          passengers:
+            type: array
+            minItems: 1
+            maxItems: 9
+            description: List of passenger details for ancillary shopping.
+            items:
+              $ref: '#/definitions/Passenger'
+          ancillaryCriterias:
+            type: array
+            minItems: 1
+            description: List of ancillary search criteria which includes group, subCodes and serviceType to shop for ancillaries.
+            items:
+              $ref: '#/definitions/AncillarySearchCriteria'
+          offers:
+            type: array
+            minItems: 1
+            maxItems: 2
+            description: List of air offer details containing itinerary, segment and price quote information for ancillary shopping.
+            items:
+              $ref: '#/definitions/Offer'
+          selectedSegments:
+            type: array
+            minItems: 1
+            maxItems: 16
+            description: List of selected segment sequences.
+            items:
+              type: string
+          fareInfos:
+            type: array
+            minItems: 1
+            description: List of fare details that can influence ancillary pricing.
+            items:
+              $ref: '#/definitions/PriceQuote'
+          currencyOverrideCode:
+            $ref: '#/definitions/CurrencyCode'
+            description: The three-letter ISO-4217 code of the currency.
+  AncillaryAddRequest:
+    allOf:
+      - $ref: '#/definitions/AncillaryRequest'
+      - type: object
+        required:
+          - pnrLocator
+          - offers
+        description: Ancillary add request which specifies ancillary information's to be added.
+        properties:
+          pnrLocator:
+            $ref: '#/definitions/PnrLocator'
+            description: The booking reference ID in the carrier's system.
+          isCommitEnabled:
+            type: boolean
+            example: true
+            default: true
+            description: If set to true, ancillary add operation will be committed to the reservation.
+          itinerary:
+            $ref: '#/definitions/Itinerary'
+            description: Itinerary details for which the ancillary will be added.
+          itineraryParts:
+            type: array
+            minItems: 1
+            maxItems: 8
+            description: List of itinerary part details for which the ancillary will be added.
+            items:
+              $ref: '#/definitions/ItineraryPart'
+          segments:
+            type: array
+            minItems: 1
+            maxItems: 16
+            description: List of segment details for which the ancillary will be added.
+            items:
+              $ref: '#/definitions/Segment'
+          passengers:
+            type: array
+            minItems: 1
+            maxItems: 9
+            description: List of passenger information for which the ancillary will be added.
+            items:
+              $ref: '#/definitions/Passenger'
+          offers:
+            type: array
+            minItems: 1
+            maxItems: 2
+            description: List of ancillary offers to be added.
+            items:
+              $ref: '#/definitions/Offer'
+          ancillaries:
+            type: array
+            minItems: 1
+            description: List of ancillaries to be added.
+            items:
+              $ref: '#/definitions/Ancillary'
+  AncillaryRemoveRequest:
+    allOf:
+      - $ref: '#/definitions/AncillaryRequest'
+      - type: object
+        required:
+          - pnrLocator
+          - airExtraIds
+        description: Ancillary remove request which specifies airExtraIds to be removed from PNR.
+        properties:
+          pnrLocator:
+            $ref: '#/definitions/PnrLocator'
+            description: The booking reference ID in the carrier's system.
+          isCommitEnabled:
+            type: boolean
+            example: true
+            default: true
+            description: If set to true, ancillary remove operation will be committed to the reservation.
+          airExtraIds:
+            type: array
+            minItems: 1
+            description: List of air extra item id to be removed from PNR.
+            items:
+              type: string
+              example: '12'
+  AncillaryResponse:
+    type: object
+    description: Abstract response which is a base for all ancillary responses.
+    properties:
+      warnings:
+        type: array
+        minItems: 1
+        description: Lists warning details that are applicable to all passengers.
+        items:
+          $ref: '#/definitions/Warning'
+      errors:
+        type: array
+        minItems: 1
+        description: Lists error details that are applicable to all passengers.
+        items:
+          $ref: '#/definitions/Error'
+  AncillaryShopResponse:
+    allOf:
+      - $ref: '#/definitions/AncillaryResponse'
+      - type: object
+        description: Ancillary shop response containing available ancillary offers.
+        properties:
+          itinerary:
+            $ref: '#/definitions/Itinerary'
+            description: Itinerary details that contains references to itineraryParts.
+          itineraryParts:
+            type: array
+            minItems: 1
+            maxItems: 8
+            description: Lists itinerary part details property that contain references to segments.
+            items:
+              $ref: '#/definitions/ItineraryPart'
+          segments:
+            type: array
+            minItems: 1
+            maxItems: 16
+            description: Lists segment details to which the ancillaries are returned.
+            items:
+              $ref: '#/definitions/Segment'
+          passengers:
+            type: array
+            minItems: 1
+            maxItems: 9
+            description: Lists passenger details associated to itineraries.
+            items:
+              $ref: '#/definitions/Passenger'
+          offers:
+            type: array
+            minItems: 1
+            maxItems: 2
+            description: Lists ancillary offer details associated with requested passenger itinerary.
+            items:
+              $ref: '#/definitions/Offer'
+          ancillaries:
+            type: array
+            minItems: 1
+            description: Lists available ancillary details.
+            items:
+              $ref: '#/definitions/Ancillary'
+  AncillaryAddResponse:
+    allOf:
+      - $ref: '#/definitions/AncillaryResponse'
+      - type: object
+        description: Ancillary add response that contains airExtraIds of added ancillaries along with the status.
+        properties:
+          results:
+            type: array
+            minItems: 1
+            description: Lists ancillary add operation results.
+            items:
+              $ref: '#/definitions/AddedAncillaryItem'
+  AncillaryRemoveResponse:
+    allOf:
+      - $ref: '#/definitions/AncillaryResponse'
+      - type: object
+        description: Ancillary remove response that contains removed airExtraIds along with the status.
+        properties:
+          results:
+            type: array
+            minItems: 1
+            description: Lists ancillary remove operation results.
+            items:
+              $ref: '#/definitions/RemovedAncillaryItem'
+  AncillarySearchCriteria:
+    type: object
+    description: Ancillary search criteria to limit the response for requested options.
+    properties:
+      serviceTypeCode:
+        $ref: '#/definitions/ServiceTypeCode'
+        description: The ATPCO service type code.
+      groupCode:
+        type: string
+        pattern: ^[0-9A-Z]{2}$
+        example: 'BG'
+        description: The ATPCO group code.
+      subCodes:
+        type: array
+        minItems: 1
+        example:
+          - 0CM
+          - 0DF
+        description: The Sub Code is either an industry-defined or carrier-defined code identifying a specific type of service.
+        items:
+          type: string
+          pattern: ^[0-9A-Z]{3}$
+          example: '0DF'
+  Ancillary:
+    type: object
+    required:
+      - id
+      - subCode
+      - airlineCode
+    description: Ancillary details.
+    properties:
+      id:
+        type: string
+        example: 'ancillary_ancillary_1'
+        description: Ancillary Id.
+      groupCode:
+        type: string
+        pattern: ^[0-9A-Z]{2}$
+        example: 'BG'
+        description: The ATPCO group code.
+      groupName:
+        type: string
+        example: 'BAGGAGE'
+        description: The ATPCO group name.
+      subCode:
+        type: string
+        pattern: ^[0-9A-Z]{3}$
+        example: '0B5'
+        description: The Sub Code is either an industry-defined or carrier-defined code identifying a specific type of service.
+      ssimCode:
+        type: string
+        example: '986'
+        description: This field specifies the Standard Schedules Information Manual (SSIM) code.
+      reasonForIssuanceCode:
+        type: string
+        pattern: ^[ABCDEFGHI]$
+        example: 'C'
+        description: |
+          Internal code specifying the reason for issuing the EMD for the service associated to the Sub Code.
+          Refer to PADIS Codeset for data element 4183 -Special Condition.
+          A - Air Transportation,
+          B - Surface Transportation / Non Air Services
+          C - Baggage
+          D - Financial Impact
+          E - Airport Services
+          F - Merchandise
+          G - In-flight Services
+          H - Reserved for future ATPCO use
+          I - Individual Airline Use
+      reasonForIssuance:
+        $ref: '#/definitions/ReasonForIssuanceEnum'
+        description: Specifies the reason for issuing the EMD for the service associated to the Sub Code.
+      commercialName:
+        type: string
+        example: 'PAYMENT SURCHARGE'
+        description: Specifies the commercial name associated to the sub code.
+      airlineCode:
+        $ref: '#/definitions/AirlineCode'
+        description: Specifies the carrier airline code.
+      specialService:
+        $ref: '#/definitions/SpecialService'
+        description: Specifies the IATA-defined Special Service Request (SSR) code applicable to the sub code.
+      vendorCode:
+        type: string
+        pattern: ^[0-9A-Z]{1,5}$
+        example: 'MMGR'
+        description: Specifies the vendor or vendors providing the service.
+      emdType:
+        $ref: '#/definitions/ElectronicMiscDocType'
+        description: Identifies the type of Electronic Miscellaneous Document (EMD) or other document that must be issued for the sub code.
+      bookingMethod:
+        $ref: '#/definitions/BookingMethod'
+        description: Method by which the sub code must be booked.
+      serviceTypeCode:
+        $ref: '#/definitions/ServiceTypeCode'
+        description: Code of the associated service type defined by ATPCO (where applicable).
+      serviceType:
+        $ref: '#/definitions/ServiceTypeEnum'
+        description: Service type identifies and describes an ancillary product.
+      isDisplayOnly:
+        type: boolean
+        example: false
+        description: If set to true, indicates this ancillary can only be displayed otherwise can be booked or purchased.
+      weights:
+        type: array
+        minItems: 1
+        description: Baggage weight and unit from sub code definition.
+        items:
+          $ref: '#/definitions/Weight'
+      bagType:
+        type: string
+        example: 'BIKE'
+        description: Non-standard baggage type.
+      ancillaryRule:
+        $ref: '#/definitions/AncillaryRule'
+        description: Rules defined for an ancillary, such as refundability, form of payment, etc.
+      bundledAncillaryRefs:
+        type: array
+        minItems: 1
+        example:
+          - '12'
+          - '24'
+        description: Lists references to ancillary elements included in the ancillary bundle. Populated only when the ancillary represents a bundle of other ancillaries.
+        items:
+          type: string
+          example: '12'
+  SpecialService:
+    type: object
+    required:
+      - code
+    description: IATA defined Special Service Request (SSR) code applicable to the sub code.
+    properties:
+      code:
+        type: string
+        pattern: ^[A-Z0-9]{1,20}$
+        example: 'WCHR'
+        description: Code of a special service requested by a passenger.
+      detail:
+        type: string
+        example: 'Wheel Chair'
+        description: Detail of a special service requested by a passenger.
+      type:
+        $ref: '#/definitions/SpecialServiceTypeEnum'
+        description: |
+          Structured - Structured data must be added to the SSR, 
+          NotAllowed - Free text should not be added to the SSR, 
+          Optional - Free text can be optionally added to the SSR, 
+          Required - Free text must be added to the SSR.
+      requiredProperties:
+        $ref: '#/definitions/RequiredProperties'
+        description: List of all properties that needs to be provided in order to book given ancillary.
+  RequiredProperties:
+    type: object
+    required:
+      - propertyDefinitions
+    properties:
+      propertyDefinitions:
+        type: array
+        minItems: 1
+        description: Names of a property that needs to be provided in order to book given ancillary.
+        items:
+          $ref: '#/definitions/PropertyDefinition'
+  PropertyDefinition:
+    type: object
+    required:
+      - name
+      - type
+      - allowedValues
+    properties:
+      name:
+        type: string
+        example: 'WEIGHT'
+        description: A name of a property.
+      type:
+        $ref: '#/definitions/PropertyDefinitionTypeEnum'
+        description: Property type.
+      min:
+        type: integer
+        example: 0
+        description: A minimum value for given property.
+      max:
+        type: integer
+        example: 2
+        description: A maximum value for given property.
+      unit:
+        type: string
+        example: 'KILOGRAM'
+        description: A unit of given value.
+      quantity:
+        type: number
+        format: float
+        example: 30.4
+        description: Quantity for a given property.
+      isOptional:
+        type: boolean
+        example: true
+        description: If true, this property is optional. If attribute is not present it means the property is required.
+      allowedValues:
+        type: array
+        minItems: 1
+        example:
+          - DOG
+        description: Possible values of an enum property.
+        items:
+          type: string
+          example: 'DOG'
+  ElectronicMiscDocType:
+    type: object
+    required:
+      - value
+    properties:
+      code:
+        type: string
+        example: '1'
+        description: Industry standard code.
+      value:
+        $ref: '#/definitions/ElectronicMiscValueEnum'
+        description: Identifies the type of Electronic Miscellaneous Document (EMD) or other document that must be issued for the Sub Code.
+      isConsumedAtIssuance:
+        type: boolean
+        example: false
+        description: If true, EMD will be issued in USED status else in OK/Open status.
+  BookingMethod:
+    type: object
+    required:
+      - value
+    description: Method by which the sub code must be booked.
+    properties:
+      code:
+        type: string
+        example: '12'
+        description: Industry standard code.
+      value:
+        $ref: '#/definitions/BookingMethodValueEnum'
+        description: It corresponds to booking field described in S5 record defined by ATPCO.
+  Weight:
+    type: object
+    required:
+      - value
+      - unit
+    properties:
+      value:
+        type: integer
+        example: 1
+        description: Value for weight.
+      unit:
+        $ref: '#/definitions/WeightUnitEnum'
+        description: Weight unit e.g. kilograms.
+  AncillaryRule:
+    type: object
+    description: Rules defined for an ancillary, such as refundability, form of payment, etc.
+    properties:
+      tourCode:
+        type: string
+        example: 'AND12M'
+        description: The Tour Code for the ticket on which the ancillary applies.
+      isRefundable:
+        type: boolean
+        example: false
+        description: If true, ancillary is refundable else non-refundable.
+      formOfRefund:
+        $ref: '#/definitions/FormOfRefund'
+        description: Specifies the form of refund of any applicable fee.
+      isExchangeable:
+        type: boolean
+        example: false
+        description: If true, this ancillary can be exchanged for another product; however, it is non-refundable.
+      isCommissionable:
+        type: boolean
+        example: false
+        description: If true, commission can be applied to an ancillary fee.
+      isInterlineable:
+        type: boolean
+        example: false
+        description: If true, fee can be applicable to interline itineraries.
+      feeApplicationMethod:
+        $ref: '#/definitions/FeeApplicationMethod'
+        description: Specifies whether the service fee applies per one way, round trip, item, travel, ticket.
+      freeOfChargeRules:
+        type: array
+        minItems: 1
+        maxItems: 2
+        example:
+          - BookingRequired
+        description: Specifies the rules regarding booking and EMD for free of charge services. Free of charge services have no price breakdown provided.
+        items:
+          $ref: '#/definitions/FreeOfChargeRulesEnum'
+      purchaseWithTicket:
+        type: boolean
+        example: true
+        description: If true, ancillary has to be purchased at ticket issue time, no earlier or later.
+      purchaseBy:
+        type: string
+        format: date
+        example: '2019-02-27'
+        description: Latest date an ancillary can be purchased.
+      isInventoryControlled:
+        type: boolean
+        example: false
+        description: If true, Indicates that this ancillary is inventory managed and there is a limited number of ancillary items that can be purchased for a segment(s).
+      freeAllowanceEligibility:
+        $ref: '#/definitions/FreeAllowanceEligibility'
+        description: If present, it indicates that an ancillary can substitute items in free allowance bucket.
+      customRule:
+        $ref: '#/definitions/CustomRule'
+        description: Custom rules that are not defined by ATPCO.
+  FormOfRefund:
+    type: object
+    required:
+      - value
+    description: Specifies the form of refund of any applicable fee.
+    properties:
+      code:
+        type: string
+        example: '1'
+        description: Industry standard code.
+      value:
+        $ref: '#/definitions/FormOfRefundValueEnum'
+        description: It corresponds to Form of Refund field described in S7 record defined by ATPCO.
+  FeeApplicationMethod:
+    type: object
+    required:
+      - value
+    description: Specifies whether the service fee applies per one way, round trip, item, travel, ticket.
+    properties:
+      code:
+        type: string
+        example: '1'
+        description: Industry standard code.
+      value:
+        $ref: '#/definitions/FeeApplicationMethodValueEnum'
+        description: It corresponds to Fee Application field described in S7 record defined by ATPCO.
+  FreeAllowanceEligibility:
+    type: object
+    required:
+      - quantity
+    properties:
+      quantity:
+        type: number
+        format: int32
+        example: 1
+        description: Number of baggage pieces that qualify as free of charge. If any baggage restrictions apply, they are specified in the BaggageRestriction structure.
+  CustomRule:
+    type: object
+    properties:
+      maxQuantityPerPassenger:
+        type: number
+        format: int32
+        example: 1
+        description: Maximum number of ancillaries that can be purchased by each passenger.
+      isConvertible:
+        type: boolean
+        example: true
+        description: If true, Indicates whether a monetary amount can be converted to points or miles.
+      applyHighestTierLevel:
+        type: boolean
+        example: true
+        description: If true, tier benefits of the passenger with the highest tier applies to all passengers in the PNR else applies only to this passenger.
+      excludedFormOfPayments:
+        type: array
+        minItems: 1
+        example:
+          - AX
+        description: List of excluded payment forms for an ancillary.
+        items:
+          type: string
+          example: 'AX'
+      requiresPaperTicket:
+        type: boolean
+        example: false
+        description: If true, Indicates whether paper ticket will be issued for this ancillary.
+  AddedAncillaryItem:
+    type: object
+    required:
+      - ancillaryId
+    description: Added ancillary item details.
+    properties:
+      ancillaryId:
+        type: string
+        example: 'ancillary_ancillary_1'
+        description: Unique identifier that is used to correlate given request with a response.
+      airExtraIds:
+        type: array
+        minItems: 1
+        example:
+          - '12'
+          - '17'
+        description: Lists air extra ids added as a part of this ancillary offer.
+        items:
+          type: string
+          example: '12'
+  RemovedAncillaryItem:
+    type: object
+    required:
+      - airExtraId
+    properties:
+      airExtraId:
+        type: string
+        example: '32'
+        description: Removed air extra item id.
+  ServiceTypeCode:
+    type: string
+    pattern: ^[0-9A-Z]$
+    example: 'F'
+    description: The ATPCO service type code.
+  ReasonForIssuanceEnum:
+    type: string
+    enum:
+      - AirTransportation
+      - GroundTransportNonAirServices
+      - Baggage
+      - FinancialImpact
+      - AirportServices
+      - Merchandise
+      - InFlightServices
+      - IndividualAirlineUse
+      - Other
+      - Unknown
+    default: Unknown
+    example: 'Other'
+    description: Specifies the reason for issuing the EMD for the service associated to the Sub Code. Refer to PADIS Codeset for data element 4183 -Special Condition.
+  SpecialServiceTypeEnum:
+    type: string
+    enum:
+      - Structured
+      - NotAllowed
+      - Optional
+      - Required
+      - Unknown
+    default: Unknown
+    example: 'Structured'
+    description: |
+      Structured - Structured data must be added to the SSR, 
+      NotAllowed - Free text should not be added to the SSR, 
+      Optional   - Free text can be optionally added to the SSR, 
+      Required   - Free text must be added to the SSR.
+  PropertyDefinitionTypeEnum:
+    type: string
+    enum:
+      - Int
+      - Decimal
+      - Text
+      - Enum
+      - Unknown
+    default: Unknown
+    example: 'Int'
+    description: PropertyDefinition Types.
+  ElectronicMiscValueEnum:
+    type: string
+    enum:
+      - Standalone
+      - FlightCouponAssociated
+      - StandaloneTicketAssociated
+      - OtherThanEmd
+      - ETicket
+      - Unknown
+    default: Unknown
+    example: 'Standalone'
+    description: Electronic Miscellaneous Value.
+  BookingMethodValueEnum:
+    type: string
+    enum:
+      - SpecialServiceRequest
+      - AuxiliarySegment
+      - ContactAirline
+      - NoBookingRequired
+      - PerServiceRecord
+      - AnyAllowed
+      - Unknown
+    default: Unknown
+    example: 'SpecialServiceRequest'
+    description: Booking method values.
+  WeightUnitEnum:
+    type: string
+    enum:
+      - Kilogram
+      - Pound
+    example: 'Kilogram'
+    description: Weight Unit details.
+  FormOfRefundValueEnum:
+    type: string
+    enum:
+      - Original
+      - Voucher
+      - Unknown
+    default: Unknown
+    example: 'Original'
+    description: Form of Refund Value.
+  FeeApplicationMethodValueEnum:
+    type: string
+    enum:
+      - OneWay
+      - RoundTrip
+      - Item
+      - Travel
+      - Ticket
+      - PerBaggageTravel
+      - PerCheckedPortion
+      - Per1KgOverFreeBaggageAllowance
+      - Per5KgOverFreeBaggageAllowance
+      - HalfPercentOfFarePerKg
+      - OnePercentOfFarePerKg
+      - OneAndHalfPercentOfFarePerKg
+      - Unknown
+    default: Unknown
+    example: 'OneWay'
+    description: Fee Application Value.
+  FreeOfChargeRulesEnum:
+    type: string
+    enum:
+      - BookingRequired
+      - EmdRequired
+    example: 'BookingRequired'
+    description: |
+      Defines how free of charge ancillary should be booked and what documents are required.
+      BookingRequired - Indicates that booking is required for free of charge ancillary.
+      EmdRequired     - Indicates that EMD is required for free of charge ancillary.
+  ServiceTypeEnum:
+    type: string
+    enum:
+      - FlightRelated
+      - Charges
+      - BaggageAllowance
+      - CarryOnBaggageAllowance
+      - Embargoes
+      - Prepaid
+      - Disclosure
+      - PreRegisteredBaggage
+      - Unknown
+    default: Unknown
+    example: 'FlightRelated'
+    description: Service type value details.
+  ClientContext:
+    type: object
+    description: Pseudo city and Office accounting code information.
+    properties:
+      pseudoCityCode:
+        type: string
+        pattern: ^[A-Z]{3}$
+        example: 'XYZ'
+        description: Pseudo city code used as point of sale.
+      countryCode:
+        type: string
+        pattern: ^[A-Z]{2}$
+        example: 'US'
+        description: Country as a two-letter, ISO 3166 code.
+      stateProvinceCode:
+        type: string
+        pattern: ^[A-Z]{2}$
+        example: 'TX'
+        description: State or province as abbreviated code.
+      stationNumber:
+        type: string
+        example: '99401201'
+        description: Office station identifier, assigned to particular pseudo city.
+        pattern: ^\d{8}$
+      accountingCode:
+        type: string
+        example: 'WC'
+        pattern: ^[a-zA-Z0-9]{2}$
+        description: Agent specific office accounting code.
+      accountingCity:
+        type: string
+        example: 'RKT'
+        pattern: ^[A-Z]{3}$
+        description: Accounting city used for OAC carriers.
+      dutyCode:
+        type: string
+        example: '5'
+        description: Agent duty code.
+  PnrLocator:
+    type: string
+    pattern: ^[A-Z0-9]{1,8}$
+    example: 'LVKWZG'
+    description: The booking reference identifier in the airline's system.
+  Itinerary:
+    type: object
+    description: Itinerary details.
+    required:
+      - id
+      - itineraryPartReferenceIds
+    properties:
+      id:
+        type: string
+        example: 'I-1'
+        pattern: ^[A-Z0-9-]{3,5}$
+        description: Unique identifier represents whole itinerary.
+      itineraryPartReferenceIds:
+        description: List of ItineraryPart reference identifiers. In case of the Round Trip flight outbound is one itinerary part and Inbound is another itinerary part.
+        type: array
+        minItems: 1
+        maxItems: 8
+        items:
+          $ref: '#/definitions/ItineraryPartReference'
+  ItineraryPart:
+    type: object
+    description: Offer Itinerary part details.
+    required:
+      - id
+      - segmentReferenceIds
+    properties:
+      id:
+        type: string
+        example: 'IP-1'
+        pattern: ^[A-Z0-9-]{4,5}$
+        description: Unique identifier represents itinerary part.In case of the Round Trip flight outbound is one itinerary part and Inbound is another itinerary part.
+      segmentReferenceIds:
+        description: List of Segment reference identifiers, segment details are specified in the segments section. In case of the connecting flight, contains all connecting segment reference ids of itinerary part.
+        type: array
+        minItems: 1
+        maxItems: 16
+        items:
+          $ref: '#/definitions/SegmentReference'
+  Segment:
+    type: object
+    description: Retained and rebooking segment or flight details.
+    required:
+      - id
+      - departureDateTime
+      - arrivalDateTime
+      - departureAirportCode
+      - arrivalAirportCode
+      - operatingAirlineCode
+      - bookingAirlineCode
+      - isElectronicTicket
+      - brandCode
+      - bookingClassCode
+      - bookingFlightNumber
+    properties:
+      id:
+        description: Unique identifier represents segment.
+        $ref: '#/definitions/SegmentReference'
+      departureDateTime:
+        description: The departure date and time of the segment.
+        $ref: '#/definitions/DateTime'
+      arrivalDateTime:
+        description: The arrival date and time of the segment.
+        $ref: '#/definitions/DateTime'
+      departureAirportCode:
+        description: The departure airport of the segment.
+        $ref: '#/definitions/AirportCode'
+      arrivalAirportCode:
+        description: The arrival airport of the segment.
+        $ref: '#/definitions/AirportCode'
+      operatingAirlineCode:
+        $ref: '#/definitions/AirlineCode'
+        description: The IATA code of the airline that operates the flight and transports the passengers in a codeshare scenario.
+      bookingAirlineCode:
+        $ref: '#/definitions/AirlineCode'
+        description: The IATA code of the airline that provides the passenger's booking or reservation.
+      isElectronicTicket:
+        description: If true, indicates if the ticket will be issued electronically.
+        example: true
+        type: boolean
+      bookingFlightNumber:
+        description: The flight number of the airline that provides the passenger's booking or reservation.
+        example: '0824'
+        type: string
+      brandCode:
+        description: Fare Family identifier.
+        pattern: ^[a-zA-Z0-9]{2}
+        example: 'FL'
+        type: string
+      bookingClassCode:
+        description: The code assigned to the booking class; this is sometimes referred to as the reservation booking designator, RBD.
+        pattern: ^[A-Z]{1,2}$
+        example: 'C'
+        type: string
+      operatingFlightNumber:
+        description: The flight number of the airline that operates the flight and transports the passengers in a codeshare scenario.
+        example: '0824'
+        type: string
+      operatingBookingClassCode:
+        description: The code of the operating booking class code, a.k.a. class of service.
+        pattern: ^[A-Z]{1,2}$
+        example: 'C'
+        type: string
+      sequence:
+        type: integer
+        description: Associated PNR segment sequence from reservation.
+        example: 1
+      statusCode:
+        type: string
+        pattern: ^[A-Z]{2}$
+        example: 'HK'
+        description: The two-letter status code used by vendors. It indicates the segment status.
+      statusName:
+        $ref: '#/definitions/SegmentStatusNameEnum'
+        description: The meaningful value describing the segment status.
+      isInboundConnection:
+        type: boolean
+        example: false
+        description: Is this inbound connection segment.
+      isOutboundConnection:
+        type: boolean
+        example: false
+        description: Is this outbound connection segment.
+  Passenger:
+    type: object
+    description: Passenger information.
+    required:
+      - id
+      - nameNumber
+    properties:
+      id:
+        description: Passenger's unique identifier.
+        $ref: '#/definitions/PassengerReference'
+      nameNumber:
+        type: string
+        pattern: ^[0-9.]{3,5}
+        example: '01.01'
+        description: Passenger's name number.
+      givenName:
+        type: string
+        example: 'Smith'
+        description: Passenger's first name.
+      middleName:
+        type: string
+        example: 'W'
+        description: Passenger's middle name or the initial of the middle name.
+      surname:
+        type: string
+        example: 'John'
+        description: Passenger's last name.
+      typeCode:
+        type: string
+        pattern: ^[A-Z]{3}$
+        example: 'ADT'
+        description: The ATPCO passenger type code. This code is used to identify applicable passengers.
+      specialServiceCodes:
+        type: array
+        example:
+          - WCHR
+          - WCHC
+        description: List of Special Service Request (SSR) codes for a specific passenger.
+        items:
+          type: string
+          pattern: ^[A-Z]{4}$
+          example: 'WCHR'
+      loyaltyPrograms:
+        type: array
+        description: List of passenger loyalty program, such as a frequent flyer card.
+        items:
+          $ref: '#/definitions/LoyaltyProgram'
+  Offer:
+    type: object
+    description: Offer Details.
+    required:
+      - items
+    properties:
+      id:
+        type: string
+        example: 'f8c3de3d-1fea-4d7c-b8b0-29f63c4c3459'
+        description: Uniquely generated UUID assigned to offer id.
+      items:
+        description: Offer items with detailed information.
+        type: array
+        minItems: 1
+        items:
+          $ref: '#/definitions/OfferItem'
+      total:
+        description: Grand total add collect or refund amounts for all offerItems in an Offer.
+        $ref: '#/definitions/Price'
+  PriceQuote:
+    type: object
+    description: Price quote information.
+    properties:
+      fareComponentId:
+        description: Fare component identifier.
+        type: number
+        example: 123
+      airlineCode:
+        description: Governing airline of the fare component.
+        $ref: '#/definitions/AirlineCode'
+      fareAmount:
+        description: Fare amount.
+        type: number
+        example: 123
+      fareBasisCode:
+        description: A fare basis code is an alphabetic or alpha-numeric code used by airlines to find the rules applicable to that fare.
+        type: string
+        example: 'BHERTW'
+      fareTariff:
+        description: The Fare Tariff is the maximum fare that can be charged for any journey.
+        type: number
+        example: 123
+      fareRule:
+        description: A fare rule is a set of terms and conditions associated with an airline ticket or fare.
+        type: string
+        example: 'BBL1'
+      fareType:
+        description: Fare Type means the name used to describe a particular type of Fare.
+        type: string
+        example: 'Flexi'
+      fareTypeBitmap:
+        description: FareTypeBitmap is part of fare pricing. This should be sent, so that carrier can use in ancillaries records.
+        type: string
+        example: '00'
+      fareVendorCode:
+        description: Fare vendor code.
+        type: string
+        example: 'X0'
+      passengerReferenceIds:
+        description: Passenger reference identifiers.
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
+          $ref: '#/definitions/PassengerReference'
+      brandSegmentAssociations:
+        description: Brand code information per segment.
+        type: array
+        minItems: 1
+        maxItems: 16
+        items:
+          $ref: '#/definitions/FareBrandAssociation'
+  CurrencyCode:
+    type: string
+    pattern: ^[A-Z]{3}$
+    example: 'USD'
+    description: The three-letter ISO-4217 currency code.
+  Warning:
+    type: object
+    description: Detailed warning information.
+    allOf:
+      - $ref: '#/definitions/Message'
+      - type: object
+        description: Warning details.
+        properties:
+          fieldName:
+            type: string
+            example: 'givenName'
+            description: Specific additional information to help debug the warning. For example the name of property missing from a request payload.
+          fieldPath:
+            type: string
+            example: 'passenger.givenName'
+            description: Specific additional information to help debug the warning. For example the name of property missing from a request payload.
+          fieldValue:
+            type: string
+            example: 'Smith'
+            description: Contains the source of the warning.
+  Error:
+    type: object
+    description: Detailed Error Information.
+    allOf:
+      - $ref: '#/definitions/Warning'
+      - type: object
+        description: Error details.
+        properties:
+          passengerReferenceId:
+            description: Indicates that this error applicable to particular passenger.
+            $ref: '#/definitions/PassengerReference'
+  AirlineCode:
+    type: string
+    pattern: ^[A-Z0-9]{2}$
+    example: 'X0'
+    description: The IATA code of the airline.
+  ItineraryPartReference:
+    type: string
+    pattern: ^[A-Z0-9-]{4,5}$
+    description: ItineraryPart reference identifier.
+    example: 'IP-1'
+  SegmentReference:
+    type: string
+    description: Reference id of segment.
+    pattern: ^[A-Z0-9-]{5,6}$
+    example: 'SEG-1'
+  DateTime:
+    description: The date and time of the flight to be booked.
+    example: '2019-02-20T05:50:00'
+    type: string
+    pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$
+  AirportCode:
+    type: string
+    pattern: ^[A-Z]{3}$
+    example: 'DFW'
+    description: The three-letter IATA code of the airport.
+  SegmentStatusNameEnum:
+    type: string
+    enum:
+      - Confirmed
+      - Waitlisted
+      - OnRequest
+      - Pending
+      - Cancelled
+      - InfantWithNoSeat
+      - PriorityWaitlist
+      - Quote
+      - SpaceAvailable
+      - Unconfirmed
+      - PendingQuote
+      - NoSeat
+      - Standby
+      - Unknown
+    example: 'Confirmed'
+    description: Identifies the booking status of the item.
+  PassengerReference:
+    type: string
+    pattern: ^[A-Z0-9-]{5,6}
+    description: Passenger reference identifier.
+    example: 'PAX-1'
+  LoyaltyProgram:
+    type: object
+    required:
+      - number
+    description: Contains details of the passenger's loyalty program, such as a frequent flyer card.
+    properties:
+      airlineCode:
+        $ref: '#/definitions/AirlineCode'
+        description: The two-letter code that issued the number such as the IATA airline code.
+      number:
+        type: string
+        example: '987654321'
+        description: The passenger membership number for loyalty program such as the frequent flyer number.
+      tierLevel:
+        type: string
+        example: 'GLD'
+        description: The tier tag or short name of the tier level reached by the passenger in the loyalty program.
+      tierNumber:
+        type: integer
+        format: int32
+        minimum: 1
+        example: 3
+        description: The tier level number reached by the passenger in the loyalty program.
+      receiverAirlineCode:
+        $ref: '#/definitions/AirlineCode'
+        description: The two-letter receiver code, such as IATA airline code.
+  OfferItem:
+    type: object
+    description: Offer Item Details.
+    required:
+      - id
+    properties:
+      id:
+        type: string
+        example: 'f8c3de3d-1fea-4d7c-b8b0-29f63c4c3459-01'
+        description: Uniquely generated offer UUID appended with sequence and assigned to offer item id.
+      itineraryReferenceId:
+        type: string
+        example: 'I-1'
+        pattern: ^[A-Z0-9-]{3,5}$
+        description: Offer item applies to this itinerary reference identifier.
+      itineraryPartReferenceIds:
+        description: Offer item applies to these itinerary part reference identifiers.
+        type: array
+        minItems: 0
+        maxItems: 8
+        items:
+          $ref: '#/definitions/ItineraryPartReference'
+      segmentReferenceIds:
+        description: Offer item applies to these segment reference identifiers.
+        type: array
+        minItems: 0
+        maxItems: 16
+        items:
+          $ref: '#/definitions/SegmentReference'
+      passengerReferenceIds:
+        description: Offer item applies to these passenger reference identifiers.
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
+          $ref: '#/definitions/PassengerReference'
+      details:
+        description: Offer item details, for Air Offer Item pricequote details are provided.
+        $ref: '#/definitions/OfferItemDetail'
+      price:
+        description: Offer price details.
+        $ref: '#/definitions/OfferPrice'
+      priceTaxExempt:
+        description: Tax exempted Offer price details.
+        $ref: '#/definitions/OfferPrice'
+      priceOverrideType:
+        $ref: '#/definitions/PriceOverrideTypeEnum'
+        description: Indicates the type of offer pricing.
+      exchangedDocuments:
+        description: Exchanged EMDs for a specific offerItem.
+        $ref: '#/definitions/ExchangeElectronicDocument'
+  Price:
+    type: object
+    description: Price information.
+    properties:
+      transactionType:
+        description: Grand total add collect or refund result type.
+        $ref: '#/definitions/TransactionResultTypeEnum'
+      base:
+        description: Base fare amount.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      tax:
+        description: Tax amount.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      fees:
+        description: Fees amount.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      feesTax:
+        description: Total tax for change/penalty fees.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      totals:
+        description: Itinerary total amount.
+        type: array
+        minItems: 1
+        maxItems: 2
+        items:
+          $ref: '#/definitions/EquivalentAmountConversionRate'
+  FareBrandAssociation:
+    type: object
+    description: Brand and segment association details.
+    required:
+      - fareBrandCode
+    properties:
+      fareBrandCode:
+        type: string
+        description: Brand code.
+        example: 'FL'
+      segmentReferenceId:
+        description: Reference id of segment.
+        $ref: '#/definitions/SegmentReference'
+  Message:
+    type: object
+    required:
+      - category
+      - type
+    properties:
+      category:
+        type: string
+        example: 'PriceExchangeService'
+        description: A high-level grouping of messages.
+      type:
+        type: string
+        example: 'DisplayMessage'
+        description: An application-specific unique messages or errors or warnings type.
+      description:
+        type: string
+        example: 'Transaction Retained'
+        description: A human-readable description of the problem.
+  OfferItemDetail:
+    type: object
+    description: Offer Item details.
+    discriminator: type
+    required:
+      - type
+    properties:
+      type:
+        description: Offer item type is used to indicate the type of offer.
+        $ref: '#/definitions/OfferItemTypeEnum'
+  OfferPrice:
+    type: object
+    description: Offer price dtails.
+    properties:
+      unitPrices:
+        description: The fare related information of the new ticket/document that gets issued.
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
+          $ref: '#/definitions/UnitPrice'
+      originalUnitPrices:
+        type: array
+        minItems: 1
+        maxItems: 9
+        description: The undiscounted fare related information of the new ticket/document that gets issued.
+        items:
+          $ref: '#/definitions/OriginalUnitPrice'
+      passengerPriceDifferences:
+        description: Price Calculation Info - Applicable to Ticket Exchange Only.
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
+          $ref: '#/definitions/PassengerPrice'
+      totalPrice:
+        description: Grand total add collect or refund amounts for all passengers.
+        $ref: '#/definitions/Price'
+  PriceOverrideTypeEnum:
+    type: string
+    enum:
+      - System
+      - Base
+      - Tax
+    default: System
+    example: 'System'
+  ExchangeElectronicDocument:
+    description: Documents that are being exchanged for Ancillaries.
+    properties:
+      passengerReferenceId:
+        type: string
+        example: 'PAX-1'
+        description: Indicates that this error applicable to particular passenger.
+      number:
+        type: string
+        description: Document number.
+        example: '7952112345678'
+      offerItemReferenceId:
+        type: string
+        example: 'OFFERITEM-1'
+        description: Indicates that this document applicable to particular offerItem.
+      issueDate:
+        description: EMD Issued date.
+        $ref: '#/definitions/Date'
+      coupons:
+        type: array
+        description: Coupons of the document.
+        items:
+          $ref: '#/definitions/DocumentCoupon'
+  TransactionResultTypeEnum:
+    description: Exchange and refund result type.
+    type: string
+    enum:
+      - AddCollect
+      - EvenExchange
+      - Refund
+      - Issue
+      - Reassociate
+      - Residual
+      - InvoluntaryExchange
+    example: 'AddCollect'
+  EquivalentAmountConversionRate:
+    description: Object representing price.
+    type: object
+    properties:
+      amount:
+        description: Amount with currency.
+        $ref: '#/definitions/AmountCurrency'
+      equivalentAmount:
+        description: Equivalent amount.
+        $ref: '#/definitions/AmountCurrency'
+      awardAmount:
+        description: Amount equivalent points value is represented here.
+        $ref: '#/definitions/AwardCurrency'
+      awardConversionRate:
+        type: number
+        format: float
+        description: Conversion Rate.
+        example: 0.06
+  OfferItemTypeEnum:
+    description: Calculate Exchange Price Offer Item type.
+    type: string
+    enum:
+      - AirOfferItem
+      - SeatOfferItem
+      - AncillaryOfferItem
+  UnitPrice:
+    type: object
+    description: The fare related information of the new ticket that gets issued out of exchange/refund.
+    required:
+      - total
+    properties:
+      total:
+        description: The total price that the passenger would pay (includes fare, taxes, fees).
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      totalBreakdown:
+        description: New Fare related information of a document that will be issued out exchange/refund. Example - Base Fare, Eqv Fare, Taxes, Currency code.
+        $ref: '#/definitions/PriceBreakdown'
+      commission:
+        description: Commission applied on the new itinerary.
+        $ref: '#/definitions/Commission'
+      passengerReferenceIds:
+        type: array
+        minItems: 1
+        maxItems: 9
+        description: Passenger reference identifiers to which qualifiers will be applied. If nothing is specified, it is applicable to all passengers.
+        items:
+          $ref: '#/definitions/PassengerReference'
+  OriginalUnitPrice:
+    allOf:
+      - $ref: '#/definitions/UnitPrice'
+      - type: object
+        description: The undiscounted fare related information of the new ticket/document that gets issued.
+        properties:
+          deal:
+            $ref: '#/definitions/Deal'
+            description: Information about applied discount/markup.
+  PassengerPrice:
+    type: object
+    description: Passenger Price Difference Details.
+    properties:
+      transactionType:
+        description: Exchange transaction type.
+        $ref: '#/definitions/TransactionTypeEnum'
+      conversionDetails:
+        description: Conversion info that includes the conversion rate and method type used.
+        $ref: '#/definitions/ConversionDetails'
+      totals:
+        description: Grand total difference includes complete cost or refunded value.
+        type: array
+        minItems: 1
+        maxItems: 2
+        items:
+          $ref: '#/definitions/EquivalentAmountConversionRate'
+      totalBreakdown:
+        description: Pricing elements representing unique PQRs.
+        $ref: '#/definitions/PriceBreakdownDetails'
+      passengerReferenceIds:
+        description: List of reference ids of requested passengers into which single PQR is assigned.
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
+          $ref: '#/definitions/PassengerReference'
+  Date:
+    description: Date information in format 'YYYY-MM-DD'.
+    example: '2019-02-20'
+    type: string
+    pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+  DocumentCoupon:
+    type: object
+    properties:
+      couponNumber:
+        type: integer
+        description: Coupon number of the document.
+        example: 1
+      segmentId:
+        type: string
+        description: Same as serviceId - associated PNR segment identifier - applicable to FulfillAncillaryRequest for association.
+        example: '1'
+      serviceItemIds:
+        type: array
+        description: Service item unique reference identifier - single for Fulfillment Response, can be multiple for FulfillAncillaryRequest association.
+        items:
+          type: string
+          example: 'SVC-1'
+  AmountCurrency:
+    description: Object representing price.
+    type: object
+    required:
+      - amount
+      - currencyCode
+    properties:
+      amount:
+        format: number
+        description: The amount in a given currency.
+        example: '100.00'
+        type: string
+      currencyCode:
+        description: The three-letter ISO-4217 code of the currency.
+        $ref: '#/definitions/CurrencyCode'
+  AwardCurrency:
+    description: Object representing price.
+    type: object
+    required:
+      - amount
+      - currencyCode
+    properties:
+      amount:
+        description: The amount in a given currency.
+        type: integer
+        example: 100
+      currencyCode:
+        description: Redemption currency code.
+        type: string
+        example: 'FFCURRENCY'
+  PriceBreakdown:
+    description: Price information of a new itinerary/journey.
+    type: object
+    properties:
+      base:
+        description: Price of the itinerary excluding taxes and fees.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      taxes:
+        type: array
+        description: Tax breakdown.
+        minItems: 1
+        items:
+          $ref: '#/definitions/Tax'
+      fees:
+        type: array
+        description: Total change/penalty fees applicable. Fee total is split by type.
+        minItems: 1
+        maxItems: 3
+        items:
+          $ref: '#/definitions/Fees'
+  Commission:
+    type: object
+    description: Details of commission.
+    properties:
+      amount:
+        description: Commission Amount.
+        $ref: '#/definitions/AmountCurrency'
+      percentage:
+        type: string
+        description: Commission Percentage.
+        example: '10.00'
+  Deal:
+    type: object
+    required:
+      - type
+      - offerName
+    description: Information about applied discount/markup.
+    properties:
+      type:
+        $ref: '#/definitions/DealTypeEnum'
+        description: Defines types of custom deals defined in the system.
+      offerName:
+        type: string
+        example: 'MAY WEEKEND DISCOUNT'
+        description: Name of the offer that identifies the discount.
+      percentage:
+        type: string
+        example: '10.00'
+        description: Percentage as defined in the RULE for percentage discounts/markups.
+      amount:
+        $ref: '#/definitions/AmountCurrency'
+        description: Amount as defined in the RULE for amount discounts/markups.
+  TransactionTypeEnum:
+    description: Reprice transaction type.
+    type: string
+    enum:
+      - AddCollect
+      - EvenExchange
+      - Residual
+      - Refund
+      - InvoluntaryExchange
+    example: 'AddCollect'
+  ConversionDetails:
+    type: object
+    properties:
+      methodType:
+        description: Conversion Method Type.
+        $ref: '#/definitions/ConversionMethodTypeEnum'
+      rate:
+        type: number
+        format: float
+        description: Conversion Rate.
+        example: 0.06
+  PriceBreakdownDetails:
+    description: Object to handle price difference for ticket.
+    type: object
+    required:
+      - base
+      - taxes
+    properties:
+      base:
+        description: Total fare difference for new itinerary.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      taxes:
+        type: array
+        description: Total tax difference breakdown.
+        minItems: 1
+        items:
+          $ref: '#/definitions/Tax'
+      nonRefundable:
+        description: The nonrefundable amount for this itinerary.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      fees:
+        description: Total change/penalty fees applicable. Fee total is split by type.
+        type: array
+        minItems: 1
+        maxItems: 3
+        items:
+          $ref: '#/definitions/Fee'
+      feesTax:
+        description: Total tax for change/penalty fees.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      refundable:
+        description: Refund amount in the original currency.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+  Tax:
+    description: Single tax unit.
+    allOf:
+      - $ref: '#/definitions/EquivalentAmountConversionRate'
+      - type: object
+        properties:
+          code:
+            type: string
+            description: Identifies the code for the tax.
+            example: 'YQ'
+          hasRefundableTaxes:
+            type: boolean
+            description: If the value is true, taxes are refundable.
+            example: false
+          hasTaxesIncludedInBase:
+            type: boolean
+            example: false
+            description: If true, taxes are included in the base price. This also determines whether a tax breakdown is returned.
+          hasExemptedTaxes:
+            type: boolean
+            description: If true, the tax amount is exempted from the total tax amount.
+            example: false
+  Fees:
+    description: Fee Details.
+    allOf:
+      - $ref: '#/definitions/EquivalentAmountConversionRate'
+      - type: object
+        properties:
+          type:
+            description: Type of the fees.
+            $ref: '#/definitions/FeeTypeEnum'
+          usage:
+            description: Fee usage.
+            $ref: '#/definitions/FeeUsageEnum'
+          applyCode:
+            description: Fee applied code.
+            $ref: '#/definitions/FeeApplyEnum'
+          waiverReason:
+            type: string
+            description: Fees waived reason specified in the pnr.
+            example: 'Airline has waived the fee'
+          waiverCode:
+            type: string
+            description: Fees has been waived by agent using one of the waiver code.
+            example: '01'
+          waiverSource:
+            description: WaiverCode is derived from ATSE or Agent.
+            $ref: '#/definitions/WaiverSourceEnum'
+  DealTypeEnum:
+    type: string
+    enum:
+      - Discount
+      - Rise
+      - Override
+    example: 'Discount'
+    description: Defines types of custom deals defined in the system.
+  ConversionMethodTypeEnum:
+    description: Conversion Method Type.
+    type: string
+    enum:
+      - Deduction
+      - Configuration
+    example: 'Deduction'
+  Fee:
+    type: object
+    description: Total change/penalty fees applicable. Fee total is split by type.
+    required:
+      - type
+      - amount
+    properties:
+      type:
+        description: Defines type of fees.
+        $ref: '#/definitions/FeeTypeEnum'
+      amount:
+        description: Fee amount and currency code.
+        $ref: '#/definitions/EquivalentAmountConversionRate'
+      waiverCode:
+        description: Details of code used for waiving fees.
+        $ref: '#/definitions/Waiver'
+      taxes:
+        type: array
+        description: Total fee tax breakdown.
+        minItems: 1
+        items:
+          $ref: '#/definitions/Tax'
+  FeeTypeEnum:
+    description: Fee type enum.
+    type: string
+    enum:
+      - ChangeFee
+      - OtherFee
+    example: 'ChangeFee'
+  FeeUsageEnum:
+    type: string
+    description: Fee usages.
+    enum:
+      - NotApplicable
+      - Waived
+    example: 'NotApplicable'
+  FeeApplyEnum:
+    type: string
+    description: Always or Only if CAT 31 not applied.
+    enum:
+      - Always
+      - Only
+    example: 'Always'
+  WaiverSourceEnum:
+    type: string
+    description: WaiverCode is derived from ATSE or Agent.
+    enum:
+      - ATSE
+      - AGENT
+    example: 'ATSE'
+  Waiver:
+    description: Details of code used for waiving fees.
+    type: object
+    required:
+      - type
+      - code
+    properties:
+      type:
+        description: Source of waiver code - it can be ATPCO (WFRWAIVE) or MISCO.
+        $ref: '#/definitions/WaiverTypeEnum'
+      code:
+        description: Waiver code value.
+        example: '01'
+        type: string
+  WaiverTypeEnum:
+    description: Source of waiver code.
+    type: string
+    enum:
+      - Miscellaneous
+      - Pricing
+    example: 'Miscellaneous'
+  AirOfferItem:
+    allOf:
+      - $ref: '#/definitions/OfferItemDetail'
+      - type: object
+        description: Air segment specific details.
+        properties:
+          priceQuotes:
+            description: Segment price quote details.
+            type: array
+            minItems: 1
+            maxItems: 16
+            items:
+              $ref: '#/definitions/PriceQuote'
+          priceQuoteTaxExempts:
+            description: Tax exempted segment price quote details.
+            type: array
+            minItems: 1
+            maxItems: 16
+            items:
+              $ref: '#/definitions/PriceQuote'
+  SeatOfferItem:
+    allOf:
+      - $ref: '#/definitions/OfferItemDetail'
+      - type: object
+        description: Seat offer specific details.
+        properties:
+          commercialName:
+            description: Commercial name of the seat.
+            example: 'SEAT ASSIGNMENT'
+            type: string
+          entitlement:
+            description: Entitlement details. When the rule is applied, and the result is TRUE, the passenger can book the seat (assuming there are no additional rules applicable).
+            $ref: '#/definitions/SeatEntitlementDetails'
+          feeWaiver:
+            description: Details of the fee waiver rule. If the rule result is set to TRUE, then a paid seat is available at no charge.
+            $ref: '#/definitions/SeatFeeWaiverDetails'
+          seatNumber:
+            description: Selected seat number.
+            example: '2A'
+            type: string
+  AncillaryOfferItem:
+    allOf:
+      - $ref: '#/definitions/OfferItemDetail'
+      - type: object
+        description: Ancillary Offer specific details.
+        properties:
+          ancillaryReferenceId:
+            type: string
+            example: 'ancillary_ancillary_1'
+            description: Offer item applies to this ancillary reference identifier.
+          quantity:
+            type: integer
+            example: 3
+            description: Ancillary Quantity.
+          isAvailable:
+            type: boolean
+            example: false
+            description: If true, indicates that a service exists and is available to consume.
+          sectorPortionIndicator:
+            $ref: '#/definitions/SectorPortionIndicatorEnum'
+            description: Determines if the ancillary offer is per sector, per portion or per journey.
+  SeatEntitlementDetails:
+    description: Entitlement details. When the rule is applied, and the result is TRUE, the passenger can book the seat (assuming there are no additional rules applicable).
+    type: object
+    properties:
+      ruleId:
+        description: Entitlement rule Id.
+        example: '859339'
+        type: string
+      isApplicable:
+        description: If true, indicates that provided rule is applicable to seat for passenger.
+        example: false
+        type: boolean
+  SeatFeeWaiverDetails:
+    description: Details of the fee waiver rule. If the rule result is set to TRUE, then a paid seat is available at no charge.
+    type: object
+    properties:
+      ruleId:
+        description: Fee waiver rule Id.
+        example: '859339'
+        type: string
+      isApplicable:
+        description: If true, indicates that provided rule is applicable to seat for passenger.
+        example: false
+        type: boolean
+  SectorPortionIndicatorEnum:
+    type: string
+    enum:
+      - Sector
+      - Portion
+      - Journey
+    example: 'Sector'
+    description: Determines if the ancillary offer is per sector, per portion or per journey.

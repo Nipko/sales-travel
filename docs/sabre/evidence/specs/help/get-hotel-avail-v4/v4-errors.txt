@@ -1,0 +1,452 @@
+Errors
+
+The below list applies to the latest versions of the CSL shopping APIs. Message codes may be either returned as Errors (ERR) or Warnings (WARN) depending on the API being used and your request parameters.
+
+Samples
+
+SOAP:
+
+<Warning timeStamp="2021-05-03T08:01:41.825-05:00" type="Validation">
+    <SystemSpecificResults>
+        <Message code="WARN.0788">Invalid format for search by distance</Message>
+        <Message code="WarningDetails">Cannot sort by distance when searching using hotel codes directly</Message>
+    </SystemSpecificResults>
+</Warning>
+
+REST:
+
+"Warning": [
+    {
+      "type": "Validation",
+      "timeStamp": "2021-05-04T15:57:19.231-05:00",
+      "SystemSpecificResults": [
+        {
+          "Message": [
+            {
+              "code": "WARN.0788",
+              "value": "Invalid format for search by distance"
+            },
+            {
+              "code": "WarningDetails",
+              "value": "Cannot sort by distance when searching using hotel codes directly"
+            }
+          ]
+        }
+      ]
+  }
+
+Code |
+Error |
+Cause |
+Resolution |
+
+0161
+ |
+Search Criteria Invalid
+ |
+Request is invalid.
+ |
+Refer to the 'ErrorDetails' or 'WarningDetails' node under Application results to validate the cause of failure, and update your request accordingly.
+ |
+
+0822
+ |
+Invalid third party rating requested
+ |
+Rating filter has incorrect values.
+ |
+
+Validate the values entered in the 'SabreRating' element are valid.
+
+Possible errors - Min > Max, Min < 0, Max > 5.
+
+ |
+
+0788
+ |
+Invalid format for search by distance
+ |
+Sorting preference cannot be applied based on request parameters.
+ |
+Change SortBy to a value other than 'DistanceFrom' if your request includes HotelRefs instead of GeoRef.
+ |
+
+0404
+ |
+Invalid start/end date combination
+ |
+Check-in and/or check-out dates are invalid.
+ |
+Validate that your start date is after current date, and before end date.
+ |
+
+0767
+ |
+Invalid room stay index
+ |
+Room Indexes for a multi-room shopping are not sequential.
+ |
+Add any missing room indexes to the request. You can include them in any order e.g. 1,3,2 or 1,2,3 as long as all of them are present.
+ |
+
+5029
+ |
+Pax configuration should be same across the rooms requested
+ |
+Adult and child count varies across different room indexes.
+ |
+Ensure all rooms have the same guest configuration.
+ |
+
+0852
+ |
+Invalid children ages
+ |
+Child age not specified.
+ |
+Ensure that the age of every child is specified under 'ChildAges' and the age is under 18. If the search is for two (2) children, ages for both children should be comma separated and added in the request e.g. 11,12.
+ |
+
+0408
+ |
+Last page of data already displayed
+ |
+When searching for more pages, you added an offset value greater than the max number of pages available.
+ |
+Each offset refers to a 'page'. Number of pages in the response can be calculated using the MaxSearchResults (from the response) and the PageSize (from the request).
+ |
+
+0790
+ |
+No properties found for reference point / distance requested
+ |
+No properties found for search location area.
+ |
+
+If you're using the 'GeoAttributes' element to filter properties, try removing it.
+
+If you still don't see any properties in the response but are confident they should be returned, contact support by emailing webservices.support@sabre.com.
+
+ |
+
+0775
+ |
+Nothing found for requested criteria
+ |
+Depending on the API being used, this may be returned as either an error or warning. Refer to the errorDetails or warningDetails returned in the response for additional information.
+ |
+Validate the message returned under the 'Details' node and proceed accordingly.
+ |
+
+0001
+ |
+No response at requested time
+ |
+Temporary timeout error in the flow.
+ |
+Retry your request after some time.
+ |
+
+0448
+ |
+System Error
+ |
+Unexpected internal error.
+ |
+Contact support by emailing webservices.support@sabre.com.
+ |
+
+0424
+ |
+No hotels found which match this input
+ |
+No property found. This error may be returned for invalid hotel codes in GetHotelList, GetHotelAvail and HotelSearch APIs as long as the hotel codes entered were all numeric.
+ |
+
+This can be due to various reasons:
+
+1. The property id is invalid.
+
+2. The property id is now inactive.
+
+3. Additional search filters (under HotelPref) have removed all available properties.
+
+ |
+
+0366
+ |
+Error during processing, please retry
+ |
+Unhandled internal exception.
+ |
+
+If this occurs for a continued period of time,
+
+contact support by emailing webservices.support@sabre.com.
+
+ |
+
+0263
+ |
+No rate could be found for the given information
+ |
+No rates returned by suppliers, and we were unable to determine a cause.
+ |
+
+If seen repeatedly,
+
+contact support by emailing webservices.support@sabre.com.
+
+ |
+
+0102
+ |
+No image data Available
+ |
+Images were requested in the response but were not available.
+ |
+
+If the request contained 'CategoryCodes' the images may have been available but removed since they did not match the requested category code.
+
+If the request doesn't contain Category codes, images are not available for the property.
+
+ |
+
+5097
+ |
+Please specify the Currency
+ |
+Currency code is mandatory in the request if the request contains a rate range filter.
+ |
+Either remove the rate range filter or add the currency code to the request.
+ |
+
+0249
+ |
+Invalid rate code
+ |
+Rate key added to the request is invalid.
+ |
+Send a valid rate key in the priceCheck request, as returned from the initial availability response.
+ |
+
+0724
+ |
+Vendor response error
+ |
+May be returned due to multiple scenarios.
+ |
+
+Refer to the 'ErrorDetails' or 'WarningDetails' element for more details.
+
+If the details node simply says "Please contact webservices support," please do so as the supplier will need to be contacted to resolve the issue.
+
+ |
+
+5276
+ |
+Not authorized to switch to <pcc>
+ |
+You are not allowed to shop in the PCC you've added under the POS element in the request.
+ |
+
+The PCC under the POS element should have branch access relationship with your sign-in PCC. Add the correct branch access relationship as necessary, and then wait for five (5) mins for the changes to take effect.
+
+In some cases, this error may be returned when it shouldn't. If this happens for more than five (5) mins, please contact webservices support.
+
+ |
+
+5099
+ |
+Invalid PCC. Length of PCC is greater than four (4) characters.
+ |
+Your sign-in PCC is not a four (4) character alpha-numeric PCC, and you don't have a valid PCC input under the POS element.
+ |
+Make sure that either the sign-in PCC or the PCC mentioned under 'POS' is a four (4) character alpha-numeric value.
+ |
+
+5027
+ |
+Exceeds the number of properties that can be requested
+ |
+Search exceeds the maximum number of properties that can be requested.
+ |
+Reduce the number of hotel codes in the request.
+ |
+
+5100
+ |
+Please check Info Source and Pre-Paid Qualifier combination for results
+ |
+The rateSource added in the request is currently not supported for the requested rate type.
+ |
+Review the rateSources in the request and the prepaidQualifier.  Refer to the API documentations to identify the supported prepaid qualifiers for the different rate sources.
+ |
+
+0061
+ |
+Invalid currency code
+ |
+Requested currency code is not supported
+ |
+ |
+
+0364
+ |
+Error rate range
+ |
+Invalid rate range added to request.
+ |
+Ensure that 'Min' under rate range is not greater than 'Max'.
+ |
+
+0414
+ |
+More days were specified than exist in inventory
+ |
+Start date is more than 330 days in the future.
+ |
+Update the check-in date to be within 330 days from the current date.
+ |
+
+0409
+ |
+Maximum length of stay restriction
+ |
+Stay cannot be for more than 220 days
+ |
+Update the check-out date to be within 220 days from the check-in date. This is an overarching validation across the platform, but different sources may have different validations for them.
+ |
+
+5024
+ |
+Should not be more than nine (9) guests per room
+ |
+A room element has more than nine (9) guests in it.
+ |
+Update the request such that no single room element has more than nine (9) guests (Adults + children) in it.
+ |
+
+5275
+ |
+Aggregator disabled by PCC. Please contact PCC admin
+ |
+The rate source you're trying to shop is not enabled for your PCC.
+ |
+
+Ask your PCC admin to log in to the HotelManager application, enable the aggregator and load credentials.
+
+If you're still seeing this message after just making this change, wait for approximately one (1) hour before shopping again.
+
+If you still see the message, contact support by emailing webservices.support@sabre.com.
+
+ |
+
+5262
+ |
+No rates available for requested combination
+ |
+This error is returned if Exact Match is set to true, but the rates returned by the supplier do not match the requested rate codes, rate types, or client IDs.
+ |
+
+If you don't want to see only specific rate types, set Exact match to false.
+
+If you're sure the supplier returns the requested rates but you're still not seeing them, check additional request filters like Rate range, Refundable only, and prepaid qualifier to see if they are removing those rate.
+
+If you're still not seeing the rates, contact support by emailing webservices.support@sabre.com.
+
+ |
+
+0392
+ |
+Invalid hotel code
+ |
+Requested hotel code is not available.
+ |
+
+The hotel code may have been marked inactive since the last time you used it. If the requested hotel code is not available in CSL but you're able to shop it in legacy,
+
+contact support by emailing webservices.support@sabre.com.
+
+ |
+
+5300
+ |
+No rates available for requested combination
+ |
+Requested negotiated / contractual rates are not valid based on feed received for the PCC.
+ |
+Reach out to the third-party source to ensure the required rate codes are correctly loaded for your PCC.
+ |
+
+5266
+ |
+Either HotelRefs or HotelPref is required
+ |
+Depending on the API, your request should contain either HotelRefs or HotelPref. You cannot send a blank request with no filtering criteria.
+ |
+Add either HotelRefs (or GeoRef) OR HotelPref to your request.
+ |
+
+5272
+ |
+Need to provide one of MarketerCodes,ChainCodes,HotelCodes,PropertyName or PropertyStatus
+ |
+An empty Hotel Pref element was added to the request.
+ |
+Add at least 1 child element under the HotelPref element.
+ |
+
+5273
+ |
+Number of properties requested cannot be greater than 5000
+ |
+Depending on the API, a different number of Hotel Codes can be added to the request.
+ |
+If returned, ensure you do not add more than 5000 hotel codes to this API request.
+ |
+
+5278
+ |
+Hotel name can contain only the following special characters ! # $ % ’ ( ) * + , - . /
+ |
+Unsupported special character was added to the HotelPref - HotelName element
+ |
+Remove unsupported special characters and retry the request.
+ |
+
+5259
+ |
+Multiple CodeContext not allowed
+ |
+All hotel codes should have the same code context in the request. No code context is treated as SABRE by default.
+ |
+Ensure that all the Code Contexts in the request are the same.
+ |
+
+0106
+ |
+Too many rooms/units
+ |
+The requested rate source does not support a request with multiple room elements.
+ |
+Either change the requested rate source or shop for a single room.
+ |
+
+0322
+ |
+No availability
+ |
+Property is not available for requested dates. Check the warning details to get more details on why property is not available.
+ |
+Try with alternate properties or different check-in/check-out dates.
+ |
+
+5311
+ |
+Property not available for requested dates
+ |
+All properties or all rates for a property filtered in response due to agency rules.
+ |
+Try with the alternate property or update the agency rules.
+ |

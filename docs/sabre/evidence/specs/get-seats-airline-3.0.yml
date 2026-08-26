@@ -1,0 +1,1281 @@
+openapi: 3.0.0
+x-lingo-api-type: rpc
+tags:
+  - name: payload
+    description: Operations supporting air reservation data passed within the request payload.
+  - name: pnr
+    description: Operations supporting preexisting PNRs.
+info:
+  title: Get Seats Airline
+  version: "3.0"
+  description: |
+    The Get Seats API provides access to seat availability and pricing information for a given air reservation context. 
+    The context may be defined by a Sabre PNR locator or by including booking details in the request.
+
+servers:
+  - url: https://{environment}.sabre.com{basePath}
+    variables:
+      environment:
+        default: 'api.cert.platform'
+        enum:
+          - 'api.cert.platform' # Certification server used for testing
+          - 'api.platform' # Production server
+      basePath:
+        default: /v3/offers
+paths:
+  /getseats/byReservationPayload:
+    post:
+      description: Retrieves seat map content with seat availability and pricing details for air segments in the reservation defined by the request payload.
+      operationId: GetSeatsByReservationPayload
+      tags:
+        - payload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatAvailabilityByPayloadRq"
+        description: Contains details of the reservation to retrieve seat maps for.
+        required: true
+      responses:
+        "200":
+          description: Contains response data for a successful operation or error details if request processing failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatAvailabilityRs"
+
+  /getseats/byPnrLocator:
+    post:
+      description: Retrieves seat map content with seat availability and pricing details for air segments in a given Sabre PNR.
+      operationId: GetSeatsByPnrLocator
+      tags:
+        - pnr
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatAvailabilityByPnrLocatorRq"
+        description: Contains the Sabre PNR locator to retrieve seat maps for.
+        required: true
+      responses:
+        "200":
+          description: Contains response data for a successful operation or error details if request processing failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatAvailabilityRs"
+
+security:
+  - oauth2_authentication: []
+
+components:
+  securitySchemes:
+    oauth2_authentication:
+      type: oauth2
+      x-base64-encode-client-credentials: true
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.platform.sabre.com/v2/auth/token
+          scopes: {}
+  schemas:
+
+    SeatAvailabilityByPayloadRq:
+      type: object
+      description: Contains details of the reservation to retrieve seat maps for.
+      required:
+        - returnSeatMapsOnlyForSegmentRefs
+        - segments
+        - passengers
+      properties:
+        returnSeatMapsOnlyForSegmentRefs:
+          description: Lists references to segments for which seat maps are requested.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IdType'
+        segments:
+          description: Lists segments in the itinerary.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SegmentPayloadRq'
+        passengers:
+          description: Lists passengers included in the booking.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PassengerPayloadRq'
+        returnSeatOffersOnlyForPassengerRefs:
+          description: Lists references to passengers for whom seat maps are requested.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IdType'
+        fareComponents:
+          description: Lists fare definitions used for the trip.
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/FareComponent"
+        currencyCode:
+          description: The code of the currency to use for search processing and results returned in the response. In not defined, the currency is determined dynamically depending on other factors.
+          $ref: "#/components/schemas/CurrencyCode"
+        isCheckinMode:
+          description: If `true`, this is a check-in request that uses a dedicated check-in seat map source. If `false`, this is a booking request. The parameter affects, for instance, the source of the seat map.
+          type: boolean
+          example: true
+        customAttributes:
+          description: Lists additional custom attributes to take into consideration during seat map retrieval.
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyValuePair"
+
+    SeatAvailabilityByPnrLocatorRq:
+      type: object
+      description: Contains the Sabre PNR locator to retrieve seat maps for.
+      required:
+        - pnrLocator
+      properties:
+        pnrLocator:
+          description: The Sabre PNR locator. PNR data is retrieved in stateless manner, meaning that any uncommitted changes made to the PNR are not read.
+          $ref: '#/components/schemas/PnrLocator'
+        returnSeatMapsOnlyForSegmentIds:
+          description: Lists segments for which seat maps are requested. Should refer to segment IDs from the PNR locator.
+          type: array
+          items:
+            $ref: '#/components/schemas/IdType'
+        returnSeatOffersOnlyForPassengerNameReferenceNumbers:
+          description: Lists name reference numbers identifying the passengers in the reservation (PNR) for whom seat maps are requested.
+          type: array
+          items:
+            $ref: "#/components/schemas/NameReferenceNumber"
+        currencyCode:
+          description: The code of the currency to use for search processing and results returned in the response.
+          $ref: "#/components/schemas/CurrencyCode"
+        isCheckinMode:
+          description: If `true`, this is a check-in request that uses a dedicated check-in seat map source. If `false`, this is a booking request. The parameter affects, for instance, the source of the seat map.
+          type: boolean
+          example: true
+        customAttributes:
+          description: Lists additional custom attributes to take into consideration during seat map retrieval. May allow integrators to pass additional context data, which can then be used in downline pricing flows.
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyValuePair"
+
+    SeatAvailabilityRs:
+      type: object
+      description: |
+        Contains seat availability data returned by the service. May also include errors and warnings encountered during request processing.
+      properties:
+        response:
+          description: Contains seat maps for requested air segments, together with seat availability and pricing information.
+          $ref: "#/components/schemas/SeatAvailabilityResponse"
+        errors:
+          description: Lists any errors that occurred during request processing.
+          type: array
+          items:
+            description: Errors that occurred during request processing.
+            $ref: '#/components/schemas/Error'
+        warnings:
+          description: Lists any warnings that occurred during request processing.
+          type: array
+          items:
+            description: Warnings that occurred during processing.
+            $ref: '#/components/schemas/Warning'
+
+    SeatAvailabilityResponse:
+      type: object
+      description: Contains seat availability data used to construct seat maps with fully integrated fees for any identified premium seats.
+      required:
+        - segments
+        - passengers
+        - offerItems
+        - serviceDefinitions
+        - seatMaps
+      properties:
+        offerId:
+          description: The unique ID of the returned offer. Used to add selected retrieved seat offers to the reservation.
+          $ref: '#/components/schemas/IdType'
+        offerExpirationDateTime:
+          description: The expiration date of the offer. The offer remains valid until this time and it can be used to book seats.
+          $ref: "#/components/schemas/DateTimeType"
+        segments:
+          description: Lists segments in the itinerary.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SegmentRs'
+        passengers:
+          description: Lists passengers included in the offer.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PassengerRs'
+        serviceDefinitions:
+          description: Lists all airline-specific products and services (excluding flights) that can be separately sold and delivered.
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceDefinition'
+        priceDefinitions:
+          description: Lists the definitions of priced products.
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceDefinition'
+        offerItems:
+          description: Lists bookable items assigned to seats on seat maps.
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferItem'
+        displayOnlyItems:
+          description: Lists display-only items assigned to seats on seat maps.
+          type: array
+          items:
+            $ref: '#/components/schemas/DisplayOnlyItem'
+        seatMaps:
+          description: Lists seat maps with corresponding seats.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SeatMap'
+
+    OfferItem:
+      type: object
+      description: Contains a bookable offer item assigned to a seat.
+      allOf:
+        - $ref: '#/components/schemas/OfferItemDetails'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              description: The ID of the offer item.
+              $ref: '#/components/schemas/IdType'
+
+    OfferItemDetails:
+      type: object
+      description: Contains further details of a bookable offer item assigned to a seat.
+      required:
+        - serviceDefinitionRef
+        - segmentRefs
+        - passengerRefs
+      properties:
+        serviceDefinitionRef:
+          description: The ID of the corresponding `ServiceDefinition` included in the same message.
+          $ref: '#/components/schemas/IdType'
+        priceDefinitionRef:
+          description: The ID of the corresponding `PriceDefinition` included in the same message.
+          $ref: '#/components/schemas/IdType'
+        segmentRefs:
+          description: Lists the IDs of segments associated with the offer.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IdType'
+        passengerRefs:
+          description: Lists the IDs of passengers associated with the offer.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IdType'
+        refundableReissuableIndicator:
+          description: Identifies whether the offer item is refundable or re-issuable.
+          $ref: '#/components/schemas/RefundableReissuableIndicatorEnum'
+        isInterlineable:
+          description: If `true`, the offer item fee can be applied to interline itineraries.
+          type: boolean
+          default: false
+        sectorPortionIndicator:
+          description: Identifies whether the offer item is related to a sector (one segment), a portion (one or more segments) or a journey.
+          $ref: '#/components/schemas/SectorPortionEnum'
+        feeApplicationMethod:
+          description: Identifies the fee application method for the offer item.
+          $ref: "#/components/schemas/FeeApplicationMethodEnum"
+        purchaseByDateTime:
+          description:  The expiration date of the offer item. The offer item remains valid until this time.
+          $ref: "#/components/schemas/DateTimeType"
+        annotations:
+          description: Lists additional data retrieved for the offer item.
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyValuePair'
+
+    DisplayOnlyItem:
+      type: object
+      description: Contains a display-only offer item assigned to a seat.
+      allOf:
+        - $ref: '#/components/schemas/OfferItemDetails'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              description: The ID of the display-only offer item.
+              $ref: '#/components/schemas/IdType'
+            displayOnlyReason:
+              description: Identifies the reason why the offer item is display-only.
+              $ref: '#/components/schemas/DisplayOnlyReasonEnum'
+            displayOnlySource:
+              description: The source system which restricted a given offer item. Can be used to properly process additional data returned in `displayOnlyReasonDetails`.
+              type: string
+              example: "DR"
+            displayOnlyReasonDetails:
+              description: Lists additional information about `displayOnlyReason` provided by the system from which the offer item was retrieved.
+              type: array
+              items:
+                $ref: '#/components/schemas/KeyValuePair'
+              example:  [ { key: "RuleId", value: "1234" } ]
+
+    DisplayOnlyReasonEnum:
+      description: Identifies the reason why the offer item is display-only.
+      type: string
+      enum:
+        - Unavailable
+        - Unable To Book
+        - Restricted
+        - Unknown
+      default: Unknown
+
+    Error:
+      type: object
+      description: Contains details of an error encountered during request processing.
+      required:
+        - category
+        - type
+      properties:
+        category:
+          type: string
+          example: 'BAD_REQUEST'
+          description: A high-level grouping of errors indicating what kind of (client-side or server-side) problem occurred.
+        type:
+          type: string
+          example: 'REQUIRED_FIELD_MISSING'
+          description: An application-specific error type, or one from the list of typical Sabre API errors.
+        description:
+          type: string
+          example: 'Client did not provide required data. See fieldName for the item expected in the request.'
+          description: A human-readable description of what went wrong with enough information that a software developer can use to debug the problem.
+        fieldName:
+          type: string
+          example: 'currencyCode'
+          description: Specific additional information to help debug the error. For example the name of property missing from a request payload.
+        fieldPath:
+          type: string
+          example: 'currencyCode'
+          description: Specific additional information to help debug the error. For example the name of property missing from a request payload.
+        fieldValue:
+          type: string
+          example: 'field value'
+          description: Contains the source of the error.
+
+    Warning:
+      type: object
+      description: Contains details of a warning returned during request processing.
+      required:
+        - category
+        - type
+      properties:
+        category:
+          type: string
+          example: 'USER_PROFILE'
+          description: A high-level grouping of warnings indicating what kind of (client-side or server-side) problem occurred.
+        type:
+          type: string
+          example: 'STRING_LENGTH'
+          description: An application-specific warnings type, or one from the list of typical Sabre API warnings.
+        description:
+          type: string
+          example: 'User name too long and truncated to 64 character maximum limit.'
+          description: A human-readable description of what went wrong with enough information that a software developer can use to debug the problem.
+        fieldName:
+          type: string
+          example: 'givenName'
+          description: Specific additional information to help debug the warning. For example the name of property missing from a request payload.
+        fieldPath:
+          type: string
+          example: 'profile.givenName'
+          description: Specific additional information to help debug the warning. For example the name of property missing from a request payload.
+        fieldValue:
+          type: string
+          example: 'Mynamificationofthelocalitywhereiwasborncreatesanametoolongforthescreen'
+          description: Contains the source of the warning.
+
+    SegmentBase:
+      description: Contains details of a flight segment.
+      type: object
+      required:
+        - id
+        - bookingAirlineCode
+        - departureAirportCode
+        - arrivalAirportCode
+        - departureDate
+        - bookingFlightNumber
+        - bookingClassCode
+      properties:
+        id:
+          description: Uniquely identifies a segment within the context of one message.
+          $ref: '#/components/schemas/IdType'
+        bookingAirlineCode:
+          description: The two-character airline code defined by IATA assigned to the booking carrier.
+          $ref: "#/components/schemas/AirlineCode"
+        bookingFlightNumber:
+          description: The flight number of the airline that provides the passenger's booking or reservation.
+          $ref: "#/components/schemas/CarrierFlightNumber"
+        departureAirportCode:
+          description:  The city code defined by IATA identifying the departure city or station.
+          $ref: "#/components/schemas/IataCityCode"
+        arrivalAirportCode:
+          description: The city code defined by IATA identifying the arrival city or station.
+          $ref: "#/components/schemas/IataCityCode"
+        departureDate:
+          description: The scheduled departure date in `YYYY-MM-DD` format in the airport's time zone.
+          $ref: "#/components/schemas/Date"
+        bookingClassCode:
+          description: The booking class code of the booking airline, a.k.a. class of service or Reservation Booking Designator (RBD).
+          $ref: "#/components/schemas/BookingClassCode"
+        departureTime:
+          description: The scheduled time of departure in `HH:MM` format.
+          $ref: "#/components/schemas/Time"
+        arrivalDate:
+          description: The scheduled arrival date in `YYYY-MM-DD` format in the airport's time zone.
+          $ref: "#/components/schemas/Date"
+        arrivalTime:
+          description: The scheduled time of arrival in `HH:MM` format.
+          $ref: "#/components/schemas/Time"
+        operatingAirlineCode:
+          description: Airline code assigned to the operating carrier.
+          $ref: "#/components/schemas/AirlineCode"
+        operatingFlightNumber:
+          description: The flight number of the airline that operates the flight and transports the passengers in a codeshare scenario.
+          $ref: "#/components/schemas/CarrierFlightNumber"
+        operatingBookingClassCode:
+          description: The booking class code of the operating airline, a.k.a. class of service or Reservation Booking Designator (RBD).
+          $ref: "#/components/schemas/BookingClassCode"
+        cabinCode:
+          description: The code of the cabin.
+          $ref: "#/components/schemas/CabinTypeCode"
+
+    SegmentRs:
+      type: object
+      description: Contains a segment from the itinerary.
+      allOf:
+        - $ref: '#/components/schemas/SegmentBase'
+        - type: object
+          properties:
+            isChangeOfGauge:
+              description: If `true`, a change of gauge is involved for this segment.
+              type: boolean
+              example: false
+            flightLegs:
+              description: Lists flight legs within the journey.
+              type: array
+              items:
+                $ref: '#/components/schemas/FlightLeg'
+
+    SegmentPayloadRq:
+      type: object
+      description: Contains a segment from the itinerary.
+      allOf:
+        - $ref: '#/components/schemas/SegmentBase'
+        - type: object
+          properties:
+            hasRecordCreateTag:
+              description: If `true`, the segment has the `/RCRQ` tag.
+              type: boolean
+              example: true
+
+    FlightLeg:
+      description: Contains a flight leg, including departure and arrival details and the aircraft ID.
+      type: object
+      required:
+        - id
+        - departureAirportCode
+        - arrivalAirportCode
+      properties:
+        id:
+          description: The ID of the aircraft used for the leg.
+          $ref: "#/components/schemas/IdType"
+        departureAirportCode:
+          description: The city code defined by IATA identifying the departure city or station.
+          $ref: "#/components/schemas/IataCityCode"
+        departureScheduledDateTime:
+          description: The scheduled date and time of departure from the airport gate.
+          $ref: "#/components/schemas/DateTimeType"
+        arrivalAirportCode:
+          description: The city code defined by IATA identifying the arrival city or station.
+          $ref: "#/components/schemas/IataCityCode"
+        aircraftCode:
+          description: A three-character IATA aircraft type designator.
+          type: string
+          pattern: '^[0-9A-Z]{3}$'
+          example: 7S8
+
+    PassengerBase:
+      type: object
+      description: Contains basic passenger details.
+      required:
+        - id
+      properties:
+        id:
+          description: Uniquely identifies a passenger in the Sabre system within the context of one message.
+          $ref: "#/components/schemas/IdType"
+        passengerType:
+          description: The Passenger Type Code (PTC), a three-letter value that typically drives pricing.
+          $ref: "#/components/schemas/PassengerCodeType"
+        givenName:
+          description: The passenger's first or given name.
+          $ref: '#/components/schemas/GivenName'
+        surname:
+          description: The passenger's family name or last name. Excludes any potential suffix.
+          $ref: '#/components/schemas/Surname'
+        loyaltyProgramAccounts:
+          description: Lists loyalty program accounts disclosed by the passenger.
+          type: array
+          items:
+            $ref: "#/components/schemas/LoyaltyProgramAccount"
+
+    PassengerPayloadRq:
+      type: object
+      description: Contains passenger details used in the payload flow.
+      allOf:
+        - $ref: '#/components/schemas/PassengerBase'
+        - type: object
+          properties:
+            fareSegmentAssociation:
+              description: Lists associations between individual items from the `segments` array and items from the `fareComponents` array.
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/FareSegmentAssociation"
+            specialServiceRequests:
+              description: Lists Special Service Requests for this passenger.
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/SpecialServiceRequest"
+            loyaltyProgramAccounts:
+              description: Lists loyalty program accounts disclosed by the passenger.
+              type: array
+              items:
+                $ref: "#/components/schemas/LoyaltyProgramAccount"
+            isAccompaniedByInfant:
+              description: If `true`, the passenger is traveling with an infant without a seat.
+              type: boolean
+              example: true
+              default: false
+            customAttributes:
+              description: Lists any custom input attributes.
+              type: array
+              items:
+                $ref: "#/components/schemas/KeyValuePair"
+
+    PassengerRs:
+      type: object
+      description: Contains details of a passenger.
+      allOf:
+        - $ref: '#/components/schemas/PassengerBase'
+
+    FareSegmentAssociation:
+      description: Contains an association between a travel segment and a fare component.
+      type: object
+      required:
+        - segmentRef
+        - fareComponentRef
+      properties:
+        segmentRef:
+          description: Reference to a fare component segment ID within this message.
+          $ref: '#/components/schemas/IdType'
+        fareComponentRef:
+          description: Reference to a fare component ID within this message.
+          $ref: '#/components/schemas/IdType'
+
+    SpecialServiceRequest:
+      description: Contains passenger's Special Service Requests and the associated travel segment.
+      type: object
+      required:
+        - codes
+      properties:
+        codes:
+          description: Lists Special Service Request codes.
+          type: array
+          items:
+            $ref: '#/components/schemas/SpecialServiceCode'
+        segmentRef:
+          description: Reference to the segment ID.
+          $ref: '#/components/schemas/IdType'
+
+    FareComponent:
+      description: Contains fare details.
+      type: object
+      required:
+        - fareComponentId
+        - fareBasis
+      properties:
+        fareComponentId:
+          description: The unique ID of the fare.
+          $ref: '#/components/schemas/IdType'
+        governingCarrier:
+          description: The code of the carrier whose fare basis is used to issue the ticket.
+          $ref: "#/components/schemas/AirlineCode"
+        totalPrice:
+          description: The total price of the `FareComponent`.
+          type: string
+          format: number
+          example: "500.00"
+        totalPriceCurrencyCode:
+          description: The code of the currency used for `totalPrice`. Required if `totalPrice` is provided.
+          $ref: "#/components/schemas/CurrencyCode"
+        fareBasis:
+          description: The alphanumeric code that appears in the Fare Basis box on a ticket.
+          $ref: "#/components/schemas/FareBasisCode"
+        brandCode:
+          description: The code of the brand.
+          type: string
+          example: A2
+        fareDetail:
+          description: Contains a variety of additional fare information.
+          $ref: "#/components/schemas/FareDetail"
+
+    FareDetail:
+      description: Contains a variety of additional fare information.
+      type: object
+      properties:
+        fareType:
+          description: The alphanumeric or alphabetic fare basis type code.
+          type: string
+          example: XAN
+        fareTariff:
+          description: The number used to represent the fare tariff type applied for a passenger to fly a given segment (city pair).
+          type: string
+          example: "1"
+        fareRule:
+          description: The automated rule provisions for specific fare classes. The term can refer to rules governing published fares or to fares that are contained in the text of a rule.
+          type: string
+          example: WPIL
+        fareIndicator:
+          description: The numerical indicator used to identify the fare.
+          type: number
+          example: 21
+        fareTypeBitmap:
+          description: The alphanumeric or alphabetic fare type from ticketing.
+          type: string
+          example: "00"
+        hasPrivateTariff:
+          description: If `true`, the `fareTariff` has fare and rule data that is not available for public inquiry.
+          type: boolean
+          example: true
+
+    PriceDefinition:
+      type: object
+      description: Contains price details returned for a product.
+      required:
+        - id
+        - currencyCode
+        - totalPrice
+      properties:
+        id:
+          description: Uniquely identifies a `PriceDefinition` within the context of one message.
+          $ref: '#/components/schemas/IdType'
+        currencyCode:
+          description: The code of the currency used for individual amounts in price breakdowns.
+          $ref: '#/components/schemas/CurrencyCode'
+        totalPrice:
+          description: The final price the customer will pay for the product, including price modifications such as discounts if applicable.
+          $ref: "#/components/schemas/PriceBreakdown"
+        referenceBasePrice:
+          description: The reference base price, which can be optionally disclosed by the pricing engine as a starting price before any discounts are applied.
+          $ref: "#/components/schemas/PriceBreakdown"
+
+    PriceBreakdown:
+      type: object
+      description: Contains a comprehensive breakdown of price components.
+      required:
+        - amount
+      properties:
+        amount:
+          description: The ancillary price with taxes included. Expressed in the currency from `PriceDefinition`.
+          type: string
+          format: number
+          example: "100.00"
+        amountWithoutTaxes:
+          description: The ancillary price without taxes. Expressed in the currency from `PriceDefinition`.
+          type: string
+          format: number
+          example: "80.00"
+        taxesTotal:
+          description: The total of all applicable taxes included in the ancillary price `amount`. The sum of all `taxAmount` items listed under the `taxes` array.
+          type: string
+          format: number
+          example: "20.00"
+        taxes:
+          description: Lists all applicable taxes.
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxType'
+        isTaxExempt:
+          description: If `true`, the service is exempt from all taxes.
+          type: boolean
+          default: false
+
+    TaxType:
+      description: Contains details of a compulsory contribution to state revenue, levied by the government on workers'
+        income and business profits or added to the cost of some goods, services, and transactions. Represents a single tax.
+      type: object
+      properties:
+        taxAmount:
+          description: The tax amount expressed in the currency from `PriceDefinition`.
+          type: string
+          format: number
+          example: "10.00"
+        taxCode:
+          description: A code that applies to the tax.
+          type: string
+          example: AY
+        description:
+          description: A short description of the tax.
+          type: string
+          example: $4 per flight segment, per passenger (U.S. domestic segment tax).
+
+    ServiceDefinition:
+      type: object
+      description: Contains an airline-specific product or service (excluding flights) that can be separately sold and delivered.
+      required:
+        - id
+      properties:
+        id:
+          description: Uniquely identifies a `ServiceDefinition` within the context of one message.
+          $ref: '#/components/schemas/IdType'
+        serviceCode:
+          description: The SSR code or the ancillary code, identifying a specific type of service. Either used across the industry or defined by the carrier.
+          $ref: '#/components/schemas/ServiceCodeType'
+        airlineCode:
+          description: The airline code of the carrier that owns the ancillary.
+          $ref: '#/components/schemas/AirlineCode'
+        commercialName:
+          description: The commercial name of the service associated with the `serviceCode`.
+          type: string
+          example: "UPTO70LB 32KG AND115LI 292LCM"
+        groupCode:
+          description: The ATPCO group code.
+          $ref: '#/components/schemas/GroupCodeType'
+        emdType:
+          description: Identifies the kind of Electronic Miscellaneous Document required for this ancillary offer.
+          $ref: '#/components/schemas/EmdTypeEnum'
+        emdTypeCode:
+          description: An internal code which defines the kind of Electronic Miscellaneous Document required for this ancillary offer. Can be `1` (Standalone), `2` (Flight Coupon Associated), `3` (Standalone Ticket Associated), `4` (Other Than EMD), or `5` (E-ticket).
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 3
+        specialServiceCode:
+          description: The Special Service Request code defined by IATA applicable to the `serviceCode`.
+          $ref: '#/components/schemas/SpecialServiceCode'
+        reasonForIssuance:
+          description: Identifies the reason for issuing the EMD for the service associated with the `serviceCode`.
+          $ref: '#/components/schemas/ReasonForIssuanceEnum'
+        reasonForIssuanceCode:
+          description: An internal code specifying the reason for issuing the EMD for the service associated with the `serviceCode`. For more information, refer to the PADIS Codeset data element 4183 - Special Condition. Can be `A` (Air Transportation), `B` (Surface Transportation / Non Air Services), `C` (Baggage), `D` (Financial Impact), `E` (Airport Services), `F` (Merchandise), `G` (In-flight Services), `H` (Reserved for future ATPCO use), or `I` (Reserved for Individual Airline Use).
+          type: string
+          pattern: '^[ABCDEFGHI]$'
+          example: 'C'
+        isCommissionable:
+          description: If `true`, a commission can be applied to the fee for this service.
+          type: boolean
+          default: false
+        isFeeGuaranteed:
+          description: If `true`, the fee for this service is guaranteed.
+          type: boolean
+          default: true
+
+    SeatMap:
+      description: Contains a list of cabins and seats within it, which can be used to render a graphical seat map.
+      type: object
+      required:
+        - segmentRef
+      properties:
+        segmentRef:
+          description: Reference to the segment ID from this response message or from the request.
+          $ref: '#/components/schemas/IdType'
+        flightLegRef:
+          description: Reference to the ID of an item from the `flightLegs` array for which this map is displayed.
+          $ref: '#/components/schemas/IdType'
+        cabinCompartments:
+          description: Lists the physical aircraft compartments.
+          type: array
+          items:
+            $ref: "#/components/schemas/CabinCompartment"
+
+    CabinCompartment:
+      description: Contains information on a physical aircraft compartment, such as the location of passenger seats, classified by a given `cabinCode`.
+      type: object
+      properties:
+        firstRow:
+          description: The number of the first seat row in the cabin compartment.
+          type: integer
+          example: 1
+        lastRow:
+          description: The number of the last seat row in the cabin compartment.
+          type: integer
+          example: 10
+        columnIds:
+          description: Lists the IDs of seat columns within the cabin compartment.
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnType'
+        cabinCode:
+          description: The type code associated with the cabin compartment.
+          $ref: "#/components/schemas/CabinTypeCode"
+        cabinName:
+          description: The name of the cabin compartment.
+          type: string
+          example: "Business"
+        cabinLayout:
+          description: Contains a detailed breakdown of the cabin layout within the compartment.
+          $ref: '#/components/schemas/CabinLayoutType'
+        seatRows:
+          description: Lists the rows of seats located in a cabin compartment.
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatRow"
+
+    CabinLayoutType:
+      description: Contains data on the rows and columns within the cabin.
+      type: object
+      required:
+        - columns
+        - rows
+      properties:
+        columns:
+          description: Lists column positions within the cabin.
+          type: array
+          items:
+            $ref: '#/components/schemas/CabinLayoutColumn'
+          minItems: 1
+        rows:
+          description: Contains index information on the first and last rows within the cabin.
+          $ref: '#/components/schemas/CabinLayoutRowPosition'
+        wingRowPosition:
+          description: Lists the positions of any wing rows.
+          type: array
+          items:
+            $ref: '#/components/schemas/CabinLayoutRowPosition'
+        exitRowPosition:
+          description: Lists the positions of any exit rows.
+          type: array
+          items:
+            $ref: '#/components/schemas/CabinLayoutRowPosition'
+        seatCount:
+          description: The total number of all seats within the cabin.
+          type: integer
+          example: 25
+        authorizedSeatCount:
+          description: The total number of bookable authorized seats.
+          type: integer
+          example: 10
+        missingRowNumbers:
+          description: Lists missing row numbers that are not located in the cabin.
+          type: array
+          items:
+            type: integer
+            description: The single missing row number.
+            example: 25
+        missingSeats:
+          description: Lists missing seats that are not located in the cabin.
+          type: array
+          items:
+            type: string
+            description: The single missing seat number.
+            example: "1C"
+        facilities:
+          description: Lists facilities available within the cabin.
+          type: array
+          items:
+            $ref: '#/components/schemas/Facility'
+        deckCode:
+          description: The code of the deck where the cabin is located. For more information, refer to the PADIS Codeset data element 9863 - Cabin class location.
+          type: string
+          example: M
+
+    CabinLayoutColumn:
+      description: Contains the location of a column within a cabin.
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          description: The seat column.
+          $ref: "#/components/schemas/ColumnType"
+        position:
+          description: Lists the position of the column.
+          example: [A, W]
+          type: array
+          items:
+            type: string
+            description: The position of the column. Can be `A` (Aisle), `C` (Central), or `W` (Window).
+            example: "W"
+
+    CabinLayoutRowPosition:
+      description: Contains index information on the first and last rows within the cabin.
+      type: object
+      required:
+        - firstRow
+        - lastRow
+      properties:
+        firstRow:
+          description: Index of the first row within the cabin.
+          example: 1
+          type: integer
+        lastRow:
+          description: Index of the last row within the cabin.
+          example: 30
+          type: integer
+
+    SeatRow:
+      description: Contains seat information related to a given row within a cabin compartment.
+      type: object
+      required:
+        - row
+        - seats
+      properties:
+        row:
+          description: Seat row number.
+          type: integer
+          example: 5
+        characteristics:
+          description: Lists row characteristic details.
+          type: array
+          items:
+            $ref: "#/components/schemas/RowCharacteristic"
+        seats:
+          description: Lists the seats within a single row.
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatType"
+
+    RowCharacteristic:
+      description: Contains row characteristic details.
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          description: The row characteristic code. Refer to IATA's PADIS Codeset data element 9825 for a full list of values.
+          $ref: "#/components/schemas/RowCharacteristicCodeType"
+        description:
+          description: A text-based description of the row characteristic.
+          type: string
+          example: Exit row
+
+    SeatType:
+      description: Contains information on a seat type within the cabin.
+      type: object
+      required:
+        - column
+      properties:
+        column:
+          description: The unique ID of the column where the seat is located.
+          $ref: '#/components/schemas/ColumnType'
+        occupationStatusCode:
+          description: The occupation status of the seat, defined by IATA PADIS data element 9865. Can be `B` (Advanced boarding pass seat), `C` (Check-in reserved seat), `D` (Seat blocked for/with deadload), `E` (Extra seat), `F` (Seat is free), `G` (Seat for group pre-allocation), `H` (Courtesy reserved seat), `I` (Seat is not available for interline through check-in), `M` (Seat occupied for medical reasons), `N` (Seat not designated for RBD specified in request), `O` (Seat is occupied), `P` (Protected seat), `Q` (No seat here), `R` (Reserved seat generic), `S` (Seat protected for code sharing), `T` (Transit passenger - seat occupied by a transit passenger or load), `U` (Upline protected seat), `V` (Downline protected seat), `X` (Seat is not available for partner airlines use), `Y` (Advanced seat selection seat), or `Z` (Seat blocked for other reason).
+          $ref: "#/components/schemas/OccupationStatusCodeType"
+        characteristics:
+          description: Lists all PADIS 9825 codeset seat characteristics.
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatCharacteristic"
+        isOperative:
+          description: If `true`, this seat is operational.
+          type: boolean
+          example: true
+        offerItemRefIds:
+          description: Lists price points applicable to the individual seat. Multiple seats can reference the same `OfferItem`.
+          type: array
+          items:
+            $ref: '#/components/schemas/IdType'
+        displayOnlyItemRefIds:
+          description: Lists display-only items applicable to the individual seat. Multiple seats can reference the same `DisplayOnlyItem`.
+          type: array
+          items:
+            $ref: '#/components/schemas/IdType'
+
+    SeatCharacteristic:
+      description: Contains seat characteristic details.
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          description: The seat characteristic code. Refer to IATA's PADIS Codeset data element 9825 for a full list of values.
+          $ref: "#/components/schemas/SeatCharacteristicCodeType"
+        description:
+          description: The text-based description of the seat characteristic.
+          type: string
+          example: Crew seat
+
+    Facility:
+      description: Contains a description of a facility in the cabin.
+      type: object
+      required:
+        - firstRow
+        - lastRow
+        - positionCodes
+        - orientationCode
+        - facilityTypeCode
+      properties:
+        firstRow:
+          description: Beginning row of the facility.
+          type: integer
+          example: 1
+        lastRow:
+          description: Ending row of the facility.
+          type: integer
+          example: 20
+        columnIds:
+          description: Lists the IDs of columns where the facility is located.
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnType"
+          example: [A,B]
+        orientationCode:
+          description: The code of the orientation of the facility with regard to the cabin, defined in the PADIS Codeset data element 9976 - Row location qualifier. Returned as assigned by the airline to the facility on the map. Can be `F` (Front) or `R` (Rear).
+          type: string
+          example: F
+        positionCodes:
+          description: |
+            Lists codes representing the position of the facility within the cabin.
+          type: array
+          items:
+            type: string
+            description:  A single position code of the facility in the cabin. For more information refer to PADIS Codeset data element 3227 - Place/location qualifier. Can be `L` (Left side section), `LC` (Left center section), `C` (Center section), `RC` (Right center section), or `R` (Right side section).
+            example: L
+        facilityTypeCode:
+          description: The code representing the facility type. For more information refer to PADIS Codeset data element 9978 - Cabin facilities characteristic.
+          type: string
+          example: D
+
+    RowCharacteristicCodeType:
+      description: The row characteristic code. Refer to IATA's PADIS Codeset data element 9825 for a full list of values.
+      type: string
+      pattern: '^[A-Z0-9]{1,2}$'
+      example: "11"
+
+    SeatCharacteristicCodeType:
+      description: The seat characteristic code. Refer to IATA's PADIS Codeset data element 9825 for a full list of values.
+      type: string
+      pattern: '^[A-Z0-9]+$'
+      example: AB
+
+    OccupationStatusCodeType:
+      description: The seat occupation status. Refer to IATA's PADIS Codeset data element 9865 for a full list of values.
+      type: string
+      pattern: '^[A-Z0-9]$'
+      example: F
+
+    AirlineCode:
+      description: The IATA code of the airline.
+      type: string
+      pattern: '^([A-Z0-9]{2}|[A-Z]{3})$'
+      example: UA
+
+    Time:
+      description: The time in `HH:MM` format.
+      type: string
+      pattern: '^[0-9]{2}:[0-9]{2}$'
+      example: '09:15'
+
+    Date:
+      description: The date and time in `yyyy-MM-dd` format.
+      type: string
+      format: date
+      example: '2019-07-09'
+
+    CarrierFlightNumber:
+      description: The numerical designation of a flight as it is operated/marketed by a carrier.
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 9999
+      example: 1001
+
+    CabinTypeCode:
+      type: string
+      pattern: '^[A-Z]$'
+      example: 'J'
+      description: The code of the cabin.
+
+    BookingClassCode:
+      type: string
+      pattern: '^[A-Z]$'
+      example: 'M'
+      description: The code of the booking class, a.k.a. class of service or Reservation Booking Designator (RBD).
+
+    IataCityCode:
+      description: The code identifying a city or a station defined by IATA.
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: DFW
+
+    IdType:
+      description: The ID of a data element, e.g. seat, offer, order, segment, passenger, etc.
+      type: string
+      pattern: '^[a-zA-Z_][a-zA-Z0-9_\-\.]*$'
+      example: SRVC-2B88-4C33-9787-9461114BC9BE
+
+    PassengerCodeType:
+      description:  A three-letter code applied to a passenger that typically drives pricing.
+      type: string
+      pattern: '^[0-9A-Z]{3}$'
+      example: ADT
+
+    NameReferenceNumber:
+      description: The name reference number used to identify a passenger in a reservation.
+      type: string
+      example: "01.01"
+
+    ServiceCodeType:
+      description: The service code of an ancillary, i.e. the ATPCO type subcode.
+      type: string
+      pattern: '^[0-9A-Z]{3,4}$'
+      example: 0B5
+
+    GivenName:
+      type: string
+      description: The passenger's first name.
+      example: MARTIN
+
+    Surname:
+      type: string
+      description: The passenger's last name.
+      example: SMITH
+
+    CurrencyCode:
+      description: A three-letter currency code in ISO 4217 format.
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: USD
+
+    SpecialServiceCode:
+      description: The code of a Special Service Request.
+      type: string
+      pattern: '^[A-Z]{4}$'
+      example: WCHR
+
+    FareBasisCode:
+      description: The alphanumeric code that appears in the Fare Basis box on a ticket.
+      type: string
+      minLength: 1
+      maxLength: 128
+      example: YUP14B
+
+    GroupCodeType:
+      description: The code of an ATPCO group.
+      type: string
+      pattern: '^[0-9A-Z]{2}$'
+      example: BG
+
+    ColumnType:
+      description: Column identifier.
+      type: string
+      pattern: '^[A-Z]{1}$'
+      example: A
+
+    EmdTypeEnum:
+      description: Identifies the kind of Electronic Miscellaneous Document required for an ancillary offer.
+      type: string
+      enum:
+        - Standalone
+        - Flight Coupon Associated
+        - Standalone Ticket Associated
+        - Other Than Emd
+        - Eticket
+
+    RefundableReissuableIndicatorEnum:
+      type: string
+      description: Identifies whether the offer item is refundable or re-issuable. Can be `Yes` (refundable), `No` (not refundable), or `Reuse` (re-issuable).
+      enum:
+        - Yes
+        - No
+        - Reuse
+
+    ReasonForIssuanceEnum:
+      description: Identifies the reason for issuing the EMD for the service associated with the `serviceCode`. For more information, refer to the PADIS Codeset data element 4183 - Special Condition.
+      type: string
+      enum:
+        - Air Transportation
+        - Surface Transportation / Non Air Services
+        - Baggage
+        - Financial Impact
+        - Airport Services
+        - Merchandise
+        - In-Flight Services
+        - Individual Airline Use
+        - Unknown
+      default: 'Unknown'
+
+    SectorPortionEnum:
+      type: string
+      description: Identifies whether the offer item is related to a sector (one segment), a portion (one or more segments) or a journey.
+      enum:
+        - Sector
+        - Portion
+        - Journey
+
+    FeeApplicationMethodEnum:
+      type: string
+      description: Identifies the fee application method for an offer item.
+      enum:
+        - One Way
+        - Round Trip
+        - Item
+        - Travel
+        - Ticket
+        - Per 1kg Over Free Baggage Allowance
+        - Per 5kg Over Free Baggage Allowance
+        - Percentage 0.5 Of Fare Per Kg
+        - Percentage 1 Of Fare Per Kg
+        - Percentage 1.5 Of Fare Per Kg
+
+    KeyValuePair:
+      description: Contains `key`-`value` pairs to use as custom attributes alongside other search criteria in the request or when displaying additional information retrieved from the system in the response.
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          type: string
+          minLength: 1
+          description: The name of a property.
+          example: Key
+        value:
+          type: string
+          minLength: 1
+          description: The value of a property.
+          example: Value
+
+    DateTimeType:
+      description: Timestamp in ISO 8601 format.
+      type: string
+      format: date-time
+      example: '2019-07-07T16:00:00Z'
+
+    LoyaltyProgramAccount:
+      description: Contains the loyalty program account of a passenger.
+      type: object
+      properties:
+        airlineCode:
+          description: The two-character code of the airline owning the loyalty program. Defined by IATA.
+          $ref: "#/components/schemas/AirlineCode"
+        accountNumber:
+          description: The loyalty program alphanumeric account number.
+          type: string
+          example: ABC123456
+        programName:
+          description: The name of the loyalty program.
+          type: string
+          example: Corporate Loyalty ID
+
+    PnrLocator:
+      type: string
+      pattern: '^[A-Z]{6}$'
+      example: 'BREDXC'
+      description: The PNR locator in the Sabre GDS.

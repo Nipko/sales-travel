@@ -1,0 +1,594 @@
+Refund Flight Tickets – Examples
+
+Below are some common use cases on how to refund flight tickets:
+
+Refund a single document
+
+To ensure a successful refund of the requested document, add the following parameters to your request:
+
+tickets
+
+number (a 13-digit electronic document number)
+
+{
+  "tickets": [
+    {
+      "number": "1607531707951"
+    }
+  ]
+}
+
+Refund a conjunctive document
+
+To ensure a successful refund of the requested document, add the following parameters to your request:
+
+tickets
+
+number (a full conjunctive document number or a 13-digit electronic number of the main document)
+
+{
+  "tickets": [
+    {
+      "number": "1606802005012/13"
+    }
+  ]
+}
+
+or
+
+{
+  "tickets": [
+    {
+      "number": "1606802005012"
+    }
+  ]
+}
+
+Refund all documents of a booking
+
+To ensure a successful refund of all documents in a booking, your request should contain:
+
+confirmationId
+
+{
+  "confirmationId": "ABCDEF"
+}
+
+Refund all EMD documents for a booking
+
+To ensure a successful refund of all EMDs in a booking, your request should contain:
+
+confirmationId
+
+documentsType
+
+{
+  "documentsType": "EMDs",
+  "confirmationId": "GHIJKL"
+}
+
+Refund two documents, change context, and designate ticket printer
+
+To ensure a successful refund of the requested documents, switch from the current Pseudo City Code (PCC) to the target PCC where the transaction should be executed and use a specific printer. Your request should contain:
+
+tickets
+
+number (a 13-digit electronic document number)
+
+targetPcc (the PCC where the void transaction of the ticket should be executed)
+
+designatePrinters
+
+ticket
+
+address (the LNIATA address of the printer)
+
+countryCode
+
+{
+  "targetPcc": "7KFA",
+  "tickets": [
+    {
+      "number": "0143357868284"
+    },
+    {
+      "number": "0143357868285"
+    }
+  ],
+  "designatePrinters": [
+    {
+      "ticket": {
+        "address": "EF34GH",
+        "countryCode": "RU"
+      }
+    }
+  ]
+}
+
+Refund multiple documents and define refund qualifiers
+
+To ensure a successful refund of multiple documents, including refund qualifiers, add the following parameters to your request:
+
+tickets
+
+number (a 13-digit electronic document number)
+
+refundQualifiers, for example:
+
+waiverCode
+
+overrideCancelFee
+
+commissionAmount
+
+{
+  "tickets": [
+    {
+      "number": "6077531707952",
+      "refundQualifiers": {
+        "waiverCode": "ABCD1234",
+        "commissionAmount": "25.00"
+      }
+    },
+    {
+      "number": "6077531707953",
+      "refundQualifiers": {
+        "overrideCancelFee": "0.00",
+        "commissionAmount": "15.00"
+      }
+    }
+  ]
+}
+
+ |
+
+By defining refund qualifiers, you will override Sabre system pricing. Use at your own risk.
+ |
+
+Refund multiple EMDs and specify commission qualifiers
+
+To ensure a successful refund of multiple EMDs, including commission qualifiers, add the following parameters to your request:
+
+tickets:
+
+number (a 13-digit electronic document number)
+
+refundQualifiers, for example:
+
+commissionAmount
+
+commissionPercentage
+
+{
+  "documentsType": "EMDs",
+  "tickets": [
+    {
+      "number": "0451826838118",
+      "refundQualifiers": {
+        "commissionAmount": "25.00"
+      }
+    },
+    {
+      "number": "0451826838119",
+      "refundQualifiers": {
+        "commissionPercentage": "2"
+      }
+    }
+  ]
+}
+
+Use cases
+
+The use cases below have been compiled to better illustrate the logical flow of Refund Flight Tickets.
+
+Use case 1 – Refund a single flight ticket
+
+This use case is based on a reservation (PNR RECLOC: MSPKUK) for one traveler. The segment below was booked using traditional Sabre air content:
+
+*MSPKUK*IA«
+ 1 CX 652Y 10JUN Q SINHKG HK1  1255P  505P /DCCX*3EGJAB /E
+ 2 CX 735Y 15JUN T HKGSIN HK1   225P  625P /DCCX*3EGJAB /E
+
+The ticket was issued without any additional documents:
+
+*BYOKLY*T«
+TKT/TIME LIMIT
+  1.T-11FEB-G7RE*AWX
+  2.TE 1607531707954-AT MILLE/M G7RE*AWX 0114/11FEB*
+
+The current ticket image indicates:
+
+ ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:                          PNR:MSPKUK
+TKT:1607531707954     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:MILLER/MAX
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    CX   652   Y  10JUN  SINHKG 1255P  OK YRZZSGAR        OPEN
+                                NVB:10JUN   NVA:10JUN   BAG:30K
+2    CX   735   Y  15JUN  HKGSIN  225P  OK YRZZSGAR        OPEN
+                                NVB:15JUN   NVA:15JUN   BAG:30K
+
+FARE     SGD1295.00
+TOTAL     USD1063.80     EQUIVALENT FARE PAID         USD975.00
+
+To execute the refund flight ticket operation, determine the desired document number.
+The request to refund the document could be:
+
+{
+  "tickets": [
+    {
+      "number": "1607531707954"
+    }
+  ]
+}
+
+The response does not contain errors:
+
+{
+  "request": {
+    "tickets": [
+      {
+        "number": "1607531707954"
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "1607531707954",
+      "isVoidable": true,
+      "isRefundable": true,
+      "refundTotals": {
+        "subtotal": "885.00",
+        "taxes": "88.80",
+        "total": "973.80",
+        "currencyCode": "USD"
+      }
+    }
+  ],
+  "refundedTickets": [
+    "1607531707954"
+  ]
+}
+
+In this case, the ticket met the requirements for a refund:
+
+At least one coupon is open
+
+Carrier (CX – Cathay Pacific) participates in Automated Refunds
+
+System was able to price a refund
+
+Automated refunds are active for your PCC
+
+The reservation was updated and the ticket was refunded:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:                          PNR:MSPKUK
+TKT:1607531707954     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:MILLER/MAX
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    CX   652   Y  10JUN  SINHKG 1255P  OK YRZZSGAR        RFND
+                                NVB:10JUN   NVA:10JUN   BAG:30K
+2    CX   735   Y  15JUN  HKGSIN  225P  OK YRZZSGAR        RFND
+                                NVB:15JUN   NVA:15JUN   BAG:30K
+
+FARE     SGD1295.00
+TOTAL     USD1063.80     EQUIVALENT FARE PAID         USD975.00
+
+Use case 2 – Refund multiple flight tickets and change context
+
+This use case is based on a reservation (PNR RECLOC: KOEYRR) for two travelers. The segments were booked using traditional Sabre air content:
+
+*KOEYRR*I*T«
+1 AC 200Y 10SEP F YVRYYC HK2   600A  830A /DCAC*TQGZ47 /E
+ 2 AC 201Y 15SEP W YYCYVR HK2   630A  705A /DCAC*TQGZ47 /E
+TKT/TIME LIMIT
+  1.T-11FEB-7KFA*AWX
+  2.TE 0143357868284-AT MEYER/C 7KFA*AWX 0729/11FEB*I
+  3.TE 0143357868285-AT SCHUL/A 7KFA*AWX 0729/11FEB*I
+
+The ticket image of 0143357868284 indicates:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:                          PNR:KOEYRR
+TKT:0143357868284     ISSUED:11FEB21   PCC:7KFA   IATA:99999999
+NAME:MEYER/CAROL
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AC   200   Y  10SEP  YVRYYC  600A  OK Y0NAZALT        OPEN
+                                NVB:        NVA:10SEP   BAG:2PC
+2    AC   201   Y  15SEP  YYCYVR  630A  OK Y0NAZALT        OPEN
+                                NVB:        NVA:10SEP   BAG:2PC
+
+FARE     CAD1364.00
+TOTAL      GBP849.90     EQUIVALENT FARE PAID         GBP778.00
+
+To refund both documents and change the context to the Pseudo City Code (PCC) where they were issued, the request to Refund Flight Tickets should be:
+
+{
+  "targetPcc": "7KFA",
+  "tickets": [
+    {
+      "number": "0143357868284"
+    },
+    {
+      "number": "0143357868285"
+    }
+  ]
+}
+
+No errors are returned in the response:
+
+{
+  "request": {
+    "targetPcc": "7KFA",
+    "tickets": [
+      {
+        "number": "0143357868284"
+      },
+      {
+        "number": "0143357868285"
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "0143357868284",
+      "isVoidable": true,
+      "isRefundable": true,
+      "refundTotals": {
+        "subtotal": "778.00",
+        "taxes": "71.90",
+        "total": "849.90",
+        "currencyCode": "GBP"
+      }
+    },
+    {
+      "number": "0143357868285",
+      "isVoidable": true,
+      "isRefundable": true,
+      "refundTotals": {
+        "subtotal": "778.00",
+        "taxes": "71.90",
+        "total": "849.90",
+        "currencyCode": "GBP"
+      }
+    }
+  ],
+  "refundedTickets": [
+    "0143357868284",
+    "0143357868285"
+  ]
+}
+
+The reservation was updated and both tickets are refunded:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:                          PNR:KOEYRR
+TKT:0143357868284     ISSUED:11FEB21   PCC:7KFA   IATA:99999999
+NAME:MEYER/CAROL
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AC   200   Y  10SEP  YVRYYC  600A  OK Y0NAZALT        RFND
+                                NVB:        NVA:10SEP   BAG:2PC
+2    AC   201   Y  15SEP  YYCYVR  630A  OK Y0NAZALT        RFND
+                                NVB:        NVA:10SEP   BAG:2PC
+
+FARE     CAD1364.00
+TOTAL      GBP849.90     EQUIVALENT FARE PAID         GBP778.00
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:                          PNR:KOEYRR
+TKT:0143357868285     ISSUED:11FEB21   PCC:7KFA   IATA:99999999
+NAME:SCHULZ/ANDY
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AC   200   Y  10SEP  YVRYYC  600A  OK Y0NAZALT        RFND
+                                NVB:        NVA:10SEP   BAG:2PC
+2    AC   201   Y  15SEP  YYCYVR  630A  OK Y0NAZALT        RFND
+                                NVB:        NVA:10SEP   BAG:2PC
+
+FARE     CAD1364.00
+TOTAL      GBP849.90     EQUIVALENT FARE PAID         GBP778.00
+
+Use case 3 – Check multiple documents and define refund qualifiers
+
+Below is an example of a simple round-trip air itinerary (PNR RECLOC: WLXFYU). These segments are booked as traditional Sabre air content:
+
+*IA*T
+1 EY7309Y 11JUN F AMSAUH*HK2  1115A  805P /DCEY*UTCAPI /E
+ 2 EY 377Y 11JUN F AUHBAH*HK2   935P  945P /DCEY*UTCAPI /E
+ 3 EY3154Y 21JUN M BAHAUH*TK2   130A  345A /DCEY*UTCAPI /E
+ 4 EY  77Y 21JUN M AUHAMS*HK2   930A  240P /DCEY*UTCAPI /E
+TKT/TIME LIMIT
+  1.T-11FEB-G7RE*AWX
+  2.TE 6077531707952-AT DOE/J G7RE*AWX 0147/11FEB*
+  3.TE 6077531707953-AT SMITH/L G7RE*AWX 0147/11FEB*
+
+Tickets were issued for both travelers:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:                          PNR:WLXFYU
+TKT:6077531707952     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:DOE/JOHN
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    EY   7309  Y  11JUN  AMSAUH 1115A  OK YLF2NL          OPEN
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+2    EY   377   Y  11JUN  AUHBAH  935P  OK YLF2NL          OPEN
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+3    EY   3154  Y  21JUN  BAHAUH  130A  OK YLF2NL          OPEN
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+4    EY   77    Y  21JUN  AUHAMS  930A  OK YLF2NL          OPEN
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+
+FARE     EUR1872.00
+TOTAL     USD2509.20     EQUIVALENT FARE PAID        USD2264.00
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:                          PNR:WLXFYU
+TKT:6077531707953     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:SMITH/LAWRENCE
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    EY   7309  Y  11JUN  AMSAUH 1115A  OK YLF2NLCH        OPEN
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+2    EY   377   Y  11JUN  AUHBAH  935P  OK YLF2NLCH        OPEN
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+3    EY   3154  Y  21JUN  BAHAUH  130A  OK YLF2NLCH        OPEN
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+4    EY   77    Y  21JUN  AUHAMS  930A  OK YLF2NLCH        OPEN
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+
+FARE     EUR1409.00
+TOTAL     USD1949.20     EQUIVALENT FARE PAID        USD1704.00
+
+To execute the check flight ticket operation, determine the desired document numbers and applicable refund qualifiers.
+
+For example, a request to refund all documents could be:
+
+{
+  "tickets": [
+    {
+      "number": "6077531707952",
+      "refundQualifiers": {
+        "waiverCode": "ABCD1234",
+        "commissionAmount": "25.00"
+      }
+    },
+    {
+      "number": "6077531707953",
+      "refundQualifiers": {
+        "overrideCancelFee": "0.00",
+        "commissionAmount": "15.00"
+      }
+    }
+  ]
+}
+
+In this example, we specified different qualifiers for each ticket:
+
+6077531707952
+
+waiverCode applies the waiver code as provisioned by the issuing carrier
+
+commissionAmount applies the commission you received for this refund
+
+6077531707953
+
+overrideCancelFee is set to the cancel fee
+
+commissionAmount applies the commission you will receive for this refund
+
+overrideTaxes applies refundable amounts for specific taxes
+
+ |
+
+By defining refund qualifiers, you will override Sabre system pricing. This is at your own risk.
+ |
+
+There are no errors in the response:
+
+{
+  "request": {
+    "tickets": [
+      {
+        "number": "6077531707952",
+        "refundQualifiers": {
+          "commissionAmount": "25.00",
+          "waiverCode": "ABCD1234"
+        }
+      },
+      {
+        "number": "6077531707953",
+        "refundQualifiers": {
+          "overrideCancelFee": "0.00",
+          "overrideTaxes": [
+            {
+              "taxCode": "CJ",
+              "taxAmount": "5.00"
+            }
+          ],
+          "commissionAmount": "15.00"
+        }
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "6077531707952",
+      "isVoidable": true,
+      "isRefundable": true,
+      "refundTotals": {
+        "subtotal": "2264.00",
+        "taxes": "245.20",
+        "total": "2509.20",
+        "currencyCode": "USD"
+      }
+    },
+    {
+      "number": "6077531707953",
+      "isVoidable": true,
+      "isRefundable": true,
+      "refundTotals": {
+        "subtotal": "1704.00",
+        "taxes": "245.20",
+        "total": "1949.20",
+        "currencyCode": "USD"
+      }
+    }
+  ],
+  "refundedTickets": [
+    "6077531707952",
+    "6077531707953"
+  ]
+}
+
+The reservation was updated and the ticket coupons are refunded:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:                          PNR:WLXFYU
+TKT:6077531707952     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:DOE/JOHN
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    EY   7309  Y  11JUN  AMSAUH 1115A  OK YLF2NL          RFND
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+2    EY   377   Y  11JUN  AUHBAH  935P  OK YLF2NL          RFND
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+3    EY   3154  Y  21JUN  BAHAUH  130A  OK YLF2NL          RFND
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+4    EY   77    Y  21JUN  AUHAMS  930A  OK YLF2NL          RFND
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+
+FARE     EUR1872.00
+TOTAL     USD2509.20     EQUIVALENT FARE PAID        USD2264.00
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:                          PNR:WLXFYU
+TKT:6077531707953     ISSUED:11FEB21   PCC:G7RE   IATA:99999999
+NAME:SMITH/LAWRENCE
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    EY   7309  Y  11JUN  AMSAUH 1115A  OK YLF2NLCH        RFND
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+2    EY   377   Y  11JUN  AUHBAH  935P  OK YLF2NLCH        RFND
+                                NVB:11JUN   NVA:11JUN   BAG:35K
+3    EY   3154  Y  21JUN  BAHAUH  130A  OK YLF2NLCH        RFND
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+4    EY   77    Y  21JUN  AUHAMS  930A  OK YLF2NLCH        RFND
+                                NVB:21JUN   NVA:21JUN   BAG:35K
+
+FARE     EUR1409.00
+TOTAL     USD1949.20     EQUIVALENT FARE PAID        USD1704.00

@@ -1,0 +1,180 @@
+Availability Break and Flight Grouping
+
+Overview
+
+Flight grouping determines which consecutive flights in an offer must be considered together during the exchange process, also known as married segments.
+
+Previously, the FlightReshopResponse.flights.isMarriedWithPreviousFlight parameter indicated whether a flight was married to the one before it.
+
+This parameter has been removed.
+
+Flight grouping is now determined exclusively by the FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak element returned within the fare component segment details.
+
+This guide explains how to transition to the new approach and how to apply FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak correctly in exchange processing.
+
+What changed
+
+ |
+Before |
+After |
+
+Grouping indicator
+ |
+FlightReshopResponse.flights.isMarriedWithPreviousFlight
+ |
+FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak
+ |
+
+Interpretation
+ |
+true means this flight is married to the previous one
+ |
+true means an availability break occurs after this segment, meaning the next segment starts a new group
+ |
+
+ |
+
+This is not applicable to NDC.
+ |
+
+How to read isAvailabilityBreak
+
+The FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak element is returned in each segment entry within a fare component.
+It signals whether the current segment is the last one in a married group.
+Consecutive segments without a break between them form a married itinerary.
+
+Translating isAvailabilityBreak to marriage indicator values
+
+Some exchange workflow APIs (for example SOAP ExchangeBookingRQ) still require marriage indicator values.
+
+When needed, derive marriageGroup from segment order and FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak.
+
+Use these rules:
+
+The first segment in each married group is O.
+
+Each next segment in the same married group is I.
+
+A segment with FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak=true is the last segment of the current married group.
+
+The segment immediately after a segment where FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak=true starts a new married group and is O.
+
+Examples
+
+Example 1: Three segments, break after the last
+
+Itinerary: A, B, C
+Simplified response sample:
+
+"segmentDetails": [
+			{
+				"segmentRef": "A",
+				"isAvailabilityBreak": false
+			},
+			{
+				"segmentRef": "B",
+				"isAvailabilityBreak": false
+			},
+            {
+				"segmentRef": "C",
+				"isAvailabilityBreak": true
+			}
+		]
+
+Grouping result:
+- Married group 1: A, B, C
+
+Equivalent values:
+- A → O
+- B → I
+- C → I
+
+Interpretation:
+
+Segment A is the start of the chain &#8594; O
+
+Segment B stays in the same chain &#8594; I
+
+The break happens after segment C because FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.isAvailabilityBreak=true and this segment is the last one in the group.
+
+Example 2: Three segments, break after segment 2
+
+Itinerary: A, B, C
+Simplified response sample:
+
+"segmentDetails": [
+			{
+				"segmentRef": "A",
+				"isAvailabilityBreak": false
+			},
+			{
+				"segmentRef": "B",
+				"isAvailabilityBreak": true
+			},
+            {
+				"segmentRef": "C",
+				"isAvailabilityBreak": false
+			}
+		]
+
+Grouping result:
+
+Married group 1: A, B
+
+Married group 2: C
+
+Positional values:
+
+A → O
+
+B → I
+
+C → O
+
+Interpretation:
+
+Segments A and B are in the same group. Segment A starts this one and Segment B has availability break.
+
+Segment C starts a new group after break.
+
+Example 3: Break after every segment
+
+Itinerary: A, B, C
+Simplified response sample:
+
+"segmentDetails": [
+			{
+				"segmentRef": "A",
+				"isAvailabilityBreak": true
+			},
+			{
+				"segmentRef": "B",
+				"isAvailabilityBreak": true
+			},
+            {
+				"segmentRef": "C",
+				"isAvailabilityBreak": true
+			}
+		]
+
+Grouping result:
+
+Married group 1: A
+
+Married group 2: B
+
+Married group 3: C
+
+Positional values:
+
+A → O
+
+B → O
+
+C → O
+
+Interpretation:
+
+Each segment forms its own group.
+
+No segment is married to any other.

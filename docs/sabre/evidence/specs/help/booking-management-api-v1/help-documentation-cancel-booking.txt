@@ -1,0 +1,170 @@
+Cancel Booking
+
+Overview
+
+The Cancel Booking method is designed to facilitate the process of canceling any type of supplier content in a single, seamless API call.
+
+Technical overview
+
+The Cancel Booking method is part of the larger Booking Management API, available in RPC/JSON format and designed to operate in a stateless way. This means that when successful, the API will automatically commit the changes applied to a Sabre reservation.
+
+While this API is designed to operate in a stateless way, it accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+The internal logic executed by Cancel Booking is defined by the content on the Sabre PNR to be canceled. Because of this, the first step executed internally is to analyze the products in the Sabre PNR.
+
+This analysis creates a mapping of products, with the corresponding API, to be used for cancellation and creates a &#8220;segment sequence position&#8221; to &#8220;product id&#8221; mapping.
+
+Orchestration
+
+The APIs orchestrated by Cancel Booking are:
+
+ContextChangeLLSRQ
+
+DesignatePrinterLLSRQ
+
+Order Management
+
+GetReservationRQ
+
+OTA_CancelLLSRQ
+
+UpdateReservationRQ
+
+EnhancedEndtransactionRQ
+
+SabreCommandLLSRQ
+
+QueuePlaceLLSRQ
+
+FullCancelDeleteRQ (internal service)
+
+Cancel Booking request structure
+
+The Cancel Booking method cancels reservations when desired products from a Sabre reservation are specified. This allows you to choose to cancel by product position within the reservation or by the product’s unique ID. Additionally, you can simply &#8220;cancel all&#8221;.
+
+confirmationId represents the booking reference ID shown in the SABRE system. This is the PNR Record Locator (RECLOC) where the cancellation will be executed.
+
+bookingSource identifies the source of the booking.
+
+retrieveBooking is an optional element to specify whether the API should return a view of the reservation after processing (default=false).
+
+receivedFrom is an optional element to specify whether the API should sign the booking change with a specific value (default=LW CANCEL API).
+
+flightTicketOperation is an optional element to specify the policy for handling flight ticket operations within the Cancel Booking service. Available options are:
+
+VOID indicates if the service should be invoked for related tickets Void Flight Tickets.
+
+REFUND indicates if the service should be invoked for related tickets Refund Flight Tickets or reservations made with low-cost airlines (non-ATPCO).
+
+errorHandlingPolicy allows you to define the API’s behavior in the event of an error. Two options are available:
+
+HALT_ON_ERROR (default): Execution is stopped when an error is encountered. A rollback is executed if some products were successfully executed to ensure the original state of the reservation is preserved.
+
+ALLOW_PARTIAL_CANCEL: Execution continues even when some products failed to cancel.
+
+cancelAll indicates if all segments (products) in the booking should be canceled (default=false).
+
+flights contains a list of the flights which should be canceled by referencing the itemId of a particular flight.
+
+hotels contains a list of the hotels which should be canceled by referencing the itemId of a particular hotel.
+
+cars contains a list of the cars which should be canceled by referencing the itemId of a particular car.
+
+trains contains a list of the trains which should be canceled by referencing the itemId of a particular train.
+
+cruises contains a list of the cruises which should be canceled by referencing the itemId of a particular cruise.
+
+segments indicates which segments are to be canceled. All types of segments are allowed here. Segments are identified by the sequence (position shown on the PNR) or id (also referred to as &#8220;database ID&#8221; or &#8220;product ID&#8221;).
+
+targetPcc is used to specify which city (PCC) should change context using ContextChange (AAA). If empty, or equals the current city, the context does not change.
+
+notification allows you to define options to notify after transaction succeeded. Two options are available:
+
+email an email will be sent to the addresses in the PNR after finishing the transaction.
+
+queuePlacement the PNR will be placed on one or more queues after finishing the transaction.
+
+designatePrinters:
+
+profileNumber: assigns a previously defined printer profile
+
+hardcopy: assigns a hardcopy printer for the transaction
+
+invoiceItinerary: assigns an invoice and itinerary printer for the transaction
+
+ticket: assigns a ticket printer for the transaction
+
+offerItemId is used to specify the ID for a void or refund offer available based on the Check Flight Tickets response for the tickets belonging to the requested confirmationId. Applicable only for NDC orders. Cannot be used in conjunction with flightTicketOperation.
+
+retentionEndDate is used to pass the retention date of the booking.
+
+retentionLabel is used to specify the label associated with the retention date.
+
+voidNonElectronicTickets is used to actively indicate that the void process should also apply to nonelectronic, paper tickets.
+
+refundDocumentsType is used to specify the document type to refund. Can be an electronic ticket, an EMD, or both.
+
+ |
+
+Refer to the Cancel Booking Examples section for details on where you can obtain the sequence and/or itemId values.
+If cancelAll=false, then at least one from the following properties must be provided: flights, hotels, cars, trains, cruises, or segments.
+ |
+
+Cancel Booking response structure
+
+The Cancel Booking response contains:
+
+Errors and warnings (if applicable). If not present (empty or contains warnings only) then execution is successful. Warnings might be returned for unsuccessful cancellation of a particular ticket when requested ErrorHandlingPolicy=ALLOW_PARTIAL_CANCEL.
+
+Original request
+
+The final status of the reservation (if requested in the API request) via the structure of the Get Booking method
+
+List of voided or refunded tickets (if this particular operation was selected in the API request)
+
+ |
+
+Although Get Booking allows for a detailed level of customization when called as a stand-alone method, when executed as part of Cancel Booking, it follows a predefined structure for optimal performance.
+ |
+
+Limitations
+
+NDC segments can only be canceled as a whole; you cannot cancel individual NDC segments and leave other NDC segments.
+
+Void and refund operation of fulfilled hybrid bookings (traditional Sabre air content + NDC offer) is not supported.
+
+For low-cost airline (non-ATPCO) bookings, only the refund operation is supported.
+
+Error handling
+
+This section illustrates the current error handling logic for Cancel Booking:
+
+ |
+
+Please access the Cancel Booking – Error List section for additional details on possible errors returned by Cancel Booking.
+ |
+
+Dependence between Error Policy and Error Category
+
+The error type UNABLE_TO_CANCEL can be returned with the category CANCELLATION_ERROR, as well as with a WARNING. The category depends on ErrorHandlingPolicy sent in the request. For HALT_ON_ERROR, CANCELLATION_ERROR displays, and for ALLOW_PARTIAL_CANCEL, WARNING displays.
+
+If you set the API to not accept any failures (policy=HALT_ON_ERROR), any failure in a downstream API that is called by the service results in an error in the Cancel Booking response.
+
+If you set the API to accept partial success (policy=ALLOW_PARTIAL_CANCEL), errors returned by downstream APIs may suggest that the entire cancel process has failed. However, this is not quite true. Therefore, these errors or failures result in warnings in the Cancel Booking response.
+
+Errors/Warnings returned by downstream services
+
+The Cancel Booking response contains errors and warnings returned by downstream APIs (see Orchestration) and these are always returned as a WARNING. Aside from rewritten items from downstream APIs, one of the following is returned: OTA_CANCEL_PROBLEM, CSL_CANCEL_PROBLEM, NDC_CANCEL_PROBLEM (depending on the downstream system).
+
+ |
+
+If a downstream API returns only warnings (no errors), then they are not rewritten into the Cancel Booking response. If a downstream API returns any error, then all errors, as well as warnings, are rewritten.
+ |
+
+Example: The Cancel Booking response may contain an error list when called with a HALT_ON_ERROR set. This is because there was a failure in the NDC Cancel API.
+
+Simultaneous changes issue returned by downstream services
+
+The Cancel Booking has retry logic in place for the scenarios where simultaneous changes error is returned by downstream services. The application will perform verification of the booking up to three times with progressive delays (1, 2 and 3 seconds), to recover from the occurrence of the simultaneous changes.

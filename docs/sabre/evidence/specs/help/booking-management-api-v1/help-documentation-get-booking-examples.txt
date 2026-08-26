@@ -1,0 +1,663 @@
+Get Booking – Examples
+
+Request
+
+The Get Booking endpoint for accessing the RPC/JSON version is:
+
+POST /v1/trip/orders/getBooking HTTP/1.1
+
+The call to Get Booking via RPC/JSON must contain at least one value: confirmationId.
+
+This will return a response with all data related to confirmationId. You can also filter the response using returnOnly, which is provided as an array of values. Refer to the schema for a full list of accepted enumerators.
+
+JSON Examples
+
+Basic non-filtered request example:
+
+{
+  "confirmationId": "XXXX"
+}
+
+Example with simple filter:
+
+{
+  "confirmationId": "XXXX",
+  "returnOnly": [
+    "TRAVELERS"
+  ]
+}
+
+Example with advanced filters (all possible filters to use):
+
+{
+  "confirmationId": "XXXX",
+  "surname": "Smith",
+  "returnOnly": [
+    "FLIGHTS",
+    "FLIGHT_PENALTY",
+    "BAGGAGE_POLICY",
+    "JOURNEYS",
+    "HOTELS",
+    "HOTEL_ADDRESS",
+    "CARS",
+    "CAR_RENTAL_ADDRESS",
+    "CAR_RENTAL_PENALTY",
+    "TRAINS",
+    "CRUISES",
+    "ALL_SEGMENTS",
+    "TRAVELERS",
+    "TICKETS",
+    "PAYMENTS",
+    "PENALTIES",
+    "REMARKS",
+    "IS_CANCELABLE",
+    "IS_TICKETED",
+    "CONTACT_INFO",
+    "OTHER_SERVICES",
+    "SPECIAL_SERVICES",
+    "FARES",
+    "CREATION_DETAILS",
+    "ANCILLARIES",
+    "FORMS_OF_PAYMENT",
+    "RETENTION_DATE",
+    "ACCOUNTING_ITEMS",
+    "NON_ELECTRONIC_TICKETS",
+    "TRAVELERS_EMPLOYERS",
+    "PROFILES"
+  ]
+}
+
+Example request with refunded conjunctive tickets:
+
+{
+  "confirmationId": "XXXX",
+  "returnOnly": [
+    "TICKETS"
+  ]
+}
+
+Example response with refunded conjunctive tickets:
+
+{
+  "flightTickets": [
+    {
+      "number": "1609786952746",
+      "date": "2023-03-20",
+      "travelerIndex": 1,
+      "flightCoupons": [
+        {
+          "itemId": "7",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "8",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "9",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "10",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        }
+      ],
+      "payment": {
+        "subtotal": "6626.00",
+        "taxes": "2212.74",
+        "total": "8838.74",
+        "currencyCode": "PLN"
+      },
+      "ticketStatusName": "Refunded/Exchanged",
+      "ticketStatusCode": "TR",
+      "ticketingPcc": "U9PK"
+    },
+    {
+      "number": "1609786952746/47",
+      "date": "2023-03-20",
+      "travelerIndex": 1,
+      "flightCoupons": [
+        {
+          "itemId": "7",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "8",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "9",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        },
+        {
+          "itemId": "10",
+          "couponStatus": "Refunded",
+          "couponStatusCode": "RF"
+        }
+      ],
+      "payment": {
+        "subtotal": "6626.00",
+        "taxes": "2212.74",
+        "total": "8838.74",
+        "currencyCode": "PLN"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "XXXX"
+    }
+  ],
+  "timestamp": "2023-03-20T12:37:51",
+  "bookingSignature": "c137df6aadc891d725bbb6e23fa6bd41320de26e608815464563251da60024ef95befae6859415a555b4564f3812e871b7bd734ac40fe81e59345345e13558e35f4",
+  "request": {
+    "confirmationId": "XXXXXX",
+    "returnOnly": [
+      "TICKETS"
+    ]
+  }
+}
+
+Example request with LCC accounting items:
+
+{
+  "confirmationId": "RRBGUO",
+  "returnOnly": [
+    "ACCOUNTING_ITEMS"
+  ]
+}
+
+Example response with LCC accounting items:
+
+{
+        "accountingItems": [
+            {
+                "fareApplicationType": "Each Traveler",
+                "formOfPaymentType": "Payment Card",
+                "creationType": "Low Cost Carrier",
+                "airlineCode": "U2",
+                "ticketNumber": "",
+                "commission": {
+                    "commissionAmount": "0.00"
+                },
+                "fareAmount": "129.00",
+                "taxAmount": "78.00",
+                "cardNumber": "4XXXXXXXXXXX1111",
+                "cardTypeCode": "VI",
+                "currencyCode": "PLN",
+                "text": "A 0000U2/LCC/ 0.00/PLN129.00/78.00/ALL/CCVI4XXXXXXXXXXX1111/1-KD8H4HD"
+            },
+            {
+                "fareApplicationType": "Each Traveler",
+                "formOfPaymentType": "Payment Card",
+                "creationType": "Credit Card Fee",
+                "airlineCode": "U2",
+                "ticketNumber": "",
+                "commission": {
+                    "commissionAmount": "0.00"
+                },
+                "fareAmount": "0.00",
+                "taxAmount": "0.00",
+                "cardNumber": "4XXXXXXXXXXX1111",
+                "cardTypeCode": "VI",
+                "currencyCode": "PLN",
+                "text": "A 0000U2/CCF/ 0.00/PLN0.00/0.00/ALL/CCVI4XXXXXXXXXXX1111/1-KD8H4HD"
+            },
+            {
+                "fareApplicationType": "Each Traveler",
+                "formOfPaymentType": "Payment Card",
+                "creationType": "Booking Fee",
+                "airlineCode": "U2",
+                "ticketNumber": "",
+                "commission": {
+                    "commissionAmount": "0.00"
+                },
+                "fareAmount": "0.00",
+                "taxAmount": "0.00",
+                "cardNumber": "4XXXXXXXXXXX1111",
+                "cardTypeCode": "VI",
+                "currencyCode": "PLN",
+                "text": "A 0000U2/BKG/ 0.00/PLN0.00/0.00/ALL/CCVI4XXXXXXXXXXX1111/1-KD8H4HD"
+            },
+            {
+                "fareApplicationType": "Each Traveler",
+                "formOfPaymentType": "Payment Card",
+                "creationType": "Ancillary Fee",
+                "airlineCode": "U2",
+                "ticketNumber": "",
+                "commission": {
+                    "commissionAmount": "0.00"
+                },
+                "fareAmount": "150.00",
+                "taxAmount": "0.00",
+                "cardNumber": "4XXXXXXXXXXX1111",
+                "cardTypeCode": "VI",
+                "currencyCode": "PLN",
+                "text": "A 0000U2/ANC/ 0.00/PLN150.00/0.00/ALL/CCVI4XXXXXXXXXXX1111/1-KD8H4HD"
+            }
+        ],
+  "timestamp": "2026-06-17T12:37:51",
+  "bookingSignature": "c137df6aadc891d725bbb6e23fa6bd41320de26e608815464563251da60024ef95befae6859415a555b4564f3812e871b7bd734ac40fe81e59345345e13558e35f4",
+  "request": {
+    "confirmationId": "RRBGUO",
+    "returnOnly": [
+      "ACCOUNTING_ITEMS"
+    ]
+  }
+}
+
+Example request with NDC seats:
+
+{
+  "confirmationId": "1SXXXCROMS3E3"
+}
+
+Example response with NDC seats:
+
+{
+	"bookingId": "1SXXXCROMS3E3",
+	"startDate": "2026-05-17",
+	"endDate": "2026-05-17",
+	"isCancelable": false,
+	"isTicketed": false,
+	"creationDetails": {
+		"creationUserSine": "AWV",
+		"creationDate": "2026-03-18",
+		"creationTime": "04:28",
+		"userWorkPcc": "U9PK",
+		"userHomePcc": "U9PK",
+		"primeHostId": "1S",
+		"lastUpdateDate": "2026-03-18",
+		"lastUpdateTime": "04:28",
+		"numberOfUpdates": 1
+	},
+	"contactInfo": {
+		"emails": [
+			"TRAVEL@SABRE.COM"
+		],
+		"phones": [
+			"123456"
+		]
+	},
+	"travelers": [
+		{
+			"givenName": "Yasmine",
+			"surname": "Koss",
+			"birthDate": "1970-01-23",
+			"type": "ADULT",
+			"passengerCode": "ADT",
+			"emails": [
+				"travel@sabre.com"
+			],
+			"phones": [
+				{
+					"number": "123456"
+				}
+			],
+			"ancillaries": [
+				{
+					"itemId": "F8FF16D2-B820-4D4A-BD77-A01B1F5A050B",
+					"commercialName": "Specific Seat Request",
+					"reasonForIssuanceCode": "A",
+					"subcode": "0B5",
+					"statusCode": "HD",
+					"totals": {
+						"subtotal": "45.00",
+						"taxes": "3.60",
+						"total": "48.60",
+						"currencyCode": "PLN"
+					}
+				}
+			]
+		}
+	],
+	"flights": [
+		{
+			"itemId": "10",
+			"confirmationId": "Z6XNH2",
+			"sourceType": "NDC",
+			"flightNumber": 3835,
+			"airlineCode": "LO",
+			"airlineName": "LOT POLISH AIRLINES",
+			"operatingFlightNumber": 3835,
+			"operatingAirlineCode": "LO",
+			"operatingAirlineName": "LOT POLISH AIRLINES",
+			"fromAirportCode": "WAW",
+			"toAirportCode": "GDN",
+			"departureDate": "2026-05-17",
+			"departureTime": "10:25:00",
+			"arrivalDate": "2026-05-17",
+			"arrivalTime": "11:20:00",
+			"seats": [
+				{
+					"number": "2C",
+					"characteristics": [
+						"1A",
+						"A",
+						"CH",
+						"FC",
+						"L",
+						"RS"
+					],
+					"statusCode": "HD",
+					"statusName": "Unknown"
+				}
+			],
+			"numberOfSeats": 1,
+			"cabinTypeName": "ECONOMY",
+			"cabinTypeCode": "Y",
+			"bookingClass": "L",
+			"meals": [
+				{
+					"code": "R",
+					"description": "Refreshment"
+				}
+			],
+			"flightStatusCode": "HK",
+			"flightStatusName": "Confirmed",
+			"durationInMinutes": 55,
+			"distanceInMiles": 180,
+			"travelerIndices": [
+				1
+			]
+		}
+	],
+	"journeys": [
+		{
+			"firstAirportCode": "WAW",
+			"departureDate": "2026-05-17",
+			"departureTime": "10:25",
+			"lastAirportCode": "GDN",
+			"numberOfFlights": 1
+		}
+	],
+	"fareRules": [
+		{
+			"originAirportCode": "WAW",
+			"destinationAirportCode": "GDN",
+			"owningAirlineCode": "LO",
+			"passengerCode": "ADT",
+			"isRefundable": false,
+			"isChangeable": true,
+			"exchangePenalties": [
+				{
+					"applicability": "AFTER_DEPARTURE",
+					"conditionsApply": false,
+					"penalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					},
+					"hasNoShowCost": true,
+					"noShowPenalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"applicability": "BEFORE_DEPARTURE",
+					"conditionsApply": false,
+					"penalty": {
+						"amount": "205.20",
+						"currencyCode": "PLN"
+					},
+					"hasNoShowCost": true,
+					"noShowPenalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					}
+				}
+			],
+			"isCancelable": true,
+			"cancelPenalties": [
+				{
+					"applicability": "AFTER_DEPARTURE",
+					"conditionsApply": false,
+					"penalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					},
+					"hasNoShowCost": true,
+					"noShowPenalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"applicability": "BEFORE_DEPARTURE",
+					"conditionsApply": false,
+					"penalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					},
+					"hasNoShowCost": true,
+					"noShowPenalty": {
+						"amount": "0.00",
+						"currencyCode": "PLN"
+					}
+				}
+			]
+		}
+	],
+	"fareOffers": [
+		{
+			"travelerIndices": [
+				1
+			],
+			"flights": [
+				{
+					"itemId": "10"
+				}
+			],
+			"checkedBaggageAllowance": {
+				"baggagePieces": [
+					{
+						"numberOfPieces": 0
+					}
+				]
+			}
+		}
+	],
+	"fares": [
+		{
+			"creationDetails": {
+				"creationDate": "2026-03-18",
+				"creationTime": "09:28"
+			},
+			"isNegotiatedFare": false,
+			"fareConstruction": [
+				{
+					"fareBasisCode": "L1SAV10",
+					"brandFareCode": "SAVER",
+					"brandFareName": "Economy Saver",
+					"brandAttributes": [
+						{
+							"itemId": "AWARD_ACCRUAL",
+							"description": "RBD Standard"
+						},
+						{
+							"itemId": "AWARD_UPGRADE",
+							"description": "Yes"
+						},
+						{
+							"itemId": "BAGGAGEALLOWANCE_CARRYON",
+							"description": "permitted - 8 KG"
+						},
+						{
+							"itemId": "BAGGAGEALLOWANCE_CHECKED",
+							"description": "at charge"
+						},
+						{
+							"itemId": "CANCEL_AFTERDEPARTURE",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "CANCEL_BEFOREDEPARTURE",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "CANCEL_NOSHOWFIRST",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "CANCEL_NOSHOWSUBSEQUENT",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "CHANGE_AFTERDEPARTURE",
+							"description": "at charge"
+						},
+						{
+							"itemId": "CHANGE_BEFOREDEPARTURE",
+							"description": "at charge"
+						},
+						{
+							"itemId": "CHANGE_NOSHOWFIRST",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "CHANGE_NOSHOWSUBSEQUENT",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "LOUNGEACCESS",
+							"description": "at charge"
+						},
+						{
+							"itemId": "PRIORITY_BOARDING",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "PRIORITY_CHECKIN",
+							"description": "not permitted"
+						},
+						{
+							"itemId": "PRIORITY_SECURITY",
+							"description": "at charge"
+						},
+						{
+							"itemId": "SEATSELECTION",
+							"description": "at charge"
+						}
+					]
+				}
+			],
+			"taxBreakdown": [
+				{
+					"taxCode": "YQ",
+					"taxAmount": {
+						"amount": "21.00",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"taxCode": "YQ",
+					"taxAmount": {
+						"amount": "4.28",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"taxCode": "EI",
+					"taxAmount": {
+						"amount": "7.12",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"taxCode": "ND",
+					"taxAmount": {
+						"amount": "1.41",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"taxCode": "XW",
+					"taxAmount": {
+						"amount": "87.56",
+						"currencyCode": "PLN"
+					}
+				},
+				{
+					"taxCode": "XX",
+					"taxAmount": {
+						"amount": "10.96",
+						"currencyCode": "PLN"
+					}
+				}
+			],
+			"totals": {
+				"subtotal": "137.00",
+				"taxes": "132.33",
+				"total": "269.33",
+				"currencyCode": "PLN"
+			},
+			"hasValidPricing": true,
+			"pricedTravelerType": "ADT",
+			"recordTypeCode": "NDC",
+			"recordTypeName": "NDC order"
+		}
+	],
+	"remarks": [
+		{
+			"type": "HISTORICAL",
+			"text": "NDC SEGMENT ADDED"
+		}
+	],
+	"allSegments": [
+		{
+			"id": "10",
+			"type": "FLIGHT",
+			"text": "3835",
+			"vendorCode": "LO",
+			"startDate": "2026-05-17",
+			"startTime": "10:25:00",
+			"startLocationCode": "WAW",
+			"endDate": "2026-05-17",
+			"endTime": "11:20:00",
+			"endLocationCode": "GDN"
+		}
+	],
+	"payments": {
+		"flightTotals": [
+			{
+				"subtotal": "137.00",
+				"taxes": "132.33",
+				"total": "269.33",
+				"currencyCode": "PLN"
+			}
+		],
+		"ancillaryTotals": [
+			{
+				"subtotal": "45.00",
+				"taxes": "3.60",
+				"total": "48.60",
+				"currencyCode": "PLN"
+			}
+		]
+	},
+	"specialServices": [
+		{
+			"travelerIndices": [
+				1
+			],
+			"code": "RQST",
+			"statusCode": "HD",
+			"statusName": "Unknown"
+		}
+	],
+	"timestamp": "2026-06-17T11:39:51",
+	"bookingSignature": "c137df6aadc891d725bbb6e23fa6bd41320de26e608815464563251da60024ef95befae6859415a555b4564f3812e871b7bd734ac40fe81e59345345e13558e35f4",
+	"request": {
+		"confirmationId": "1SXXXCROMS3E3"
+	}
+}
+
+ |
+
+In general, GetBooking takes the latest ticket status into consideration and limits the number of ticket entries in the response. However, since the refund operation for conjunctive tickets generates a TR item (stored in the booking) with just the primary document, both the TR item ("number": "1609786952746") and the original TE item ("number": "1609786952746/47") are returned in the response.
+ |

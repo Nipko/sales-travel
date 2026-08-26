@@ -1,0 +1,54 @@
+Overview
+
+What is it?
+
+The Flight Reshop API is a RESTful upgrade to the legacy ExchangeShoppingRQ SOAP service. It allows you to retrieve reissue options for individual or multiple tickets as well as for orders. It generates a list of applicable itinerary reshop offers based on structured search parameters, helping agents and systems identify valid alternatives for rebooking.
+
+ |
+
+This API is currently in beta version, and it offers limited functionality focused on ATPCO content. Development of NDC exchange capabilities is actively in progress.
+ |
+
+Why use it?
+
+The Flight Reshop API is designed to simplify the ticket reissue process and support Sabre’s modernization strategy. It introduces key improvements by:
+
+Transitioning from SOAP to REST for faster, more efficient integration.
+
+Supporting emerging content types, including NDC.
+
+Preparing the ecosystem for future enhancements, such as dynamic offer management.
+
+Supporting structured search for itinerary reshop offers.
+
+Offering a premium reshop functionality.
+
+Improving performance and integration flexibility.
+
+With this API, you can manage flight changes and reissues in a streamlined way, reducing complexity and improving flexibility for future capabilities.
+
+How it works
+
+The Flight Reshop API provides new offer options for a passenger based on the voluntary change restrictions of the original ticket (default mode).
+
+It returns details of the new journey and calculates the fare difference between the original ticket and the new ticket. To do this, the API executes the following steps:
+
+Validates input and retrieves itinerary data. Ensures the provided details are correct and fetches relevant itinerary data when needed (e.g., for flight retention).
+
+Finds available flights based on the original ticket restrictions.
+
+Calculates the fare difference and returns a structured list of new journey offers.
+
+How to use
+
+Start with an authentication token
+
+You must provide an authentication token to access the Flight Reshop API. Tokens can be generated in two ways:
+
+Using the Create Access Token API for stateless token scenarios (ATK). After a successful response (TokenCreateRS), locate the BinarySecurityToken element containing the ATK token.
+
+Using the Create Session service for stateful token scenarios (ATH). The response (SessionCreateRS) also includes the BinarySecurityToken element with the authorization token.
+
+Examples
+
+Refer to the Help section for more information. The Flight Reshop API has a dedicated example page covering common business use cases. For additional usage scenarios, see our Postman Collection.

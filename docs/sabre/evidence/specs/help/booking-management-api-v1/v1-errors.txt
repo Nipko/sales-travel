@@ -1,0 +1,359 @@
+Errors
+
+Most common errors in REST API:
+
+HTTP Status Code |
+Message |
+Text |
+Resolution |
+
+400
+ |
+Bad Request
+ |
+Invalid format for request
+ |
+
+1. Verify that your request includes valid parameters or values.
+
+2. Verify that the grant_type in the request payload.
+
+ |
+
+400
+ |
+ |
+ERR.2SG.CLIENT.INVALID_REQUEST
+ |
+Verify that your request includes valid parameters or values. Check API documentation.
+ |
+
+401
+ |
+Unauthorized
+ |
+Not authorized to make this request. Check access level and refer to API documentation for access information.
+ |
+Verify your token credentials.
+ |
+
+401
+ |
+Unauthorized
+ |
+invalid_client
+ |
+
+1. Verify your token credentials.
+
+2. Verify TAM Pool details. The error may occur when TAM Pool is exhausted.
+
+ |
+
+401
+ |
+Unauthorized
+ |
+Credentials are missing or the syntax is not correct
+ |
+Verify that your base64-encoded token credentials were constructed properly.
+ |
+
+401
+ |
+Unauthorized
+ |
+Wrong clientID or clientSecret
+ |
+Verify password for the client ID.
+ |
+
+401
+ |
+Unauthorized
+ |
+ERR.2SG.SEC.MISSING_CREDENTIALS
+ |
+Verify whether you use the correct data type.
+ |
+
+401
+ |
+Unauthorized
+ |
+ERR.2SG.SEC.INVALID_CREDENTIALS
+ |
+Verify your token credentials.
+ |
+
+403
+ |
+Forbidden
+ |
+Request is for a resource that is forbidden
+ |
+
+1. Verify that your token credentials allow authorization to call this API.
+
+2. Contact your Sabre account manager to verify access.
+
+ |
+
+403
+ |
+ |
+ERR.2SG.SEC.NOT_AUTHORIZED
+ |
+
+1. Verify that your token credentials allow authorization to call this API.
+
+2. Contact your Sabre account manager to verify access.
+
+ |
+
+403
+ |
+ |
+ERR.2SG.CLIENT.SERVICE_UNKNOWN
+ |
+
+1. Verify whether the URL is valid.
+
+2. Verify whether your request includes the required segments such as version number. Check API documentation.
+
+ |
+
+404
+ |
+Not Found
+ |
+Response does not contain any data
+ |
+
+1. No data found to fulfill the request. You might consider using fewer parameters/filters.
+
+2. URL includes missing segments such as version number. Check API documentation.
+
+3. Verify whether the URL is valid.
+
+ |
+
+405
+ |
+Method Not Allowed
+ |
+ |
+Method is not valid or authorized for this endpoint. Check API documentation.
+ |
+
+406
+ |
+Not Acceptable
+ |
+Requested resource is only capable of generating content not acceptable according to the Accept headers sent in the request.
+ |
+ |
+
+413
+ |
+ |
+ERR.2SG.CLIENT.INVALID_REQUEST
+ |
+
+1. Request URL is too long.
+
+2. Reduce the number of request parameters in the URL. Separate parameters into multiple requests.
+
+ |
+
+413
+ |
+FULL head
+ |
+ |
+
+1. Request URL is too long.
+
+2. Reduce the number of request parameters in the URL. Separate parameters into multiple requests.
+
+ |
+
+429
+ |
+too many requests
+ |
+temporarily_unavailable
+ |
+
+1. Internal limit has been exceeded.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+429
+ |
+Throttled
+ |
+Active token count is exceeded
+ |
+
+1. Maximum number of concurrent requests for the API has been exceeded. Contact your Sabre account manager to determine or increase your allocated concurrent request limit for this API.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+429
+ |
+ |
+ERR.2SG.GATEWAY.REQUEST_THROTTLED
+ |
+
+1. Maximum number of concurrent requests for the API has been exceeded. Contact your Sabre account manager to determine or increase your allocated concurrent request limit for this API.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+500
+ |
+Server Error
+ |
+ |
+
+1. API encountered an unexpected condition that prevented it from fulfilling the client's request.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+500
+ |
+ |
+ERR.2SG.SEC.INTERNAL_PROCESSING_ERROR
+ |
+
+1. API encountered an unexpected condition that prevented it from fulfilling the client's request.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+500
+ |
+ |
+ERR.2SG.GATEWAY.TIMEOUT
+ |
+Wait at least 500 milliseconds and resend the request.
+ |
+
+500
+ |
+ |
+ERR.2SG.GATEWAY.INTERNAL_PROCESSING_ERROR
+ |
+Wait at least 500 milliseconds and resend the request.
+ |
+
+500
+ |
+ |
+ERR.2SG.GATEWAY.INVALID_PROVIDER_RESPONSE
+ |
+
+1. The server cannot understand the response of the service because of bad format or failure to comply with protocol. Contact the Sabre support desk.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+500
+ |
+ |
+ERR.2SG.GATEWAY.PROVIDER_CONNECTION_ERROR
+ |
+
+1. Your request encountered a transport error.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+500
+ |
+Connection error
+ |
+ERR.2SG.PROVIDER_CONNECTION_ERROR
+ |
+
+1. Your request encountered a transport error.
+
+2. Wait at least 500 milliseconds and resend the request.
+
+ |
+
+503
+ |
+Service Unavailable
+ |
+Server is currently unavailable. Please try again later and report if the problem persists.
+ |
+Wait at least 500 milliseconds and resend the request.
+ |
+
+504
+ |
+Gateway Timeout
+ |
+Server timed out trying to fulfill the request. Please try again later and report if the problem persists.
+ |
+Wait at least 500 milliseconds and resend the request.
+ |
+
+Booking Management API Common Errors
+
+For a full list of possible errors returned by the Booking Management API, refer to the individual Error List sections for each method under the Help tab:
+
+Method |
+Error List |
+
+Get Booking
+ |
+Get Booking - Error List
+ |
+
+Create Booking
+ |
+Create Booking - Error List
+ |
+
+Cancel Booking
+ |
+Cancel Booking - Error List
+ |
+
+Modify Booking
+ |
+Modify Booking - Error List
+ |
+
+Fulfill Flight Tickets
+ |
+Fulfill Flight Tickets - Error List
+ |
+
+Void Flight Tickets
+ |
+Void Flight Tickets - Error List
+ |
+
+Check Flight Tickets
+ |
+Check Flight Tickets - Error List
+ |
+
+Refund Flight Tickets
+ |
+Refund Flight Tickets - Error List
+ |

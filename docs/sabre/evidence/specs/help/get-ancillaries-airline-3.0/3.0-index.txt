@@ -1,0 +1,100 @@
+Overview
+
+What is it?
+
+The Get Ancillaries API allows you to display a list of all optional services both free and chargeable that could be purchased by agent/passenger.
+
+This API supports Sabre Hosted airlines as well as Non-Hosted using multiple content sources:
+
+ATPCO
+
+Sabre product catalog
+
+ |
+
+This API is intended for use by Airline Carriers. There is an equivalent spec aimed at use by Agencies Get Ancillaries - Agency API
+ |
+
+Why use it?
+
+Display Available Optional Services: Use this service to display a list of available optional services, such as baggage allowance/charges, meals, and accessibility services with details including the commercial name of the product/service, price information (including tax breakdown), and inventory level.
+
+Personalized Prices for Chargeable Services: When applicable, the Get Ancillaries API returns personalized prices for chargeable services using integration with travel AI, and integration with the Sabre Dynamic Retailer product.
+
+Consistency and Simplicity in Shopping and Booking: Using OfferItemId brings consistency and simplicity to the shopping and booking process, ensuring that the offers displayed for a given passenger (based on their characteristics and attributes) can be easily booked while maintaining price consistency. The Get Ancillaries API provides the foundation for the transition path into Offer and Order, and retains most preexisting functionalities from traditional PNR booking flows.
+
+How it works
+
+/getAncillaries/byReservationPayload:
+
+The API calls Orchestrator to resolve itinerary context for the given request.
+
+The API calls Content Providers to get the ancillary offers with prices. Possible content sources:
+
+travel AI for personalized ancillary offers, for hosted airlines
+
+ATPCO filing prepared by carriers, decorated by rules defined in Dynamic Retailer, for hosted airlines
+
+ATPCO filing prepared by carriers, for non-hosted airlines.
+
+The API aggregates the retrieved ancillary content.
+
+The API returns a response containing a list of available ancillary services and pricing details for air segments in the reservation.
+
+The API persists the returned offers temporarily in OfferStore to facilitate ancillary booking flow.
+
+/getAncillaries/byPnrLocator:
+
+The API calls Orchestrator to resolve itinerary context for the given request based on a Sabre PNR and ticketing information.
+
+The API calls Content Providers to get the ancillary offers with prices. Possible content sources:
+
+travel AI for personalized ancillary offers, for hosted airlines
+
+ATPCO filing prepared by carriers, decorated by rules defined in Dynamic Retailer, for hosted airlines
+
+ATPCO filing prepared by carriers, for non-hosted airlines.
+
+The API aggregates the retrieved ancillary content.
+
+The API returns a response containing a list of available ancillary services and pricing details for air segments in a given Sabre PNR.
+
+The API persists the returned offers temporarily in OfferStore to facilitate ancillary booking flow.
+
+For NDC content, the Get Ancillaries API v2 can be used.
+
+How to use
+
+Authentication
+
+You must provide an authentication token to all endpoints within the Get Ancillaries API. Tokens can be obtained from
+the OAuth Token Create API. Refer to
+our Get a Token guide for step-by-step
+instructions.
+
+/getAncillaries/byReservationPayload
+
+To obtain ancillary content for an ATPCO carrier, create a request by providing all required information:
+
+segments (list of segments in the itinerary)
+
+passengers (list of passengers included in the booking)
+
+If available, you can also include other types of data which may influence the offer price, such as:
+
+fare details (fareComponents)
+
+passenger type codes (passengerType)
+
+currencyCode
+
+loyalty account details
+
+/getAncillaries/byPnrLocator
+
+To obtain ancillary content for an ATPCO carrier, create a stateless request by providing the PNR locator.
+
+ |
+
+To book an ancillary, use the Manage Ancillary API.
+ |

@@ -1,0 +1,203 @@
+Sabre Flight Reshop
+
+Overview
+
+The Sabre Flight Reshop method is designed to allow you to retrieve alternative itinerary options when a passenger needs to change their fulfilled itinerary.
+
+This is achieved by executing internal calls to individual product domains (PNR and Order) through distinct processing paths determined by the content type.
+
+Capabilities related to ATPCO content
+
+Identifies fares in the ticket to exchange and returns up to 50 available itinerary options that are compliant with the carrier's change policy filed in the Voluntary Changes (Category 31) rules for all ticketed fares.
+
+Provides the cost to change the ticket for each itinerary option for each passenger in the request.
+
+Provides the residual amount of any associated EMD-A issued with the ticket presented for exchange.
+
+Doesn't modify the PNR or process the ticket exchange.
+
+Technical overview
+
+The Flight Reshop API follows the Sabre RPC Protocol Specification.
+
+This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+The Sabre Flight Reshop method contains internal logic that determines when to call specific downstream APIs based on request qualifiers or the content present in the Sabre reservation.
+
+Example: If no tickets are present within the request and the API identifies the content as ATPCO, appropriate error handling is triggered.
+
+Internal orchestration
+
+The APIs orchestrated in Sabre Flight Reshop include:
+
+ContextChangeLLSRQ
+
+GetReservationRQ
+
+Exchange Shopping
+
+Order Management
+
+Reshop Shop Order
+
+Request structure
+
+Depending on the selected content type (traditional ATPCO or NDC), parameters mandatory to provide within the Sabre Flight Reshop request will vary:
+
+targetPcc: Pseudo City Code (PCC) for the target context.
+
+bookingId: Booking reference ID (e.g., PNR Locator).
+
+journeys: List of travel journeys to reshop.
+
+departureLocation/arrivalLocation: Desired location details.
+
+locationVariant: Location variants based on multiple location codes or a search radius. Check Finding Cheaper Flights with Alternate Airports to learn more.
+
+travelers: Traveler details.
+
+route: Routing modifiers.
+
+departureDateFlexibility: Defines date flexibility. Check Date Flexibility for more information.
+
+airlines: Optional carrier filters.
+
+fare: Fare-related modifiers.
+
+cabin: Cabin preferences and cabin processing logic. Refer to Jump Cabin Logic to learn more.
+
+useOriginalPricing: Apply the original ticket's pricing parameters to reshop offers. Refer to Use Original Pricing for more details.
+
+brandedFareFilters: Preferred filters related to branded fares. For more information, see Brand Filters.
+
+priceGuarantee: Controls how the fare search algorithm treats Category 31 (Voluntary Changes) rules during reshop processing. For more information, see Non-Verified Solutions.
+
+retailing: Retailing attributes.
+
+returnOfferAttributes: Offer attributes to include in the response. Check Baggage and Flexibility to learn more.
+
+filterByOfferAttributes: Retailing attribute filters. Refer to Flexibility Filters.
+
+returnAdditionalOffers: The number of additional offer solutions to return, formerly known as multiple brands. Check Multiple Branded Fares for more information.
+
+avoidBrandDowngrade: Brand downgrade setting. Refer to Avoid Brand Downgrade to learn more.
+
+source: The source distribution model (e.g., ATPCO, NDC). The NDC content requires activation at the Pseudo City Code (PCC) level - more details are available in the NDC Offers section.
+
+tickets: Tickets considered for exchange.
+
+overrideCheckedInTicketCoupons: CKIN coupon settings. Check Override Checked in Ticket Coupons for more information.
+
+processingOptions: Configuration settings.
+
+Response structure
+
+The Sabre Flight Reshop response structure is built on an orchestration of various Sabre API calls, depending on the selected content type, with response normalization in mind.
+
+ |
+
+Not all APIs in the orchestration are invoked during every execution of a Sabre Flight Reshop request. Internal logic determines which APIs to call based on the specific scenario. For example, if no retain functionality is requested, the method doesn't invoke the GetReservationRQ API.
+ |
+
+The following core parameters are included in a Sabre Flight Reshop response:
+
+timestamp: UTC timestamp when the response was generated.
+
+flights: Flights used to build exchange journeys.
+
+journeys: Journey segments included in exchange offers.
+
+numberOfOffers: The total number of returned offers.
+
+offers: List of offers matching the requested exchange criteria.
+
+offerAttributes: Attributes for branded and non-branded fares.
+
+associatedElectronicMiscellaneousDocuments: EMD-A documents linked to tickets.
+
+errors: Error details. Not present in successful responses.
+
+warnings: Warning details. May appear in successful responses.
+
+request: A copy of the original request.
+
+Error handling
+
+This section illustrates the current error handling logic for Sabre Flight Reshop.
+Errors are structured as demonstrated in the table below:
+
+Field |
+Type |
+Description |
+
+category
+ |
+String
+ |
+Indicates the error category.
+ |
+
+description
+ |
+String
+ |
+Provides a detailed error description.
+ |
+
+type
+ |
+String
+ |
+Indicates the error type.
+ |
+
+fieldPath
+ |
+String
+ |
+The request field path if the error has been caused by a bad request.
+ |
+
+fieldName
+ |
+String
+ |
+The request field name if the error has been caused by a bad request.
+ |
+
+fieldValue
+ |
+String
+ |
+The request field value if the error has been caused by a bad request.
+ |
+
+Error codes
+
+If an error occurs, Sabre Flight Reshop returns a non-empty errors array. Each item in the array contains three (3) parameters:
+
+category
+
+description
+
+type
+
+To view a complete list of errors returned by Sabre Flight Reshop, go to the Flight Reshop API – Error List section.
+
+Warning handling
+
+Warnings are handled using the same structure and logic as errors.
+
+Warning codes
+
+If a warning occurs, Sabre Flight Reshop returns a non-empty warnings array. Each item in the array contains three (3) parameters:
+
+category
+
+description
+
+type
+
+To view a complete list of warnings returned by Sabre Flight Reshop, go to the Flight Reshop API – Warning List section.

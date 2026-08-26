@@ -1,0 +1,878 @@
+openapi: 3.0.0
+x-lingo-api-type: rpc
+tags:
+  - name: GetAncillaries
+    description: Get Ancillaries API.
+info:
+  title: Get Ancillaries
+  version: "2.3"
+  description: The Get Ancillaries API displays free-of-charge ancillaries in the International Air Transport Association (IATA) New Distribution Capability (NDC) standard format.
+security:
+  - oauth2_authentication: []
+servers:
+  - url: https://api.cert.platform.sabre.com{basePath}
+    description: Certification server used for testing.
+    variables:
+      basePath:
+        default: /v2/offers
+  - url: https://api.platform.sabre.com{basePath}
+    description: Production server.
+    variables:
+      basePath:
+        default: /v2/offers
+paths:
+  /getAncillaries:
+    post:
+      tags:
+        - GetAncillaries
+      description: Retrieves availability of ancillaries and information about the chargeable and non-chargeable ancillaries.
+      operationId: getAncillaries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/ServiceListOfferRequest"
+                - $ref: "#/components/schemas/ServiceListOrderRequest"
+        description: Retrieves Special Service Request (SSR) and ancillary information for a given order.
+        required: true
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceList"
+components:
+  securitySchemes:
+    oauth2_authentication:
+      type: oauth2
+      x-base64-encode-client-credentials: true
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token
+          scopes: {}
+  schemas:
+    GenericServiceListRequest:
+      description: Contains the base request body for `GetAncillaries`, used to determine the `requestType`.
+      type: object
+      required:
+        - requestType
+      properties:
+        requestType:
+          type: string
+          example: 'orderId'
+          description: Determines the action the `GetAncillaries` operation will perform. Can be `orderId`, or `offerId`.
+      discriminator:
+        propertyName: requestType
+        mapping:
+          orderId: "#/components/schemas/ServiceListOrderRequest"
+          offerId: "#/components/schemas/ServiceListOfferRequest"
+
+    ServiceListOfferRequest:
+      allOf:
+        - $ref: '#/components/schemas/GenericServiceListRequest'
+        - type: object
+          description: Contains the transaction set from `GetAncillaries` that returns the services for a given offer, including SSR and ancillary information.
+          required:
+            - request
+          properties:
+            request:
+              description: Contains the air offer.
+              $ref: "#/components/schemas/OfferRequest"
+    ServiceListOrderRequest:
+      allOf:
+        - $ref: '#/components/schemas/GenericServiceListRequest'
+        - type: object
+          description: Contains the transaction set from `GetAncillaries` that returns the services for a given order, including SSR and ancillary information.
+          required:
+            - request
+          properties:
+            request:
+              description: Contains the air order.
+              $ref: "#/components/schemas/OrderRequest"
+
+    OfferRequest:
+      description: Contains the details of a given offer based on the ID provided.
+      type: object
+      required:
+        - offerId
+        - passengers
+      properties:
+        offerId:
+          description: The unique external offer ID.
+          $ref: '#/components/schemas/Identifier'
+        passengers:
+          description: Lists details of passengers associated with the NDC offer.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Passenger'
+        requestedSegmentRefs:
+          description: Lists the references to a segment definition for which ancillaries should return.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+
+    OrderRequest:
+      description: Contains the details of a given order based on the ID provided.
+      type: object
+      required:
+        - orderId
+      properties:
+        orderId:
+          description: The unique external order ID.
+          $ref: '#/components/schemas/Identifier'
+        requestedSegmentRefs:
+          description: Lists the references for a segment that must return ancillaries.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+        requestedPaxRefs:
+          description: Lists references to passengers whose ancillaries should be returned.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+        groupCode:
+          description: The ATPCO group code.
+          $ref: '#/components/schemas/GroupCodeType'
+
+    ServiceList:
+      description: Contains the transaction set that returns the associated special service requests (SSRs).
+      type: object
+      properties:
+        ancillaries:
+          description: Contains SSR and ancillary information.
+          $ref: "#/components/schemas/ServiceListResponse"
+        errors:
+          description: Lists the errors that occurred during request processing.
+          type: array
+          items:
+            description: Contains details of an error that occurred during request processing.
+            $ref: '#/components/schemas/Error'
+        warnings:
+          description: Lists the warnings that occurred during request processing.
+          type: array
+          items:
+            description: Warnings that occurred during processing.
+            $ref: '#/components/schemas/Warning'
+
+    ServiceListResponse:
+      description: Contains segments, passengers, and offers applicable to the service.
+      type: object
+      required:
+        - segments
+        - passengers
+        - offer
+        - serviceDefinitions
+      properties:
+        segments:
+          description: Lists all the flight segments associated with the ancillaries.
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Segment'
+        passengers:
+          description: Lists the passenger data associated with the ancillaries.
+          type: array
+          minItems: 1
+          maxItems: 99
+          items:
+            $ref: '#/components/schemas/Passenger'
+        offer:
+          description: Contains the offer ID/offer item ID associated with the ancillaries.
+          $ref: '#/components/schemas/Offer'
+        serviceDefinitions:
+          description: Lists the references to a `ServiceDefinition` ID within this message.
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceDefinition'
+        priceDefinitions:
+          description: Lists the references to a `PriceDefinition` items within this message.
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceDefinition'
+
+    Offer:
+      description: Contains offer information, including an ID and any other services the system was not able to add.
+      type: object
+      required:
+        - offerId
+      properties:
+        offerId:
+          description: The ID assigned to an offer within the Offer Store. The ID is required to add returned baggage offer items to the reservation.
+          type: string
+          pattern: '^[a-zA-Z_][a-zA-Z0-9_\-\.]*$'
+          example: 'dd75f77b49ffg9zqflescjh402-1'
+        sellable:
+          description: Whether the items in this offer are available for sale.
+          type: boolean
+          example: false
+        otherServices:
+          type: array
+          description: Lists the services that the system was not able to add to `baggageGrid` or `otherBaggageCharges`. Both of these fields will be defined in a future version of this API.
+          items:
+            $ref: '#/components/schemas/OfferItem'
+
+    OfferItem:
+      description: Contains information about an offer item, including ID, segment, and passenger references.
+      type: object
+      required:
+        - serviceDefinitionRef
+        - passengerRefs
+      properties:
+        offerItemId:
+          description: The unique ID of an offer item.
+          $ref: '#/components/schemas/Identifier'
+        serviceDefinitionRef:
+          description: Reference to service defined in the same message.
+          $ref: '#/components/schemas/Identifier'
+        priceDefinitionRef:
+          description: Reference to price defined in the same message.
+          $ref: '#/components/schemas/Identifier'
+        segmentRefs:
+          description: Lists all the segments associated with the offer item by ID.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+        passengerRefs:
+          description: Lists all the passengers associated with the offer by ID.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+        paymentType:
+          description: Informs which payment type is expected/supported by the carrier.
+          $ref: '#/components/schemas/PaymentTypeEnum'
+        paymentRequired:
+          description: Informs is payment type required for this offerItem.
+          type: boolean
+          default: false
+        bundleComponents:
+          description: Lists bundle components.
+          type: array
+          items:
+            $ref: '#/components/schemas/BundleComponent'
+
+    BundleComponent:
+      description: |
+        Contains the bundle component details. Represents selection of products in a bundle.
+      type: object
+      required:
+        - name
+        - bundledItems
+      properties:
+        name:
+          description: Name of the bundle component.
+          type: string
+          example: 'Seat'
+        bundledItems:
+          description: |
+            Lists items included in the bundle component.
+            Purchasing the bundle offer adds all listed items to the reservation.
+
+            Example: Bundle is offered on a portion of travel composed of two segments.
+            As seats are booked per segment, this array would contain two bundled seat items (separate one for each segment).
+          type: array
+          items:
+            $ref: '#/components/schemas/BundledItem'
+
+    BundledItem:
+      type: object
+      description: Contains details of an item included in a bundle.
+      required:
+        - id
+        - serviceDefinitionRef
+      properties:
+        id:
+          description: The unique ID of the bundled item.
+          $ref: '#/components/schemas/Identifier'
+        serviceDefinitionRef:
+          description: The ID of the corresponding `ServiceDefinition` included in the same message.
+          $ref: '#/components/schemas/Identifier'
+        segmentRefs:
+          description: Lists references to segments associated with the bundled item.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Identifier'
+        # optional extensions to provide service type specific offer data
+        baggageOfferDetails:
+          description: Describes the baggage offer details.
+          $ref: '#/components/schemas/BaggageOfferDetails'
+
+    BaggageOfferDetails:
+      description: Contains the baggage offer details.
+      type: object
+      properties:
+        occurrenceGroup:
+          description: |
+            The unique identifier for a group of related baggage offers.
+          type: string
+          example: "Standard Piece"
+        allowedForOccurrenceRange:
+          description: |
+            Specifies that given item can be used only to cover occurrences within given `occurrenceGroup`.
+          $ref: '#/components/schemas/OccurrenceRange'
+
+    OccurrenceRange:
+      description: |
+        Contains the range of occurrences. If one of the properties is missing, it represents an open range.
+      type: object
+      properties:
+        firstOccurrence:
+          description: The first occurrence in the range.
+          type: integer
+          minimum: 1
+          example: 1
+        lastOccurrence:
+          description: The last occurrence in the range.
+          type: integer
+          minimum: 1
+          example: 5
+
+    Error:
+      description: Contains detailed error information detected during a request processing.
+      type: object
+      properties:
+        code:
+          description: An application error code specified by IATA Code Table 9321.
+          $ref: "#/components/schemas/IataCityCode"
+        descriptionText:
+          description: Specifies free text description of the provided error.
+          type: string
+          example: 'Error was caused by bad weather and bad coffee'
+        languageCode:
+          description: Specifies the ISO 639-2 code of the language the error is returned in.
+          type: string
+          example: 'mul'
+        ownerName:
+          description: Specifies the name of the organization that owns the error codelist.
+          type: string
+          example: 'OwnerName'
+        statusText:
+          description: "Specifies the document processing status. Can be: `NotProcessed`, `Incomplete`, `Complete`, or `Unknown`."
+          type: string
+          example: 'NotProcessed'
+        tagText:
+          description: Lists any invalid elements found in the request. These are listed as URIs related to the JSON document root.
+          type: array
+          items:
+            description: "Specifies the error type. This string can accept values that have not been explicitly coded for and can process them with the value `unknown`."
+            type: string
+            example: 'request.order.orderId'
+        typeCode:
+          description: The error type. This string can accept values that have not been explicitly coded for and can process them with the value `unknown`.
+          type: string
+          example: 'Type Code'
+        url:
+          description: Specifies the link to the online description of the provided error.
+          type: string
+          format: uri
+          example: 'https://developer.sabre.com/home'
+
+    Warning:
+      description: Contains the detailed warning information detected during the request processing.
+      type: object
+      properties:
+        code:
+          description: Specifies the code that identifies the returned warning (per warning owner).
+          type: string
+          example: '060544'
+        descriptionText:
+          description: Specifies the free text description of the provided warning.
+          type: string
+          example: 'Possible uncommitted PNR data exists'
+        ownerName:
+          description: Specifies the name of the organization that owns the error codelist.
+          type: string
+          example: 'OrderView'
+
+    Segment:
+      description: Contains the operation details of a flight between the point where the passengers first board and their final destination.
+      type: object
+      required:
+        - id
+        - bookingAirlineCode
+        - departureAirportCode
+        - departureDate
+        - bookingFlightNumber
+      properties:
+        id:
+          description: The identifier of the segment within the context of one message.
+          $ref: '#/components/schemas/Identifier'
+        bookingAirlineCode:
+          description: The IATA two-character code of the airline that provides the passenger's booking or reservation.
+          $ref: "#/components/schemas/AirlineCode"
+        bookingFlightNumber:
+          description: The flight number of the airline that provides the passenger's booking or reservation.
+          $ref: "#/components/schemas/CarrierFlightNumber"
+        departureAirportCode:
+          description: The three-letter IATA code of the departure airport.
+          $ref: "#/components/schemas/IataCityCode"
+        arrivalAirportCode:
+          description: The three-letter IATA code of the arrival airport.
+          $ref: "#/components/schemas/IataCityCode"
+        departureDate:
+          description: The scheduled departure date in `YYYY-MM-DD` format in the airport's time zone.
+          $ref: "#/components/schemas/Date"
+        departureTime:
+          description: The scheduled departure time in `HH:mm:ss` format.
+          $ref: "#/components/schemas/Time"
+        arrivalDate:
+          description: The scheduled arrival date in `YYYY-MM-DD` format in the airport's time zone.
+          $ref: "#/components/schemas/Date"
+        arrivalTime:
+          description: The scheduled arrival time in `HH:mm:ss` format.
+          $ref: "#/components/schemas/Time"
+        operatingAirlineCode:
+          description: The two-letter IATA code or three-letter ICAO code of the airline that operates the flight and transports the passengers in a codeshare scenario.
+          $ref: "#/components/schemas/AirlineCode"
+        operatingFlightNumber:
+          description: The flight number of the airline that operates the flight and transports the passengers in a codeshare scenario.
+          $ref: "#/components/schemas/CarrierFlightNumber"
+        bookingClassCode:
+          description: The code assigned to the booking class; this is sometimes referred to as the reservation booking designator (RBD).
+          $ref: "#/components/schemas/BookingClassCode"
+        operatingBookingClassCode:
+          description: The code assigned to the booking class; this is sometimes referred to as the reservation booking designator (RBD).
+          $ref: "#/components/schemas/BookingClassCode"
+        cabinCode:
+          description: The code of the cabin.
+          $ref: "#/components/schemas/CabinTypeCode"
+        reservationStatus:
+          description: Specifies the reservation status as listed on the PNR.
+          type: string
+          pattern: '^[a-zA-Z_][a-zA-Z0-9_\-\.]*$'
+          example: 'HK'
+        isChangeOfGauge:
+          description: If true, there will be a change of aircraft for a continuing flight in this segment.
+          type: boolean
+          example: false
+        flightLegs:
+          description: Lists all the legs of the flight. This includes the departure, arrival, and aircraft ID.
+          type: array
+          items:
+            $ref: '#/components/schemas/FlightLeg'
+
+    FlightLeg:
+      description: Contains the departure, arrival, and aircraft ID used for a leg of the segment.
+      type: object
+      required:
+        - legId
+        - departureAirportCode
+        - arrivalAirportCode
+      properties:
+        legId:
+          description: The ID of the aircraft used for one of the legs from the segment.
+          $ref: "#/components/schemas/Identifier"
+        departureAirportCode:
+          description: The three-letter IATA code of the departure airport.
+          $ref: "#/components/schemas/IataCityCode"
+        arrivalAirportCode:
+          description: The three-letter IATA code of the arrival airport.
+          $ref: "#/components/schemas/IataCityCode"
+        equipmentCode:
+          description: |
+            Specifies the three-letter IATA aircraft type designator. 
+            Refer to the [Aircraft Equipment Lookup](https://developer.sabre.com/rest-api/aircraft-equipment-lookup/v1/reference-documentation#/default/aircraftEquipmentLookup) API to obtain this information.
+          type: string
+          pattern: '[A-Z0-9]{3}'
+          example: '7S8'
+
+    Passenger:
+      description: Contains passenger information, including ID, passenger type, and naming data.
+      type: object
+      required:
+        - passengerId
+        - givenName
+        - surname
+      properties:
+        passengerId:
+          description: Uniquely identifies a passenger in the Sabre system within the context of one message.
+          $ref: "#/components/schemas/Identifier"
+        passengerTypeCode:
+          description: Three-letter value that applies to the characteristic of the passenger. These typically drive pricing values.
+          $ref: "#/components/schemas/PassengerTypeCode"
+        givenName:
+          $ref: '#/components/schemas/GivenName'
+          description: The passenger's first name.
+        surname:
+          $ref: '#/components/schemas/Surname'
+          description: The passenger's family name or last name. Excludes any potential suffix.
+
+    PriceDefinition:
+      type: object
+      description: Contains the price definition the customer will pay.
+      required:
+        - id
+      properties:
+        id:
+          description: Uniquely identifies a PriceDefinition within the context of one message.
+          $ref: '#/components/schemas/Identifier'
+        serviceFee:
+          description: The final price the customer will pay after the Price modification system determines if any markup or discount applies to the offer.
+          $ref: "#/components/schemas/ServiceFee"
+        baseFee:
+          description: The price before the Price modification.
+          $ref: "#/components/schemas/ServiceFee"
+
+    ServiceFee:
+      type: object
+      description: Contains the information about the price the customer will pay.
+      required:
+        - totalPrice
+      properties:
+        unitPrice:
+          description: Single ancillary price. Optional. Returned only if quantity > 1.
+          $ref: '#/components/schemas/PriceElement'
+        totalPrice:
+          description: Final price that the customer will pay. Price will multiple by quantity, including taxes.
+          $ref: '#/components/schemas/PriceElement'
+
+    PriceElement:
+      type: object
+      description: Contains price information.
+      required:
+        - saleAmount
+      properties:
+        saleAmount:
+          description: Ancillary price with taxes. Currency is based on customer's location.
+          $ref: '#/components/schemas/Amount'
+        amount:
+          description: Ancillary price without taxes. Currency is based on customer's location.
+          $ref: '#/components/schemas/Amount'
+        ancillaryRecordAmount:
+          description: Ancillary price without taxes. Currency as filed by airlines (record currency).
+          $ref: '#/components/schemas/Amount'
+        taxSummary:
+          description: A compulsory contribution to state revenue, levied by the government on workers'
+            income and business profits or added to the cost of some goods, services, and transactions.
+          $ref: '#/components/schemas/TaxSummary'
+
+    TaxSummary:
+      type: object
+      description: Contains tax summary information, including the total tax amount.
+      properties:
+        taxesTotal:
+          description: Total sum of all the elements and the applicable tax amounts in the ancillary price, including TaxType and price.
+          $ref: '#/components/schemas/Amount'
+        taxes:
+          description: Lists the taxes that apply.
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxType'
+        isTaxExempt:
+          description: If true, all the taxes for this item are tax exempt.
+          type: boolean
+          default: false
+
+    TaxType:
+      description: Contains information for a compulsory contribution to state revenue, levied by the government on workers' income and business profits or added to the cost some goods, services, and transactions. The Price element represents the single tax price.
+      type: object
+      properties:
+        taxAmount:
+          description: Tax amount.
+          $ref: '#/components/schemas/Amount'
+        taxCode:
+          description: Specifies the code that applies to the tax.
+          type: string
+          example: 'AY'
+        taxDescription:
+          description: Specifies the Tax short description.
+          type: string
+          minLength: 1
+          example: '$4 per flight segment, per passenger (U.S. domestic segment tax).'
+
+    ServiceDefinition:
+      description: Contains details about the service, including ID, industry or carrier-defined code, code of the owning carrier, commercial name of the service, and any special booking instructions.
+      type: object
+      required:
+        - id
+        - serviceCode
+      properties:
+        id:
+          description: Uniquely identifies an ancillary definition within the context of one message.
+          $ref: '#/components/schemas/Identifier'
+        serviceCode:
+          description: The ancillary code, also known as an SSR code. This code is either an industry-defined or carrier-defined code identifying a specific type of service.
+          $ref: '#/components/schemas/ServiceTypeCode'
+        airlineCode:
+          description: The IATA two-letter or ICAO three-letter airline code of the ancillary's owning carrier.
+          $ref: '#/components/schemas/AirlineCode'
+        commercialName:
+          description: Specifies the commercial name associated with the service code.
+          type: string
+          example: 'SECOND BAG UPTO50LB 23KG'
+        groupCode:
+          description: The ATPCO group code.
+          $ref: '#/components/schemas/GroupCodeType'
+        additionalInputRequirements:
+          description: Specifies how and if the sub code must be booked.
+          $ref: '#/components/schemas/AdditionalInputRequirements'
+        ancillaryBagDescriptionCode:
+          description: Specifies the type of baggage.
+          type: string
+          example: 'GOLF'
+        ownerCode:
+          description: The NDC airline code that is responsible for this offer.
+          $ref: "#/components/schemas/AirlineCode"
+        upToWeightLimitInKilograms:
+          description: Baggage weight up to limit in kilograms.
+          type: integer
+          example: 32
+        upToWeightLimitInPounds:
+          description: Baggage weight up to limit in Pounds.
+          type: integer
+          example: 70
+        reasonForIssuance:
+          description: Specifies the reason for issuing an EMD for the service associated to the Sub Code.
+          $ref: '#/components/schemas/ReasonForIssuanceEnum'
+        subGroup:
+          description: The ATPCO subgroup.
+          $ref: '#/components/schemas/SubGroupType'
+        maximumQuantity:
+          type: number
+          description: Maximum quantity of this service allowed by the airline.
+          example: 10
+        bookingMethod:
+          description: Specifies how and if the sub code must be booked.
+          $ref: '#/components/schemas/BookingMethodEnum'
+        settlementMethodCode:
+          type: string
+          nullable: true
+          description: Specifies the Interline settlement method code.
+          example: 'DS, EA'
+        cabinUpgrade:
+          description: Specifies the instructions for cabin service upgrade.
+          $ref: '#/components/schemas/ServiceCabinUpgrade'
+        descriptionFreeText:
+          type: array
+          description: Lists descriptions of the service.
+          items:
+            $ref: '#/components/schemas/DescriptionFreeText'
+
+    BookingMethodEnum:
+      type: string
+      enum:
+        - Special Service Request
+        - Auxiliary Segment
+        - Contact Airline
+        - No Booking Required
+        - Per Service Record
+        - Any Allowed
+
+    SubGroupType:
+      description: The subgroup ATPCO type.
+      type: string
+      pattern: '^[0-9A-Z]{2}$'
+      example: 'PH'
+
+    ReasonForIssuanceEnum:
+      description: A (Air Transportation) B (Ground Transportation Non Air Services) C (Baggage) D Financial Impact
+        E (Airport Services) F (Merchandise) G (In-flight Services) I (Individual Airline Use) U (Unknown)
+        Refer to PADIS Codeset for data element 4183 -Special Condition.
+      type: string
+      enum:
+        - Air Transportation
+        - Baggage
+        - Airport Services
+        - Merchandise
+        - In-Flight Services
+        - Ground Transportation Non Air Services
+        - Financial Impact
+        - Individual Airline Use
+        - Unknown
+
+    ServiceCabinUpgrade:
+      type: object
+      description: Contains the instructions for cabin service upgrade.
+      nullable: true
+      properties:
+        methodCode:
+          type: string
+          nullable: true
+          description: Specifies the service upgrade method code (PADIS 9750).
+          example: 'A'
+        reservationBookingDesignator:
+          type: string
+          nullable: false
+          description: Specifies the new cabin type code related to the upgrade method.
+          example: 'C'
+
+    AdditionalInputRequirements:
+      description: Contains the required additional input that must be provided while booking an offer.
+      type: object
+      required:
+        - pattern
+      properties:
+        pattern:
+          type: string
+          description: Text-based information about the SSR entry.
+          example: '%FREETEXT%'
+        variables:
+          type: array
+          description: Lists the variables that may have been used in `pattern`.
+          items:
+            $ref: "#/components/schemas/AdditionalInputPatternVariable"
+
+    AdditionalInputPatternVariable:
+      description: Contains the definition of the variable used in the additional input pattern.
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          type: string
+          description: 'Specifies the variable identifier as used in pattern, without wrapping the "%" characters.'
+          example: 'FREETEXT'
+        value:
+          type: string
+          description: Specifies the expression pattern of the variable.
+          example: '[A-Z0-9\-/ ]*'
+        description:
+          type: string
+          description: >
+            Human-readable explanation of the meaning of this SSR property, e.g. "Pick Up Address", "Phone Contact". 
+            Necessary when the SSR property represents additional input required from user to book the ancillary/SSR.
+          example: 'Chauffeur Drive To Airport'
+
+    AirlineCode:
+      description: Specifies the two-letter IATA airline code, or three-letter ICAO airline code.
+      type: string
+      pattern: '^([A-Z0-9]{2}|[A-Z]{3})$'
+      example: 'AA'
+
+    Time:
+      description: Specifies the time in `HH:mm:ss` format.
+      type: string
+      pattern: '^[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$'
+      example: "11:34:54"
+
+    Date:
+      description: Specifies the date in `YYYY-MM-DD` format.
+      type: string
+      format: date
+      example: '2019-07-19'
+
+    CarrierFlightNumber:
+      description: The flight number of the airline that operates the flight and transports the passengers in a codeshare scenario.
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 9999
+      example: 1001
+
+    CabinTypeCode:
+      type: string
+      pattern: '^[A-Z]$'
+      example: 'J'
+      description: Specifies the code of the cabin.
+
+    BookingClassCode:
+      type: string
+      pattern: '^[A-Z]{1,2}$'
+      example: 'M'
+      description: Specifies the code of the booking class, a.k.a. class of service or reservation booking designator (RBD).
+
+    IataCityCode:
+      description: Specifies the three-character IATA code of a city or station.
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: 'DFW'
+
+    Identifier:
+      description: A unique value used as an identifier across this API.
+      type: string
+      example: 'SRVC-2B88-4C33-9787-9461114BC9BE'
+
+    PassengerTypeCode:
+      description: Specifies the ATPCO passenger type code. This code is used to identify applicable passengers.
+      type: string
+      pattern: '^[0-9A-Z]{3}$'
+      example: 'ADT'
+
+    ServiceTypeCode:
+      description: Specifies the ATPCO service type code.
+      type: string
+      pattern: '^[0-9A-Z]$'
+      example: 'C'
+
+    Title:
+      type: string
+      description: Specifies the title that is used before the passenger's surname.
+      example: 'Mr'
+
+    GivenName:
+      type: string
+      description: Specifies the passenger's first name.
+      example: 'MARTIN'
+
+    MiddleName:
+      type: string
+      description: Specifies the passenger's middle name or initial.
+      example: 'GEORGE'
+
+    Surname:
+      type: string
+      description: Specifies the passenger's last name.
+      example: 'SMITH'
+
+    SuffixName:
+      type: string
+      description: Specifies the passenger's suffix name.
+      example: 'III'
+
+    Amount:
+      description: Contains monetary amount information.
+      type: object
+      required:
+        - amount
+        - currencyCode
+      properties:
+        amount:
+          type: string
+          format: number
+          example: '128.00'
+          description: The amount in a given currency.
+        currencyCode:
+          description: The three-letter ISO-4217 code of the currency.
+          $ref: "#/components/schemas/CurrencyCode"
+
+    CurrencyCode:
+      description: Specifies the Currency code (ISO 4217).
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: 'USD'
+
+    GroupCodeType:
+      description: The ATPCO group code.
+      type: string
+      pattern: '^[0-9A-Z]{2}$'
+      example: 'BG'
+
+    DescriptionFreeText:
+      type: object
+      required: [ text ]
+      properties:
+        id:
+          description: The identifier of a description item.
+          type: string
+          example: '0'
+        text:
+          description: The text of a description item.
+          type: string
+          example: 'FREE TEXT'
+
+    PaymentTypeEnum:
+      description: Type of the payment type.
+      type: string
+      enum:
+        - Instant
+        - Deferred

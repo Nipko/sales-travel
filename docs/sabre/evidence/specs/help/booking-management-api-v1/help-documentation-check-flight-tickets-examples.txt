@@ -1,0 +1,992 @@
+Check Flight Tickets – Examples
+
+Below are some common use cases on how to check flight tickets:
+
+Check a single document
+
+To ensure a successful check of the requested document, add the following parameters to your request:
+
+tickets:
+
+number (a 13-digit electronic document number)
+
+{
+  "tickets": [
+    {
+      "number": "1607531707951"
+    }
+  ]
+}
+
+Check a conjunctive document
+
+To ensure a successful check of the requested document, add the following parameters to your request:
+
+tickets:
+
+number (a full conjunctive document number or a 13-digit electronic number of the main document)
+
+{
+  "tickets": [
+    {
+      "number": "1606802005010/11"
+    }
+  ]
+}
+
+or
+
+{
+  "tickets": [
+    {
+      "number": "1606802005010"
+    }
+  ]
+}
+
+Check all documents of a booking
+
+To ensure a successful check of the requested document, add the following parameter to your request:
+
+confirmationId (PNR Locator or Sabre Order ID)
+
+{
+  "confirmationId": "ABCDEF"
+}
+
+Check two documents and change context
+
+To ensure a successful check of the requested documents and to switch from the current Pseudo City Code (PCC) to the target PCC where the transaction should be executed, your request should contain:
+
+tickets
+
+number (a 13-digit electronic document number)
+
+targetPcc (the PCC where the void transaction of the ticket should be executed)
+
+{
+  "targetPcc": "7KFA",
+  "tickets": [
+    {
+      "number": "0143357868284"
+    },
+    {
+      "number": "0143357868285"
+    }
+  ]
+}
+
+Check multiple documents and define refund qualifiers
+
+To ensure a successful check of multiple documents, including refund qualifiers, add the following parameters to your request:
+
+tickets
+
+number (a 13-digit electronic document number)
+
+refundQualifiers, for example:
+
+waiverCode
+
+overrideCancelFee
+
+commissionAmount
+
+{
+  "tickets": [
+    {
+      "number": "6077531707952",
+      "refundQualifiers": {
+        "waiverCode": "ABCD1234",
+        "commissionAmount": "25.00"
+      }
+    },
+    {
+      "number": "6077531707953",
+      "refundQualifiers": {
+        "overrideCancelFee": "0.00",
+        "commissionAmount": "15.00"
+      }
+    }
+  ]
+}
+
+ |
+
+By defining refund qualifiers, you will override Sabre system pricing. Use at your own risk.
+ |
+
+Use cases
+
+The use cases below have been compiled to better illustrate the logical flow of Check Flight Tickets.
+
+Use case 1 – Check a single flight ticket
+
+This use case is based on a reservation (PNR RECLOC: RASZFY) for one traveler. The segment was booked as traditional Sabre air content:
+
+*RASZFY*IA«
+ 1 CX 690Y 10SEP S SINHKG HK1  1255P  515P /DCCX*2EB8SA /E
+ 2 CX 711Y 15SEP F HKGSIN HK1   440P  835P /DCCX*2EB8SA /E
+
+The ticket was issued without any additional documents:
+
+*RASZFY*T«
+TKT/TIME LIMIT
+  1.T-05JUL-G7RE*HMT
+  2.TE 1607958830515-AT MILLE/M G7RE*HMT 0856/05JUL*
+
+The current ticket image indicates:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:123124                    PNR:RASZFY
+TKT:1607958830515     ISSUED:05JUL23   PCC:G7RE   IATA:96188116
+NAME:MILLER/MAX
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    CX   690   Y  10SEP  SINHKG 1255P  OK YR21SGAR        OPEN
+                                NVB:10SEP   NVA:10SEP   BAG:1PC
+2    CX   711   Y  15SEP  HKGSIN  440P  OK YR21SGAR        OPEN
+                                NVB:15SEP   NVA:15SEP   BAG:1PC
+
+FARE     SGD1220.00
+TOTAL     USD1024.00     EQUIVALENT FARE PAID         USD903.00
+
+In order to execute check flight ticket operation, determine the desired document number.
+
+For example, the request to check the document could be:
+
+{
+  "tickets": [
+    {
+      "number": "1607958830515"
+    }
+  ]
+}
+
+The response does not contain errors:
+
+{
+  "timestamp": "2023-07-05T13:57:53",
+  "request": {
+    "tickets": [
+      {
+        "number": "1607958830515"
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "1607958830515",
+      "isVoidable": true,
+      "isRefundable": true,
+      "isAutomatedRefundsEligible": true,
+      "refundPenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "222.0",
+            "currencyCode": "USD"
+          },
+          "hasNoShowCost": true,
+          "noShowPenalty": {
+            "penalty": {
+              "amount": "518.0",
+              "currencyCode": "USD"
+            },
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "222.0",
+            "currencyCode": "USD"
+          },
+          "hasNoShowCost": true,
+          "noShowPenalty": {
+            "penalty": {
+              "amount": "518.0",
+              "currencyCode": "USD"
+            },
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        }
+      ],
+      "refundTaxes": [
+        {
+          "taxCode": "YR",
+          "amount": "41.20"
+        },
+        {
+          "taxCode": "SG",
+          "amount": "32.10"
+        },
+        {
+          "taxCode": "L7",
+          "amount": "8.00"
+        },
+        {
+          "taxCode": "OP",
+          "amount": "5.90"
+        },
+        {
+          "taxCode": "HK",
+          "amount": "15.30"
+        },
+        {
+          "taxCode": "G3",
+          "amount": "11.50"
+        },
+        {
+          "taxCode": "I5",
+          "amount": "7.00"
+        }
+      ],
+      "refundTotals": {
+        "subtotal": "681.00",
+        "taxes": "121.00",
+        "total": "802.00",
+        "currencyCode": "USD"
+      },
+      "isChangeable": true,
+      "exchangePenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "74.0",
+            "currencyCode": "USD"
+          },
+          "hasNoShowCost": true,
+          "noShowPenalty": {
+            "penalty": {
+              "amount": "370.0",
+              "currencyCode": "USD"
+            },
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "74.0",
+            "currencyCode": "USD"
+          },
+          "hasNoShowCost": true,
+          "noShowPenalty": {
+            "penalty": {
+              "amount": "370.0",
+              "currencyCode": "USD"
+            },
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        }
+      ]
+    }
+  ]
+}
+
+In this case, the ticket meets the requirements for the following operations:
+
+Void: The ticket is within the void period, coupons are all open.
+
+Refund: At least one coupon is open, carrier (CX – Cathay Pacific participates in Automated Refunds), the system was able to price a refund.
+
+Exchange: Coupon status validation was successful, and the system was able to establish the price of the exchange.
+
+The reservation was not updated, and the ticket remains untouched.
+
+Use case 2 – Check multiple flight tickets and change context
+
+This use case is based on a reservation (PNR RECLOC: KOEYRRRASFTO) for two travelers. The segments were booked as traditional Sabre air content:
+
+*RASFTO*I*T«
+ 1 AC 216Y 10SEP S YVRYYC HK2   110P  336P /DCAC*2EDAG2 /E
+ 2 AC 213Y 15SEP F YYCYVR HK2  1220P 1252P /DCAC*2EDAG2 /E
+TKT/TIME LIMIT
+  1.T-05JUL-U9PK*HMT
+  2.TE 0149786953843-AT MAYER/C U9PK*HMT 1606/05JUL*I
+  3.TE 0149786953844-AT MAYER/J U9PK*HMT 1606/05JUL*I
+
+The ticket image of 0149786953843 indicates:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:1536
+INV:                  CUST:123435                    PNR:RASFTO
+TKT:0149786953843     ISSUED:05JUL23   PCC:U9PK   IATA:63211116
+NAME:MAYER/CAROL
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AC   216   Y  10SEP  YVRYYC  110P  OK YZ0NZALT        OPEN
+                                NVB:        NVA:10SEP   BAG:2PC
+2    AC   213   Y  15SEP  YYCYVR 1220P  OK YZ0NZALT        OPEN
+                                NVB:        NVA:10SEP   BAG:2PC
+
+FARE     CAD1582.00
+TOTAL     PLN5397.97     EQUIVALENT FARE PAID        PLN4859.00
+
+To check both documents and change the context to the Pseudo City where they were issued, the request to Check Flight Ticket should be:
+
+{
+  "targetPcc": "U9PK",
+  "tickets": [
+    {
+      "number": "0149786953843"
+    },
+    {
+      "number": "0149786953844"
+    }
+  ]
+}
+
+No errors are returned in the response:
+
+{
+  "timestamp": "2023-07-05T14:23:26",
+  "request": {
+    "targetPcc": "U9PK",
+    "tickets": [
+      {
+        "number": "0149786953843"
+      },
+      {
+        "number": "0149786953844"
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "0149786953843",
+      "isVoidable": true,
+      "isRefundable": true,
+      "isAutomatedRefundsEligible": true,
+      "refundPenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        }
+      ],
+      "refundTaxes": [
+        {
+          "taxCode": "YR",
+          "amount": "97.64"
+        },
+        {
+          "taxCode": "SQ",
+          "amount": "184.27"
+        },
+        {
+          "taxCode": "XG",
+          "amount": "257.06"
+        }
+      ],
+      "refundTotals": {
+        "subtotal": "4859.00",
+        "taxes": "538.97",
+        "total": "5397.97",
+        "currencyCode": "PLN"
+      },
+      "isChangeable": true,
+      "exchangePenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        }
+      ]
+    },
+    {
+      "number": "0149786953844",
+      "isVoidable": true,
+      "isRefundable": true,
+      "isAutomatedRefundsEligible": true,
+      "refundPenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 33"
+          },
+          "source": "Category 33"
+        }
+      ],
+      "refundTaxes": [
+        {
+          "taxCode": "YR",
+          "amount": "97.64"
+        },
+        {
+          "taxCode": "SQ",
+          "amount": "184.27"
+        },
+        {
+          "taxCode": "XG",
+          "amount": "257.06"
+        }
+      ],
+      "refundTotals": {
+        "subtotal": "4859.00",
+        "taxes": "538.97",
+        "total": "5397.97",
+        "currencyCode": "PLN"
+      },
+      "isChangeable": true,
+      "exchangePenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "0.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        }
+      ]
+    }
+  ]
+}
+
+The reservation was not updated. Both tickets return options for void, refund, and exchange.
+
+Use case 3 – Check multiple documents and define refund qualifiers
+
+Below is an example of a simple round-trip air itinerary (PNR RECLOC: QOLZEF). These segments are booked as traditional Sabre air content:
+
+*QOLZEF*IA*T«
+ 1 AA6938I 27SEP W LGWJFK HK2   300P  600P /DCAA*OOZDXY /E
+ 2 AA4659D 30SEP J JFKBOS*HK2  1010P 1127P /DCAA*OOZDXY /E
+ 3 AA6981D 01OCT S BOSLHR*HK2   725A  655P /DCAA*OOZDXY /E
+TKT/TIME LIMIT
+  1.T-06JUL-U9PK*AWV
+  2.TE 0019786953845-AT KOWAL/J U9PK*AWV 1257/06JUL*I
+  3.TE 0019786953846-AT KOWAL/J U9PK*AWV 1257/06JUL*I
+
+Tickets were issued for both travelers:
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:1234567                   PNR:QOLZEF
+TKT:0019786953845     ISSUED:06JUL23   PCC:U9PK   IATA:63211116
+NAME:KOWALSKI/JOHN
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AA   6938  I  27SEP  LGWJFK  300P  OK INX5C1S4        OPEN
+                                NVB:27SEP   NVA:27SEP   BAG:2PC
+2    AA   4659  D  30SEP  JFKBOS 1010P  OK DNW5E1S2        OPEN
+                                NVB:30SEP   NVA:30SEP   BAG:2PC
+3    AA   6981  D  01OCT  BOSLHR  725A  OK DNW5E1S2        OPEN
+                                NVB:01OCT   NVA:01OCT   BAG:2PC
+
+FARE     GBP3114.00
+TOTAL    PLN22113.93     EQUIVALENT FARE PAID       PLN16095.00
+
+ELECTRONIC TICKET RECORD                          CRS CODE:0011
+INV:                  CUST:1234567                   PNR:QOLZEF
+TKT:0019786953846     ISSUED:06JUL23   PCC:U9PK   IATA:63211116
+NAME:KOWALSKI/JANE
+FORM OF PAYMENT                        FCI: 0
+1    CASH
+CPN  A/L  FLT  CLS DATE   BRDOFF  TIME  ST F/B             STAT
+1    AA   6938  I  27SEP  LGWJFK  300P  OK INX5C1S4        OPEN
+                                NVB:27SEP   NVA:27SEP   BAG:2PC
+2    AA   4659  D  30SEP  JFKBOS 1010P  OK DNW5E1S2        OPEN
+                                NVB:30SEP   NVA:30SEP   BAG:2PC
+3    AA   6981  D  01OCT  BOSLHR  725A  OK DNW5E1S2        OPEN
+                                NVB:01OCT   NVA:01OCT   BAG:2PC
+
+FARE     GBP3114.00
+TOTAL    PLN22113.93     EQUIVALENT FARE PAID       PLN16095.00
+
+To execute the check flight ticket operation, determine the desired document numbers and applicable refund qualifiers.
+
+For example, the request to check all documents could be:
+
+{
+  "tickets": [
+    {
+      "number": "0019786953845",
+      "refundQualifiers": {
+        "waiverCode": "ABCD1234",
+        "commissionAmount": "25.00"
+      }
+    },
+    {
+      "number": "0019786953846",
+      "refundQualifiers": {
+        "overrideCancelFee": "0.00",
+        "commissionAmount": "15.00",
+        "overrideTaxes": [
+          {
+            "taxCode": "YC",
+            "taxAmount": "5.00"
+          }
+        ]
+      }
+    }
+  ]
+}
+
+In this example, we specified different qualifiers for each ticket:
+
+0019786953845
+
+waiverCode to apply a waiver code as provisioned by the issuing carrier
+
+commissionAmount to apply a commission you will receive for this refund
+
+0019786953846
+
+overrideCancelFee to specify the cancel fee
+
+commissionAmount to apply a commission you will receive for this refund
+
+overrideTaxes to apply refundable amounts for specific taxes
+
+ |
+
+By defining refund qualifiers, you will override Sabre system pricing. Use at your own risk.
+ |
+
+There are no errors in the response:
+
+{
+  "timestamp": "2023-07-06T11:01:26",
+  "request": {
+    "tickets": [
+      {
+        "number": "0019786953845",
+        "refundQualifiers": {
+          "commissionAmount": "25.00",
+          "waiverCode": "ABCD1234"
+        }
+      },
+      {
+        "number": "0019786953846",
+        "refundQualifiers": {
+          "overrideCancelFee": "0.00",
+          "overrideTaxes": [
+            {
+              "taxCode": "YC",
+              "taxAmount": "5.00"
+            }
+          ],
+          "commissionAmount": "15.00"
+        }
+      }
+    ]
+  },
+  "tickets": [
+    {
+      "number": "0019786953845",
+      "isVoidable": true,
+      "isRefundable": true,
+      "isAutomatedRefundsEligible": true,
+      "refundTaxes": [
+        {
+          "taxCode": "YR",
+          "amount": "0.00"
+        },
+        {
+          "taxCode": "GB",
+          "amount": "987.15"
+        },
+        {
+          "taxCode": "UB",
+          "amount": "97.01"
+        },
+        {
+          "taxCode": "US",
+          "amount": "171.62"
+        },
+        {
+          "taxCode": "YC",
+          "amount": "26.52"
+        },
+        {
+          "taxCode": "XY",
+          "amount": "28.47"
+        },
+        {
+          "taxCode": "XA",
+          "amount": "15.58"
+        },
+        {
+          "taxCode": "AY",
+          "amount": "22.78"
+        },
+        {
+          "taxCode": "XF",
+          "amount": "18.30"
+        }
+      ],
+      "refundTotals": {
+        "subtotal": "0.00",
+        "taxes": "1367.43",
+        "total": "1367.43",
+        "currencyCode": "PLN"
+      },
+      "isChangeable": true,
+      "exchangePenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "1551.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "1551.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        }
+      ]
+    },
+    {
+      "number": "0019786953846",
+      "isVoidable": true,
+      "isRefundable": true,
+      "isAutomatedRefundsEligible": true,
+      "refundTaxes": [
+        {
+          "taxCode": "YR",
+          "amount": "0.00"
+        },
+        {
+          "taxCode": "GB",
+          "amount": "987.15"
+        },
+        {
+          "taxCode": "UB",
+          "amount": "97.01"
+        },
+        {
+          "taxCode": "US",
+          "amount": "171.62"
+        },
+        {
+          "taxCode": "YC",
+          "amount": "5.00"
+        },
+        {
+          "taxCode": "XY",
+          "amount": "28.47"
+        },
+        {
+          "taxCode": "XA",
+          "amount": "15.58"
+        },
+        {
+          "taxCode": "AY",
+          "amount": "22.78"
+        },
+        {
+          "taxCode": "XF",
+          "amount": "18.30"
+        }
+      ],
+      "refundTotals": {
+        "subtotal": "0.00",
+        "taxes": "1345.91",
+        "total": "1345.91",
+        "currencyCode": "PLN"
+      },
+      "isChangeable": true,
+      "exchangePenalties": [
+        {
+          "applicability": "BEFORE_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "1551.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        },
+        {
+          "applicability": "AFTER_DEPARTURE",
+          "conditionsApply": false,
+          "penalty": {
+            "amount": "1551.0",
+            "currencyCode": "PLN"
+          },
+          "hasNoShowCost": false,
+          "noShowPenalty": {
+            "source": "Category 31"
+          },
+          "source": "Category 31"
+        }
+      ]
+    }
+  ]
+}
+
+The reservation was not updated. The tickets remain with open coupons.
+
+Use case 4 – Check an NDC order
+
+Below is an example of a simple round-trip air itinerary (PNR RECLOC: IORVQO / Sabre Order ID: 1SXXXCITUW8P4). These segments are booked as NDC Sabre air content:
+
+{
+  "startDate": "2021-05-30",
+  "endDate": "2021-06-05",
+  "flights": [
+    {
+      "itemId": "10",
+      "confirmationId": "4T3XNE",
+      "sourceType": "NDC",
+      "flightNumber": 444,
+      "airlineCode": "QF",
+      "operatingFlightNumber": 444,
+      "operatingAirlineCode": "QF",
+      "fromAirportCode": "MEL",
+      "toAirportCode": "SYD",
+      "departureDate": "2021-05-30",
+      "departureTime": "13:00:00",
+      "departureTerminalName": "1",
+      "arrivalDate": "2021-05-30",
+      "arrivalTime": "14:25:00",
+      "arrivalTerminalName": "3",
+      "cabinTypeName": "ECONOMY",
+      "cabinTypeCode": "Y",
+      "aircraftTypeCode": "73H",
+      "aircraftTypeName": "BOEING 737 800",
+      "bookingClass": "O",
+      "meals": [
+        {
+          "code": "H",
+          "description": "Hot meal"
+        }
+      ],
+      "flightStatusCode": "HK",
+      "flightStatusName": "Confirmed",
+      "durationInMinutes": 85,
+      "distanceInMiles": 456
+    },
+    {
+      "itemId": "11",
+      "confirmationId": "4T3XNE",
+      "sourceType": "NDC",
+      "flightNumber": 437,
+      "airlineCode": "QF",
+      "operatingFlightNumber": 437,
+      "operatingAirlineCode": "QF",
+      "fromAirportCode": "SYD",
+      "toAirportCode": "MEL",
+      "departureDate": "2021-06-05",
+      "departureTime": "11:00:00",
+      "departureTerminalName": "3",
+      "arrivalDate": "2021-06-05",
+      "arrivalTime": "12:35:00",
+      "arrivalTerminalName": "1",
+      "cabinTypeName": "ECONOMY",
+      "cabinTypeCode": "Y",
+      "aircraftTypeCode": "73H",
+      "aircraftTypeName": "BOEING 737 800",
+      "bookingClass": "O",
+      "meals": [
+        {
+          "code": "H",
+          "description": "Hot meal"
+        }
+      ],
+      "flightStatusCode": "HK",
+      "flightStatusName": "Confirmed",
+      "durationInMinutes": 95,
+      "distanceInMiles": 456
+    }
+  ],
+  "flightTickets": [
+    {
+      "number": "0815740238620",
+      "date": "2021-03-22",
+      "travelerIndex": 1,
+      "flightCoupons": [
+        {
+          "itemId": "10",
+          "couponStatus": "Not Flown",
+          "couponStatusCode": "I"
+        },
+        {
+          "itemId": "11",
+          "couponStatus": "Not Flown",
+          "couponStatusCode": "I"
+        }
+      ],
+      "payment": {
+        "subtotal": "153.00",
+        "taxes": "57.20",
+        "total": "210.20",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TO"
+    }
+  ],
+  "request": {
+    "confirmationId": "1SXXXCITUW8P4",
+    "returnOnly": [
+      "FLIGHTS",
+      "TICKETS"
+    ]
+  }
+}
+
+In this example, we will check void or refund options for the entire order using the Sabre Order ID:
+
+{
+  "confirmationId": "1SXXXCITUW8P4"
+}
+
+There are no errors in the response:
+
+{
+  "request": {
+    "confirmationId": "1SXXXCITUW8P4"
+  },
+  "cancelOffers": [
+    {
+      "offerType": "VOID",
+      "offerItemId": "cb7778589bcbb4hpnkmkhp4ya1",
+      "offerExpirationDate": "2021-03-22",
+      "offerExpirationTime": "11:53"
+    }
+  ]
+}
+
+The reservation was not updated, and the order remains in its current state.
+
+In this example we are still in the void period, and the only option to use is offerType: "VOID". To finally execute the void offer, apply "offerItemId": "cb7778589bcbb4hpnkmkhp4ya1" to your cancelBookingRequest.
+
+Use case 5 – Check a reservation made with a low-cost airline (non-ATPCO)
+
+Low-cost airline reservations are ticketless and only support a refundability check. Your request should only specify the confirmationId:
+
+{
+  "confirmationId": "{{pnr}}"
+}
+
+The response, if successful, will provide you the details of the corresponding reservation in the low-cost airline system and the applicable refund amounts:
+
+{
+  "request": {
+    "confirmationId": "{{pnr}}"
+  },
+  "flightRefunds": [
+    {
+      "airlineCode": "U2",
+      "confirmationId": "K9HZPCB",
+      "refundTotals": {
+        "total": "719.00",
+        "currencyCode": "PLN"
+      }
+    }
+  ]
+}
+
+ |
+
+If there are multiple low-cost airline bookings in the Sabre PNR, the flightRefunds array will contain multiple objects.
+ |

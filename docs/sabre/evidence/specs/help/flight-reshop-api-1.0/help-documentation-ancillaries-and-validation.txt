@@ -1,0 +1,223 @@
+Ancillaries and Validation
+
+Overview
+
+Validation of associated EMDs is an indispensable functionality incorporated in the Sabre Flight Reshop request.
+
+ |
+
+Validation of additional EMDs that are not associated to the ticket is not supported.
+ |
+
+Details of validated EMDs are returned in the exchange shopping response under the FlightReshopResponse.associatedElectronicMiscellaneousDocuments array. Each EMD is associated to a specific passenger based on the issued ticket number.
+
+The following information may be returned in the API response:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+ticketNumber
+ |
+Number of the flight document associated to the set of EMDs.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.ticketNumber
+ |
+
+refundEligibility
+ |
+Identifies whether the document is refundable. Can be Refundable, Non-refundable, or Re-use (the service type is non-refundable, but the value may be reapplied towards a future purchase).
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.refundEligibility
+ |
+
+number
+ |
+The EMD number.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.number
+ |
+
+reasonForIssuanceCode
+ |
+A single-character code associated to the Reason for Issuance (RFIC) as defined by IATA. Can be A (Air Transportation), B (Surface Transportation Non Air Services), C (Baggage), D (Financial Impact), E (Airport Services), F (Merchandise), G (Inflight Services), or I (Individual Airline Use).
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.reasonForIssuanceCode
+ |
+
+reasonForIssuanceName
+ |
+Identifies the decoded name of the Reason for Issuance Code (RFIC) defined by IATA. Can be Air Transportation, Surface Transportation Non Air Services, Baggage, Financial Impact, Airport Services, Merchandise, Inflight Services, or Individual Airline Use.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.reasonForIssuanceName
+ |
+
+unusedAmount
+ |
+The monetary amount of a document or item that's not used.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.unusedAmount
+ |
+
+total
+ |
+The total amount of the document or item.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.total
+ |
+
+currencyCode
+ |
+The three-letter ISO 4217 currency code.
+ |
+FlightReshopResponse.associatedElectronicMiscellaneousDocuments.electronicMiscellaneousDocuments.currencyCode
+ |
+
+Air extras for new offers
+
+The Sabre Flight Reshop response includes a list of available air extras for each itinerary option, including carry-on and checked baggage allowance and charges.
+
+The following parameters can be used to request air extras for new offers:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+returnOfferAttributes
+ |
+Lists offer attributes to include in the response. Each item identifies the type of offer attribute whose details should be included in the returned offers.
+ |
+FlightReshopRequest.retailing.returnOfferAttributes
+ |
+
+ |
+
+By setting the Baggage value, Sabre Flight Reshop processes both checked and carry‑on baggage within a single request.
+ |
+
+The following parameters may be returned in the API response:
+
+Parameter |
+Description |
+Sabre Flight Reshop Path |
+
+checkedBaggageRef
+ |
+References the matching checked baggage item for a specific segment in an offer, if applicable.
+ |
+FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.checkedBaggageRef
+ |
+
+carryOnBaggageRef
+ |
+References the matching carry-on baggage item for a specific segment in an offer, if applicable.
+ |
+FlightReshopResponse.offers.items.fares.fareComponents.segmentDetails.carryOnBaggageRef
+ |
+
+checkedBaggageItems
+ |
+Lists information about checked baggage.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems
+ |
+
+carryOnBaggageItems
+ |
+Contains the unique, shared list of carry-on baggage details returned across offers, if applicable.
+ |
+FlightReshopResponse.offerAttributes.carryOnBaggageItems
+ |
+
+id
+ |
+The ID of the attribute used to reference a specific piece of baggage within the offer context.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.id
+ |
+
+allowances
+ |
+Lists baggage allowances applicable per portion of travel.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances
+ |
+
+charges
+ |
+Lists baggage charges applicable per portion of travel.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges
+ |
+
+airlineCode
+ |
+Indicates the carrier whose baggage provisions apply.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances.airlineCode
+
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.airlineCode
+ |
+
+numberOfPieces
+ |
+The number of baggage pieces.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances.numberOfPieces
+ |
+
+maximumWeightInPounds
+ |
+Weight limit in pounds.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances.maximumWeightInPounds
+ |
+
+maximumWeightInKilograms
+ |
+Weight limit in kilograms.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances.maximumWeightInKilograms
+ |
+
+description
+ |
+Baggage text information. Can apply to baggage allowance and/or charges.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.allowances.bagDefinition.description
+
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.bagDefinition.description
+ |
+
+firstPiece
+ |
+The first piece of baggage for which the specified charge applies.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.firstPiece
+ |
+
+lastPiece
+ |
+The last piece of baggage for which the specified charge applies.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.lastPiece
+ |
+
+amount
+ |
+The monetary amount associated with the baggage charge.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.amount
+ |
+
+currencyCode
+ |
+The three-letter ISO 4217 currency code.
+ |
+FlightReshopResponse.offerAttributes.checkedBaggageItems.charges.currencyCode
+ |
+
+ |
+
+Baggage data is returned only when the carrier has loaded this information into ATPCO. If the airline has not filed carry-on baggage details, no data will be present for that carrier's offers.
+ |

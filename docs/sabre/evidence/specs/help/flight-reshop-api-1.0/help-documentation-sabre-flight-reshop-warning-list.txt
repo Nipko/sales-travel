@@ -1,0 +1,35 @@
+Sabre Flight Reshop – Warning List
+
+Below are all possible warnings returned by the Sabre Flight Reshop endpoint:
+
+Warning type |
+Warning category |
+Description |
+
+BOOKING_ID_NOT_APPLICABLE
+ |
+IGNORED_DETAILS
+ |
+The bookingId was ignored for the selected distribution model as it is not used in processing for this source.
+ |
+
+INVALID_CORPORATE_ID
+ |
+IGNORED_DETAILS
+ |
+The specified corporate ID program was ignored because its value does not match the required pattern: [A-Za-z]{3}[0-9]{2}.
+ |
+
+INVALID_CABIN_ASSOCIATION
+ |
+IGNORED_DETAILS
+ |
+The cabin preference for the selected journey was not applied due to the retention of the originally chosen flight(s) within that journey.
+ |
+
+FUNCTIONALITY_NOT_APPLICABLE
+ |
+IGNORED_DETAILS
+ |
+The selected functionality cannot be applied to the NDC exchange content type.
+ |

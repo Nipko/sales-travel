@@ -1,0 +1,614 @@
+Overview
+
+What is it?
+
+Your search for the best airfare starts and ends here. Bargain Finder Max computes a vast array of airline schedules and fares across multiple dates to derive the best itinerary offers in seconds.
+
+ |
+
+This service requires activation. Contact your Sabre Account Representative for assistance. Air Shopping is the science of computing a vast array of airline schedules and fares to derive best itinerary options.
+ |
+
+Why use it?
+
+Instant results
+
+Whether for business or pleasure, find the best options in less than two seconds.
+
+Precisely tailored
+
+Customize shopping for your customers and tailor search results for the most relevant fares based on itinerary preferences, diversity controls, and more.
+
+Increase conversion
+
+Build greater customer value, leading to increased bookings and higher revenues.
+
+Diverse content
+
+Access all of Sabre’s air content, including traditional ATPCO, NDC (New-Distribution-Capability), and LCC (low-cost-carrier).
+
+How it works
+
+Bargain Finder Max, an API with a unique approach of combining fare-led and schedule-led algorithms, delivers the most relevant offers and solutions personalized to your travelers’ needs. With features like highly customizable search criteria designed to tailor specific results to all of your business’ or traveler requirements, Bargain Finder Max provides your travelers with what they want most; smart travel options.
+
+How to use
+
+Authentication
+
+You must provide an authentication token to use the Bargain Finder Max endpoint. Tokens can be obtained from the OAuth Token Create API.
+
+v5/offers/shop/
+
+To retrieve offers matching your request parameters, send a POST call to the v5/offers/shop/ endpoint. The following snippet shows an example of a request:
+
+{
+  "OTA_AirLowFareSearchRQ": {
+    "Version": "5",
+    "POS": {
+      "Source": [
+        {
+          "PseudoCityCode": "XXXX",
+          "RequestorID": {
+            "Type": "1",
+            "ID": "1",
+            "CompanyName": {
+              "Code": "TN"
+            }
+          }
+        }
+      ]
+    },
+    "OriginDestinationInformation": [
+      {
+        "DepartureDateTime": "2026-09-11T20:00:00",
+        "OriginLocation": {
+          "LocationCode": "WAW"
+        },
+        "DestinationLocation": {
+          "LocationCode": "SPU"
+        }
+      },
+      {
+        "DepartureDateTime": "2026-09-18T20:00:00",
+        "OriginLocation": {
+          "LocationCode": "SPU"
+        },
+        "DestinationLocation": {
+          "LocationCode": "WAW"
+        }
+      }
+    ],
+    "TravelPreferences": {
+      "MaxStopsQuantity": 0,
+      "VendorPref": [
+        {
+          "Code": "LO"
+        }
+      ]
+    },
+    "TravelerInfoSummary": {
+      "AirTravelerAvail": [
+        {
+          "PassengerTypeQuantity": [
+            {
+              "Code": "ADT",
+              "Quantity": 1
+            }
+          ]
+        }
+      ]
+    },
+    "TPA_Extensions": {
+      "IntelliSellTransaction": {
+        "RequestType": {
+          "Name": "50ITINS"
+        }
+      }
+    }
+  }
+}
+
+The API will reply with a response containing retrieved offers, which may look as presented below:
+
+{
+  "groupedItineraryResponse": {
+    "version": "5",
+    "messages": [
+      {
+        "severity": "Info",
+        "type": "SERVER",
+        "code": "GCA14-ISELL-TN-00-2024-12-01-WL5P",
+        "text": "27131"
+      },
+      {
+        "severity": "Info",
+        "type": "WORKERTHREAD",
+        "code": "TRANSACTIONID",
+        "text": "7346539295149655838"
+      },
+      {
+        "severity": "Info",
+        "type": "DRE",
+        "code": "RULEID",
+        "text": "18411"
+      },
+      {
+        "severity": "Info",
+        "type": "DEFAULT",
+        "code": "RULEID",
+        "text": "31139"
+      }
+    ],
+    "statistics": {
+      "itineraryCount": 1
+    },
+    "scheduleDescs": [
+      {
+        "id": 1,
+        "frequency": "SM*W***",
+        "stopCount": 0,
+        "eTicketable": true,
+        "totalMilesFlown": 635,
+        "elapsedTime": 115,
+        "departure": {
+          "airport": "SPU",
+          "city": "SPU",
+          "country": "HR",
+          "time": "17:10:00+02:00"
+        },
+        "arrival": {
+          "airport": "WAW",
+          "city": "WAW",
+          "country": "PL",
+          "time": "19:05:00+02:00"
+        },
+        "carrier": {
+          "marketing": "LO",
+          "marketingFlightNumber": 576,
+          "operating": "LO",
+          "operatingFlightNumber": 576,
+          "equipment": {
+            "code": "E75",
+            "typeForFirstLeg": "N",
+            "typeForLastLeg": "N"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "frequency": "SM*W***",
+        "stopCount": 0,
+        "eTicketable": true,
+        "totalMilesFlown": 635,
+        "elapsedTime": 120,
+        "departure": {
+          "airport": "WAW",
+          "city": "WAW",
+          "country": "PL",
+          "time": "14:20:00+02:00"
+        },
+        "arrival": {
+          "airport": "SPU",
+          "city": "SPU",
+          "country": "HR",
+          "time": "16:20:00+02:00"
+        },
+        "carrier": {
+          "marketing": "LO",
+          "marketingFlightNumber": 575,
+          "operating": "LO",
+          "operatingFlightNumber": 575,
+          "equipment": {
+            "code": "E75",
+            "typeForFirstLeg": "N",
+            "typeForLastLeg": "N"
+          }
+        }
+      }
+    ],
+    "taxDescs": [
+      {
+        "id": 1,
+        "code": "YQF",
+        "amount": 16.3,
+        "currency": "USD",
+        "description": "SERVICE FEE - CARRIER-IMPOSED FUEL",
+        "publishedAmount": 15,
+        "publishedCurrency": "EUR",
+        "station": "WAW"
+      },
+      {
+        "id": 2,
+        "code": "YQF",
+        "amount": 16.3,
+        "currency": "USD",
+        "description": "SERVICE FEE - CARRIER-IMPOSED FUEL",
+        "publishedAmount": 15,
+        "publishedCurrency": "EUR",
+        "station": "SPU"
+      },
+      {
+        "id": 3,
+        "code": "XW",
+        "amount": 21.5,
+        "currency": "USD",
+        "description": "AIRPORT TAX",
+        "publishedAmount": 86.69,
+        "publishedCurrency": "PLN",
+        "station": "WAW",
+        "country": "PL"
+      },
+      {
+        "id": 4,
+        "code": "ND",
+        "amount": 0.4,
+        "currency": "USD",
+        "description": "PASSENGER SERVICE CHARGE DEPARTURES",
+        "publishedAmount": 1.43,
+        "publishedCurrency": "PLN",
+        "station": "WAW",
+        "country": "PL"
+      },
+      {
+        "id": 5,
+        "code": "HR",
+        "amount": 17.8,
+        "currency": "USD",
+        "description": "PASSENGER SERVICE AND SECURITY CHARGE",
+        "publishedAmount": 16.4,
+        "publishedCurrency": "EUR",
+        "station": "SPU",
+        "country": "HR"
+      },
+      {
+        "id": 6,
+        "code": "MI",
+        "amount": 1.5,
+        "currency": "USD",
+        "description": "CIVIL AVIATION AUTHORITY  CCAA  TAX",
+        "publishedAmount": 1.37,
+        "publishedCurrency": "EUR",
+        "station": "SPU",
+        "country": "HR"
+      }
+    ],
+    "taxSummaryDescs": [
+      {
+        "id": 1,
+        "code": "XW",
+        "amount": 21.5,
+        "currency": "USD",
+        "description": "AIRPORT TAX",
+        "publishedAmount": 86.69,
+        "publishedCurrency": "PLN",
+        "station": "WAW",
+        "country": "PL"
+      },
+      {
+        "id": 2,
+        "code": "ND",
+        "amount": 0.4,
+        "currency": "USD",
+        "description": "PASSENGER SERVICE CHARGE DEPARTURES",
+        "publishedAmount": 1.43,
+        "publishedCurrency": "PLN",
+        "station": "WAW",
+        "country": "PL"
+      },
+      {
+        "id": 3,
+        "code": "HR",
+        "amount": 17.8,
+        "currency": "USD",
+        "description": "PASSENGER SERVICE AND SECURITY CHARGE",
+        "publishedAmount": 16.4,
+        "publishedCurrency": "EUR",
+        "station": "SPU",
+        "country": "HR"
+      },
+      {
+        "id": 4,
+        "code": "MI",
+        "amount": 1.5,
+        "currency": "USD",
+        "description": "CIVIL AVIATION AUTHORITY  CCAA  TAX",
+        "publishedAmount": 1.37,
+        "publishedCurrency": "EUR",
+        "station": "SPU",
+        "country": "HR"
+      },
+      {
+        "id": 5,
+        "code": "YQ",
+        "amount": 32.6,
+        "currency": "USD",
+        "description": "YQ taxes summary"
+      }
+    ],
+    "obFeeDescs": [
+      {
+        "id": 1,
+        "amount": 0,
+        "currency": "USD"
+      }
+    ],
+    "fareComponentDescs": [
+      {
+        "id": 1,
+        "governingCarrier": "LO",
+        "fareAmount": 26.86,
+        "fareCurrency": "NUC",
+        "fareBasisCode": "OSAVI5",
+        "farePassengerType": "ADT",
+        "publishedFareAmount": 235,
+        "publishedFareCurrency": "PLN",
+        "directionality": "FROM",
+        "applicablePricingCategories": "4 5 6 7 8 9 10 15 16 17 31 33",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "00",
+        "fareType": "XPN",
+        "fareTariff": "21",
+        "fareRule": "SAV1",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {
+              "stopover": true
+            }
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "governingCarrier": "LO",
+        "fareAmount": 26.86,
+        "fareCurrency": "NUC",
+        "fareBasisCode": "OSAVI5",
+        "farePassengerType": "ADT",
+        "publishedFareAmount": 235,
+        "publishedFareCurrency": "PLN",
+        "directionality": "TO",
+        "applicablePricingCategories": "4 5 6 7 8 9 10 15 16 17 31 33",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "00",
+        "fareType": "XPN",
+        "fareTariff": "21",
+        "fareRule": "SAV1",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {
+              "stopover": true
+            }
+          }
+        ]
+      }
+    ],
+    "validatingCarrierDescs": [
+      {
+        "id": 1,
+        "settlementMethod": "ARC",
+        "newVcxProcess": true,
+        "default": {
+          "code": "LO"
+        }
+      }
+    ],
+    "baggageAllowanceDescs": [
+      {
+        "id": 1,
+        "pieceCount": 0
+      }
+    ],
+    "legDescs": [
+      {
+        "id": 1,
+        "elapsedTime": 115,
+        "schedules": [
+          {
+            "ref": 1
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "elapsedTime": 120,
+        "schedules": [
+          {
+            "ref": 2
+          }
+        ]
+      }
+    ],
+    "itineraryGroups": [
+      {
+        "groupDescription": {
+          "legDescriptions": [
+            {
+              "departureDate": "2026-09-11",
+              "departureLocation": "WAW",
+              "arrivalLocation": "SPU"
+            },
+            {
+              "departureDate": "2026-09-18",
+              "departureLocation": "SPU",
+              "arrivalLocation": "WAW"
+            }
+          ]
+        },
+        "itineraries": [
+          {
+            "id": 1,
+            "pricingSource": "ADVJR1",
+            "legs": [
+              {
+                "ref": 2
+              },
+              {
+                "ref": 1
+              }
+            ],
+            "pricingInformation": [
+              {
+                "pricingSubsource": "HPIS",
+                "fare": {
+                  "mandatoryInd": true,
+                  "validatingCarrierCode": "LO",
+                  "vita": true,
+                  "eTicketable": true,
+                  "lastTicketDate": "2026-11-21",
+                  "lastTicketTime": "12:29",
+                  "governingCarriers": "LO LO",
+                  "passengerInfoList": [
+                    {
+                      "passengerInfo": {
+                        "passengerType": "ADT",
+                        "passengerNumber": 1,
+                        "nonRefundable": true,
+                        "fareComponents": [
+                          {
+                            "ref": 1,
+                            "beginAirport": "WAW",
+                            "endAirport": "SPU",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "O",
+                                  "cabinCode": "Y",
+                                  "mealCode": "RF",
+                                  "seatsAvailable": 9,
+                                  "availabilityBreak": true
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "ref": 2,
+                            "beginAirport": "SPU",
+                            "endAirport": "WAW",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "O",
+                                  "cabinCode": "Y",
+                                  "mealCode": "RF",
+                                  "seatsAvailable": 9,
+                                  "availabilityBreak": true
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "taxes": [
+                          {
+                            "ref": 5
+                          },
+                          {
+                            "ref": 6
+                          },
+                          {
+                            "ref": 4
+                          },
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 2
+                          }
+                        ],
+                        "taxSummaries": [
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 4
+                          },
+                          {
+                            "ref": 2
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 5
+                          }
+                        ],
+                        "obFees": [
+                          {
+                            "ref": 1
+                          }
+                        ],
+                        "currencyConversion": {
+                          "from": "PLN",
+                          "to": "USD",
+                          "exchangeRateUsed": 0.2475903
+                        },
+                        "passengerTotalFare": {
+                          "totalFare": 131.8,
+                          "totalTaxAmount": 73.8,
+                          "currency": "USD",
+                          "baseFareAmount": 235,
+                          "baseFareCurrency": "PLN",
+                          "equivalentAmount": 58,
+                          "equivalentCurrency": "USD",
+                          "constructionAmount": 53.72,
+                          "constructionCurrency": "NUC",
+                          "exchangeRateOne": 4.372975
+                        },
+                        "baggageInformation": [
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "LO",
+                            "segments": [
+                              {
+                                "id": 0
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          },
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "LO",
+                            "segments": [
+                              {
+                                "id": 1
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "totalFare": {
+                    "totalPrice": 131.8,
+                    "totalTaxAmount": 73.8,
+                    "currency": "USD",
+                    "baseFareAmount": 235,
+                    "baseFareCurrency": "PLN",
+                    "constructionAmount": 53.72,
+                    "constructionCurrency": "NUC",
+                    "equivalentAmount": 58,
+                    "equivalentCurrency": "USD"
+                  },
+                  "validatingCarriers": [
+                    {
+                      "ref": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

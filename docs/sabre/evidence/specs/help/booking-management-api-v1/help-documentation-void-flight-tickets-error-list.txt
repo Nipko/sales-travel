@@ -1,0 +1,265 @@
+Void Flight Tickets – Error List
+
+Error list
+
+Below is a full list of possible errors returned by Void Flight Tickets:
+
+Error type |
+Error category |
+Description |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The ticket does not match the segments selected for cancellation. Review flights selection or void using /v1/trip/orders/voidFlightTickets.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The current status of the selected ticket prevents the execution of the selected operation. Verify ticket status by using the Get Booking method.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Operation of voiding ticket failed.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Response is empty
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The ticket is outside of the void period. Please follow refund procedures.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+The request refers to a NDC issued document and void is currently not supported. Please contact the NDC-issuing airline for further assistance.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Order contains no tickets.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Segment contains no tickets.
+ |
+
+UNABLE_TO_VOID_TICKET
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Coupon Status ACTL - Coupons[%s] of the document are currently under airport control. Verify with the carrier if the desired operation is allowed and proceed with the manual change.
+ |
+
+NO_TICKETS_VOIDED
+ |
+WARNING
+ |
+No tickets voided
+ |
+
+TOO_MANY_DOCUMENTS
+ |
+BAD_REQUEST
+ |
+Currently a maximum of %s documents is supported.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains duplicate printer objects. Please request only one printer profile.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains an invalid combination of printer profile and manual printer designation. Please request either printer profile designation or submit a list of printers for manual designation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Properties confirmationId and tickets cannot be combined. Use tickets property to indicate specific tickets for check/void/refund operation or confirmationId to process all tickets present in the reservation.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains multiple types of printers in a single printer address object. The printer address object can contain only one printer type.
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+The request contains a printer designation without a recognizable printer type. Verify the printer address object details against the API schema.
+ |
+
+DESIGNATE_PRINTER_FAILED
+ |
+APPLICATION_ERROR
+ |
+Operation of printer designation failed
+ |
+
+UNDESIGNATE_PRINTER_FAILED
+ |
+APPLICATION_ERROR
+ |
+Operation of printer undesignation failed
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+Ticket is not found in reservation
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+The booking does not contain tickets.
+ |
+
+SINGLE_RESERVATION_TICKETS_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Only tickets within one reservation can be voided.
+ |
+
+TICKET_NUMBER_MISMATCH
+ |
+CANCELLATION_ERROR/WARNING
+ |
+Ticket number mismatch
+ |
+
+VOID_RETRY_FAILED
+ |
+CANCELLATION_ERROR
+ |
+Temporary unable to process void request for ticketNumber=%s
+ |
+
+INVALID_FLAGS_COMBINATION
+ |
+BAD_REQUEST
+ |
+Request contains too many notification options. Select email or queuePlacement.
+ |
+
+INVALID_TICKET_NUMBER
+ |
+BAD_REQUEST
+ |
+Validation Failed: must match \"^[0-9A-Z]{13}$\"
+ |
+
+BOOKING_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+PNR %s not found for specified ticket
+ |
+
+NDC_NOT_SUPPORTED
+ |
+REQUEST_NOT_ALLOWED
+ |
+Unable to void the ticket. The request refers to an NDC order. Tickets might be refunded together with the order using cancelBooking.
+ |
+
+CHECK_RETRY_FAILED
+ |
+CANCELLATION_ERROR
+ |
+Temporary unable to process check request for ticketNumber=%s
+ |
+
+UNKNOWN_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+Operation of view order content failed
+ |
+
+UNABLE_TO_CHECK_TICKET
+ |
+CANCELLATION_ERROR
+ |
+Response is empty
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+ |
+
+The %s variable contains information returned dynamically by the downline service.
+ |
+
+Void Flight Tickets can also return errors stemming directly from downline services:
+
+Error type |
+Error category |
+Downline service |
+
+VOID_TICKET_PROBLEM
+ |
+WARNING
+ |
+VoidTicketLLSRQ
+ |
+
+DESIGNATE_PRINTER_PROBLEM
+ |
+WARNING
+ |
+DesignatePrinterLLSRQ
+ |
+
+UNDESIGNATE_PRINTER_PROBLEM
+ |
+WARNING
+ |
+DesignatePrinterLLSRQ
+ |
+
+TICKET_NOT_FOUND
+ |
+RESOURCE_NOT_FOUND
+ |
+TKT_ElectronicDocumentServicesRQ
+ |

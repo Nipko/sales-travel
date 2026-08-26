@@ -1,0 +1,4283 @@
+Get Seats NDC - Offer ID (with loyalty data)
+
+Examples of Get Seats NDC request and response on Offer ID path with loyalty data.
+
+Request
+
+{
+  "offerId": "ih6b6ccd76bdvsjhgmlkxkjx33-1",
+  "passengers": [
+    {
+      "id": "Passenger1",
+      "passengerType": "ADT",
+      "givenName": "Jordan",
+      "surname": "Loytest",
+      "loyaltyProgramAccounts": [
+        {
+          "accountNumber": "1380227",
+          "airline": "QF"
+        }
+      ]
+    }
+  ]
+}
+
+Response
+
+{
+  "response": {
+    "offerId": "ih6b6ccd76bdvsjhgmlkxo6qc0",
+    "segments": [
+      {
+        "id": "S1",
+        "bookingAirlineCode": "QF",
+        "bookingFlightNumber": 500,
+        "departureAirportCode": "SYD",
+        "arrivalAirportCode": "BNE",
+        "departureDate": "2026-03-16",
+        "bookingClassCode": "V",
+        "departureTime": "06:05",
+        "flightLegs": [
+          {
+            "id": "SABRE_NDCC_LEG_ID_1",
+            "departureAirportCode": "SYD",
+            "departureScheduledDateTime": "2026-03-16T06:05:00Z",
+            "arrivalAirportCode": "BNE",
+            "aircraftCode": "73H"
+          }
+        ]
+      }
+    ],
+    "passengers": [
+      {
+        "id": "Passenger1",
+        "passengerType": "ADT"
+      }
+    ],
+    "serviceDefinitions": [
+      {
+        "id": "DS20260213T133838507427555793790520",
+        "serviceCode": "0B5",
+        "airlineCode": "QF",
+        "commercialName": "SEAT ASSIGNMENT",
+        "groupCode": "SA",
+        "specialServiceCode": "SEAT"
+      },
+      {
+        "id": "DS20260213T133838507427555793790521",
+        "serviceCode": "0B5",
+        "airlineCode": "QF",
+        "commercialName": "EXTRA LEGROOM",
+        "groupCode": "SA",
+        "specialServiceCode": "SEAT"
+      },
+      {
+        "id": "DS20260213T133838507427555793790522",
+        "serviceCode": "0B5",
+        "airlineCode": "QF",
+        "commercialName": "EXTRA LEGROOM",
+        "groupCode": "SA",
+        "specialServiceCode": "SEAT"
+      },
+      {
+        "id": "DS20260213T133838507427555793790523",
+        "serviceCode": "0B5",
+        "airlineCode": "QF",
+        "commercialName": "FORWARD 3",
+        "groupCode": "SA",
+        "specialServiceCode": "SEAT"
+      }
+    ],
+    "priceDefinitions": [
+      {
+        "id": "1",
+        "currencyCode": "USD",
+        "totalPrice": {
+          "amount": 0.0,
+          "amountWithoutTaxes": 0.0
+        }
+      },
+      {
+        "id": "2",
+        "currencyCode": "USD",
+        "totalPrice": {
+          "amount": 30.0,
+          "amountWithoutTaxes": 30.0
+        }
+      },
+      {
+        "id": "3",
+        "currencyCode": "USD",
+        "totalPrice": {
+          "amount": 30.0,
+          "amountWithoutTaxes": 30.0
+        }
+      },
+      {
+        "id": "4",
+        "currencyCode": "USD",
+        "totalPrice": {
+          "amount": 10.0,
+          "amountWithoutTaxes": 10.0
+        }
+      }
+    ],
+    "offerItems": [
+      {
+        "serviceDefinitionRef": "DS20260213T133838507427555793790520",
+        "priceDefinitionRef": "1",
+        "segmentRefs": [
+          "S1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Payment Not Required",
+        "id": "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+      },
+      {
+        "serviceDefinitionRef": "DS20260213T133838507427555793790521",
+        "priceDefinitionRef": "2",
+        "segmentRefs": [
+          "S1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+      },
+      {
+        "serviceDefinitionRef": "DS20260213T133838507427555793790522",
+        "priceDefinitionRef": "3",
+        "segmentRefs": [
+          "S1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+      },
+      {
+        "serviceDefinitionRef": "DS20260213T133838507427555793790523",
+        "priceDefinitionRef": "4",
+        "segmentRefs": [
+          "S1"
+        ],
+        "passengerRefs": [
+          "Passenger1"
+        ],
+        "paymentType": "Deferred",
+        "id": "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+      }
+    ],
+    "seatMaps": [
+      {
+        "segmentRef": "S1",
+        "cabinCompartments": [
+          {
+            "firstRow": 4,
+            "lastRow": 30,
+            "cabinCode": "Y",
+            "cabinLayout": {
+              "columns": [
+                {
+                  "id": "A",
+                  "position": [
+                    "W"
+                  ]
+                },
+                {
+                  "id": "B",
+                  "position": [
+                    "C"
+                  ]
+                },
+                {
+                  "id": "C",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "D",
+                  "position": [
+                    "A"
+                  ]
+                },
+                {
+                  "id": "E",
+                  "position": [
+                    "C"
+                  ]
+                },
+                {
+                  "id": "F",
+                  "position": [
+                    "W"
+                  ]
+                }
+              ],
+              "rows": {
+                "firstRow": 4,
+                "lastRow": 30
+              },
+              "wingRowPosition": [
+                {
+                  "firstRow": 11,
+                  "lastRow": 17
+                }
+              ],
+              "exitRowPosition": [
+                {
+                  "firstRow": 13,
+                  "lastRow": 14
+                }
+              ]
+            },
+            "seatRows": [
+              {
+                "row": 4,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "PC",
+                        "description": "PetInCabin"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "PC",
+                        "description": "PetInCabin"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "PC",
+                        "description": "PetInCabin"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "PC",
+                        "description": "PetInCabin"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-3"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 5,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 6,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 7,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 8,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "O",
+                        "description": "PreferredSeat/PreferentialSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-4"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 9,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1W",
+                        "description": "WindowSeatWithoutWindow"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1W",
+                        "description": "WindowSeatWithoutWindow"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 10,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 11,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 12,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "H",
+                        "description": "SeatWithFacilitiesForHandicapped/IncapacitatedPassenger"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 13,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 14,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "E",
+                        "description": "ExitRowSeat"
+                      },
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1B",
+                        "description": "NotAllowedForMedical"
+                      },
+                      {
+                        "code": "1C",
+                        "description": "NotAllowedForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "CH",
+                        "description": "ChargeableSeat"
+                      },
+                      {
+                        "code": "IE",
+                        "description": "SeatNotSuitableForChild"
+                      },
+                      {
+                        "code": "L",
+                        "description": "LegSpaceSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-2"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 15,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 16,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 17,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "OW",
+                        "description": "OverWingSeat(S)"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 18,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 19,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 20,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 21,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Q",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 22,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "DE",
+                        "description": "Deportee"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 23,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 24,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "DE",
+                        "description": "Deportee"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 25,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 26,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 27,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "F",
+                    "characteristics": [
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 28,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 29,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              },
+              {
+                "row": 30,
+                "seats": [
+                  {
+                    "column": "A",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "B",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "C",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1A",
+                        "description": "NotAllowedForInfants"
+                      },
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "LS",
+                        "description": "LeftSideOfAircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "D",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "A",
+                        "description": "AisleSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "E",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "9",
+                        "description": "CenterSeat"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  },
+                  {
+                    "column": "F",
+                    "occupationStatusCode": "Z",
+                    "characteristics": [
+                      {
+                        "code": "1D",
+                        "description": "RestrictedRecline"
+                      },
+                      {
+                        "code": "I",
+                        "description": "SeatSuitableForAdultWithInfant"
+                      },
+                      {
+                        "code": "RS",
+                        "description": "RightSideOf Aircraft"
+                      },
+                      {
+                        "code": "U",
+                        "description": "SeatSuitableForUnaccompaniedMinors"
+                      },
+                      {
+                        "code": "V",
+                        "description": "SeatToBeLeftVacant/OfferedLast"
+                      },
+                      {
+                        "code": "W",
+                        "description": "Window"
+                      },
+                      {
+                        "code": "1",
+                        "description": "RestrictedGeneral"
+                      },
+                      {
+                        "code": "LA",
+                        "description": "NoSeatLavatory"
+                      }
+                    ],
+                    "offerItemRefIds": [
+                      "ih6b6ccd76bdvsjhgmlkxo6qc0-1"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

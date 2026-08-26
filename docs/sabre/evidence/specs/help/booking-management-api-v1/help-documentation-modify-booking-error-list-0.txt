@@ -1,0 +1,1078 @@
+Modify Booking – Error List
+
+Error list
+
+The list below presents all possible errors returned by Modify Booking.
+
+Error type |
+Error category |
+Description |
+
+TIMEOUT
+ |
+APPLICATION_ERROR
+ |
+No response from service provider (service ActionCode).
+ |
+
+DOWNLINE_SERVICE_FAILURE
+ |
+APPLICATION_ERROR
+ |
+General problem with (service ActionCode) service.
+ |
+
+ATH_TOKEN_FAILURE
+ |
+APPLICATION_ERROR
+ |
+Unable to create ATH session token. Please retry the transaction.
+ |
+
+FAULT_RESPONSE
+ |
+APPLICATION_ERROR
+ |
+The underlying system cannot process request at this time.
+ |
+
+UNABLE_TO_END_TRANSACTION
+ |
+APPLICATION_ERROR
+ |
+General problem with EnhancedEndTransactionRQ service.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION
+ |
+APPLICATION_ERROR
+ |
+General problem with UpdateReservationRQ service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT
+ |
+APPLICATION_ERROR
+ |
+General problem with ContextChangeLLSRQ service.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+User is unauthorized to change context for the desired PCC.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE
+ |
+APPLICATION_ERROR
+ |
+System could not revert context.
+ |
+
+UNABLE_TO_CHANGE_CONTEXT_PLEASE_WAIT
+ |
+APPLICATION_ERROR
+ |
+System is still processing the transaction.
+ |
+
+HYBRID_CONTENT_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Modifications are not supported for hybrid bookings that include both traditional and NDC flights combined with CSL hotel content.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Incorrect request data provided.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Incorrect request data provided. Wrong combination of fields.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Request is missing mandatory data.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: recordId is required.
+ |
+
+INVALID_CHARACTERS_OR_WRONG_FORMAT
+ |
+BAD_REQUEST
+ |
+Verify request format. Special characters are not accepted.
+ |
+
+INVALID_USAGE
+ |
+BAD_REQUEST
+ |
+Validation failed: changeOfGaugeSeats cannot be used for an NDC flight. This functionality is currently not supported.
+ |
+
+TEXT_INPUT_TOO_LONG
+ |
+BAD_REQUEST
+ |
+The text is too long.
+ |
+
+INTERNAL_SERVER_ERROR
+ |
+INTERNAL_SERVER_ERROR
+ |
+Unexpected and unknown error.
+ |
+
+UNAUTHORIZED_ACCESS
+ |
+UNAUTHORIZED
+ |
+When invalid/expired ATK token is used.
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING
+ |
+WARNING
+ |
+Booking was modified successfully but could not be retrieved.
+ |
+
+NO_CHANGES_FOUND
+ |
+BAD_REQUEST
+ |
+The selected booking has not been modified. No changes were determined within the provided request.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: passengerCode is required.
+ |
+
+UNABLE_TO_RETRIEVE_BOOKING_SIGNATURE
+ |
+APPLICATION_ERROR
+ |
+A general problem with internal Get Booking call. Booking signature verification was not successful.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: travelers are required.
+ |
+
+BOOKING_NOT_CONFIRMED
+ |
+APPLICATION_ERROR
+ |
+The booking is not confirmed by the hotel vendor. Verify hotel status by the means of Get Booking method.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNATURE
+ |
+APPLICATION_ERROR
+ |
+Booking signature is different than specified in the request. Verify current booking status by the means of Get Booking method.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INDEX_OUT_BOUNDS
+ |
+BAD_REQUEST
+ |
+Verify travelers association with the hotel booking. At least one traveler index is out of travelers list bounds.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_CHILD_AGE_MISSING
+ |
+BAD_REQUEST
+ |
+It is mandatory to pass child/infant guest age when booking a hotel.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_DUPLICATE_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify travelers association with the hotel booking. Duplicate association is not permitted.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_WRONG_NUMBER_OF_GUESTS
+ |
+APPLICATION_ERROR
+ |
+The number of guests cannot be modified. Modification of the number of guests requires a new hotel booking key.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_NUMBER_OF_GUESTS_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+The number of guests cannot be modified. The specified value does not match the number of guests in provided hotel booking key.
+ |
+
+MODIFICATION_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The selected operation is not supported. Modification of traveler-related information is not allowed.
+ |
+
+OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported.
+ |
+
+OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+NDC ancillaries deletion cannot be combined with other updates.
+ |
+
+DELETE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Deletion of the identity documents [DOCO, DOCA, DOCS] is allowed by the means of ModifyBookingRequest.after.travelers.identityDocuments property.
+ |
+
+ADD_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Addition of the identity documents [DOCO, DOCA, DOCS] is allowed by the means of ModifyBookingRequest.after.travelers.identityDocuments property.
+ |
+
+ADD_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. The addition of identity documents for hotel guests is not permitted.
+ |
+
+ADD_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Adding name-associated remarks for hotel guests is not permitted.
+ |
+
+UPDATE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Update of the identity documents [DOCO, DOCA, DOCS] is allowed by the means of ModifyBookingRequest.after.travelers.identityDocuments property.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_NO_AVAILABILITY
+ |
+APPLICATION_ERROR
+ |
+The check-in and/or check-out date cannot be modified. There is no availability for the new date range.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_WRONG_DATE_RANGE
+ |
+APPLICATION_ERROR
+ |
+The check-in and/or check-out date cannot be modified. The new stay date range is outside of the original date range and requires a new hotel booking key.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_BOOKING_KEY
+ |
+APPLICATION_ERROR
+ |
+The hotel booking key cannot be decoded. Generate the new booking key by means of HotelPriceCheck API.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_WRONG_LEAD_TRAVELER_INDEX
+ |
+BAD_REQUEST
+ |
+Verify lead traveler association with the hotel booking. Specified traveler index is out of travelers list bounds.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_HOTEL_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+The hotel with a specified id could not be found. Check if the id value is correct.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_PAST_DATE
+ |
+BAD_REQUEST
+ |
+Check-in and/or check-out date cannot be a past date.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_GUEST_WITHOUT_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Verify travelers association with the hotel booking. Guests without hotel association are not permitted.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_MISSING_TRAVELER
+ |
+BAD_REQUEST
+ |
+Travelers stored in the booking cannot be deleted. Operation is not supported.
+ |
+
+UNABLE_TO_CONFIRM_MODIFICATION_STATUS
+ |
+WARNING
+ |
+Modification request was sent successfully but could not be confirmed. Verify current booking status by the means of Get Booking method (confirmationId: %id).
+ |
+
+UNABLE_TO_MODIFY_BOOKING_DATE_RANGE_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+Check-in and/or check-out date cannot be modified. The new stay date range does not match the date range in provided hotel booking key.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_DATE_COMBINATION
+ |
+BAD_REQUEST
+ |
+The combination of check-in and check-out date is invalid. The check-in date cannot be the same or later than check-out date.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_ANCILLARY_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Ancillaries may only be linked to travelers included in air content.
+ |
+
+HOTEL_LEAD_GUEST_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Required hotel lead guest data is missing. The lead guest name and surname are mandatory.
+ |
+
+HOTEL_SUPPLIER_ISSUE
+ |
+APPLICATION_ERROR
+ |
+Invalid response from hotel provider.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_ACCOMMODATION_NOT_CHANGED
+ |
+APPLICATION_ERROR
+ |
+The accommodation cannot be changed. Verify if provided booking key was generated for the correct hotel property.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TRAVELER_TYPE_MISMATCH
+ |
+BAD_REQUEST
+ |
+Verify travelers list. Change of the traveler type is not permitted.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_CONTENT_TYPE
+ |
+APPLICATION_ERROR
+ |
+CSL content was not found. The modification of the legacy hotel content is not supported.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_GUEST_TYPE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Modification of the hotel bookings containing child/infant guest details is currently not supported. The guest association should be limited to adult guests only.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_WRONG_FORM_OF_PAYMENT_INDEX
+ |
+BAD_REQUEST
+ |
+Verify form of payment association. Specified index is out of form of payment list bounds.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_FORM_OF_PAYMENT
+ |
+BAD_REQUEST
+ |
+The selected form of payment cannot be stored in the booking and can only be used as a payment reference.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_FORM_OF_PAYMENT_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The hotel property does not support selected form of payment.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_PAYMENT_TYPE_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+Modification with the selected form of payment is currently not supported.
+ |
+
+BOOKING_NOT_FOUND
+ |
+APPLICATION_ERROR
+ |
+Booking cannot be found. Verify the value of the booking reference ID.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TRAVELER_WITHOUT_GROUP
+ |
+BAD_REQUEST
+ |
+A traveler without group assignation is not allowed.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TOO_MANY_TRAVELERS
+ |
+APPLICATION_ERROR
+ |
+The number of travelers exceeds the maximum amount of the names specified for this group booking.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_EXTRA_TRAVELER
+ |
+BAD_REQUEST
+ |
+The number of travelers does not equal the number of booked space. Operation is not supported.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_NAME_CHANGE_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+The traveler’s name modification is restricted by the airline.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INFANT_EMAIL_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The email information cannot be associated with the infant passenger type.
+ |
+
+INVALID_NUMBER_OF_FLIGHTS
+ |
+BAD_REQUEST
+ |
+The number of specified flights does not match the number of flights currently stored in the booking. Please add missing flights and retry.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_WRONG_LOYALTY_DATA
+ |
+APPLICATION_ERROR
+ |
+Verify frequent flyer data. Traveler name and owner of frequent traveler number do not match.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_NO_LOYALTY_AGREEMENT
+ |
+APPLICATION_ERROR
+ |
+Unable to add loyalty information due to lack of frequent flyer agreement between airlines.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_LOYALTY_NOT_ACCEPTED
+ |
+APPLICATION_ERROR
+ |
+Frequent flyer number is not accepted by the airline.
+ |
+
+UNABLE_TO_UPDATE_RESERVATION_DUPLICATED_LOYALTY_DATA
+ |
+APPLICATION_ERROR
+ |
+Frequent flyer data for specified airline already exists in the booking.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INFANT_LOYALTY_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The loyalty information cannot be associated with the infant passenger type.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SSR_ASSIGNATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+A specific flight assignation for the special service request (SSR) is currently not supported.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TOO_MANY_INFANTS
+ |
+BAD_REQUEST
+ |
+There are too many infants specified in the request. Each infant traveler needs to be associated with an adult traveler.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_INVALID_CODE
+ |
+BAD_REQUEST
+ |
+Verify special service code. Provided code is not recognized.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_INFANT_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+Validation failed: specialServices cannot be combined with an infant not occupying a seat.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_CODE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+Verify special service code. Provided code is not supported by the airline.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_MISSING_MESSAGE
+ |
+BAD_REQUEST
+ |
+Special service message is required by the airline.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_MISSING_TRAVELER_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+The traveler association is missing. Provide required association with the traveler in a special service.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_INVALID_TRAVELER_ASSOCIATION
+ |
+BAD_REQUEST
+ |
+The specified traveler index is invalid. Verify special service association with the traveler.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_TRAVELER_ASSOCIATION_INVALID
+ |
+BAD_REQUEST
+ |
+Verify travelers association with the special services. At least one traveler index is invalid.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_FLIGHT_ASSOCIATION_REQUIRED
+ |
+BAD_REQUEST
+ |
+The specified special service request requires flight association. Use flights property to provide required information.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_FLIGHT_ASSOCIATION_INVALID
+ |
+BAD_REQUEST
+ |
+Verify flight association with the special services. At least one flight id is invalid.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_IDENTITY_DOCUMENT_FLIGHT_ASSOCIATION_INVALID
+ |
+BAD_REQUEST
+ |
+Verify flight association with the identity documents. At least one flight id is invalid.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TRAVELER_NAME_TOO_LONG
+ |
+BAD_REQUEST
+ |
+Verify traveler’s given name and surname. Sabre system accepts up to 61 or 60 characters for add and update operations respectively.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_TRAVELER_CHANGE
+ |
+BAD_REQUEST
+ |
+Travelers stored in the booking cannot be modified. Operation is not supported.
+ |
+
+PROGRAM_TYPE_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The selected loyalty program type is currently not supported.
+ |
+
+BIRTHDATE_MISMATCH
+ |
+BAD_REQUEST
+ |
+The date of birth does not match the information provided for the selected traveler. Correct the value to match the traveler’s date of birth.
+ |
+
+DOCUMENT_TYPE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected identity document type is currently not supported for the NDC bookings.
+ |
+
+MULTIPLE_DOCUMENTS_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+Only a single occurrence of the selected document type is allowed. Remove duplicate instances from the identityDocuments array.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires information about the issue date of the VISA document.
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+The airline requires information about the country where the VISA document is valid.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+The expiry date of the identity document cannot be in the past.
+ |
+
+RETENTION_DATE_MISSING
+ |
+BAD_REQUEST
+ |
+The date is required to create retention line in the booking.
+ |
+
+INVALID_RETENTION_DATE
+ |
+BAD_REQUEST
+ |
+The retention date cannot be in the past.
+ |
+
+INVALID_RETENTION_DATE_RANGE
+ |
+BAD_REQUEST
+ |
+The retention date exceeds the acceptable date range. Select the date no later than %s.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_HOTEL_ROOM_TYPE_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+Hotel booking cannot be modified. The room product code does not match the corresponding information in the provided hotel booking key.
+ |
+
+SEATS_DUPLICATE_ASSOCIATION
+ |
+APPLICATION_ERROR
+ |
+At least one of the selected seats is already assigned within a given flight.
+ |
+
+SEATS_DUPLICATE_ASSOCIATION
+ |
+APPLICATION_ERROR
+ |
+The requested seat: %s cannot be assigned multiple times. Verify seat details and retry.
+ |
+
+SEATS_DUPLICATE_ASSOCIATION
+ |
+APPLICATION_ERROR
+ |
+The requested seat cannot be assigned multiple times. Verify seat details and retry.
+ |
+
+SEATS_NOT_AVAILABLE
+ |
+APPLICATION_ERROR
+ |
+At least one of the selected seats is not allowed for booking. Choose different seat and retry.
+ |
+
+SEATS_ASSIGNMENT_INVALID
+ |
+BAD_REQUEST
+ |
+At least one of the selected seats does not have the appropriate association with the traveler. Verify traveler number and retry.
+ |
+
+SEAT_NOT_ALLOWED_FOR_BOOKING
+ |
+WARNING
+ |
+At least one of the selected seats is not allowed for booking. Seat selection was not processed successfully.
+ |
+
+INFANT_SPECIAL_SERVICE_MISSING
+ |
+WARNING
+ |
+Infant travelers require dedicated special service request information to be stored in the booking.
+ |
+
+SEATS_NUMBER_INVALID
+ |
+BAD_REQUEST
+ |
+At least one selected seat does not belong to the flight seat map. Verify seat number against seat offer and retry.
+ |
+
+SEATS_OFFER_EXPIRED
+ |
+APPLICATION_ERROR
+ |
+At least one selected seat offer is expired. Verify offer details and retry.
+ |
+
+SEATS_OFFER_ID_MISSING
+ |
+BAD_REQUEST
+ |
+At least one of the selected seats of the NDC flights does not have the required offer ID. Add seat offer ID and retry.
+ |
+
+SEATS_OFFER_INVALID
+ |
+APPLICATION_ERROR
+ |
+The requested seat offer is invalid. Verify offer details and retry.
+ |
+
+SEATS_OFFER_UNAVAILABLE
+ |
+APPLICATION_ERROR
+ |
+The requested seat offer is not available for the selected traveler. Verify offer details and retry.
+ |
+
+SEATS_UPDATE_NOT_SUPPORTED
+ |
+APPLICATION_ERROR
+ |
+The airline: %s does not support seat modification.
+ |
+
+SEATS_UPDATE_WITHOUT_TICKETING
+ |
+APPLICATION_ERROR
+ |
+The airline: %s does not allow for seat updates before ticketing. Issue tickets and retry.
+ |
+
+INVALID_VALUE
+ |
+BAD_REQUEST
+ |
+Provided card number is invalid. Payment card must meet \"^[0-9]{12,19}$\" pattern.
+ |
+
+UNABLE_TO_PROCESS_MODIFICATION
+ |
+APPLICATION_ERROR
+ |
+Supplier system rejected the modification. Please reach out to the supplier.
+ |
+
+INVALID_CARD_NUMBER
+ |
+APPLICATION_ERROR
+ |
+Payment card number is invalid. Verify and retry.
+ |
+
+INVALID_PAYMENT_CARD_NUMBER
+ |
+BAD_REQUEST
+ |
+One or more provided card numbers are invalid. Verify specified payment card details and retry.
+ |
+
+BOOKING_CONTENT_MISMATCH
+ |
+APPLICATION_ERROR
+ |
+A part of the booking has been modified (flight with ID %s cannot be matched), preventing the modification operation from being processed. Please verify the booking details and retry.
+ |
+
+AIRLINE_CODE_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The airline code parameter is not supported for NDC content.
+ |
+
+UPDATE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Modify Booking allows only addition of otherServices objects.
+ |
+
+DELETE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. Modify Booking allows only addition of otherServices objects.
+ |
+
+ADD_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. The addition of FORM_OF_PAYMENT name-associated remarks is not permitted.
+ |
+
+UPDATE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. The modification to FORM_OF_PAYMENT name-associated remarks is not permitted.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: The %s remark cannot be combined with: alphaCode.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: identityDocument %s cannot be combined with: passportType
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: identityDocument %s cannot be combined with: visaType
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: identityDocument %s requires: [%s]
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: The ALPHA_CODED remark requires: [text, alphaCode]
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: The %s remark requires: [text]
+ |
+
+DELETE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. FORM_OF_PAYMENT remarks are automatically managed through the ModifyBookingRequest.after.payments.formsOfPayment property.
+ |
+
+ADD_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. FORM_OF_PAYMENT remarks are automatically managed through the ModifyBookingRequest.after.payments.formsOfPayment property.
+ |
+
+UPDATE_OPERATION_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. FORM_OF_PAYMENT remarks are automatically managed through the ModifyBookingRequest.after.payments.formsOfPayment property.
+ |
+
+INVALID_TRAVELER_INDEX
+ |
+BAD_REQUEST
+ |
+The selected traveler index does not match any given traveler.
+ |
+
+UNABLE_TO_MODIFY_HYBRID_BOOKING
+ |
+BAD_REQUEST
+ |
+OSI remarks cannot be added for hybrid ATPCO + NDC bookings.
+ |
+
+SERVICE_MESSAGE_MISSING
+ |
+BAD_REQUEST
+ |
+Service message is empty or missing, verify and retry.
+ |
+
+AIRLINE_CODE_MISSING
+ |
+BAD_REQUEST
+ |
+Airline code is empty or missing, verify and retry.
+ |
+
+AIRCRAFT_CHANGE
+ |
+WARNING
+ |
+Seat selection has been partially completed. Change of gauge flights require seat selection for both the arriving and departing aircraft.
+ |
+
+ASSOCIATION_NOT_ALLOWED
+ |
+APPLICATION_ERROR
+ |
+The selected operation is not allowed. OtherServices objects can not be associated with infants.
+ |
+
+COUNTRY_CODE_INVALID
+ |
+APPLICATION_ERROR
+ |
+Provided citizenship country code is invalid. Verify offer details and retry.
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The UpdateReservationRQ service returned an error: %s
+ |
+
+DOWNLINE_SERVICE_ERROR
+ |
+APPLICATION_ERROR
+ |
+The orders/change service returned an error: %s
+ |
+
+PRICE_QUOTE_REISSUE_NOT_SUPPORTED
+ |
+BAD_REQUEST
+ |
+The selected operation is not supported. PQR modification is not allowed.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_RECORD_ID
+ |
+BAD_REQUEST
+ |
+At least one record ID is not valid. Verify and retry.
+ |
+
+UNABLE_TO_MODIFY_BOOKING_INVALID_RECORD_ID
+ |
+APPLICATION_ERROR
+ |
+The submitted record ID is not valid. Verify and retry.
+ |
+
+INVALID_REMARK_FORMAT
+ |
+BAD_REQUEST
+ |
+At least one of the specified remarks results in an invalid format. If QUEUE_PLACE remarks are provided, ensure their text follows the required format: (pseudo city code)(DDMMM)/(HHMM)(A|P)-(queue number)/(prefatory instruction number). Verify provided remarks and retry.
+ |
+
+UNABLE_TO_ADD_ANCILLARY_INFANT_NOT_ALLOWED
+ |
+BAD_REQUEST
+ |
+The selected operation is not allowed. Ancillaries can not be assigned to infants.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: NDC ancillary objects must include only 'offerId' and 'description'.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: ATPCO ancillary objects must not include 'offerId' and 'description'.
+ |
+
+INVALID_COMBINATION
+ |
+BAD_REQUEST
+ |
+Validation failed: vendorCode cannot be combined with: source
+ |
+
+MANDATORY_DATA_MISSING
+ |
+BAD_REQUEST
+ |
+Validation failed: [%s] is required.
+ |
+
+SPECIAL_SERVICE_CODE_MISSING
+ |
+BAD_REQUEST
+ |
+The required special service code of an ancillary is missing. Verify and retry.
+ |
+
+ |
+
+The variable %s contains information returned dynamically by the downline service.
+ |

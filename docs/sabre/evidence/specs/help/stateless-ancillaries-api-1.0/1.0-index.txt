@@ -1,0 +1,359 @@
+Overview
+
+ |
+
+If you are interested in using Digital Connect Stateless APIs, please reach out to your account manager.
+
+ |
+
+What is it?
+
+Stateless Ancillaries API is used to retrieve available ancillary offers by providing a PNR or by offerPayload or by providing passenger and segment information or by offerId. This API also has the ability to add an ancillary required by the airline to a PNR or remove an ancillary from a PNR as well.
+
+Why use it?
+
+Capabilities:
+
+Leveraging this stateless ancillaries service is accompanied by the following capabilities listed below.
+
+Shop for ancillaries: Ancillary offers can be retrieved either by providing the PNR in the request for all segments in the PNR or by providing passenger and segment data in the request or by providing offerId or offerPayload which includes segments, passengers, offers, selectedSegments, itinerary and itineraryParts. The passengers can choose the available ancillaries and the details exposed. Ancillary shop response returns ancillary offers, ancillary prices and available discounted offers based on the given passenger data.
+
+Add ancillaries: This stateless service is used to add available ancillaries offers to the PNR. The service also supports an option to override the amount of an ancillary. It is required to provide pnrLocator and offer.
+
+Remove ancillaries: This service allows a user to remove previously booked ancillary for a particular passenger for a flight segment. Multiple ancillaries if present in a PNR can be removed with a single request. It is required to provide airExtraIds and pnrLocator in order for the ancillary to be deleted from the PNR. airExtraIds are the ids for ancillaryService which can be retrieved by calling PNR display.
+
+How it works
+
+Shop for Ancillaries
+
+Stateless Ancillary Shop Service [endpoint: ancillaries/shop] provides a list of available ancillaries for one or multiple segments
+and passengers. Ancillary request should provide passenger/s details for associated segments.
+The service responds with the ancillary offers, prices and other relevant information. Discounts will be returned if applicable.
+
+The user creates a request providing information about the desired flight, including the fare basis information, booking class etc.
+Please visit the reference documentation section for details regarding the contract.
+
+Add Ancillaries
+
+Stateless Ancillary Add Service [endpoint: ancillaries/add] allows the user to book one or more ancillaries for passenger/s for a
+specific segment/itinerary, in addition the user may apply ancillary price override. Prior to adding the specified ancillary,
+the user may call the above service [ancillaries/shop] to obtain a list of available ancillaries with prices. Based on the ancillary service
+response the user may then call the service ancillaries/add to reserve the specific ancillary for the requested passengers that should be added to the reservation.
+
+The user provides information about the ancillary offers, quantity and its reference to the passenger and segment.
+
+Remove Ancillaries
+
+Stateless Ancillary Remove Service [endpoint: ancillaries/remove] allows the user to remove previously booked ancillary for a particular passenger for a flight segment.
+
+The user provides information about the airExtraId of an ancillary to be removed from the record.
+
+How to use
+
+Check end-to-end use cases in our Postman collection
+
+Download the postman collection with sample use case(s) of Digital Connect Stateless services. The collection contains details about setting up and performing operations using stateless services.
+
+Start with an authentication token
+
+You must provide a REST token to all endpoints within the API. To get more details on how to generate it, refer to REST API Token Credentials.
+
+More information is available at Authentication and Authorization under Setup and Guides.
+
+Ancillary Shop
+
+Shop for Ancillaries - Payload Mode
+
+The following request is an example of how you can request ancillaries for a specific flight. The response will contain the ancillary offers, prices and other relevant information per passenger with one or more segments.
+
+To receive a successful response the request should contain the below
+
+Add clientContext to specify the Point of Sale in which operation will be performed
+
+Add segments which includes the flight information
+
+Add passengers which has the passenger information
+
+{
+  "clientContext": {
+    "pseudoCityCode": "ABC",
+    "stationNumber": "31000104",
+    "accountingCity": "ABC"
+  },
+  "segments": [
+    {
+      "id": "SEG-1",
+      "departureDateTime": "2024-07-09T06:00:00",
+      "arrivalDateTime": "2024-07-09T09:25:00",
+      "departureAirportCode": "BOS",
+      "arrivalAirportCode": "SFO",
+      "operatingAirlineCode": "X0",
+      "bookingAirlineCode": "X0",
+      "isElectronicTicket": true,
+      "bookingFlightNumber": "133",
+      "brandCode": "AN",
+      "bookingClassCode": "Y",
+      "operatingFlightNumber": "133",
+      "operatingBookingClassCode": "Y",
+      "sequence": 1
+    }
+  ],
+  "passengers": [
+    {
+      "id": "PAX-1",
+      "nameNumber": "01.01",
+      "givenName": "TEST MR",
+      "surname": "SABRE",
+      "typeCode": "ADT"
+    }
+  ]
+}
+
+Shop for Ancillaries with Loyalty Points - Resource Mode
+
+This request allows the user to shop for ancillaries with prices in points. The response shows the value for each ancillary in points and in monetary value.
+
+To receive a successful response the request should contain the below
+
+Add clientContext to specify the Point of Sale in which operation will be performed
+
+Add isAwardPricing as true so the response shows the value for each ancillary in points and the amount
+
+Add segments which includes the flight information
+
+Add passengers which has the passenger information
+
+Add offers in case of resource mode
+
+Add itinerary and ItineraryParts to determine the segments that belong to each itinerary part
+
+{
+  "clientContext": {
+    "pseudoCityCode": "HDQ",
+    "dutyCode": "5"
+  },
+  "isAwardPricing": true,
+  "segments": [
+    {
+      "id": "SEG-1",
+      "departureDateTime": "2024-12-01T06:00:00",
+      "arrivalDateTime": "2024-12-01T09:26:00",
+      "departureAirportCode": "BOS",
+      "arrivalAirportCode": "SFO",
+      "operatingAirlineCode": "X0",
+      "bookingAirlineCode": "X0",
+      "isElectronicTicket": true,
+      "bookingFlightNumber": "0133",
+      "brandCode": "AN",
+      "bookingClassCode": "Y",
+      "operatingFlightNumber": "133",
+      "operatingBookingClassCode": "Y",
+      "isInboundConnection": false,
+      "isOutboundConnection": true,
+      "sequence": 1
+    }
+  ],
+  "passengers": [
+    {
+      "id": "PAX-1",
+      "nameNumber": "01.01",
+      "givenName": "SABRE MR",
+      "surname": "TEST",
+      "typeCode": "ADT"
+    }
+  ],
+  "offers": [
+    {
+      "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2",
+      "items": [
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-1",
+          "segmentReferenceIds": [
+            "SEG-1"
+          ],
+          "passengerReferenceIds": [
+            "PAX-1"
+          ],
+          "details": {
+            "type": "AirOfferItem"
+          }
+        }
+      ]
+    }
+  ],
+  "itinerary": {
+    "id": "I-1",
+    "itineraryPartReferenceIds": [
+      "IP-1"
+    ]
+  },
+  "itineraryParts": [
+    {
+      "id": "IP-1",
+      "segmentReferenceIds": [
+        "SEG-1"
+      ]
+    }
+  ]
+}
+
+Ancillary Add
+
+The following request is an example of how a user can add one or more ancillaries for passengers for a specific segment/itinerary.
+
+Ancillary Add - Adding ancillary using resource mode
+
+To receive a successful response the request should contain the below
+
+Add pnrLocator to which the ancillaries need to be added
+
+Add itinerary and itineraryParts to determine the segments that belong to each itinerary part
+
+Add segments which includes the flight information
+
+Add `passengers`which has the passenger information
+
+Add offers to add the specific ancillary offer to the booking
+
+Add ancillaries to determine the selected ancillaries from the ancillary shop response
+
+{
+  "pnrLocator": "SXZRGJ",
+  "itinerary": {
+    "id": "I-1",
+    "itineraryPartReferenceIds": [
+      "IP-1"
+    ]
+  },
+  "itineraryParts": [
+    {
+      "id": "IP-1",
+      "segmentReferenceIds": [
+        "SEG-1"
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "SEG-1",
+      "departureDateTime": "2024-06-20T06:00:00",
+      "arrivalDateTime": "2024-06-20T09:29:00",
+      "departureAirportCode": "BOS",
+      "arrivalAirportCode": "SFO",
+      "operatingAirlineCode": "X0",
+      "bookingAirlineCode": "X0",
+      "isElectronicTicket": true,
+      "bookingFlightNumber": "133",
+      "brandCode": "AN",
+      "bookingClassCode": "V",
+      "operatingFlightNumber": "1B33",
+      "operatingBookingClassCode": "V",
+      "sequence": 1
+    }
+  ],
+  "passengers": [
+    {
+      "id": "PAX-1",
+      "nameNumber": "01.01",
+      "givenName": "PP",
+      "surname": "TEST",
+      "typeCode": "ADT"
+    }
+  ],
+  "offers": [
+    {
+      "id": "42e083bb-e2ae-4a66-aa45-93860443371a",
+      "items": [
+        {
+          "id": "42e083bb-e2ae-4a66-aa45-93860443371a-2",
+          "segmentReferenceIds": [
+            "SEG-1"
+          ],
+          "passengerReferenceIds": [
+            "PAX-1"
+          ],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_2",
+            "quantity": 1,
+            "isAvailable": false,
+            "sectorPortionIndicator": "Sector"
+          },
+          "price": {
+            "unitPrices": [
+              {
+                "total": {
+                  "amount": {
+                    "amount": 50.00,
+                    "currencyCode": "USD"
+                  }
+                },
+                "totalBreakdown": {
+                  "base": {
+                    "amount": {
+                      "amount": 50.00,
+                      "currencyCode": "USD"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "ancillaries": [
+    {
+      "id": "ancillary_ancillary_2",
+      "groupCode": "99",
+      "groupName": "MISCELLANEOUS FEES",
+      "subCode": "GTS",
+      "reasonForIssuanceCode": "D",
+      "reasonForIssuance": "FinancialImpact",
+      "commercialName": "GDS TICKET SERVICE FEE",
+      "airlineCode": "X0",
+      "vendorCode": "MMGR",
+      "emdType": {
+        "code": "1",
+        "value": "Standalone",
+        "isConsumedAtIssuance": true
+      }
+    }
+  ]
+}
+
+Ancillary Remove
+
+The following request is an example of how the user can remove previously booked ancillary for a particular passenger for a flight segment.
+
+Remove single ancillary
+
+To receive a successful response the request should contain the below
+
+pnrLocator
+
+airExtraIds of the ancillary to be removed
+
+{
+  "pnrLocator": "SXZRGJ",
+  "airExtraIds": [
+    "11"
+  ]
+}
+
+Remove Multiple Ancillaries
+
+To receive a successful response the request should contain the below
+
+pnrLocator
+
+airExtraIds with the list ancillaries to be removed
+
+{
+  "pnrLocator": "SXZRGJ",
+  "airExtraIds": [
+    "11",
+    "13"
+  ]
+}

@@ -1,0 +1,4001 @@
+openapi: 3.0.2
+info:
+  title: Get Hotel Avail
+  description: The Get Hotel Avail API is designed to retrieve the lowest rates available for multiple properties, listed in different rate sources, in one call. Optional request parameters may be provided to sort and filter the rates returned in the response.
+  version: v5.0
+servers:
+  - url: https://{environment}.sabre.com
+    variables:
+      environment:
+        default: "api.cert.platform"
+        enum:
+          - "api.cert.platform" # Public Certification Server
+          - "api.platform" # Public Production Server
+
+security:
+  - oauth2_authentication: []
+
+paths:
+  /v5/get/hotelavail:
+    post:
+      description: Creates a request for the lowest rates available for multiple hotel properties.
+      operationId: getHotelAvail
+      summary: Lead rates from multiple properties.
+      parameters:
+        - name: Application-ID
+          in: header
+          description: The customer application ID. Recommended, but not mandatory. To generate a new application ID, contact your account manager.
+          schema:
+            type: string
+      requestBody:
+        description: Contains the parameters required to retrieve rates for indicated hotel properties or for properties located in a requested geographical area.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GetHotelAvailRequest"
+            examples:
+              1. Rates for Hotels in Geographical Location:
+                $ref: '#/components/examples/GetHotelAvailRequest'
+        required: true
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetHotelAvailResponse"
+              examples:
+                1. Rates for Hotels in Geographical Location:
+                  $ref: '#/components/examples/GetHotelAvailResponse'
+
+components:
+  examples:
+    GetHotelAvailRequest:
+      description: |
+        ##### Scenario
+        The *Rates for Hotels in Geographical Location* example represents the most common use case for the **Get Hotel Avail API**. We will send a request to receive rates for hotel properties that are located in a particular geographical area of the world.  
+        ##### Instruction
+        To get a successful response, we need to provide the properties listed below in `GetHotelAvailRQ`:
+        
+        | Property | Description |
+        | :--- | ---: |
+        | `POS` | Contains Point of Sale information used to support shopping in an authorized branch location. |
+        | `SearchCriteria` | Contains search parameters used to retrieve relevant hotel content via CSL. For a geographical location search, `GeoSearch` and `RateInfoRef` objects are mandatory to include in `SearchCriteria`. |
+        | `GeoSearch` | Contains details of a specific geographical location to use in the hotel search. In this example, we are providing a `GeoCode` object within `GeoSearch`. |
+        | `RateInfoRef` | Contains information used to define availability search parameters, such as the code of rate currency and the preferred stay period. |
+        
+        **Note:** Other request parameters are optional, and may be added to further refine search results.
+      value:
+        {
+          "GetHotelAvailRQ": {
+            "POS": {
+              "Source": {
+                "PseudoCityCode": "TM61"
+              }
+            },
+            "SearchCriteria": {
+              "OffSet": 1,
+              "SortBy": "NegotiatedRateAvailability",
+              "SortOrder": "ASC",
+              "PageSize": 40,
+              "GeoSearch": {
+                "GeoRef": {
+                  "Radius": 200,
+                  "UOM": "MI",
+                  "RestrictSearchToCountry": "US",
+                  "GeoCode": {
+                    "Latitude": 32.758,
+                    "Longitude": -97.08
+                  }
+                }
+              },
+              "RateInfoRef": {
+                "CurrencyCode": "USD",
+                "BestOnly": "4",
+                "StayDateTimeRange": {
+                  "StartDate": "2025-02-21",
+                  "EndDate": "2025-02-23"
+                },
+                "Rooms": {
+                  "Room": [
+                    {
+                      "Index": 1,
+                      "Adults": 1,
+                      "Children": 1,
+                      "ChildAges": "10"
+                    }
+                  ]
+                }
+              },
+              "HotelPref": {
+                "LenientHotelName": "inn and"
+              }
+            },
+            {
+              "TPAExtensions": {
+                "Elements": {
+                  "BrowserAgent": "Chrome"
+                }
+              }
+            }
+          }
+        }
+
+    GetHotelAvailResponse:
+      description: |
+        ##### Summary
+        For our example of a *Rates for Hotels in Geographical Location* request, the service returned matching hotel properties. The data we received consists of two major sections:
+
+        - `ApplicationResults` - Contains messages returned by the server, e.g. success, warning, and errors.
+        - `HotelAvailInfos` - Contains availability details for all retrieved hotel properties. This portion of the response includes six parameters:
+          - `OffSet` - The page number of the shopping response.
+          - `MaxSearchResults` - The total number of hotel properties that match the requested search criteria. If greater than `PageSize` in the request, the `ShopKey` from the response may be used to view all remaining properties.
+          - `ShopKey` - An encrypted key associated with the requested set of `SearchCriteria` that can be used to apply the same criteria in a new search for hotel properties.
+          - `SearchLatitude` - The latitude provided in the search criteria.
+          - `SearchLongitude` - The longitude provided in the search criteria.
+          - `HotelAvailInfo` - Lists details of hotels that match the requested search criteria.
+      
+        ##### Next Steps
+        The **Get Hotel Avail API** is the first step in the [CSL Workflow](https://developer.sabre.com/product-collection/content-services-for-lodging-csl/references).
+
+      value:
+        {
+          "GetHotelAvailRS": {
+            "ApplicationResults": {
+              "status": "Complete",
+              "Success": [
+                {
+                  "timeStamp": "2024-05-30T00:17:56.715-05:00"
+                }
+              ],
+              "Warning": [
+                {
+                  "type": "Application",
+                  "timeStamp": "2024-05-30T00:17:56.709-05:00",
+                  "SystemSpecificResults": [
+                    {
+                      "Message": [
+                        {
+                          "code": "WARN.0724",
+                          "value": "Vendor response error"
+                        },
+                        {
+                          "code": "WarningDetails",
+                          "value": "112 - No Results Available"
+                        },
+                        {
+                          "code": "WarningDetails",
+                          "value": "100-Invalid hotel code"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Application",
+                  "timeStamp": "2024-05-30T00:17:56.709-05:00",
+                  "SystemSpecificResults": [
+                    {
+                      "Message": [
+                        {
+                          "code": "WARN.0322",
+                          "value": "No availability"
+                        },
+                        {
+                          "code": "WarningDetails",
+                          "value": "100-Invalid property code"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Application",
+                  "timeStamp": "2024-05-30T00:17:56.709-05:00",
+                  "SystemSpecificResults": [
+                    {
+                      "Message": [
+                        {
+                          "code": "WARN.0123",
+                          "value": "Too many children"
+                        },
+                        {
+                          "code": "WarningDetails",
+                          "value": "100-Shopping for children not supported for requested rate source"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "HotelAvailInfos": {
+              "OffSet": 1,
+              "MaxSearchResults": 163,
+              "ShopKey": "lwsf8wzmk0",
+              "SearchLatitude": 32.758,
+              "SearchLongitude": -97.08,
+              "HotelAvailInfo": [
+                {
+                  "HotelInfo": {
+                    "HotelCode": "100074506",
+                    "CodeContext": "GLOBAL",
+                    "HotelName": "Baymont Inn And Suites Arlington - Near Six Flags",
+                    "ChainCode": "BU",
+                    "ChainName": "Baymont Inns And Suites by Wyndham",
+                    "BrandCode": "10000",
+                    "BrandName": "undefined",
+                    "Distance": 0.89,
+                    "Direction": "E",
+                    "UOM": "MI",
+                    "SabreRating": "2.5",
+                    "Ordinal": 1,
+                    "SabreHotelCode": "38964",
+                    "CanReturnRequestedNegotiatedRate": false,
+                    "LocationInfo": {
+                      "Latitude": "32.75341",
+                      "Longitude": "-97.06569",
+                      "Address": {
+                        "AddressLine1": "2401 Diplomacy Drive",
+                        "CityName": {
+                          "CityCode": "DFW",
+                          "value": "Arlington"
+                        },
+                        "StateProv": {
+                          "StateCode": "TX",
+                          "value": ""
+                        },
+                        "PostalCode": "76011",
+                        "CountryName": {
+                          "Code": "US",
+                          "value": "United States of America"
+                        }
+                      },
+                      "Contact": {
+                        "Phone": "1-817-6332434",
+                        "Fax": "1-817-6333500"
+                      }
+                    },
+                    "Amenities": {
+                      "Amenity": [
+                        {
+                          "Code": 101,
+                          "Description": "Wheelchair access",
+                          "value": ""
+                        },
+                        {
+                          "Code": 162,
+                          "Description": "Meal plan available",
+                          "value": "Y"
+                        },
+                        {
+                          "Code": 168,
+                          "Description": "Onsite laundry",
+                          "ComplimentaryInd": false,
+                          "value": "Coin Laundry"
+                        },
+                        {
+                          "Code": 198,
+                          "Description": "Non-smoking rooms (generic)",
+                          "value": ""
+                        },
+                        {
+                          "Code": 2002,
+                          "Description": "Stay Safe",
+                          "value": ""
+                        },
+                        {
+                          "Code": 2035,
+                          "Description": "Recreation Facilities",
+                          "value": ""
+                        },
+                        {
+                          "Code": 227,
+                          "Description": "Complimentary breakfast",
+                          "value": "CONTINENTAL"
+                        },
+                        {
+                          "Code": 228,
+                          "Description": "Business center",
+                          "value": ""
+                        },
+                        {
+                          "Code": 236,
+                          "Description": "Golf",
+                          "value": ""
+                        },
+                        {
+                          "Code": 259,
+                          "Description": "High speed internet access",
+                          "value": "WIRELESS"
+                        },
+                        {
+                          "Code": 260,
+                          "Description": "Interior corridors",
+                          "value": ""
+                        },
+                        {
+                          "Code": 269,
+                          "Description": "Meeting rooms",
+                          "value": ""
+                        },
+                        {
+                          "Code": 48,
+                          "Description": "Health club",
+                          "value": ""
+                        },
+                        {
+                          "Code": 66,
+                          "Description": "Outdoor pool",
+                          "value": ""
+                        },
+                        {
+                          "Code": 71,
+                          "Description": "Pool",
+                          "value": ""
+                        },
+                        {
+                          "Code": 68,
+                          "Description": "Parking",
+                          "value": "Y-COMPLIMENTARY"
+                        },
+                        {
+                          "Code": 42,
+                          "Description": "Free Parking",
+                          "value": ""
+                        }
+                      ]
+                    },
+                    "SecurityFeatures": {
+                      "SecurityFeature": [
+                        {
+                          "Code": 9,
+                          "Description": "Complies with Local/State/Federal fire laws",
+                          "value": "Y"
+                        }
+                      ]
+                    },
+                    "PropertyQualityInfo": {
+                      "PropertyQuality": [
+                        {
+                          "Code": 5,
+                          "Description": "Regular"
+                        }
+                      ]
+                    }
+                  },
+                  "HotelRateInfo": {
+                    "RateInfos": {
+                      "ConvertedRateInfo": [
+                        {
+                          "StartDate": "2025-02-21",
+                          "EndDate": "2025-02-23",
+                          "AmountBeforeTax": "110.50",
+                          "AmountAfterTax": "136.66",
+                          "AverageNightlyRate": "68.33",
+                          "AverageNightlyRateBeforeTax": "55.25",
+                          "HighestNightlyRate": "55.25",
+                          "ApproxTotalPrice": "136.66",
+                          "CurrencyCode": "USD",
+                          "AdditionalFeesInclusive": false,
+                          "TaxInclusive": true,
+                          "RateSource": "110",
+                          "RateKey": "ReY9ZtihvHSgURIP1cNjUCCUx+ax/rnRQ0ns+fkjH1qYz2DE8bfasTv9GyqynxyqvBp6+MAvo5WYnJUoHjOh79p7KjzErzjpfaUdBIIH8D4bQaij6mAN1yTvgO2tTg9BdmcYgfd5g1cZXLs03V0NbpHVB+B3aZ5ockm4OFbKu8E5HqWSAwHLt1MQIGxQJi3z7O/IJJKafyWyq97/l0hi/Q2Z8M1PQC0Q2YWEyPqpnFMczSZtK2SpooiLvwmDbJR4rMxDOC8ZyBerWZYUW8iP996eMM8DY/fPQ9Q5Rk1uzGpjhN7m5StzvukjAh/KWKYjbRyR5NKWtldjd8N3hO4PCf1K6fZPLNAdYmz6zeEasBthbwOlDeVzjq/eapwuub9sFbOfqq0a6rHXRHldk12x6PvVIFFNv430n+Jb4gniH8GXwwRs99z8IuOnfjoA/oOPkKfhRGA66wVwilnySfO0Bvpa0+fptUIcBZPrq+xLZETD/GSxZIJ5PBA3wxQIiGO0A/T04pZZzoY2JpMGTNg1syMXhOHEiktHX8cnxBsLY8YD3NXFUqeHA05bVcIJT1SwRbLZJqj8cRiTuAR+bfLNolJK5ylwnPK5AXTyN+Qe/VvZD8UveKMSZUnvUNFfxIOvSnvuY7KN3W6MDM4IrVC504NF4SL89Lnakj6VAOgkmSg6/n9bwYklGAXD6KSZbGUYN+1WiouLLKq7KM+MsmtYxmFrD4s2dPhiVdJGEWUUMju9Biia6sIc5955MFh4bGMClKNxYKiRau6jlv8MnNb9J2s66oztnRQdIXHsjvIGSFffPABhvPuGBwF3x5c/idGAZi1QTlRDygidTWxfVcBXMZOIxisXx2XLTcV2uyDBtQ6266RW6Sdv2raw+fil5z7U0rwF/Jht+01zt+LtG970RpCJ3j8+GNlKTOgdyVNgXb1eS9empoyFnYeY3dKozC6PyskG2IPMVR1mWoAEcB2i3dZzz47QrNLdYdM/ppoD8U6k9PKvlVcgJDDWmfGKGGLkC9KldVuQjMlieNsdwbymx1lZy3QgCUiT1H2+FOoxzthzRzLs6BcfqW9DHiAc96dxGKa2Tzb9RvT9RMSmSvyiyA==",
+                          "Commission": {
+                            "Amount": "0.93",
+                            "CurrencyCode": "USD",
+                            "Type": "Amount"
+                          }
+                        },
+                        {
+                          "StartDate": "2025-02-21",
+                          "EndDate": "2025-02-23",
+                          "AmountBeforeTax": "130.00",
+                          "AmountAfterTax": "130.00",
+                          "AverageNightlyRate": "65.00",
+                          "AverageNightlyRateBeforeTax": "65.00",
+                          "HighestNightlyRate": "65.00",
+                          "ApproxTotalPrice": "160.09",
+                          "CurrencyCode": "USD",
+                          "AdditionalFeesInclusive": false,
+                          "TaxInclusive": true,
+                          "RateSource": "113",
+                          "RateKey": "Aq5G+RC74EV3vVQF0MBOJ2tYWHpBY4t7HedVXmwY9iNK+JYbpf1YLxwxQU3Sekl5vhnA1Z/lhU6xvvfeU/X/Zo8pc0CMDDJuukPRPcb4jot0kX0rAt4GbcFvfhn9xLCmSSZFASckTA1mAgtraKTxj06XUd3bOQ3qKJy9b+rjSrKv/vUCRnsiiyeiXBU0zEpZjSQgbIBEv4rA+O6xGpPyF7+ZemUxeuXi2SD4WEP+J6c1MUjrDieGGoRFiMd+bePMYv8SYmO2qd5ztm5gi9gQ9gwpMC5Po1AzB/rv0mq0CDJlcnwzhfvD67Pe6jTzCvWm1ta+cQ3GILHgUa+In5LZUMumgFrnD+8cmTTXSaxekAH7WkUBQ2XaCoKvAB4UcHXmi6LxDFugCr9WDe/SFoQpXGgKkvf+U53C5R2TB2IO926u6dStdIithAVVQfQ/QrgvPqvG8GPD99mn0w5KEFj0gOUNCAzV0Y99AkK0PPPv7wtWHGZhHMqf6Dn62qSHsmoaFehjsuH7TkgjmQcIS4rbuN2Ms446U94jc/emPIBqOBk="
+                        }
+                      ]
+                    },
+                    "Rooms": {
+                      "Room": [
+                        {
+                          "RoomIndex": 1,
+                          "Adults": 1,
+                          "Children": 1,
+                          "BedTypeOptions": {
+                            "BedTypes": [
+                              {
+                                "BedType": [
+                                  {
+                                    "Code": 5,
+                                    "Description": "Queen"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          "RoomDescription": {
+                            "Name": "Room, 1 Queen Bed, Accessible, Non Smoking (Mobility,Hearing,Tub w/Grab Bars)",
+                            "Text": [
+                              "Room, 1 Queen Bed, Accessible, Non Smoking (Mobility,Hearing,Tub w/Grab Bars)"
+                            ]
+                          },
+                          "Amenities": {
+                            "Amenity": [
+                              {
+                                "Code": 74,
+                                "Description": "Non-smoking",
+                                "value": ""
+                              }
+                            ]
+                          },
+                          "RatePlans": {
+                            "RatePlan": [
+                              {
+                                "RatePlanName": "Room, 1 Queen Bed, Accessible, Non Smoking (Mobility,Hearing,Tub w/Grab Bars)",
+                                "RatePlanType": "13",
+                                "RatePlanTypeDescription": "Regular/rack",
+                                "PrepaidIndicator": true,
+                                "AvailableQuantity": 4,
+                                "RateSource": "110",
+                                "RateKey": "ReY9ZtihvHSgURIP1cNjUCCUx+ax/rnRQ0ns+fkjH1qYz2DE8bfasTv9GyqynxyqvBp6+MAvo5WYnJUoHjOh79p7KjzErzjpfaUdBIIH8D4bQaij6mAN1yTvgO2tTg9BdmcYgfd5g1cZXLs03V0NbpHVB+B3aZ5ockm4OFbKu8E5HqWSAwHLt1MQIGxQJi3z7O/IJJKafyWyq97/l0hi/Q2Z8M1PQC0Q2YWEyPqpnFMczSZtK2SpooiLvwmDbJR4rMxDOC8ZyBerWZYUW8iP996eMM8DY/fPQ9Q5Rk1uzGpjhN7m5StzvukjAh/KWKYjbRyR5NKWtldjd8N3hO4PCf1K6fZPLNAdYmz6zeEasBthbwOlDeVzjq/eapwuub9sFbOfqq0a6rHXRHldk12x6PvVIFFNv430n+Jb4gniH8GXwwRs99z8IuOnfjoA/oOPkKfhRGA66wVwilnySfO0Bvpa0+fptUIcBZPrq+xLZETD/GSxZIJ5PBA3wxQIiGO0A/T04pZZzoY2JpMGTNg1syMXhOHEiktHX8cnxBsLY8YD3NXFUqeHA05bVcIJT1SwRbLZJqj8cRiTuAR+bfLNolJK5ylwnPK5AXTyN+Qe/VvZD8UveKMSZUnvUNFfxIOvSnvuY7KN3W6MDM4IrVC504NF4SL89Lnakj6VAOgkmSg6/n9bwYklGAXD6KSZbGUYN+1WiouLLKq7KM+MsmtYxmFrD4s2dPhiVdJGEWUUMju9Biia6sIc5955MFh4bGMClKNxYKiRau6jlv8MnNb9J2s66oztnRQdIXHsjvIGSFffPABhvPuGBwF3x5c/idGAZi1QTlRDygidTWxfVcBXMZOIxisXx2XLTcV2uyDBtQ6266RW6Sdv2raw+fil5z7U0rwF/Jht+01zt+LtG970RpCJ3j8+GNlKTOgdyVNgXb1eS9empoyFnYeY3dKozC6PyskG2IPMVR1mWoAEcB2i3dZzz47QrNLdYdM/ppoD8U6k9PKvlVcgJDDWmfGKGGLkC9KldVuQjMlieNsdwbymx1lZy3QgCUiT1H2+FOoxzthzRzLs6BcfqW9DHiAc96dxGKa2Tzb9RvT9RMSmSvyiyA==",
+                                "LoyaltyPoints": false,
+                                "RatePlanDescription": {
+                                  "Text": [
+                                    "Room, 1 Queen Bed, Accessible, Non Smoking (Mobility,Hearing,Tub w/Grab Bars)"
+                                  ]
+                                },
+                                "RatePlanInclusions": {
+                                  "RatePlanInclusion": [
+                                    {
+                                      "Description": "Free parking",
+                                      "Code": 42
+                                    },
+                                    {
+                                      "Description": "Complimentary wireless internet",
+                                      "Code": 286
+                                    }
+                                  ]
+                                },
+                                "MealsIncluded": {
+                                  "Breakfast": true,
+                                  "Lunch": false,
+                                  "Dinner": false,
+                                  "MealPlanIndicator": true,
+                                  "MealPlanCode": 19,
+                                  "MealPlanDescription": "Breakfast"
+                                },
+                                "ConvertedRateInfo": {
+                                  "StartDate": "2025-02-21",
+                                  "EndDate": "2025-02-23",
+                                  "AmountBeforeTax": "110.50",
+                                  "AmountAfterTax": "136.66",
+                                  "AverageNightlyRate": "68.33",
+                                  "AverageNightlyRateBeforeTax": "55.25",
+                                  "HighestNightlyRate": "55.25",
+                                  "ApproxTotalPrice": "136.66",
+                                  "CurrencyCode": "USD",
+                                  "AdditionalFeesInclusive": false,
+                                  "TaxInclusive": true,
+                                  "Taxes": {
+                                    "Amount": "26.16",
+                                    "CurrencyCode": "USD",
+                                    "TaxGroups": {
+                                      "TaxGroup": [
+                                        {
+                                          "Code": 201,
+                                          "Description": "Tax Recovery Charges and Service Fees",
+                                          "Amount": "26.16",
+                                          "CurrencyCode": "USD",
+                                          "TaxDescription": {
+                                            "Text": [
+                                              "Tax Recovery Charges and Service Fees"
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "CancelPenalties": {
+                                    "CancelPenalty": [
+                                      {
+                                        "Refundable": false
+                                      }
+                                    ]
+                                  },
+                                  "Guarantee": {
+                                    "GuaranteeType": "DEP",
+                                    "GuaranteesAccepted": {
+                                      "GuaranteeAccepted": [
+                                        {
+                                          "GuaranteeTypeCode": 5,
+                                          "GuaranteeTypeDescription": "Credit card"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "RoomIndex": 1,
+                          "RoomType": "Guest room",
+                          "RoomTypeCode": 42,
+                          "Adults": 1,
+                          "Children": 1,
+                          "RoomDescription": {
+                            "Text": [
+                              "Queen Room with Bath Tub - Mobility/Hearing Accessible - Non-Smoking"
+                            ]
+                          },
+                          "RatePlans": {
+                            "RatePlan": [
+                              {
+                                "RatePlanName": "Queen Room with Bath Tub - Mobility/Hearing Accessible - Non-Smoking",
+                                "RatePlanType": "13",
+                                "RatePlanTypeDescription": "Regular/rack",
+                                "PrepaidIndicator": false,
+                                "AvailableQuantity": 4,
+                                "RateSource": "113",
+                                "RateKey": "Aq5G+RC74EV3vVQF0MBOJ2tYWHpBY4t7HedVXmwY9iNK+JYbpf1YLxwxQU3Sekl5vhnA1Z/lhU6xvvfeU/X/Zo8pc0CMDDJuukPRPcb4jot0kX0rAt4GbcFvfhn9xLCmSSZFASckTA1mAgtraKTxj06XUd3bOQ3qKJy9b+rjSrKv/vUCRnsiiyeiXBU0zEpZjSQgbIBEv4rA+O6xGpPyF7+ZemUxeuXi2SD4WEP+J6c1MUjrDieGGoRFiMd+bePMYv8SYmO2qd5ztm5gi9gQ9gwpMC5Po1AzB/rv0mq0CDJlcnwzhfvD67Pe6jTzCvWm1ta+cQ3GILHgUa+In5LZUMumgFrnD+8cmTTXSaxekAH7WkUBQ2XaCoKvAB4UcHXmi6LxDFugCr9WDe/SFoQpXGgKkvf+U53C5R2TB2IO926u6dStdIithAVVQfQ/QrgvPqvG8GPD99mn0w5KEFj0gOUNCAzV0Y99AkK0PPPv7wtWHGZhHMqf6Dn62qSHsmoaFehjsuH7TkgjmQcIS4rbuN2Ms446U94jc/emPIBqOBk=",
+                                "LoyaltyPoints": false,
+                                "RatePlanDescription": {
+                                  "Text": [
+                                    "Queen Room with Bath Tub - Mobility/Hearing Accessible - Non-Smoking"
+                                  ]
+                                },
+                                "ConvertedRateInfo": {
+                                  "StartDate": "2025-02-21",
+                                  "EndDate": "2025-02-23",
+                                  "AmountBeforeTax": "130.00",
+                                  "AmountAfterTax": "130.00",
+                                  "AverageNightlyRate": "65.00",
+                                  "AverageNightlyRateBeforeTax": "65.00",
+                                  "HighestNightlyRate": "65.00",
+                                  "ApproxTotalPrice": "160.09",
+                                  "CurrencyCode": "USD",
+                                  "AdditionalFeesInclusive": false,
+                                  "TaxInclusive": true,
+                                  "Fees": {
+                                    "Amount": "30.09",
+                                    "CurrencyCode": "USD",
+                                    "FeeGroups": {
+                                      "FeeGroup": [
+                                        {
+                                          "Code": 14,
+                                          "Description": "Service charge",
+                                          "Amount": "7.60",
+                                          "CurrencyCode": "USD",
+                                          "FeeDescription": {
+                                            "Text": [
+                                              "Service charge"
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "Code": 36,
+                                          "Description": "Value Added Tax (VAT)",
+                                          "Amount": "19.50",
+                                          "CurrencyCode": "USD",
+                                          "FeeDescription": {
+                                            "Text": [
+                                              "Tax"
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "Code": 3,
+                                          "Description": "City / Municipal Tax",
+                                          "Amount": "2.99",
+                                          "CurrencyCode": "USD",
+                                          "FeeDescription": {
+                                            "Text": [
+                                              "City tax"
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "CancelPenalties": {
+                                    "CancelPenalty": [
+                                      {
+                                        "Refundable": true
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "RateUnavailability": {
+                      "RateSource": [
+                        {
+                          "Source": "100",
+                          "Reason": "Hotel not found",
+                          "DisplayMessage": "Hotel permanently closed"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "HotelInfo": {
+                    "HotelCode": "100132500",
+                    "CodeContext": "GLOBAL",
+                    "HotelName": "Americas Best Value Inn And Suites Arlington/grand Prairie",
+                    "ChainCode": "BV",
+                    "ChainName": "AmericasBestValue",
+                    "BrandCode": "10000",
+                    "BrandName": "undefined",
+                    "Distance": 1.22,
+                    "Direction": "NE",
+                    "UOM": "MI",
+                    "SabreRating": "2.0",
+                    "Ordinal": 2,
+                    "SabreHotelCode": "7161",
+                    "CanReturnRequestedNegotiatedRate": false,
+                    "LocationInfo": {
+                      "Latitude": "32.767915",
+                      "Longitude": "-97.062527",
+                      "Address": {
+                        "AddressLine1": "1108 North Highway 360",
+                        "CityName": {
+                          "CityCode": "DFW",
+                          "value": "Grand Prairie"
+                        },
+                        "StateProv": {
+                          "StateCode": "TX",
+                          "value": ""
+                        },
+                        "PostalCode": "75050",
+                        "CountryName": {
+                          "Code": "US",
+                          "value": "United States of America"
+                        }
+                      },
+                      "Contact": {
+                        "Phone": "1-972-9750000",
+                        "Fax": "1-972-975 3033"
+                      }
+                    },
+                    "Amenities": {
+                      "Amenity": [
+                        {
+                          "Code": 168,
+                          "Description": "Onsite laundry",
+                          "ComplimentaryInd": false,
+                          "value": "Guest laundromat"
+                        },
+                        {
+                          "Code": 2002,
+                          "Description": "Stay Safe",
+                          "value": ""
+                        },
+                        {
+                          "Code": 2004,
+                          "Description": "Local Calls",
+                          "value": "Complimentary"
+                        },
+                        {
+                          "Code": 2016,
+                          "Description": "Rollaway adult",
+                          "value": ""
+                        },
+                        {
+                          "Code": 2017,
+                          "Description": "Crib charge",
+                          "value": ""
+                        },
+                        {
+                          "Code": 2018,
+                          "Description": "Extra person",
+                          "value": ""
+                        },
+                        {
+                          "Code": 227,
+                          "Description": "Complimentary breakfast",
+                          "value": ""
+                        },
+                        {
+                          "Code": 259,
+                          "Description": "High speed internet access",
+                          "value": ""
+                        },
+                        {
+                          "Code": 68,
+                          "Description": "Parking",
+                          "value": "Y-ON SITE"
+                        },
+                        {
+                          "Code": 42,
+                          "Description": "Free Parking",
+                          "value": ""
+                        }
+                      ]
+                    },
+                    "PropertyQualityInfo": {
+                      "PropertyQuality": [
+                        {
+                          "Code": 6,
+                          "Description": "Economy"
+                        }
+                      ]
+                    }
+                  },
+                  "HotelRateInfo": {
+                    "RateInfos": {
+                      "ConvertedRateInfo": [
+                        {
+                          "StartDate": "2025-02-21",
+                          "EndDate": "2025-02-23",
+                          "AmountBeforeTax": "124.65",
+                          "AmountAfterTax": "150.31",
+                          "AverageNightlyRate": "75.16",
+                          "AverageNightlyRateBeforeTax": "62.33",
+                          "HighestNightlyRate": "63.24",
+                          "ApproxTotalPrice": "150.31",
+                          "CurrencyCode": "USD",
+                          "AdditionalFeesInclusive": false,
+                          "TaxInclusive": true,
+                          "RateSource": "110",
+                          "RateKey": "ReY9ZtihvHSgURIP1cNjUAbnks0Yob5Jvwfxg57VqjbHR8vEpbXR3KIA8nabdhpgMRbNSw+AWzfQoMvnMY5qedrRRXyVcLDfjHuRVJxmgPp2Dk6OygVzeFytD4mTyYfpfI7A7J9UfP5DPqkupcjmVZN2cMYy6ZXUd8+Npr9Xc59Sb8qX/osCwFdKxTFajIWabHNaVIOsT/T/WrXB4OYma1ANwcm+tnmv+l9rlck1nsoMYLCGKxyc3R4eDXNrQkqXv5fNhcMdUZlKDg0JbOi95SyZSHgYA1+E3H0DBjXuMziNAcb+jg3yc6XthMMwN98BiXCJiU1OwmAshj7EDgrUtTxZ9Z9OYpv4EQ4SCwfPOgt9HnJ4DGeIaE4FgtgqneeE2F7HZi+jWFttSvvsxhG3+N+FAUTv6MTogOfELkEIvPSQYTuWtH+9fFQj9hHZXf/knI5gDCeSFWtDMusL2N968m7UmnYzug0sQkOG+JtoAK+7zzPUlcfq3Bncec8tFWWd08gotxO0iEHCoTvKIfcghTYQC2ECK4o2LWVavKIpeTqhBZSZoarN9B5y/2Z9Dd8jFZ9ucLsprnlvdQSVqz3Oa42kFiI3DBZoT7M8/NExC3S3Hcmc/gsqdNoE6UQa5gtg79Q8yWZmbQep0SWfT3euHIS18VBNMxf1lCmOVVirJoO+4tWmGbChxf7vMHpubsonTSjDmbDSVYvduSVQP9+0nYz4Vq48oukRs6+m+WRYJXWsOUTj6l3Rdlruvpg8JlVD1ZnKIPssVF45byb/ukKIKXcnoM55eswAFmcxvW+11HL1zV4Jb6B7Tm+bBoTrISw4lWjcHyz5DCZp2Ea9tNvVSQgpVX1/CfrZGD0Immi53/jjwJhiiSTfEKQWkJvX5D/hGoj7In+59yK2XwgZ8YgYe6teBw6LczVA5Va8z0SzQxnt2Bd9qU/eM20Arh0iF160S4rHbDWo1XlQeE/exFK7UuNSo8eDrqGqE2yIF4Jq0tEQz+Kb3rkaf8vWuUcjt7kCv04xr6jcl73uvGc1Z5tbKfl/nH/38cHJrhuLPqf27pC5Grb1I4uTYwR753cCtD0MEAFHwfmLH1wklsvyMB5ICQ==",
+                          "Commission": {
+                            "Amount": "1.07",
+                            "CurrencyCode": "USD",
+                            "Type": "Amount"
+                          }
+                        },
+                        {
+                          "StartDate": "2025-02-21",
+                          "EndDate": "2025-02-23",
+                          "AmountBeforeTax": "146.65",
+                          "AmountAfterTax": "146.65",
+                          "AverageNightlyRate": "73.32",
+                          "AverageNightlyRateBeforeTax": "73.33",
+                          "HighestNightlyRate": "73.33",
+                          "ApproxTotalPrice": "168.65",
+                          "CurrencyCode": "USD",
+                          "AdditionalFeesInclusive": false,
+                          "TaxInclusive": true,
+                          "RateSource": "113",
+                          "RateKey": "1WdeOslhgtn12F86kSumUgbG8LoyPZiWooEc4+JsiUB3ygBd2r7Md9CFjnX6SnIBbDtkQf6PT9XAoemoOfc7i801dj5bjRvzqv6pdzYSAZWRswMmXHAr4loXLCL5LHuexTtICiC/Pwi3gfA9BIeiPF3eHR4bLIptm1xJc2k+Sxvq9qn9B+olKdlhIsKNSvHQK6PQhn8Ievw1T2WwKaoTN8g726/Zz4qBEJG5SttzyzjLCAVnoLXkOJyz3ocolCe8myEN2PKpPWG75uoVt87NHzbTtCcIHYXUTTEKYnQ4zBz2LASgtsBN0PNYfVi5UDXGZQagvvcpoh7TrD1FEsEOqJ/L1mXHwIgBwH7hU+SEVD2pl21oWVKhxlLcgZOgVyTjBbSp3M6CRIAsBtxR0xAiVZDjDRFYSdPJaODEdFjnuNEc0GgT3xxXiQmBZUW4+o8U5v+pdLgjWyjbovep3p9BSuKe1CzUtEuAIIu/HBQYp/FCHw52UXV6YcrNdFFOVYLqLACS0p3WhyV7Wkgjhay1umN9omgZlKK2SSMofR9/GaY="
+                        },
+                        {
+                          "StartDate": "2025-02-21",
+                          "EndDate": "2025-02-23",
+                          "AmountBeforeTax": "162.49",
+                          "AmountAfterTax": "183.41",
+                          "AverageNightlyRate": "91.71",
+                          "AverageNightlyRateBeforeTax": "81.25",
+                          "HighestNightlyRate": "81.25",
+                          "ApproxTotalPrice": "183.41",
+                          "CurrencyCode": "USD",
+                          "TaxInclusive": true,
+                          "RateSource": "204",
+                          "RateKey": "kaPGE3+B3L+0M/WlW5EC1mdiCBeS1doiWNd/9i2LmaTKEQL+56CCnTK1bxxSt18W2QqFtKQOKGo64dBrVMdCQ4mBegwhtHpYvrbi4Ix6/TY2OWaDCgAt2BlVN3rvXW0TL84/VTnNd/V34DAdPxj5VfKXVMu+RVQCiMnSdAtk+wvCJNOWZuBM4qcTCO9rGaOHmKN8iu54n+BtBNssTIewcEugKzMPe/danW6c/197sJ6ikh4f6Yq0zckdKbHb6pJfOLpnjES+WsReFCVIO5dLeADtmzl/bijFBgbtAmt2fMzA8QRsdE3UgN/vVBpH//J75y6Gj/FtVolgrVz+EB1dA7wWeJ4CVv7wUxjOMutqOmbfymY5VJFhkUgBgPj6waP53SR5tettIRNGlN0Ft2lAR+whkMNLPOKTdQee2/5eT9UWX3ERrIzcYlmetU+n4yUwXidBa3PACj5JDAz9PWu8MmhE0JO/16kHdGXTsUe0Zbv1cQw5CTed2XFo3VIoWy4xCOhKg9LmqqSaqi2nxZeWixkC0t29pL+G4sCjDG5rOnY=",
+                          "Commission": {
+                            "Percent": 0,
+                            "Type": "None"
+                          }
+                        }
+                      ]
+                    },
+                    "Rooms": {
+                      "Room": [
+                        {
+                          "RoomIndex": 1,
+                          "Adults": 1,
+                          "Children": 1,
+                          "BedTypeOptions": {
+                            "BedTypes": [
+                              {
+                                "BedType": [
+                                  {
+                                    "Code": 1,
+                                    "Description": "Double"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          "RoomDescription": {
+                            "Name": "Room, 1 Double Bed, Accessible, Smoking",
+                            "Text": [
+                              "Room, 1 Double Bed, Accessible, Smoking"
+                            ]
+                          },
+                          "Amenities": {
+                            "Amenity": [
+                              {
+                                "Code": 101,
+                                "Description": "Smoking",
+                                "value": ""
+                              }
+                            ]
+                          },
+                          "RatePlans": {
+                            "RatePlan": [
+                              {
+                                "RatePlanName": "Room, 1 Double Bed, Accessible, Smoking",
+                                "RatePlanType": "13",
+                                "RatePlanTypeDescription": "Regular/rack",
+                                "PrepaidIndicator": true,
+                                "AvailableQuantity": 2,
+                                "RateSource": "110",
+                                "RateKey": "ReY9ZtihvHSgURIP1cNjUAbnks0Yob5Jvwfxg57VqjbHR8vEpbXR3KIA8nabdhpgMRbNSw+AWzfQoMvnMY5qedrRRXyVcLDfjHuRVJxmgPp2Dk6OygVzeFytD4mTyYfpfI7A7J9UfP5DPqkupcjmVZN2cMYy6ZXUd8+Npr9Xc59Sb8qX/osCwFdKxTFajIWabHNaVIOsT/T/WrXB4OYma1ANwcm+tnmv+l9rlck1nsoMYLCGKxyc3R4eDXNrQkqXv5fNhcMdUZlKDg0JbOi95SyZSHgYA1+E3H0DBjXuMziNAcb+jg3yc6XthMMwN98BiXCJiU1OwmAshj7EDgrUtTxZ9Z9OYpv4EQ4SCwfPOgt9HnJ4DGeIaE4FgtgqneeE2F7HZi+jWFttSvvsxhG3+N+FAUTv6MTogOfELkEIvPSQYTuWtH+9fFQj9hHZXf/knI5gDCeSFWtDMusL2N968m7UmnYzug0sQkOG+JtoAK+7zzPUlcfq3Bncec8tFWWd08gotxO0iEHCoTvKIfcghTYQC2ECK4o2LWVavKIpeTqhBZSZoarN9B5y/2Z9Dd8jFZ9ucLsprnlvdQSVqz3Oa42kFiI3DBZoT7M8/NExC3S3Hcmc/gsqdNoE6UQa5gtg79Q8yWZmbQep0SWfT3euHIS18VBNMxf1lCmOVVirJoO+4tWmGbChxf7vMHpubsonTSjDmbDSVYvduSVQP9+0nYz4Vq48oukRs6+m+WRYJXWsOUTj6l3Rdlruvpg8JlVD1ZnKIPssVF45byb/ukKIKXcnoM55eswAFmcxvW+11HL1zV4Jb6B7Tm+bBoTrISw4lWjcHyz5DCZp2Ea9tNvVSQgpVX1/CfrZGD0Immi53/jjwJhiiSTfEKQWkJvX5D/hGoj7In+59yK2XwgZ8YgYe6teBw6LczVA5Va8z0SzQxnt2Bd9qU/eM20Arh0iF160S4rHbDWo1XlQeE/exFK7UuNSo8eDrqGqE2yIF4Jq0tEQz+Kb3rkaf8vWuUcjt7kCv04xr6jcl73uvGc1Z5tbKfl/nH/38cHJrhuLPqf27pC5Grb1I4uTYwR753cCtD0MEAFHwfmLH1wklsvyMB5ICQ==",
+                                "LoyaltyPoints": false,
+                                "RatePlanDescription": {
+                                  "Text": [
+                                    "Room, 1 Double Bed, Accessible, Smoking"
+                                  ]
+                                },
+                                "RatePlanInclusions": {
+                                  "RatePlanInclusion": [
+                                    {
+                                      "Description": "Free parking",
+                                      "Code": 42
+                                    },
+                                    {
+                                      "Description": "Complimentary wireless internet",
+                                      "Code": 286
+                                    }
+                                  ]
+                                },
+                                "ConvertedRateInfo": {
+                                  "StartDate": "2025-02-21",
+                                  "EndDate": "2025-02-23",
+                                  "AmountBeforeTax": "124.65",
+                                  "AmountAfterTax": "150.31",
+                                  "AverageNightlyRate": "75.16",
+                                  "AverageNightlyRateBeforeTax": "62.33",
+                                  "HighestNightlyRate": "63.24",
+                                  "ApproxTotalPrice": "150.31",
+                                  "CurrencyCode": "USD",
+                                  "AdditionalFeesInclusive": false,
+                                  "TaxInclusive": true,
+                                  "Rates": {
+                                    "Rate": [
+                                      {
+                                        "StartDate": "2025-02-21",
+                                        "EndDate": "2025-02-22",
+                                        "AmountBeforeTax": "61.41",
+                                        "AmountAfterTax": "74.05",
+                                        "CurrencyCode": "USD"
+                                      },
+                                      {
+                                        "StartDate": "2025-02-22",
+                                        "EndDate": "2025-02-23",
+                                        "AmountBeforeTax": "63.24",
+                                        "AmountAfterTax": "76.26",
+                                        "CurrencyCode": "USD"
+                                      }
+                                    ]
+                                  },
+                                  "Taxes": {
+                                    "Amount": "25.66",
+                                    "CurrencyCode": "USD",
+                                    "Tax": [
+                                      {
+                                        "StartDate": "2025-02-21",
+                                        "EndDate": "2025-02-22",
+                                        "Amount": "12.64",
+                                        "CurrencyCode": "USD"
+                                      },
+                                      {
+                                        "StartDate": "2025-02-22",
+                                        "EndDate": "2025-02-23",
+                                        "Amount": "13.02",
+                                        "CurrencyCode": "USD"
+                                      }
+                                    ],
+                                    "TaxGroups": {
+                                      "TaxGroup": [
+                                        {
+                                          "Code": 201,
+                                          "Description": "Tax Recovery Charges and Service Fees",
+                                          "Amount": "25.66",
+                                          "CurrencyCode": "USD",
+                                          "TaxDescription": {
+                                            "Text": [
+                                              "Tax Recovery Charges and Service Fees"
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "CancelPenalties": {
+                                    "CancelPenalty": [
+                                      {
+                                        "Refundable": false
+                                      }
+                                    ]
+                                  },
+                                  "Guarantee": {
+                                    "GuaranteeType": "DEP",
+                                    "GuaranteesAccepted": {
+                                      "GuaranteeAccepted": [
+                                        {
+                                          "GuaranteeTypeCode": 5,
+                                          "GuaranteeTypeDescription": "Credit card"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "RoomIndex": 1,
+                          "RoomType": "Suite",
+                          "RoomTypeCode": 3,
+                          "Adults": 1,
+                          "Children": 1,
+                          "RoomDescription": {
+                            "Text": [
+                              "King Suite - Non-Smoking"
+                            ]
+                          },
+                          "RatePlans": {
+                            "RatePlan": [
+                              {
+                                "RatePlanName": "King Suite - Non-Smoking",
+                                "RatePlanType": "13",
+                                "RatePlanTypeDescription": "Regular/rack",
+                                "PrepaidIndicator": false,
+                                "AvailableQuantity": 5,
+                                "RateSource": "113",
+                                "RateKey": "1WdeOslhgtn12F86kSumUgbG8LoyPZiWooEc4+JsiUB3ygBd2r7Md9CFjnX6SnIBbDtkQf6PT9XAoemoOfc7i801dj5bjRvzqv6pdzYSAZWRswMmXHAr4loXLCL5LHuexTtICiC/Pwi3gfA9BIeiPF3eHR4bLIptm1xJc2k+Sxvq9qn9B+olKdlhIsKNSvHQK6PQhn8Ievw1T2WwKaoTN8g726/Zz4qBEJG5SttzyzjLCAVnoLXkOJyz3ocolCe8myEN2PKpPWG75uoVt87NHzbTtCcIHYXUTTEKYnQ4zBz2LASgtsBN0PNYfVi5UDXGZQagvvcpoh7TrD1FEsEOqJ/L1mXHwIgBwH7hU+SEVD2pl21oWVKhxlLcgZOgVyTjBbSp3M6CRIAsBtxR0xAiVZDjDRFYSdPJaODEdFjnuNEc0GgT3xxXiQmBZUW4+o8U5v+pdLgjWyjbovep3p9BSuKe1CzUtEuAIIu/HBQYp/FCHw52UXV6YcrNdFFOVYLqLACS0p3WhyV7Wkgjhay1umN9omgZlKK2SSMofR9/GaY=",
+                                "LoyaltyPoints": false,
+                                "RatePlanDescription": {
+                                  "Text": [
+                                    "King Suite - Non-Smoking"
+                                  ]
+                                },
+                                "ConvertedRateInfo": {
+                                  "StartDate": "2025-02-21",
+                                  "EndDate": "2025-02-23",
+                                  "AmountBeforeTax": "146.65",
+                                  "AmountAfterTax": "146.65",
+                                  "AverageNightlyRate": "73.32",
+                                  "AverageNightlyRateBeforeTax": "73.33",
+                                  "HighestNightlyRate": "73.33",
+                                  "ApproxTotalPrice": "168.65",
+                                  "CurrencyCode": "USD",
+                                  "AdditionalFeesInclusive": false,
+                                  "TaxInclusive": true,
+                                  "Fees": {
+                                    "Amount": "22.00",
+                                    "CurrencyCode": "USD",
+                                    "FeeGroups": {
+                                      "FeeGroup": [
+                                        {
+                                          "Code": 36,
+                                          "Description": "Value Added Tax (VAT)",
+                                          "Amount": "22.00",
+                                          "CurrencyCode": "USD",
+                                          "FeeDescription": {
+                                            "Text": [
+                                              "Tax"
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "CancelPenalties": {
+                                    "CancelPenalty": [
+                                      {
+                                        "Refundable": true
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "RoomIndex": 1,
+                          "NonSmoking": true,
+                          "Adults": 1,
+                          "Children": 1,
+                          "RoomDescription": {
+                            "Text": [
+                              "Standard Room, 1 King Bed, Non Smoking"
+                            ]
+                          },
+                          "Occupancy": {
+                            "Max": 2
+                          },
+                          "RatePlans": {
+                            "RatePlan": [
+                              {
+                                "RatePlanName": "Room, 1 Double Bed, Accessible, Smoking",
+                                "RatePlanType": "25",
+                                "RatePlanTypeDescription": "Net",
+                                "PrepaidIndicator": false,
+                                "RateSource": "204",
+                                "RateKey": "kaPGE3+B3L+0M/WlW5EC1mdiCBeS1doiWNd/9i2LmaTKEQL+56CCnTK1bxxSt18W2QqFtKQOKGo64dBrVMdCQ4mBegwhtHpYvrbi4Ix6/TY2OWaDCgAt2BlVN3rvXW0TL84/VTnNd/V34DAdPxj5VfKXVMu+RVQCiMnSdAtk+wvCJNOWZuBM4qcTCO9rGaOHmKN8iu54n+BtBNssTIewcEugKzMPe/danW6c/197sJ6ikh4f6Yq0zckdKbHb6pJfOLpnjES+WsReFCVIO5dLeADtmzl/bijFBgbtAmt2fMzA8QRsdE3UgN/vVBpH//J75y6Gj/FtVolgrVz+EB1dA7wWeJ4CVv7wUxjOMutqOmbfymY5VJFhkUgBgPj6waP53SR5tettIRNGlN0Ft2lAR+whkMNLPOKTdQee2/5eT9UWX3ERrIzcYlmetU+n4yUwXidBa3PACj5JDAz9PWu8MmhE0JO/16kHdGXTsUe0Zbv1cQw5CTed2XFo3VIoWy4xCOhKg9LmqqSaqi2nxZeWixkC0t29pL+G4sCjDG5rOnY=",
+                                "LoyaltyPoints": false,
+                                "RatePlanDescription": {
+                                  "Text": [
+                                    "Room, 1 Double Bed, Accessible, Smoking"
+                                  ]
+                                },
+                                "MealsIncluded": {
+                                  "MealPlanIndicator": false,
+                                  "MealPlanCode": 14,
+                                  "MealPlanDescription": "Room only"
+                                },
+                                "ConvertedRateInfo": {
+                                  "StartDate": "2025-02-21",
+                                  "EndDate": "2025-02-23",
+                                  "AmountBeforeTax": "162.49",
+                                  "AmountAfterTax": "183.41",
+                                  "AverageNightlyRate": "91.71",
+                                  "AverageNightlyRateBeforeTax": "81.25",
+                                  "HighestNightlyRate": "81.25",
+                                  "ApproxTotalPrice": "183.41",
+                                  "CurrencyCode": "USD",
+                                  "TaxInclusive": true,
+                                  "Taxes": {
+                                    "Amount": "20.92",
+                                    "CurrencyCode": "USD",
+                                    "Tax": [
+                                      {
+                                        "StartDate": "2025-02-21",
+                                        "EndDate": "2025-02-23",
+                                        "Amount": "20.92",
+                                        "CurrencyCode": "USD"
+                                      }
+                                    ],
+                                    "TaxGroups": {
+                                      "TaxGroup": [
+                                        {
+                                          "Code": 17,
+                                          "Description": "Total tax",
+                                          "Amount": "20.92",
+                                          "CurrencyCode": "USD",
+                                          "TaxDescription": {
+                                            "Text": [
+                                              "Tax"
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "CancelPenalties": {
+                                    "CancelPenalty": [
+                                      {
+                                        "Refundable": false,
+                                        "PenaltyDescription": {
+                                          "Text": [
+                                            "This rate is non-refundable."
+                                          ]
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "RateUnavailability": {
+                      "RateSource": [
+                        {
+                          "Source": "100",
+                          "Reason": "Hotel not found",
+                          "DisplayMessage": "Hotel permanently closed"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "TPAExtensions": {
+                "Elements": {
+                  "PropertyDisplayOptimizerFirstCall": "property display call details",
+                  "ViewManagerInfo": {
+                    "isViewManagerRuleApplied": false
+                  },
+                  "SponsoredListings": {
+                    "SponsoredListing": {
+                      "SabrePropertyId": "310660",
+                      "GlobalPropertyId": "100266286",
+                      "ImpressionURL": "impression url",
+                      "AttributionReference": "attribute ref"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+  schemas:
+    GetHotelAvailRequest:
+      required:
+        - GetHotelAvailRQ
+      type: object
+      description: Contains the parameters required to build a request.
+      properties:
+        GetHotelAvailRQ:
+          required:
+            - SearchCriteria
+          type: object
+          description: Contains the parent object of a request.
+          properties:
+            POS:
+              $ref: "#/components/schemas/POS"
+            CorporateNumber:
+              $ref: "#/components/schemas/CorporateNumber"
+            SearchCriteria:
+              $ref: "#/components/schemas/SearchCriteriaAvail"
+            TPAExtensions:
+              $ref: "#/components/schemas/TPAExtensions"
+
+    GetHotelAvailResponse:
+      type: object
+      description: Contains the parameters provided in the response.
+      properties:
+        GetHotelAvailRS:
+          type: object
+          description: Contains static content, rates, and images returned for the requested hotel properties. Static and media content is displayed in the response only if specifically requested.
+          properties:
+            ApplicationResults:
+              description: Contains the parent object used to return request processing details, including errors, warnings, and timestamps.
+              $ref: "#/components/schemas/ApplicationResults"
+            HotelAvailInfos:
+              description: Contains availability details for all found hotel properties. Not populated if any validation errors occurred.
+              $ref: "#/components/schemas/HotelAvailInfos"
+            TPAExtensions:
+              $ref: "#/components/schemas/TPAExtensions"
+
+    POS:
+      description: Contains Point of Sale information used to support shopping in an authorized branch location (AAA Access to the PCC) while remaining logged in to the home branch or IPCC. When making a call with a session-based token (ATH), you can also obtain AAA Access to the PCC by using the Change AAA API (ChangeContextLLSRQ) instead of the `POS` element.
+      required:
+        - Source
+      type: object
+      properties:
+        Source:
+          description: Contains the pseudo city code.
+          $ref: "#/components/schemas/Source"
+
+    Source:
+      description: Contains the PCC of an authorized branch shop location. If this PCC does not allow access from the PCC you are logged in to, the request will fail.
+      required:
+        - PseudoCityCode
+      type: object
+      properties:
+        PseudoCityCode:
+          pattern: "^[a-zA-Z0-9]{4}$"
+          type: string
+          description: The unique four-character pseudo city code (PCC) that identifies the authorized branch location.
+          example: "TM61"
+
+    CorporateNumber:
+      description: The corporate number of the agency for whom the shopping request in CSL is made. Useful for corporate-level functionalities, such as preferencing and credentials.
+      type: string
+      minLength: 1
+      example: "DK44391RC"
+
+    SearchCriteriaAvail:
+      description: Contains the search parameters used to retrieve relevant hotel content via CSL.
+      type: object
+      properties:
+        OffSet:
+          minimum: 1
+          default: 1
+          type: integer
+          description: The requested page number to be returned in the shopping response.
+          example: 1
+        SortBy:
+          default: NegotiatedRateAvailability
+          type: string
+          description: The sorting preference for results returned in the response. Can be `NegotiatedRateAvailability`, `DistanceFrom`, `SabreRating`, `AverageNightlyRate`, or `AverageNightlyRateBeforeTax`.
+
+        SortOrder:
+          type: string
+          description: Identifies whether the returned rates should be sorted in ascending or descending order. Assumes a default value depending on `SortBy`. Can be `ASC` for `SortBy` set to `DistanceFrom`, `AverageNightlyRate`, and `AverageNightlyRateBeforeTax`, or `DESC` for `SortBy` set to `SabreRating`. If `SortBy` equals `NegotiatedRateAvailability`, this parameter is ignored.
+          example: ASC
+          enum:
+            - ASC
+            - DESC
+
+        PageSize:
+          maximum: 200
+          minimum: 1
+          type: integer
+          description: The number of hotel properties displayed per page. If greater than `40`, retrieves live aggregator rates for all properties, live Sabre GDS rates for 40 properties, and cached rates for the remaining properties.
+          example: 50
+          default: 200
+        ShopKey:
+          maxLength: 240
+          minLength: 0
+          type: string
+          description: An encrypted key associated with a previously requested set of `SearchCriteria` that can be used to apply the same criteria for a new group of hotel properties. When used, only the `Offset` parameter is taken into consideration, and all other request parameters are ignored.
+          example: "48ff454e-b83d-4c4f-aeb9-1bc9f3df8794"
+
+        TierLabels:
+          type: boolean
+          description: If `true`, includes the tier label `value` for all preferenced properties in the response.
+          example: false
+          default: true
+
+        RateDetailsInd:
+          type: boolean
+          description: If `true`, does not display any hotel properties without rate details in the response.
+          example: false
+          default: true
+      oneOf:
+        - $ref: "#/components/schemas/SearchByGeoSearch"
+        - $ref: "#/components/schemas/SearchByHotelRefs"
+
+    TPAExtensions:
+      type: object
+      description: Schema-safe container for custom, partner-specific fields that extend a standard API message without changing core elements.
+      additionalProperties: true
+
+    SearchByGeoSearch:
+      type: object
+      description: Contains details of a geographical location to use in the hotel search. Mutually exclusive with `SearchByHotelRefs`.
+      required:
+        - GeoSearch
+        - RateInfoRef
+      properties:
+        GeoSearch:
+          description: Contains details of a specific geographical location.
+          $ref: "#/components/schemas/GeoSearch"
+        RateInfoRef:
+          description: Contains information used to define the availability search parameters.
+          $ref: "#/components/schemas/RateInfoRef"
+        HotelPref:
+          description: Contains information used to refine the search results.
+          $ref: "#/components/schemas/HotelPref"
+        ImageRef:
+          description: Contains information used to retrieve a hero image for each property.
+          $ref: "#/components/schemas/ImageRef"
+
+    SearchByHotelRefs:
+      type: object
+      description: Contains details of particular hotel properties to use in the search. Mutually exclusive with `SearchByGeoSearch`.
+      required:
+        - HotelRefs
+        - RateInfoRef
+      properties:
+        HotelRefs:
+          description: Contains specific hotel codes to search for.
+          $ref: "#/components/schemas/HotelRefs"
+        RateInfoRef:
+          description: Contains information used to define the availability search parameters.
+          $ref: "#/components/schemas/RateInfoRef"
+        HotelPref:
+          description: Contains information used to refine the search results.
+          $ref: "#/components/schemas/HotelPref"
+        ImageRef:
+          description: Contains information used to retrieve a hero image for each property.
+          $ref: "#/components/schemas/ImageRef"
+    GeoSearch:
+      required:
+        - GeoRef
+      type: object
+      description: Contains geographical details of a location to use in the hotel property search.
+      properties:
+        GeoRef:
+          description: Contains geographic information to search properties by.
+          $ref: "#/components/schemas/GeoRef"
+        GeoAttributes:
+          description: Contains information about specific properties to filter.
+          $ref: "#/components/schemas/GeoAttributes"
+
+    GeoRef:
+      required:
+        - Radius
+        - UOM
+      type: object
+      description: Contains geographical parameters to search hotel properties by.
+      properties:
+        Radius:
+          type: number
+          description: The radius in which hotels are to be located. The radius is calculated from one of the points indicated under `SearchByGeoCode`, `SearchByRefPoint`, or `SearchByAddressRef`.
+          example: 200.0
+        UOM:
+          type: string
+          description: Identifies the unit of measurement applied for the `Radius` value. The maximum search distance can be either 200 mi or 320 km.
+          example: "MI"
+          enum:
+            - KM
+            - MI
+        RestrictSearchToCountry:
+          type: string
+          example: "US"
+          description: The code of a country to retrieve hotels for. Since geographical searches are based on the provided radius, some requests may return hotel properties located across boundaries of different countries.
+      oneOf:
+        - $ref: "#/components/schemas/SearchByGeoCode"
+        - $ref: "#/components/schemas/SearchByRefPoint"
+        - $ref: "#/components/schemas/SearchByAddressRef"
+
+    SearchByGeoCode:
+      required:
+        - GeoCode
+      type: object
+      description: Contains the latitude and longitude coordinates of a location to search by. Mutually exclusive with `SearchByRefPoint` and `SearchByAddressRef`.
+      properties:
+        GeoCode:
+          type: object
+          description: Contains the latitude and longitude coordinates of a search location.
+          required:
+            - Latitude
+            - Longitude
+          properties:
+            Latitude:
+              maximum: 90
+              minimum: -90
+              type: number
+              description: A geographic coordinate specifying the north-south position of a point on the Earth, used as search criteria for the hotel location.
+              example: 32.758
+            Longitude:
+              maximum: 180
+              minimum: -180
+              type: number
+              description: A geographic coordinate specifying the east-west position of a point on the Earth, used as search criteria for the hotel location.
+              example: -97.08
+
+    SearchByRefPoint:
+      description: Contains the location of a reference point to search by. Mutually exclusive with `SearchByGeoCode` and `SearchByAddressRef`.
+      required:
+        - RefPoint
+      properties:
+        RefPoint:
+          required:
+            - RefPointType
+            - Value
+            - ValueContext
+          type: object
+          description: Contains details of a reference point to search by.
+          properties:
+            Value:
+              maxLength: 50
+              minLength: 3
+              type: string
+              description: The value of the reference point.
+              example: "DFW"
+            ValueContext:
+              type: string
+              description: Identifies the type of information entered into `Value`.
+              example: "CODE"
+              enum:
+                - NAME
+                - CODE
+            RefPointType:
+              type: string
+              description: Identifies the OTA code of the reference point type. Can be `6` (IATA Airport Code), `7` (Rail Station), `11` (Global Property ID), `16` (Point of Interest), or `37` (Polygon ID).
+              example: "6"
+              enum:
+                - "6"
+                - "7"
+                - "11"
+                - "16"
+                - "37"
+            StateProv:
+              maxLength: 50
+              minLength: 2
+              type: string
+              description: The state or province of the reference point.
+              example: "TX"
+            CountryCode:
+              maxLength: 50
+              minLength: 2
+              type: string
+              description: The country code of the reference point.
+              example: "US"
+
+    SearchByAddressRef:
+      description: Contains the address of a location to search by. Mutually exclusive with `SearchByGeoCode` and `SearchByRefPoint`.
+      required:
+        - AddressRef
+      properties:
+        AddressRef:
+          required:
+            - CountryCode
+          type: object
+          description: Contains an address to search by.
+          properties:
+            Street:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The street name of the address.
+              example: "Hidden Ridge"
+            City:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The city name of the address.
+              example: "Irving"
+            County:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The county name of the address.
+              example: "Dallas County"
+            PostalCode:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The postal code of the address.
+              example: "75038"
+            StateProv:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The state or province of the address.
+              example: "TX"
+            CountryCode:
+              maxLength: 50
+              minLength: 0
+              type: string
+              description: The country code of the address.
+              example: "US"
+
+    GeoAttributes:
+      type: object
+      properties:
+        Attributes:
+          description: Lists filters to apply to the search results.
+          maxItems: 10
+          type: array
+          items:
+            required:
+              - Name
+              - Value
+            type: object
+            description: Contains the definition of a geographical rate filter.
+            properties:
+              Name:
+                type: string
+                description: The type of rate filter. Can be `LOCALAREA` (applied only if `RefPointType` is set to `37` - polygon ID) or `CHAIN`. All other values are ignored.
+                example: "LOCALAREA"
+              Value:
+                type: string
+                description: The value of the filter. If used with `Name` set to `LOCALAREA`, indicates the polygon name to include in the search results. If used with `CHAIN`, defines the chain code to filter the results by. Using with `CHAIN` does not return any master or affiliate chain codes linked to the requested chain code. It is recommended to apply a filter by using `ChainCodes` under the `HotelPref` object instead.
+                example: "KRAKOW AREA"
+
+      description: Contains filters used to refine the search results. The filters are applied if `RefPointType` is set to `37` (Polygon Search).
+
+    HotelRefs:
+      required:
+        - HotelRef
+      type: object
+      description: Contains hotel information to search by.
+
+      properties:
+        HotelRef:
+          description: Lists hotel property codes. Regardless of the hotel codes and code contexts in the request, the response always contains a global hotel code, and may also contain a Sabre hotel code if available.
+          $ref: "#/components/schemas/HotelRef"
+
+    HotelRef:
+      maxItems: 200
+      type: array
+      description: Lists hotel property codes. Regardless of the hotel codes and code contexts in the request, the response always contains a global hotel code, and may also contain a Sabre hotel code if available.
+      items:
+        required:
+          - HotelCode
+        type: object
+        description: Contains a hotel property code.
+        properties:
+          HotelCode:
+            maxLength: 20
+            minLength: 1
+            type: string
+            description: The hotel property identification code. Can be a global or a Sabre hotel code; the type is identified by the value provided under `CodeContext`.
+            example: "100072188"
+          CodeContext:
+            type: string
+            description: Identifies the type of code passed under `HotelCode`.
+            example: "GLOBAL"
+            default: SABRE
+            enum:
+              - SABRE
+              - GLOBAL
+
+    RateInfoRef:
+      required:
+        - BestOnly
+        - CurrencyCode
+        - Rooms
+        - StayDateTimeRange
+      type: object
+      description: Contains availability search criteria. Optional if `ShopKey` and `OffSet` are provided in the request and can be used to fetch a new set of rates by applying the search criteria from a previous call.
+      properties:
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code. Used to compare rates from different sources to find and return the lowest rate.
+          example: "USD"
+        BestOnly:
+          type: string
+          description: Defines whether the lowest rate across all sources or the lowest rate for each source is returned. Can be `1` (lowest rate across all available sources), `2` (lowest rate for each source), `3` (lowest rate for each source, along with the lowest negotiated/contractual rate across all sources), or `4` (lowest public rate and lowest negotiated/contractual rate if available; for GDS rates, also populates the `RateRanges` object in the response to indicate the highest rate returned from the hotel supplier).
+          pattern: "^([1-9][0-9]?)$"
+          example: "1"
+        PrepaidQualifier:
+          type: string
+          description: Identifies whether the response should include only prepaid rates, only postpaid rates, or both. Can be `IncludePrepaid` (default; returns prepaid and postpaid rates), `ExcludePrepaid` (returns only postpaid rates), or `PrepaidOnly` (returns only prepaid rates). All rates with `RateSource` equal `112` are treated as prepaid.
+          example: "IncludePrepaid"
+          default: IncludePrepaid
+          enum:
+            - IncludePrepaid
+            - PrepaidOnly
+            - ExcludePrepaid
+        RefundableOnly:
+          type: boolean
+          description: If `false`, returns both refundable and non-refundable rates in the response. If `true`, returns only refundable rates. Applies to the `Refundable` parameter within the `CancelPenalties` object in the response, which is set to `true` if a rate is either fully or partially refundable.
+          example: true
+          default: false
+        ConvertedRateInfoOnly:
+          type: boolean
+          description: If `true`, returns rates only under `ConvertedRateInfo` in the response. If `false`, returns rates under both `RateInfo` and `ConvertedRateInfo`.
+          example: true
+          default: true
+        TravellerCountry:
+          pattern: "^([a-zA-Z]{2})"
+          type: string
+          description: The country of the traveler. Passed to suppliers to receive country-specific rates in the response (if available). Country-specific rates are currently not retrievable via the Sabre GDS and are supported by aggregators.
+          example: "IN"
+        StayDateTimeRange:
+          description: Contains the check-in date and time for hotel availability search.
+          $ref: "#/components/schemas/StayDateTimeRange"
+        RateRange:
+          description: Contains the minimum and maximum nightly rates in the requested currency.
+          $ref: "#/components/schemas/RateRange"
+        RateFilters:
+          description: Contains filters used to exclude unwanted rates from the response.
+          $ref: "#/components/schemas/RateFilters"
+        Rooms:
+          description: Contains room configuration details for availability search.
+          $ref: "#/components/schemas/Rooms"
+        RatePlanCandidates:
+          description: Contains details of preferred negotiated or contractual rates.
+          $ref: "#/components/schemas/RatePlanCandidates"
+        LoyaltyIds:
+          description: Contains the traveler's loyalty program details used to retrieve loyalty rates from hotel suppliers.
+          $ref: "#/components/schemas/LoyaltyIds"
+        FrequentFlyerNumber:
+          type: string
+          description: The frequent traveler number.
+          example: "AQ1234"
+        CorpDiscount:
+          pattern: "^[0-9a-zA-Z]{1,20}$"
+          type: string
+          description: The traveler's corporate discount code.
+          example: "9876"
+        RateSource:
+          type: string
+          description: The sources to check for rates, provided as a comma-separated string. If not specified, all allowed rate sources are used to fetch rates.
+          example: "100,112,110,113"
+
+    StayDateTimeRange:
+      required:
+        - EndDate
+        - StartDate
+      type: object
+      description: Contains details of the preferred stay period. Allows for shopping across multiple days or for the same day.
+      properties:
+        StartDate:
+          type: string
+          description: The check-in date in `YYYY-MM-DD` format. Can be set for a maximum of 330 days in the future, but this may vary for certain rate sources. Some aggregators may support less than 330 days in the future.
+          format: date
+          example: "2024-02-20"
+        EndDate:
+          type: string
+          description: The checkout date in `YYYY-MM-DD` format. Can be set for a maximum of 220 days from the `StartDate`, but this may vary for certain rate sources. Some aggregators may support less than 220 days from the `StartDate`.
+          format: date
+          example: "2024-02-23"
+
+    RateRange:
+      type: object
+      description: Contains information used to filter rates that exceed the minimum or maximum limit of the `AverageNightlyRateBeforeTax` amount specified in the request. When using `RateRange`, it is mandatory to also include the `CurrencyCode` in the request. If the rates returned from suppliers are not provided in the requested currency, the rates are converted into the requested currency first, and then `RateRange` filters are applied.
+      properties:
+        Min:
+          multipleOf: 0.001
+          type: number
+          description: Only hotels with the average nightly rate before tax greater than this value are returned in the response.
+          example: 100.05
+        Max:
+          multipleOf: 0.001
+          type: number
+          description: Only hotels with the average nightly rate before tax lower than this value are returned in the response.
+          example: 1013.05
+
+    RateFilters:
+      required:
+        - RateFilter
+      type: object
+      description: Contains details of filters used to remove specific rates from the response. Multiple rate filters can be defined in a single request.
+      properties:
+        RateFilter:
+          description: Lists rate filters to use in the request.
+          $ref: "#/components/schemas/RateFilter"
+
+    RateFilter:
+      type: array
+      minItems: 1
+      description: Lists rate filters to use in the request.
+      items:
+        required:
+          - Type
+          - Value
+          - Action
+        type: object
+        description: Contains information defining a rate filter.
+        properties:
+          Type:
+            type: string
+            example: "Commission"
+            description: The type of rate filter. Can be `RateCode`, `RateType`, or `Commission`.
+          Value:
+            type: string
+            example: "NC"
+            description: The value associated with `Type`. Used to either include or exclude a particular value from the response.
+          Action:
+            type: string
+            enum:
+              - Exclude
+              - Include
+            description: Identifies whether the `Value` is to be included or excluded from the response.
+    Rooms:
+      required:
+        - Room
+      type: object
+      properties:
+        Room:
+          description: Contains the room parameters to search by.
+          $ref: "#/components/schemas/Room"
+      description: Contains the room parameters to search by.
+
+    Room:
+      minItems: 1
+      type: array
+      description: Lists room details used to book multiple rooms for the same PNR segment. Multiroom availability may not be always guaranteed, especially for Sabre GDS rates.
+      # In case you wish to book multiple rooms in the same PNR segment, the recommendation is to do a `HotelPriceCheck` and then Sell Initiate (not Commit) the reservation. For the 2nd room, make a 2nd `HotelPriceCheck` call to generate a new `BookingKey`, and then add another segment into the same PNR session. Once both segments are confirmed, ET (commit) the reservation.
+      items:
+        required:
+          - Adults
+          - Index
+        type: object
+        description: Contains details of a requested room.
+        properties:
+          Index:
+            minimum: 1
+            type: integer
+            description: The index number of the room. If multiple rooms are requested, their indices must be provided in numerical order. All rooms must have the same adult and child guest counts.
+            example: 1
+          Adults:
+            minimum: 1
+            type: integer
+            description: The number of adults to stay in the room.
+            example: 1
+          Children:
+            minimum: 0
+            type: integer
+            description: The number of children to stay in the room. Support for infants varies by source. Rates from the GDS do not support infants; a request for one adult and one child is treated as a request for one adult.
+            example: 1
+          ChildAges:
+            type: string
+            description: The ages of the children, provided as a comma-separated string. Required if the value of `Children` is higher than zero.
+            example: "10,12"
+
+    RatePlanCandidates:
+      required:
+        - RatePlanCandidate
+      type: object
+      description: Contains the rate types, client IDs, or rate codes to shop rates for.
+      properties:
+        ExactMatchOnly:
+          type: boolean
+          description: If `true`, returns only those rates that are an exact match to the criteria requested within this object.
+          example: false
+          default: false
+        OtherAvailableRatePlans:
+          type: boolean
+          description: If `true`, returns a list of all negotiated or contractual rate codes, if provided by the supplier.
+          example: false
+          default: false
+        RatePlanCandidate:
+          description: "Lists properties that are candidates for specific rate plans."
+          $ref: "#/components/schemas/RatePlanCandidate"
+
+    RatePlanCandidate:
+      maxItems: 11
+      minItems: 1
+      type: array
+      description: Lists types of rates treated as candidates for specific rate plans. Accepts a maximum of three (3) items with the `RatePlanType` attribute and a maximum of eight (8) items with the `RatePlanCode` attribute.
+      items:
+        type: object
+        description: Contains details of a rate type to treat as a rate plan candidate.
+        properties:
+          RatePlanType:
+            pattern: ^[0-9]{1,2}$
+            type: string
+            description: The type of a rate plan. Specifies the rate category and allows for a comparison of major categories across brands. Refer to OpenTravel Code List Rate Plan Type (RPT).
+            example: "11"
+          RatePlanCode:
+            type: string
+            description: The code of a rate plan. Used to request a particular rate code or an ID if the guest qualifies for a specific rate, such as `ABC`, `WKX`, etc.
+            example: "ABC"
+
+    LoyaltyIds:
+      required:
+        - LoyaltyId
+      type: object
+      description: Contains the traveler's loyalty numbers, if applicable.
+      properties:
+        LoyaltyId:
+          description: Lists the traveler's loyalty IDs with different hotel chains. Passed on to supported suppliers only if the hotel `ChainCode` is provided in the request.
+          $ref: "#/components/schemas/LoyaltyId"
+
+    LoyaltyId:
+      maxItems: 10
+      minItems: 1
+      type: array
+      description: Lists the traveler's loyalty IDs with different hotel chains. Passed on to supported suppliers only if the hotel `ChainCode` is provided in the request.
+        # If used during hotel availability calls, some hotel chains may return special member rates based on their CRS capabilities. Loyalty IDs when passed during shopping will automatically be applied during Booking as well and displayed in the PNR with the /ID, but we recommend manually including the loyalty ID in the booking request again and without the preceding Hotel Chain Code.
+
+      example:
+        - YX1123
+        - MC1234
+      items:
+        type: string
+        example: "YX1123"
+
+    HotelPref:
+      type: object
+      description: Contains hotel preference parameters used to restrict search result to a specific property.
+      properties:
+        HotelName:
+          pattern: '^[0-9a-zA-Z .\/-]{3,100}$'
+          type: string
+          description: The name of the hotel property to search for or used to filter search results. The service looks for an exact match to the hotel name; only properties with this exact name are returned. Mutually exclusive with `LenientHotelName`.
+          example: "Inn"
+
+        LenientHotelName:
+          type: string
+          example: "Holi Inn"
+          description: A string consisting of minimum three (3) characters used to search for hotel names or filter returned hotel names. The service looks for a lenient match to the hotel name; properties that include this string value in their name are returned. Mutually exclusive with `HotelName`.
+
+        BrandCodes:
+          description: Contains brand codes to search for. Returned hotel properties must belong to at least one brand code from this object.
+          $ref: "#/components/schemas/BrandCodes"
+
+        ChainCodes:
+          description: Contains chain codes to search for. Returned hotel properties must belong to at least one chain code from this object.
+          $ref: "#/components/schemas/ChainCodes"
+
+        AmenityCodes:
+          description: Contains amenity codes to search for. Returned hotel properties must have at least one or all of the amenities from this object, depending on the value of `Inclusive`.
+          $ref: "#/components/schemas/AmenityCodes"
+
+        SecurityFeatureCodes:
+          description: Contains security feature codes to search for. Returned hotel properties must have at least one or all of the security features from this object, depending on the value of `Inclusive`.
+          $ref: "#/components/schemas/SecurityFeatureCodes"
+
+        PropertyTypeCodes:
+          description: Contains property type codes to search for. Returned hotel properties must belong to at least one or all of the property types from this object, depending on the value of `Inclusive`.
+          $ref: "#/components/schemas/PropertyTypeCodes"
+
+        PropertyQualityCodes:
+          description: Contains property quality codes to search for. Returned hotel properties must have at least one or all of the property quality codes from this object assigned, depending on the value of `Inclusive`.
+          $ref: "#/components/schemas/PropertyQualityCodes"
+
+        SabreRating:
+          description: Contains minimum and maximum Sabre rating values to search for. Accepts values from `0.5` to `5.0` in half-point increments, that is `0.5`, `1.0`, `1.5`, `2.0`, ... `4.5`, `5.0`. Other values not supported.
+          $ref: "#/components/schemas/SabreRating"
+
+    BrandCodes:
+      required:
+        - BrandCode
+      type: object
+      properties:
+        BrandCode:
+          description: Lists the hotel brand codes associated with the property.
+          $ref: "#/components/schemas/BrandCode"
+      description: Contains brand codes to search for. Returned hotel properties must belong to at least one brand code from this object.
+    BrandCode:
+      maxItems: 20
+      type: array
+      description: Lists the hotel brand codes associated with the property.
+      example:
+        - "10008"
+        - "10009"
+      items:
+        pattern: ^[0-9a-zA-Z ]{1,20}$
+        type: string
+        description: The brand code to search for or use to filter the results.
+        example: "10008"
+    ChainCodes:
+      required:
+        - ChainCode
+      type: object
+      properties:
+        ChainCode:
+          description: Lists chain codes associated with the property.
+          $ref: "#/components/schemas/ChainCode"
+      description: Contains chain codes to search for. Returned hotel properties must belong to at least one chain code from this object.
+    ChainCode:
+      maxItems: 20
+      type: array
+      description: Lists chain codes associated with the property.
+      example:
+        - MC
+        - YX
+      items:
+        pattern: ^[0-9a-zA-Z]{2}$
+        type: string
+        description: The chain code to search for or use to filter the results.
+        example: "MC"
+    AmenityCodes:
+      required:
+        - AmenityCode
+      type: object
+      properties:
+        Inclusive:
+          type: boolean
+          description: If `true`, returns only properties with all the requested amenity codes. If `false`, returns properties with at least one of the requested amenity codes.
+          example: false
+          default: false
+        AmenityCode:
+          description: Lists the amenity codes associated with the property.
+          $ref: "#/components/schemas/AmenityCode"
+      description: Contains amenity codes to search for. Returned hotel properties must have at least one or all of the amenities from this object, depending on the value of `Inclusive`.
+    AmenityCode:
+      maxItems: 20
+      type: array
+      description: Lists the amenity codes associated with the property.
+      example:
+        - 15
+        - 16
+      items:
+        minimum: 1
+        type: integer
+        description: The code of an amenity mapped to the OTA code `HAC`. Used in property search or to filter the results.
+        example: 15
+    SecurityFeatureCodes:
+      required:
+        - SecurityFeatureCode
+      type: object
+      properties:
+        Inclusive:
+          type: boolean
+          description: If `true`, returns only properties with all the requested security feature codes. If `false`, returns properties with at least one of the requested security feature codes.
+          example: false
+          default: false
+        SecurityFeatureCode:
+          description: Lists the security feature codes associated with the property.
+          $ref: "#/components/schemas/SecurityFeatureCode"
+      description: Contains security feature codes to search for. Returned hotel properties must have at least one or all of the security features from this object, depending on the value of `Inclusive`.
+    SecurityFeatureCode:
+      maxItems: 20
+      type: array
+      description: Lists the security feature codes associated with the property.
+      items:
+        minimum: 1
+        type: integer
+        description: A security feature code used to filter the results that map to the OTA code `SEC`.
+        example: 15
+    PropertyTypeCodes:
+      required:
+        - PropertyTypeCode
+      type: object
+      properties:
+        Inclusive:
+          type: boolean
+          description: If `true`, returns only properties that belong to all the requested property type codes. If `false`, returns properties that belong to at least one of the requested property type codes.
+          example: false
+          default: false
+        PropertyTypeCode:
+          description: The property type code used to filter the results that map to the OTA code `PCT`.
+          $ref: "#/components/schemas/PropertyTypeCode"
+
+      description: Contains property type codes to search for. Returned hotel properties must belong to at least one or all of the property types from this object, depending on the value of `Inclusive`.
+    PropertyTypeCode:
+      maxItems: 20
+      type: array
+      description: Lists property type codes to search for.
+      example:
+        - 15
+        - 16
+      items:
+        minimum: 1
+        type: integer
+        description: The property type code used to filter the results that map to the OTA code `PCT`.
+        example: 15
+    PropertyQualityCodes:
+      required:
+        - PropertyQualityCode
+      type: object
+      properties:
+        Inclusive:
+          type: boolean
+          description: If `true`, returns only properties that belong to all the requested property quality codes. If `false`, returns properties that belong to at least one of the requested property quality codes.
+          example: false
+          default: false
+        PropertyQualityCode:
+          description: The property quality code, mapped to the OTA code `LOS`. Used for property search or to filter the results.
+          $ref: "#/components/schemas/PropertyQualityCode"
+      description: Contains property quality codes to search for. Returned hotel properties must have at least one or all of the property quality codes from this object assigned, depending on the value of `Inclusive`.
+    PropertyQualityCode:
+      maxItems: 20
+      type: array
+      description: Lists property quality codes to search for.
+      example:
+        - 15
+        - 16
+      items:
+        minimum: 1
+        type: integer
+        description: The property quality code, mapped to the OTA code `LOS`. Used for property search or to filter the results.
+        example: 15
+    SabreRating:
+      type: object
+      properties:
+        Min:
+          pattern: ^[0]{1}\.[5]{1}|[1-4]{1}\.[0,5]{0,1}|[5]{1}\.[0]{1}|[1-5]{1}$
+          type: string
+          description: Only properties with a rating greater than this value are returned. Defaults to `0.5` if `Max` is specified but `Min` is not.
+          example: "1.5"
+        Max:
+          pattern: ^[0]{1}\.[5]{1}|[1-4]{1}\.[0,5]{0,1}|[5]{1}\.[0]{1}|[1-5]{1}$
+          type: string
+          description: Only properties with a rating lower than this value are returned. Defaults to `5` if `Min` is specified but `Max` is not.
+          example: "4.5"
+      description: Contains minimum and maximum Sabre rating values to search for. Accepts values from `0.5` to `5.0` in half-point increments, that is `0.5`, `1.0`, `1.5`, `2.0`, ... `4.5`, `5.0`. Other values not supported.
+    ImageRef:
+      type: object
+      properties:
+        Type:
+          type: string
+          description: Identifies the size type of hotel images to return. Can be `THUMBNAIL` (thumbnail dimensions- 100x150), `ORIGINAL` (original dimensions of the source image), `SMALL` (small dimensions- 200x200), `MEDIUM` (medium dimensions- 400x400), or `LARGE` (large dimensions- 800x800).
+          example: "MEDIUM"
+          default: THUMBNAIL
+          enum:
+            - ORIGINAL
+            - THUMBNAIL
+            - SMALL
+            - MEDIUM
+            - LARGE
+        CategoryCode:
+          minimum: 1
+          type: integer
+          description: The hotel image type to return in the response, mapped to the OTA code `PIC`. For example, type `1` indicates "Exterior view" images of the hotel.
+          example: 3
+        LanguageCode:
+          pattern: "^([a-z][a-z][_][A-Z][A-Z])|([a-zA-Z]{2})$"
+          type: string
+          description: The language code of an image description. Can be `EN`, `ES`, `IT`, `DE`, `ZH`, `JA`, `RU`, `PT`, or `zh_TW`, but more may be added later.
+          example: "EN"
+      description: Contains hotel image details. If not specified, no images are returned in the response.
+
+    ApplicationResults:
+      type: object
+      description: Contains the parent object used to return request processing details, including errors, warnings, and timestamps.
+      properties:
+        status:
+          type: string
+          description: Identifies the processing status of a request.
+          example: "Complete"
+          enum:
+            - Complete
+            - Incomplete
+            - NotProcessed
+            - Unknown
+        Success:
+          description: Lists results of the search performed by the service, as well as any errors that may have occurred.
+          $ref: "#/components/schemas/ElementStructure"
+        Error:
+          description: Lists results of the search performed by the service, as well as any errors that may have occurred.
+          $ref: "#/components/schemas/ElementStructure"
+        Warning:
+          description: Lists results of the search performed by the service, as well as any errors that may have occurred.
+          $ref: "#/components/schemas/ElementStructure"
+
+    ElementStructure:
+      type: array
+      description:
+        Lists results of the search performed by the service, as well as any errors that may have occurred.
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            description: The source of a request processing result (error or warning).
+            example: "Transport"
+          timeStamp:
+            type: string
+            description: Timestamp when the request processing result was returned, in ISO 8601 format.
+            example: "2024-06-09T20:45:04+05:30"
+          SystemSpecificResults:
+            type: array
+            description: Lists details of the service response status.
+            items:
+              type: object
+              properties:
+                timeStamp:
+                  type: string
+                  description: Timestamp when the result was returned, in ISO 8601 format.
+                  example: "2024-06-09T20:45:04+05:30"
+                reference:
+                  type: string
+                  description: The name of the parameter for which the status details apply.
+                  example: "reference"
+                HostCommand:
+                  type: object
+                  properties:
+                    LNIATA:
+                      type: string
+                      description:
+                        The Line Number Interchange Address Terminal Address
+                        (LNIATA) number.
+                      example: "AAVTYZ"
+                  description: Contains the host system command run to create the result.
+                Message:
+                  type: array
+                  description:
+                    Lists application-specific codes and messages. A textual
+                    description to provide more information about the specific condition,
+                    warning, or error, with the `Code` attribute as a numeric value.
+                  items:
+                    type: object
+                    description: Contains a message definition.
+                    properties:
+                      code:
+                        type: string
+                        description: The code that represents an error or warning when returned.
+                        example: "ERR.0381"
+                      value:
+                        type: string
+                        description: The message associated to the above code.
+                        example: "Invalid check-in date"
+
+    HotelAvailInfos:
+      type: object
+      description: Contains availability details for all found hotel properties. Not populated if any validation errors occurred.
+      properties:
+        OffSet:
+          minimum: 1
+          type: integer
+          description: The page number of the returned shopping response.
+          example: 2
+        MaxSearchResults:
+          minimum: 0
+          type: integer
+          description: The total number of hotel properties that match the requested search criteria. If greater than `PageSize` in the request, the `ShopKey` from the response may be used to view all remaining properties.
+          example: 763
+        ShopKey:
+          maxLength: 240
+          minLength: 0
+          type: string
+          description: A unique identifier of the shopping operation. Allows you to iterate subsequent pages of a shopping response by using together with `Offset` in your request.
+          example: "48ff454e-b83d-4c4f-aeb9-1bc9f3df8794"
+        SearchLatitude:
+          type: number
+          description: The latitude provided in the search criteria. Populated only if the request uses the `GeoRef` object instead of the `HotelRefs` object.
+          example: 32.758
+        SearchLongitude:
+          type: number
+          description: The longitude provided in the search criteria. Populated only if the request uses the `GeoRef` object instead of the `HotelRefs` object.
+          example: -97.08
+        HotelAvailInfo:
+          type: array
+          description: Lists details of hotels that match the requested search criteria.
+          items:
+            $ref: "#/components/schemas/HotelAvailInfo"
+        TranslatedHotelAvailInfo:
+          description: Lists details of hotels that match the requested search criteria, returned in multiple languages. This hotel content is similar to that provided in the `HotelAvailInfo` array, but with an additional parameter `LanguageCode` to indicate the target language.
+          type: array
+          items:
+            allOf:
+              - type: object
+                properties:
+                  LanguageCode:
+                    description: The code of the language in which the hotel content is retrieved.
+                    type: string
+                    example: "en"
+              - $ref: "#/components/schemas/HotelAvailInfo"
+
+    HotelAvailInfo:
+      type: object
+      description: Contains information about a hotel, including static content, image, and rate. Populated if rates are returned for the property, or if rates are not returned and the `RateDetailsInd` parameter was set to `false` in the request.
+      required:
+        - HotelInfo
+      properties:
+        HotelInfo:
+          description: Contains basic hotel information.
+          $ref: "#/components/schemas/HotelInfo"
+        HotelRateInfo:
+          description: Contains details of property availability and rates.
+          $ref: "#/components/schemas/HotelRateInfo"
+        HotelImageInfo:
+          description: Contains image information for a hotel.
+          $ref: "#/components/schemas/HotelImageInfo"
+
+    HotelInfo:
+      required:
+        - CodeContext
+        - HotelCode
+      type: object
+      description: Contains basic hotel information.
+      properties:
+        HotelCode:
+          maxLength: 20
+          minLength: 1
+          type: string
+          description: The hotel code and property ID. Always contains the global ID, irrespective of the property code and context in the request.
+          example: "100072188"
+
+        CodeContext:
+          type: string
+          description: Identifies the context of the `HotelCode`. Always set to `GLOBAL` in the response, irrespective of whether the request used a `GLOBAL` or `SABRE` code context.
+          example: "GLOBAL"
+          enum:
+            - GLOBAL
+        SabreHotelCode:
+          maxLength: 20
+          minLength: 1
+          type: string
+          description: The Sabre property ID associated with a global ID. Populated if the request used a Sabre hotel code. If the request used a global hotel code, `SabreHotelCode` is populated only if the global hotel code can be shopped using a Sabre hotel code.
+          example: "8315"
+
+        HotelName:
+          maxLength: 500
+          minLength: 0
+          type: string
+          description: The name of the hotel property.
+          example: "Hyatt Regency Tulsa"
+
+        ChainCode:
+          maxLength: 20
+          minLength: 0
+          type: string
+          description: The code of the chain to which the hotel belongs.
+          example: "HY"
+
+        ChainName:
+          maxLength: 500
+          minLength: 0
+          type: string
+          description: The name of the hotel chain.
+          example: "Hyatt Hotels And Resorts"
+
+        BrandCode:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The hotel brand code.
+          example: "10008"
+
+        BrandName:
+          maxLength: 500
+          minLength: 0
+          type: string
+          description: The name of the hotel brand.
+          example: "Hyatt"
+
+        Distance:
+          type: number
+          description: The distance from the hotel to the point of search. Populated only if the request used the `GeoRef` object to search for hotels near a geographical location.
+          example: 23.45
+
+        Direction:
+          type: string
+          description: The direction of the hotel from the point of search. Populated only if the request used the `GeoRef` object to search for hotels near a geographical location. Can be  `S` (south), `N` (north), `E` (east), or `W` (west).
+          example: "S"
+
+        UOM:
+          type: string
+          description: Identifies the unit of measurement applied for `Distance`. Populated only if the request used the `GeoRef` object to search for hotels near a geographical location.
+          example: "MI"
+          enum:
+            - MI
+            - KM
+
+        Logo:
+          type: string
+          description: The URL address of the hotel's logo image. Returned only if the hotel lead image was requested.
+          format: uri
+
+        SabreRating:
+          maxLength: 10
+          minLength: 0
+          type: string
+          description: The Sabre property rating.
+          example: "3.5"
+
+        CanReturnRequestedNegotiatedRate:
+          type: boolean
+          description: If `true`, the requested rate code or client ID is valid for the property or chain, and is used to fetch the negotiated or contractual rates. If `false`, no rate codes are linked to the client ID for the specific chain, and negotiated or contractual rates are not returned. Populated only if `SortBy` is set to `NegotiatedRateAvailability` in the request.
+
+        Ordinal:
+          type: integer
+          description: The position in which preferred properties are displayed in the response.
+          example: 1
+        TierLabels:
+          description: Contains agency, corporate, or supplier labels assigned to the property.
+          $ref: "#/components/schemas/TierLabels"
+        LocationInfo:
+          $ref: "#/components/schemas/LocationInfo"
+          description: Contains the hotel location information.
+        Amenities:
+          $ref: "#/components/schemas/Amenities"
+          description: Contains the amenities offered by the hotel.
+        SecurityFeatures:
+          $ref: "#/components/schemas/SecurityFeatures"
+          description: Contains the security features provided by the property.
+        PropertyTypeInfo:
+          $ref: "#/components/schemas/PropertyTypeInfo"
+          description: Contains information about the property class types associated with the hotel.
+        PropertyQualityInfo:
+          $ref: "#/components/schemas/PropertyQualityInfo"
+          description: Contains information on the quality of the hotel.
+
+    TierLabels:
+      type: object
+      properties:
+        TierLabel:
+          $ref: "#/components/schemas/TierLabel"
+          description: Lists all agency, corporate, or supplier labels assigned to the property.
+      description: Contains agency, corporate, or supplier labels assigned to the property.
+    TierLabel:
+      type: array
+      description: Lists all agency, corporate, or supplier labels assigned to the property.
+      items:
+        type: object
+        description: Contains details of a single tier label.
+        properties:
+          Type:
+            maxLength: 500
+            minLength: 0
+            type: string
+            description: The tier label type.
+            example: "Agency"
+          Value:
+            maxLength: 500
+            minLength: 0
+            type: string
+            description: The value assigned to the tier level.
+            example: "Platinum"
+          ProgramId:
+            pattern: "^[0-9]{1,10}$"
+            type: string
+            description: The ID of the preference program to which the tier label belongs.
+            example: "1082"
+
+    PropertyLabels:
+      type: object
+      properties:
+        PropertyLabel:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyLabel"
+      description: Lists all property labels assigned to the hotel.
+    PropertyLabel:
+      type: object
+      description: Contains details of a single property label.
+      properties:
+        Type:
+          maxLength: 500
+          minLength: 0
+          type: string
+          description: The property label type.
+          example: "SponsoredListingHeader"
+        Value:
+          maxLength: 500
+          minLength: 0
+          type: string
+          description: The value assigned to the property label.
+          example: "100266286 || City DFW || Shopping Day Fri Sat Sun"
+
+    LocationInfo:
+      type: object
+      properties:
+        Latitude:
+          maxLength: 20
+          minLength: 0
+          type: string
+          description: The latitude of the hotel location.
+          example: "36.154800"
+        Longitude:
+          maxLength: 20
+          minLength: 0
+          type: string
+          description: The longitude of the hotel location.
+          example: "-95.990356"
+        Address:
+          $ref: "#/components/schemas/Address"
+          description: Contains address information for the hotel.
+        Neighborhoods:
+          $ref: "#/components/schemas/Neighborhoods"
+          description: Contains neighborhood polygons, such as MSA (metropolitan statistical area), area, or hood, within which the hotel property is located.
+        Contact:
+          $ref: "#/components/schemas/Contact"
+          description: Contains the contact details for the hotel.
+      description: Contains the hotel location information.
+    Address:
+      required:
+        - AddressLine1
+        - CityName
+        - CountryName
+      type: object
+      properties:
+        AddressLine1:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The mandatory first address line.
+          example: "50 N MARTINGALE RD"
+        AddressLine2:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The optional second address line.
+          example: "Pointer Square"
+        AddressLine3:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The optional third address line.
+          example: "Orlando"
+        CityName:
+          $ref: "#/components/schemas/CityName"
+          description: Contains details of the city where the property is located.
+        StateProv:
+          $ref: "#/components/schemas/StateProv"
+          description: Contains details of the state or province where the property is located.
+        PostalCode:
+          maxLength: 20
+          minLength: 0
+          type: string
+          description: The postal code of the hotel property.
+          example: "60173"
+        CountryName:
+          $ref: "#/components/schemas/CountryName"
+          description: Contains the name of the country where the property is located.
+      description: Contains address information for a hotel.
+    CityName:
+      type: object
+      description: Contains details of the city name.
+      properties:
+        CityCode:
+          pattern: "^([A-Z0-9]{0,5})$"
+          type: string
+          description: The three-letter city code.
+          example: "TUL"
+        value:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The full name of the city.
+          example: "Tulsa"
+    StateProv:
+      type: object
+      description: Contains details of the state or province.
+      properties:
+        StateCode:
+          maxLength: 10
+          minLength: 0
+          type: string
+          description: The code of the state or province.
+          example: "OK"
+        value:
+          type: string
+          description: The full name of the state or province.
+          example: "Oklahoma"
+    CountryName:
+      type: object
+      properties:
+        Code:
+          pattern: "^([A-Z0-9]{0,3})$"
+          type: string
+          description: The two-letter country code of the property location.
+          example: "US"
+        value:
+          type: string
+          description: The name of the country.
+          example: "United States"
+      description: Contains the name of the country where the property is located.
+    Neighborhoods:
+      type: object
+      properties:
+        Neighborhood:
+          $ref: "#/components/schemas/Neighborhood"
+          description: Lists details of polygons within which the hotel property is situated.
+      description: Contains neighborhood polygons, such as MSA (metropolitan statistical area), area, or hood, within which the hotel property is located.
+    Neighborhood:
+      maxItems: 10
+      type: array
+      description: Lists details of polygons within which the hotel property is situated.
+      items:
+        type: object
+        description: Contains a polygon where the property is located.
+        properties:
+          Id:
+            maxLength: 20
+            minLength: 0
+            type: string
+            description: The polygon ID of the neighborhood.
+            example: "90000092"
+          value:
+            type: string
+            description: The name of the polygon.
+            example: "Tulsa OK"
+    Contact:
+      type: object
+      properties:
+        Phone:
+          maxLength: 50
+          minLength: 0
+          type: string
+          description: The phone number of the hotel.
+          example: "999-222-1111"
+        Fax:
+          maxLength: 20
+          minLength: 0
+          type: string
+          description: The fax number of the hotel.
+          example: "999-222-1110"
+        Email:
+          type: string
+          description: The email address of the hotel.
+          example: "test@test.com"
+      description: Contains the contact details for the hotel.
+
+    Amenities:
+      type: object
+      properties:
+        Amenity:
+          $ref: "#/components/schemas/Amenity"
+          description: Lists the amenities offered by the hotel.
+      description: Contains the amenities offered by the hotel.
+
+    Amenity:
+      type: array
+      description: Lists the amenities offered by the hotel.
+      items:
+        type: object
+        description: Contains details of an amenity offered by the hotel.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The OTA amenity code that maps to the `HAC` OTA code.
+            example: 5
+          Description:
+            maxLength: 255
+            minLength: 0
+            type: string
+            description: The description of the OTA code.
+            example: "Parking"
+          ComplimentaryInd:
+            type: boolean
+            description: If `true`, the amenity is complimentary and `ComplimentaryInd` is not displayed in the response. If `false`, the amenity is charged extra, and `ComplimentaryInd` is returned in the response.
+            example: false
+          value:
+            type: string
+            example: "Ask at reception for car park charges"
+            description: The description of the amenity offered by the hotel.
+    SecurityFeatures:
+      type: object
+      description: Contains the security features provided by the property.
+      properties:
+        SecurityFeature:
+          $ref: "#/components/schemas/SecurityFeature"
+          description: Lists all the security feature details.
+    SecurityFeature:
+      type: array
+      description: Lists all the security feature details.
+      items:
+        type: object
+        description: Contains a security feature provided by the property.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The numeric OTA code of the hotel security feature. Mapped to the `SEC` OTA code.
+            example: 15
+          Description:
+            type: string
+            description: The description of the hotel security feature.
+            example: "Complies with Local/State/Federal fire laws"
+          value:
+            type: string
+            description: Additional textual description for the security feature.
+            example: "Fire safety law compliant"
+    PropertyTypeInfo:
+      type: object
+      properties:
+        PropertyType:
+          $ref: "#/components/schemas/PropertyType"
+          description: Lists the property class types.
+      description: Contains information about the property class types associated with the hotel.
+    PropertyType:
+      type: array
+      description: Lists the property class types.
+      items:
+        type: object
+        description: Contains details of a property class type.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The numeric OTA code of the property class type. For hotels, the code is mapped to the `PCT` OTA code.
+            example: 1
+          Description:
+            maxLength: 255
+            minLength: 0
+            type: string
+            description: The description of the property class type.
+            example: "All Suite"
+    PropertyQualityInfo:
+      type: object
+      properties:
+        PropertyQuality:
+          $ref: "#/components/schemas/PropertyQuality"
+          description: Lists the property quality codes associated with the hotel.
+      description: Contains information on the quality of the hotel.
+    PropertyQuality:
+      type: array
+      description: Lists the property quality codes associated with the hotel.
+      items:
+        type: object
+        description: Contains a property quality code.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The numeric OTA code of the property quality type. Mapped to the `LOS` OTA code.
+            example: 1
+          Description:
+            maxLength: 255
+            minLength: 0
+            type: string
+            description: The description of the property quality type.
+            example: "Regular"
+
+    HotelRateInfo:
+      type: object
+      description: Contains details of property availability and rates.
+      properties:
+        RateRanges:
+          $ref: "#/components/schemas/RateRanges"
+          description: Contains the approximate values of the minimum and maximum rates available for the property. Populated only if the request includes the `BestOnly` parameter set to `4`. Supported only for Sabre GDS rates.
+        RateInfos:
+          $ref: "#/components/schemas/RateInfos"
+          description: Contains details of retrieved hotel rates. Always returns `ConvertedRateInfo`. `RateInfo` may be returned depending on the value of `ConvertedRateInfoOnly` in the request.
+        Rooms:
+          $ref: "#/components/schemas/response.Rooms"
+          description: Contains information related to the returned rooms.
+        AvailableRatePlans:
+          $ref: "#/components/schemas/AvailableRatePlans"
+          description: Contains rate plans available at the hotel property. Populated in the response only if `OtherAvailableRatePlans` is set to `true` in the request and the supplier returns negotiated or contractual rates, not considering any other filters that may be present in the request.
+        RateUnavailability:
+          $ref: "#/components/schemas/RateUnavailability"
+          description: Contains additional information returned when a rate is not retrieved from the source for any reason.
+
+    RateRanges:
+      type: object
+      required:
+        - RateRange
+      properties:
+        RateRange:
+          $ref: "#/components/schemas/RateRangeType"
+          description: Lists the approximate values of the minimum and maximum rates available for the property.
+      description: Contains the approximate values of the minimum and maximum rates available for the property. Populated only if the request includes the `BestOnly` parameter set to `4`. Supported only for Sabre GDS rates.
+    RateRangeType:
+      type: array
+      description: Lists the approximate values of the minimum and maximum rates available for the property.
+      minItems: 1
+      items:
+        type: object
+        description: Contains details of the minimum and maximum rates available for the property.
+        properties:
+          MinRate:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The approximate value of the lowest available total rate.
+            example: "127.4"
+
+          MaxRate:
+            type: string
+            description: The approximate value of the highest available total rate.
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            example: "127.4"
+
+          CurrencyCode:
+            type: string
+            description: The ISO 4217 code of the currency applied for `MinRate` and `MaxRate`.
+            pattern: "[A-Z]{3}"
+            example: "INR"
+
+          ConvertedMinRate:
+            type: string
+            description: The approximate value of the lowest available total rate converted to the requested currency.
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            example: "127.4"
+
+          ConvertedMaxRate:
+            type: string
+            description: The approximate value of the highest available total rate converted to the requested currency.
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            example: "127.4"
+
+          ConvertedCurrencyCode:
+            type: string
+            description: The ISO 4217 code of the requested currency.
+            pattern: "[A-Z]{3}"
+            example: "EUR"
+          RateSource:
+            type: string
+            description: The source of the returned rate.
+            example: "110"
+
+    RateUnavailability:
+      type: object
+      required:
+        - RateSource
+      properties:
+        RateSource:
+          $ref: "#/components/schemas/RateSource"
+          description: Lists the additional information returned when a rate is not retrieved from the source for any reason.
+      description: Contains additional information returned when a rate is not retrieved from the source for any reason.
+
+    RateSource:
+      type: array
+      description: Lists the additional information returned when a rate is not retrieved from the source for any reason.
+      minItems: 1
+      items:
+        type: object
+        description: Contains additional information provided in the response when a rate cannot be returned.
+        required:
+          - Source
+          - Reason
+        properties:
+          Source:
+            type: string
+            description: The rate source for which a rate is not returned.
+            example: "110"
+          DisplayMessage:
+            type: string
+            description: The display message mapped to the unavailability reason.
+            example: "Unable to establish a connection with supplier."
+          Reason:
+            type: string
+            description: The reason of rate unavailability.
+            example: "Supplier timed out."
+
+    RateInfos:
+      properties:
+        RateInfo:
+          type: array
+          description: Lists information about rates retrieved from hotel suppliers.
+          items:
+            allOf:
+              - $ref: "#/components/schemas/RateInfoBasic"
+              - type: object
+                properties:
+                  RateSource:
+                    type: string
+                    description: The code of the supplier the rates are returned from.
+                    example: "100"
+                  RateKey:
+                    type: string
+                    description: The specific key associated with the rate.
+                    example: "NFZ6Y/BZlGHH9RhcPEBtCN6zQTOAckUn8C11PGKuz9BaSMsJXduJuKzEeFe7t24KvAItmy9bNxc1kL3b6g31NPQGvihdWaZCsVfLg6f/Qe4KgDhaUpTYQj+xMd/8l49JTQRreXBUK4EqtYhVkY0aqA5WIxCfzOrYgIdZkKNtngnbjkr4IvmCmKu+MVMNFKgpADA3rjwPCaxFM5MY1s5NYEBHdP2LnMHNvmuLxp1kYoBNIUlAPYFdUh9fQZe1RkYSPcCUaPYJMH5RgC9FyW6E2cu+TefaO1YkzIy4zJXrdnNBDuU/imR3O4FA0n8R0Vb+d8hZZL3Q/+vNfbxzRLX3CQ=="
+
+                  Commission:
+                    $ref: "#/components/schemas/Commission"
+
+        ConvertedRateInfo:
+          type: array
+          description: Lists information about rates retrieved from hotel suppliers converted to the currency provided in the request.
+          items:
+            allOf:
+              - $ref: "#/components/schemas/RateInfoBasic"
+              - type: object
+                required:
+                  - RateKey
+                  - RateSource
+                properties:
+                  RateSource:
+                    type: string
+                    description: The code of the supplier the rates are returned from.
+                    example: "100"
+                  RateKey:
+                    type: string
+                    description: The specific key associated with the rate.
+                    example: "NFZ6Y/BZlGHH9RhcPEBtCN6zQTOAckUn8C11PGKuz9BaSMsJXduJuKzEeFe7t24KvAItmy9bNxc1kL3b6g31NPQGvihdWaZCsVfLg6f/Qe4KgDhaUpTYQj+xMd/8l49JTQRreXBUK4EqtYhVkY0aqA5WIxCfzOrYgIdZkKNtngnbjkr4IvmCmKu+MVMNFKgpADA3rjwPCaxFM5MY1s5NYEBHdP2LnMHNvmuLxp1kYoBNIUlAPYFdUh9fQZe1RkYSPcCUaPYJMH5RgC9FyW6E2cu+TefaO1YkzIy4zJXrdnNBDuU/imR3O4FA0n8R0Vb+d8hZZL3Q/+vNfbxzRLX3CQ=="
+
+                  Commission:
+                    $ref: "#/components/schemas/Commission"
+
+      description: Contains details of retrieved hotel rates. Always returns `ConvertedRateInfo`. `RateInfo` may be returned depending on the value of `ConvertedRateInfoOnly` in the request.
+
+    RateInfoBasic:
+      type: object
+      description: Contains details of an average total rate, not room-specific, provided in the currency returned by the supplier.
+      properties:
+        StartDate:
+          type: string
+          description: The date from which the rate is applicable, in `YYYY-MM-DD` format.
+          format: date
+          example: "2024-01-16"
+        EndDate:
+          type: string
+          description: The date to which the rate is applicable, in `YYYY-MM-DD` format.
+          format: date
+          example: "2024-01-22"
+        AmountBeforeTax:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description:
+            The total amount chargeable for the booking, before any taxes
+            have been applied.
+          example: "923.12"
+        AmountAfterTax:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total rate amount sent back by the hotel supplier. May or may not include all known taxes and fees; taxes and fees can vary depending on the supplier. Disclaimer parameters `TaxInclusive` and `AdditionalFeesInclusive` determine whether taxes and fees respectively are included in the `AmountAfterTax` value.
+          example: "1023.12"
+        MinSellingRate:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The supplier recommendation for the net rate amount to charge. Populated for certain rate sources.
+          example: "985.32"
+        AverageNightlyRate:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The average nightly rate. Calculated as the `AmountAfterTax` divided by the number of nights.
+          example: "170.52"
+        AverageNightlyRateBeforeTax:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The average nightly rate without considering taxes and fees. Calculated as the `AmountBeforeTax` divided by the number of nights. All rate-related filters, such as `BestOnly` and `RateRange`, are applied to this value.
+          example: "167.21"
+        HighestNightlyRate:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total highest nightly rate, without taxes or fees, sent back by the hotel supplier. For GDS suppliers, the amount is returned as received; for aggregators, the amount is calculated and returned depending on how they sent back their rates of stay.
+          example: "167.21"
+        ApproxTotalPrice:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The all-inclusive rate as sent back by the hotel supplier, including known taxes and fees even if they are not included in the `AmountAfterTax`. Used for display purposes only. For prepaid rates, the amount returned under `AmountAfterTax` is what is charged upfront, and not the amount returned in the `ApproxTotalPrice`. If the `AmountAfterTax` already includes all known taxes and fees, `ApproxTotalPrice` returns the same value as `AmountAfterTax`.
+          example: "167.21"
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code of the returned rates.
+          example: "AUD"
+        AdditionalFeesInclusive:
+          type: boolean
+          description: If `true`, all additional fees are included in the `AmountAfterTax`.
+          example: true
+        TaxInclusive:
+          type: boolean
+          description: If `true`, all taxes are included in the `AmountAfterTax`.
+          example: true
+        LocalFeesInclusive:
+          type: boolean
+          description: If `true`, all local fees are included in the `AmountAfterTax`.
+          example: true
+        IncidentalsInclusive:
+          type: boolean
+          description: If `true`, all incidentals are included in the `AmountAfterTax`.
+          example: true
+
+    Commission:
+      type: object
+      properties:
+        Percent:
+          multipleOf: 0.01
+          type: number
+          description: The percentage of the total rate that will be taken as a commission.
+          example: 12.01
+        Amount:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total amount of commission that will be taken out of the rate.
+          example: "82.41"
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code of the commission `Amount`.
+          example: "AUD"
+        Type:
+          type: string
+          description: The type of commission. Possible values are `FlatRate`, `Amount`, `Percentage`, `Variable` and `None`.
+          example: "Variable"
+        CommissionDescription:
+          $ref: "#/components/schemas/CommissionDescription"
+          description: Contains a description of the commission.
+      description: Contains the commission percentage, amount, and description.
+    CommissionDescription:
+      required:
+        - Text
+      type: object
+      description: Contains a description of the commission.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          items:
+            type: string
+            description: A text description of the commission.
+            example: "30 percent"
+          description: Lists additional text-based descriptions of the commission, for example about its value or type.
+
+    response.Rooms:
+      required:
+        - Room
+      type: object
+      description: Contains information related to the returned rooms.
+      properties:
+        Room:
+          $ref: "#/components/schemas/response.Room"
+          description: Lists data retrieved for the returned rooms.
+    response.Room:
+      minItems: 1
+      type: array
+      description: Lists data retrieved for the returned rooms.
+      items:
+        required:
+          - RatePlans
+          - RoomIndex
+        type: object
+        properties:
+          RoomIndex:
+            minimum: 1
+            type: integer
+            description: The sequence number of the room.
+            example: 3
+          RoomType:
+            type: string
+            description: The OTA room type description that maps to the `GRI` OTA code.
+            example: "Suite"
+          RoomTypeCode:
+            type: integer
+            description: The type code of the room. Refer to OpenTravel Code List Guest Room Info (GRI).
+            example: 3
+          RoomCategory:
+            type: string
+            description: The category of the room. Typical values are `Moderate`, `Standard`, `Suite`, or `Deluxe`. Refer to OpenTravel Code List Segment Category Code (SEG).
+            example: "Suite"
+          RoomID:
+            type: string
+            description: The unique identifier of the room. Returned if a specific room was requested.
+            example: "B11"
+          Floor:
+            type: integer
+            description: The floor on which the room is located.
+            example: 5
+          RoomViewCode:
+            minimum: 1
+            type: integer
+            description: The view from the room. Refer to OpenTravel Code List Room View Type (RVT).
+            example: 1
+          RoomViewDescription:
+            type: string
+            description: The OTA description for the `RoomViewCode`.
+            example: "Ocean View"
+          NonSmoking:
+            type: boolean
+            description: If `true`, smoking is not allowed inside the room.
+            example: true
+          SharedRoomInd:
+            type: boolean
+            description: If `true`, the room requires or has sharing available. Typically used by hostelers.
+            example: true
+          Adults:
+            type: integer
+            minimum: 0
+            example: 1
+            description: The number of adults considered in the request when fetching availability.
+          Children:
+            type: integer
+            minimum: 0
+            example: 1
+            description: The number of children considered in the request when fetching availability. For GDS requests, the value is `0` since children are not taken into account for GDS rates.
+          BedTypeOptions:
+            $ref: "#/components/schemas/BedTypeOptions"
+          RoomDescription:
+            $ref: "#/components/schemas/RoomDescription"
+          AdditionalDetails:
+            $ref: "#/components/schemas/AdditionalDetails"
+          Amenities:
+            $ref: "#/components/schemas/Amenities"
+          AccessibleAmenities:
+            $ref: "#/components/schemas/Amenities"
+          Occupancy:
+            $ref: "#/components/schemas/Occupancy"
+          RatePlans:
+            $ref: "#/components/schemas/RatePlans"
+        description: Contains room and rate plan details.
+    BedTypeOptions:
+      required:
+        - BedTypes
+      type: object
+      description: Contains bed type configuration options available for the room.
+      properties:
+        BedTypes:
+          $ref: "#/components/schemas/BedTypes"
+          description: Lists bed types available in the room. Different bed types are available for each bed configuration. If multiple `BedType` items are returned, it means that either configuration can be booked.
+    BedTypes:
+      minItems: 1
+      type: array
+      description: Lists bed types available in the room. Different bed types are available for each bed configuration. If multiple `BedType` items are returned, it means that either configuration can be booked.
+      items:
+        type: object
+        description: Contains bed type configurations available in the room.
+        properties:
+          BedType:
+            $ref: "#/components/schemas/BedType"
+    BedType:
+      minItems: 1
+      type: array
+      description: Lists the type of bed(s) found in the room.
+      items:
+        type: object
+        description: Contains details of a type of bed available in the room.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The bed type code mapped to the `BED` OTA code.
+            example: 1
+          Description:
+            type: string
+            description: The OTA description for the `Code`.
+            example: "King Bed"
+          Count:
+            minimum: 0
+            type: integer
+            description: The number of beds of the corresponding bed type available in the room.
+            example: 2
+    RoomDescription:
+      type: object
+      description: Contains the room name and description.
+      properties:
+        Name:
+          type: string
+          description: The name of the room.
+          example: "Suite"
+        Text:
+          type: array
+          description: Lists room descriptions provided by the supplier. If `SplitDescriptions` is set to `true` in the request, the retrieved room description is split into multiple `Text` items to allow for a better representation on the UI.
+          items:
+            type: string
+            description: The text of a room description.
+            example: "The room is a cozy two person place with its own kitchen and a shower."
+    AdditionalDetails:
+      required:
+        - AdditionalDetail
+      type: object
+      description: Contains additional details retrieved for the room.
+      properties:
+        AdditionalDetail:
+          $ref: "#/components/schemas/AdditionalDetail"
+          description: Lists all additional details associated with the room.
+    AdditionalDetail:
+      minItems: 1
+      type: array
+      description: Lists all additional details associated with the room.
+      items:
+        type: object
+        description: Contains information on an addition to the room.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The OTA code mapped to the ADT table.
+            example: 13
+          Description:
+            type: string
+            description: The OTA description for the `Code`.
+            example: "Check In Instruction"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The total rate for the addition.
+            example: "23.12"
+          CurrencyCode:
+            pattern: "^[A-Z]{3}$"
+            type: string
+            description: The ISO 4217 currency code of the `Amount`.
+            example: "AUD"
+          Text:
+            type: array
+            description: Lists descriptions of the room and additions it offers.
+            items:
+              type: string
+              description: The text of a description.
+              example: "The room has several additions, such as an extra bathroom and two beds more than the usual."
+
+    Occupancy:
+      type: object
+      properties:
+        Min:
+          type: integer
+          description: The minimum occupancy of the room.
+          example: 1
+        Max:
+          type: integer
+          description: The maximum occupancy of the room.
+          example: 6
+      description: Contains room occupancy limits. Not available for Sabre GDS rates.
+    RatePlans:
+      required:
+        - RatePlan
+      type: object
+      description: Contains rate plans available for the room.
+      properties:
+        RatePlan:
+          $ref: "#/components/schemas/RatePlan"
+          description: Lists rate plans retrieved for the room as used in the booking process.
+    RatePlan:
+      minItems: 1
+      type: array
+      description: Lists rate plans retrieved for the room as used in the booking process.
+      items:
+        required:
+          - PrepaidIndicator
+          - RateKey
+          - RateSource
+        type: object
+        description: Contains details of a rate plan.
+        properties:
+          RatePlanName:
+            type: string
+            description: The name of the rate plan or group.
+            example: "Single Bed Room with Breakfast"
+          RatePlanCode:
+            type: string
+            description: The rate plan code as returned from the hotel supplier's CRS. May be used to request a particular rate if the guest qualifies for it, for example AARP, AAA, a corporate rate, etc. Can also be used to specify the code for a negotiated rate.
+            example: "LES"
+          RatePlanType:
+            pattern: "^([0-9]{1,2})$"
+            type: string
+            description: The rate plan type as returned from the hotel supplier's CRS. Allows to define rate categories used for a comparison across brands. Refer to OpenTravel Code List Rate Plan Type (RPT).
+            example: "10"
+          RatePlanTypeDescription:
+            type: string
+            description: The description for the `RatePlanType`.
+            example: "Standard"
+          PrepaidIndicator:
+            type: boolean
+            description: If `true`, the rate is a prepaid rate. All rates with `RateSource` set to `100` are currently treated as postpaid, and rates with `RateSource` set to `112` are treated as prepaid.
+            example: true
+          AvailableQuantity:
+            type: integer
+            description: The number of rooms available within this rate plan. Not available for Sabre GDS rates.
+            example: 3
+          LimitedAvailability:
+            type: string
+            description: If `true`, the rate has limited availability. Returned only for GDS rates.
+            example: "true"
+          RateSource:
+            type: string
+            description: The code identifying the rate supplier.
+            example: "100"
+          RateKey:
+            type: string
+            description: The Sabre-generated rate key. Can be used in a request to the Hotel Price Check API to proceed with the booking.
+            example: "NFZ6Y/BZlGHH9RhcPEBtCN6zQTOAckUn8C11PGKuz9BaSMsJXduJuKzEeFe7t24KvAItmy9bNxc1kL3b6g31NPQGvihdWaZCsVfLg6f/Qe4KgDhaUpTYQj+xMd/8l49JTQRreXBUK4EqtYhVkY0aqA5WIxCfzOrYgIdZkKNtngnbjkr4IvmCmKu+MVMNFKgpADA3rjwPCaxFM5MY1s5NYEBHdP2LnMHNvmuLxp1kYoBNIUlAPYFdUh9fQZe1RkYSPcCUaPYJMH5RgC9FyW6E2cu+TefaO1YkzIy4zJXrdnNBDuU/imR3O4FA0n8R0Vb+d8hZZL3Q/+vNfbxzRLX3CQ=="
+          ClientId:
+            type: string
+            description: The three-character alphabetical client ID referring to an associated `RatePlanCode`. Returned if the request includes a `RatePlanCandidate` array with the `RatePlanCode` parameter only.
+            example: "AMX"
+          ProductCode:
+            type: string
+            description: The inventory block code of the room. Populates only for GDS products.
+            example: "A1KRAC"
+          LoyaltyMemberRate:
+            type: boolean
+            description: If true, it indicates the rate is returned only for loyalty program members.
+            example: true
+          LoyaltyId:
+            type: string
+            description: The loyalty ID sent to the supplier to retrieve the rate. Does not indicate that the rate is a loyalty program rate or that booking it grants reward points.
+            example: "HY5342"
+          LoyaltyPoints:
+            type: boolean
+            description: If `true`, booking the rate will result in receiving loyalty points.
+            example: false
+          LoyaltyProgramName:
+            type: string
+            description: The name of the supplier loyalty program that grants points.
+            example: "Choice Privileges"
+          Ordinal:
+            type: integer
+            minimum: 0
+            example: 0
+            description: The number representing the location of the rate among all rates offered for the same room type.
+          RatePlanDescription:
+            $ref: "#/components/schemas/RatePlanDescription"
+          RatePlanInclusions:
+            $ref: "#/components/schemas/RatePlanInclusions"
+          MealsIncluded:
+            $ref: "#/components/schemas/MealsIncluded"
+          RateInfo:
+            allOf:
+              - $ref: "#/components/schemas/RateInfoBasic"
+              - type: object
+                properties:
+                  Rates:
+                    $ref: "#/components/schemas/NightlyRates"
+                  Taxes:
+                    $ref: "#/components/schemas/Taxes"
+                  Fees:
+                    $ref: "#/components/schemas/Fees"
+                  RoomExtras:
+                    $ref: "#/components/schemas/RoomExtras"
+                  CancelPenalties:
+                    $ref: "#/components/schemas/CancelPenalties"
+                  Guarantee:
+                    $ref: "#/components/schemas/Guarantee"
+                  AdditionalDetails:
+                    $ref: "#/components/schemas/AdditionalDetails"
+
+          ConvertedRateInfo:
+            allOf:
+              - $ref: "#/components/schemas/RateInfoBasic"
+              - type: object
+                properties:
+                  Rates:
+                    $ref: "#/components/schemas/NightlyRates"
+                  Taxes:
+                    $ref: "#/components/schemas/Taxes"
+                  Fees:
+                    $ref: "#/components/schemas/Fees"
+                  RoomExtras:
+                    $ref: "#/components/schemas/RoomExtras"
+                  CancelPenalties:
+                    $ref: "#/components/schemas/CancelPenalties"
+                  Guarantee:
+                    $ref: "#/components/schemas/Guarantee"
+                  AdditionalDetails:
+                    $ref: "#/components/schemas/AdditionalDetails"
+
+    RatePlanDescription:
+      required:
+        - Text
+      type: object
+      description: Contains descriptions of the room associated with the rate plan.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          description: Lists product descriptions for the room associated with the rate plan. If `SplitDescriptions` is set to `true` in the request, the retrieved room description is split into multiple `Text` items to allow for a better representation on the UI.
+          items:
+            type: string
+            description: The text of a rate plan description.
+            example: "Junior Suite"
+
+    RatePlanInclusions:
+      required:
+        - RatePlanInclusion
+      type: object
+      description: Contains the definition of charges that are included for the rate plan.
+      properties:
+        RatePlanInclusion:
+          $ref: "#/components/schemas/RatePlanInclusion"
+          description: Lists the details of charges that are included for the rate plan.
+    RatePlanInclusion:
+      minItems: 1
+      type: array
+      description: Lists the details of charges that are included for the rate plan.
+      items:
+        type: object
+        description: Contains a charge or a free service included in the rate plan.
+        properties:
+          Description:
+            type: string
+            description: The description of the rate plan inclusion.
+            example: "Free Parking"
+          Code:
+            minimum: 1
+            type: integer
+            description: The code associated with the specific rate plan inclusion.
+            example: 12
+          Text:
+            type: array
+            description: Lists text-based descriptions of the rate plan inclusion.
+            items:
+              type: string
+              description: The text of a rate plan inclusion description.
+              example: "Free Parking"
+    MealsIncluded:
+      type: object
+      properties:
+        BreakFast:
+          type: boolean
+          description: If `true`, breakfast is included in the plan.
+          example: true
+        Lunch:
+          type: boolean
+          description: If `true`, lunch is included in the plan.
+          example: true
+        Dinner:
+          type: boolean
+          description: If `true`, dinner is included in the plan.
+          example: true
+        MealPlanIndicator:
+          type: boolean
+          description: If `true`, a meal plan is included in the rate plan.
+          example: true
+        MealPlanCode:
+          minimum: 1
+          type: integer
+          description: The code of the type of meal included in the rate plan. Refer to OpenTravel Code List Meal Plan Type (MPT).
+          example: 11
+        MealPlanDescription:
+          type: string
+          description: The description of the `MealPlanCode`.
+          example: "Full Breakfast"
+        GuestCount:
+          minimum: 0
+          type: integer
+          description: The number of guests included in the meal plan.
+          example: 2
+      description: Contains information about the meals included in the rate plan.
+
+    NightlyRates:
+      required:
+        - Rate
+      type: object
+      description: Contains details of nightly rates returned for the rate plan.
+      properties:
+        Rate:
+          $ref: "#/components/schemas/NightlyRate"
+          description: Lists information about nightly rates retrieved for the rate plan.
+
+    NightlyRate:
+      minItems: 1
+      type: array
+      description: Lists information about nightly rates retrieved for the rate plan.
+      items:
+        type: object
+        description: Contains details of a nightly rate.
+        properties:
+          StartDate:
+            type: string
+            description: The date from which the rate is applicable, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-02-20"
+          EndDate:
+            type: string
+            description: The date to which the rate is applicable, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-02-22"
+          AmountBeforeTax:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The rate amount without taxes included.
+            example: "1253.12"
+          AmountAfterTax:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The rate amount with taxes included.
+            example: "1475.23"
+          CurrencyCode:
+            pattern: "^[A-Z]{3}$"
+            type: string
+            description: The ISO 4217 currency code of the returned rate.
+            example: "AUD"
+    Taxes:
+      type: object
+      properties:
+        Amount:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total tax amount.
+          example: "22.46"
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code of the total tax `Amount`.
+          example: "AUD"
+        Tax:
+          $ref: "#/components/schemas/Tax"
+          description: Lists taxes applicable to the retrieved rates.
+        TaxGroups:
+          $ref: "#/components/schemas/TaxGroups"
+          description: Contains a breakdown of different types of taxes applicable to the retrieved rates.
+      description: Contains tax information associated with the retrieved rates.
+    Tax:
+      type: array
+      description: Lists taxes applicable to the retrieved rates.
+      items:
+        required:
+          - Amount
+          - CurrencyCode
+        type: object
+        description: Contains details of an individual tax.
+        properties:
+          StartDate:
+            type: string
+            description: The date from which the corresponding tax amount is applied, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-09-20"
+          EndDate:
+            type: string
+            description: The date to which the corresponding tax amount is applied, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-09-22"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The tax amount in the given date range.
+            example: "11.23"
+          CurrencyCode:
+            pattern: "^([A-Z]{3})$"
+            type: string
+            description: The ISO 4217 currency code of the tax `Amount`.
+            example: "AUD"
+    TaxGroups:
+      required:
+        - TaxGroup
+      type: object
+      properties:
+        TaxGroup:
+          $ref: "#/components/schemas/TaxGroup"
+          description: Lists individual tax groups.
+      description: Contains a breakdown of different types of taxes.
+    TaxGroup:
+      minItems: 1
+      type: array
+      description: Lists individual tax groups.
+      items:
+        required:
+          - Amount
+          - Code
+          - CurrencyCode
+        type: object
+        description: Contains details of a tax group.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The tax group code mapped to the `FTT` OTA code.
+            example: 36
+          Description:
+            type: string
+            description: The OTA description of the `Code`.
+            example: "Service Tax"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The tax amount of the given tax type.
+            example: "22.46"
+          CurrencyCode:
+            pattern: "^([A-Z]{3})$"
+            type: string
+            description: The ISO 4217 currency code of the tax `Amount`.
+            example: "AUD"
+          TaxDescription:
+            $ref: "#/components/schemas/TaxDescription"
+    TaxDescription:
+      required:
+        - Text
+      type: object
+      description: Contains descriptions of the tax group.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          description: Lists descriptions of the tax group.
+          items:
+            type: string
+            description: A text description of the tax.
+            example: "Value Added Tax"
+    Fees:
+      type: object
+      properties:
+        Amount:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total fee amount.
+          example: "22.46"
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code of the fee `Amount`.
+          example: "AUD"
+        Fee:
+          $ref: "#/components/schemas/Fee"
+          description: Lists individual fees applicable to the retrieved rates.
+        FeeGroups:
+          $ref: "#/components/schemas/FeeGroups"
+          description: Contains a breakdown of different types of fees.
+      description: Contains fee information associated with the retrieved rates.
+    Fee:
+      type: array
+      description: Lists individual fees applicable to the retrieved rates.
+      items:
+        required:
+          - Amount
+          - CurrencyCode
+        type: object
+        description: Contains details of a fee.
+        properties:
+          StartDate:
+            type: string
+            description: The date from which the corresponding fee amount is applied, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-09-20"
+          EndDate:
+            type: string
+            description: The date to which the corresponding fee amount is applied, in `YYYY-MM-DD` format.
+            format: date
+            example: "2024-09-22"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The fee amount in the given date range.
+            example: "11.23"
+          CurrencyCode:
+            pattern: "^([A-Z]{3})$"
+            type: string
+            description: The ISO 4217 currency code of the fee `Amount`.
+            example: "AUD"
+    FeeGroups:
+      required:
+        - FeeGroup
+      type: object
+      properties:
+        FeeGroup:
+          $ref: "#/components/schemas/FeeGroup"
+          description: Lists individual fee groups.
+      description: Contains a breakdown of different types of fees.
+    FeeGroup:
+      minItems: 1
+      type: array
+      description: Lists individual fee groups.
+      items:
+        required:
+          - Amount
+          - Code
+          - CurrencyCode
+        type: object
+        description: Contains details of a fee group.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The fee group code mapped to the `FTT` OTA code.
+            example: 12
+          Description:
+            type: string
+            description: The OTA description of the `Code`.
+            example: "Resort fees"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The fee amount of the given fee type.
+            example: "22.46"
+          CurrencyCode:
+            pattern: "^([A-Z]{3})$"
+            type: string
+            description: The ISO 4217 currency code of the fee `Amount`.
+            example: "AUD"
+          FeeDescription:
+            $ref: "#/components/schemas/FeeDescription"
+    FeeDescription:
+      required:
+        - Text
+      type: object
+      description: Contains descriptions of the fee group.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          description: Lists descriptions of the fee group.
+          items:
+            type: string
+            description: A text description of the fee.
+            example: "Resort Fee"
+    RoomExtras:
+      required:
+        - RoomExtra
+      type: object
+      description: Contains details of available room extras.
+      properties:
+        RoomExtra:
+          $ref: "#/components/schemas/RoomExtra"
+          description: Lists information about retrieved room extras.
+    RoomExtra:
+      minItems: 1
+      type: array
+      description: Lists information about retrieved room extras.
+      items:
+        type: object
+        description: Contains details of a room extra.
+        properties:
+          Code:
+            minimum: 1
+            type: integer
+            description: The code of the room extra, mapped to the RMA OTA table.
+            example: 196
+          Description:
+            type: string
+            description: The OTA description of the `Code`.
+            example: "Extra Adult charge"
+          Amount:
+            type: string
+            format: number
+            pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+            description: The amount to be paid for the room extra.
+            example: "145.23"
+          CurrencyCode:
+            pattern: "^[A-Z]{3}$"
+            type: string
+            description: The ISO 4217 currency code of the room extra `Amount`.
+            example: "AUD"
+          Text:
+            type: array
+            description: Lists descriptions of the room extra.
+            items:
+              type: string
+              description: A description of the room extra and what it applies to.
+              example: "Extra Adult charge"
+    CancelPenalties:
+      type: object
+      description: Contains details of cancellation penalties associated with a rate.
+      properties:
+        CancelPenalty:
+          $ref: "#/components/schemas/CancelPenalty"
+          description: Lists retrieved cancellation penalties.
+    CancelPenalty:
+      minItems: 1
+      type: array
+      description: Lists retrieved cancellation penalties.
+      items:
+        required:
+          - Refundable
+        type: object
+        description: Contains details about penalties applied when products are canceled.
+        properties:
+          Refundable:
+            type: boolean
+            description: If `true`, the paid amount is fully or partially refunded to the traveler when the booking is canceled.
+            example: true
+          Deadline:
+            $ref: "#/components/schemas/Deadline"
+          AmountPercent:
+            $ref: "#/components/schemas/AmountPercent"
+          PenaltyDescription:
+            $ref: "#/components/schemas/PenaltyDescription"
+    PenaltyDescription:
+      required:
+        - Text
+      type: object
+      description: Contains descriptions of the cancellation penalty.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          description: Lists descriptions of the cancellation penalty.
+          items:
+            type: string
+            description: A text-based description of the cancellation penalty.
+            example:
+              "We understand that sometimes your travel plans change. We do not\
+              \ charge a change or cancel fee. However, this property (Donnington Valley\
+              \ Hotel and Spa) imposes the following penalty to its customers that we\
+              \ are required to pass on: Cancellations or changes made after 11:59 PM\
+              \ ((GMT+01:00)) on Jul 1, 2018, or no-shows, are subject to a 1 Night\
+              \ Room & Tax penalty.   \n"
+    Guarantee:
+      required:
+        - GuaranteesAccepted
+      type: object
+      description: Contains information about the corresponding rate guarantee.
+      properties:
+        GuaranteeType:
+          type: string
+          description: The type of the guarantee associated with the rate.
+          example: "GUAR"
+        GuaranteesAccepted:
+          $ref: "#/components/schemas/GuaranteesAccepted"
+          description: Contains details of guarantees accepted at the hotel property.
+        DepositPolicies:
+          $ref: "#/components/schemas/DepositPolicies"
+          description: Contains details of the deposit policy associated with the rate.
+        GuaranteeDescription:
+          $ref: "#/components/schemas/GuaranteeDescription"
+          description: Contains the guarantee description.
+    GuaranteesAccepted:
+      required:
+        - GuaranteeAccepted
+      type: object
+      description: Contains details of guarantees accepted at the hotel property.
+      properties:
+        GuaranteeAccepted:
+          minItems: 1
+          type: array
+          description: Lists guarantees accepted at the hotel property.
+          items:
+            type: object
+            description: Contains details of a rate guarantee.
+            properties:
+              GuaranteeTypeCode:
+                minimum: 1
+                type: integer
+                description:
+                  The code of the guarantee type, mapped to the OTA PMT
+                  table.
+                example: 5
+              GuaranteeTypeDescription:
+                type: string
+                description: The OTA description for the `GuaranteeTypeCode`.
+                example: "Credit Card"
+              PaymentCards:
+                $ref: "#/components/schemas/PaymentCards"
+    PaymentCards:
+      required:
+        - PaymentCard
+      type: object
+      description: Contains payment cards accepted as rate guarantees.
+      properties:
+        CVVRequired:
+          type: boolean
+          description: If `true`, the hotel property requires CVV details.
+          example: true
+        PaymentCard:
+          $ref: "#/components/schemas/PaymentCard"
+          description: Lists payment cards accepted as rate guarantees.
+    PaymentCard:
+      minItems: 1
+      type: array
+      description: Lists payment cards accepted as rate guarantees.
+      items:
+        required:
+          - CardCode
+        type: object
+        description: Contains a payment card accepted as the rate guarantee.
+        properties:
+          CardCode:
+            type: string
+            description: The code associated with the payment card accepted for the guarantee payment.
+            example: "AX"
+          value:
+            type: string
+            description: The value of the payment `CardCode` accepted for the guarantee payment.
+            example: "American Express"
+    DepositPolicies:
+      required:
+        - DepositPolicy
+      type: object
+      description: Contains details of the deposit policy associated with the rate.
+      properties:
+        DepositPolicy:
+          $ref: "#/components/schemas/DepositPolicy"
+          description: Lists deposit policies associated with the rate.
+    DepositPolicy:
+      minItems: 1
+      type: array
+      description: Lists deposit policies associated with the rate.
+      items:
+        type: object
+        description: Contains information about a deposit policy.
+        properties:
+          Deadline:
+            $ref: "#/components/schemas/Deadline"
+          AmountPercent:
+            $ref: "#/components/schemas/AmountPercent"
+    Deadline:
+      type: object
+      description: Contains the deadline for the guarantee deposit payment or cancellation penalty payment.
+      properties:
+        AbsoluteDeadline:
+          type: string
+          description: The time and date of the deadline.
+          example: "2024-01-01"
+        OffsetTimeUnit:
+          type: string
+          description: The unit of time used as the deadline offset.
+          example: "Day"
+        OffsetUnitMultiplier:
+          minimum: 1
+          type: integer
+          description: The multiplier of `OffsetTimeUnit`.
+          example: 2
+        OffsetDropTime:
+          type: string
+          description: Identifies the point of reference in the traveler's journey from when the deadline offset is implemented.
+          enum:
+            - BeforeArrival
+            - AfterBooking
+            - AfterConfirmation
+            - AfterArrival
+            - AfterDeparture
+    AmountPercent:
+      type: object
+      description: Contains the guarantee deposit amount or cancellation penalty amount.
+      properties:
+        TaxInclusive:
+          type: boolean
+          description: If `true`, all taxes are included in the `Amount`.
+          example: true
+        FeesInclusive:
+          type: boolean
+          description: If `true`, all fees are included in the deposit `Amount`.
+          example: true
+        NmbrOfNights:
+          type: integer
+          description: The total amount of nights that will be spent at the property.
+          example: 12
+        Percent:
+          multipleOf: 0.01
+          type: number
+          description: The percentage used to calculate the amount of guarantee deposit or cancellation penalty.
+          example: 12.01
+        Amount:
+          type: string
+          format: number
+          pattern: '^(([1-9][0-9]+)|([0-9]))(\.[0-9]{1,3})?$'
+          description: The total value of the guarantee deposit or cancellation penalty.
+          example: "84.12"
+        CurrencyCode:
+          pattern: "^[A-Z]{3}$"
+          type: string
+          description: The ISO 4217 currency code of the `Amount`.
+          example: "AUD"
+    GuaranteeDescription:
+      required:
+        - Text
+      type: object
+      description: Contains the guarantee description.
+      properties:
+        Text:
+          minItems: 1
+          type: array
+          description: Lists the descriptions of the guarantee.
+          items:
+            type: string
+            description: The description of the guarantee used for the stay.
+            example: "A pre-arrival deposit that is given back to the traveler after a completed stay."
+
+    AvailableRatePlans:
+      type: object
+      properties:
+        AvailableRatePlan:
+          $ref: "#/components/schemas/AvailableRatePlan"
+          description: Lists rate plans available at the hotel property.
+      description: Contains rate plans available at the hotel property. Populated in the response only if `OtherAvailableRatePlans` is set to `true` in the request and the supplier returns negotiated or contractual rates, not considering any other filters that may be present in the request.
+
+    AvailableRatePlan:
+      type: array
+      description: Lists rate plans available at the hotel property.
+      items:
+        type: object
+        description: Contains details of a rate plan.
+        properties:
+          RatePlanCode:
+            type: string
+            description: The rate code for the negotiated or contractual rate returned by the supplier.
+            example: "IBM"
+          RatePlanType:
+            type: string
+            description: The type of rate. Can be `10` (negotiated rate) or `22` (contractual rate).
+            example: "10"
+          RatePlanTypeDescription:
+            type: string
+            description: The description for the returned `RatePlanType` OTA value.
+            example: "Contractual"
+
+          ClientId:
+            type: string
+            description: The client identifier that links to the rate code for a negotiated or contractual rate.
+            example: "S93"
+          RateSource:
+            type: string
+            description: The source from which the negotiated or contractual rate is returned.
+            example: "100"
+    HotelImageInfo:
+      type: object
+      properties:
+        ImageItem:
+          $ref: "#/components/schemas/ImageItem"
+          description: Contains image information for a hotel.
+      description: Contains image information for a hotel.
+    ImageItem:
+      required:
+        - AdditionalInfo
+        - Category
+        - Format
+        - Id
+        - Image
+        - LastModifedDate
+        - Ordinal
+      type: object
+      properties:
+        Id:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The unique ID of the returned media item.
+          example: "1377631"
+        Ordinal:
+          minimum: 0
+          type: number
+          description: The priority of the media item. The lower the number, the lower the priority.
+          example: 2.0
+        LastModifedDate:
+          type: string
+          description: The date when the media item was last updated or changed in `YYYY-MM-DD` format.
+          format: date
+          example: "2024-06-28"
+        Format:
+          type: string
+          description: Identifies the format of the media item.
+          example: "JPG"
+          enum:
+            - BMP
+            - GIF
+            - ICO
+            - JPG
+            - PNG
+            - TIFF
+            - WEBP
+        Image:
+          $ref: "#/components/schemas/Image"
+          description: Contains details of a hotel image.
+        Category:
+          $ref: "#/components/schemas/Category"
+          description: Contains the category the image item belongs to.
+        AdditionalInfo:
+          $ref: "#/components/schemas/AdditionalInfo"
+          description: Contains any additional information related to the media item.
+      description: Contains image information for a hotel.
+    Image:
+      required:
+        - Height
+        - Type
+        - Url
+        - Width
+      type: object
+      properties:
+        Url:
+          type: string
+          description: The URL address of the returned image.
+          format: uri
+        Height:
+          minimum: 0
+          type: integer
+          description: The height of the image expressed in pixels.
+          example: 100
+        Width:
+          minimum: 0
+          type: integer
+          description: The width of the image expressed in pixels.
+          example: 150
+        Type:
+          type: string
+          description: Identifies the size type of the image. Can be `THUMBNAIL` (thumbnail dimensions- 100x150), `ORIGINAL` (original dimensions of the source image), `SMALL` (small dimensions- 200x200), `MEDIUM` (medium dimensions- 400x400), or `LARGE` (large dimensions- 800x800).
+          enum:
+            - ORIGINAL
+            - MEDIUM
+            - LARGE
+            - THUMBNAIL
+            - SMALL
+      description: Contains details of a hotel image.
+    Category:
+      required:
+        - Description
+      type: object
+      properties:
+        CategoryCode:
+          minimum: 1
+          type: number
+          description: The category code of the image item, mapped to the `PCI` OTA code.
+          example: 3.0
+        Description:
+          $ref: "#/components/schemas/Description"
+          description: Contains the image description details.
+      description: Contains the category the image item belongs to.
+    Description:
+      type: object
+      properties:
+        Text:
+          type: array
+          description: Lists image item descriptions for all requested language codes.
+          items:
+            type: object
+            description: Contains the image item description for a specific language code.
+            properties:
+              Language:
+                pattern: "^([a-z][a-z][_][A-Z][A-Z])|([a-zA-Z]{2})$"
+                type: string
+                description: The language code of an image description. Can be `EN`, `ES`, `IT`, `DE`, `ZH`, `JA`, `RU`, `PT`, or `zh_TW`, but more may be added later.
+                example: "en"
+              value:
+                type: string
+                description: The text of the description associated with the `Language` code.
+                example: "Corridor view"
+      description: Contains the image description details.
+    AdditionalInfo:
+      type: object
+      properties:
+        Info:
+          $ref: "#/components/schemas/Info"
+          description: Lists additional caption information in the response.
+      description: Contains any additional information related to the media item.
+    Info:
+      maxItems: 10
+      type: array
+      description: Lists additional caption information in the response.
+      items:
+        required:
+          - Description
+          - Type
+        type: object
+        description: Contains additional caption information returned for the image item.
+        properties:
+          Type:
+            type: string
+            description: Identifies the type of additional information present.
+            example: "CAPTION"
+            enum:
+              - CAPTION
+          Description:
+            $ref: "#/components/schemas/Description"
+
+  securitySchemes:
+    oauth2_authentication:
+      type: oauth2
+      x-base64-encode-client-credentials: true
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token
+          scopes: {}

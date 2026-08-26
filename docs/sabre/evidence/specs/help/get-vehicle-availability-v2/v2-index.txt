@@ -1,0 +1,1418 @@
+Overview
+
+What is it?
+
+GetVehAvailRQ is used to request information about car rental locations, the car type available, and the rates for those cars at specific locations.
+
+Why use it?
+
+GetVehAvailRQ is used to request information about car rental location/s, the car type available, and the rates for those cars at specific locations.
+
+This is used to get car rates in one of three ways:
+
+Specific car supplier at a specific location
+
+Select one, multiple, or all car suppliers at an airport location
+
+Select one, multiple, or all car suppliers near a specific Geo point for one or more rental locations.
+
+ |
+
+For Point of Interest, Rail Station name, Address, and/or City name, a separate API call must be used to get a latitude / longitude prior to using the GetVehAvail API.
+ |
+
+Use Geo AutoComplete API to input:
+
+Point of Interest, for example the Eiffel Tower.
+
+Rail Station name, for example Grand Central Station.
+
+Use Geo Search API to input any type of Address information:
+
+Street Address, City Name, State/Province, Country Code, Postal code
+
+Or just City Name and Country Code.
+
+Many optional items can be requested as follows:
+
+Pickup location by airport code
+
+City location code or geo reference
+
+Multiple pickup location points
+
+Return location by airport code
+
+City location code, or geo reference
+
+Delivery/Collection
+
+Client ID numbers
+
+Tour codes
+
+Promotional Coupons
+
+Corporate IDs
+
+Frequent Traveler
+
+Guaranteed/prepaid rates
+
+Commission programs
+
+Rate assured
+
+Rate categories
+
+Rate codes
+
+Rate qualifiers
+
+Rate assured
+
+Commission
+
+Special equipment / extra car preferences
+
+Vehicle preferences
+
+Seatbelts (number of occupants)
+
+Bags
+
+How it works
+
+The Developer sends information in a JSON format that adheres with the GetVehAvailRQ structure to CarShopAPI and gets the car rates and location details in the response.
+
+How to use
+
+The Get Vehicle Availability API lets you view multiple sets of vehicle information, all within a single response. Requests contain several different search parameters, both required and optional, so a full understanding of what to search by is crucial in order to successfully use this API.
+
+We introduced 2 new attributes in the request for Version 2. We explained in details with sample requests below for each scenario.
+
+Request
+
+ConvertedRateInfoOnly=&#8220;false&#8221; SupplierCurrencyOnly=&#8220;false&#8221;
+When both are set to &#8216;false', car rates are returned in the requested currency (ConvertedVehRentalRate) and in the currency that the vehicle will be booked in (VehRentalRate).
+
+Then Response contains Rate information be repeated,
+Converted Rate Info Only is returned in
+If Supplier Currency=’true’, then the rate is NOT converted, the supplier currency matches the requested currency
+Supplier Currency is returned in
+
+{
+  "GetVehAvailRQ": {
+    "SearchCriteria": {
+      "PickUpDate": "2026-11-12",
+      "PickUpTime": "07:30",
+      "ReturnDate": "2026-11-26",
+      "ReturnTime": "07:30",
+      "SortBy": "Preferred",
+      "SortOrder": "ASC",
+      "RentalLocRef": {
+        "PickUpLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        },
+        "ReturnLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        }
+      },
+      "ImageRef": {
+        "Image": {
+          "Type": "ORIGINAL"
+        }
+      },
+      "LocPolicyRef": {
+        "Include": true
+      },
+      "RatePrefs": {
+        "Commission": false,
+        "RateAssured": false,
+        "SupplierCurrencyOnly": false,
+        "ConvertedRateInfoOnly": false
+      },
+      "CarExtrasPrefs": {
+        "CarExtrasPref": [
+          {
+            "Type": "NAV"
+          }
+        ]
+      },
+      "VendorPrefs": {
+        "VendorPref": {
+          "Code": "ZA"
+        }
+      }
+    }
+  }
+}
+
+Sample Response
+
+{
+  "GetVehAvailRS": {
+    "ApplicationResults": {
+      "status": "Complete",
+      "Success": [
+        {
+          "timeStamp": "2026-10-14T11:14:46.693-05:00"
+        }
+      ]
+    },
+    "VehAvailInfos": {
+      "PickUpDate": "2026-11-12",
+      "PickUpTime": "0730",
+      "ReturnDate": "2026-11-26",
+      "ReturnTime": "0730",
+      "RentalDays": "14",
+      "RentalHours": "0",
+      "VehAvailInfo": [
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "ECAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "306.06",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "43.72",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "25.67",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1178.75",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "ECAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "306.06",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "43.72",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "25.67",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1178.75",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        },
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "CCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "317.01",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "45.28",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "26.34",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1206.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "CCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "317.01",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "45.28",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "26.34",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1206.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        },
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "ICAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "326.40",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "46.62",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "27.34",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1230.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "ICAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "326.40",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "46.62",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "27.34",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1230.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        },
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "SCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "331.88",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "47.41",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "27.67",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1244.74",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "SCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 1,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "331.88",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "47.41",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "27.67",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1244.74",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        },
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "FCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 2,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "346.75",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "49.53",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "29.01",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1282.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "WK",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "FCAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 2,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "346.75",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "49.53",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "29.01",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1282.73",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        },
+        {
+          "Vendor": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "PickUpLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "ReturnLocation": {
+            "PolicyRef": "ZADFWDFW",
+            "LocationCode": "DFW",
+            "ExtendedLocationCode": "DFW",
+            "Distance": "NA"
+          },
+          "VehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "W2",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "IFAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 2,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "334.73",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "47.81",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "28.01",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1252.02",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ],
+          "ConvertedVehRentalRate": [
+            {
+              "AvailabilityStatus": "S",
+              "RateCode": "W2",
+              "RatePlanReturned": "W",
+              "GuaranteeInd": "G",
+              "RateAssured": "*",
+              "SupplierCurrency": true,
+              "Vehicle": {
+                "VehType": "IFAR",
+                "SeatBeltsAndBagsInfo": {
+                  "SeatBelts": {
+                    "Quantity": 5
+                  },
+                  "BagsInfo": {
+                    "Bags": [
+                      {
+                        "Quantity": 2,
+                        "Size": "Large"
+                      },
+                      {
+                        "Quantity": 2,
+                        "Size": "Small"
+                      }
+                    ]
+                  }
+                },
+                "Images": {}
+              },
+              "VehicleCharges": {
+                "VehicleCharge": [
+                  {
+                    "Amount": "334.73",
+                    "CurrencyCode": "USD",
+                    "ChargeType": "BaseRateTotal",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "47.81",
+                    "ChargeType": "ExtraDay",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "28.01",
+                    "ChargeType": "ExtraHour",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  },
+                  {
+                    "Amount": "1252.02",
+                    "ChargeType": "ApproximateTotalPrice",
+                    "MileageAllowance": "UNL",
+                    "ExtraMileageCharge": "0",
+                    "UOM": "MI"
+                  }
+                ]
+              },
+              "Commission": {},
+              "CarExtraCharges": {
+                "TotalAmount": "189.99",
+                "CarExtra": [
+                  {
+                    "BaseAmount": "189.99",
+                    "Plan": "B",
+                    "Code": "NAV",
+                    "Status": "CNF"
+                  }
+                ]
+              },
+              "GuaranteePrepaid": {}
+            }
+          ]
+        }
+      ]
+    },
+    "VehLocPolicyInfos": {
+      "VehLocPolicyinfo": [
+        {
+          "PolicyRef": "ZADFWDFW",
+          "LocationName": "DALLAS FORT WORTH INTL",
+          "LocationCode": "DFW",
+          "ExtendedLocationCode": "DFW",
+          "LocationOwner": "C",
+          "CounterLocation": "A",
+          "LocationType": "PickUp",
+          "VendorDetails": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "LocationInfo": {
+            "Address": {
+              "AddressLine1": "2424 E 38TH ST",
+              "CityName": {
+                "value": "DALLAS"
+              },
+              "StateProv": {
+                "StateCode": "TX"
+              },
+              "PostalCode": "75261-0000",
+              "CountryName": {
+                "Code": "US",
+                "value": "United States"
+              }
+            }
+          },
+          "OperationSchedule": {
+            "StartDate": "2026-11-12-06:00",
+            "OperationTimes": {
+              "OperationTime": [
+                {
+                  "Start": "0630",
+                  "End": "2359",
+                  "DayOfTheWeek": "Thursday"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "PolicyRef": "ZADFWDFW",
+          "LocationName": "DALLAS FORT WORTH INTL",
+          "LocationCode": "DFW",
+          "ExtendedLocationCode": "DFW",
+          "LocationOwner": "C",
+          "CounterLocation": "A",
+          "LocationType": "DropOff",
+          "VendorDetails": {
+            "Code": "ZA",
+            "Name": "PAYLESS"
+          },
+          "LocationInfo": {
+            "Address": {
+              "AddressLine1": "2424 E 38TH ST",
+              "CityName": {
+                "value": "DALLAS"
+              },
+              "StateProv": {
+                "StateCode": "TX"
+              },
+              "PostalCode": "75261-0000",
+              "CountryName": {
+                "Code": "US",
+                "value": "United States"
+              }
+            }
+          },
+          "OperationSchedule": {
+            "StartDate": "2026-11-26-06:00",
+            "OperationTimes": {
+              "OperationTime": [
+                {
+                  "Start": "0630",
+                  "End": "2359",
+                  "DayOfTheWeek": "Thursday"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+Request using SupplierCurrencyOnly
+
+ConvertedRateInfoOnly=&#8220;false&#8221; SupplierCurrencyOnly=&#8220;true&#8221;
+When SupplierCurrencyOnly is set to &#8216;true', car rates are returned in the currency that the vehicle will be booked in (VehRentalRate) only.
+
+Then Response contains Rate information be returned once,
+Supplier Currency is returned in
+
+{
+  "GetVehAvailRQ": {
+    "SearchCriteria": {
+      "PickUpDate": "2026-11-12",
+      "PickUpTime": "07:30",
+      "ReturnDate": "2026-11-26",
+      "ReturnTime": "07:30",
+      "SortBy": "Preferred",
+      "SortOrder": "ASC",
+      "RentalLocRef": {
+        "PickUpLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        },
+        "ReturnLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        }
+      },
+      "ImageRef": {
+        "Image": {
+          "Type": "ORIGINAL"
+        }
+      },
+      "LocPolicyRef": {
+        "Include": true
+      },
+      "RatePrefs": {
+        "Commission": false,
+        "RateAssured": false,
+        "SupplierCurrencyOnly": true,
+        "ConvertedRateInfoOnly": false
+      },
+      "CarExtrasPrefs": {
+        "CarExtrasPref": [
+          {
+            "Type": "NAV"
+          }
+        ]
+      },
+      "VendorPrefs": {
+        "VendorPref": {
+          "Code": "ZA"
+        }
+      }
+    }
+  }
+}
+
+Request using ConvertedRateInfoOnly
+
+ConvertedRateInfoOnly=&#8220;true&#8221; SupplierCurrencyOnly=&#8220;false&#8221;
+When ConvertedRateInfoOnly is set to &#8216;true', car rates are returned in the requested currency (ConvertedVehRentalRate) only.
+
+Then Response contains Rate information be returned once,
+Converted Rate Info Only is returned in
+If Supplier Currency=’true’, then the rate is NOT converted, the supplier currency matches the requested currency
+
+{
+  "GetVehAvailRQ": {
+    "SearchCriteria": {
+      "PickUpDate": "2026-11-12",
+      "PickUpTime": "07:30",
+      "ReturnDate": "2026-11-26",
+      "ReturnTime": "07:30",
+      "SortBy": "Preferred",
+      "SortOrder": "ASC",
+      "RentalLocRef": {
+        "PickUpLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        },
+        "ReturnLocation": {
+          "ExtendedLocationCode": "DFW",
+          "LocationCode": "DFW"
+        }
+      },
+      "ImageRef": {
+        "Image": {
+          "Type": "ORIGINAL"
+        }
+      },
+      "LocPolicyRef": {
+        "Include": true
+      },
+      "RatePrefs": {
+        "Commission": false,
+        "RateAssured": false,
+        "SupplierCurrencyOnly": false,
+        "ConvertedRateInfoOnly": true,
+        "CurrencyInfo": {
+          "Code": "USD"
+        }
+      },
+      "CarExtrasPrefs": {
+        "CarExtrasPref": [
+          {
+            "Type": "NAV"
+          }
+        ]
+      },
+      "VendorPrefs": {
+        "VendorPref": {
+          "Code": "ZA"
+        }
+      }
+    }
+  }
+}
+
+Resources
+
+Request Schema
+
+Response Schema

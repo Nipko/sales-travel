@@ -1,0 +1,135 @@
+Void Flight Tickets
+
+Overview
+
+The Void Flight Tickets method is designed to facilitate the process of canceling any type of electronic document in a single, seamless API call.
+
+Technical overview
+
+The Void Flight Tickets method is part of the larger Booking Management API, available in RPC/JSON format and designed to operate in a stateless way. When successful, the API automatically commits the changes applied to a Sabre reservation.
+
+While this API is designed to operate in a stateless way, it accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution.
+
+General logic
+
+The logic executed by Void Flight Tickets is defined by the electronic documents submitted. Firstly, the application retrieves details for each document and then validates if the requirements for the void procedure are met. The analysis includes the void period, coupon status, and whether all documents belong to the same reservation.
+
+Before entering the void flow, the application sorts documents into four (4) buckets:
+
+stand-alone tickets
+
+stand-alone EMDs (EMD type S)
+
+tickets with at least one associated EMD (EMD type A) and the associated EMDs
+
+paper tickets (TK type)
+
+The void flow is executed based on this sorted list. After each successful void, the reservation is updated (EnhancedEndtransactionRQ).
+
+ |
+
+This feature requires AUTO-END and AUTO-ER settings to be inactive. Otherwise, these functionalities are responsible for an automatic reservation update and no EnhancedEndTransactionRQ call is made.
+ |
+
+Orchestration
+
+The APIs orchestrated by Void Flight Tickets are:
+
+ContextChangeLLSRQ
+
+DesignatePrinterLLSRQ
+
+GetReservationRQ
+
+TKT_ElectronicDocumentServicesRQ
+
+VoidTicketLLSRQ
+
+QueuePlaceLLSRQ
+
+EnhancedEndtransactionRQ
+
+Void Flight Tickets request structure
+
+The Void Flight Tickets method cancels electronic documents as specified. This allows you to submit a list of up to 12 elements from the same reservation to be canceled.
+
+errorHandlingPolicy allows you to define the API’s behavior in the event of an error. Two options are available:
+
+HALT_ON_ERROR (default): Execution is stopped in case an error is encountered, a rollback is executed if some products were successfully executed to ensure the original state of the reservation is preserved.
+
+ALLOW_PARTIAL_CANCEL: Execution continues even when some products failed to cancel.
+
+targetPCC is used to specify which city (PCC) should change context using ContextChange (AAA). If empty, or equals the current city, the context does not change.
+
+tickets is used to provide a list of 13-digit electronic document numbers to be voided. 1 to 12 elements are accepted.
+
+receivedFrom is an optional element to specify whether the API should sign the booking change with a specific value (default=LW CANCEL API).
+
+notification allows you to define options to notify after transaction succeeded. Two options are available:
+
+email: an email will be sent to the addresses in the PNR after finishing the transaction.
+
+queuePlacement: the PNR will be placed on one or more queues after finishing the transaction.
+
+designatePrinters allows you to define printers to be used during the transaction. The following options are available:
+
+printerProfileNumber: assigns a previously defined printer profile
+
+hardcopy: assigns a hardcopy printer for the transaction
+
+invoiceItinerary: assigns an invoice and itinerary printer for the transaction
+
+ticket: assigns a ticket printer for the transaction
+
+confirmationId is used to specify the PNR Locator or Sabre Order ID. Alternatively, tickets can be defined.
+
+voidNonElectronicTickets is used to actively indicate that void the process should also apply to nonelectronic, paper tickets.
+
+ |
+
+Paper tickets can only be voided if the request contains a confirmationId.
+ |
+
+Void Flight Tickets response structure
+
+The Void Flight Tickets response contains:
+
+Errors and warnings (if applicable). If not present (empty or contains warnings only) then execution is successful. Warnings might be returned for unsuccessful cancellation of a particular ticket when requested ErrorHandlingPolicy=ALLOW_PARTIAL_CANCEL.
+
+Original request
+
+List of voided tickets
+
+Limitations
+
+Void of NDC documents is currently not available
+
+A maximum of 12 documents is supported
+
+All documents must belong to the same reservation (PNR)
+
+Error handling
+
+This section illustrates the current error handling logic for Void Flight Tickets:
+
+ |
+
+Please access the Void Flight Tickets – Error List section for additional details on possible errors returned by Void Flight Tickets.
+ |
+
+Dependency between Error Policy and Error Category
+
+The error type UNABLE_TO_VOID_TICKET can be returned with the category CANCELLATION_ERROR, as well as with a WARNING. The category depends on the ErrorHandlingPolicy sent in the request. For HALT_ON_ERROR, CANCELLATION_ERROR displays, and for ALLOW_PARTIAL_CANCEL, WARNING displays.
+
+If you set the API to not accept any failures (policy=HALT_ON_ERROR), any failure in a downstream API called by the service results in an error in the Void Flight Tickets response.
+
+If you set the API to accept partial success (policy=ALLOW_PARTIAL_CANCEL), errors returned by downstream APIs may suggest that the entire void process has failed. However, this is not quite true. Therefore, these errors or failures result in warnings in the Void Flight Tickets response.
+
+Errors/Warnings returned by downstream services
+
+The Void Flight Tickets response contains errors and warnings returned by downstream APIs and are always returned as a WARNING.
+
+ |
+
+Since void transaction is irreversible, a failure with one of the documents might return an error, but previously processed documents are voided.
+ |
