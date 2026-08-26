@@ -203,8 +203,25 @@ function buildPaymentFunctions(payment: PaymentInfo): string {
   let methodContent: string;
 
   if (payment.type === 'Credit Card' && payment.card) {
+    // ⚠️ DEUDA DE CUMPLIMIENTO CONOCIDA, ANTERIOR A LA INTEGRACION DE SABRE.
+    //
+    // Este carril manda el PAN (`<CardNumber>`, mas abajo) y el CVV por NUESTRO servidor, y eso
+    // contradice `CLAUDE.md` §Seguridad: "hosted checkout unicamente en fase 1 (PCI SAQ-A). Nunca
+    // PAN/CVV en servidor". No se descubrio revisando este fichero: lo destapo la regla de lint
+    // anti-PAN que la decision D1 introdujo para Sabre (`eslint.config.mjs`), que alcanza a todo
+    // `**/request.builder.ts`.
+    //
+    // El `disable` NO valida la practica: la deja VISIBLE donde vive en vez de esconderla
+    // estrechando la regla a `providers/sabre/**`, que fue la otra salida y la que habria borrado
+    // el hallazgo. LATAM esta en produccion y cambiarle la forma de pago no es un efecto colateral
+    // aceptable de una integracion ajena — es una decision del founder, pendiente.
+    //
+    // Ojo al alcance real: la regla caza el CVV pero NO el PAN, porque `number` es un nombre
+    // demasiado generico para prohibirlo. Los dos salen igual.
+    // eslint-disable-next-line no-restricted-syntax -- deuda PCI heredada; ver el bloque de arriba
     const securityCode = payment.card.securityCode
-      ? `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
+      ? // eslint-disable-next-line no-restricted-syntax -- idem
+        `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
       : '';
     methodContent = `<PaymentMethod>
           <PaymentCard>

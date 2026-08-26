@@ -14,19 +14,21 @@ import { mapSabreGetBookingForDisplay, type SabreBookingSnapshot } from './get.r
  * _"Errors and warnings (if applicable). If not present (empty or contains warnings only) then
  * execution is successful"_ (`help-documentation-cancel-booking.txt`).
  *
- * ## ⚠️ Colisión conocida con el clasificador de sobres — leer antes de cablear el adapter
+ * ## La colisión con el clasificador de sobres — RESUELTA, y cómo
  *
- * `classifySabreEnvelope` (de `errors.ts`) trata **cualquier** nodo bajo la clave `errors` como
+ * Hubo un cruce real: `classifySabreEnvelope` trataba **cualquier** nodo bajo `errors` como
  * severidad error, así que un cuerpo de cancelación con `errors: [{category: 'WARNING', …}]`
- * —que el fabricante declara ÉXITO— le sale `ok: false`, y `SabreHttpClient.postJson` lanza
- * `SabreApiError` antes de que este mapper vea nada. Peor: `SabreApiError` sólo conserva un
- * resumen redactado del cuerpo, así que `voidedTickets[]` y `flightRefunds[]` **no se pueden
- * recuperar** del error. Comprobado ejecutando el clasificador sobre el ejemplo oficial de
- * `NO_ITEMS_CANCELLED`.
+ * —que el fabricante declara ÉXITO— salía `ok: false` y `SabreHttpClient.postJson` lanzaba antes
+ * de que este mapper viera nada. Como `SabreApiError` sólo conserva un resumen redactado,
+ * `voidedTickets[]` y `flightRefunds[]` se perdían.
  *
- * Este módulo mapea el cuerpo tal como el contrato lo define, que es lo correcto; quien cablee el
- * adapter tiene que resolver ese cruce —regla por operación en `errors.ts`, que es de otra tanda—
- * o una cancelación con warnings se leerá como fallo y el vendedor la reintentará.
+ * Lo cierra `SABRE_PARTIAL_OUTCOME_CONTRACTS` en `errors.ts`: una segunda pregunta, más estrecha,
+ * que sólo se hace cuando la regla dura ya dijo que no, y sólo para las operaciones cuyo contrato
+ * declara ese desenlace. Para cancelación exige que **todo** el fallo viva en el `errors` de la
+ * raíz y que cada entrada declare `category` Y `type` — con eso, un entitlement o un error de
+ * servidor dentro de ese mismo array siguen siendo `SabreApiError`, con su breaker y su alerta.
+ * Las 6 ramas de este mapper son alcanzables por `postJson` y hay test de cada una, incluido el
+ * ejemplo oficial de `NO_ITEMS_CANCELLED`.
  */
 
 /** `Value.amount` / `TotalValues.*` — patrón `^[0-9]+(\.[0-9]{1,3})?$` (`:4095-4111`, `:8299-8325`). */

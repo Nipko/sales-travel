@@ -1,4 +1,9 @@
-import type { OrderCreateResult, OrderView } from '@sales-travel/domain';
+import type {
+  OrderCreateResult,
+  OrderItemKind,
+  OrderItemResult,
+  OrderView,
+} from '@sales-travel/domain';
 import type { OrderStatus } from '../database/database.types.js';
 
 /**
@@ -23,7 +28,9 @@ import type { OrderStatus } from '../database/database.types.js';
  *      con Sabre, `createBooking` **no** devuelve `bookingSignature`, así que sin esta lectura
  *      no hay forma de modificar ni de compensar nada después. Ver `hasVersionStamp` en
  *      `OrderCreateAudit` y `docs/sabre/04-create-booking.md`.
- *   3. **compensar** — cancelación SELECTIVA por `itemId` de lo que sí entró cuando el resto no.
+ *   3. **compensar** — cancelación SELECTIVA por `itemId` de lo que sí entró, y **sólo cuando
+ *      falló algo de lo que la compra DEPENDE**. Un accesorio caído no compensa: la reserva se
+ *      conserva y el caso escala. Ver {@link ORDER_ITEM_ROLE}.
  *
  * Regla que atraviesa todo el fichero: **ninguna rama termina en silencio**. Cuando no se sabe
  * qué pasó, la decisión es `escalate`, no `settled`. Un desenlace desconocido persistido como
@@ -52,9 +59,70 @@ export const ORDER_STATUS_BY_OUTCOME: Readonly<
   FAILED: 'failed',
 };
 
+/**
+ * Papel de un ítem DENTRO de la compra. Es el eje de la regla más cara del fichero.
+ *
+ * El eje **no** es el precio ni «qué producto es»: es de qué DEPENDE la compra. Un ítem es
+ * ESENCIAL cuando, si falla, lo que sí entró deja de poder usarse; es ACCESORIO cuando lo demás
+ * sigue sirviendo sin él.
+ */
+export type OrderItemRole = 'ESSENTIAL' | 'ACCESSORY';
+
+/**
+ * El papel de cada tipo de ítem, decidido una vez y en un solo sitio.
+ *
+ * Es un `Record` **completo** sobre `OrderItemKind` a propósito, no un `Set` con un `default`: el
+ * día que el puerto del dominio añada un tipo de ítem, este fichero deja de compilar hasta que
+ * alguien decida si el fallo de esa cosa puede cancelar una reserva. Un `default: 'ACCESSORY'`
+ * dejaría entrar en silencio productos que sí sostienen el viaje; un `default: 'ESSENTIAL'`
+ * convertiría cualquier extra nuevo en un motivo para cancelar un vuelo.
+ *
+ * ⚠️ **`hotel` como ACCESORIO es la entrada discutible de esta tabla**, y está así a sabiendas.
+ * Un hotel no es un extra —es medio paquete y a veces el motivo del viaje—, pero el criterio de
+ * la tabla no es la importancia comercial:
+ *
+ *  1. **La dependencia va en un solo sentido.** Sin el vuelo, el hotel de Lima no se puede usar;
+ *     sin el hotel, el vuelo a Lima sigue volando y el cliente duerme en otro sitio. Cancelar el
+ *     vuelo porque cayó el hotel destruye lo único que seguía sirviendo.
+ *  2. **Los dos errores no cuestan lo mismo.** No compensar deja la reserva viva y ESCALA: una
+ *     persona la ve y la deshace a mano si hay que deshacerla. Compensar de más devuelve al
+ *     inventario una tarifa aérea que puede no volver a existir, y eso no tiene vuelta.
+ *  3. **Cambiarlo es una línea con nombre.** Si negocio decide que un paquete cae entero cuando
+ *     cae el hotel, se cambia esta entrada y el test que la fija dice exactamente qué se cambió.
+ */
+export const ORDER_ITEM_ROLE: Readonly<Record<OrderItemKind, OrderItemRole>> = {
+  /** Sin vuelo el cliente no está en la ciudad: el hotel, el coche y el asiento sobran. */
+  flight: 'ESSENTIAL',
+  /** Ver la nota de arriba: la compra no depende de él, y equivocarse aquí es reversible. */
+  hotel: 'ACCESSORY',
+  /** Se sustituye en el mostrador del destino; su fallo jamás justifica tirar la tarifa aérea. */
+  car: 'ACCESSORY',
+  /** Equipaje, comidas y demás extras: cuelgan del vuelo y el viaje ocurre sin ellos. */
+  ancillary: 'ACCESSORY',
+  /**
+   * El caso que originó la regla. El asiento cuelga de SU vuelo, y el contrato de Sabre ni
+   * siquiera le da `itemId` ni carril en `CancelBookingRequest`: no hay forma de cancelarlo, sólo
+   * de cancelar el vuelo entero en su lugar.
+   */
+  seat: 'ACCESSORY',
+};
+
+/**
+ * Los ítems FALLIDOS de los que la compra depende. Vacío ⇒ no se cayó nada esencial.
+ *
+ * Sólo cuenta `FAILED`. Un esencial `UNCONFIRMED` **no** es un fallo: el ítem existe en la
+ * reserva y todavía puede confirmarse solo (lista de espera, `NN` sin respuesta), y tratarlo como
+ * caído dispararía una compensación que cancela justo lo que aún podía salir bien.
+ */
+export function failedEssentialItems(result: OrderCreateResult): readonly OrderItemResult[] {
+  return result.items.filter(
+    (item) => item.status === 'FAILED' && ORDER_ITEM_ROLE[item.kind] === 'ESSENTIAL',
+  );
+}
+
 /** Por qué hay que deshacer parte de lo que se creó. Vocabulario cerrado: va al `domain_event`. */
 export type CompensationReason =
-  /** `PARTIAL`: la reserva existe y al menos un ítem quedó fuera. */
+  /** `PARTIAL`: la reserva existe y se cayó al menos un ítem **esencial**. */
   | 'partial-items-failed'
   /** La lectura de cierre dice que el proveedor ya la tiene por cancelada, y nosotros no. */
   | 'verified-cancelled-upstream';
@@ -71,6 +139,16 @@ export type EscalationReason =
   | 'verified-not-found'
   /** Hay que compensar y el proveedor no dijo QUÉ ítems se pueden cancelar. */
   | 'compensation-targets-unknown'
+  /**
+   * El desenlace es parcial pero **no se cayó nada de lo que la compra depende**: un accesorio
+   * fuera (el asiento, un extra) o un `errors[]` sin ningún ítem caído.
+   *
+   * La reserva se CONSERVA. Cancelar un vuelo confirmado porque no había asiento es indefendible:
+   * la tarifa puede haber desaparecido y el cliente se queda sin viaje por un extra. Perder el
+   * asiento es recuperable; perder el vuelo no. Así que no se compensa, y lo mira una persona —que
+   * es quien puede pedir otro asiento, o deshacer la reserva si el cliente no la quiere así.
+   */
+  | 'partial-without-essential-failure'
   /** Se canceló y el proveedor no confirmó el resultado (`UNVERIFIED`). */
   | 'cancellation-unverified';
 
@@ -172,11 +250,11 @@ function isCancelledUpstream(view: OrderView): boolean {
 }
 
 /**
- * Convierte "hay que compensar" en una decisión concreta.
+ * Convierte "hay que compensar" en una decisión concreta. Sólo se llama cuando ya está decidido
+ * QUE hay que compensar; el filtro de si el fallo lo merece vive en {@link decideAfterVerify}.
  *
  * Si no hay ítems que cancelar, la decisión **no** es un `cancelAll` ciego: es `escalate`. Tirar
- * de la manta en un éxito parcial cancela también lo que sí quedó bien, y el pasajero se queda
- * sin el vuelo que ya tenía por culpa de un asiento que no había.
+ * de la manta en un éxito parcial cancela también lo que sí quedó bien.
  */
 function compensateOrEscalate(
   result: OrderCreateResult,
@@ -218,6 +296,11 @@ export function decideAfterVerify(input: {
   if (isCancelledUpstream(view)) {
     // Creamos algo que el proveedor ya da por muerto. Si hay ítems vivos hay que deshacerlos;
     // si no los hay, es una orden cancelada del otro lado y se registra como tal.
+    //
+    // Esta rama NO pasa por la puerta de {@link failedEssentialItems}, y es deliberado: aquí no
+    // se cancela nada por culpa de un accesorio: la reserva entera ya está muerta del otro lado y
+    // lo que queda es limpiar los restos. Dejar un ítem vivo colgando de una reserva cancelada es
+    // como aparece un segmento fantasma que se emite solo.
     const targets = compensationTargets(created);
     if (targets.length === 0) return { kind: 'settled', status: 'cancelled' };
     return {
@@ -228,7 +311,19 @@ export function decideAfterVerify(input: {
     };
   }
 
-  if (outcome === 'PARTIAL') return compensateOrEscalate(created, 'partial-items-failed', status);
+  if (outcome === 'PARTIAL') {
+    // **UN FALLO DE ACCESORIO NUNCA CANCELA EL PRODUCTO.** La compensación se dispara por el
+    // fallo de algo de lo que la compra DEPENDE, no por cualquier desenlace parcial: un asiento
+    // denegado, un extra caído o un `errors[]` sin ítem caído dejan la reserva intacta y escalan.
+    //
+    // Sin esta puerta, `compensationTargets` de un parcial con el asiento fuera devuelve
+    // exactamente un id —el del VUELO CONFIRMADO, porque es el único ítem vivo con id— y el saga
+    // cancela el vuelo del cliente porque no había asiento.
+    if (failedEssentialItems(created).length === 0) {
+      return { kind: 'escalate', reason: 'partial-without-essential-failure', status };
+    }
+    return compensateOrEscalate(created, 'partial-items-failed', status);
+  }
 
   // `CONFIRMED` y `PENDING` verificados: no hay nada que deshacer. `PENDING` sigue en `pending`
   // a propósito — la reserva existe y el proveedor todavía no la resolvió.

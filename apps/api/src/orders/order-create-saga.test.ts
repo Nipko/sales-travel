@@ -41,7 +41,8 @@ import { runPostSaleJob } from './post-sale.worker.js';
  *
  *  1. toda creación se CIERRA verificando (criterio de salida de la fase);
  *  2. lo que no se pudo verificar NO se persiste como confirmado;
- *  3. el éxito parcial encola una compensación SELECTIVA, con los ítems dentro;
+ *  3. el éxito parcial encola una compensación SELECTIVA, con los ítems dentro, **y sólo cuando
+ *     se cayó algo de lo que la compra depende**: un accesorio fuera conserva la reserva y escala;
  *  4. cada operación con dinero deja un `domain_event` con actor, tenant y la
  *     `errorHandlingPolicy` con la que se pidió (RNF-08);
  *  5. `orders.provider_raw` se llena SIN PII;
@@ -313,6 +314,15 @@ function confirmado(): OrderCreateResult {
   };
 }
 
+/**
+ * El parcial que originó la regla: el VUELO dentro, el ASIENTO fuera.
+ *
+ * El proveedor declara el vuelo como cancelable —es verdad, se puede— y encima le da un
+ * `providerItemId` al asiento, que el ACL de Sabre no le daría nunca. Las dos cosas son a
+ * propósito: la reserva se conserva porque lo que se cayó es un accesorio, no porque no hubiera
+ * nada que cancelar. Si la protección dependiera de que la lista llegue vacía, este caso la
+ * atravesaría.
+ */
 function parcial(): OrderCreateResult {
   return {
     outcome: 'PARTIAL',
@@ -327,6 +337,34 @@ function parcial(): OrderCreateResult {
         category: 'APPLICATION_ERROR',
         type: 'SEAT_NOT_AVAILABLE',
         message: 'The requested seat is no longer available',
+        fieldName: 'documentNumber',
+        fieldValue: DOCUMENTO,
+      },
+    ],
+    compensation: { cancellableItemIds: ['12'] },
+  };
+}
+
+/**
+ * El parcial que SÍ compensa: un tramo dentro y el otro caído.
+ *
+ * Un vuelo es de lo que la compra DEPENDE. Con la ida confirmada y la vuelta denegada, el cliente
+ * se queda tirado a mitad de camino: aquí sí hay que deshacer lo que quedó vivo.
+ */
+function vueloCaido(): OrderCreateResult {
+  return {
+    outcome: 'PARTIAL',
+    pnr: PNR,
+    items: [
+      { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+      { kind: 'flight', providerItemId: '14', status: 'FAILED', statusCode: 'UC' },
+    ],
+    issues: [
+      {
+        severity: 'ERROR',
+        category: 'APPLICATION_ERROR',
+        type: 'FLIGHT_NOT_AVAILABLE',
+        message: 'The requested flight is no longer available',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO,
       },
@@ -420,8 +458,8 @@ describe('saga de creación — toda creación se CIERRA verificando', () => {
 });
 
 describe('saga de creación — la compensación es selectiva y va a la cola', () => {
-  it('un PARTIAL encola la compensación CON los ítems que el proveedor declaró', async () => {
-    const b = banco({ created: parcial() });
+  it('un vuelo caído encola la compensación CON los ítems que el proveedor declaró', async () => {
+    const b = banco({ created: vueloCaido() });
     const { saga } = await b.orders.createOrder(TENANT, USER, dto());
 
     expect(saga).toEqual({
@@ -454,11 +492,153 @@ describe('saga de creación — la compensación es selectiva y va a la cola', (
     await b.orders.createOrder(TENANT, USER, dto());
     expect(b.queue.compensations).toEqual([]);
   });
+});
 
+/**
+ * **UN FALLO DE ACCESORIO NUNCA CANCELA EL PRODUCTO.**
+ *
+ * Cancelar un vuelo confirmado porque no había asiento es indefendible: la tarifa puede haber
+ * desaparecido y el cliente se queda sin viaje por un extra. Perder el asiento es recuperable;
+ * perder el vuelo no. La compensación se dispara por el fallo de algo de lo que la compra DEPENDE,
+ * no por cualquier desenlace parcial.
+ *
+ * Todo entra por `OrdersService.createOrder`: lo que se mide es lo que sale del proceso —lo que se
+ * encola y lo que se persiste—, no lo que devuelve una función interna.
+ */
+describe('saga de creación — un accesorio caído no cancela el producto', () => {
+  it('asiento denegado: NO se cancela el vuelo, ni ahora ni encolado para después', async () => {
+    const b = banco({ created: parcial() });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+    // Las dos formas de perder el vuelo: cancelarlo aquí, o encolar una compensación que lo
+    // cancele dentro de un minuto. Ninguna ocurre —y el proveedor había declarado el vuelo
+    // cancelable, así que la protección no viene de que la lista llegara vacía.
+    expect(b.queue.compensations).toEqual([]);
+    expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('y el caso ESCALA: sin reintento automático, porque lo tiene que ver una persona', async () => {
+    // Un asiento no se recupera solo. Lo que hace falta es alguien que pida otro, o que pregunte
+    // al cliente si quiere la reserva así — decisiones que ninguna cola puede tomar.
+    const b = banco({ created: parcial() });
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    const escalado = b.audit.first(ORDER_EVENTS.escalated);
+    expect(escalado?.payload).toMatchObject({
+      reason: 'partial-without-essential-failure',
+      outcome: 'PARTIAL',
+      queued: false,
+    });
+    expect(b.queue.verifications).toEqual([]);
+  });
+
+  it('CONTRAPESO: si el que se cae es el vuelo, SÍ se compensa lo que quedó vivo', async () => {
+    // La regla no puede degenerar en «no se compensa nunca». Un tramo caído deja al cliente a
+    // mitad de camino y lo que sobrevivió hay que deshacerlo.
+    const b = banco({ created: vueloCaido() });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga.kind).toBe('compensate');
+    expect(b.queue.compensations[0]?.cancellableItemIds).toEqual(['12']);
+  });
+
+  it('MIXTO: un asiento caído junto a un vuelo caído sigue compensando', async () => {
+    // El accesorio no puede volver inofensivo un fallo que sí lo es: si la puerta preguntara
+    // «¿hay algún accesorio caído?» en vez de «¿se cayó algo esencial?», este caso dejaría el
+    // tramo vivo colgando de una reserva rota.
+    const b = banco({
+      created: {
+        outcome: 'PARTIAL',
+        pnr: PNR,
+        items: [
+          { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+          { kind: 'flight', providerItemId: '14', status: 'FAILED', statusCode: 'UC' },
+          { kind: 'seat', status: 'FAILED', statusCode: 'UC' },
+        ],
+        issues: [],
+        compensation: { cancellableItemIds: ['12'] },
+      },
+    });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'compensate', cancellableItemIds: ['12'] });
+  });
+
+  it('un vuelo en lista de espera NO es un vuelo caído: no dispara la compensación', async () => {
+    // `NN`/`UU` son ítems que existen y todavía pueden confirmarse solos. Contarlos como fallo
+    // esencial cancelaría justo lo que aún podía salir bien.
+    const b = banco({
+      created: {
+        outcome: 'PARTIAL',
+        pnr: PNR,
+        items: [
+          { kind: 'flight', providerItemId: '12', status: 'UNCONFIRMED', statusCode: 'NN' },
+          { kind: 'seat', status: 'FAILED', statusCode: 'UC' },
+        ],
+        issues: [],
+        compensation: { cancellableItemIds: ['12'] },
+      },
+    });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'escalate', reason: 'partial-without-essential-failure' });
+    expect(b.queue.compensations).toEqual([]);
+  });
+
+  it('un PARTIAL que sólo trae `errors[]`, sin ítem caído, tampoco cancela nada', async () => {
+    // Es el parcial que produce elegir `DO_NOT_HALT_ON_*` y que el proveedor cuente algo que no
+    // tumbó ningún ítem. Cancelar el vuelo por un mensaje de error es la misma avería con otro
+    // disfraz.
+    const b = banco({
+      created: {
+        outcome: 'PARTIAL',
+        pnr: PNR,
+        items: [{ kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' }],
+        issues: [{ severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'REMARK_NOT_ADDED' }],
+        compensation: { cancellableItemIds: ['12'] },
+      },
+    });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'escalate', reason: 'partial-without-essential-failure' });
+    expect(b.queue.compensations).toEqual([]);
+  });
+
+  it('un hotel caído no cancela el vuelo: la compra no depende de él', async () => {
+    // LA DECISIÓN DISCUTIBLE, fijada aquí para que cambiarla sea explícito. Sin el vuelo el hotel
+    // de Lima no se puede usar; sin el hotel el vuelo a Lima sigue volando y el cliente duerme en
+    // otro sitio. La dependencia va en un solo sentido, y equivocarse por este lado es
+    // recuperable: escala y una persona rehace el hotel. Si negocio decide que un paquete cae
+    // entero cuando cae el hotel, este test se pone rojo y dice qué se está cambiando.
+    const b = banco({
+      created: {
+        outcome: 'PARTIAL',
+        pnr: PNR,
+        items: [
+          { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+          { kind: 'hotel', providerItemId: 'H1', status: 'FAILED', statusCode: 'UC' },
+        ],
+        issues: [],
+        compensation: { cancellableItemIds: ['12'] },
+      },
+    });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'escalate', reason: 'partial-without-essential-failure' });
+    expect(b.queue.compensations).toEqual([]);
+  });
+});
+
+describe('saga de creación — la cola puede no estar, y se dice', () => {
   it('sin Redis, el evento DICE que la compensación no se encoló', async () => {
     // La degradación es elegante pero visible: creer que hay una compensación en marcha que no
     // existe es peor que no tener cola.
-    const adapter = new SagaAdapter({ created: parcial() });
+    const adapter = new SagaAdapter({ created: vueloCaido() });
     const registry = new FlightProviderRegistry([new SagaFactory(adapter)], {
       isEnabledForTenant: () => Promise.resolve(false),
     });

@@ -232,6 +232,38 @@ describe('compensación', () => {
     expect(mapped.order.compensation).toBeUndefined();
     expect('compensation' in mapped.order).toBe(false);
   });
+
+  it('sin ningún ítem caído no se ofrece nada que cancelar, aunque vengan errores', () => {
+    // Una reserva con los dos vuelos dentro y un `errors[]` al lado no tiene NADA que deshacer:
+    // publicar aquí los dos ids es entregar una lista cuyo único significado posible es «cancela
+    // los vuelos del cliente por un mensaje de error».
+    const mapped = mapSabreCreateBookingResponse(
+      response({
+        booking: { bookingId: 'PYMUEZ', flights: [flight(), flight({ itemId: 'DEF34' })] },
+        errors: [{ category: 'APPLICATION_ERROR', type: 'REMARK_NOT_ADDED' }],
+      }),
+    );
+
+    expect(mapped.order.outcome).toBe('PARTIAL');
+    expect(mapped.order.compensation).toBeUndefined();
+  });
+
+  it('un producto caído CON itemId sí abre la lista: es lo que `cancelBooking` sabe nombrar', () => {
+    // El contrapeso del caso de arriba. `CancelBookingRequest` tiene carril de `hotels`
+    // (`:323-438`), así que un hotel caído es un fallo direccionable y deshacer lo que quedó vivo
+    // tiene sentido. Si la puerta degenerara en «no ofrecer nunca nada», este test lo dice.
+    const mapped = mapSabreCreateBookingResponse(
+      response({
+        booking: {
+          bookingId: 'PYMUEZ',
+          flights: [flight()],
+          hotels: [{ itemId: 'H1', hotelStatusCode: 'UC' }],
+        },
+      }),
+    );
+
+    expect(mapped.order.compensation).toEqual({ cancellableItemIds: ['ABC12'] });
+  });
 });
 
 describe('bookingSignature', () => {
@@ -394,13 +426,50 @@ describe('el asiento se pide y ahora también se lee', () => {
     expect(mapped.order.items[1]?.status).toBe('FAILED');
   });
 
-  it('el asiento denegado NO entra en la compensación: el contrato no le da itemId', () => {
-    // `Seat` declara `number`, `characteristics`, `statusCode` y `statusName`, y nada más. Colar
-    // aquí el `itemId` del vuelo sería cancelar el vuelo porque falló el asiento.
+  it('un asiento denegado NO abre la compensación: la única cancelación posible sería la del vuelo', () => {
+    // `Seat` declara `number`, `characteristics`, `statusCode` y `statusName`, y nada más: no hay
+    // ningún id de asiento que mandar. Lo que antes salía de aquí era `['ABC12']` —el `itemId` del
+    // VUELO CONFIRMADO— y leer eso como «esto hay que cancelarlo» es cancelar el vuelo porque no
+    // había asiento. La lista se omite entera, que es la única forma de que no signifique eso.
     const mapped = mapSabreCreateBookingResponse(withSeats([seat({ statusCode: 'UC' })]));
 
-    expect(mapped.order.compensation).toEqual({ cancellableItemIds: ['ABC12'] });
+    expect(mapped.order.compensation).toBeUndefined();
+    expect('compensation' in mapped.order).toBe(false);
     expect(mapped.order.items[1]?.providerItemId).toBeUndefined();
+    // Y sin embargo el asiento caído SÍ se ve: el desenlace y el ítem son lo que lee la persona
+    // que atiende la escalada, y lo que el saga clasifica como accesorio.
+    expect(mapped.order.outcome).toBe('PARTIAL');
+    expect(mapped.order.items[1]).toMatchObject({ kind: 'seat', status: 'FAILED' });
+  });
+
+  it('MIXTO: un asiento caído junto a un vuelo caído no borra la compensación', () => {
+    // El accesorio no puede volver inofensivo un fallo que sí lo es. Si la puerta mirara «hay
+    // algún fallo sin itemId» en vez de «hay algún fallo CON itemId», este caso dejaría el tramo
+    // vivo colgando de una reserva rota.
+    const mapped = mapSabreCreateBookingResponse(
+      response({
+        booking: {
+          bookingId: 'PYMUEZ',
+          flights: [
+            flight({ seats: [seat({ statusCode: 'UC' })] }),
+            flight({ itemId: 'DEF34', flightStatusCode: 'UC' }),
+          ],
+        },
+      }),
+    );
+
+    expect(mapped.order.compensation).toEqual({ cancellableItemIds: ['ABC12'] });
+  });
+
+  it('el `kind` del ítem sale del mapper: es el dato con el que el saga distingue accesorios', () => {
+    // Las dos mitades se mueven juntas. La regla «un accesorio no cancela un producto» se aplica
+    // allí clasificando por `kind`; si este mapper dejara de etiquetar el asiento como `'seat'`
+    // —o lo colgara del `kind` del vuelo—, la regla de allí seguiría verde y no protegería nada.
+    const mapped = mapSabreCreateBookingResponse(
+      withSeats([seat({ statusCode: 'UC' }), seat({ number: '13B', statusCode: 'HK' })]),
+    );
+
+    expect(mapped.order.items.map((item) => item.kind)).toEqual(['flight', 'seat', 'seat']);
   });
 
   it('el número de asiento no sale del mapper: nadie lo confunde con una clave de cancelación', () => {

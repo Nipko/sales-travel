@@ -43,6 +43,10 @@ async function loadDotEnv() {
 
 function config() {
   const cfg = {
+    // Camino corto: el `secret` YA CALCULADO que Postman guarda en su environment. Se admite
+    // porque es lo que un operador tiene a mano si ya busca desde Postman, y evita pedirle que
+    // desmonte la credencial en tres piezas para que el script la vuelva a montar igual.
+    secret: process.env.SABRE_SECRET,
     epr: process.env.SABRE_EPR,
     password: process.env.SABRE_PASSWORD,
     pcc: process.env.SABRE_PCC,
@@ -51,11 +55,26 @@ function config() {
     depDate: process.env.DEP_DATE ?? isoPlusDays(30),
     retDate: process.env.RET_DATE ?? isoPlusDays(37),
   };
-  const missing = ['epr', 'password', 'pcc'].filter((k) => !cfg[k]);
+
+  // El PCC hace falta SIEMPRE, incluso con el secret ya hecho: va en el body de cada búsqueda
+  // (`POS.Source.PseudoCityCode`), no sólo dentro de la credencial.
+  if (!cfg.pcc) {
+    console.error(
+      `Falta SABRE_PCC. Va en el body de cada búsqueda, no sólo dentro del secret.\n` +
+        `En tu environment de Postman es la variable \`pcc\`.`,
+    );
+    process.exit(2);
+  }
+  if (cfg.secret) return cfg;
+
+  const missing = ['epr', 'password'].filter((k) => !cfg[k]);
   if (missing.length > 0) {
     console.error(
-      `Faltan credenciales: ${missing.map((m) => 'SABRE_' + m.toUpperCase()).join(', ')}.\n` +
-        `Créalas en ${resolve(root, '.env.sabre')} (ya está en .gitignore) o expórtalas en el shell.\n` +
+      `Faltan credenciales: ${missing.map((m) => 'SABRE_' + m.toUpperCase()).join(', ')}.\n\n` +
+        `Dos formas de darlas, en ${resolve(root, '.env.sabre')} (ya está en .gitignore):\n` +
+        `  (a) SABRE_SECRET=<el valor de la variable \`secret\` de tu environment de Postman>\n` +
+        `  (b) SABRE_EPR + SABRE_PASSWORD, y el script deriva el secret\n` +
+        `En ambos casos hace falta SABRE_PCC.\n` +
         `Ver docs/sabre/20-workflows-e2e.md §8.1.`,
     );
     process.exit(2);
@@ -73,7 +92,8 @@ function isoPlusDays(days) {
  * VERIFICADO en el script pre-request de la colección — ver `docs/sabre/01-…` §2.1.
  * OJO: el secret es reversible, no un hash. Quien lo tenga tiene el password en claro.
  */
-function deriveSecret({ epr, pcc, password, domain }) {
+function deriveSecret({ secret, epr, pcc, password, domain }) {
+  if (secret) return secret;
   const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
   return b64(`${b64(`V1:${epr}:${pcc}:${domain}`)}:${b64(password)}`);
 }

@@ -5,6 +5,7 @@ import type {
   OrderCreatePort,
   OrderCreateRequest,
   OrderCreateResult,
+  OrderItemKind,
   Passenger,
   SearchContext,
 } from '@sales-travel/domain';
@@ -19,6 +20,7 @@ import {
   type SabreFlightInput,
   type SabreGender,
   type SabrePartialFailureDomain,
+  type SabrePricingInput,
   type SabreTitle,
   type SabreTravelerInput,
 } from './booking/create.request.builder';
@@ -44,10 +46,18 @@ import { logRedacted, type SabreLogLevel } from './redaction';
  *    builder, que es el borde del contrato y no debe conocer nuestro dominio.
  * 2. **Elige el carril.** NDC si la oferta trae los identificadores de `offers/price`; ATPCO si
  *    trae itinerario. No hay un tercer caso silencioso: sin ninguna de las dos cosas, lanza.
- * 3. **Publica lo que hay que auditar.** `errorHandlingPolicy`, `asynchronousUpdateWaitTimeMs`,
- *    `advisories` y `hasBookingSignature` salen en {@link SabreOrderCreateOutcome} para que el
+ * 3. **Publica lo que hay que auditar.** El caso de uso elegido, la tolerancia que produjo,
+ *    `errorHandlingPolicy`, `asynchronousUpdateWaitTimeMs`, `advisories`, `hasBookingSignature` y
+ *    el veredicto de fallo parcial salen en {@link SabreOrderCreateOutcome} para que el
  *    `domain_event` los pueda citar (RNF-08). Un `PARTIAL` sin la política que se pidió es una
  *    reserva a medias que nadie puede explicar tres semanas después.
+ *
+ * Y una regla de negocio que gobierna las tres: **un fallo de accesorio nunca cancela el
+ * producto.** Cancelar un vuelo confirmado porque no había asiento deja al cliente sin viaje —la
+ * tarifa puede haber desaparecido— por culpa de un extra. Por eso la tolerancia no se pide como una
+ * lista suelta de dominios sino como un **caso de uso** ({@link SabreBookingUseCase}), que es lo que
+ * dice de qué DEPENDE la compra, y por eso el resultado vuelve con el veredicto ya hecho
+ * ({@link SabrePartialFailureVerdict}) en vez de dejar que cada saga lo reinvente.
  *
  * **`createBooking` NO se reintenta.** Está en `SABRE_NON_IDEMPOTENT_PATHS`, así que el cliente
  * HTTP lo impide aunque quien llame pida `idempotent: true`; aquí ni se pide.
@@ -65,13 +75,77 @@ export interface SabreOrderCreateDeps {
   readonly logger?: LoggerPort;
 }
 
+// ---------------------------------------------------------------------------------------------
+// El caso de uso: quién decide qué es accesorio
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Qué se está vendiendo, y por tanto **de qué depende la compra**.
+ *
+ * El éxito parcial es un modo que se ELIGE antes de llamar (`booking-management-v1.yml:698`,
+ * `:8918-8940`), no una anomalía que se detecta después. Pero elegirlo como una lista suelta de
+ * dominios deja la decisión sin dueño: cualquiera puede tolerar cualquier cosa y nada queda escrito
+ * sobre por qué. Aquí se pide por caso de uso, que es una frase que alguien puede defender.
+ *
+ *  - **`FLIGHT_ONLY`** — venta de vuelo suelto. Nada es accesorio: `HALT_ON_ERROR`. Un vuelo a
+ *    medias no es vendible (docs/sabre/04 §5.4).
+ *  - **`FLIGHT_WITH_EXTRAS`** — vuelo con extras dentro de la misma oferta (asiento o ancillary de
+ *    los `selectedOfferItems` de NDC). El vuelo es la compra; el extra es accesorio y su fallo no
+ *    la tumba. Es literalmente el caso «perder el 12A no debe tumbar la venta»: el extra se
+ *    reintenta después contra el PNR ya creado.
+ *
+ * Lo que NO hay, y por qué:
+ *
+ *  - **Ningún caso de uso tolera `PRICING`.** `DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR` deja el PNR
+ *    **sin price quote** y el billete puede emitirse a otra tarifa (docs/sabre/04 §5.1). El precio
+ *    no es un accesorio: es aquello de lo que la compra depende. Quien lo necesite alguna vez lo
+ *    pedirá por el builder, con una razón escrita, no por aquí.
+ *  - **Ninguno tolera `IDENTITY_DOC_WARNING`.** Un aviso de documento habla de si el pasajero puede
+ *    embarcar, no de un extra: seguir adelante es vender un viaje que quizá no se pueda hacer.
+ *  - `HOTEL` y `CAR` ya no existen en el vocabulario del builder: éste es el carril aéreo y un body
+ *    salido de él no lleva esos bloques.
+ */
+export const SABRE_BOOKING_USE_CASES = ['FLIGHT_ONLY', 'FLIGHT_WITH_EXTRAS'] as const;
+
+export type SabreBookingUseCase = (typeof SABRE_BOOKING_USE_CASES)[number];
+
+/**
+ * Caso de uso → dominios que ese caso declara accesorios.
+ *
+ * Es la ÚNICA tabla que decide qué se tolera. El orden dentro de cada lista da igual: el builder
+ * reordena las políticas al orden del enum del contrato para que dos llamadas equivalentes
+ * produzcan el mismo array y el `domain_event` sea comparable.
+ */
+export const SABRE_TOLERANCE_BY_USE_CASE = {
+  FLIGHT_ONLY: [],
+  FLIGHT_WITH_EXTRAS: ['ANCILLARY', 'SEAT'],
+} as const satisfies Record<SabreBookingUseCase, readonly SabrePartialFailureDomain[]>;
+
+/** Sin caso de uso declarado, nada es accesorio. El default seguro es no tolerar nada. */
+export const SABRE_DEFAULT_BOOKING_USE_CASE: SabreBookingUseCase = 'FLIGHT_ONLY';
+
+/**
+ * Tolerancia → el `kind` de ítem cuyo fallo esa tolerancia declara accesorio.
+ *
+ * `null` significa «este dominio no nombra ningún ítem de la orden»: `PRICING` es una propiedad del
+ * PNR entero e `IDENTITY_DOC_WARNING` habla de un traveler, y ninguno de los dos aparece en
+ * `OrderCreateResult.items[]`. Escribirlos con `null` en vez de omitirlos no es adorno: el
+ * `satisfies` obliga a decidir qué hacer con cualquier dominio nuevo en vez de dejarlo caer en el
+ * silencio de un `Partial<Record<…>>`.
+ */
+const ACCESSORY_ITEM_KIND_BY_TOLERANCE = {
+  PRICING: null,
+  ANCILLARY: 'ancillary',
+  SEAT: 'seat',
+  IDENTITY_DOC_WARNING: null,
+} as const satisfies Record<SabrePartialFailureDomain, OrderItemKind | null>;
+
 export interface SabreOrderCreateOptions {
   /**
-   * Dominios cuyo fallo NO debe tumbar la reserva. **Vacío = `HALT_ON_ERROR`**, que es el default
-   * del contrato y el nuestro. El éxito parcial es un modo que se ELIGE antes de llamar
-   * (`booking-management-v1.yml:698`, `:8918-8935`), no una anomalía que se detecta después.
+   * Qué se está vendiendo. **Default `FLIGHT_ONLY`**: sin decirlo, nada es accesorio y la política
+   * es `HALT_ON_ERROR`, que es el default del contrato y el nuestro.
    */
-  readonly partialFailureTolerance?: readonly SabrePartialFailureDomain[];
+  readonly useCase?: SabreBookingUseCase;
   readonly haltOnInvalidConnectingTime?: boolean;
   /**
    * Espera asíncrona en ms. **Siempre explícita**: con el default 0 del contrato (`:714-722`) la
@@ -87,9 +161,46 @@ export interface SabreOrderCreateOptions {
   readonly agency?: SabreAgencyInput;
   /**
    * Estado con el que se piden los vuelos ATPCO. Default `NN` — el del contrato (`:5216`,
-   * `default: NN`). `YK` construye una **pasiva** y no se pone por accidente.
+   * `default: NN`). `YK` construye una **pasiva** y no se pone por accidente: además de registrar
+   * un segmento reservado fuera de Sabre, es lo único que hace que la reserva salga SIN cotizar
+   * (ver {@link productOf}).
    */
   readonly flightStatusCode?: string;
+}
+
+/**
+ * Qué falló, leído contra lo que el caso de uso declaró accesorio.
+ *
+ * Existe porque la política de tolerancia sin veredicto es media función: se elige tolerar el fallo
+ * del asiento, la política viaja al cable, Sabre devuelve `200` con la reserva y `errors[]` al
+ * lado… y arriba nadie sabe si eso obliga a compensar. Aquí se decide UNA vez, con la lista de
+ * accesorios que se pidió, y el resultado se registra.
+ */
+export interface SabrePartialFailureVerdict {
+  /** `kind` de los ítems `FAILED` que el caso de uso declaró accesorios. No cancelan la compra. */
+  readonly accessoryFailures: readonly OrderItemKind[];
+  /** `kind` de los ítems `FAILED` que NO son accesorios: de eso depende la compra. */
+  readonly dependencyFailures: readonly OrderItemKind[];
+  /**
+   * La señal que dispara la compensación: `dependencyFailures.length > 0`.
+   *
+   * ⚠️ **Se dispara por un fallo DEMOSTRADO, no por un desenlace parcial cualquiera.** Es la
+   * dirección que fija la regla de negocio: compensar de más significa cancelar un vuelo confirmado
+   * —y la tarifa puede no volver—, mientras que compensar de menos deja un extra colgando que se
+   * puede deshacer después. Un `errors[]` que no llegue a marcar ningún ítem como fallido **no**
+   * pone esto a `true`; para eso está {@link hasUnattributedErrors}.
+   */
+  readonly dependencyFailed: boolean;
+  /**
+   * Hay incidencias de severidad `ERROR` y ningún ítem fallido que las explique.
+   *
+   * Es el borde honesto de este veredicto: `ProviderIssue` trae `category`/`type`/`fieldPath`, y
+   * atribuir esos códigos a un dominio de producto exigiría una taxonomía que no tenemos verificada
+   * contra CERT. Cuando esto viene a `true` la decisión NO está tomada: hay que releer la reserva
+   * con `getBooking` —que además es obligatorio para modificar, porque `createBooking` no devuelve
+   * `bookingSignature`— y mirar `result.issues`.
+   */
+  readonly hasUnattributedErrors: boolean;
 }
 
 /**
@@ -98,6 +209,12 @@ export interface SabreOrderCreateOptions {
  */
 export interface SabreOrderCreateOutcome {
   readonly result: OrderCreateResult;
+  /** El caso de uso con el que se llamó. Es la decisión, en el vocabulario en que se tomó. */
+  readonly useCase: SabreBookingUseCase;
+  /** Los dominios que ese caso de uso declaró accesorios, antes de traducirlos al enum de Sabre. */
+  readonly partialFailureTolerance: readonly SabrePartialFailureDomain[];
+  /** Qué falló y si obliga a compensar, resuelto contra la tolerancia que se pidió. */
+  readonly failures: SabrePartialFailureVerdict;
   /** La política que se mandó, tal cual viajó en el body. */
   readonly errorHandlingPolicy: readonly string[];
   readonly asynchronousUpdateWaitTimeMs: number;
@@ -150,6 +267,9 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
 
     const mapped: SabreCreateBookingMapped = mapSabreCreateBookingResponse(result.data);
     const advisories = plan.advisories.map(describeAdvisory);
+    const useCase = options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE;
+    const tolerance = toleranceOf(useCase);
+    const failures = classifySabrePartialFailure(mapped.order, tolerance);
 
     this.log(mapped.order.outcome === 'CONFIRMED' ? 'debug' : 'warn', 'sabre.createBooking', {
       tenantId: ctx.tenantId,
@@ -157,17 +277,24 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       durationMs: result.durationMs,
       outcome: mapped.order.outcome,
       // La política aplicada va en CADA línea, no sólo en el evento: leer un `PARTIAL` sin saber
-      // qué se pidió tolerar no permite decidir si hay que compensar.
+      // qué se pidió tolerar no permite decidir si hay que compensar. Y el caso de uso va al lado,
+      // porque es el vocabulario en el que se tomó la decisión: `errorHandlingPolicy` dice qué se
+      // mandó, `useCase` dice por qué.
+      useCase,
       errorHandlingPolicy: [...plan.errorHandlingPolicy],
       asynchronousUpdateWaitTimeMs: plan.asynchronousUpdateWaitTimeMs,
       items: mapped.order.items.length,
       issues: mapped.order.issues.length,
+      dependencyFailed: failures.dependencyFailed,
       hasBookingSignature: mapped.hasBookingSignature,
       ...(advisories.length === 0 ? {} : { advisories }),
     });
 
     return {
       result: mapped.order,
+      useCase,
+      partialFailureTolerance: tolerance,
+      failures,
       errorHandlingPolicy: [...plan.errorHandlingPolicy],
       asynchronousUpdateWaitTimeMs: plan.asynchronousUpdateWaitTimeMs,
       advisories,
@@ -175,7 +302,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       hasBookingSignature: mapped.hasBookingSignature,
       conversationId: result.conversationId,
       ...(mapped.timestamp === undefined ? {} : { timestamp: mapped.timestamp }),
-      providerRaw: providerRawOf(mapped, plan, result.conversationId),
+      providerRaw: providerRawOf(mapped, plan, result.conversationId, useCase, tolerance, failures),
     };
   }
 
@@ -195,7 +322,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     };
 
     return buildSabreCreateBookingRequest(input, this.cfg, {
-      partialFailureTolerance: [...(options.partialFailureTolerance ?? [])],
+      partialFailureTolerance: [...toleranceOf(options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE)],
       ...(options.haltOnInvalidConnectingTime === undefined
         ? {}
         : { haltOnInvalidConnectingTime: options.haltOnInvalidConnectingTime }),
@@ -223,6 +350,78 @@ function describeAdvisory(item: MissingAirlineRequirement): string {
 
 /** `FlightStatusCode` por defecto del contrato (`booking-management-v1.yml:5216`). */
 export const DEFAULT_FLIGHT_STATUS_CODE = 'NN';
+
+/**
+ * El `flightStatusCode` que construye una **pasiva**: un segmento reservado FUERA de Sabre que sólo
+ * se registra (`booking-management-v1.yml:5221`, docs/sabre/04 §2 `createBooking - Passive Air
+ * segment`). Es el único caso en el que este adapter no cotiza — ver {@link productOf}.
+ */
+export const SABRE_PASSIVE_FLIGHT_STATUS_CODE = 'YK';
+
+// ---------------------------------------------------------------------------------------------
+// Tolerancia y veredicto
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Los dominios que el caso de uso declara accesorios. Se devuelve una copia, para que nadie mute
+ * la tabla.
+ *
+ * El caso de uso se comprueba en tiempo de ejecución además de en el tipo: un llamador en
+ * JavaScript puro —o un `unknown` que cruce un borde sin parsear— acabaría indexando la tabla con
+ * una llave que no existe, y `[...undefined]` revienta con un `TypeError` que no dice nada. Aquí
+ * falla con el error tipado del adapter y nombrando el campo.
+ */
+function toleranceOf(useCase: SabreBookingUseCase): readonly SabrePartialFailureDomain[] {
+  const tolerance = SABRE_TOLERANCE_BY_USE_CASE[useCase] as
+    | readonly SabrePartialFailureDomain[]
+    | undefined;
+  if (tolerance === undefined) {
+    throw new SabreOrderCreateInputError(
+      `useCase no es uno de los casos de uso declarados (${SABRE_BOOKING_USE_CASES.join(', ')}): ` +
+        'la tolerancia a fallo parcial no se elige campo a campo, se elige por caso de uso',
+    );
+  }
+  return [...tolerance];
+}
+
+/**
+ * Clasifica lo que falló contra lo que se declaró accesorio.
+ *
+ * Sólo cuenta `status === 'FAILED'`. **`UNCONFIRMED` no es `FAILED`**: el ítem existe en la reserva
+ * y el proveedor no lo dio por confirmado —lista de espera, `NN` pendiente de respuesta de la
+ * aerolínea—, y colapsar los dos lleva a cancelar lo que todavía podía confirmarse. Es la misma
+ * distinción que ya fija `classifyItemStatus` en el mapper, y aquí no se vuelve a decidir.
+ *
+ * Se expone para poder ejercitarla desde un test sin montar una respuesta HTTP, pero el camino de
+ * producción es {@link SabreOrderCreateAdapter.createBooking}, que es por donde entran los tests
+ * que importan.
+ */
+export function classifySabrePartialFailure(
+  result: OrderCreateResult,
+  tolerance: readonly SabrePartialFailureDomain[],
+): SabrePartialFailureVerdict {
+  const accessoryKinds = new Set<OrderItemKind>();
+  for (const domain of tolerance) {
+    const kind = ACCESSORY_ITEM_KIND_BY_TOLERANCE[domain];
+    if (kind !== null) accessoryKinds.add(kind);
+  }
+
+  const failed = result.items.filter((item) => item.status === 'FAILED');
+  const accessoryFailures = failed
+    .filter((item) => accessoryKinds.has(item.kind))
+    .map((item) => item.kind);
+  const dependencyFailures = failed
+    .filter((item) => !accessoryKinds.has(item.kind))
+    .map((item) => item.kind);
+  const errors = result.issues.filter((issue) => issue.severity === 'ERROR');
+
+  return {
+    accessoryFailures,
+    dependencyFailures,
+    dependencyFailed: dependencyFailures.length > 0,
+    hasUnattributedErrors: errors.length > 0 && failed.length === 0,
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Traducción dominio → contrato
@@ -378,6 +577,17 @@ function rawId(offer: Offer, key: string): string | null {
  *
  * Sin ids de price y sin itinerario **lanza**. El fallback que fabrica un id —el que tiene el ACL
  * de LATAM— no arregla nada: mueve el fallo al paso de reserva, con el cliente delante.
+ *
+ * **El carril ATPCO cotiza siempre.** `flightPricing` es opcional en el contrato (`:4994`) y su
+ * ausencia significa literalmente «reserva sin cotizar» (docs/sabre/04 §3.3.2): el PNR queda sin
+ * price quote y el precio que se le dio al cliente no es el que queda guardado, así que la emisión
+ * puede salir a otra tarifa. `[{}]` es «cotiza con defaults», que es el mínimo que garantiza que la
+ * reserva lleve precio. La ÚNICA excepción es la pasiva
+ * ({@link SABRE_PASSIVE_FLIGHT_STATUS_CODE}): ahí el segmento se reservó fuera de Sabre y no hay
+ * nada que cotizar — el patrón de la colección es `flightStatusCode: "YK"` **sin `flightPricing`**.
+ *
+ * El carril NDC no lleva `flightPricing`: el precio vive dentro de la oferta que ya pasó por
+ * `offers/price`, y `flightOffer` ni siquiera declara el bloque (`:4952-4981`).
  */
 function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductInput {
   const offerId = rawId(offer, SABRE_RAW_KEYS.priceOfferId);
@@ -409,7 +619,30 @@ function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductI
     );
   }
 
-  return { kind: 'atpco', flights: segments.map((s) => flightOf(s, flightStatusCode)) };
+  return {
+    kind: 'atpco',
+    flights: segments.map((s) => flightOf(s, flightStatusCode)),
+    ...(isPassive(flightStatusCode) ? {} : { pricing: defaultAtpcoPricing() }),
+  };
+}
+
+/** `YK` es el marcador de pasiva, y se compara normalizado porque llega por opción del llamador. */
+function isPassive(flightStatusCode: string): boolean {
+  return flightStatusCode.trim().toUpperCase() === SABRE_PASSIVE_FLIGHT_STATUS_CODE;
+}
+
+/**
+ * `flightPricing: [{}]` — «cotiza con defaults».
+ *
+ * Se construye fresco en cada reserva en vez de compartir una constante: el array cruza a Zod y de
+ * ahí al body, y un objeto compartido entre reservas es la clase de estado que acaba mutado por
+ * accidente. Los cualificadores del pricing waterfall del consolidador —comisión, aerolínea
+ * validadora, `priceComparisons`— existen en el builder y NO se rellenan aquí: no hay todavía un
+ * caso de uso que los pida por este puerto, y un campo sin caso de uso es superficie que nadie
+ * prueba.
+ */
+function defaultAtpcoPricing(): SabrePricingInput[] {
+  return [{}];
 }
 
 /**
@@ -468,6 +701,9 @@ export function providerRawOf(
   mapped: SabreCreateBookingMapped,
   plan: SabreCreateBookingPlan,
   conversationId: string,
+  useCase: SabreBookingUseCase,
+  tolerance: readonly SabrePartialFailureDomain[],
+  failures: SabrePartialFailureVerdict,
 ): Record<string, unknown> {
   return {
     provider: 'sabre',
@@ -478,6 +714,15 @@ export function providerRawOf(
     ...(mapped.order.orderId === undefined ? {} : { orderId: mapped.order.orderId }),
     ...(mapped.timestamp === undefined ? {} : { timestamp: mapped.timestamp }),
     hasBookingSignature: mapped.hasBookingSignature,
+    // La decisión, en los dos vocabularios: `useCase` es por qué se toleró, `partialFailureTolerance`
+    // qué se toleró y `errorHandlingPolicy` lo que de verdad viajó al cable. Los tres son
+    // vocabulario CERRADO —enums nuestros y del contrato—, así que no hay PII que redactar.
+    useCase,
+    partialFailureTolerance: [...tolerance],
+    accessoryFailures: [...failures.accessoryFailures],
+    dependencyFailures: [...failures.dependencyFailures],
+    dependencyFailed: failures.dependencyFailed,
+    hasUnattributedErrors: failures.hasUnattributedErrors,
     errorHandlingPolicy: [...plan.errorHandlingPolicy],
     asynchronousUpdateWaitTimeMs: plan.asynchronousUpdateWaitTimeMs,
     carriers: [...plan.carriers],

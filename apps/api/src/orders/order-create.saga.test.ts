@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { OrderCreateResult, OrderView } from '@sales-travel/domain';
 import {
+  ORDER_ITEM_ROLE,
   ORDER_STATUS_BY_OUTCOME,
   compensationTargets,
   decideAfterCreateThrew,
   decideAfterVerify,
+  failedEssentialItems,
   fallbackProviderRaw,
   locatorOf,
   planVerification,
@@ -42,6 +44,18 @@ function vueloSiAsientoNo(): OrderCreateResult {
     items: [
       { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
       { kind: 'seat', providerItemId: '13', status: 'FAILED', statusCode: 'UC' },
+    ],
+    compensation: { cancellableItemIds: ['12'] },
+  });
+}
+
+/** El PARTIAL que SÍ compensa: se cayó un tramo, y el cliente se queda a mitad de camino. */
+function vueloCaido(): OrderCreateResult {
+  return resultado({
+    outcome: 'PARTIAL',
+    items: [
+      { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+      { kind: 'flight', providerItemId: '14', status: 'FAILED', statusCode: 'UC' },
     ],
     compensation: { cancellableItemIds: ['12'] },
   });
@@ -165,8 +179,8 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
     expect(d).toEqual({ kind: 'settled', status: 'pending' });
   });
 
-  it('un PARTIAL compensa POR ítem, y sólo los que el proveedor declaró', () => {
-    const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista() });
+  it('un PARTIAL con un ESENCIAL caído compensa POR ítem, y sólo los que el proveedor declaró', () => {
+    const d = decideAfterVerify({ created: vueloCaido(), view: vista() });
     expect(d).toEqual({
       kind: 'compensate',
       reason: 'partial-items-failed',
@@ -175,13 +189,28 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
     });
   });
 
-  it('un PARTIAL sin NADA que cancelar escala: no degrada a cancelar la reserva entera', () => {
-    // La sonda de la regla más cara del fichero. Si `compensateOrEscalate` cayera a un cancelAll
-    // cuando la lista sale vacía, este test se pone rojo — y en producción el pasajero se
-    // quedaría sin el vuelo que ya tenía por culpa de un asiento que no había.
+  it('un PARTIAL con sólo un ACCESORIO caído NO compensa: conserva la reserva y escala', () => {
+    // La regla del fundador. El proveedor declara el vuelo cancelable —y lo es—, así que lo único
+    // que impide cancelarlo es esta puerta: sin ella, el pasajero pierde el vuelo que ya tenía
+    // por culpa de un asiento que no había, y la tarifa puede no volver a existir.
+    const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista() });
+    expect(d).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+  });
+
+  it('un PARTIAL esencial sin NADA que cancelar escala: no degrada a cancelar la reserva entera', () => {
+    // La otra sonda: si `compensateOrEscalate` cayera a un cancelAll cuando la lista sale vacía,
+    // este test se pone rojo. El fallo es de un vuelo —esencial—, así que la puerta anterior no
+    // interviene y esta rama sigue siendo alcanzable.
     const sinObjetivos = resultado({
       outcome: 'PARTIAL',
-      items: [{ kind: 'seat', providerItemId: '13', status: 'FAILED' }],
+      items: [
+        { kind: 'flight', providerItemId: '14', status: 'FAILED', statusCode: 'UC' },
+        { kind: 'flight', providerItemId: '15', status: 'UNCONFIRMED', statusCode: 'NN' },
+      ],
     });
     const d = decideAfterVerify({ created: sinObjetivos, view: vista() });
     expect(d).toEqual({
@@ -194,6 +223,9 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
   it.each(['CANCELLED', 'canceled', 'Void', 'VOIDED'])(
     'una reserva que el proveedor da por muerta (%s) se deshace, no se confirma',
     (estado) => {
+      // Ojo con el caso: aquí sólo se cayó el ASIENTO y aun así se compensa, porque el motivo no
+      // es el accesorio sino que la reserva entera está muerta del otro lado. Lo que queda vivo
+      // colgando de una reserva cancelada es como aparece un segmento fantasma que se emite solo.
       const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista({ status: estado }) });
       expect(d).toEqual({
         kind: 'compensate',
@@ -220,6 +252,33 @@ describe('decideAfterCreateThrew — una excepción no es un FAILED', () => {
       reason: 'create-uncertain',
       status: 'failed',
     });
+  });
+});
+
+describe('ORDER_ITEM_ROLE — de qué depende la compra', () => {
+  it('los cinco tipos de ítem tienen papel, y sólo el vuelo puede disparar una cancelación', () => {
+    // La tabla se fija ENTERA a propósito. Añadir un tipo de ítem al puerto del dominio y no
+    // decidir su papel deja de compilar; cambiarle el papel a uno existente pone este test rojo y
+    // obliga a decir qué se está cambiando. Ninguna de las dos cosas puede pasar en silencio: lo
+    // que se decide aquí es si el fallo de esa cosa puede cancelar el vuelo de un cliente.
+    expect(ORDER_ITEM_ROLE).toEqual({
+      flight: 'ESSENTIAL',
+      hotel: 'ACCESSORY',
+      car: 'ACCESSORY',
+      ancillary: 'ACCESSORY',
+      seat: 'ACCESSORY',
+    });
+  });
+
+  it('sólo cuenta como fallo esencial lo que está FAILED, nunca lo que aún puede confirmarse', () => {
+    const enEspera = resultado({
+      outcome: 'PARTIAL',
+      items: [
+        { kind: 'flight', providerItemId: '12', status: 'UNCONFIRMED', statusCode: 'NN' },
+        { kind: 'seat', status: 'FAILED', statusCode: 'UC' },
+      ],
+    });
+    expect(failedEssentialItems(enEspera)).toEqual([]);
   });
 });
 

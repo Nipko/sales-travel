@@ -79,8 +79,13 @@ function buildPaymentBlock(payment: PaymentInfo): string {
   let methodContent: string;
 
   if (payment.type === 'Credit Card' && payment.card) {
+    // ⚠️ Misma deuda de cumplimiento que `ordercreate/request.builder.ts` — ver el bloque largo
+    // de alli. Resumen: este carril manda PAN y CVV por nuestro servidor contra la postura
+    // SAQ-A de `CLAUDE.md`; es anterior a Sabre y esta pendiente de decision del founder.
+    // eslint-disable-next-line no-restricted-syntax -- deuda PCI heredada
     const securityCode = payment.card.securityCode
-      ? `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
+      ? // eslint-disable-next-line no-restricted-syntax -- idem
+        `\n            <CardSecurityCode>${escape(payment.card.securityCode)}</CardSecurityCode>`
       : '';
     methodContent = `<PaymentMethod>
           <PaymentCard>

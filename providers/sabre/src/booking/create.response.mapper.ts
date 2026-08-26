@@ -573,19 +573,32 @@ export function resolveOutcome(
 }
 
 /**
- * Qué se puede deshacer.
+ * Qué se puede deshacer — y **cuándo hay algo que deshacer**. Dos preguntas, y la segunda es la
+ * que faltaba.
  *
- * Sólo los ítems que **existen** —los que traen `itemId`— y que no están ya `FAILED`. Un ítem que
- * falló no llegó a crearse y no hay nada que cancelarle. La actividad de compensación cancela por
- * `itemId`, **nunca** con un `cancelAll: true` ciego (docs/sabre/04 §5.4).
+ * **QUÉ**: sólo los ítems que **existen** —los que traen `itemId`— y que no están ya `FAILED`. Un
+ * ítem que falló no llegó a crearse y no hay nada que cancelarle. La actividad de compensación
+ * cancela por `itemId`, **nunca** con un `cancelAll: true` ciego (docs/sabre/04 §5.4).
  *
- * ⚠️ **Un asiento nunca entra aquí, y no por descuido.** `Seat` (`:2409-2444`) no declara
- * `itemId` —sus cuatro campos son `number`, `characteristics`, `statusCode` y `statusName`— y
- * `CancelBookingRequest` no tiene carril de asientos: sólo `flights`/`hotels`/`cars`/`trains`/
- * `cruises`/`segments` (`:323-438`). No hay nada que mandar. Y poner ahí el `itemId` del vuelo al
- * que cuelga el asiento sería peor que no poner nada: significaría **cancelar el vuelo porque
- * falló el asiento**. El filtro de `providerItemId` lo deja fuera por construcción; el asiento
- * degradado se ve en `items[]` y en el desenlace, que es donde tiene que verse.
+ * **CUÁNDO**: sólo si el proveedor declaró caído algo que su propio `cancelBooking` sabe nombrar,
+ * o sea un ítem `FAILED` **con `itemId`**. Sin eso, esta lista no puede significar más que
+ * «cancela el vuelo confirmado», porque lo único que se habrá caído es algo que no se puede
+ * cancelar por separado.
+ *
+ * ⚠️ **Un asiento no tiene `itemId` y no lo puede tener.** `Seat` (`:2409-2444`) declara `number`,
+ * `characteristics`, `statusCode` y `statusName`, y `CancelBookingRequest` no tiene carril de
+ * asientos: sólo `flights`/`hotels`/`cars`/`trains`/`cruises`/`segments` (`:323-438`). Antes, el
+ * filtro de `providerItemId` dejaba fuera el asiento pero metía dentro el `itemId` del VUELO al
+ * que cuelga, y el resultado era literalmente **cancelar el vuelo porque falló el asiento**: la
+ * puerta de arriba es lo que hace verdadera esta advertencia en vez de dejarla en una promesa. El
+ * asiento degradado se ve en `items[]` y en el desenlace, que es donde tiene que verse.
+ *
+ * ⚠️ Esta puerta **no protege sola, y no pretende hacerlo**: quien decide si se compensa es el
+ * saga (`apps/api/src/orders/order-create.saga.ts`, tabla `ORDER_ITEM_ROLE`), y cuando aquí no se
+ * declara nada, el saga cae a su propia lista —los ítems confirmados con id, o sea el vuelo—. Lo
+ * que esta mitad garantiza es más modesto y aun así hace falta: el ACL no entrega una lista cuyo
+ * único significado posible sería «cancela el vuelo confirmado». La garantía de que un accesorio
+ * caído no cancela un producto está allí, y allí es donde hay que ir a romperla.
  *
  * Se omite el bloque entero cuando no hay nada cancelable: un `cancellableItemIds: []` invita a
  * escribir «si está vacío, cancélalo todo», que es justo lo contrario de lo que hay que hacer.
@@ -593,10 +606,18 @@ export function resolveOutcome(
 function buildCompensation(
   items: readonly OrderItemResult[],
 ): { compensation: { cancellableItemIds: string[] } } | Record<string, never> {
+  const hasCancellableFailure = items.some((item) => item.status === 'FAILED' && hasItemId(item));
+  if (!hasCancellableFailure) return {};
+
   const ids = items
     .filter((item) => item.status !== 'FAILED')
     .map((item) => item.providerItemId)
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
   if (ids.length === 0) return {};
   return { compensation: { cancellableItemIds: ids } };
+}
+
+/** Un id vacío no direcciona nada: `itemId` es `^[A-Z0-9]+$` (`:1875`), nunca la cadena vacía. */
+function hasItemId(item: OrderItemResult): boolean {
+  return typeof item.providerItemId === 'string' && item.providerItemId.length > 0;
 }

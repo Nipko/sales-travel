@@ -86,19 +86,46 @@ export const SABRE_DEFAULT_ERROR_POLICY: SabreCreateErrorPolicy = 'HALT_ON_ERROR
 
 /**
  * Dominios de producto en los que el llamador acepta seguir adelante pese a un fallo. Es el
- * vocabulario de `OrderCreateRequest.partialFailureTolerance` (docs/sabre/04 §8.4); la traducción
- * al enum de Sabre vive en {@link SABRE_ERROR_POLICY_BY_TOLERANCE} y **sólo** ahí.
+ * vocabulario de la tolerancia a fallo parcial (docs/sabre/04 §5.4); la traducción al enum de Sabre
+ * vive en {@link SABRE_ERROR_POLICY_BY_TOLERANCE} y **sólo** ahí.
+ *
+ * La lista es exactamente la de los dominios cuyo bloque **este builder sabe construir**: sólo se
+ * puede tolerar el fallo de algo que se llegó a pedir.
+ *
+ *  - `SEAT` — `flights[].seats[]` (ATPCO) y `flightOffer.seatOffers[]` (NDC).
+ *  - `ANCILLARY` — los `selectedOfferItems[]` de NDC pueden ser ancillaries: `offers/price`
+ *    devuelve `offerItems[]` como un `oneOf` y `ServiceOfferItem` (`type: "Service"`) es un
+ *    ancillary dentro de esa respuesta (docs/sabre/03 §2.5, `offer-price-ndc-v1.yml:556-598`).
+ *  - `PRICING` — `flightDetails.flightPricing[]`.
+ *  - `IDENTITY_DOC_WARNING` — `travelers[].identityDocuments[]`.
+ *
+ * `HOTEL` y `CAR` estaban aquí y **se han quitado**: ver
+ * {@link SABRE_UNBUILDABLE_PARTIAL_FAILURE_DOMAINS}.
  */
 export const SABRE_PARTIAL_FAILURE_DOMAINS = [
   'PRICING',
-  'HOTEL',
-  'CAR',
   'ANCILLARY',
   'SEAT',
   'IDENTITY_DOC_WARNING',
 ] as const;
 
 export type SabrePartialFailureDomain = (typeof SABRE_PARTIAL_FAILURE_DOMAINS)[number];
+
+/**
+ * Los dominios del enum del contrato que **este builder no puede provocar**, y por eso no se
+ * ofrecen.
+ *
+ * `buildProduct` emite `flightOffer` o `flightDetails` y nada más —RF-08 es el carril aéreo, y la
+ * cabecera de este archivo ya dice que hotel y coche no se construyen aquí—. Un
+ * `DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR` en un body sin bloque `hotel` viaja al cable declarando
+ * tolerancia a un fallo que no puede ocurrir: aceptado y sin efecto, que es la peor clase de
+ * opción porque parece que hace algo.
+ *
+ * La constante existe por la misma razón que {@link SABRE_FULFILL_ONLY_FORM_OF_PAYMENT_TYPES}: para
+ * que nadie los vuelva a añadir «porque están en el enum del contrato». Vuelven el día que el
+ * builder construya `hotel`/`car`, no antes. Hay un test que fija la ausencia.
+ */
+export const SABRE_UNBUILDABLE_PARTIAL_FAILURE_DOMAINS = ['HOTEL', 'CAR'] as const;
 
 /**
  * Tolerancia de dominio → política del contrato.
@@ -109,8 +136,6 @@ export type SabrePartialFailureDomain = (typeof SABRE_PARTIAL_FAILURE_DOMAINS)[n
  */
 export const SABRE_ERROR_POLICY_BY_TOLERANCE = {
   PRICING: 'DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR',
-  HOTEL: 'DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR',
-  CAR: 'DO_NOT_HALT_ON_CAR_BOOKING_ERROR',
   ANCILLARY: 'DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR',
   SEAT: 'DO_NOT_HALT_ON_SEAT_BOOKING_ERROR',
   IDENTITY_DOC_WARNING: 'DO_NOT_HALT_ON_IDENTITY_DOCUMENT_WARNING',
@@ -460,6 +485,19 @@ const AGENCY_CUSTOMER_NUMBER = /^[0-9A-Z]{6}([1-9A-Z*]{1}|[0-9A-Z]{4})?$/;
 /** `:787` — sin acentos ni ñ. Patrón literal del contrato: ver {@link NAME_REFERENCE_CODE}. */
 // eslint-disable-next-line no-useless-escape -- patrón literal del contrato
 const RETENTION_LABEL = /^[a-zA-Z0-9 ,.*?\-\/]{0,215}$/;
+/**
+ * Tirada de dígitos con forma de PAN. Se corta en 9 —igual que la del builder de precio— para dejar
+ * margen sobre el BIN de 8, que es lo más largo que un dato de tarjeta puede medir legítimamente en
+ * este ACL. El `pattern` de `cardNumber` del contrato empieza en 12 (`:5314`).
+ *
+ * No se comparte con `price/request.builder.ts` a propósito: **no es una regla global del paquete**
+ * sino una decisión por campo, y hoy se aplica a UNO —ver {@link assertRetentionLabelNoPan}—. Un
+ * teléfono (`^[0-9+-]+$`), un `documentNumber` o un `confirmationId` llevan tiradas largas
+ * legítimas y no se tocan; el resto del texto libre del body (`agency.address.*`,
+ * `futureTicketingPolicy.comment`, `invoiceDescription`, `receivedFrom`) sigue admitiéndolas y está
+ * inventariado en `pan-egress.guard.test.ts`, no cerrado aquí.
+ */
+const PAN_LIKE_DIGIT_RUN = /[0-9]{9,}/;
 /** `:5293` — ⚠️ no admite columna de letra doble. */
 const SEAT_NUMBER = /^[0-9]+[A-Z]$/;
 /** `:5688`, `:5789` — importe con hasta 3 decimales. */
@@ -1125,6 +1163,8 @@ export function buildSabreCreateBookingRequest(
   const parsed = parseOrThrow(SabreCreateBookingInputSchema, input, 'la reserva');
   const opts = parseOrThrow(SabreCreateBookingOptionsSchema, options, 'las opciones de reserva');
 
+  assertRetentionLabelNoPan(parsed.retentionLabel);
+
   if (opts.omitPayment && parsed.formsOfPayment !== undefined) {
     throw new SabreCreateBookingError(
       'omitPayment y formsOfPayment son contradictorios: o se manda el bloque de pago o no',
@@ -1214,6 +1254,33 @@ export function resolveErrorHandlingPolicy(
   if (haltOnInvalidConnectingTime) selected.add('HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR');
   if (selected.size === 0) return [SABRE_DEFAULT_ERROR_POLICY];
   return SABRE_CREATE_ERROR_POLICIES.filter((policy) => selected.has(policy));
+}
+
+/**
+ * El hueco que el patrón del contrato deja abierto en `retentionLabel`, cerrado.
+ *
+ * `^[a-zA-Z0-9 ,.*?\-/]{0,215}$` (`:787`) admite un PAN de 16 dígitos sin inmutarse, y el campo es
+ * **una etiqueta**: «The label associated with the retention date», ejemplo oficial
+ * `'RETENTION DATE'`. Acaba escrito en el PNR, que es lo que ve la aerolínea y cualquiera que
+ * recupere la reserva — el sitio clásico donde aparecen números de tarjeta que nadie quiso poner
+ * ahí. Con D1 decidida no hay ninguna razón para que una etiqueta de retención lleve nueve dígitos
+ * seguidos, así que se rechaza en voz alta en vez de dejarlo pasar «porque el patrón lo admite».
+ *
+ * El mensaje **no lleva el valor**: nombra el campo y la regla, como todos los de este archivo.
+ *
+ * ⚠️ Esto NO promete que un PAN no pueda llegar a Sabre por este body: `phones`, `documentNumber`,
+ * `confirmationId` o `programNumber` admiten tiradas largas porque las necesitan, y ahí la defensa
+ * es la barrera de tipo y la redacción, no la forma. Lo que cierra es este campo y sólo éste; el
+ * inventario completo vive en `pan-egress.guard.test.ts`.
+ */
+function assertRetentionLabelNoPan(retentionLabel: string | undefined): void {
+  if (retentionLabel === undefined) return;
+  if (!PAN_LIKE_DIGIT_RUN.test(retentionLabel)) return;
+  throw new SabreCreateBookingError(
+    'retentionLabel contiene una tirada de 9 o más dígitos seguidos: es una etiqueta que se ' +
+      'escribe en el PNR y ninguna etiqueta legítima la necesita, mientras que D1 prohíbe lo ' +
+      'único que sí tiene esa forma',
+  );
 }
 
 /**

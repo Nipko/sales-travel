@@ -9,8 +9,11 @@ import {
   SABRE_CREATE_BOOKING_PATH,
   SABRE_CREATE_ERROR_POLICIES,
   SABRE_DEFAULT_ERROR_POLICY,
+  SABRE_ERROR_POLICY_BY_TOLERANCE,
   SABRE_FULFILL_ONLY_FORM_OF_PAYMENT_TYPES,
   SABRE_PANLESS_FORM_OF_PAYMENT_TYPES,
+  SABRE_PARTIAL_FAILURE_DOMAINS,
+  SABRE_UNBUILDABLE_PARTIAL_FAILURE_DOMAINS,
   SabreCreateBookingError,
   buildSabreCreateBookingRequest,
   resolveErrorHandlingPolicy,
@@ -266,7 +269,7 @@ describe('errorHandlingPolicy', () => {
 
   it('HALT_ON_ERROR no se mezcla con ningún DO_NOT_HALT_ON_*: sería pedir parar y seguir', () => {
     const plan = build(ndcInput(), {
-      partialFailureTolerance: ['SEAT', 'HOTEL', 'ANCILLARY'],
+      partialFailureTolerance: ['SEAT', 'PRICING', 'ANCILLARY'],
     });
     expect(plan.body.errorHandlingPolicy).not.toContain('HALT_ON_ERROR');
   });
@@ -282,10 +285,13 @@ describe('errorHandlingPolicy', () => {
   });
 
   it('el orden es el del enum del contrato y no el de quien llama: dos llamadas equivalentes producen el mismo array', () => {
-    const a = resolveErrorHandlingPolicy(['SEAT', 'HOTEL'], false);
-    const b = resolveErrorHandlingPolicy(['HOTEL', 'SEAT'], false);
+    const a = resolveErrorHandlingPolicy(['SEAT', 'ANCILLARY'], false);
+    const b = resolveErrorHandlingPolicy(['ANCILLARY', 'SEAT'], false);
     expect(a).toEqual(b);
-    expect(a).toEqual(['DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR', 'DO_NOT_HALT_ON_SEAT_BOOKING_ERROR']);
+    expect(a).toEqual([
+      'DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR',
+      'DO_NOT_HALT_ON_SEAT_BOOKING_ERROR',
+    ]);
   });
 
   it('las tolerancias repetidas no duplican políticas', () => {
@@ -311,6 +317,77 @@ describe('errorHandlingPolicy', () => {
         partialFailureTolerance: ['LO_QUE_SEA'] as unknown as ['SEAT'],
       }),
     ).toThrow(SabreCreateBookingError);
+  });
+
+  it('sólo se ofrecen los dominios cuyo bloque este builder sabe construir', () => {
+    // Los cuatro que quedan tienen bloque en el body: `flightPricing`, los offer items de NDC,
+    // `seats[]`/`seatOffers[]` e `identityDocuments[]`.
+    expect([...SABRE_PARTIAL_FAILURE_DOMAINS]).toEqual([
+      'PRICING',
+      'ANCILLARY',
+      'SEAT',
+      'IDENTITY_DOC_WARNING',
+    ]);
+    // Y la traducción cubre exactamente esos cuatro: ni un dominio sin política ni al revés.
+    expect(Object.keys(SABRE_ERROR_POLICY_BY_TOLERANCE).sort()).toEqual(
+      [...SABRE_PARTIAL_FAILURE_DOMAINS].sort(),
+    );
+  });
+
+  it('HOTEL y CAR no se pueden tolerar: este builder no construye ni hotel ni coche', () => {
+    for (const domain of SABRE_UNBUILDABLE_PARTIAL_FAILURE_DOMAINS) {
+      expect(SABRE_PARTIAL_FAILURE_DOMAINS).not.toContain(domain);
+      expect(() =>
+        build(ndcInput(), { partialFailureTolerance: [domain] as unknown as ['SEAT'] }),
+      ).toThrow(SabreCreateBookingError);
+    }
+    // Las políticas SIGUEN en el enum del contrato: lo que se quitó es nuestra oferta, no la copia
+    // del spec. Si algún día el builder construye `hotel`, vuelven — y este test se pone rojo.
+    expect(SABRE_CREATE_ERROR_POLICIES).toContain('DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR');
+    expect(SABRE_CREATE_ERROR_POLICIES).toContain('DO_NOT_HALT_ON_CAR_BOOKING_ERROR');
+  });
+
+  it('el body no puede llevar bloque hotel ni car, que es lo que hacía inertes esas dos políticas', async () => {
+    const body = await serializedBodyOnTheWire(atpcoInput());
+    const sent = JSON.parse(body) as Record<string, unknown>;
+    expect(sent['hotel']).toBeUndefined();
+    expect(sent['car']).toBeUndefined();
+    expect(Object.keys(sent).filter((key) => key === 'hotels' || key === 'cars')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// D1 — el hueco del patrón de `retentionLabel`
+// ---------------------------------------------------------------------------------------------
+
+describe('retentionLabel', () => {
+  it('una etiqueta legítima viaja al cable tal cual', async () => {
+    const body = await serializedBodyOnTheWire(
+      ndcInput({ retentionEndDate: '2026-12-01', retentionLabel: 'RETENIDA POR CONSOLIDADOR' }),
+    );
+    expect(body).toContain('"retentionLabel":"RETENIDA POR CONSOLIDADOR"');
+  });
+
+  it('un PAN pasa el patrón del contrato y aun así NO llega al cable', () => {
+    // El patrón `:787` lo admite entero: la defensa no puede ser el regex del contrato.
+    expect(/^[a-zA-Z0-9 ,.*?\-/]{0,215}$/.test('4111111111111111')).toBe(true);
+
+    const message = messageOf(() => build(ndcInput({ retentionLabel: '4111111111111111' })));
+    expect(message).toContain('retentionLabel');
+    // Y el número no viaja en el mensaje, que acaba en un log y en la pantalla del agente.
+    expect(message).not.toContain('4111111111111111');
+  });
+
+  it('la regla es la tirada de dígitos, no la longitud de la etiqueta', () => {
+    // 8 dígitos —una fecha, un número de grupo— pasan: el corte está en 9, con margen sobre el BIN.
+    expect(() => build(ndcInput({ retentionLabel: 'GRUPO 20261201 BOG' }))).not.toThrow();
+    expect(() => build(ndcInput({ retentionLabel: 'REF 123456789' }))).toThrow(
+      SabreCreateBookingError,
+    );
+  });
+
+  it('sin retentionLabel no hay nada que comprobar y la reserva se construye igual', () => {
+    expect(build(ndcInput()).body.retentionLabel).toBeUndefined();
   });
 });
 

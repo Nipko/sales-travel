@@ -805,7 +805,6 @@ const CARRIED_CREATE: readonly string[] = Object.freeze([
   'product.pricing.0.amountOnSecondFormOfPayment',
   'product.pricing.0.priceComparisons.0.desiredAmount',
   'receivedFrom',
-  'retentionLabel',
   'travelers.0.givenName',
   'travelers.0.identityDocuments.0.documentNumber',
   'travelers.0.identityDocuments.0.givenName',
@@ -873,6 +872,12 @@ describe('barrido de mutación: dónde llega un PAN inyectado y dónde no', () =
     expect(verdicts['travelers.0.surname']).toBe('rejected');
     expect(verdicts['travelers.0.givenName']).toBe('carried');
     expect(verdicts['targetPcc']).toBe('rejected');
+    // `retentionLabel` ESTUVO en la lista de arriba: su patrón de contrato (`:787`) admite un PAN
+    // entero y el guard lo toleraba a la vista. Es una ETIQUETA que se escribe en el PNR, no un
+    // identificador del proveedor ni un teléfono, así que con D1 decidida el hueco se cerró en el
+    // builder. Se fija la rama que rechaza para que el campo no desaparezca de este barrido en
+    // silencio el día que alguien afloje el builder.
+    expect(verdicts['retentionLabel']).toBe('rejected');
     expect(carriedPaths(verdicts), CARRIED_HELP).toEqual([...CARRIED_CREATE]);
   });
 
