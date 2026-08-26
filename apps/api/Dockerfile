@@ -2,7 +2,12 @@ ARG NODE_VERSION=20.18-alpine
 ARG PNPM_VERSION=9.15.0
 
 FROM node:${NODE_VERSION} AS base
-RUN npm install -g pnpm@${PNPM_VERSION}
+# pnpm se instala por COREPACK, no por `npm install -g`. El motivo no es estetico: la imagen
+# base flotante trajo un npm mas nuevo y pnpm empezo a rechazar arrancar con
+# ERR_PNPM_PNPM_ENGINE_IDENTITY_UNVERIFIABLE — no puede verificar que el pnpm que corre es el que
+# declara `packageManager` en package.json. Corepack es la via soportada y establece esa identidad.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 
 FROM base AS builder
@@ -12,13 +17,12 @@ COPY packages packages
 COPY providers providers
 COPY apps/api apps/api
 RUN pnpm install --filter @sales-travel/api... --no-frozen-lockfile
-RUN pnpm --filter @sales-travel/validation run build
-RUN pnpm --filter @sales-travel/canonical run build
-RUN pnpm --filter @sales-travel/core run build
-RUN pnpm --filter @sales-travel/domain run build
-RUN pnpm --filter @sales-travel/latam-ndc run build
-RUN pnpm --filter @sales-travel/despegar-hotels run build
-RUN pnpm --filter @sales-travel/agent-cars run build
+# Las dependencias se construyen por el GRAFO (`^...`), no por una lista escrita a mano.
+# La lista anterior enumeraba los siete paquetes uno a uno y se quedo rancia en cuanto
+# `apps/api` gano una dependencia nueva (`@sales-travel/sabre`): el `pnpm install` de arriba si
+# la instalaba, pero nadie la construia, asi que el build de la api fallaba al no encontrar su
+# `dist`. Es el mismo criterio que ya usa `.github/workflows/ci.yml`.
+RUN pnpm --filter "@sales-travel/api^..." run build
 RUN pnpm --filter @sales-travel/api run build
 RUN pnpm --filter @sales-travel/api deploy --prod /out/api
 
