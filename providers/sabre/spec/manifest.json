@@ -1,0 +1,155 @@
+{
+  "note": "RNF-15: los 21 contratos NO se copian a este paquete (dos originales de 3,9 MB divergirian en silencio, que es el fallo contra el que existe el requisito). Se pinea hash + info.version de los .yml congelados en docs/sabre/evidence/specs/. Regenerar solo cuando se baje una version nueva del devhub, y con revision del diff. Ver docs/sabre/11-plan-implementacion.md 6.1.",
+  "specDir": "docs/sabre/evidence/specs",
+  "algorithm": "sha256",
+  "count": 21,
+  "specs": [
+    {
+      "slug": "bargain-finder-max-v3",
+      "file": "bargain-finder-max-v3.yml",
+      "version": "v3",
+      "bytes": 209338,
+      "sha256": "c8827f2392cd6fd2022ed299822e603daee268980f5210feac4b281ca8e7cd8f"
+    },
+    {
+      "slug": "bargain-finder-max-v4",
+      "file": "bargain-finder-max-v4.yml",
+      "version": "v4",
+      "bytes": 311540,
+      "sha256": "c9e1e59ad32207849baa39171b447bbec19e28a716af5962ffca4e77c8ff9263"
+    },
+    {
+      "slug": "bargain-finder-max-v5",
+      "file": "bargain-finder-max-v5.yml",
+      "version": "v5",
+      "bytes": 444880,
+      "sha256": "68784935e8437e1a08da201d29dc89e2259dfbe2ccb0f04558683ba6d250ea2e"
+    },
+    {
+      "slug": "booking-management-v1",
+      "file": "booking-management-v1.yml",
+      "version": "1.33",
+      "bytes": 430286,
+      "sha256": "cccef8d39b2e8439717f3c6722f21a9b9fdf8070fceb798fe3193150987fa570"
+    },
+    {
+      "slug": "flight-reshop-api-1.0",
+      "file": "flight-reshop-api-1.0.yml",
+      "version": "1.1",
+      "bytes": 336014,
+      "sha256": "b97311cc1dfecea3fd5b5d94c03e57034dd4e563878eb58bdd7565fb65fdd0e6"
+    },
+    {
+      "slug": "flightcheck-api-v1",
+      "file": "flightcheck-api-v1.yml",
+      "version": "1.0",
+      "bytes": 81045,
+      "sha256": "9eae38cf56c7d1730110b5185c402a98d5a05572733cc2e2f1215de2a3b0d2cb"
+    },
+    {
+      "slug": "get-ancillaries-agency-2.3",
+      "file": "get-ancillaries-agency-2.3.yml",
+      "version": "2.3",
+      "bytes": 33634,
+      "sha256": "aa50a18f029924d517ccdb3f39863e0ff1817e078bf12c87aefb96467d166e35"
+    },
+    {
+      "slug": "get-ancillaries-airline-3.0",
+      "file": "get-ancillaries-airline-3.0.yml",
+      "version": "3.0",
+      "bytes": 1017825,
+      "sha256": "bd0b5a0f5f4ddd92cec1daa7821eb1d9a5416d4cec9da976aa70eedb8e0a4e7f"
+    },
+    {
+      "slug": "get-hotel-avail-v3",
+      "file": "get-hotel-avail-v3.yml",
+      "version": "v3",
+      "bytes": 101564,
+      "sha256": "50770a6ba30680821d097b25862a08a0603525e0936963c0c86d29702e6735e7"
+    },
+    {
+      "slug": "get-hotel-avail-v4",
+      "file": "get-hotel-avail-v4.yml",
+      "version": "v4",
+      "bytes": 93541,
+      "sha256": "bf8ca20e97e74aa9c917df8b38d0440a723856101d8cf953b34d7e96a95c0e97"
+    },
+    {
+      "slug": "get-hotel-avail-v5.0",
+      "file": "get-hotel-avail-v5.0.yml",
+      "version": "v5.0",
+      "bytes": 177249,
+      "sha256": "1f438aa38d95ff312ec71a7f77f50cb3fd121b728e11a17f980818ccd55d1171"
+    },
+    {
+      "slug": "get-hotel-details-v2",
+      "file": "get-hotel-details-v2.yml",
+      "version": "v2",
+      "bytes": 117666,
+      "sha256": "6a4e02a1bb71eb16b65373e8e45af8096073d5d7b6df1aa7367ec69225d83ab9"
+    },
+    {
+      "slug": "get-seats-agency-3.0",
+      "file": "get-seats-agency-3.0.yml",
+      "version": "3.1",
+      "bytes": 52034,
+      "sha256": "8e1199b43dd447381771edc4e989055cc85cc1d80b29b4ec37f7c117b02609cb"
+    },
+    {
+      "slug": "get-seats-airline-3.0",
+      "file": "get-seats-airline-3.0.yml",
+      "version": "3.0",
+      "bytes": 50749,
+      "sha256": "42ce6dee8287aa32633989e67539d3079c66c03f52309e3b464611954e93883e"
+    },
+    {
+      "slug": "get-vehicle-availability-v1",
+      "file": "get-vehicle-availability-v1.yml",
+      "version": "v1",
+      "bytes": 72375,
+      "sha256": "4f929dc4a238049459f02b807dc8a45ea3dd2da3a816ff25f56d4fc548d62099"
+    },
+    {
+      "slug": "get-vehicle-availability-v2",
+      "file": "get-vehicle-availability-v2.yml",
+      "version": "v2",
+      "bytes": 37672,
+      "sha256": "b0aa9b9932a376ea973ab2b6e3396d74de4d1d419d87cd839e94ef8e24f69743"
+    },
+    {
+      "slug": "hotel-price-check-v4",
+      "file": "hotel-price-check-v4.yml",
+      "version": "v4",
+      "bytes": 54222,
+      "sha256": "f0f84c806c5a45c174bdc205cbc01f19d80bf1d99b826b680903645495451dbd"
+    },
+    {
+      "slug": "hotel-price-check-v5",
+      "file": "hotel-price-check-v5.yml",
+      "version": "v5",
+      "bytes": 59740,
+      "sha256": "5e74e506ca68300f914142af62442ab675a48de9385de12eb3f540a9976b0b9f"
+    },
+    {
+      "slug": "manage-ancillary-1.1",
+      "file": "manage-ancillary-1.1.yml",
+      "version": "1.1",
+      "bytes": 56785,
+      "sha256": "5540f90a4ba6a8eecf2c9693133a82b8037bf7ba6af46fe003e3b1881051da19"
+    },
+    {
+      "slug": "offer-price-ndc-v1",
+      "file": "offer-price-ndc-v1.yml",
+      "version": "1.5",
+      "bytes": 195776,
+      "sha256": "91d9ca65f6f05f8272ab501fa89e3132794d2ea547a78397dca536da3f4ec5c0"
+    },
+    {
+      "slug": "stateless-ancillaries-api-1.0",
+      "file": "stateless-ancillaries-api-1.0.yml",
+      "version": "1.0",
+      "bytes": 63847,
+      "sha256": "57c139eefccd82295ba656c21a9e7bd68dd3c1c70b01f32f5d22c8d0f37f75ec"
+    }
+  ]
+}

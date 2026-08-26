@@ -8,11 +8,17 @@ pnpm-lock.yaml
 *.min.js
 *.min.css
 
-# Postman collections (exports as-is, no need to reformat)
+# Postman collections y environments (exports tal cual, no se reformatean)
 **/API_LATAM_*.json
 **/*.postman_collection.json
+**/*.postman_environment.json
 docs/research/*.postman.json
 
 # Generated data (large JSON with airport catalog)
 apps/web-b2b/src/data/airports-full.json
+
+# Evidencia congelada de proveedores: contratos OpenAPI y respuestas capturadas, byte a byte
+# como los sirve el proveedor. Reformatearlos rompería las 500+ citas `archivo.yml:<línea>`
+# que la documentación usa como prueba, que es justo lo que hace verificable el expediente.
+docs/sabre/evidence/
 

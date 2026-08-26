@@ -92,7 +92,8 @@ export class HotelsService {
       {
         tenantId,
         vertical: 'hotels',
-        providerCode: PROVIDER_CODE,
+        // Un solo proveedor: la fila de la búsqueda y la del proveedor son la misma.
+        providerCodes: [PROVIDER_CODE],
         criteria: {
           checkinDate: input.checkinDate,
           checkoutDate: input.checkoutDate,

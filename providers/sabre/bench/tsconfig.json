@@ -1,0 +1,14 @@
+{
+  // El bench vive fuera de `src/` para que NUNCA se compile ni se publique (ver el docstring de
+  // `redaction.budget.bench.ts`). Pero fuera de `src/` tampoco lo veía el `typecheck` del paquete,
+  // y una sonda que no compila se pudre en silencio hasta que alguien la necesita. Este proyecto
+  // sólo la TYPECHECKEA: `noEmit`, y `rootDir` en la raíz del paquete para poder importar `../src`.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    // Sin `.tsbuildinfo`: este proyecto no emite nada, así que no tiene salida que invalidar.
+    "incremental": false
+  },
+  "include": ["**/*.ts"]
+}

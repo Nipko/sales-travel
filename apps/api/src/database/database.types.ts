@@ -81,6 +81,15 @@ export interface SearchLogsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
   tenant_id: string | null;
+  /**
+   * Búsqueda del usuario a la que pertenece esta fila (0035). Varias filas con el mismo
+   * grupo son UN fan-out y la cuota las cuenta una sola vez. NULL sólo en las filas
+   * anteriores a la columna, que `count_recent_searches` sigue contando 1 cada una.
+   *
+   * Obligatorio al insertar a propósito: sin default en la BD, una fila nueva sin grupo
+   * sería una búsqueda extra en la cuota del tenant y nadie se enteraría.
+   */
+  search_group_id: string | null;
   actor_user_id: string | null;
   vertical: SearchVertical;
   provider_code: string;

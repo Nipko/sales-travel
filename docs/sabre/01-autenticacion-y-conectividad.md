@@ -1,5 +1,5 @@
 ---
-titulo: "Sabre — Autenticación y conectividad"
+titulo: 'Sabre — Autenticación y conectividad'
 fecha: 2026-08-25
 estado: reconciliado-contra-spec
 Fuentes: ver 00-fuentes.md
@@ -13,16 +13,16 @@ Fuentes: ver 00-fuentes.md
 > `[INFERIDO]` o `DESCONOCIDO`, ahora dice **VERIFICADO-SPEC** con archivo y línea. Donde el contrato **contradice**
 > lo que decía la primera pasada, está señalado explícitamente con «**Corrección**».
 >
-> | Marca | Significado |
-> | --- | --- |
-> | **VERIFICADO** | Se lee literalmente en un body, header, URL o script de la colección. Se cita la ruta del request. |
-> | **VERIFICADO-SPEC** | Sale del contrato OpenAPI oficial o de la documentación oficial. Se cita archivo:línea. |
+> | Marca                     | Significado                                                                                                                               |
+> | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+> | **VERIFICADO**            | Se lee literalmente en un body, header, URL o script de la colección. Se cita la ruta del request.                                        |
+> | **VERIFICADO-SPEC**       | Sale del contrato OpenAPI oficial o de la documentación oficial. Se cita archivo:línea.                                                   |
 > | **VERIFICADO-POR-SCRIPT** | El script de test de Postman **lee** esa ruta del response. Evidencia fuerte de que el campo existe, pero el body real no está capturado. |
-> | **[INFERIDO]** | Viene de nombres de variables, convención NDC/OTA o conocimiento general. **Hay que verificarlo contra el sandbox.** |
-> | **DESCONOCIDO** | No hay forma de saberlo desde las fuentes disponibles. Va a `Preguntas abiertas`. |
+> | **[INFERIDO]**            | Viene de nombres de variables, convención NDC/OTA o conocimiento general. **Hay que verificarlo contra el sandbox.**                      |
+> | **DESCONOCIDO**           | No hay forma de saberlo desde las fuentes disponibles. Va a `Preguntas abiertas`.                                                         |
 
 > **Nota de procedencia — corrección a la primera pasada.** La colección trae **4 respuestas guardadas y NO están
-> vacías**: pesan **16.479 bytes cada una** y están extraídas en `slices/responses/*.json`. Las cuatro son de
+> vacías**: pesan **16.479 bytes cada una** y están extraídas en `evidence/responses/*.json`. Las cuatro son de
 > `/v1/orders/view` (los únicos 4 requests a ese endpoint en toda la colección — VERIFICADO), y **ninguna es de
 > autenticación**, por lo que siguen sin decir nada sobre la forma del response de `/v2/auth/token`. Lo que sí
 > aportan es la única evidencia dura de forma de respuesta salida de la colección; se explotan en los documentos de
@@ -33,13 +33,13 @@ Fuentes: ver 00-fuentes.md
 ## 1. Los dos modos de credencial
 
 Sabre expone **dos mecanismos de credencial que conviven en la misma colección**, nombrados explícitamente en los
-títulos de los requests. **VERIFICADO** (conteo por *request*, reproducible — ver Anexo):
+títulos de los requests. **VERIFICADO** (conteo por _request_, reproducible — ver Anexo):
 
-| Sufijo en el nombre del request | Nº de requests | Endpoint sobre el que aparece |
-| --- | --- | --- |
-| `(Stateless ATK)` | **89** | **sólo** `{{rest_endpoint}}/v{3,4,5}/offers/shop` y `/v1/offers/price` |
-| `(Stateful ATH)` | **57** | **sólo** `{{soap_endpoint}}` |
-| `REST Authorize ATK` | **59** | `{{rest_endpoint}}/v2/auth/token` |
+| Sufijo en el nombre del request | Nº de requests | Endpoint sobre el que aparece                                          |
+| ------------------------------- | -------------- | ---------------------------------------------------------------------- |
+| `(Stateless ATK)`               | **89**         | **sólo** `{{rest_endpoint}}/v{3,4,5}/offers/shop` y `/v1/offers/price` |
+| `(Stateful ATH)`                | **57**         | **sólo** `{{soap_endpoint}}`                                           |
+| `REST Authorize ATK`            | **59**         | `{{rest_endpoint}}/v2/auth/token`                                      |
 
 > **Corrección (hallazgo 1 de la crítica — ACEPTADO).** La primera pasada ponía **26** en la fila
 > `REST Authorize ATK`, contradiciendo su propio §2, que decía 59. El conteo correcto es **59**, verificado por dos
@@ -55,7 +55,7 @@ Distribución de transporte en la colección — **VERIFICADO**: **808** request
 `{{soap_endpoint}}`, **0** a `{{lls_endpoint}}`. Mensajes de sesión: **73** requests `SessionCreateRQ`, **61**
 `SessionCloseRQ` (conteo por request, no por ocurrencia de string).
 
-### 1.1 El hallazgo clave: el token es *el mismo campo* para REST y para SOAP — y ahora está en el contrato
+### 1.1 El hallazgo clave: el token es _el mismo campo_ para REST y para SOAP — y ahora está en el contrato
 
 La colección define auth **a nivel colección** (no por request) — **VERIFICADO**, raíz del `.json`:
 
@@ -81,9 +81,9 @@ const header = `<SOAP-ENV:Envelope ...><SOAP-ENV:Header>
 La primera pasada lo dedujo de la estructura. **Ahora está escrito en la documentación oficial**, literalmente, en
 las siete páginas de Booking Management — **VERIFICADO-SPEC**:
 
-> «*This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH)
+> «_This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH)
 > tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after
-> execution.*»
+> execution._»
 > — `help/booking-management-api-v1/help-documentation-create-booking.txt:28`; idéntico en
 > `help-documentation-get-booking.txt:14`, `help-documentation-cancel-booking.txt:11`,
 > `help-documentation-modify-booking-0.txt:28`, `help-documentation-fulfill-flight-tickets.txt:16`,
@@ -102,11 +102,13 @@ Además, el script normaliza el prefijo — **VERIFICADO**, con el comentario or
 ```js
 // Analyze 'token' variable, if it starts with "ATH:" this text is removed
 // as it's not accepted by Sabre's 2SG gateways
-if (token) { pm.environment.set('token', token.replace(/^ATH:/, '')); }
+if (token) {
+  pm.environment.set('token', token.replace(/^ATH:/, ''));
+}
 ```
 
 > **Implicación para nuestro ACL:** el token que devuelve `SessionCreateRQ` puede venir prefijado `ATH:`. Hay que
-> **strippear el prefijo antes de usarlo en el gateway REST**, pero *conservar el valor tal cual lo devolvió Sabre*
+> **strippear el prefijo antes de usarlo en el gateway REST**, pero _conservar el valor tal cual lo devolvió Sabre_
 > para el `BinarySecurityToken` SOAP. Nuestro `SabreTokenService` debe guardar ambas formas o normalizar siempre.
 
 ### 1.2 Qué flujo exige cuál — evidencia por workflow (**recontada**)
@@ -116,25 +118,25 @@ if (token) { pm.environment.set('token', token.replace(/^ATH:/, '')); }
 > eso estaba inflada 3–4×: hacía creer que WF-20 abría 4 sesiones y WF-28 abría 20. Tabla recontada **por request**,
 > agrupando por la carpeta de segundo nivel bajo `Workflows/` (255 requests en total):
 
-| Workflow | n | SOAP | `/v2/auth/token` | `SessionCreateRQ` | `SessionCloseRQ` | Ancillaries | Modo |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 — Air NDC Shop, Price, Book, Cancel | 6 | 0 | 1 | 0 | 0 | 0 | **REST puro (ATK)** |
-| 2 — **Profiles** + Air NDC | 9 | 4 | 1 | **1** | 1 | 0 | sesión SOAP (perfiles EPS) |
-| 3 — Air Shop, Book, Cancel | 4 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| 4 — **Profiles** + Air Shop/Book | 8 | 4 | 1 | **1** | 1 | 0 | sesión SOAP (perfiles EPS) |
-| 5 — Air **LCC** Shop, Book, Cancel | 6 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| 6 / 7 / 8 — Shop, Book, Fulfill, Void/Refund | 9 / 10 / 15 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| 9 / 10 — Hotel / Vehicle Shop, Book, Cancel | 8 / 5 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| 11–14, 16–18 — variantes NDC / ATPCO | 5–9 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| **15 — NDC All supported airlines** | 25 | 0 | **5** | 0 | 0 | 0 | REST puro, **5 re-auth** |
-| **19 — ATPCO Air search, Ancillaries, Book** | 5 | **1** | 1 | **0** | 0 | **1** | **ATK + SOAP sin sesión** |
-| **20 — LCC Air Search, Ancillaries, Book** | 6 | **3** | **0** | **1** | **1** | **1** | **SESIÓN SOAP obligatoria** |
-| **21 — LCC Check, Refund Booking** | 10 | 2 | 1 | **1** | **1** | 0 | sesión SOAP |
-| **22 — LCC + ATPCO Check, Refund** | 10 | 1 | 1 | **0** | **1** | 0 | ⚠ cierra sin abrir |
-| 23–25 — variantes NDC | 6 / 4 / 4 | 0 | 1 | 0 | 0 | 0 | REST puro (ATK) |
-| **26 — ATPCO Refund ancillaries (tickets)** | 11 | 3 | 1 | **1** | **1** | **1** | sesión SOAP |
-| **27 — ATPCO Refund ancillaries (confId)** | 10 | 2 | 1 | **1** | **0** | **1** | ⚠ abre sin cerrar |
-| **28–33 — NDC asignación de asientos** | 41 | 5 | **6** | **5** | **0** | 0 | ⚠ mixto, 5 sesiones sin cerrar |
+| Workflow                                     | n           | SOAP  | `/v2/auth/token` | `SessionCreateRQ` | `SessionCloseRQ` | Ancillaries | Modo                            |
+| -------------------------------------------- | ----------- | ----- | ---------------- | ----------------- | ---------------- | ----------- | ------------------------------- |
+| 1 — Air NDC Shop, Price, Book, Cancel        | 6           | 0     | 1                | 0                 | 0                | 0           | **REST puro (ATK)**             |
+| 2 — **Profiles** + Air NDC                   | 9           | 4     | 1                | **1**             | 1                | 0           | sesión SOAP (perfiles EPS)      |
+| 3 — Air Shop, Book, Cancel                   | 4           | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| 4 — **Profiles** + Air Shop/Book             | 8           | 4     | 1                | **1**             | 1                | 0           | sesión SOAP (perfiles EPS)      |
+| 5 — Air **LCC** Shop, Book, Cancel           | 6           | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| 6 / 7 / 8 — Shop, Book, Fulfill, Void/Refund | 9 / 10 / 15 | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| 9 / 10 — Hotel / Vehicle Shop, Book, Cancel  | 8 / 5       | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| 11–14, 16–18 — variantes NDC / ATPCO         | 5–9         | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| **15 — NDC All supported airlines**          | 25          | 0     | **5**            | 0                 | 0                | 0           | REST puro, **5 re-auth**        |
+| **19 — ATPCO Air search, Ancillaries, Book** | 5           | **1** | 1                | **0**             | 0                | **1**       | **ATK + SOAP sin sesión**       |
+| **20 — LCC Air Search, Ancillaries, Book**   | 6           | **3** | **0**            | **1**             | **1**            | **1**       | **SESIÓN SOAP obligatoria**     |
+| **21 — LCC Check, Refund Booking**           | 10          | 2     | 1                | **1**             | **1**            | 0           | sesión SOAP                     |
+| **22 — LCC + ATPCO Check, Refund**           | 10          | 1     | 1                | **0**             | **1**            | 0           | ⚠ cierra sin abrir             |
+| 23–25 — variantes NDC                        | 6 / 4 / 4   | 0     | 1                | 0                 | 0                | 0           | REST puro (ATK)                 |
+| **26 — ATPCO Refund ancillaries (tickets)**  | 11          | 3     | 1                | **1**             | **1**            | **1**       | sesión SOAP                     |
+| **27 — ATPCO Refund ancillaries (confId)**   | 10          | 2     | 1                | **1**             | **0**            | **1**       | ⚠ abre sin cerrar              |
+| **28–33 — NDC asignación de asientos**       | 41          | 5     | **6**            | **5**             | **0**            | 0           | ⚠ mixto, 5 sesiones sin cerrar |
 
 Cambios respecto a la primera pasada, todos aceptando la crítica:
 
@@ -149,6 +151,7 @@ Cambios respecto a la primera pasada, todos aceptando la crítica:
 Los dos casos que fijan la regla, **VERIFICADO** leyendo la secuencia de pasos:
 
 **Workflow 19 (ATPCO) — arranca con ATK y usa ese ATK para hablar SOAP:**
+
 ```
 0. REST Authorize ATK           POST {{rest_endpoint}}/v2/auth/token
 1. Shop (BFM)                   POST {{rest_endpoint}}/v4/offers/shop
@@ -158,6 +161,7 @@ Los dos casos que fijan la regla, **VERIFICADO** leyendo la secuencia de pasos:
 ```
 
 **Workflow 20 (LCC) — NO hay `REST Authorize`; todo el flujo cuelga de la sesión SOAP:**
+
 ```
 SessionCreateRQ 1.0.0           POST {{soap_endpoint}}          <-- unica fuente de token
 1. Shop (BFM)                   POST {{rest_endpoint}}/v3/offers/shop      <-- REST con token ATH
@@ -169,15 +173,15 @@ SessionCloseRQ                  POST {{soap_endpoint}}
 
 **Reglas operativas que se derivan:**
 
-| Necesito… | Modo requerido |
-| --- | --- |
-| Shopping NDC / ATPCO, price, createBooking, getBooking, cancel, fulfill, void, refund | **ATK stateless** |
-| Ancillaries **ATPCO** vía SOAP (`GetAncillaryOffersRQ 3.1.0`, **6 requests**) | ATK basta; el transporte es SOAP sin sesión |
-| Ancillaries **NDC** vía REST (`/v2/offers/getAncillaries`, **3 requests**) | ATK stateless |
-| Ancillaries **LCC** | **Sesión ATH abierta** (WF-20 no tiene otra fuente de token) |
-| Cualquier cosa **LCC** con modificación (refund, FOP) | Sesión ATH |
-| **Perfiles** (`Sabre_OTA_ProfileCreateRQ`, `EPS_EXT_ProfileCreateRQ`) | Sesión ATH |
-| Modificación de **asientos**, **SSR/documentos de identidad**, **FOP de hotel** | Sesión ATH |
+| Necesito…                                                                             | Modo requerido                                               |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Shopping NDC / ATPCO, price, createBooking, getBooking, cancel, fulfill, void, refund | **ATK stateless**                                            |
+| Ancillaries **ATPCO** vía SOAP (`GetAncillaryOffersRQ 3.1.0`, **6 requests**)         | ATK basta; el transporte es SOAP sin sesión                  |
+| Ancillaries **NDC** vía REST (`/v2/offers/getAncillaries`, **3 requests**)            | ATK stateless                                                |
+| Ancillaries **LCC**                                                                   | **Sesión ATH abierta** (WF-20 no tiene otra fuente de token) |
+| Cualquier cosa **LCC** con modificación (refund, FOP)                                 | Sesión ATH                                                   |
+| **Perfiles** (`Sabre_OTA_ProfileCreateRQ`, `EPS_EXT_ProfileCreateRQ`)                 | Sesión ATH                                                   |
+| Modificación de **asientos**, **SSR/documentos de identidad**, **FOP de hotel**       | Sesión ATH                                                   |
 
 > **Matiz sobre "ancillaries".** `GetAncillaryOffersRQ` existe en **los dos transportes**: 6 requests SOAP
 > (`3.1.0`, ATPCO/LCC) y 3 requests REST (`{{rest_endpoint}}/v2/offers/getAncillaries`, NDC). La primera pasada
@@ -201,18 +205,18 @@ Conversation-ID: {{conv_id}}
 grant_type=client_credentials
 ```
 
-| Elemento | Valor | Marca |
-| --- | --- | --- |
-| Método / path | `POST /v2/auth/token` | VERIFICADO + **VERIFICADO-SPEC**: `booking-management-v1.yml:23` (`tokenUrl`) |
-| Flujo OAuth2 | `client_credentials` (Swagger 2.0 lo llama `flow: application`) | **VERIFICADO-SPEC**: `booking-management-v1.yml:26`; OAS3: `bargain-finder-max-v5.yml:10246` (`flows.clientCredentials`) |
-| Credencial en Basic base64 | `x-base64-encode-client-credentials: true` | **VERIFICADO-SPEC**: `booking-management-v1.yml:27` — presente en **los 15 specs** |
-| `Content-Type` | `application/x-www-form-urlencoded` | VERIFICADO |
-| Body | `grant_type=client_credentials` (29 bytes, sin más params) | VERIFICADO |
-| `Authorization` (a la API) | `Bearer TOKEN` | **VERIFICADO-SPEC**: `booking-management-v1.yml:53-55` — declarado `required: true` en las 8 operaciones |
-| `Conversation-ID` | `{{conv_id}}`, que el script fija a `"2021.01.DevStudio"` | VERIFICADO (no aparece en ningún spec) |
-| Auth de request | `noauth` — hay que **desactivar** el bearer heredado | VERIFICADO |
-| Campo del response | `access_token` | **VERIFICADO-POR-SCRIPT** |
-| `expires_in` / `token_type` | **no aparecen ni en la colección ni en ningún spec** | **DESCONOCIDO** |
+| Elemento                    | Valor                                                           | Marca                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Método / path               | `POST /v2/auth/token`                                           | VERIFICADO + **VERIFICADO-SPEC**: `booking-management-v1.yml:23` (`tokenUrl`)                                            |
+| Flujo OAuth2                | `client_credentials` (Swagger 2.0 lo llama `flow: application`) | **VERIFICADO-SPEC**: `booking-management-v1.yml:26`; OAS3: `bargain-finder-max-v5.yml:10246` (`flows.clientCredentials`) |
+| Credencial en Basic base64  | `x-base64-encode-client-credentials: true`                      | **VERIFICADO-SPEC**: `booking-management-v1.yml:27` — presente en **los 21 specs**                                       |
+| `Content-Type`              | `application/x-www-form-urlencoded`                             | VERIFICADO                                                                                                               |
+| Body                        | `grant_type=client_credentials` (29 bytes, sin más params)      | VERIFICADO                                                                                                               |
+| `Authorization` (a la API)  | `Bearer TOKEN`                                                  | **VERIFICADO-SPEC**: `booking-management-v1.yml:53-55` — declarado `required: true` en las 8 operaciones                 |
+| `Conversation-ID`           | `{{conv_id}}`, que el script fija a `"2021.01.DevStudio"`       | VERIFICADO (no aparece en ningún spec)                                                                                   |
+| Auth de request             | `noauth` — hay que **desactivar** el bearer heredado            | VERIFICADO                                                                                                               |
+| Campo del response          | `access_token`                                                  | **VERIFICADO-POR-SCRIPT**                                                                                                |
+| `expires_in` / `token_type` | **no aparecen ni en la colección ni en ningún spec**            | **DESCONOCIDO**                                                                                                          |
 
 Consumo del response — **VERIFICADO-POR-SCRIPT**, evento `test` de colección:
 
@@ -267,7 +271,8 @@ El flag `x-base64-encode-client-credentials: true` de los specs (**VERIFICADO-SP
 header `Authorization: Basic`, pero **no describe el esquema de doble base64 ni el prefijo `V1:`**: eso sólo está
 en el script de la colección. Los dos se complementan, no se contradicen.
 
-Ejemplo ilustrativo con valores ficticios **[INFERIDO — sólo para mostrar la forma, los valores no salen de la colección]**:
+Ejemplo con valores ficticios. Los valores no salen de la colección, pero **el cálculo sí está verificado**:
+es reproducible con `node tools/sabre/cert-probe.mjs` y con el bloque `node -e` de más abajo.
 
 ```
 EPR=500001  PCC=U9PK  password=Pa55w0rd!
@@ -275,8 +280,19 @@ clientId  = "V1:500001:U9PK:AA"
 A         = "VjE6NTAwMDAxOlU5UEs6QUE="
 B         = "UGE1NXcwcmQh"
 secretRaw = "VjE6NTAwMDAxOlU5UEs6QUE=:UGE1NXcwcmQh"
-secret    = "VmpFNk5UQXdNREF4T2xVNVVFczZRVUU5OlVHRXhOWGN3Y21RaA=="
+secret    = "VmpFNk5UQXdNREF4T2xVNVVFczZRVUU9OlVHRTFOWGN3Y21RaA=="
 ```
+
+> **Corregido el 2026-08-25.** La versión anterior de este ejemplo publicaba
+> `VmpFNk5UQXdNREF4T2xVNVVFczZRVUU5OlVHRXhOWGN3Y21RaA==`, que es **incorrecto** por dos erratas de
+> transcripción: al decodificarlo, `A` daba `"V1:500001:U9PK:AA="` (se había tragado el relleno `=` dentro
+> de la propia cadena) y `B` daba `"Pa15w0rd!"` (un `1` en vez del `5` del password). Las líneas `A`, `B` y
+> `secretRaw` siempre estuvieron bien; sólo el resultado final estaba mal. Quien copiara ese valor para
+> validar su implementación habría perseguido un `401` inexistente. Comprobación:
+>
+> ```bash
+> node -e 'const b=s=>Buffer.from(s,"utf8").toString("base64");console.log(b(b("V1:500001:U9PK:AA")+":"+b("Pa55w0rd!")))'
+> ```
 
 **Observaciones críticas:**
 
@@ -290,7 +306,7 @@ secret    = "VmpFNk5UQXdNREF4T2xVNVVFczZRVUU5OlVHRXhOWGN3Y21RaA=="
    calcula en runtime a partir de valores que **el cliente tiene que darnos**.
 4. **Si el Basic está mal construido, Sabre lo dice con un error específico.** **VERIFICADO-SPEC**,
    `help/booking-management-api-v1/v1-errors.txt:60-67`: `401 Unauthorized / "Credentials are missing or the syntax
-   is not correct"` → «*Verify that your base64-encoded token credentials were constructed properly.*» Es el error
+is not correct"` → «_Verify that your base64-encoded token credentials were constructed properly._» Es el error
    que veremos si nos equivocamos en el doble base64. Ver §5.
 
 ### 2.2 La rama `/v3/auth/token` — existe en el script, **cero requests la usan**
@@ -310,13 +326,13 @@ alternativo para versiones ≥ v3, con OAuth2 clásico:
 }
 ```
 
-| | `/v2/auth/token` | `/v3/auth/token` |
-| --- | --- | --- |
-| Identidad | EPR + PCC + password | `client_id` + `client_secret` |
-| Codificación | **doble base64** (`V1:` + `:AA`) | base64 simple `client_id:client_secret` |
-| Variable Postman | `secret` | `auth_secret` |
-| Requests que lo usan en la colección | **59** | **0** |
-| Declarado en los 15 specs oficiales | **15 / 15** | **0 / 15** |
+|                                      | `/v2/auth/token`                 | `/v3/auth/token`                        |
+| ------------------------------------ | -------------------------------- | --------------------------------------- |
+| Identidad                            | EPR + PCC + password             | `client_id` + `client_secret`           |
+| Codificación                         | **doble base64** (`V1:` + `:AA`) | base64 simple `client_id:client_secret` |
+| Variable Postman                     | `secret`                         | `auth_secret`                           |
+| Requests que lo usan en la colección | **59**                           | **0**                                   |
+| Declarado en los 21 specs oficiales  | **21 / 21**                      | **0 / 21**                              |
 
 > **Refuerzo desde el spec.** Los **quince** contratos oficiales apuntan su `tokenUrl` a `/v2/auth/token`. Ninguno
 > menciona `/v3`. **VERIFICADO-SPEC** (`booking-management-v1.yml:23`, `bargain-finder-max-v5.yml:10249`,
@@ -339,16 +355,16 @@ alternativo para versiones ≥ v3, con OAuth2 clásico:
 De las **425** variables del environment `BM API TEST CERT - EPR`, **sólo 6 tienen valor**, y 3 de esas 6 son
 punteros a otra variable que no existe:
 
-| Variable | Valor | Uso real en la colección |
-| --- | --- | --- |
-| `rest_endpoint` | `https://api.cert.platform.sabre.com` | **808 requests** |
-| `soap_endpoint` | `https://webservices.cert.platform.sabre.com` | **243 requests** |
-| `lls_endpoint` | `https://webservices.cert.platform.sabre.com` | **0 requests — variable muerta** |
-| `username` | `{{epr}}` | ← `epr` **no definida** |
-| `pcc_tkt` | `{{your_target_pcc}}` | ← `your_target_pcc` **no definida** |
-| `ptrta` | `{{atpco_printer_address}}` | **0 requests — variable muerta**, y su destino tampoco existe |
+| Variable        | Valor                                         | Uso real en la colección                                      |
+| --------------- | --------------------------------------------- | ------------------------------------------------------------- |
+| `rest_endpoint` | `https://api.cert.platform.sabre.com`         | **808 requests**                                              |
+| `soap_endpoint` | `https://webservices.cert.platform.sabre.com` | **243 requests**                                              |
+| `lls_endpoint`  | `https://webservices.cert.platform.sabre.com` | **0 requests — variable muerta**                              |
+| `username`      | `{{epr}}`                                     | ← `epr` **no definida**                                       |
+| `pcc_tkt`       | `{{your_target_pcc}}`                         | ← `your_target_pcc` **no definida**                           |
+| `ptrta`         | `{{atpco_printer_address}}`                   | **0 requests — variable muerta**, y su destino tampoco existe |
 
-`lls_endpoint` y `soap_endpoint` **apuntan al mismo host**. LLS (*Legacy Local Services*, las APIs `*LLSRQ` tipo
+`lls_endpoint` y `soap_endpoint` **apuntan al mismo host**. LLS (_Legacy Local Services_, las APIs `*LLSRQ` tipo
 `OTA_AirAvailLLSRQ`, `ContextChangeLLSRQ`) comparte gateway con el resto de SOAP. **[INFERIDO]** que la separación
 de variables es histórica; en la práctica sólo necesitamos dos hosts.
 
@@ -378,17 +394,17 @@ servers:
       environment:
         default: 'api.cert.platform'
         enum:
-          - api.cert.platform   # Public Certification Server
-          - api.platform        # Public Production Server
+          - api.cert.platform # Public Certification Server
+          - api.platform # Public Production Server
 ```
 
 Remate: **dos specs apuntan su `tokenUrl` directamente a producción** — `get-seats-agency-3.0.yml:101` y
 `get-seats-airline-3.0.yml:78` usan `https://api.platform.sabre.com/v2/auth/token`. Es la confirmación de que el
 endpoint de token en prod es el mismo path sobre el host de prod.
 
-| Entorno | REST | SOAP |
-| --- | --- | --- |
-| **CERT** | `https://api.cert.platform.sabre.com` — **VERIFICADO** + **VERIFICADO-SPEC** (`booking-management-v1.yml:12`) | `https://webservices.cert.platform.sabre.com` — **VERIFICADO** |
+| Entorno  | REST                                                                                                                 | SOAP                                                                           |
+| -------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **CERT** | `https://api.cert.platform.sabre.com` — **VERIFICADO** + **VERIFICADO-SPEC** (`booking-management-v1.yml:12`)        | `https://webservices.cert.platform.sabre.com` — **VERIFICADO**                 |
 | **PROD** | `https://api.platform.sabre.com` — **VERIFICADO-SPEC** (`offer-price-ndc-v1.yml:15`, `get-seats-agency-3.0.yml:101`) | `https://webservices.platform.sabre.com` — **[INFERIDO]**, sigue sin verificar |
 
 **El host SOAP de producción sigue siendo inferencia**, porque no tenemos ningún contrato del carril SOAP: los 15
@@ -400,17 +416,17 @@ REST, pero no está confirmada. Sigue en `Preguntas abiertas`.
 Todos los productos comparten host y `tokenUrl`. Lo que **sí cambia por producto** es el prefijo de path, y hay que
 modelarlo bien o el cliente HTTP montará URLs rotas:
 
-| Producto | `basePath` / path completo declarado | Ref |
-| --- | --- | --- |
-| Booking Management v1.33 | `basePath: /v1/trip/orders` (host raíz) | `booking-management-v1.yml:12-15` |
-| Bargain Finder Max v5 / v4 / v3 | host raíz, path `/v{5,4,3}/offers/shop` | `bargain-finder-max-v5.yml:11`, `-v4.yml:29`, `-v3.yml:7-8` |
-| Offer Price NDC v1 | server **incluye** `/v1/offers`, path `/price` | `offer-price-ndc-v1.yml:13` |
-| Flight Reshop 1.0 | server `basePath` default `/v1/offers`, path `/flightReshop` | `flight-reshop-api-1.0.yml:16-17` |
-| FlightCheck v1 | server `basePath` default `/v1/offers`, path `/flightCheck` | `flightcheck-api-v1.yml:15-16` |
-| Get Seats 3.0 (agency / airline) | server `basePath` default `/v3/offers`, path `/getseats/*` | `get-seats-agency-3.0.yml:25-26` |
-| Get Hotel Avail v4 / v3 | host raíz, path `/v4.0.0/get/hotelavail` | `get-hotel-avail-v4.yml:8,12` |
-| Hotel Price Check v5 / v4 | host raíz, path `/v5/hotel/pricecheck` | `hotel-price-check-v5.yml:8,19` |
-| Get Vehicle Availability v2 / v1 | host raíz, path `/v2.0.0/get/vehavail` | `get-vehicle-availability-v2.yml:13,16` |
+| Producto                         | `basePath` / path completo declarado                         | Ref                                                         |
+| -------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- |
+| Booking Management v1.33         | `basePath: /v1/trip/orders` (host raíz)                      | `booking-management-v1.yml:12-15`                           |
+| Bargain Finder Max v5 / v4 / v3  | host raíz, path `/v{5,4,3}/offers/shop`                      | `bargain-finder-max-v5.yml:11`, `-v4.yml:29`, `-v3.yml:7-8` |
+| Offer Price NDC v1               | server **incluye** `/v1/offers`, path `/price`               | `offer-price-ndc-v1.yml:13`                                 |
+| Flight Reshop 1.0                | server `basePath` default `/v1/offers`, path `/flightReshop` | `flight-reshop-api-1.0.yml:16-17`                           |
+| FlightCheck v1                   | server `basePath` default `/v1/offers`, path `/flightCheck`  | `flightcheck-api-v1.yml:15-16`                              |
+| Get Seats 3.0 (agency / airline) | server `basePath` default `/v3/offers`, path `/getseats/*`   | `get-seats-agency-3.0.yml:25-26`                            |
+| Get Hotel Avail v4 / v3          | host raíz, path `/v4.0.0/get/hotelavail`                     | `get-hotel-avail-v4.yml:8,12`                               |
+| Hotel Price Check v5 / v4        | host raíz, path `/v5/hotel/pricecheck`                       | `hotel-price-check-v5.yml:8,19`                             |
+| Get Vehicle Availability v2 / v1 | host raíz, path `/v2.0.0/get/vehavail`                       | `get-vehicle-availability-v2.yml:13,16`                     |
 
 > **Ojo con Get Seats.** El spec dice `basePath: /v3/offers` + `/getseats/byNdcOrderId`, pero los **32 requests** de
 > la colección van a `{{rest_endpoint}}/v1/offers/getseats`. **El spec y la colección no coinciden en la versión
@@ -424,10 +440,14 @@ Los endpoints **no son secretos**: van en `config`, nunca en `credentials`. Se d
 
 ```ts
 const SABRE_HOSTS = {
-  cert: { rest: 'https://api.cert.platform.sabre.com',            // VERIFICADO-SPEC
-          soap: 'https://webservices.cert.platform.sabre.com' },  // VERIFICADO (coleccion)
-  prod: { rest: 'https://api.platform.sabre.com',                 // VERIFICADO-SPEC
-          soap: 'https://webservices.platform.sabre.com' },       // [INFERIDO]
+  cert: {
+    rest: 'https://api.cert.platform.sabre.com', // VERIFICADO-SPEC
+    soap: 'https://webservices.cert.platform.sabre.com',
+  }, // VERIFICADO (coleccion)
+  prod: {
+    rest: 'https://api.platform.sabre.com', // VERIFICADO-SPEC
+    soap: 'https://webservices.platform.sabre.com',
+  }, // [INFERIDO]
 } as const;
 ```
 
@@ -435,12 +455,12 @@ const SABRE_HOSTS = {
 
 **26 requests** apuntan a variables `*_endpoint` que **no existen** en el environment. Como shipping, no corren:
 
-| Variable usada como URL | Requests | ¿Definida? |
-| --- | --- | --- |
-| `{{getBooking_endpoint}}` | 12 | **NO** |
-| `{{createBooking_endpoint}}` | 7 | **NO** |
-| `{{modifyBooking_endpoint}}` | 6 | **NO** |
-| `{{cancelBooking_endpoint}}` | 1 | **NO** |
+| Variable usada como URL      | Requests | ¿Definida? |
+| ---------------------------- | -------- | ---------- |
+| `{{getBooking_endpoint}}`    | 12       | **NO**     |
+| `{{createBooking_endpoint}}` | 7        | **NO**     |
+| `{{modifyBooking_endpoint}}` | 6        | **NO**     |
+| `{{cancelBooking_endpoint}}` | 1        | **NO**     |
 
 **[INFERIDO]** que son restos de un environment interno de Sabre con hosts por microservicio. Al portar los casos
 de prueba hay que reescribirlas a `{{rest_endpoint}}/v1/trip/orders/<op>`, que es lo que el spec declara como
@@ -452,18 +472,18 @@ de prueba hay que reescribirlas a `{{rest_endpoint}}/v1/trip/orders/<op>`, que e
 
 ### 4.1 Glosario de los identificadores
 
-| Identificador | Variable Postman | Qué es | Dónde aparece |
-| --- | --- | --- | --- |
-| **EPR** | `username` = `{{epr}}` | *Employee Profile Record*. El **usuario humano/técnico** dentro de la agencia. Es el `username` de Sabre. | `clientId` REST (`V1:EPR:PCC:AA`); `<Username>` del `UsernameToken` SOAP |
-| **PCC** / pseudo-city | `pcc` | Código de 3–4 chars de la **oficina** (pseudo-city). Define qué tarifas privadas se ven, en qué colas caen los PNR y bajo qué agencia queda la reserva. **VERIFICADO-SPEC**: «*Four-character pseudo city code (PCC) of authorized branch*» (`get-hotel-avail-v4.yml:94`). | `clientId` REST; `<Organization>`; `<POS><Source PseudoCityCode=…>` |
-| **password** | `password` | Password del EPR. | Base64 en el `secret`; `<Password>` SOAP en claro |
-| **Domain** | — (literal) | Dominio de autenticación. `AA` en REST, `DEFAULT`/`AA` en SOAP. | §4.3 |
-| **`pcc_tkt`** | `pcc_tkt` = `{{your_target_pcc}}` | **PCC de emisión dedicado**: la oficina que emite el billete, que puede ser ≠ la que reservó. | `targetPcc` en `fulfillFlightTickets` y `cancelBooking` |
-| **`ptrta`** | `ptrta` = `{{atpco_printer_address}}` | *Printer address* ATPCO. **0 usos** — variable muerta. Lo que sí se usa es `hardcopy` (16) y `country_code` (15). | — |
-| **`X-Sabre-Group`** | `x_sabre_group` (vacía) | Header REST. **Obligatorio con `targetPcc` cuando se usa ATK** (§4.2). | 214 requests, hardcodeado |
-| **`X-Sabre-Current-City`** | `x_sabre_current_city` (vacía) | Header REST. **Obligatorio con `targetPcc` cuando se usa ATH** (§4.2). | 214 requests, hardcodeado |
-| **`Application-ID`** | — | Header opcional recomendado por Sabre en hotel/vehicle. **VERIFICADO-SPEC**: «*Specifies the customer application ID. It is recommended but not needed*» (`hotel-price-check-v5.yml:24-28`, `get-hotel-avail-v4.yml:18-22`). **0 usos en la colección.** | — |
-| **`AppId`** | `AppId` (vacía) | `CustomerAppId` en el sobre SOAP. Sólo lo usa `header_appid`, que **nadie usa**. | 0 usos |
+| Identificador              | Variable Postman                      | Qué es                                                                                                                                                                                                                                                                     | Dónde aparece                                                            |
+| -------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **EPR**                    | `username` = `{{epr}}`                | _Employee Profile Record_. El **usuario humano/técnico** dentro de la agencia. Es el `username` de Sabre.                                                                                                                                                                  | `clientId` REST (`V1:EPR:PCC:AA`); `<Username>` del `UsernameToken` SOAP |
+| **PCC** / pseudo-city      | `pcc`                                 | Código de 3–4 chars de la **oficina** (pseudo-city). Define qué tarifas privadas se ven, en qué colas caen los PNR y bajo qué agencia queda la reserva. **VERIFICADO-SPEC**: «_Four-character pseudo city code (PCC) of authorized branch_» (`get-hotel-avail-v4.yml:94`). | `clientId` REST; `<Organization>`; `<POS><Source PseudoCityCode=…>`      |
+| **password**               | `password`                            | Password del EPR.                                                                                                                                                                                                                                                          | Base64 en el `secret`; `<Password>` SOAP en claro                        |
+| **Domain**                 | — (literal)                           | Dominio de autenticación. `AA` en REST, `DEFAULT`/`AA` en SOAP.                                                                                                                                                                                                            | §4.3                                                                     |
+| **`pcc_tkt`**              | `pcc_tkt` = `{{your_target_pcc}}`     | **PCC de emisión dedicado**: la oficina que emite el billete, que puede ser ≠ la que reservó.                                                                                                                                                                              | `targetPcc` en `fulfillFlightTickets` y `cancelBooking`                  |
+| **`ptrta`**                | `ptrta` = `{{atpco_printer_address}}` | _Printer address_ ATPCO. **0 usos** — variable muerta. Lo que sí se usa es `hardcopy` (16) y `country_code` (15).                                                                                                                                                          | —                                                                        |
+| **`X-Sabre-Group`**        | `x_sabre_group` (vacía)               | Header REST. **Obligatorio con `targetPcc` cuando se usa ATK** (§4.2).                                                                                                                                                                                                     | 214 requests, hardcodeado                                                |
+| **`X-Sabre-Current-City`** | `x_sabre_current_city` (vacía)        | Header REST. **Obligatorio con `targetPcc` cuando se usa ATH** (§4.2).                                                                                                                                                                                                     | 214 requests, hardcodeado                                                |
+| **`Application-ID`**       | —                                     | Header opcional recomendado por Sabre en hotel/vehicle. **VERIFICADO-SPEC**: «_Specifies the customer application ID. It is recommended but not needed_» (`hotel-price-check-v5.yml:24-28`, `get-hotel-avail-v4.yml:18-22`). **0 usos en la colección.**                   | —                                                                        |
+| **`AppId`**                | `AppId` (vacía)                       | `CustomerAppId` en el sobre SOAP. Sólo lo usa `header_appid`, que **nadie usa**.                                                                                                                                                                                           | 0 usos                                                                   |
 
 ### 4.2 `X-Sabre-Group` y `X-Sabre-Current-City` — **la documentación oficial los desambigua**
 
@@ -472,9 +492,9 @@ de prueba hay que reescribirlas a `{{rest_endpoint}}/v1/trip/orders/<op>`, que e
 
 **VERIFICADO-SPEC**, `help/booking-management-api-v1/help-documentation-create-booking-error-list.txt:1166-1170`:
 
-| Error type | Categoría | Descripción oficial |
-| --- | --- | --- |
-| `HEADER_DATA_MISSING_TARGET_PCC` | `BAD_REQUEST` | «*Target PCC was defined but header data is missing. Please complete **X-Sabre-Group (ATK)** or **X-Sabre-Current-City (ATH)**.*» |
+| Error type                       | Categoría     | Descripción oficial                                                                                                               |
+| -------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `HEADER_DATA_MISSING_TARGET_PCC` | `BAD_REQUEST` | «_Target PCC was defined but header data is missing. Please complete **X-Sabre-Group (ATK)** or **X-Sabre-Current-City (ATH)**._» |
 
 De ahí se derivan tres reglas duras que la primera pasada no tenía:
 
@@ -489,21 +509,21 @@ De ahí se derivan tres reglas duras que la primera pasada no tenía:
 
 Uso en la colección — **VERIFICADO**, 214 requests:
 
-| Endpoint | `X-Sabre-Group` = `X-Sabre-Current-City` | Requests |
-| --- | --- | --- |
-| `/v1/trip/orders/getBooking` | `U9PK` / `G7RE` | 75 + 56 |
-| `/v1/trip/orders/modifyBooking` | `U9PK` | 41 |
-| `/v1/trip/orders/createBooking` | `U9PK` / `G7RE` | 14 + 14 |
-| `{{getBooking_endpoint}}` (roto) | `G7RE` / `U9PK` | 4 + 2 |
-| `/v1/trip/orders/checkFlightTickets` | `U9PK` | 4 |
-| `{{modifyBooking_endpoint}}` (roto) | `U9PK` | 2 |
-| `/v1.0.0/veh/pricecheck`, `/v1/trip/orders/cancelBooking` | `G7RE` | 1 + 1 |
+| Endpoint                                                  | `X-Sabre-Group` = `X-Sabre-Current-City` | Requests |
+| --------------------------------------------------------- | ---------------------------------------- | -------- |
+| `/v1/trip/orders/getBooking`                              | `U9PK` / `G7RE`                          | 75 + 56  |
+| `/v1/trip/orders/modifyBooking`                           | `U9PK`                                   | 41       |
+| `/v1/trip/orders/createBooking`                           | `U9PK` / `G7RE`                          | 14 + 14  |
+| `{{getBooking_endpoint}}` (roto)                          | `G7RE` / `U9PK`                          | 4 + 2    |
+| `/v1/trip/orders/checkFlightTickets`                      | `U9PK`                                   | 4        |
+| `{{modifyBooking_endpoint}}` (roto)                       | `U9PK`                                   | 2        |
+| `/v1.0.0/veh/pricecheck`, `/v1/trip/orders/cancelBooking` | `G7RE`                                   | 1 + 1    |
 
 **Detalle importante:** el environment define `x_sabre_group` y `x_sabre_current_city` **vacías**, y los requests
 **no las usan** — llevan `U9PK` y `G7RE` **hardcodeados**. Son los PCC de certificación del autor de la colección,
 no valores nuestros. Al portar hay que parametrizarlos contra el PCC del tenant.
 
-> **Ninguno de los 15 specs declara estos headers** (grep `X-Sabre` sobre `specs/*.yml` → 0). Sólo aparecen en la
+> **Ninguno de los 21 specs declara estos headers** (grep `X-Sabre` sobre `specs/*.yml` → 0). Sólo aparecen en la
 > lista de errores. Es un caso donde la documentación de errores es más completa que el contrato.
 
 ### 4.3 Incoherencia de `Domain`: `AA` vs `DEFAULT` — **VERIFICADO**
@@ -511,12 +531,12 @@ no valores nuestros. Al portar hay que parametrizarlos contra el PCC del tenant.
 Los 73 requests `SessionCreateRQ` se agrupan en **exactamente 4 variantes de body** (verificado normalizando
 espacios y agrupando):
 
-| # | Requests | `Domain` | `ConversationId` | `ClientId` / `ClientSecret` | Cuerpo `SessionCreateRQ` |
-| --- | --- | --- | --- | --- | --- |
-| 1 | **39** | `DEFAULT` | `2019.09.DevStudio` | — | `<SessionCreateRQ returnContextID="true">` + `POS` `{{pcc}}` |
-| 2 | **23** | `DEFAULT` | `STX_2019_Postman` | `SBR-BMAPI` / `{{soap_client_secret}}` | `<sws:SessionCreateRQ … Version="1.0.0">` + `POS` **`U9PK` hardcodeado** |
-| 3 | **7** | **`AA`** | `2019.09.DevStudio` | — | `<SessionCreateRQ returnContextID="true">` + `POS` `{{pcc}}` |
-| 4 | **4** | `DEFAULT` | `STX_2019_Postman` | — | `<SessionCreateRQ Version="1.0.0" xmlns="…/OTA/2002/11"/>` (sin `POS`) |
+| #   | Requests | `Domain`  | `ConversationId`    | `ClientId` / `ClientSecret`            | Cuerpo `SessionCreateRQ`                                                 |
+| --- | -------- | --------- | ------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| 1   | **39**   | `DEFAULT` | `2019.09.DevStudio` | —                                      | `<SessionCreateRQ returnContextID="true">` + `POS` `{{pcc}}`             |
+| 2   | **23**   | `DEFAULT` | `STX_2019_Postman`  | `SBR-BMAPI` / `{{soap_client_secret}}` | `<sws:SessionCreateRQ … Version="1.0.0">` + `POS` **`U9PK` hardcodeado** |
+| 3   | **7**    | **`AA`**  | `2019.09.DevStudio` | —                                      | `<SessionCreateRQ returnContextID="true">` + `POS` `{{pcc}}`             |
+| 4   | **4**    | `DEFAULT` | `STX_2019_Postman`  | —                                      | `<SessionCreateRQ Version="1.0.0" xmlns="…/OTA/2002/11"/>` (sin `POS`)   |
 
 > **Nota metodológica.** Un conteo que busque el tag literal `<SessionCreateRQ` devuelve **50**, no 73, porque la
 > variante 2 usa el prefijo de namespace `<sws:SessionCreateRQ>`. 50 = 39 + 7 + 4. El conteo correcto por request
@@ -573,6 +593,7 @@ credencial de agencia — pero la fuente lo traía en claro y hay que preguntar 
 <SessionCloseRQ><POS><Source PseudoCityCode="{{pcc}}"/></POS></SessionCloseRQ>
 {{footer}}
 ```
+
 ```xml
 {{header}}
 <SessionCloseRQ Version="1.0.0" xmlns="http://www.opentravel.org/OTA/2002/11"/>
@@ -584,34 +605,33 @@ credencial de agencia — pero la fuente lo traía en claro y hay que preguntar 
 La documentación oficial define `targetPcc` en términos que son literalmente el modelo consolidador —
 **VERIFICADO-SPEC**, `help/booking-management-api-v1/help-documentation-create-booking.txt:118`:
 
-> «*`targetPcc` changes the context to a desired pseudo city code. This is particularly useful **for agencies that
-> separate their booking, fulfillment, and shopping across different pseudo city codes (PCCs)**.*»
+> «_`targetPcc` changes the context to a desired pseudo city code. This is particularly useful **for agencies that
+> separate their booking, fulfillment, and shopping across different pseudo city codes (PCCs)**._»
 
 Y explica **cómo** lo implementa Sabre por debajo — **VERIFICADO-SPEC**,
 `help-documentation-cancel-booking.txt:81` (idéntico en `help-documentation-check-flight-tickets.txt:64`):
 
-> «*`targetPcc` is used to specify which city (PCC) should change context using **ContextChange (AAA)**. If empty,
-> or equals the current city, the context does not change.*»
+> «_`targetPcc` is used to specify which city (PCC) should change context using **ContextChange (AAA)**. If empty,
+> or equals the current city, the context does not change._»
 
 Es decir: **el `targetPcc` de REST es azúcar sobre `ContextChangeLLSRQ`**, que la API orquesta internamente. La
-lista de servicios orquestados lo confirma — `help-documentation-create-booking.txt:45-49` abre «*Internal
-orchestration*» con `ContextChangeLLSRQ` como **primera** entrada. **Nosotros nunca llamamos a
+lista de servicios orquestados lo confirma — `help-documentation-create-booking.txt:45-49` abre «_Internal
+orchestration_» con `ContextChangeLLSRQ` como **primera** entrada. **Nosotros nunca llamamos a
 `ContextChangeLLSRQ` desde el carril REST.**
 
 Los **7 requests** con `targetPcc`, sobre 4 endpoints — **VERIFICADO** (lista completa):
 
-| Endpoint | Valor | Request |
-| --- | --- | --- |
-| `/v1/trip/orders/cancelBooking` | `{{pcc}}` | `Cancel Booking /v1 Cancel All + Change PCC` |
-| `/v1/trip/orders/cancelBooking` | `{{pcc_tkt}}` | `Cancel Booking - cancelAll and void corresponding tickets` |
-| `/v1/trip/orders/voidFlightTickets` | `{{pcc}}` | `Void Flight Tickets - Change PCC` |
-| `/v1/trip/orders/createBooking` | `7KFA` (hardcodeado) | `createBooking - Air with pricing Complex` |
-| **`/v1/trip/orders/createBooking`** | **`{{pcc}}`** | **`createBooking - Air with Changed PCC`** |
-| `/v1/trip/orders/fulfillFlightTickets` | `{{pcc_tkt}}` | `FulfillFlightTickets - … dedicated ticketing PCC` (×2) |
+| Endpoint                               | Valor                | Request                                                     |
+| -------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| `/v1/trip/orders/cancelBooking`        | `{{pcc}}`            | `Cancel Booking /v1 Cancel All + Change PCC`                |
+| `/v1/trip/orders/cancelBooking`        | `{{pcc_tkt}}`        | `Cancel Booking - cancelAll and void corresponding tickets` |
+| `/v1/trip/orders/voidFlightTickets`    | `{{pcc}}`            | `Void Flight Tickets - Change PCC`                          |
+| `/v1/trip/orders/createBooking`        | `7KFA` (hardcodeado) | `createBooking - Air with pricing Complex`                  |
+| **`/v1/trip/orders/createBooking`**    | **`{{pcc}}`**        | **`createBooking - Air with Changed PCC`**                  |
+| `/v1/trip/orders/fulfillFlightTickets` | `{{pcc_tkt}}`        | `FulfillFlightTickets - … dedicated ticketing PCC` (×2)     |
 
 > **Corrección (hallazgo 3 de la crítica — ACEPTADO).** La primera pasada listaba un solo valor para
-> `createBooking` (`7KFA` hardcodeado) y omitía `createBooking - Air with Changed PCC`, que usa `{{pcc}}`
-> **parametrizado**. El total de 7 requests sobre 4 endpoints sí era correcto, pero la omisión debilitaba
+> `createBooking` (`7KFA` hardcodeado) y omitía `createBooking - Air with Changed PCC`, que usa `{{pcc}}` > **parametrizado**. El total de 7 requests sobre 4 endpoints sí era correcto, pero la omisión debilitaba
 > justamente el argumento de §9.4: **Sabre soporta cambiar el PCC tanto al reservar como al emitir**, y la propia
 > colección de Sabre lo trae parametrizado en ambos puntos. No es un hardcode de demo.
 
@@ -621,18 +641,19 @@ El caso bisagra del modelo consolidador es
 ```json
 {
   "confirmationId": "{{pnr}}",
-  "fulfillments": [ { "payment": { "primaryFormOfPayment": 1 } } ],
+  "fulfillments": [{ "payment": { "primaryFormOfPayment": 1 } }],
   "designatePrinters": [
     { "hardcopy": { "address": "{{hardcopy}}" } },
-    { "ticket":   { "countryCode": "{{country_code}}" } }
+    { "ticket": { "countryCode": "{{country_code}}" } }
   ],
-  "formsOfPayment": [ { "type": "PAYMENTCARD", "cardTypeCode": "VI", "cardNumber": "…" } ],
+  "formsOfPayment": [{ "type": "PAYMENTCARD", "cardTypeCode": "VI", "cardNumber": "…" }],
   "targetPcc": "{{pcc_tkt}}"
 }
 ```
+
 Headers: `Content-Type: application/json`, `at-diagnostics: false`.
 
-> **Esto es exactamente el patrón consolidador:** *reservo con un PCC, emito con otro.* Y la API lo soporta de
+> **Esto es exactamente el patrón consolidador:** _reservo con un PCC, emito con otro._ Y la API lo soporta de
 > forma nativa vía `targetPcc`, sin re-autenticar.
 
 ### 4.5 ¿Hace falta autoridad previa sobre el `targetPcc`? — **VERIFICADO-SPEC: SÍ, y falla en runtime**
@@ -644,13 +665,13 @@ Headers: `Content-Type: application/json`, `at-diagnostics: false`.
 (idéntico en `help-documentation-get-booking-error-list.txt:338-372` y
 `help-documentation-modify-booking-error-list-0.txt:53-88`):
 
-| Error type | Categoría | Descripción oficial |
-| --- | --- | --- |
-| `UNABLE_TO_CHANGE_CONTEXT` | `APPLICATION_ERROR` | General problem with `ContextChangeLLSRQ` service. |
-| `UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED` | `APPLICATION_ERROR` | **User is unauthorized to change context for the desired PCC.** |
-| `UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED` | `APPLICATION_ERROR` | **User is unauthorized to change context for the desired PCC.** |
-| `UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` | `APPLICATION_ERROR` | System could not revert context. |
-| `UNABLE_TO_CHANGE_CONTEXT_PLEASE_WAIT` | `APPLICATION_ERROR` | System is still processing the transaction. |
+| Error type                               | Categoría           | Descripción oficial                                             |
+| ---------------------------------------- | ------------------- | --------------------------------------------------------------- |
+| `UNABLE_TO_CHANGE_CONTEXT`               | `APPLICATION_ERROR` | General problem with `ContextChangeLLSRQ` service.              |
+| `UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED`  | `APPLICATION_ERROR` | **User is unauthorized to change context for the desired PCC.** |
+| `UNABLE_TO_CHANGE_CONTEXT_NOT_ALLOWED`   | `APPLICATION_ERROR` | **User is unauthorized to change context for the desired PCC.** |
+| `UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` | `APPLICATION_ERROR` | System could not revert context.                                |
+| `UNABLE_TO_CHANGE_CONTEXT_PLEASE_WAIT`   | `APPLICATION_ERROR` | System is still processing the transaction.                     |
 
 Y para NDC hay una comprobación adicional — `…create-booking-error-list.txt:1159-1163`:
 
@@ -659,9 +680,9 @@ Y para NDC hay una comprobación adicional — `…create-booking-error-list.txt
 **Consecuencias de diseño:**
 
 - El modelo híbrido de §9.4 **con una sola cuenta es viable**, pero depende de un permiso que se concede en el
-  back-office de Sabre (*branch access* / AAA), no desde la API. Nuestro onboarding BYOC debe **probarlo
+  back-office de Sabre (_branch access_ / AAA), no desde la API. Nuestro onboarding BYOC debe **probarlo
   explícitamente** con un `getBooking` de humo contra el `ticketingPcc` antes de dar la cuenta por buena.
-- `UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` («*System could not revert context*») es un error especialmente
+- `UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` («_System could not revert context_») es un error especialmente
   peligroso: significa que Sabre **no pudo volver al PCC original**. Debe escalar a alerta operativa, no a un
   reintento silencioso.
 - Para NDC, `targetPcc` no basta: la oferta tiene que haberse **shoppeado con el mismo PCC**. El
@@ -681,12 +702,12 @@ Y para NDC hay una comprobación adicional — `…create-booking-error-list.txt
 negocio viajan **dentro** de un `200`, en un array `errors[]`:
 
 - `booking-management-v1.yml` declara `'200'` como **única** respuesta en las 8 operaciones (líneas 59, 84, 109,
-  135, 161, 186, 210, 234). El array de error va en el body: «*Lists detailed error information. **This array is
-  not displayed in successful responses**.*» (`booking-management-v1.yml:461-465`, y equivalentes en las 8
+  135, 161, 186, 210, 234). El array de error va en el body: «_Lists detailed error information. **This array is
+  not displayed in successful responses**._» (`booking-management-v1.yml:461-465`, y equivalentes en las 8
   respuestas).
-- `flightcheck-api-v1.yml:43`: «*Successful response, **unless the `errors` array is returned***.»
-- `get-seats-agency-3.0.yml:43`: «*Contains response data for a successful operation **or error details if request
-  processing failed***.»
+- `flightcheck-api-v1.yml:43`: «\*Successful response, **unless the `errors` array is returned\***.»
+- `get-seats-agency-3.0.yml:43`: «\*Contains response data for a successful operation **or error details if request
+  processing failed\***.»
 - `bargain-finder-max-v5.yml:31-43`: sólo `'200'`.
 - Excepciones que sí declaran códigos HTTP: `offer-price-ndc-v1.yml:56,62` (`400`, `500`),
   `get-hotel-avail-v4.yml:36,42` (`400`, `404`), `get-vehicle-availability-v2.yml:36,39` (`400`, `404`).
@@ -700,15 +721,17 @@ negocio viajan **dentro** de un `200`, en un array `errors[]`:
 
 ```jsonc
 {
-  "errors": [{
-    "category":    "BAD_REQUEST",              // requerido
-    "type":        "REQUIRED_FIELD_MISSING",   // requerido
-    "description": "may not be null",
-    "fieldPath":   "someObject.someFieldName",
-    "fieldName":   "someName",
-    "fieldValue":  "field value"
-  }],
-  "warnings": [{ "category": "WARNING", "type": "EMAIL_NOT_FOUND", "description": "…" }]
+  "errors": [
+    {
+      "category": "BAD_REQUEST", // requerido
+      "type": "REQUIRED_FIELD_MISSING", // requerido
+      "description": "may not be null",
+      "fieldPath": "someObject.someFieldName",
+      "fieldName": "someName",
+      "fieldValue": "field value",
+    },
+  ],
+  "warnings": [{ "category": "WARNING", "type": "EMAIL_NOT_FOUND", "description": "…" }],
 }
 ```
 
@@ -717,38 +740,38 @@ Categorías observadas en las listas oficiales: `BAD_REQUEST`, `APPLICATION_ERRO
 
 ### 5.2 Capa de gateway (2SG) — tabla oficial y clasificación
 
-**VERIFICADO-SPEC**, `help/booking-management-api-v1/v1-errors.txt` (tabla completa, «*Most common errors in REST
-API*»). Clasificación nuestra para el circuit breaker y el retry:
+**VERIFICADO-SPEC**, `help/booking-management-api-v1/v1-errors.txt` (tabla completa, «_Most common errors in REST
+API_»). Clasificación nuestra para el circuit breaker y el retry:
 
-| HTTP | Message | Text / código | Resolución oficial | **Clasificación** |
-| --- | --- | --- | --- | --- |
-| 400 | Bad Request | `Invalid format for request` | Verificar parámetros y el `grant_type` del payload | **NO REINTENTABLE** |
-| 400 | — | `ERR.2SG.CLIENT.INVALID_REQUEST` | Verificar parámetros. Ver documentación | **NO REINTENTABLE** |
-| 401 | Unauthorized | `Not authorized to make this request…` | Verificar credenciales del token | **NO REINTENTABLE** (falta de habilitación, no expiración) |
-| 401 | Unauthorized | **`invalid_client`** | 1) Verificar credenciales. 2) **Verificar TAM Pool — puede estar agotado** | **REINTENTABLE con backoff** (ver §5.3) |
-| 401 | Unauthorized | `Credentials are missing or the syntax is not correct` | Verificar que el base64 se construyó bien | **NO REINTENTABLE** — bug nuestro en el doble base64 (§2.1) |
-| 401 | Unauthorized | `Wrong clientID or clientSecret` | Verificar password del client ID | **NO REINTENTABLE** — credencial mala. **Marcar la cuenta BYOC como inválida** |
-| 401 | Unauthorized | `ERR.2SG.SEC.MISSING_CREDENTIALS` | Verificar el tipo de dato | **NO REINTENTABLE** |
-| 401 | Unauthorized | `ERR.2SG.SEC.INVALID_CREDENTIALS` | Verificar credenciales del token | **REINTENTABLE 1 vez** tras invalidar cache de token |
-| 403 | Forbidden | `Request is for a resource that is forbidden` | Verificar autorización; contactar account manager | **NO REINTENTABLE** |
-| 403 | — | `ERR.2SG.SEC.NOT_AUTHORIZED` | Ídem | **NO REINTENTABLE** — falta activación del producto |
-| 403 | — | `ERR.2SG.CLIENT.SERVICE_UNKNOWN` | Verificar URL y segmentos (versión) | **NO REINTENTABLE** — bug de path (§3.3) |
-| 404 | Not Found | `Response does not contain any data` | Menos filtros, o URL/versión mal | **NO REINTENTABLE** — puede ser "sin resultados" legítimo |
-| 405 | Method Not Allowed | — | Método no válido para el endpoint | **NO REINTENTABLE** |
-| 406 | Not Acceptable | Accept headers incompatibles | — | **NO REINTENTABLE** |
-| 413 | — / `FULL head` | `ERR.2SG.CLIENT.INVALID_REQUEST` | URL demasiado larga; partir en varios requests | **NO REINTENTABLE** |
-| 429 | too many requests | **`temporarily_unavailable`** | Límite interno excedido. **Esperar ≥ 500 ms y reenviar** | **REINTENTABLE con backoff** |
-| 429 | Throttled | **`Active token count is exceeded`** | Máx. de requests concurrentes excedido. Contactar account manager. Esperar ≥ 500 ms | **REINTENTABLE + limitar concurrencia** |
-| 429 | — | `ERR.2SG.GATEWAY.REQUEST_THROTTLED` | Ídem | **REINTENTABLE con backoff** |
-| 500 | Server Error | — | Esperar ≥ 500 ms y reenviar | **REINTENTABLE (≤ 2) → ABRIR CIRCUITO si persiste** |
-| 500 | — | `ERR.2SG.SEC.INTERNAL_PROCESSING_ERROR` | Ídem | **REINTENTABLE → ABRIR CIRCUITO** |
-| 500 | — | `ERR.2SG.GATEWAY.TIMEOUT` | Esperar ≥ 500 ms y reenviar | **REINTENTABLE → ABRIR CIRCUITO** |
-| 500 | — | `ERR.2SG.GATEWAY.INTERNAL_PROCESSING_ERROR` | Ídem | **REINTENTABLE → ABRIR CIRCUITO** |
-| 500 | — | `ERR.2SG.GATEWAY.INVALID_PROVIDER_RESPONSE` | Formato de respuesta del proveedor inválido. Contactar soporte Sabre | **ABRIR CIRCUITO** — reintentar no arregla un formato roto |
-| 500 | — | `ERR.2SG.GATEWAY.PROVIDER_CONNECTION_ERROR` | Error de transporte. Esperar ≥ 500 ms | **REINTENTABLE → ABRIR CIRCUITO** |
-| 500 | Connection error | `ERR.2SG.PROVIDER_CONNECTION_ERROR` | Ídem | **REINTENTABLE → ABRIR CIRCUITO** |
-| 503 | Service Unavailable | Servidor no disponible | Reintentar más tarde; reportar si persiste | **ABRIR CIRCUITO inmediatamente** |
-| 504 | Gateway Timeout | Timeout del servidor | Ídem | **ABRIR CIRCUITO inmediatamente** |
+| HTTP | Message             | Text / código                                          | Resolución oficial                                                                  | **Clasificación**                                                              |
+| ---- | ------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 400  | Bad Request         | `Invalid format for request`                           | Verificar parámetros y el `grant_type` del payload                                  | **NO REINTENTABLE**                                                            |
+| 400  | —                   | `ERR.2SG.CLIENT.INVALID_REQUEST`                       | Verificar parámetros. Ver documentación                                             | **NO REINTENTABLE**                                                            |
+| 401  | Unauthorized        | `Not authorized to make this request…`                 | Verificar credenciales del token                                                    | **NO REINTENTABLE** (falta de habilitación, no expiración)                     |
+| 401  | Unauthorized        | **`invalid_client`**                                   | 1) Verificar credenciales. 2) **Verificar TAM Pool — puede estar agotado**          | **REINTENTABLE con backoff** (ver §5.3)                                        |
+| 401  | Unauthorized        | `Credentials are missing or the syntax is not correct` | Verificar que el base64 se construyó bien                                           | **NO REINTENTABLE** — bug nuestro en el doble base64 (§2.1)                    |
+| 401  | Unauthorized        | `Wrong clientID or clientSecret`                       | Verificar password del client ID                                                    | **NO REINTENTABLE** — credencial mala. **Marcar la cuenta BYOC como inválida** |
+| 401  | Unauthorized        | `ERR.2SG.SEC.MISSING_CREDENTIALS`                      | Verificar el tipo de dato                                                           | **NO REINTENTABLE**                                                            |
+| 401  | Unauthorized        | `ERR.2SG.SEC.INVALID_CREDENTIALS`                      | Verificar credenciales del token                                                    | **REINTENTABLE 1 vez** tras invalidar cache de token                           |
+| 403  | Forbidden           | `Request is for a resource that is forbidden`          | Verificar autorización; contactar account manager                                   | **NO REINTENTABLE**                                                            |
+| 403  | —                   | `ERR.2SG.SEC.NOT_AUTHORIZED`                           | Ídem                                                                                | **NO REINTENTABLE** — falta activación del producto                            |
+| 403  | —                   | `ERR.2SG.CLIENT.SERVICE_UNKNOWN`                       | Verificar URL y segmentos (versión)                                                 | **NO REINTENTABLE** — bug de path (§3.3)                                       |
+| 404  | Not Found           | `Response does not contain any data`                   | Menos filtros, o URL/versión mal                                                    | **NO REINTENTABLE** — puede ser "sin resultados" legítimo                      |
+| 405  | Method Not Allowed  | —                                                      | Método no válido para el endpoint                                                   | **NO REINTENTABLE**                                                            |
+| 406  | Not Acceptable      | Accept headers incompatibles                           | —                                                                                   | **NO REINTENTABLE**                                                            |
+| 413  | — / `FULL head`     | `ERR.2SG.CLIENT.INVALID_REQUEST`                       | URL demasiado larga; partir en varios requests                                      | **NO REINTENTABLE**                                                            |
+| 429  | too many requests   | **`temporarily_unavailable`**                          | Límite interno excedido. **Esperar ≥ 500 ms y reenviar**                            | **REINTENTABLE con backoff**                                                   |
+| 429  | Throttled           | **`Active token count is exceeded`**                   | Máx. de requests concurrentes excedido. Contactar account manager. Esperar ≥ 500 ms | **REINTENTABLE + limitar concurrencia**                                        |
+| 429  | —                   | `ERR.2SG.GATEWAY.REQUEST_THROTTLED`                    | Ídem                                                                                | **REINTENTABLE con backoff**                                                   |
+| 500  | Server Error        | —                                                      | Esperar ≥ 500 ms y reenviar                                                         | **REINTENTABLE (≤ 2) → ABRIR CIRCUITO si persiste**                            |
+| 500  | —                   | `ERR.2SG.SEC.INTERNAL_PROCESSING_ERROR`                | Ídem                                                                                | **REINTENTABLE → ABRIR CIRCUITO**                                              |
+| 500  | —                   | `ERR.2SG.GATEWAY.TIMEOUT`                              | Esperar ≥ 500 ms y reenviar                                                         | **REINTENTABLE → ABRIR CIRCUITO**                                              |
+| 500  | —                   | `ERR.2SG.GATEWAY.INTERNAL_PROCESSING_ERROR`            | Ídem                                                                                | **REINTENTABLE → ABRIR CIRCUITO**                                              |
+| 500  | —                   | `ERR.2SG.GATEWAY.INVALID_PROVIDER_RESPONSE`            | Formato de respuesta del proveedor inválido. Contactar soporte Sabre                | **ABRIR CIRCUITO** — reintentar no arregla un formato roto                     |
+| 500  | —                   | `ERR.2SG.GATEWAY.PROVIDER_CONNECTION_ERROR`            | Error de transporte. Esperar ≥ 500 ms                                               | **REINTENTABLE → ABRIR CIRCUITO**                                              |
+| 500  | Connection error    | `ERR.2SG.PROVIDER_CONNECTION_ERROR`                    | Ídem                                                                                | **REINTENTABLE → ABRIR CIRCUITO**                                              |
+| 503  | Service Unavailable | Servidor no disponible                                 | Reintentar más tarde; reportar si persiste                                          | **ABRIR CIRCUITO inmediatamente**                                              |
+| 504  | Gateway Timeout     | Timeout del servidor                                   | Ídem                                                                                | **ABRIR CIRCUITO inmediatamente**                                              |
 
 **Nota sobre el "≥ 500 ms"**: es la única cifra de espera que Sabre publica, y la repite en **todos** los casos
 reintentables. La tomamos como **suelo**, no como política: nuestro backoff será exponencial con jitter a partir de
@@ -762,8 +785,8 @@ fan-out del `search.service.ts` con un semáforo por `provider_account`, no por 
 
 **VERIFICADO-SPEC**, `v1-errors.txt:41-51`:
 
-> `401 / Unauthorized / invalid_client` → «*1. Verify your token credentials. **2. Verify TAM Pool details. The
-> error may occur when TAM Pool is exhausted.***»
+> `401 / Unauthorized / invalid_client` → «\*1. Verify your token credentials. **2. Verify TAM Pool details. The
+> error may occur when TAM Pool is exhausted.\***»
 
 Esto es importante y contraintuitivo: **un 401 `invalid_client` puede no significar "credencial mala" sino "no
 quedan slots"**. Tratarlo como credencial revocada (deshabilitar la cuenta BYOC del tenant) sería un
@@ -785,15 +808,15 @@ falso positivo que tumba a una agencia entera por saturación temporal.
 **VERIFICADO-SPEC**, `help/booking-management-api-v1/help-documentation-get-booking-error-list.txt:16-70` — todos
 con `type: UNAUTHORIZED_ACCESS`:
 
-| Categoría | Descripción oficial | Clasificación |
-| --- | --- | --- |
-| `UNAUTHORIZED` | **«Expired or invalid security token»** (`:48`) | **REINTENTABLE 1 vez** tras re-auth |
-| `UNAUTHORIZED` | **«Invalid security token.»** (`:55`) | **REINTENTABLE 1 vez** tras re-auth |
-| `UNAUTHORIZED` | «Booking cannot be retrieved due to authorization issues in the security systems…» (`:62`) | **NO REINTENTABLE** |
-| `UNAUTHORIZED` | «The service `GetAncillaryOffersRQ` returned an authorization failure…» (`:20`) | **NO REINTENTABLE** — falta suscripción |
-| `UNAUTHORIZED` | «`TKT_ElectronicDocumentServicesRQ` is available to Sabre travel agency subscribers only» (`:41`) | **NO REINTENTABLE** — falta suscripción |
-| `RESOURCE_RESTRICTED` | «Access to selected booking is restricted. Verify… Travel Journal Record settings» (`:69`) | **NO REINTENTABLE** |
-| `UNAUTHORIZED` (createBooking, `…create-booking-error-list.txt:1299-1303`) | «When invalid/expired ATK token is used.» | **REINTENTABLE 1 vez** tras re-auth |
+| Categoría                                                                  | Descripción oficial                                                                               | Clasificación                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `UNAUTHORIZED`                                                             | **«Expired or invalid security token»** (`:48`)                                                   | **REINTENTABLE 1 vez** tras re-auth     |
+| `UNAUTHORIZED`                                                             | **«Invalid security token.»** (`:55`)                                                             | **REINTENTABLE 1 vez** tras re-auth     |
+| `UNAUTHORIZED`                                                             | «Booking cannot be retrieved due to authorization issues in the security systems…» (`:62`)        | **NO REINTENTABLE**                     |
+| `UNAUTHORIZED`                                                             | «The service `GetAncillaryOffersRQ` returned an authorization failure…» (`:20`)                   | **NO REINTENTABLE** — falta suscripción |
+| `UNAUTHORIZED`                                                             | «`TKT_ElectronicDocumentServicesRQ` is available to Sabre travel agency subscribers only» (`:41`) | **NO REINTENTABLE** — falta suscripción |
+| `RESOURCE_RESTRICTED`                                                      | «Access to selected booking is restricted. Verify… Travel Journal Record settings» (`:69`)        | **NO REINTENTABLE**                     |
+| `UNAUTHORIZED` (createBooking, `…create-booking-error-list.txt:1299-1303`) | «When invalid/expired ATK token is used.»                                                         | **REINTENTABLE 1 vez** tras re-auth     |
 
 > **Riesgo de clasificación.** Los siete comparten `type = UNAUTHORIZED_ACCESS`. **El `type` no basta para decidir
 > si reintentar**: hay que mirar la `description`, que es texto libre en inglés y puede cambiar sin aviso. Es una
@@ -806,12 +829,12 @@ con `type: UNAUTHORIZED_ACCESS`:
 
 **VERIFICADO-SPEC** — aparecen en `createBooking`, `modifyBooking`, `cancelBooking` y `flightReshop`:
 
-| Error type | Categoría | Descripción oficial | Ref | Clasificación |
-| --- | --- | --- | --- | --- |
-| `ATH_TOKEN_FAILURE` | `APPLICATION_ERROR` | «Unable to create ATH session token. **Please retry the transaction.**» | `…create-booking-error-list.txt:39-43`; `…modify-booking-error-list-0.txt:25-29`; `flight-reshop-api-1.0/…-error-list.txt:23-27` | **REINTENTABLE** (Sabre lo pide explícitamente) |
-| `UNABLE_TO_RETRIEVE_SESSION_DATA` | `APPLICATION_ERROR` | General problem with `GetReservationRQ` service | `…create-booking-error-list.txt:56-64` | **REINTENTABLE 1 vez** |
-| `CLOSE_SESSION_WARNING` | `WARNING` | Falló el `SessionCloseRQ` interno | `…cancel-booking-error-list.txt:554-558` | **NO reintentar la operación**, pero **sí alertar**: es una sesión potencialmente fugada |
-| `FAULT_RESPONSE` | `APPLICATION_ERROR` | «The underlying system cannot process request at this time.» | `…create-booking-error-list.txt:45-49` | **REINTENTABLE → ABRIR CIRCUITO** si persiste |
+| Error type                        | Categoría           | Descripción oficial                                                     | Ref                                                                                                                              | Clasificación                                                                            |
+| --------------------------------- | ------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `ATH_TOKEN_FAILURE`               | `APPLICATION_ERROR` | «Unable to create ATH session token. **Please retry the transaction.**» | `…create-booking-error-list.txt:39-43`; `…modify-booking-error-list-0.txt:25-29`; `flight-reshop-api-1.0/…-error-list.txt:23-27` | **REINTENTABLE** (Sabre lo pide explícitamente)                                          |
+| `UNABLE_TO_RETRIEVE_SESSION_DATA` | `APPLICATION_ERROR` | General problem with `GetReservationRQ` service                         | `…create-booking-error-list.txt:56-64`                                                                                           | **REINTENTABLE 1 vez**                                                                   |
+| `CLOSE_SESSION_WARNING`           | `WARNING`           | Falló el `SessionCloseRQ` interno                                       | `…cancel-booking-error-list.txt:554-558`                                                                                         | **NO reintentar la operación**, pero **sí alertar**: es una sesión potencialmente fugada |
+| `FAULT_RESPONSE`                  | `APPLICATION_ERROR` | «The underlying system cannot process request at this time.»            | `…create-booking-error-list.txt:45-49`                                                                                           | **REINTENTABLE → ABRIR CIRCUITO** si persiste                                            |
 
 > **`ATH_TOKEN_FAILURE` es la prueba de que la API REST abre sesiones ATH por su cuenta**, incluso cuando le mandas
 > un ATK. Sabre necesita un AAA para orquestar `ContextChangeLLSRQ`, `EPS_EXT_ProfileToPNRRQ`, `EPS_EXT_ProfileReadRQ`,
@@ -827,21 +850,21 @@ con `type: UNAUTHORIZED_ACCESS`:
 
 ### 6.1 Inventario — **VERIFICADO** (conteo por request, `slices/09-soap-lls-stateful.txt`)
 
-| Mensaje SOAP | Requests | Para qué |
-| --- | --- | --- |
-| `SessionCreateRQ` | **73** | abrir sesión ATH (4 variantes de body, §4.3) |
-| `SessionCloseRQ` | **61** | cerrar sesión |
-| `OTA_AirAvailLLSRQ` | **30** | disponibilidad de vuelo — *obtener el número de vuelo* antes de modificar |
-| `GetHotelAvailRQ` (v5.0.0, CSL) | **26** | disponibilidad hotelera CSL → devuelve `RateKey` |
-| `HotelPriceCheckRQ` (v5.0.0) | **25** | revalidación hotel → devuelve `BookingKey` |
-| `GetAncillaryOffersRQ 3.1.0` | **6** | ancillaries ATPCO/LCC |
-| `OTA_AirBookLLSRQ` | **4** | book de segmentos en grupo |
-| `PassengerDetailsRQ 3.4.0` | **4** | nombres / tipos de pasajero en group bookings |
-| `EnhancedEndTransactionRQ 1.0.0` | **4** | **commit** del PNR (el `ET` del emulador) |
-| `Sabre_OTA_ProfileCreateRQ` | **4** | perfiles EPS |
-| `UpdatePassengerNameRecordRQ 1.1.0` | **3** | añadir segmento de hotel CSL / FOP |
-| `GetVehAvailRQ` | **2** | disponibilidad de auto |
-| `VehPriceCheckRQ` | **1** | revalidación de auto |
+| Mensaje SOAP                        | Requests | Para qué                                                                  |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------- |
+| `SessionCreateRQ`                   | **73**   | abrir sesión ATH (4 variantes de body, §4.3)                              |
+| `SessionCloseRQ`                    | **61**   | cerrar sesión                                                             |
+| `OTA_AirAvailLLSRQ`                 | **30**   | disponibilidad de vuelo — _obtener el número de vuelo_ antes de modificar |
+| `GetHotelAvailRQ` (v5.0.0, CSL)     | **26**   | disponibilidad hotelera CSL → devuelve `RateKey`                          |
+| `HotelPriceCheckRQ` (v5.0.0)        | **25**   | revalidación hotel → devuelve `BookingKey`                                |
+| `GetAncillaryOffersRQ 3.1.0`        | **6**    | ancillaries ATPCO/LCC                                                     |
+| `OTA_AirBookLLSRQ`                  | **4**    | book de segmentos en grupo                                                |
+| `PassengerDetailsRQ 3.4.0`          | **4**    | nombres / tipos de pasajero en group bookings                             |
+| `EnhancedEndTransactionRQ 1.0.0`    | **4**    | **commit** del PNR (el `ET` del emulador)                                 |
+| `Sabre_OTA_ProfileCreateRQ`         | **4**    | perfiles EPS                                                              |
+| `UpdatePassengerNameRecordRQ 1.1.0` | **3**    | añadir segmento de hotel CSL / FOP                                        |
+| `GetVehAvailRQ`                     | **2**    | disponibilidad de auto                                                    |
+| `VehPriceCheckRQ`                   | **1**    | revalidación de auto                                                      |
 
 Todos van a `{{soap_endpoint}}` con `Content-Type: text/xml`. **0 requests** usan `{{lls_endpoint}}`.
 
@@ -849,14 +872,14 @@ Todos van a `{{soap_endpoint}}` con `Content-Type: text/xml`. **0 requests** usa
 
 No es una preferencia de transporte: hay funcionalidad que **sólo existe** ahí.
 
-| Capacidad | ¿Hay alternativa REST? | Evidencia |
-| --- | --- | --- |
-| **Ancillaries LCC** | **No** | WF-20 tiene `auth=0`: su único origen de token es `SessionCreateRQ` |
-| **Perfiles (EPS)** | **No** | WF-2 y WF-4 abren sesión para `Sabre_OTA_ProfileCreateRQ`; la orquestación REST sólo hace `ProfileToPNR`/`ProfileRead` |
-| **Preparación hotel CSL** (`RateKey` → `BookingKey`) | Parcial | los 26 `GetHotelAvailRQ` + 25 `HotelPriceCheckRQ` SOAP alimentan el `bookingKey` que consume `createBooking` REST |
-| **Preparación vehículo** (`bookingKey`) | Parcial | 2 `GetVehAvailRQ` + 1 `VehPriceCheckRQ` |
-| **Group bookings** (add/update/delete de pasajeros) | **No** | `PassengerDetailsRQ` + `OTA_AirBookLLSRQ` + `EnhancedEndTransactionRQ`, 4 de cada |
-| **Modificación de asientos / SSR / FOP** | Parcial | `UpdatePassengerNameRecordRQ`, y todas las carpetas de *Seat modifications* abren sesión |
+| Capacidad                                            | ¿Hay alternativa REST? | Evidencia                                                                                                              |
+| ---------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Ancillaries LCC**                                  | **No**                 | WF-20 tiene `auth=0`: su único origen de token es `SessionCreateRQ`                                                    |
+| **Perfiles (EPS)**                                   | **No**                 | WF-2 y WF-4 abren sesión para `Sabre_OTA_ProfileCreateRQ`; la orquestación REST sólo hace `ProfileToPNR`/`ProfileRead` |
+| **Preparación hotel CSL** (`RateKey` → `BookingKey`) | Parcial                | los 26 `GetHotelAvailRQ` + 25 `HotelPriceCheckRQ` SOAP alimentan el `bookingKey` que consume `createBooking` REST      |
+| **Preparación vehículo** (`bookingKey`)              | Parcial                | 2 `GetVehAvailRQ` + 1 `VehPriceCheckRQ`                                                                                |
+| **Group bookings** (add/update/delete de pasajeros)  | **No**                 | `PassengerDetailsRQ` + `OTA_AirBookLLSRQ` + `EnhancedEndTransactionRQ`, 4 de cada                                      |
+| **Modificación de asientos / SSR / FOP**             | Parcial                | `UpdatePassengerNameRecordRQ`, y todas las carpetas de _Seat modifications_ abren sesión                               |
 
 > **Consecuencia para el roadmap:** un adapter Sabre "sólo REST" **no puede** vender LCC con ancillaries, ni
 > gestionar perfiles, ni hacer group bookings. Si el alcance de Ola 1 incluye alguno de esos, el cliente SOAP + el
@@ -868,8 +891,8 @@ Hay dos hechos del spec que, combinados, definen la arquitectura:
 
 1. **La sesión ATH sirve para hablar SOAP con estado** — se abre, se acumula contexto (área AAA con el PNR en
    curso), se hace `EnhancedEndTransactionRQ` para commitear, se cierra.
-2. **Pero cualquier llamada REST de Booking Management la limpia**: «*the session (AAA) is cleared before and after
-   execution*» (**VERIFICADO-SPEC**, ×7 páginas, §1.1).
+2. **Pero cualquier llamada REST de Booking Management la limpia**: «_the session (AAA) is cleared before and after
+   execution_» (**VERIFICADO-SPEC**, ×7 páginas, §1.1).
 
 Es decir: **no se puede intercalar libremente REST y SOAP sobre la misma sesión abierta.** Un flujo como
 
@@ -883,14 +906,14 @@ son autocontenidas; el estado SOAP sólo se acumula entre mensajes SOAP consecut
 
 **Requisitos del `SabreSessionPool`:**
 
-| Requisito | Por qué |
-| --- | --- |
-| `acquire()` / `release()` con `finally` garantizado | El cupo de sesiones es finito; una sesión huérfana no se recupera sola |
-| Límite de concurrencia por `provider_account` (no por proceso) | `429 Active token count is exceeded` es por contrato de agencia, no por instancia |
-| Keepalive por inactividad | Las sesiones ATH expiran por *idle*, no por TTL fijo **[INFERIDO]** |
-| `SessionCloseRQ` en compensación de **Temporal** | Las sagas LCC / group booking son largas; un crash del worker no puede dejar la sesión abierta |
-| Marcar la sesión como *dirty* tras cualquier llamada REST intercalada | El AAA quedó limpio; el contexto acumulado ya no vale |
-| Métrica `sabre_sessions_open` por tenant + alerta | Sin esto, la fuga se descubre cuando la agencia deja de poder vender |
+| Requisito                                                             | Por qué                                                                                        |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `acquire()` / `release()` con `finally` garantizado                   | El cupo de sesiones es finito; una sesión huérfana no se recupera sola                         |
+| Límite de concurrencia por `provider_account` (no por proceso)        | `429 Active token count is exceeded` es por contrato de agencia, no por instancia              |
+| Keepalive por inactividad                                             | Las sesiones ATH expiran por _idle_, no por TTL fijo **[INFERIDO]**                            |
+| `SessionCloseRQ` en compensación de **Temporal**                      | Las sagas LCC / group booking son largas; un crash del worker no puede dejar la sesión abierta |
+| Marcar la sesión como _dirty_ tras cualquier llamada REST intercalada | El AAA quedó limpio; el contexto acumulado ya no vale                                          |
+| Métrica `sabre_sessions_open` por tenant + alerta                     | Sin esto, la fuga se descubre cuando la agencia deja de poder vender                           |
 
 ### 6.4 La fuga de sesiones de la propia colección — **localizada, no uniforme**
 
@@ -928,17 +951,17 @@ upsell. Si portamos esos ejemplos literalmente, fugamos sesiones justo en los fl
 
 ### 7.1 Lo que sabemos y lo que no — **actualizado contra el spec**
 
-| Pregunta | Respuesta |
-| --- | --- |
-| ¿El response de `/v2/auth/token` trae `expires_in`? | **DESCONOCIDO.** 0 coincidencias de `expires_in`/`token_type`/`refresh_token` en la colección **y en los 15 specs**. Los `securityDefinitions` sólo declaran el `tokenUrl`. |
-| ¿Cuánto dura un ATK v2? | **DESCONOCIDO.** **[INFERIDO]** vida larga (orden de días). **Verificar contra sandbox.** |
-| ¿Existe un límite de tokens/concurrencia? | **VERIFICADO-SPEC: SÍ.** `401 invalid_client` menciona el **TAM Pool agotado** (`v1-errors.txt:49`) y `429 Throttled` dice «*Active token count is exceeded… contact your Sabre account manager to determine or increase your allocated concurrent request limit*» (`v1-errors.txt:195-205`). **La cifra concreta es contractual y sigue DESCONOCIDA.** |
-| ¿Cuánto dura una sesión ATH? | **DESCONOCIDO.** **[INFERIDO]** expira por inactividad (~15 min) con cupo concurrente por agencia. **Verificar.** |
-| ¿Se puede refrescar? | **DESCONOCIDO.** No hay `refresh_token` en ninguna fuente. |
-| ¿Qué devuelve Sabre si el token expiró? | **VERIFICADO-SPEC.** Gateway: `401 ERR.2SG.SEC.INVALID_CREDENTIALS`. Aplicación: `UNAUTHORIZED_ACCESS / UNAUTHORIZED / "Expired or invalid security token"` dentro de un `200`. Ver §5.4. |
+| Pregunta                                            | Respuesta                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ¿El response de `/v2/auth/token` trae `expires_in`? | **DESCONOCIDO.** 0 coincidencias de `expires_in`/`token_type`/`refresh_token` en la colección **y en los 21 specs**. Los `securityDefinitions` sólo declaran el `tokenUrl`.                                                                                                                                                                             |
+| ¿Cuánto dura un ATK v2?                             | **DESCONOCIDO.** **[INFERIDO]** vida larga (orden de días). **Verificar contra sandbox.**                                                                                                                                                                                                                                                               |
+| ¿Existe un límite de tokens/concurrencia?           | **VERIFICADO-SPEC: SÍ.** `401 invalid_client` menciona el **TAM Pool agotado** (`v1-errors.txt:49`) y `429 Throttled` dice «_Active token count is exceeded… contact your Sabre account manager to determine or increase your allocated concurrent request limit_» (`v1-errors.txt:195-205`). **La cifra concreta es contractual y sigue DESCONOCIDA.** |
+| ¿Cuánto dura una sesión ATH?                        | **DESCONOCIDO.** **[INFERIDO]** expira por inactividad (~15 min) con cupo concurrente por agencia. **Verificar.**                                                                                                                                                                                                                                       |
+| ¿Se puede refrescar?                                | **DESCONOCIDO.** No hay `refresh_token` en ninguna fuente.                                                                                                                                                                                                                                                                                              |
+| ¿Qué devuelve Sabre si el token expiró?             | **VERIFICADO-SPEC.** Gateway: `401 ERR.2SG.SEC.INVALID_CREDENTIALS`. Aplicación: `UNAUTHORIZED_ACCESS / UNAUTHORIZED / "Expired or invalid security token"` dentro de un `200`. Ver §5.4.                                                                                                                                                               |
 
-> **El dato del TAM Pool cambia una decisión.** La primera pasada decía «*[INFERIDO] Sabre limita la tasa de
-> creación de tokens*» como razón para llevar el cache a Redis. **Ya no es inferencia**: el pool existe y su
+> **El dato del TAM Pool cambia una decisión.** La primera pasada decía «_[INFERIDO] Sabre limita la tasa de
+> creación de tokens_» como razón para llevar el cache a Redis. **Ya no es inferencia**: el pool existe y su
 > agotamiento se manifiesta como `401 invalid_client`. **El cache distribuido pasa de "conveniente" a
 > "obligatorio"**: N réplicas re-autenticando en cada deploy es exactamente la forma de agotar el pool.
 
@@ -956,15 +979,15 @@ Nuestro patrón actual (`LatamTokenService`) — verificado contra el archivo:
 
 Qué se reusa tal cual y qué cambia para Sabre:
 
-| Aspecto | `latam-ndc` | Sabre ATK | Sabre ATH |
-| --- | --- | --- | --- |
-| Coalescing `inflight` | sí | **reusar igual** | **imprescindible** (una sesión, no N) |
-| Fuente del TTL | `expires_in` del response | **puede no venir** → TTL configurable con default conservador | *idle timeout*, no TTL fijo |
-| Margen | `expires_in - 60s` | mismo criterio si viene; si no, TTL fijo | keepalive periódico |
-| Dónde vive | memoria del proceso | **debe ser el cache port** (TAM Pool, §7.1) | memoria + lease |
-| Ante `401` | no contemplado | **invalidar + reintentar 1 vez**, salvo op no idempotente (§5.4) | invalidar sesión + `SessionCreateRQ` |
-| Ante `429` | no contemplado | **backoff ≥ 500 ms + semáforo por cuenta** | ídem + reducir tamaño del pool |
-| Cierre | n/a | n/a | **`SessionCloseRQ` obligatorio** |
+| Aspecto               | `latam-ndc`               | Sabre ATK                                                        | Sabre ATH                             |
+| --------------------- | ------------------------- | ---------------------------------------------------------------- | ------------------------------------- |
+| Coalescing `inflight` | sí                        | **reusar igual**                                                 | **imprescindible** (una sesión, no N) |
+| Fuente del TTL        | `expires_in` del response | **puede no venir** → TTL configurable con default conservador    | _idle timeout_, no TTL fijo           |
+| Margen                | `expires_in - 60s`        | mismo criterio si viene; si no, TTL fijo                         | keepalive periódico                   |
+| Dónde vive            | memoria del proceso       | **debe ser el cache port** (TAM Pool, §7.1)                      | memoria + lease                       |
+| Ante `401`            | no contemplado            | **invalidar + reintentar 1 vez**, salvo op no idempotente (§5.4) | invalidar sesión + `SessionCreateRQ`  |
+| Ante `429`            | no contemplado            | **backoff ≥ 500 ms + semáforo por cuenta**                       | ídem + reducir tamaño del pool        |
+| Cierre                | n/a                       | n/a                                                              | **`SessionCloseRQ` obligatorio**      |
 
 **Tres diferencias que obligan a desviarse del patrón LATAM:**
 
@@ -1004,11 +1027,11 @@ herencia por `resolve_provider_account()` subiendo el `ltree` `path` hasta el an
 }
 ```
 
-| Campo | Obligatorio | Por qué es secreto |
-| --- | --- | --- |
-| `epr` | sí | Es el `username`. Con el password da acceso total a la oficina. |
-| `password` | sí | Password del EPR. |
-| `clientId` / `clientSecret` | no | Reservados para migrar a `/v3/auth/token` (§2.2). |
+| Campo                       | Obligatorio | Por qué es secreto                                              |
+| --------------------------- | ----------- | --------------------------------------------------------------- |
+| `epr`                       | sí          | Es el `username`. Con el password da acceso total a la oficina. |
+| `password`                  | sí          | Password del EPR.                                               |
+| `clientId` / `clientSecret` | no          | Reservados para migrar a `/v3/auth/token` (§2.2).               |
 
 **No** guardamos el `secret` calculado: es derivable y almacenarlo duplicaría el material sensible. Se computa en
 cada `fetchToken()`.
@@ -1039,22 +1062,22 @@ cada `fetchToken()`.
 }
 ```
 
-| Campo | Origen | Nota |
-| --- | --- | --- |
-| `environment` | — | `'cert' \| 'prod'`; resuelve los dos hosts (§3.4). |
-| `restEndpoint` / `soapEndpoint` | `rest_endpoint`, `soap_endpoint` | Override opcional. |
-| `homePcc` | `pcc` | PCC de autenticación. **Entra en el `clientId`**, por eso `SabreConfig` lo necesita junto a `credentials`. |
-| `ticketingPcc` | `pcc_tkt` | PCC de emisión → `targetPcc`. **Campo bisagra del modelo consolidador** (§9). |
-| `agencyIata` | — **[INFERIDO]**, no hay variable en el environment | Necesario para facturación y para el FOP `TRAVEL_AGENCY_IATA` que aparece en ModifyBooking. |
-| `domain` / `soapDomain` | literales `AA` / `DEFAULT` | Configurables por la incoherencia de §4.3. |
-| `applicationId` | — | Header `Application-ID`, **recomendado por Sabre** en hotel/vehicle (**VERIFICADO-SPEC**, `hotel-price-check-v5.yml:24-28`). Se pide al account manager. **Campo nuevo en esta pasada.** |
-| `printerHardcopyLniata` | `hardcopy` (16 usos) | `designatePrinters[].hardcopy.address`. |
-| `printerCountryCode` | `country_code` (15 usos) | `designatePrinters[].ticket.countryCode`. |
-| `sabreGroup` / `sabreCurrentCity` | `x_sabre_group`, `x_sabre_current_city` | Si son `null`, default a `homePcc`. **Obligatorios cuando se usa `targetPcc`** (§4.2): `sabreGroup` para ATK, `sabreCurrentCity` para ATH. |
-| `maxConcurrentRequests` | — | **Campo nuevo.** Semáforo por cuenta contra el `429 Active token count is exceeded` (§5.2). El valor real lo fija el contrato con Sabre. |
+| Campo                             | Origen                                              | Nota                                                                                                                                                                                     |
+| --------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment`                     | —                                                   | `'cert' \| 'prod'`; resuelve los dos hosts (§3.4).                                                                                                                                       |
+| `restEndpoint` / `soapEndpoint`   | `rest_endpoint`, `soap_endpoint`                    | Override opcional.                                                                                                                                                                       |
+| `homePcc`                         | `pcc`                                               | PCC de autenticación. **Entra en el `clientId`**, por eso `SabreConfig` lo necesita junto a `credentials`.                                                                               |
+| `ticketingPcc`                    | `pcc_tkt`                                           | PCC de emisión → `targetPcc`. **Campo bisagra del modelo consolidador** (§9).                                                                                                            |
+| `agencyIata`                      | — **[INFERIDO]**, no hay variable en el environment | Necesario para facturación y para el FOP `TRAVEL_AGENCY_IATA` que aparece en ModifyBooking.                                                                                              |
+| `domain` / `soapDomain`           | literales `AA` / `DEFAULT`                          | Configurables por la incoherencia de §4.3.                                                                                                                                               |
+| `applicationId`                   | —                                                   | Header `Application-ID`, **recomendado por Sabre** en hotel/vehicle (**VERIFICADO-SPEC**, `hotel-price-check-v5.yml:24-28`). Se pide al account manager. **Campo nuevo en esta pasada.** |
+| `printerHardcopyLniata`           | `hardcopy` (16 usos)                                | `designatePrinters[].hardcopy.address`.                                                                                                                                                  |
+| `printerCountryCode`              | `country_code` (15 usos)                            | `designatePrinters[].ticket.countryCode`.                                                                                                                                                |
+| `sabreGroup` / `sabreCurrentCity` | `x_sabre_group`, `x_sabre_current_city`             | Si son `null`, default a `homePcc`. **Obligatorios cuando se usa `targetPcc`** (§4.2): `sabreGroup` para ATK, `sabreCurrentCity` para ATH.                                               |
+| `maxConcurrentRequests`           | —                                                   | **Campo nuevo.** Semáforo por cuenta contra el `429 Active token count is exceeded` (§5.2). El valor real lo fija el contrato con Sabre.                                                 |
 
 > **`homePcc` va en `config`, no en `credentials`** — aunque forme parte del `clientId`. Razones: (a) un PCC no es
-> secreto, se imprime en el billete y el propio spec lo describe como «*pseudo city code of authorized branch*»
+> secreto, se imprime en el billete y el propio spec lo describe como «_pseudo city code of authorized branch_»
 > (`get-hotel-avail-v4.yml:94`); (b) el comentario de la migración 0012 ya lo asigna a `config`
 > (`0012_provider_accounts.sql:26`); (c) la UI de agencia necesita mostrarlo, y `credentials` nunca sale por API.
 > El factory combina ambos lados, igual que `latam-ndc.factory.ts`.
@@ -1071,8 +1094,8 @@ export interface SabreConfig {
   homePcc?: string;
   ticketingPcc?: string;
   agencyIata?: string;
-  domain?: string;                 // default 'AA'
-  soapDomain?: string;             // default 'DEFAULT'
+  domain?: string; // default 'AA'
+  soapDomain?: string; // default 'DEFAULT'
   conversationIdPrefix?: string;
   applicationId?: string;
   printerHardcopyLniata?: string;
@@ -1086,7 +1109,7 @@ export interface SabreConfig {
 
 export function isMockMode(cfg: SabreConfig): boolean {
   if (cfg.mock) return true;
-  return !cfg.epr || !cfg.password || !cfg.homePcc;   // las 3 que construyen el clientId
+  return !cfg.epr || !cfg.password || !cfg.homePcc; // las 3 que construyen el clientId
 }
 ```
 
@@ -1116,19 +1139,19 @@ BSP/ARC.**
 
 ### 9.1 Los tres modelos
 
-| | **A. Hereda todo** | **B. PCC propio** | **C. Híbrido (reserva propia, emisión del consolidador)** |
-| --- | --- | --- | --- |
-| `provider_account` | ninguna propia; hereda | propia, `is_inheritable=false` | propia con `ticketingPcc` = PCC del consolidador |
-| `homePcc` | del consolidador | de la agencia | de la agencia |
-| PNR creado bajo | PCC del consolidador | PCC de la agencia | PCC de la agencia |
-| Billete emitido bajo | IATA/ARC del consolidador | IATA/ARC de la agencia | **IATA/ARC del consolidador** |
-| Liquidación BSP/ARC | consolidador | agencia | consolidador |
-| Riesgo de ADM | consolidador | agencia | consolidador |
-| Tarifas privadas visibles | las del consolidador | las de la agencia | las de la agencia al reservar |
-| Colas Sabre (queues) | del consolidador | de la agencia | reserva en la agencia, emisión en el consolidador |
-| Requiere que la agencia tenga IATA propio | **no** | **sí** | no |
-| Mecanismo API | ninguno extra | ninguno extra | **`targetPcc`** + header `X-Sabre-*` (**VERIFICADO-SPEC**, §4.2/§4.4) |
-| Prerrequisito no-API | — | — | **autoridad de contexto sobre el `targetPcc`** (**VERIFICADO-SPEC**, §4.5) |
+|                                           | **A. Hereda todo**        | **B. PCC propio**              | **C. Híbrido (reserva propia, emisión del consolidador)**                  |
+| ----------------------------------------- | ------------------------- | ------------------------------ | -------------------------------------------------------------------------- |
+| `provider_account`                        | ninguna propia; hereda    | propia, `is_inheritable=false` | propia con `ticketingPcc` = PCC del consolidador                           |
+| `homePcc`                                 | del consolidador          | de la agencia                  | de la agencia                                                              |
+| PNR creado bajo                           | PCC del consolidador      | PCC de la agencia              | PCC de la agencia                                                          |
+| Billete emitido bajo                      | IATA/ARC del consolidador | IATA/ARC de la agencia         | **IATA/ARC del consolidador**                                              |
+| Liquidación BSP/ARC                       | consolidador              | agencia                        | consolidador                                                               |
+| Riesgo de ADM                             | consolidador              | agencia                        | consolidador                                                               |
+| Tarifas privadas visibles                 | las del consolidador      | las de la agencia              | las de la agencia al reservar                                              |
+| Colas Sabre (queues)                      | del consolidador          | de la agencia                  | reserva en la agencia, emisión en el consolidador                          |
+| Requiere que la agencia tenga IATA propio | **no**                    | **sí**                         | no                                                                         |
+| Mecanismo API                             | ninguno extra             | ninguno extra                  | **`targetPcc`** + header `X-Sabre-*` (**VERIFICADO-SPEC**, §4.2/§4.4)      |
+| Prerrequisito no-API                      | —                         | —                              | **autoridad de contexto sobre el `targetPcc`** (**VERIFICADO-SPEC**, §4.5) |
 
 ### 9.2 Modelo A — hereda las credenciales del consolidador
 
@@ -1145,7 +1168,7 @@ contratos del API no asignan facturación, BSP ni ADM):
   porque no tiene relación con Sabre.
 - **Sabre no distingue a la sub-agencia.** Desde el GDS todas las ventas de toda la red se ven idénticas. Por tanto
   **la atribución por tenant es responsabilidad exclusiva nuestra**: hay que estampar el `tenant_id` en el PNR
-  (remark / accounting line / DK number) *y* en nuestro `domain_events`. Sin eso la reconciliación "qué vendió cada
+  (remark / accounting line / DK number) _y_ en nuestro `domain_events`. Sin eso la reconciliación "qué vendió cada
   agencia" es imposible de auditar contra Sabre.
 - Las **tarifas privadas** que ve la sub-agencia son las negociadas por el consolidador — puede ser ventaja
   (mejores netas) o problema (la agencia no ve sus propios acuerdos).
@@ -1158,7 +1181,7 @@ contratos del API no asignan facturación, BSP ni ADM):
 
 - El PNR y el billete se operan con el PCC propio de la agencia; su IATA/ARC, liquidación y riesgo de ADM se
   verifican contractualmente y no se deducen sólo del request.
-- El consolidador **pierde visibilidad** salvo que en el back-office de Sabre exista *branch access* entre el PCC
+- El consolidador **pierde visibilidad** salvo que en el back-office de Sabre exista _branch access_ entre el PCC
   del consolidador y el de la agencia. **No se configura desde la API**: es un trámite con Sabre. Lo que sí sabemos
   ahora es **cómo se manifiesta si no existe**: `UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED` (**VERIFICADO-SPEC**, §4.5).
 - Nuestro rol pasa a ser tecnología pura: no hay markup del consolidador sobre el neto porque el neto no pasa por
@@ -1169,16 +1192,16 @@ contratos del API no asignan facturación, BSP ni ADM):
 
 Reservar con el PCC de la agencia y **emitir con `targetPcc` = PCC del consolidador** está soportado nativamente y
 **la documentación oficial lo nombra como el caso de uso** (**VERIFICADO-SPEC**,
-`help-documentation-create-booking.txt:118`: «*particularly useful for agencies that separate their booking,
-fulfillment, and shopping across different pseudo city codes*»). La colección lo ejercita en **ambos extremos**:
+`help-documentation-create-booking.txt:118`: «_particularly useful for agencies that separate their booking,
+fulfillment, and shopping across different pseudo city codes_»). La colección lo ejercita en **ambos extremos**:
 `createBooking - Air with Changed PCC` con `targetPcc = {{pcc}}` **parametrizado** y
 `FulfillFlightTickets - … dedicated ticketing PCC` con `targetPcc = {{pcc_tkt}}` (§4.4).
 
 Se mapea limpiamente a nuestro schema porque `provider_accounts` ya tiene `label` en la clave única:
 
-| `label` | `homePcc` | Uso |
-| --- | --- | --- |
-| `default` | PCC de la agencia | shop, price, createBooking, getBooking |
+| `label`     | `homePcc`            | Uso                                                          |
+| ----------- | -------------------- | ------------------------------------------------------------ |
+| `default`   | PCC de la agencia    | shop, price, createBooking, getBooking                       |
 | `ticketing` | PCC del consolidador | `fulfillFlightTickets` / `voidFlightTickets` con `targetPcc` |
 
 Alternativa más simple: **una sola cuenta**, con `config.ticketingPcc` apuntando al PCC del consolidador y el mismo
@@ -1205,49 +1228,55 @@ Todos sobre `scratchpad/sabre/requests.jsonl` (1 request JSON por línea).
 
 ```js
 // node -e "…"  — conteos de §1
-const L = require('fs').readFileSync('requests.jsonl','utf8').trim().split('\n').map(JSON.parse);
-const c = f => L.filter(f).length;
-c(r => /REST Authorize/i.test(r.path));            // 59
-c(r => /v2\/auth\/token/.test(r.url||''));         // 59   <-- coherente
-c(r => /v3\/auth\/token/.test(r.url||''));         //  0
-c(r => /\(Stateless ATK\)/.test(r.path));          // 89
-c(r => /\(Stateful ATH\)/.test(r.path));           // 57
-c(r => /soap_endpoint/.test(r.url||''));           // 243
-c(r => /lls_endpoint/.test(r.url||''));            //  0
-c(r => /rest_endpoint/.test(r.url||''));           // 808
+const L = require('fs').readFileSync('requests.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+const c = (f) => L.filter(f).length;
+c((r) => /REST Authorize/i.test(r.path)); // 59
+c((r) => /v2\/auth\/token/.test(r.url || '')); // 59   <-- coherente
+c((r) => /v3\/auth\/token/.test(r.url || '')); //  0
+c((r) => /\(Stateless ATK\)/.test(r.path)); // 89
+c((r) => /\(Stateful ATH\)/.test(r.path)); // 57
+c((r) => /soap_endpoint/.test(r.url || '')); // 243
+c((r) => /lls_endpoint/.test(r.url || '')); //  0
+c((r) => /rest_endpoint/.test(r.url || '')); // 808
 ```
 
 ```js
 // §1.2 — por workflow, CONTANDO REQUESTS (no ocurrencias de string)
-const wf = L.filter(r => /^Workflows \//.test(r.path));
+const wf = L.filter((r) => /^Workflows \//.test(r.path));
 const by = {};
 for (const r of wf) (by[r.path.split(' / ')[1]] ??= []).push(r);
-for (const [k, rs] of Object.entries(by)) console.log(k,
-  'soap='  + rs.filter(r => /soap_endpoint/.test(r.url||'')).length,
-  'auth='  + rs.filter(r => /v2\/auth\/token/.test(r.url||'')).length,
-  'creat=' + rs.filter(r => /SessionCreateRQ/.test(r.path)).length,
-  'close=' + rs.filter(r => /SessionCloseRQ/.test(r.path)).length);
+for (const [k, rs] of Object.entries(by))
+  console.log(
+    k,
+    'soap=' + rs.filter((r) => /soap_endpoint/.test(r.url || '')).length,
+    'auth=' + rs.filter((r) => /v2\/auth\/token/.test(r.url || '')).length,
+    'creat=' + rs.filter((r) => /SessionCreateRQ/.test(r.path)).length,
+    'close=' + rs.filter((r) => /SessionCloseRQ/.test(r.path)).length,
+  );
 ```
 
 ```js
 // §4.3 — variantes de body de SessionCreateRQ  (73 requests -> 4 variantes: 39 / 23 / 7 / 4)
-const sc = L.filter(r => /SessionCreateRQ/.test(r.path));            // 73
+const sc = L.filter((r) => /SessionCreateRQ/.test(r.path)); // 73
 const g = {};
-for (const r of sc) { const k = (r.body||'').replace(/\s+/g,' ').trim(); g[k] = (g[k]||0) + 1; }
-Object.values(g).sort((a,b) => b-a);                                 // [39, 23, 7, 4]
+for (const r of sc) {
+  const k = (r.body || '').replace(/\s+/g, ' ').trim();
+  g[k] = (g[k] || 0) + 1;
+}
+Object.values(g).sort((a, b) => b - a); // [39, 23, 7, 4]
 // OJO: buscar el tag literal '<SessionCreateRQ' devuelve 50, no 73:
 //      la variante de 23 usa el prefijo de namespace '<sws:SessionCreateRQ'.
 ```
 
 ```js
 // §6.4 — balance de sesiones por carpeta padre  (13 create-sin-close + 1 close-sin-create = neto 12)
-const par = r => r.path.split(' / ').slice(0,-1).join(' / ');
+const par = (r) => r.path.split(' / ').slice(0, -1).join(' / ');
 const m = {};
 for (const r of L) {
-  if (/SessionCreateRQ/.test(r.path)) ((m[par(r)] ??= {c:0,x:0}).c++);
-  if (/SessionCloseRQ/.test(r.path))  ((m[par(r)] ??= {c:0,x:0}).x++);
+  if (/SessionCreateRQ/.test(r.path)) (m[par(r)] ??= { c: 0, x: 0 }).c++;
+  if (/SessionCloseRQ/.test(r.path)) (m[par(r)] ??= { c: 0, x: 0 }).x++;
 }
-Object.entries(m).filter(([,v]) => v.c !== v.x);
+Object.entries(m).filter(([, v]) => v.c !== v.x);
 ```
 
 ```bash
@@ -1259,11 +1288,11 @@ grep -n "^host:\|^basePath:\|tokenUrl\|x-base64-encode-client-credentials\|^serv
 
 ## Preguntas abiertas
 
-*(Se han retirado las que el spec ya respondió: hostnames REST de producción, semántica de `X-Sabre-Group` /
+_(Se han retirado las que el spec ya respondió: hostnames REST de producción, semántica de `X-Sabre-Group` /
 `X-Sabre-Current-City`, necesidad de autoridad previa para `targetPcc`, shape del error de auth, y si
-`ContextChangeLLSRQ` es la única vía de cambio de PCC en REST.)*
+`ContextChangeLLSRQ` es la única vía de cambio de PCC en REST.)_
 
-1. **¿El response de `/v2/auth/token` trae `expires_in`?** Ni la colección ni los 15 specs lo modelan. Sin esto no
+1. **¿El response de `/v2/auth/token` trae `expires_in`?** Ni la colección ni los 21 specs lo modelan. Sin esto no
    podemos dimensionar el cache. **Capturar del sandbox en la primera llamada real.**
 2. **¿Cuánto dura realmente un ATK v2?** Se asume vida larga (días) por convención; sigue siendo inferencia pura.
 3. **¿Cuál es el tamaño del TAM Pool y el `allocated concurrent request limit` de nuestra agencia?** El spec
@@ -1313,7 +1342,7 @@ grep -n "^host:\|^basePath:\|tokenUrl\|x-base64-encode-client-credentials\|^serv
    donde un reintento puede **duplicar una emisión**.
 5. **El `secret` es reversible.** Base64, no hash: quien lo lea tiene el password. Un log de debug, un mensaje de
    error que incluya el header, o una traza OTel mal filtrada **filtran la credencial completa de la oficina**. Hay
-   que añadir `Authorization`, `secret`, `password` y `BinarySecurityToken` al redactor de logs *antes* de la
+   que añadir `Authorization`, `secret`, `password` y `BinarySecurityToken` al redactor de logs _antes_ de la
    primera llamada real.
 6. **El sobre `SessionCreateRQ` lleva el password en claro dentro del XML.** Cualquier log del request SOAP completo
    — que es lo natural al debuggear XML — filtra el password. Riesgo mayor que en REST, donde al menos está
@@ -1325,8 +1354,8 @@ grep -n "^host:\|^basePath:\|tokenUrl\|x-base64-encode-client-credentials\|^serv
 8. **Consumimos sesiones aunque nunca abramos una.** `ATH_TOKEN_FAILURE` demuestra que la API REST crea tokens ATH
    internamente para orquestar `ContextChangeLLSRQ` / `GetReservationRQ` / `OTA_AirBookLLSRQ` (**VERIFICADO-SPEC**,
    §5.5). El dimensionado del pool que hagamos **subestimará el consumo real** si no lo tiene en cuenta.
-9. **`UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` deja el contexto en un PCC que no es el nuestro.** «*System could not
-   revert context*» (**VERIFICADO-SPEC**, §4.5). Si tras un `targetPcc` la reversión falla y seguimos operando,
+9. **`UNABLE_TO_CHANGE_CONTEXT_FINISH_IGNORE` deja el contexto en un PCC que no es el nuestro.** «_System could not
+   revert context_» (**VERIFICADO-SPEC**, §4.5). Si tras un `targetPcc` la reversión falla y seguimos operando,
    podemos ejecutar la siguiente operación **en la oficina equivocada**. Debe abortar la saga y alertar, nunca
    reintentar en silencio.
 10. **PCC de terceros hardcodeados.** `U9PK`, `G7RE`, `7KFA`, `G7HE`, `N87F`, `GF1I` aparecen fijos en headers y
@@ -1351,5 +1380,5 @@ grep -n "^host:\|^basePath:\|tokenUrl\|x-base64-encode-client-credentials\|^serv
     hace que la red opere con la cuenta del consolidador; quién queda como emisor de récord y responsable de ADM se
     confirma por contrato. Si la UI lo presenta como un toggle más, el founder puede asumir un riesgo que no vio.
 18. **Sin atribución explícita por tenant en el PNR, la reconciliación es imposible.** En modelo heredado Sabre ve un
-    único actor. Si no estampamos `tenant_id` en el PNR *y* en `domain_events` desde la primera reserva, no habrá
+    único actor. Si no estampamos `tenant_id` en el PNR _y_ en `domain_events` desde la primera reserva, no habrá
     forma de auditar quién vendió qué contra los datos del GDS.

@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true
+  },
+  // `include` es la frontera de lo que se COMPILA Y SE PUBLICA, y `tsconfig.build.json` la hereda
+  // tal cual (sólo redefine `exclude`, que en JSON no se fusiona sino que se reemplaza).
+  //
+  // Por eso `src/` contiene únicamente código de producción y `*.test.ts` —lo único que la
+  // exclusión del build conoce por nombre—. Cualquier otra sonda (benches, scripts de medición,
+  // fixtures ejecutables) vive FUERA de `src/`, con su propio proyecto: ver `bench/tsconfig.json`.
+  // La regla se comprueba en `src/dist-surface.guard.test.ts` por ALCANZABILIDAD: todo `.ts` de
+  // `src/` que no sea `*.test.ts` tiene que ser alcanzable desde `src/index.ts`, y todo fichero de
+  // `dist/` tiene que ser un emit de un módulo alcanzable desde `dist/index.js`. Es una propiedad,
+  // no una lista de sufijos: una sonda con nombre nuevo (`medicion-latencia.ts`, `repro-caso-4.ts`)
+  // se detecta igual, y no hay que recordar añadir un patrón a `exclude` cada vez.
+  "include": ["src/**/*"]
+}

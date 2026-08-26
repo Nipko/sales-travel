@@ -109,6 +109,66 @@ function humanizeBookingError(raw: string): string {
   return humanizeProviderError(raw);
 }
 
+const ERROR_DESCONOCIDO = 'Error desconocido';
+
+/**
+ * Desenlace de la reserva tal como lo devuelve `POST /api/orders`.
+ *
+ * Es una COPIA de `OrderCreateOutcome` de `packages/domain`, no un import: `apps/web-b2b` no
+ * depende de ningún paquete del workspace (ver su `package.json`), así que el compilador no
+ * puede atar las dos listas. Si un día se añade un quinto desenlace, hay que tocarlo aquí a
+ * mano; `BOOKING_OUTCOME_STYLE` es un `Record` completo y avisará de la mitad que falte.
+ *
+ * Antes esto era un `success: boolean`, y con un booleano una reserva con el vuelo dentro y el
+ * asiento fuera se pintaba en verde con su PNR: la mentira que el pasajero descubre en el
+ * mostrador. Cada desenlace se pinta distinto.
+ */
+type BookingOutcome = 'CONFIRMED' | 'PARTIAL' | 'PENDING' | 'FAILED';
+
+interface CreateOrderProviderResult {
+  outcome?: BookingOutcome;
+  pnr?: string;
+  issues?: { severity: 'ERROR' | 'WARNING'; category: string; type: string; message?: string }[];
+}
+
+interface BookingOutcomeView {
+  outcome: BookingOutcome;
+  pnr?: string;
+  error?: string;
+}
+
+/** Resume las incidencias del proveedor en una línea. `undefined` si no hay ninguna de error. */
+function describeIssues(issues: CreateOrderProviderResult['issues']): string | undefined {
+  const errores = (issues ?? []).filter((i) => i.severity === 'ERROR');
+  if (errores.length === 0) return undefined;
+  return errores.map((i) => i.message ?? `${i.category}: ${i.type}`).join(' | ');
+}
+
+/** Sólo `CONFIRMED` es verde. `PARTIAL` y `PENDING` son ámbar: hay reserva, pero no está cerrada. */
+const BOOKING_OUTCOME_STYLE: Record<BookingOutcome, { box: string; title: string; text: string }> =
+  {
+    CONFIRMED: {
+      box: 'border-green-200 bg-green-50',
+      title: 'Reserva creada exitosamente',
+      text: 'text-green-800',
+    },
+    PARTIAL: {
+      box: 'border-amber-200 bg-amber-50',
+      title: 'Reserva creada PARCIALMENTE — hay servicios sin confirmar',
+      text: 'text-amber-900',
+    },
+    PENDING: {
+      box: 'border-amber-200 bg-amber-50',
+      title: 'Reserva enviada — el proveedor todavía no la confirmó',
+      text: 'text-amber-900',
+    },
+    FAILED: {
+      box: 'border-red-200 bg-red-50',
+      title: 'No se pudo crear la reserva',
+      text: 'text-red-800',
+    },
+  };
+
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   draft: {
     label: 'Borrador',
@@ -153,11 +213,7 @@ export default function QuotationDetailPage() {
     changed: boolean;
     newTotal?: string;
   } | null>(null);
-  const [bookingResult, setBookingResult] = useState<{
-    success: boolean;
-    pnr?: string;
-    error?: string;
-  } | null>(null);
+  const [bookingResult, setBookingResult] = useState<BookingOutcomeView | null>(null);
 
   useEffect(() => {
     fetch(`/api/quotations/${params.id}`)
@@ -302,19 +358,27 @@ export default function QuotationDetailPage() {
       body: JSON.stringify(body),
     });
     const data = (await res.json()) as {
-      providerResult?: { success: boolean; pnr?: string; error?: string };
+      providerResult?: CreateOrderProviderResult;
       error?: string;
     };
-    if (data.providerResult?.success) {
-      setBookingResult({ success: true, pnr: data.providerResult.pnr });
-    } else {
+    const outcome = data.providerResult?.outcome;
+    if (!outcome) {
       setBookingResult({
-        success: false,
-        error: humanizeBookingError(
-          data.providerResult?.error ?? data.error ?? 'Error desconocido',
-        ),
+        outcome: 'FAILED',
+        error: humanizeBookingError(data.error ?? ERROR_DESCONOCIDO),
       });
+      return;
     }
+    setBookingResult({
+      outcome,
+      pnr: data.providerResult?.pnr,
+      error:
+        outcome === 'CONFIRMED'
+          ? undefined
+          : humanizeBookingError(
+              describeIssues(data.providerResult?.issues) ?? data.error ?? ERROR_DESCONOCIDO,
+            ),
+    });
   }
 
   async function handleVerifyPrice() {
@@ -870,26 +934,34 @@ export default function QuotationDetailPage() {
       {/* Reserva — ancho completo para dar más espacio a los datos de pasajeros */}
       {bookingResult && (
         <div
-          className={`mt-5 rounded-xl border p-4 ${
-            bookingResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
-          }`}
+          className={`mt-5 rounded-xl border p-4 ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].box}`}
         >
-          {bookingResult.success ? (
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-green-800">Reserva creada exitosamente</p>
-              {bookingResult.pnr && (
-                <p className="font-mono text-lg font-bold text-green-900">
-                  PNR: {bookingResult.pnr}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-red-800">{bookingResult.error}</p>
-          )}
+          <div className="space-y-1">
+            <p
+              className={`text-sm font-semibold ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+            >
+              {BOOKING_OUTCOME_STYLE[bookingResult.outcome].title}
+            </p>
+            {bookingResult.pnr && (
+              <p className="font-mono text-lg font-bold text-[var(--color-fg)]">
+                PNR: {bookingResult.pnr}
+              </p>
+            )}
+            {bookingResult.error && (
+              <p className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}>
+                {bookingResult.error}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
-      {!bookingResult?.success && (
+      {/*
+        El formulario vuelve SÓLO si no quedó nada reservado. Con `PARTIAL` o `PENDING` hay PNR
+        en el proveedor: reofrecer "reservar" ahí es invitar a crear una segunda reserva encima
+        de una que ya existe.
+      */}
+      {(!bookingResult || bookingResult.outcome === 'FAILED') && (
         <div className="mt-5">
           <PassengerForm
             paxCount={searchCriteria.paxCount}

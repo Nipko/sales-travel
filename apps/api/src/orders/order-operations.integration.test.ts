@@ -28,8 +28,10 @@ d('order_operations (post-venta durable)', () => {
     );
     userId = u.rows[0]!.id;
     const o = await pool.query<{ id: string }>(
-      `INSERT INTO orders (tenant_id, user_id, search_criteria, selected_offer, passengers, contact_info, total_amount, order_number, status)
-       VALUES ($1,$2,'{}'::jsonb,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb, 1000, 1, 'confirmed') RETURNING id`,
+      // `provider` explícito: 0035 le quitó el DEFAULT a la columna, justamente para que un
+      // INSERT que se olvide del proveedor falle en vez de atribuirle la orden a otro.
+      `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers, contact_info, total_amount, order_number, status)
+       VALUES ($1,$2,'latam-ndc','{}'::jsonb,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb, 1000, 1, 'confirmed') RETURNING id`,
       [tenantId, userId],
     );
     orderId = o.rows[0]!.id;

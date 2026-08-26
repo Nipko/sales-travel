@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# Por qué existe este hook: hasta la ronda 7 el ÚNICO punto donde se comprobaba el formato era el
+# paso `format:check` del workflow de CI, que corre en push/PR contra `main`. Eso deja dos huecos
+# por los que el formato se degradó dos veces seguidas en `providers/sabre`:
+#
+#   1. El código que aún no se ha commiteado no lo ve NADIE. `providers/sabre/` estuvo entero sin
+#      trackear mientras se escribían 719 tests: CI nunca lo miró ni una vez.
+#   2. Aun commiteado, el aviso llega al final del ciclo —cuando el build rojo ya cuesta una vuelta
+#      entera— en vez de en el momento en que el fichero entra al repo.
+#
+# El hook mueve la comprobación al primer momento en que el fichero es visible para el repo, y sólo
+# sobre lo que está en el índice, para que cueste milisegundos. No sustituye al paso de CI: es la
+# primera de dos redes, y CI sigue siendo la que decide.
+#
+# Se activa solo vía `core.hooksPath`, que el script `prepare` de la raíz configura en cada
+# `pnpm install`. No hay dependencias nuevas: prettier ya estaba.
+
+if [ -z "$(git diff --cached --name-only --diff-filter=ACMR)" ]; then
+  exit 0
+fi
+
+# Se resuelve a un COMANDO concreto, no a una función de shell: `xargs` hace `exec`, y una función
+# no es ejecutable —el hook parecería pasar siempre, que es peor que no tenerlo—.
+if [ -x "node_modules/.bin/prettier" ]; then
+  PRETTIER="node_modules/.bin/prettier"
+elif command -v pnpm >/dev/null 2>&1; then
+  PRETTIER="pnpm exec prettier"
+else
+  echo "pre-commit: no encuentro prettier; corre \`pnpm install\`. Commit abortado." >&2
+  exit 1
+fi
+
+# `--ignore-unknown` salta lo que prettier no sabe parsear (imágenes, .sql, binarios) sin fallar;
+# `.prettierignore` lo sigue respetando prettier por su cuenta, incluida la evidencia congelada de
+# proveedores que NO debe reformatearse (rompe las citas `archivo.yml:<línea>` de la documentación).
+# `-z`/`-0` por si algún fichero lleva espacios en el nombre.
+if git diff --cached --name-only --diff-filter=ACMR -z |
+  xargs -0 $PRETTIER --check --ignore-unknown; then
+  exit 0
+fi
+
+cat >&2 <<'MSG'
+
+pre-commit: hay ficheros sin formatear en el índice (arriba están listados).
+
+  pnpm format          # los arregla
+  git add -u           # vuelve a añadirlos al índice
+
+Este es el mismo comando que corre CI (`pnpm format:check`): si falla aquí, el build fallará.
+No lo saltes con `--no-verify`; CLAUDE.md lo lista como anti-patrón explícito.
+MSG
+exit 1

@@ -113,6 +113,18 @@ const PROVIDERS: Record<string, ProviderForm> = {
   'agent-cars': AGENT_CARS,
 };
 
+/**
+ * Sin fallback, a propósito. La versión anterior caía a LATAM NDC ante un código
+ * desconocido y pintaba SUS campos: el operador cargaba API Key y API Secret creyendo que
+ * configuraba otro proveedor, la cuenta se guardaba con la forma de credencial equivocada
+ * y el fallo recién aparecía en la primera búsqueda, ya disfrazado de "el proveedor no
+ * responde". Con un proveedor de vuelos era invisible; con dos es una fuga de credenciales
+ * al formulario del proveedor que no es.
+ */
+function providerFormFor(code: string): ProviderForm | undefined {
+  return PROVIDERS[code];
+}
+
 interface SalesRow {
   tenantId: string;
   ordersTotal: number;
@@ -604,7 +616,7 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Record<string, string>>({});
 
-  const provider = PROVIDERS[providerCode] ?? LATAM_NDC;
+  const provider = providerFormFor(providerCode);
 
   useEffect(() => {
     void load();
@@ -626,6 +638,12 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
 
   async function save() {
     setError('');
+    if (!provider) {
+      setError(
+        `El proveedor "${providerCode}" no está soportado por este panel. Actualizá la plataforma antes de cargarle credenciales.`,
+      );
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/provider-accounts', {
@@ -685,12 +703,19 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
                 <KeyRound className="size-4 text-[var(--color-fg-subtle)]" />
                 <div>
                   <div className="text-sm font-medium text-[var(--color-fg)]">
-                    {PROVIDERS[a.providerCode]?.label ?? a.providerCode}{' '}
+                    {providerFormFor(a.providerCode)?.label ?? a.providerCode}{' '}
                     <span className="font-normal text-[var(--color-fg-subtle)]">· {a.label}</span>
                   </div>
                   <div className="text-[10px] text-[var(--color-fg-subtle)]">
                     {a.isInheritable ? 'Heredable por sub-agencias' : 'No heredable'}
                   </div>
+                  {/* Una cuenta con un código que este panel no conoce no se puede editar sin
+                      arriesgarse a pisarla con la forma de credencial de otro proveedor. */}
+                  {!providerFormFor(a.providerCode) && (
+                    <div className="text-[10px] font-medium text-[var(--color-danger)]">
+                      Proveedor desconocido para esta versión del panel
+                    </div>
+                  )}
                 </div>
               </div>
               <span
@@ -741,7 +766,7 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
                 className={inputClass}
               />
             </Field>
-            {provider.credentials.map((f) => (
+            {provider?.credentials.map((f) => (
               <Field key={f.key} label={f.label}>
                 <input
                   type={f.secret ? 'password' : 'text'}
@@ -752,7 +777,7 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
                 />
               </Field>
             ))}
-            {provider.config.map((f) => (
+            {provider?.config.map((f) => (
               <Field key={f.key} label={f.label}>
                 <input
                   value={config[f.key] ?? ''}
@@ -782,12 +807,19 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
               Heredable por sub-agencias
             </label>
           </div>
+          {!provider && (
+            <ErrorBox>
+              El proveedor &quot;{providerCode}&quot; no está soportado por este panel: no sabemos
+              qué credenciales pide. Guardarlas con la forma de otro proveedor las dejaría
+              inservibles. Actualizá la plataforma o elegí otro proveedor.
+            </ErrorBox>
+          )}
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
               Cancelar
             </Button>
-            <Button size="sm" disabled={saving} onClick={() => void save()}>
+            <Button size="sm" disabled={saving || !provider} onClick={() => void save()}>
               {saving ? 'Guardando…' : 'Guardar credenciales'}
             </Button>
           </div>

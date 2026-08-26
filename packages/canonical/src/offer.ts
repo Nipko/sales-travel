@@ -21,12 +21,69 @@ export const OfferProductTypeSchema = z.enum([
 export type OfferProductType = z.infer<typeof OfferProductTypeSchema>;
 
 /**
+ * Valor JSON arbitrario. Existe para tipar `ProviderRef.raw` sin recurrir a `any` y
+ * garantizando que lo que se guarde ahí sobrevive un `JSON.stringify`: la Offer se cachea
+ * en Redis y viaja por HTTP, así que un `Date` o una clase se corromperían en silencio.
+ */
+export type ProviderRawValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ProviderRawValue[]
+  | { [key: string]: ProviderRawValue };
+
+export const ProviderRawValueSchema: z.ZodType<ProviderRawValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(ProviderRawValueSchema),
+    z.record(ProviderRawValueSchema),
+  ]),
+);
+
+/**
+ * De dónde viene el contenido DENTRO del proveedor: no es el proveedor, es el carril por el
+ * que llegó la tarifa.
+ *
+ * Se valida la FORMA (token en mayúsculas), no el vocabulario de un proveedor concreto: cada
+ * ACL nombra sus propios carriles y LATAM hoy no declara ninguno. Cerrarlo como enum obligaría
+ * a tocar el modelo canónico cada vez que entre un proveedor nuevo.
+ */
+export const ProviderContentSourceSchema = z
+  .string()
+  .min(2)
+  .max(20)
+  .regex(/^[A-Z0-9_-]+$/, 'provider content source must be an uppercase token');
+export type ProviderContentSource = z.infer<typeof ProviderContentSourceSchema>;
+
+/**
  * Identifica al proveedor que originó la Offer (Amadeus, Travelport, HotelDo, etc).
  * El nombre canónico se asigna en cada ACL en `providers/<name>/`.
  */
 export const ProviderRefSchema = z.object({
   name: z.string().min(2).max(40),
   offerRef: z.string().min(1).max(255),
+
+  /** Carril de contenido dentro del proveedor. Sabre: 'ATPCO' | 'NDC' | 'LCC'. */
+  source: ProviderContentSourceSchema.optional(),
+
+  /**
+   * Identificadores CRUDOS del proveedor, OPACOS para el dominio: los que hay que reenviar de
+   * un paso de venta al siguiente (en Sabre la cadena offerId -> offerItemId -> passengerId).
+   *
+   * Es un objeto y no un string concatenado porque en el peor caso admitido por el contrato de
+   * Sabre la codificación con pipes estilo LATAM da 526 caracteres —más del doble de los 255 de
+   * `offerRef`— y porque el contenido ATPCO/LCC no trae id reservable en absoluto: hay que
+   * transportar el itinerario entero (`FlightDetails.flights` admite 16 vuelos). Ver
+   * `docs/sabre/08-seams-integracion-repo.md` §5.4.
+   *
+   * Reglas: sólo el ACL que las escribió interpreta estas llaves —nunca `packages/domain` ni
+   * `apps/`—, y nunca llevan secretos, PAN ni PII: esto viaja al navegador dentro de la Offer.
+   */
+  raw: z.record(ProviderRawValueSchema).optional(),
 });
 export type ProviderRef = z.infer<typeof ProviderRefSchema>;
 
@@ -105,5 +162,21 @@ export const OfferSchema = z.object({
 
   fetchedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
+
+  /**
+   * Quién decide `expiresAt`. No es cosmético: es la diferencia entre "esta oferta vence a las
+   * 14:32 según la aerolínea" y "nosotros dejamos de fiarnos de ella a las 14:32".
+   *
+   * Hace falta porque las ofertas ATPCO de Sabre NO traen TTL: `Offer.timeToLive` es requerido
+   * en el esquema, pero el objeto `offer` que lo contiene es OPCIONAL y no aparece en el
+   * contenido ATPCO (`bargain-finder-max-v5.yml:8794/:8835-8837`; los tres ejemplos oficiales
+   * son ATPCO puro y no lo traen). Su `expiresAt` es política NUESTRA —el TTL de caché de
+   * búsqueda— y presentarla como dato del proveedor en una cotización por WhatsApp es prometer
+   * lo que no se puede cumplir.
+   *
+   * Ausente = no declarado. Quien lo lea no puede afirmar procedencia; sólo `'provider'` la
+   * autoriza. Ver `docs/sabre/11-plan-implementacion.md` §6.2 punto 2.
+   */
+  expiresAtSource: z.enum(['provider', 'platform-policy']).optional(),
 });
 export type Offer = z.infer<typeof OfferSchema>;

@@ -1,8 +1,8 @@
 ---
-titulo: "Sabre — Workflows end-to-end (secuencias de llamadas)"
+titulo: 'Sabre — Workflows end-to-end (secuencias de llamadas)'
 fecha: 2026-08-25
 estado: reconciliado contra contratos oficiales
-fuentes: "ver 00-fuentes.md"
+fuentes: 'ver 00-fuentes.md'
 ---
 
 # Sabre — Workflows end-to-end
@@ -20,20 +20,20 @@ fuentes: "ver 00-fuentes.md"
 
 Se usa la convencion de `00-fuentes.md`, con una precision extra dentro de **VERIFICADO**:
 
-| Marca | Significado |
-| --- | --- |
-| **VERIFICADO** | Sale de un body, header, URL o script real de la coleccion Postman. Se cita la ruta del request. |
+| Marca                 | Significado                                                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **VERIFICADO**        | Sale de un body, header, URL o script real de la coleccion Postman. Se cita la ruta del request.                                                                                                                         |
 | **VERIFICADO-script** | El **path del campo de respuesta** aparece literalmente en un script de la coleccion (p. ej. `jsonData.response.offers[0].id`). Prueba que el campo existe, **no** que sea el unico ni describe tipos ni cardinalidades. |
-| **VERIFICADO-SPEC** | Sale del contrato OpenAPI/Swagger oficial o de una pagina de documentacion oficial. Se cita `archivo:linea`. Es la evidencia mas fuerte disponible sin sandbox. |
-| **[INFERIDO]** | Deduccion por convencion NDC/OTA o por nombre de variable. Confirmar contra el sandbox. |
-| **DESCONOCIDO** | No esta en ninguna fuente disponible. Solo se resuelve con acceso a CERT. |
+| **VERIFICADO-SPEC**   | Sale del contrato OpenAPI/Swagger oficial o de una pagina de documentacion oficial. Se cita `archivo:linea`. Es la evidencia mas fuerte disponible sin sandbox.                                                          |
+| **[INFERIDO]**        | Deduccion por convencion NDC/OTA o por nombre de variable. Confirmar contra el sandbox.                                                                                                                                  |
+| **DESCONOCIDO**       | No esta en ninguna fuente disponible. Solo se resuelve con acceso a CERT.                                                                                                                                                |
 
 ### 0.2 Correccion de procedencia respecto de la primera pasada
 
 Tres afirmaciones de la primera pasada eran falsas y quedan retiradas:
 
 1. **"Las 4 respuestas guardadas estan vacias" — FALSO.** Las cuatro existen y pesan ~16,5 KB cada una
-   (`slices/responses/*.json`). Todas son de `/v1/orders/view` dentro de `ModifyBooking / NDC modifications flows`.
+   (`evidence/responses/*.json`). Todas son de `/v1/orders/view` dentro de `ModifyBooking / NDC modifications flows`.
    **Matiz honesto y nuevo:** las cuatro son **el mismo documento repetido**. Comparadas campo a campo tienen el
    mismo `order.id` (`4e54071d6c2d483c808f8a09f38f6bbc`), el mismo `pnrLocator` (`TOSGCZ`), el mismo `contactInfos`
    y el mismo `birthdate` — pese a estar pegadas en requests llamados "Add phone", "Delete phone", "Update phone" y
@@ -48,11 +48,11 @@ Tres afirmaciones de la primera pasada eran falsas y quedan retiradas:
 
 ### 0.3 Endpoints base — VERIFICADO
 
-| Variable | Valor (entorno CERT) |
-| --- | --- |
-| `rest_endpoint` | `https://api.cert.platform.sabre.com` |
+| Variable        | Valor (entorno CERT)                          |
+| --------------- | --------------------------------------------- |
+| `rest_endpoint` | `https://api.cert.platform.sabre.com`         |
 | `soap_endpoint` | `https://webservices.cert.platform.sabre.com` |
-| `lls_endpoint` | `https://webservices.cert.platform.sabre.com` |
+| `lls_endpoint`  | `https://webservices.cert.platform.sabre.com` |
 
 De las **425 variables del entorno, solo 6 traen valor** y ninguna es una credencial: `username={{epr}}`,
 `rest_endpoint`, `soap_endpoint`, `lls_endpoint`, `pcc_tkt={{your_target_pcc}}`, `ptrta={{atpco_printer_address}}`.
@@ -63,19 +63,19 @@ Las 419 restantes las rellena el dev (ver §8.1). VERIFICADO.
 Este es el hallazgo que reordena todo el documento. Sabre tiene **un solo header de autorizacion** pero **dos
 formas de conseguir el token**:
 
-| Carril | Como se obtiene | Valor | Se usa en |
-| --- | --- | --- | --- |
-| **ATK (stateless)** | `POST /v2/auth/token`, OAuth `client_credentials` | `access_token` | Todo REST, y como `BinarySecurityToken` en SOAP *stateless* |
-| **ATH (stateful)** | `SessionCreateRQ` SOAP con `UsernameToken` (EPR) | `Envelope.Header.Security.BinarySecurityToken`, con forma `Shared/IDL:IceSess...!380374!0` | SOAP stateful **y tambien REST**: se manda igual como `Authorization: Bearer <token>` |
+| Carril              | Como se obtiene                                   | Valor                                                                                      | Se usa en                                                                             |
+| ------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| **ATK (stateless)** | `POST /v2/auth/token`, OAuth `client_credentials` | `access_token`                                                                             | Todo REST, y como `BinarySecurityToken` en SOAP _stateless_                           |
+| **ATH (stateful)**  | `SessionCreateRQ` SOAP con `UsernameToken` (EPR)  | `Envelope.Header.Security.BinarySecurityToken`, con forma `Shared/IDL:IceSess...!380374!0` | SOAP stateful **y tambien REST**: se manda igual como `Authorization: Bearer <token>` |
 
 VERIFICADO-SPEC: `specs/help/hotel-price-check-v5/v5-index.txt:33-73` documenta las dos rutas y muestra
 literalmente `Authorization: Bearer Shared/IDL:IceSess...!380374!0` para el caso ATH.
 
 Y las guias de **todos** los metodos de Booking Management dicen lo mismo:
 
-> *"This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH)
+> _"This API is designed to operate in a stateless way, and accepts both sessionless (ATK) and session-based (ATH)
 > tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after
-> execution."*
+> execution."_
 > VERIFICADO-SPEC: `specs/help/booking-management-api-v1/help-documentation-create-booking.txt:28` (y las
 > equivalentes en `get-booking.txt:14`, `cancel-booking.txt:11`, `fulfill-flight-tickets.txt:16`,
 > `check-flight-tickets.txt:11`, `void-flight-tickets.txt:11`, `refund-flight-tickets.txt:11`,
@@ -95,6 +95,7 @@ Y las guias de **todos** los metodos de Booking Management dicen lo mismo:
    `prerequest` a nivel coleccion).
 
 ---
+
 ## 1. Tabla maestra: los 28 workflows
 
 Notacion: `AUTH` = `POST /v2/auth/token`; `SHOP vN` = `POST /vN/offers/shop` (Bargain Finder Max);
@@ -106,54 +107,55 @@ Notacion: `AUTH` = `POST /v2/auth/token`; `SHOP vN` = `POST /vN/offers/shop` (Ba
 Las secuencias de esta tabla se regeneraron **request a request** desde `requests.jsonl` (no desde los nombres de
 carpeta), asi que el orden y los conteos son exactos. VERIFICADO.
 
-| # | Nombre (carpeta Postman) | Reqs | Contenido | Secuencia de endpoints (en orden real) | Caso de negocio |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Air NDC Shop, Price Check, Book, Cancel | 6 | **NDC** | AUTH → SHOP **v5** → PRICE → CB → GB → CANCEL | **Venta NDC minima end-to-end.** El camino feliz canonico. |
-| 2 | Profiles, Air NDC Shop, Price Check, Book, Cancel | 9 | NDC + Profiles (EPS SOAP) | SOAP:SessionCreateRQ → SOAP:Sabre_OTA_ProfileCreateRQ (filtro) → SOAP:Sabre_OTA_ProfileCreateRQ (perfil) → SOAP:SessionCloseRQ ‖ AUTH → SHOP v5 → PRICE → CB(`profiles[]`) → CANCEL | Reservar NDC usando un **perfil de viajero** ya almacenado en Sabre. |
-| 3 | Air Shop, Book, Cancel | 4 | **ATPCO** | AUTH → SHOP **v4** → CB(`flightDetails`) → CANCEL | Venta GDS clasica sin emision. **No hay paso PRICE.** |
-| 4 | Profiles, Air Shop, Book, Cancel | 8 | ATPCO + Profiles | Igual que 2 pero SHOP v4 y el CB combina `profiles[]` + `flightDetails` | ATPCO con perfil. |
-| 5 | Air LCC Shop, Book, Cancel | 6 | **LCC** (`U2` easyJet) | AUTH → SHOP **v4** (`LCC:Enable`) → CB(`flights[].source="LCC"`) → TICKET **‖** FULFILL → CANCEL | Venta de low-cost dentro del PNR de Sabre. |
-| 6 | Air Shop, Book, Fulfill, Cancel + Void | 9 | ATPCO | AUTH → SHOP **v3** → CB → TICKET ‖ FULFILL → CHECK → GB → CANCEL(`flightTicketOperation:"VOID"`) → GB | **Emision + anulacion (void) el mismo dia.** |
-| 7 | Air Shop, Book, Fulfill, Void, Display, Cancel | 10 | ATPCO | AUTH → SHOP **v4** → CB → TICKET ‖ FULFILL → GB → CHECK → **VOID** → GB → CANCEL | Void **explicito** de tickets, separado del cancel del PNR. |
-| 8 | Air Shop, Book, Fulfill, Refund, Display, Cancel | 15 | ATPCO (+ variante AA con `/v1/offers/flightShop`) | AUTH → SHOP v4 → `/v1/offers/flightShop` → CB ×2 → TICKET → FULFILL ×2 → GB → CHECK ×2 → **REFUND ×2** → GB → CANCEL | **Reembolso.** La carpeta contiene **dos ramas paralelas** (estandar y "refundable AA"): por eso los pasos van duplicados. Unico uso de `/v1/offers/flightShop`. |
-| 9 | Hotel Shop, Book, Cancel | 8 | **Hotel** | AUTH → `/v5/get/hotelavail` (×4 variantes) → `/v5/hotel/pricecheck` → CB(`hotel.bookingKey`) → CANCEL | Reserva de hotel GDS / Booking.com dentro del mismo PNR. |
-| 10 | Vehicle Shop, Book, Cancel | 5 | **Auto** | AUTH → `/v2.0.0/get/vehavail` → `/v1.0.0/veh/pricecheck` → CB(`car.bookingKey`) → CANCEL | Reserva de auto. |
-| 11 | NDC Multi Adult Travelers — 3 pax + vuelo de vuelta | 5 | NDC | AUTH → SHOP **v5** → PRICE → CB(3 travelers) → GB | **Multi-pax NDC.** Mapea `passengers[i].id` del price a cada traveler. |
-| 12 | Idem 11 + extra contact information | 5 | NDC | AUTH → SHOP **v5** → PRICE → CB(+`travelers[].emails/phones[]`) → GB | Contacto por pasajero (obligatorio en varias aerolineas NDC). |
-| 13 | NDC — Extra contact info + identity documents DOCO | 5 | NDC | AUTH → SHOP **v5** → PRICE → CB(`identityDocuments[]`) → GB | PASSPORT / VISA / KNOWN_TRAVELER_NUMBER / REDRESS_NUMBER / SECURE_FLIGHT_PASSENGER_DATA. |
-| 14 | NDC Cancel order and void corresponding flight tickets | 9 | NDC | AUTH → SHOP **v4** → PRICE → CB → FULFILL → GB → **CHECK** → CANCEL(`offerItemId`) → GB | **Cancelacion NDC correcta:** el `offerItemId` sale de `checkFlightTickets`. |
-| 15 | NDC All supported airlines (AA, QF, UA, QR, SQ) | 25 | NDC (con una excepcion, ver §6) | 5 subcarpetas: AUTH → SHOP (v4, v4, v5, v5, v5) → PRICE → CB → GB | Smoke test por aerolinea. |
-| 16 | ATPCO — Check if ticket is refundable and/or exchangeable | 7 | ATPCO | AUTH → SHOP v4 → CB → FULFILL → GB → CHECK → CANCEL | **Consultar reglas de reembolso/cambio** de un ticket emitido. |
-| 17 | ATPCO — Check refundable + override refund commission | 7 | ATPCO | Igual que 16, con `refundQualifiers.overrideCancelFee` + `commissionAmount` en el CHECK | Forzar comision/penalidad al calcular el reembolso. |
-| 18 | NDC Multiple traveler types (Adult + Child) | 5 | NDC | AUTH → SHOP **v4** → PRICE → CB(2 `selectedOfferItems`: ADT y CNN) → GB | **Familias.** Un `offerItem` por tipo de pasajero. |
-| 19 | ATPCO — Air search, Ancillaries, Book | 5 | ATPCO + ancillaries | AUTH → SHOP v4 → **SOAP:GetAncillaryOffersRQ 3.1.0 (sin sesion)** → CB(`travelers[].ancillaries[]`) → GB | Vender equipaje/asiento ATPCO como EMD. **SOAP stateless.** |
-| 20 | LCC — Air Search, Ancillaries, Book | 6 | LCC + ancillaries | **SOAP:SessionCreateRQ** → SHOP v3 → SOAP:GetAncillaryOffersRQ → CB → GB → **SOAP:SessionCloseRQ** | **No hay AUTH REST.** El token ATH sirve para todo. |
-| 21 | LCC — Check, Refund Booking | 10 | LCC | AUTH → SOAP:SessionCreateRQ → SHOP v3 → CB → TICKET → GB → CHECK → CANCEL(`flightTicketOperation:"REFUND"`) → GB → SOAP:SessionCloseRQ | Reembolso de LCC. |
-| 22 | LCC + ATPCO — Check, Refund Booking | 10 | **Mixto LCC+ATPCO** | AUTH → SHOP v3 (ida, LCC) → SHOP v3 (vuelta, ATPCO) → CB → TICKET → GB → CHECK → CANCEL → GB → **SOAP:SessionCloseRQ sin SessionCreateRQ** | Un PNR con dos fuentes. **Ver aviso de §5.2: el fulfill oficial no soporta hibridos.** |
-| 23 | NDC — OSI remarks — Shop, Price Check, Book | 6 | NDC (QF) | AUTH → SHOP **v5** → PRICE → CB(`otherServices[]`) → GB → CANCEL | Remarks OSI por pasajero. |
-| 24 | NDC — Citizenship country code + traveler title | 4 | NDC (**BA**) | AUTH → SHOP **v5** → PRICE → CB(`travelers[].title`, `identityDocuments[].citizenshipCountryCode`) | Requisito British Airways. |
-| 25 | NDC — Agency phone number | 4 | NDC (**AF**) | AUTH → SHOP **v4** → PRICE → CB(`agency.contactInfo.phones[]`) | Requisito Air France. |
-| 26 | ATPCO — Refund ancillaries with list of tickets | 11 | ATPCO + EMD | AUTH → SHOP v3 → SOAP:SessionCreateRQ → SOAP:GetAncillaryOffersRQ → CB → GB → FULFILL(`ancillaryIds`) → GB → REFUND(`documentsType:"EMDs"`) → GB → SOAP:SessionCloseRQ | Reembolsar **solo los EMD**. |
-| 27 | ATPCO — Refund ancillaries and tickets with confirmationId | 10 | ATPCO + EMD | Igual que 26 pero REFUND usa `confirmationId` + `documentsType:"Tickets and EMDs"` y **nunca cierra la sesion** | Reembolsar **todo el PNR de una**. |
-| 28–33 | NDC — Assign seats at order creation (multiple airlines) | 41 | NDC + asientos | 6 subcarpetas: AUTH [→ SOAP:SessionCreateRQ en 5 de 6] → SHOP **v3 ×5 / v5 ×1** → PRICE → **SEATS** → CB(`flightOffer.seatOffers[]`) → GB. **Ninguna cierra sesion.** | **Asientos asignados en la creacion del pedido** (QR / LO / AY, incl. infante con asiento). |
+| #     | Nombre (carpeta Postman)                                   | Reqs | Contenido                                         | Secuencia de endpoints (en orden real)                                                                                                                                              | Caso de negocio                                                                                                                                                  |
+| ----- | ---------------------------------------------------------- | ---- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Air NDC Shop, Price Check, Book, Cancel                    | 6    | **NDC**                                           | AUTH → SHOP **v5** → PRICE → CB → GB → CANCEL                                                                                                                                       | **Venta NDC minima end-to-end.** El camino feliz canonico.                                                                                                       |
+| 2     | Profiles, Air NDC Shop, Price Check, Book, Cancel          | 9    | NDC + Profiles (EPS SOAP)                         | SOAP:SessionCreateRQ → SOAP:Sabre_OTA_ProfileCreateRQ (filtro) → SOAP:Sabre_OTA_ProfileCreateRQ (perfil) → SOAP:SessionCloseRQ ‖ AUTH → SHOP v5 → PRICE → CB(`profiles[]`) → CANCEL | Reservar NDC usando un **perfil de viajero** ya almacenado en Sabre.                                                                                             |
+| 3     | Air Shop, Book, Cancel                                     | 4    | **ATPCO**                                         | AUTH → SHOP **v4** → CB(`flightDetails`) → CANCEL                                                                                                                                   | Venta GDS clasica sin emision. **No hay paso PRICE.**                                                                                                            |
+| 4     | Profiles, Air Shop, Book, Cancel                           | 8    | ATPCO + Profiles                                  | Igual que 2 pero SHOP v4 y el CB combina `profiles[]` + `flightDetails`                                                                                                             | ATPCO con perfil.                                                                                                                                                |
+| 5     | Air LCC Shop, Book, Cancel                                 | 6    | **LCC** (`U2` easyJet)                            | AUTH → SHOP **v4** (`LCC:Enable`) → CB(`flights[].source="LCC"`) → TICKET **‖** FULFILL → CANCEL                                                                                    | Venta de low-cost dentro del PNR de Sabre.                                                                                                                       |
+| 6     | Air Shop, Book, Fulfill, Cancel + Void                     | 9    | ATPCO                                             | AUTH → SHOP **v3** → CB → TICKET ‖ FULFILL → CHECK → GB → CANCEL(`flightTicketOperation:"VOID"`) → GB                                                                               | **Emision + anulacion (void) el mismo dia.**                                                                                                                     |
+| 7     | Air Shop, Book, Fulfill, Void, Display, Cancel             | 10   | ATPCO                                             | AUTH → SHOP **v4** → CB → TICKET ‖ FULFILL → GB → CHECK → **VOID** → GB → CANCEL                                                                                                    | Void **explicito** de tickets, separado del cancel del PNR.                                                                                                      |
+| 8     | Air Shop, Book, Fulfill, Refund, Display, Cancel           | 15   | ATPCO (+ variante AA con `/v1/offers/flightShop`) | AUTH → SHOP v4 → `/v1/offers/flightShop` → CB ×2 → TICKET → FULFILL ×2 → GB → CHECK ×2 → **REFUND ×2** → GB → CANCEL                                                                | **Reembolso.** La carpeta contiene **dos ramas paralelas** (estandar y "refundable AA"): por eso los pasos van duplicados. Unico uso de `/v1/offers/flightShop`. |
+| 9     | Hotel Shop, Book, Cancel                                   | 8    | **Hotel**                                         | AUTH → `/v5/get/hotelavail` (×4 variantes) → `/v5/hotel/pricecheck` → CB(`hotel.bookingKey`) → CANCEL                                                                               | Reserva de hotel GDS / Booking.com dentro del mismo PNR.                                                                                                         |
+| 10    | Vehicle Shop, Book, Cancel                                 | 5    | **Auto**                                          | AUTH → `/v2.0.0/get/vehavail` → `/v1.0.0/veh/pricecheck` → CB(`car.bookingKey`) → CANCEL                                                                                            | Reserva de auto.                                                                                                                                                 |
+| 11    | NDC Multi Adult Travelers — 3 pax + vuelo de vuelta        | 5    | NDC                                               | AUTH → SHOP **v5** → PRICE → CB(3 travelers) → GB                                                                                                                                   | **Multi-pax NDC.** Mapea `passengers[i].id` del price a cada traveler.                                                                                           |
+| 12    | Idem 11 + extra contact information                        | 5    | NDC                                               | AUTH → SHOP **v5** → PRICE → CB(+`travelers[].emails/phones[]`) → GB                                                                                                                | Contacto por pasajero (obligatorio en varias aerolineas NDC).                                                                                                    |
+| 13    | NDC — Extra contact info + identity documents DOCO         | 5    | NDC                                               | AUTH → SHOP **v5** → PRICE → CB(`identityDocuments[]`) → GB                                                                                                                         | PASSPORT / VISA / KNOWN_TRAVELER_NUMBER / REDRESS_NUMBER / SECURE_FLIGHT_PASSENGER_DATA.                                                                         |
+| 14    | NDC Cancel order and void corresponding flight tickets     | 9    | NDC                                               | AUTH → SHOP **v4** → PRICE → CB → FULFILL → GB → **CHECK** → CANCEL(`offerItemId`) → GB                                                                                             | **Cancelacion NDC correcta:** el `offerItemId` sale de `checkFlightTickets`.                                                                                     |
+| 15    | NDC All supported airlines (AA, QF, UA, QR, SQ)            | 25   | NDC (con una excepcion, ver §6)                   | 5 subcarpetas: AUTH → SHOP (v4, v4, v5, v5, v5) → PRICE → CB → GB                                                                                                                   | Smoke test por aerolinea.                                                                                                                                        |
+| 16    | ATPCO — Check if ticket is refundable and/or exchangeable  | 7    | ATPCO                                             | AUTH → SHOP v4 → CB → FULFILL → GB → CHECK → CANCEL                                                                                                                                 | **Consultar reglas de reembolso/cambio** de un ticket emitido.                                                                                                   |
+| 17    | ATPCO — Check refundable + override refund commission      | 7    | ATPCO                                             | Igual que 16, con `refundQualifiers.overrideCancelFee` + `commissionAmount` en el CHECK                                                                                             | Forzar comision/penalidad al calcular el reembolso.                                                                                                              |
+| 18    | NDC Multiple traveler types (Adult + Child)                | 5    | NDC                                               | AUTH → SHOP **v4** → PRICE → CB(2 `selectedOfferItems`: ADT y CNN) → GB                                                                                                             | **Familias.** Un `offerItem` por tipo de pasajero.                                                                                                               |
+| 19    | ATPCO — Air search, Ancillaries, Book                      | 5    | ATPCO + ancillaries                               | AUTH → SHOP v4 → **SOAP:GetAncillaryOffersRQ 3.1.0 (sin sesion)** → CB(`travelers[].ancillaries[]`) → GB                                                                            | Vender equipaje/asiento ATPCO como EMD. **SOAP stateless.**                                                                                                      |
+| 20    | LCC — Air Search, Ancillaries, Book                        | 6    | LCC + ancillaries                                 | **SOAP:SessionCreateRQ** → SHOP v3 → SOAP:GetAncillaryOffersRQ → CB → GB → **SOAP:SessionCloseRQ**                                                                                  | **No hay AUTH REST.** El token ATH sirve para todo.                                                                                                              |
+| 21    | LCC — Check, Refund Booking                                | 10   | LCC                                               | AUTH → SOAP:SessionCreateRQ → SHOP v3 → CB → TICKET → GB → CHECK → CANCEL(`flightTicketOperation:"REFUND"`) → GB → SOAP:SessionCloseRQ                                              | Reembolso de LCC.                                                                                                                                                |
+| 22    | LCC + ATPCO — Check, Refund Booking                        | 10   | **Mixto LCC+ATPCO**                               | AUTH → SHOP v3 (ida, LCC) → SHOP v3 (vuelta, ATPCO) → CB → TICKET → GB → CHECK → CANCEL → GB → **SOAP:SessionCloseRQ sin SessionCreateRQ**                                          | Un PNR con dos fuentes. **Ver aviso de §5.2: el fulfill oficial no soporta hibridos.**                                                                           |
+| 23    | NDC — OSI remarks — Shop, Price Check, Book                | 6    | NDC (QF)                                          | AUTH → SHOP **v5** → PRICE → CB(`otherServices[]`) → GB → CANCEL                                                                                                                    | Remarks OSI por pasajero.                                                                                                                                        |
+| 24    | NDC — Citizenship country code + traveler title            | 4    | NDC (**BA**)                                      | AUTH → SHOP **v5** → PRICE → CB(`travelers[].title`, `identityDocuments[].citizenshipCountryCode`)                                                                                  | Requisito British Airways.                                                                                                                                       |
+| 25    | NDC — Agency phone number                                  | 4    | NDC (**AF**)                                      | AUTH → SHOP **v4** → PRICE → CB(`agency.contactInfo.phones[]`)                                                                                                                      | Requisito Air France.                                                                                                                                            |
+| 26    | ATPCO — Refund ancillaries with list of tickets            | 11   | ATPCO + EMD                                       | AUTH → SHOP v3 → SOAP:SessionCreateRQ → SOAP:GetAncillaryOffersRQ → CB → GB → FULFILL(`ancillaryIds`) → GB → REFUND(`documentsType:"EMDs"`) → GB → SOAP:SessionCloseRQ              | Reembolsar **solo los EMD**.                                                                                                                                     |
+| 27    | ATPCO — Refund ancillaries and tickets with confirmationId | 10   | ATPCO + EMD                                       | Igual que 26 pero REFUND usa `confirmationId` + `documentsType:"Tickets and EMDs"` y **nunca cierra la sesion**                                                                     | Reembolsar **todo el PNR de una**.                                                                                                                               |
+| 28–33 | NDC — Assign seats at order creation (multiple airlines)   | 41   | NDC + asientos                                    | 6 subcarpetas: AUTH [→ SOAP:SessionCreateRQ en 5 de 6] → SHOP **v3 ×5 / v5 ×1** → PRICE → **SEATS** → CB(`flightOffer.seatOffers[]`) → GB. **Ninguna cierra sesion.**               | **Asientos asignados en la creacion del pedido** (QR / LO / AY, incl. infante con asiento).                                                                      |
 
 **Total: 255 requests.** VERIFICADO (conteo programatico sobre `requests.jsonl`).
 
 > Nota sobre 28–33: en la coleccion es **una sola carpeta** llamada `28 -33 NDC - Assign seats at order creation
-> (multiple airlines)` con 6 subcarpetas. La numeracion 28–33 es de Sabre; no hay carpetas 29..33 separadas.
+(multiple airlines)` con 6 subcarpetas. La numeracion 28–33 es de Sabre; no hay carpetas 29..33 separadas.
 
 ### 1.1 Correcciones a la tabla de la primera pasada
 
-| Fila | Decia | Dice ahora | Evidencia |
-| --- | --- | --- | --- |
-| WF-4 | el CB usa `profiles[].profileName` | El CB usa `profiles[].uniqueId` + `profileTypeCode:"TVL"` + `domainId:{{pcc}}`. `profileName` solo existe como variable de log que el script pre-request genera con un UUID | VERIFICADO: body de `Workflows / 2 / 3. createBooking - ProfileId` |
-| WF-8 | secuencia lineal de 15 pasos | Son **dos ramas paralelas** de ~7 pasos (estandar y "refundable AA"), no una cadena | VERIFICADO: dos `createBooking`, dos `fulfill`, dos `check`, dos `refund` |
-| WF-20 | AUTH → SessionCreateRQ | **No hay AUTH REST.** El primer request del flujo es `SessionCreateRQ` | VERIFICADO: dump completo de la carpeta (6 requests) |
-| WF-28–33 | `Domain: AA` | **Falso: `Domain: DEFAULT`**, y ademas usan otra forma de `SessionCreateRQ` (§2.2) | VERIFICADO: `<Domain>DEFAULT</Domain>` en las 5 subcarpetas |
-| WF-26 / WF-27 | ausentes de la tabla de `Domain` | Usan **`Domain: AA`**, igual que WF-20 y WF-21 | VERIFICADO |
-| §0 | "solo 4 respuestas guardadas, ninguna en Workflows, y estan vacias" | Ninguna esta en `Workflows` (eso era correcto), pero **no estan vacias**: son 4 copias del mismo `/v1/orders/view` de ~16,5 KB | VERIFICADO: `slices/responses/*.json` |
+| Fila          | Decia                                                               | Dice ahora                                                                                                                                                                  | Evidencia                                                                 |
+| ------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| WF-4          | el CB usa `profiles[].profileName`                                  | El CB usa `profiles[].uniqueId` + `profileTypeCode:"TVL"` + `domainId:{{pcc}}`. `profileName` solo existe como variable de log que el script pre-request genera con un UUID | VERIFICADO: body de `Workflows / 2 / 3. createBooking - ProfileId`        |
+| WF-8          | secuencia lineal de 15 pasos                                        | Son **dos ramas paralelas** de ~7 pasos (estandar y "refundable AA"), no una cadena                                                                                         | VERIFICADO: dos `createBooking`, dos `fulfill`, dos `check`, dos `refund` |
+| WF-20         | AUTH → SessionCreateRQ                                              | **No hay AUTH REST.** El primer request del flujo es `SessionCreateRQ`                                                                                                      | VERIFICADO: dump completo de la carpeta (6 requests)                      |
+| WF-28–33      | `Domain: AA`                                                        | **Falso: `Domain: DEFAULT`**, y ademas usan otra forma de `SessionCreateRQ` (§2.2)                                                                                          | VERIFICADO: `<Domain>DEFAULT</Domain>` en las 5 subcarpetas               |
+| WF-26 / WF-27 | ausentes de la tabla de `Domain`                                    | Usan **`Domain: AA`**, igual que WF-20 y WF-21                                                                                                                              | VERIFICADO                                                                |
+| §0            | "solo 4 respuestas guardadas, ninguna en Workflows, y estan vacias" | Ninguna esta en `Workflows` (eso era correcto), pero **no estan vacias**: son 4 copias del mismo `/v1/orders/view` de ~16,5 KB                                              | VERIFICADO: `evidence/responses/*.json`                                   |
 
 ---
+
 ## 2. El carril SOAP/LLS stateful (lo que faltaba)
 
 ### 2.1 Cuanto hay, y donde esta
@@ -161,21 +163,21 @@ carpeta), asi que el orden y los conteos son exactos. VERIFICADO.
 243 de los 1.077 requests van a `{{soap_endpoint}}` / `{{lls_endpoint}}`. Reparto real por mensaje
 (VERIFICADO, conteo programatico sobre el body de cada request, no sobre el nombre de la carpeta):
 
-| Mensaje SOAP | Total | En `Workflows` | En `ModifyBooking` | En `Create Booking` | En `FulfillFlightTickets` | En `Authentication` |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `SessionCreateRQ` | **73** | 9 | 61 | 0 | 2 | 1 |
-| `SessionCloseRQ` | **61** | 6 | 52 | 0 | 3 | 0 |
-| `OTA_AirAvailRQ` 2.4.0 | 30 | 0 | 28 | 0 | 2 | 0 |
-| `GetHotelAvailRQ` 5.0.0 | 26 | 0 | 23 | 3 | 0 | 0 |
-| `HotelPriceCheckRQ` 5.0.0 | 25 | 0 | 24 | 1 | 0 | 0 |
-| `GetAncillaryOffersRQ` 3.1.0 | 6 | 4 | 2 | 0 | 0 | 0 |
-| `PassengerDetailsRQ` 3.4.0 | 4 | 0 | 4 | 0 | 0 | 0 |
-| `OTA_AirBookRQ` 2.2.0 | 4 | 0 | 4 | 0 | 0 | 0 |
-| `EnhancedEndTransactionRQ` 1.0.0 | 4 | 0 | 4 | 0 | 0 | 0 |
-| `Sabre_OTA_ProfileCreateRQ` 6.55 | 4 | 4 | 0 | 0 | 0 | 0 |
-| `UpdatePassengerNameRecordRQ` 1.1.0 | 3 | 0 | 3 | 0 | 0 | 0 |
-| `GetVehAvailRQ` 2.0.0 | 2 | 0 | 0 | 2 | 0 | 0 |
-| `VehPriceCheckRQ` 1.0.0 | 1 | 0 | 0 | 1 | 0 | 0 |
+| Mensaje SOAP                        |  Total | En `Workflows` | En `ModifyBooking` | En `Create Booking` | En `FulfillFlightTickets` | En `Authentication` |
+| ----------------------------------- | -----: | -------------: | -----------------: | ------------------: | ------------------------: | ------------------: |
+| `SessionCreateRQ`                   | **73** |              9 |                 61 |                   0 |                         2 |                   1 |
+| `SessionCloseRQ`                    | **61** |              6 |                 52 |                   0 |                         3 |                   0 |
+| `OTA_AirAvailRQ` 2.4.0              |     30 |              0 |                 28 |                   0 |                         2 |                   0 |
+| `GetHotelAvailRQ` 5.0.0             |     26 |              0 |                 23 |                   3 |                         0 |                   0 |
+| `HotelPriceCheckRQ` 5.0.0           |     25 |              0 |                 24 |                   1 |                         0 |                   0 |
+| `GetAncillaryOffersRQ` 3.1.0        |      6 |              4 |                  2 |                   0 |                         0 |                   0 |
+| `PassengerDetailsRQ` 3.4.0          |      4 |              0 |                  4 |                   0 |                         0 |                   0 |
+| `OTA_AirBookRQ` 2.2.0               |      4 |              0 |                  4 |                   0 |                         0 |                   0 |
+| `EnhancedEndTransactionRQ` 1.0.0    |      4 |              0 |                  4 |                   0 |                         0 |                   0 |
+| `Sabre_OTA_ProfileCreateRQ` 6.55    |      4 |              4 |                  0 |                   0 |                         0 |                   0 |
+| `UpdatePassengerNameRecordRQ` 1.1.0 |      3 |              0 |                  3 |                   0 |                         0 |                   0 |
+| `GetVehAvailRQ` 2.0.0               |      2 |              0 |                  0 |                   2 |                         0 |                   0 |
+| `VehPriceCheckRQ` 1.0.0             |      1 |              0 |                  0 |                   1 |                         0 |                   0 |
 
 > **Correccion al brief de esta pasada.** El conteo que circulaba (`SessionCreateRQ 50`) esta bajo: son **73**. La
 > diferencia son 23 requests cuyo body usa la forma `<sws:SessionCreateRQ …>` con prefijo de namespace, que un
@@ -186,15 +188,15 @@ carpeta), asi que el orden y los conteos son exactos. VERIFICADO.
 **El balance de sesiones no cuadra: 73 aperturas contra 61 cierres.** 12 sesiones se abren y no se cierran.
 Desglose de los desbalances (VERIFICADO):
 
-| Carpeta | Abre | Cierra | Delta |
-| --- | ---: | ---: | ---: |
-| `Workflows / 28-33 (asientos NDC)` | 5 | 0 | **+5** |
-| `ModifyBooking / Flight modification flows` | 24 | 21 | +3 |
-| `ModifyBooking / NDC modifications flows` | 20 | 18 | +2 |
-| `Authentication / SessionCreateRQ` | 1 | 0 | +1 |
-| `FulfillFlightTickets / Basic flow NDC` | 2 | 1 | +1 |
-| `Workflows / 27` | 1 | 0 | +1 |
-| `Workflows / 22` | 0 | 1 | **−1** |
+| Carpeta                                     | Abre | Cierra |  Delta |
+| ------------------------------------------- | ---: | -----: | -----: |
+| `Workflows / 28-33 (asientos NDC)`          |    5 |      0 | **+5** |
+| `ModifyBooking / Flight modification flows` |   24 |     21 |     +3 |
+| `ModifyBooking / NDC modifications flows`   |   20 |     18 |     +2 |
+| `Authentication / SessionCreateRQ`          |    1 |      0 |     +1 |
+| `FulfillFlightTickets / Basic flow NDC`     |    2 |      1 |     +1 |
+| `Workflows / 27`                            |    1 |      0 |     +1 |
+| `Workflows / 22`                            |    0 |      1 | **−1** |
 
 ### 2.2 Hay DOS formas distintas de `SessionCreateRQ`, y una filtra credenciales
 
@@ -252,6 +254,7 @@ Las 23 son: 9 de `ModifyBooking / Seat modifications`, 5 de `ModifyBooking / NDC
 4 de `FulfillFlightTickets` y **las 5 de `Workflows / 28-33`**. VERIFICADO.
 
 **Implicaciones:**
+
 - El par `SBR-BMAPI` / el valor fijo original es un secreto de aplicacion de Sabre publicado en un fichero de ejemplo. **No lo
   copiamos a nuestro codigo ni a ningun fixture.** Si hace falta un `ClientId`/`ClientSecret` de aplicacion, se pide
   a Sabre el nuestro. Va a Riesgos.
@@ -379,12 +382,12 @@ logic"). Escribir nosotros ese carril para vender seria reimplementar peor lo qu
 **Donde el carril stateful sigue siendo inevitable** (VERIFICADO, por presencia en la coleccion y ausencia de
 equivalente REST):
 
-| Necesidad | Por que no hay REST | Mensajes |
-| --- | --- | --- |
-| Grupos (`GroupInfo`, `NumSeatsRemaining`) | `createBooking` no expone bloque de grupo | `PassengerDetailsRQ` + `OTA_AirBookRQ` + `EnhancedEndTransactionRQ` |
-| Perfiles de viajero (crear/leer) | El REST solo los **consume** (`profiles[].uniqueId`) | `Sabre_OTA_ProfileCreateRQ 6.55` |
-| Ancillaries ATPCO/LCC | No hay endpoint REST equivalente en esta coleccion | `GetAncillaryOffersRQ 3.1.0` |
-| FoP hibrido CSL+aire | `modifyBooking` no lo cubre | `UpdatePassengerNameRecordRQ 1.1.0` |
+| Necesidad                                 | Por que no hay REST                                  | Mensajes                                                            |
+| ----------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
+| Grupos (`GroupInfo`, `NumSeatsRemaining`) | `createBooking` no expone bloque de grupo            | `PassengerDetailsRQ` + `OTA_AirBookRQ` + `EnhancedEndTransactionRQ` |
+| Perfiles de viajero (crear/leer)          | El REST solo los **consume** (`profiles[].uniqueId`) | `Sabre_OTA_ProfileCreateRQ 6.55`                                    |
+| Ancillaries ATPCO/LCC                     | No hay endpoint REST equivalente en esta coleccion   | `GetAncillaryOffersRQ 3.1.0`                                        |
+| FoP hibrido CSL+aire                      | `modifyBooking` no lo cubre                          | `UpdatePassengerNameRecordRQ 1.1.0`                                 |
 
 **Recomendacion:** en fase 1 **no** construimos el carril stateful. El unico que podria colarse antes de tiempo es
 `GetAncillaryOffersRQ` si queremos vender equipaje; y ese, ademas, obliga al segundo juego de credenciales (§5.4).
@@ -396,35 +399,35 @@ equivalente REST):
 Revision endpoint por endpoint contra los 20 `.yml` disponibles. **Esta es la tabla que hay que mirar antes de
 copiar cualquier request de la coleccion.**
 
-| Paso del flujo | La coleccion llama | El contrato oficial declara | Veredicto |
-| --- | --- | --- | --- |
-| Auth | `POST /v2/auth/token` | `tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token` — VERIFICADO-SPEC `booking-management-v1.yml:22` | **Coincide.** |
-| Shop | `/v3` (26), `/v4` (49), `/v5` (13) `/offers/shop` | 3 specs vivos: `bargain-finder-max-v3.yml:16`, `-v4.yml:9`, `-v5.yml:13` | **Los tres siguen publicados.** Fijar **v5** para lo nuevo. |
-| Shop — campo `Version` del body | `/v3` → `"1"`; `/v4` → `"4"`; `/v5` → `"4"` (11 veces) y `"1"` (2 veces) | v3 documenta `Version: '3'` (`bargain-finder-max-v3.yml:423`); v5 usa `"Version": "5"` en sus 3 ejemplos (`bargain-finder-max-v5.yml:71, 613, 1381`) | **Deriva real.** La coleccion manda un `Version` de body que no corresponde a la URL. WF-1 postea `Version:"1"` a `/v5/offers/shop`. Usar el que dice el spec. |
-| Price | `/v1/offers/price` | server `…/v1/offers` + path `/price` — VERIFICADO-SPEC `offer-price-ndc-v1.yml:13,18`. Version del contrato: **1.5** | **Coincide.** |
-| Seats | `/v1/offers/getseats` (32 usos) con `requestType:"offerId"` | **`/v3/offers/getseats/byNdcOfferId`** (y `byNdcOrderId`, `byReservationPayload`) — VERIFICADO-SPEC `get-seats-agency-3.0.yml:25-26, 49` | **DERIVA GRAVE.** El v1 con discriminador `requestType` fue sustituido por tres rutas separadas en v3. Cambia URL **y** forma del request. Ver §2.6. |
-| Ancillaries REST | `/v2/offers/getAncillaries` (3 usos, fuera de `Workflows`) | **`/v3/offers/getAncillaries/byReservationPayload`** y `…/byPnrLocator` — VERIFICADO-SPEC `get-ancillaries-airline-3.0.yml:19-20, 30, 68` | **DERIVA.** Igual patron que getseats. |
-| Booking (crear/leer/cancelar/modificar) | `/v1/trip/orders/*` | `basePath: /v1/trip/orders` con 8 metodos — VERIFICADO-SPEC `booking-management-v1.yml:15, 39-215`. Version del contrato: **1.33** | **Coincide.** Los 8 endpoints de la coleccion son exactamente los 8 del spec. |
-| Emision legacy | `/v1.3.0/air/ticket` (6 usos) | **No hay spec publicado.** El contrato dice que `fulfillFlightTickets` orquesta `AirTicketRQ` internamente — VERIFICADO-SPEC `help-documentation-fulfill-flight-tickets.txt:65-72` | **Legacy.** Ver §7.2: usar `fulfillFlightTickets`. |
-| Hotel avail | `/v5/get/hotelavail` | `/v5/get/hotelavail` — VERIFICADO-SPEC `get-hotel-avail-v5.0.yml:19` | **Coincide.** (`00-fuentes.md` lo daba por ausente; el spec v5 ya esta descargado.) |
-| Hotel price check | `/v5/hotel/pricecheck` | `/v5/hotel/pricecheck` — VERIFICADO-SPEC `hotel-price-check-v5.yml:19` | **Coincide.** |
-| Auto avail | `/v2.0.0/get/vehavail` | `/v2.0.0/get/vehavail` — VERIFICADO-SPEC `get-vehicle-availability-v2.yml:16` | **Coincide.** |
-| Auto price check | `/v1.0.0/veh/pricecheck` | **No hay spec publicado** de vehicle price check | **DESCONOCIDO.** Solo tenemos el contrato del avail. |
-| Shopping "moderno" | `/v1/offers/flightShop` (1 uso, WF-8) | **No hay spec publicado** con ese path | **DESCONOCIDO.** Puede ser preview o retirado. No apoyarse en el. |
-| Orders NDC crudo | `/v1/orders/view` (4), `/v1/orders/change` (1) | Sin spec propio, pero el contrato de Booking Mgmt los cita como fuente interna: `#source: … /v1/offers/reshop/cancelOrder`, `orders/change OrderChangeResponse.order.ticketingDocumentInfo…` — VERIFICADO-SPEC `booking-management-v1.yml:6516, 7983, 8013` | **Capa interna.** Sabre la usa por debajo de Booking Mgmt. Preferir siempre `/v1/trip/orders/*`. |
-| Reshop / FlightCheck | **no se usan en la coleccion** | `/v1/offers/flightReshop` (`flight-reshop-api-1.0.yml:9,16,25`) y `/v1/offers/flightCheck` (`flightcheck-api-v1.yml:8,16,23`) | **Capacidad no ejercitada.** `flightCheck` es el revalidador de oferta multi-fuente; es candidato serio a sustituir al `price` para ATPCO/LCC. Ver Preguntas abiertas. |
+| Paso del flujo                          | La coleccion llama                                                       | El contrato oficial declara                                                                                                                                                                                                                                 | Veredicto                                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth                                    | `POST /v2/auth/token`                                                    | `tokenUrl: https://api.cert.platform.sabre.com/v2/auth/token` — VERIFICADO-SPEC `booking-management-v1.yml:22`                                                                                                                                              | **Coincide.**                                                                                                                                                          |
+| Shop                                    | `/v3` (26), `/v4` (49), `/v5` (13) `/offers/shop`                        | 3 specs vivos: `bargain-finder-max-v3.yml:16`, `-v4.yml:9`, `-v5.yml:13`                                                                                                                                                                                    | **Los tres siguen publicados.** Fijar **v5** para lo nuevo.                                                                                                            |
+| Shop — campo `Version` del body         | `/v3` → `"1"`; `/v4` → `"4"`; `/v5` → `"4"` (11 veces) y `"1"` (2 veces) | v3 documenta `Version: '3'` (`bargain-finder-max-v3.yml:423`); v5 usa `"Version": "5"` en sus 3 ejemplos (`bargain-finder-max-v5.yml:71, 613, 1381`)                                                                                                        | **Deriva real.** La coleccion manda un `Version` de body que no corresponde a la URL. WF-1 postea `Version:"1"` a `/v5/offers/shop`. Usar el que dice el spec.         |
+| Price                                   | `/v1/offers/price`                                                       | server `…/v1/offers` + path `/price` — VERIFICADO-SPEC `offer-price-ndc-v1.yml:13,18`. Version del contrato: **1.5**                                                                                                                                        | **Coincide.**                                                                                                                                                          |
+| Seats                                   | `/v1/offers/getseats` (32 usos) con `requestType:"offerId"`              | **`/v3/offers/getseats/byNdcOfferId`** (y `byNdcOrderId`, `byReservationPayload`) — VERIFICADO-SPEC `get-seats-agency-3.0.yml:25-26, 49`                                                                                                                    | **DERIVA GRAVE.** El v1 con discriminador `requestType` fue sustituido por tres rutas separadas en v3. Cambia URL **y** forma del request. Ver §2.6.                   |
+| Ancillaries REST                        | `/v2/offers/getAncillaries` (3 usos, fuera de `Workflows`)               | **`/v3/offers/getAncillaries/byReservationPayload`** y `…/byPnrLocator` — VERIFICADO-SPEC `get-ancillaries-airline-3.0.yml:19-20, 30, 68`                                                                                                                   | **DERIVA.** Igual patron que getseats.                                                                                                                                 |
+| Booking (crear/leer/cancelar/modificar) | `/v1/trip/orders/*`                                                      | `basePath: /v1/trip/orders` con 8 metodos — VERIFICADO-SPEC `booking-management-v1.yml:15, 39-215`. Version del contrato: **1.33**                                                                                                                          | **Coincide.** Los 8 endpoints de la coleccion son exactamente los 8 del spec.                                                                                          |
+| Emision legacy                          | `/v1.3.0/air/ticket` (6 usos)                                            | **No hay spec publicado.** El contrato dice que `fulfillFlightTickets` orquesta `AirTicketRQ` internamente — VERIFICADO-SPEC `help-documentation-fulfill-flight-tickets.txt:65-72`                                                                          | **Legacy.** Ver §7.2: usar `fulfillFlightTickets`.                                                                                                                     |
+| Hotel avail                             | `/v5/get/hotelavail`                                                     | `/v5/get/hotelavail` — VERIFICADO-SPEC `get-hotel-avail-v5.0.yml:19`                                                                                                                                                                                        | **Coincide.** (`00-fuentes.md` lo daba por ausente; el spec v5 ya esta descargado.)                                                                                    |
+| Hotel price check                       | `/v5/hotel/pricecheck`                                                   | `/v5/hotel/pricecheck` — VERIFICADO-SPEC `hotel-price-check-v5.yml:19`                                                                                                                                                                                      | **Coincide.**                                                                                                                                                          |
+| Auto avail                              | `/v2.0.0/get/vehavail`                                                   | `/v2.0.0/get/vehavail` — VERIFICADO-SPEC `get-vehicle-availability-v2.yml:16`                                                                                                                                                                               | **Coincide.**                                                                                                                                                          |
+| Auto price check                        | `/v1.0.0/veh/pricecheck`                                                 | **No hay spec publicado** de vehicle price check                                                                                                                                                                                                            | **DESCONOCIDO.** Solo tenemos el contrato del avail.                                                                                                                   |
+| Shopping "moderno"                      | `/v1/offers/flightShop` (1 uso, WF-8)                                    | **No hay spec publicado** con ese path                                                                                                                                                                                                                      | **DESCONOCIDO.** Puede ser preview o retirado. No apoyarse en el.                                                                                                      |
+| Orders NDC crudo                        | `/v1/orders/view` (4), `/v1/orders/change` (1)                           | Sin spec propio, pero el contrato de Booking Mgmt los cita como fuente interna: `#source: … /v1/offers/reshop/cancelOrder`, `orders/change OrderChangeResponse.order.ticketingDocumentInfo…` — VERIFICADO-SPEC `booking-management-v1.yml:6516, 7983, 8013` | **Capa interna.** Sabre la usa por debajo de Booking Mgmt. Preferir siempre `/v1/trip/orders/*`.                                                                       |
+| Reshop / FlightCheck                    | **no se usan en la coleccion**                                           | `/v1/offers/flightReshop` (`flight-reshop-api-1.0.yml:9,16,25`) y `/v1/offers/flightCheck` (`flightcheck-api-v1.yml:8,16,23`)                                                                                                                               | **Capacidad no ejercitada.** `flightCheck` es el revalidador de oferta multi-fuente; es candidato serio a sustituir al `price` para ATPCO/LCC. Ver Preguntas abiertas. |
 
 ### 2.6 Que cambia exactamente en `getseats` v1 → v3
 
 Es la unica deriva que rompe un diagrama de este documento (§3.11), asi que se detalla.
 
-| | Coleccion (v1) | Contrato oficial (v3.1) |
-| --- | --- | --- |
-| URL | `POST /v1/offers/getseats` | `POST /v3/offers/getseats/byNdcOfferId` |
-| Discriminador | `"requestType": "offerId"` en el body | Va en la **ruta** |
-| Oferta | `request.offer.offerId` | `offerId` en la raiz |
-| Agencia | `party.sender.travelAgency{iataNumber, pseudoCityID, agencyID, name, type, agentUserID}` | **Ya no hace falta**: *"it is no longer required to provide PCC in travelAgency element as this information is read from ATK/ATH session"* — VERIFICADO-SPEC `specs/help/get-seats-agency-3.0/3.0-index.txt:102` |
-| Pasajeros | no se mandan | `passengers[]` opcional con `id`/`passengerType`/`givenName`/`surname`, "which allows for a more accurate seat offer retrieval" — VERIFICADO-SPEC `get-seats-agency-3.0.yml:113-119` |
+|               | Coleccion (v1)                                                                           | Contrato oficial (v3.1)                                                                                                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| URL           | `POST /v1/offers/getseats`                                                               | `POST /v3/offers/getseats/byNdcOfferId`                                                                                                                                                                          |
+| Discriminador | `"requestType": "offerId"` en el body                                                    | Va en la **ruta**                                                                                                                                                                                                |
+| Oferta        | `request.offer.offerId`                                                                  | `offerId` en la raiz                                                                                                                                                                                             |
+| Agencia       | `party.sender.travelAgency{iataNumber, pseudoCityID, agencyID, name, type, agentUserID}` | **Ya no hace falta**: _"it is no longer required to provide PCC in travelAgency element as this information is read from ATK/ATH session"_ — VERIFICADO-SPEC `specs/help/get-seats-agency-3.0/3.0-index.txt:102` |
+| Pasajeros     | no se mandan                                                                             | `passengers[]` opcional con `id`/`passengerType`/`givenName`/`surname`, "which allows for a more accurate seat offer retrieval" — VERIFICADO-SPEC `get-seats-agency-3.0.yml:113-119`                             |
 
 Request v3 real (VERIFICADO-SPEC, `specs/help/get-seats-agency-3.0/get-seats-v3-get-seats-ndc-offer-id.txt:6-16`):
 
@@ -438,6 +441,7 @@ Request v3 real (VERIFICADO-SPEC, `specs/help/get-seats-agency-3.0/get-seats-v3-
 ```
 
 ---
+
 ## 3. Diagramas de secuencia, revisados contra el contrato
 
 Cada diagrama lleva ahora el resultado del contraste con el `.yml`. Donde el contrato **contradice** lo que decia
@@ -469,7 +473,7 @@ sequenceDiagram
 **Lo que el contrato cierra en este diagrama:**
 
 - `CreateBookingResponse` = `timestamp` + `confirmationId` (`pattern ^[A-Z0-9]{6,}$`, ejemplo `GLEBNY`) + `booking`
-  + `errors[]` + `request`. **Nada mas.** VERIFICADO-SPEC `booking-management-v1.yml:804-829`.
+  - `errors[]` + `request`. **Nada mas.** VERIFICADO-SPEC `booking-management-v1.yml:804-829`.
 - **CORRECCION:** `createBooking` **no devuelve `bookingSignature`**. Solo `getBooking` lo hace. VERIFICADO-SPEC
   `booking-management-v1.yml:295-312`. Si el flujo va a modificar, hace falta un `getBooking` intermedio.
 - `CancelBookingResponse` incluye ademas `voidedTickets[]`, `refundedTickets[]` y `flightRefunds[]`, campos que la
@@ -488,12 +492,20 @@ Body real del CB (447 bytes, el mas pequeno de la coleccion) — `Workflows / 1 
 
 ```json
 {
-  "flightOffer": { "offerId": "{{price_offer_id}}", "selectedOfferItems": ["{{price_offer_item_id}}"] },
-  "travelers": [{
-    "id": "{{price_passenger_id}}",
-    "givenName": "John", "surname": "Kowalski",
-    "birthDate": "1970-01-23", "passengerCode": "ADT", "customerNumber": "1234567"
-  }],
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": ["{{price_offer_item_id}}"]
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id}}",
+      "givenName": "John",
+      "surname": "Kowalski",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT",
+      "customerNumber": "1234567"
+    }
+  ],
   "contactInfo": { "emails": ["travel@sabre.com"], "phones": ["123456"] }
 }
 ```
@@ -565,8 +577,8 @@ sequenceDiagram
 
 > **CORRECCION / respuesta a la pregunta abierta 9 de la primera pasada.** No son dos alternativas de igual rango.
 > El contrato dice que `fulfillFlightTickets` **orquesta `AirTicketRQ` por dentro**
-> (VERIFICADO-SPEC `help-documentation-fulfill-flight-tickets.txt:65-72`: *"The APIs orchestrated by Fulfill Flight
-> Tickets are: ContextChangeLLSRQ, GetReservationRQ, AirTicketRQ, Order Management"*). `/v1.3.0/air/ticket` es la
+> (VERIFICADO-SPEC `help-documentation-fulfill-flight-tickets.txt:65-72`: _"The APIs orchestrated by Fulfill Flight
+> Tickets are: ContextChangeLLSRQ, GetReservationRQ, AirTicketRQ, Order Management"_). `/v1.3.0/air/ticket` es la
 > LLS cruda; `fulfillFlightTickets` es la envoltura oficial y ademas es la unica que cubre **NDC**. Usamos
 > `fulfillFlightTickets`.
 
@@ -603,18 +615,19 @@ sequenceDiagram
 `CheckTicketsResponse` = `timestamp` + `request` + **`tickets[]`** + `errors[]` + **`cancelOffers[]`** +
 **`flightRefunds[]`**. VERIFICADO-SPEC `booking-management-v1.yml:660-692`. Y cada elemento:
 
-| Campo | Forma | Para que sirve | Cita |
-| --- | --- | --- | --- |
-| `tickets[]` | `CheckedTicket` = `Ticket` + `refundFee` (`RefundFee`: importe, moneda, impuestos) + `ticketStatusCode` | Refundabilidad y coste por billete **ATPCO** | `booking-management-v1.yml:8496-8513` |
-| `cancelOffers[]` | `{offerType: VOID\|REFUND, offerItemId, offerExpirationDate, offerExpirationTime, refundTotals}` | Cancelacion **NDC** | `booking-management-v1.yml:6504-6531` |
-| `flightRefunds[]` | `{airlineCode, confirmationId, refundTotals}` (`refundTotals` obligatorio) | Refund **LCC** (non-ATPCO) | `booking-management-v1.yml:4148-4167` |
+| Campo             | Forma                                                                                                   | Para que sirve                               | Cita                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------- |
+| `tickets[]`       | `CheckedTicket` = `Ticket` + `refundFee` (`RefundFee`: importe, moneda, impuestos) + `ticketStatusCode` | Refundabilidad y coste por billete **ATPCO** | `booking-management-v1.yml:8496-8513` |
+| `cancelOffers[]`  | `{offerType: VOID\|REFUND, offerItemId, offerExpirationDate, offerExpirationTime, refundTotals}`        | Cancelacion **NDC**                          | `booking-management-v1.yml:6504-6531` |
+| `flightRefunds[]` | `{airlineCode, confirmationId, refundTotals}` (`refundTotals` obligatorio)                              | Refund **LCC** (non-ATPCO)                   | `booking-management-v1.yml:4148-4167` |
 
 Y el proposito declarado de WF-16/17 (¿es reembolsable/cambiable?) ya no es un hueco: el contrato dice que
-`checkFlightTickets` *"checks tickets … for void, refund and exchange conditions"* y que calcula el coste de cambio
-(*"Potential exchange cost (exchange penalties, no-show cost – if applicable)"*). VERIFICADO-SPEC
+`checkFlightTickets` _"checks tickets … for void, refund and exchange conditions"_ y que calcula el coste de cambio
+(_"Potential exchange cost (exchange penalties, no-show cost – if applicable)"_). VERIFICADO-SPEC
 `help-documentation-check-flight-tickets.txt:5, 19-23`.
 
 **Limites que hay que respetar** (VERIFICADO-SPEC `help-documentation-check-flight-tickets.txt:85-97`):
+
 - Maximo **12 documentos** por llamada, y **todos del mismo PNR**.
 - De una orden NDC **solo se puede comprobar la orden entera**: no hay void/refund parcial.
 - Si el PNR mezcla ATPCO con una reserva LCC (non-ATPCO), devuelve `SCENARIO_NOT_SUPPORTED`.
@@ -659,21 +672,31 @@ Body real de la rama 2 — `Workflows / 8 / 1a Flight Shop - refundable AA`. VER
 ```json
 {
   "journeys": [
-    { "departureLocation": {"airportCode":"JFK"}, "arrivalLocation": {"airportCode":"MIA"}, "departureDate":"2026-09-01" },
-    { "departureLocation": {"airportCode":"MIA"}, "arrivalLocation": {"airportCode":"JFK"}, "departureDate":"2026-09-08" }
+    {
+      "departureLocation": { "airportCode": "JFK" },
+      "arrivalLocation": { "airportCode": "MIA" },
+      "departureDate": "2026-09-01"
+    },
+    {
+      "departureLocation": { "airportCode": "MIA" },
+      "arrivalLocation": { "airportCode": "JFK" },
+      "departureDate": "2026-09-08"
+    }
   ],
   "travelers": [{ "passengerTypeCode": "ADT" }],
   "airlines": { "marketingAirlinesFilter": { "airlineCodes": ["AA"] } },
   "fare": { "brandedFareFilters": [{ "brandCodes": ["MAINFL"] }] },
-  "retailing": { "filterByOfferAttributes": { "isRefundAllowed": true },
-                 "returnOfferAttributes": ["Flexibility", "Baggage"] },
+  "retailing": {
+    "filterByOfferAttributes": { "isRefundAllowed": true },
+    "returnOfferAttributes": ["Flexibility", "Baggage"]
+  },
   "sources": { "distributionModels": ["ATPCO"] },
   "processingOptions": { "limitNumberOfOffers": 5 }
 }
 ```
 
 > **Dos avisos.** (a) Las fechas estan **hardcodeadas** (`2026-09-01`); corriendolo hoy, 2026-08-25, aun sirve,
-> pero caduca en dias. (b) `/v1/offers/flightShop` **no tiene contrato publicado** entre los 20 specs descargados.
+> pero caduca en dias. (b) `/v1/offers/flightShop` **no tiene contrato publicado** entre los 21 specs descargados.
 > No construimos nada encima de el.
 
 `RefundTicketsResponse` = `timestamp` + `request` + `tickets[]` + `errors[]` + **`refundedTickets[]`** (lista plana
@@ -707,14 +730,14 @@ sequenceDiagram
 > **El script de la coleccion ignora `PriceChange`.** Solo saca `BookingKey` y `GuaranteeType`. Un ACL que copie
 > ese script venderia al cliente un precio distinto del que le mostro sin enterarse. **`PriceChange === true` tiene
 > que interrumpir el flujo y volver al vendedor.** Ese es, ademas, el proposito declarado del endpoint:
-> *"validates whether the price returned when shopping for a chosen product is still valid. This API is called
-> between the shopping and booking steps."* VERIFICADO-SPEC `hotel-price-check-v5.yml:4`.
+> _"validates whether the price returned when shopping for a chosen product is still valid. This API is called
+> between the shopping and booking steps."_ VERIFICADO-SPEC `hotel-price-check-v5.yml:4`.
 
 Mapeo `GuaranteeType` → `hotel.paymentPolicy`. VERIFICADO-script (`Workflows / 9 / 2. Hotel Price Check /v5`):
 
 ```js
-const guaranteeMap = { GUAR: "GUARANTEE", DEP: "DEPOSIT" };
-pm.environment.set("guarantee_type", guaranteeMap[rawGuaranteeType] || rawGuaranteeType);
+const guaranteeMap = { GUAR: 'GUARANTEE', DEP: 'DEPOSIT' };
+pm.environment.set('guarantee_type', guaranteeMap[rawGuaranteeType] || rawGuaranteeType);
 ```
 
 El contrato confirma que `Guarantee.GuaranteeType` es un string libre con ejemplo `"GUAR"`, y que junto a el vienen
@@ -725,7 +748,7 @@ coleccion **no es exhaustivo**; hay que tratar el valor desconocido como error, 
 `payment.formsOfPayment[]` acepta 6 tipos en el ejemplo de hotel: `PAYMENTCARD`, `VIRTUAL_CARD`, `AGENCY_NAME`,
 `AGENCY_IATA`, `CORPORATE`, `COMPANY_NAME`. VERIFICADO.
 
-Error relevante para la saga: `UNABLE_TO_BOOK_HOTEL_EXPIRED_BOOKING_KEY` — *"The hotel booking key is expired."*
+Error relevante para la saga: `UNABLE_TO_BOOK_HOTEL_EXPIRED_BOOKING_KEY` — _"The hotel booking key is expired."_
 VERIFICADO-SPEC `help-documentation-create-booking-error-list.txt:207-211`. El `bookingKey` tiene TTL propio.
 
 ### 3.7 WF-10 — Auto
@@ -774,8 +797,8 @@ sequenceDiagram
 **La regla:** el numero de `selectedOfferItems` que manda el `createBooking` lo determina el **tipo de pasajero**,
 no la cantidad. Un `offerItem` por PTC. VERIFICADO-script + confirmado por el contrato del price, donde `OfferItem`
 lleva `passengers[]` con `ptc` y `requestedPtc` (VERIFICADO-SPEC, ejemplo `offer-price-ndc-v1.yml:2116-2124`) y la
-guia de BFM dice *"For each of our passengers, pricing information is returned. You can identify the applicable
-passenger by inspecting the `passengerInfo.passengerType`"* (VERIFICADO-SPEC `bargain-finder-max-v5.yml:672`).
+guia de BFM dice _"For each of our passengers, pricing information is returned. You can identify the applicable
+passenger by inspecting the `passengerInfo.passengerType`"_ (VERIFICADO-SPEC `bargain-finder-max-v5.yml:672`).
 
 ### 3.9 WF-14 — NDC: cancelar orden y anular tickets
 
@@ -812,15 +835,15 @@ sequenceDiagram
    VERIFICADO-SPEC `booking-management-v1.yml:6517-6528`. Es decir: `checkFlightTickets` → `cancelBooking` es una
    ventana, no un par de llamadas cualquiera.
 3. **`offerItemId` y `flightTicketOperation` son mutuamente excluyentes.** El error oficial lo dice literal:
-   *"Unable to cancel the booking. Combination of offerItemId and flightTicketOperation is not supported. Change
-   request to use either offerItemId or flightTicketOperation."* VERIFICADO-SPEC
+   _"Unable to cancel the booking. Combination of offerItemId and flightTicketOperation is not supported. Change
+   request to use either offerItemId or flightTicketOperation."_ VERIFICADO-SPEC
    `help-documentation-cancel-booking-error-list.txt:43`. NDC → `offerItemId`. ATPCO/LCC → `flightTicketOperation`.
 
 Assertions del getBooking final. VERIFICADO-script (`Workflows / 14 / 10. getBooking`):
 
 ```js
 pm.expect(response).not.to.have.property('flights');
-response.flightTickets.forEach(t => {
+response.flightTickets.forEach((t) => {
   pm.expect(t.ticketStatusName).to.eql('Voided');
   pm.expect(t.ticketStatusCode).to.eql('OV');
 });
@@ -832,10 +855,10 @@ El contrato confirma el vocabulario: `TicketStatusEnum = {Issued, Voided, "Refun
 comparando con `'OV'`) sigue siendo solo eso, una etiqueta mal escrita; el valor correcto es **`OV`**.
 
 **`asynchronousUpdateWaitTime` — pregunta abierta 8 de la primera pasada, CERRADA:** es **opcional**, entero,
-`minimum 0`, `maximum 10000`, **`default 0`**, y su descripcion es *"The maximum wait time in milliseconds applied
-to asynchronous updates related to booking creation. Mainly used for the redisplay operation of NDC bookings."*
+`minimum 0`, `maximum 10000`, **`default 0`**, y su descripcion es _"The maximum wait time in milliseconds applied
+to asynchronous updates related to booking creation. Mainly used for the redisplay operation of NDC bookings."_
 VERIFICADO-SPEC `booking-management-v1.yml:714-722`. O sea: no mandarlo es legal y equivale a 0; lo que se pierde
-es el *redisplay* sincronico del pedido NDC, no la reserva. Se sigue sin saber que pasa si la aerolinea tarda mas
+es el _redisplay_ sincronico del pedido NDC, no la reserva. Se sigue sin saber que pasa si la aerolinea tarda mas
 que el valor pedido: eso queda en Preguntas abiertas.
 
 ### 3.10 WF-19 y WF-20 — ancillaries: el mismo mensaje, dos regimenes
@@ -881,16 +904,18 @@ case 'SessionCreateRQ':
 Captura de los ancillaries. VERIFICADO-script (`Workflows / 20 / GetAncillaryOffersRQ`):
 
 ```js
-const BASE_ANCILLARY = result.Envelope.Body[0].GetAncillaryOffersRS[0].AncillaryDefinition[ancillarySeqNum];
-const ancillarySubCode  = BASE_ANCILLARY.SubCode[0];
-const ancillaryVendor   = BASE_ANCILLARY.Vendor[0];
-const ancillaryGroup    = BASE_ANCILLARY.Group[0];
+const BASE_ANCILLARY =
+  result.Envelope.Body[0].GetAncillaryOffersRS[0].AncillaryDefinition[ancillarySeqNum];
+const ancillarySubCode = BASE_ANCILLARY.SubCode[0];
+const ancillaryVendor = BASE_ANCILLARY.Vendor[0];
+const ancillaryGroup = BASE_ANCILLARY.Group[0];
 const ancillaryBasePrice =
-  result.Envelope.Body[0].GetAncillaryOffersRS[0].Offers[ancillarySeqNum].AncillaryFee[0].TotalBaseEquiv[0].Amount[0]._;
+  result.Envelope.Body[0].GetAncillaryOffersRS[0].Offers[ancillarySeqNum].AncillaryFee[0]
+    .TotalBaseEquiv[0].Amount[0]._;
 ```
 
-> **Restriccion del contrato que la primera pasada no tenia:** *"Ancillary services are currently not supported for
-> NDC bookings."* VERIFICADO-SPEC `help-documentation-create-booking.txt:97`. Es decir: `travelers[].ancillaries[]`
+> **Restriccion del contrato que la primera pasada no tenia:** _"Ancillary services are currently not supported for
+> NDC bookings."_ VERIFICADO-SPEC `help-documentation-create-booking.txt:97`. Es decir: `travelers[].ancillaries[]`
 > vale para ATPCO y LCC, **no para NDC**. Para NDC, lo unico vendible en la creacion son **asientos**
 > (`flightOffer.seatOffers[]`). Eso reordena el backlog: si queremos vender equipaje NDC, no es un campo mas del
 > `createBooking`, es otro producto.
@@ -963,15 +988,15 @@ cabinCompartments, seatRows, seats). Ejemplo real completo en
 3. el numero de asiento es `seatRow.row + seat.column` — exactamente lo que el `createBooking` manda como
    `seatOffers[].number: "{{row}}{{column}}"`.
 
-Esto ya no depende de ningun fichero de *globals* de Postman. **Se puede escribir el mapper.**
+Esto ya no depende de ningun fichero de _globals_ de Postman. **Se puede escribir el mapper.**
 
 **Y el contrato explica por que el orden es shop → price → getseats y no shop → getseats:**
 
-> *"The seat map may be displayed using the OfferID from a shopping response, but the seats are not bookable
+> _"The seat map may be displayed using the OfferID from a shopping response, but the seats are not bookable
 > because the prices displayed on the map are not guaranteed until the Offer for the air fare has been priced.
 > Therefore, the seat map is displayed with a view only indicator (`sellable: false`). If an attempt is made to book
 > a seat at this stage, an error about 'invalid or expired offer' is returned. Seats will be bookable from a seat
-> map displayed after pricing."*
+> map displayed after pricing."_
 > VERIFICADO-SPEC `specs/help/get-seats-agency-3.0/3.0-index.txt:52-56`.
 
 Body real de `getseats` en la coleccion (v1) — `Workflows / 28-33 / … / Offers (seats)`. VERIFICADO:
@@ -981,9 +1006,18 @@ Body real de `getseats` en la coleccion (v1) — `Workflows / 28-33 / … / Offe
   "request": { "offer": { "offerId": "{{priceOfferId}}" } },
   "pointOfSale": { "agentDutyCode": "*", "location": { "countryCode": "PL", "cityCode": "KRK" } },
   "requestType": "offerId",
-  "party": { "sender": { "travelAgency": {
-    "iataNumber": "99999999", "pseudoCityID": "B4T0", "agencyID": "99999999",
-    "name": "SABRE", "type": "TravelAgency", "agentUserID": "xmluser001" } } }
+  "party": {
+    "sender": {
+      "travelAgency": {
+        "iataNumber": "99999999",
+        "pseudoCityID": "B4T0",
+        "agencyID": "99999999",
+        "name": "SABRE",
+        "type": "TravelAgency",
+        "agentUserID": "xmluser001"
+      }
+    }
+  }
 }
 ```
 
@@ -1010,6 +1044,7 @@ Fragmento de `createBooking` con asientos. VERIFICADO:
 > token ATH. Ver Preguntas abiertas.
 
 ---
+
 ## 4. La cadena de estado: que identificador nace donde y cuanto vive
 
 ### 4.1 Evidencia primaria: el script `test` a nivel coleccion
@@ -1020,31 +1055,45 @@ La coleccion tiene un unico script `test` global que, segun el 6.º segmento de 
 ```js
 switch (URI_ID) {
   case 'token':
-    pm.environment.set('token', jsonData.access_token); break;
+    pm.environment.set('token', jsonData.access_token);
+    break;
   case 'shop':
-    pm.environment.set('shop_offer_item_id',
-      jsonData.groupedItineraryResponse.itineraryGroups[0].itineraries[0].pricingInformation[0].fare.offerItemId);
+    pm.environment.set(
+      'shop_offer_item_id',
+      jsonData.groupedItineraryResponse.itineraryGroups[0].itineraries[0].pricingInformation[0].fare
+        .offerItemId,
+    );
     break;
   case 'price':
-    pm.environment.set('price_offer_id',      jsonData.response.offers[0].id);
+    pm.environment.set('price_offer_id', jsonData.response.offers[0].id);
     pm.environment.set('price_offer_item_id', jsonData.response.offers[0].offerItems[0].id);
-    pm.environment.set('price_passenger_id',  jsonData.response.offers[0].offerItems[0].passengers[0].id);
+    pm.environment.set(
+      'price_passenger_id',
+      jsonData.response.offers[0].offerItems[0].passengers[0].id,
+    );
     break;
-  case 'create':                                   // endpoint /v1/orders/create
+  case 'create': // endpoint /v1/orders/create
     pm.environment.set('sabre_order_id', jsonData.order.id);
-    pm.environment.set('pnr',            jsonData.order.pnrLocator);
+    pm.environment.set('pnr', jsonData.order.pnrLocator);
     break;
   case 'ticket':
-    pm.environment.set('tkt',  jsonData.AirTicketRS.Summary[0].DocumentNumber);
+    pm.environment.set('tkt', jsonData.AirTicketRS.Summary[0].DocumentNumber);
     pm.environment.set('tkt2', jsonData.AirTicketRS.Summary[1].DocumentNumber);
     break;
   case 'hotelavail':
-    pm.environment.set('hotel_code', jsonData.GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelInfo.HotelCode);
-    pm.environment.set('rate_key',
-      jsonData.GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelRateInfo.RateInfos.RateInfo[0].RateKey);
+    pm.environment.set(
+      'hotel_code',
+      jsonData.GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelInfo.HotelCode,
+    );
+    pm.environment.set(
+      'rate_key',
+      jsonData.GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelRateInfo.RateInfos.RateInfo[0]
+        .RateKey,
+    );
     break;
   case 'orders':
-    if (request.url.split("/")[6] === 'createBooking') pm.environment.set('pnr', jsonData.confirmationId);
+    if (request.url.split('/')[6] === 'createBooking')
+      pm.environment.set('pnr', jsonData.confirmationId);
     break;
 }
 ```
@@ -1055,12 +1104,12 @@ VERIFICADO.
 
 ### 4.2 `orderId` vs `confirmationId` — matiz corregido
 
-La primera pasada afirmaba: *"en el modelo actual el identificador de negocio es `confirmationId` (el PNR), no un
-`orderId`"* y que *"el `orderItemId` de los flujos NDC no es un identificador de linea de la orden"*. **La primera
+La primera pasada afirmaba: _"en el modelo actual el identificador de negocio es `confirmationId` (el PNR), no un
+`orderId`"_ y que _"el `orderItemId` de los flujos NDC no es un identificador de linea de la orden"_. **La primera
 mitad es correcta; la segunda es falsa, y ahora hay prueba dura.**
 
 Las 4 respuestas guardadas de `/v1/orders/view` muestran el objeto orden real. VERIFICADO
-(`slices/responses/01-Add_phone_Orders_View.json`):
+(`evidence/responses/01-Add_phone_Orders_View.json`):
 
 ```
 order
@@ -1095,11 +1144,11 @@ order
 3. **El `offerItemId` que WF-14 mete en `cancelBooking` es otra cosa**: es
    `checkFlightTickets.cancelOffers[].offerItemId`, un identificador de **oferta de cancelacion**. Que se llamen
    igual es una colision de nombres de Sabre, no una identidad. VERIFICADO-SPEC `booking-management-v1.yml:6511`
-   (*"Offer ID referencing the cancel option for a NDC order"*).
+   (_"Offer ID referencing the cancel option for a NDC order"_).
 4. `/v1/orders/create` ya no existe en esta coleccion; `case 'create'` del script global es codigo muerto que
    sobrevive porque `/v1/orders/view` comparte el prefijo. Los usos vivos son `/v1/orders/view` (4) y
    `/v1/orders/change` (1). El contrato de Booking Management confirma que esa capa es **interna**: cita
-   `orders/change OrderChangeResponse.order.ticketingDocumentInfo…` como *fuente* de sus propios campos.
+   `orders/change OrderChangeResponse.order.ticketingDocumentInfo…` como _fuente_ de sus propios campos.
    VERIFICADO-SPEC `booking-management-v1.yml:7983, 8013`.
 
 ### 4.3 Diagrama de la cadena
@@ -1176,49 +1225,49 @@ flowchart LR
 
 Los TTL que la primera pasada marcaba como **desconocidos** ya no lo son. Cambios marcados **[NUEVO]**.
 
-| Identificador | Nace en | Path | Consumido por | Confianza | TTL |
-| --- | --- | --- | --- | --- | --- |
-| `access_token` | `POST /v2/auth/token` | `access_token` | Todo REST + `BinarySecurityToken` en SOAP stateless | VERIFICADO-SPEC | **[NUEVO] `expires_in: 604800` = 7 dias exactos**, `token_type: "bearer"`. Refrescar al 80 % (≈5,6 dias). Cita: `specs/help/get-hotel-avail-v5.0/v5.0-index.html:76-78` |
-| `token` ATH (sesion) | `SessionCreateRQ` | `Envelope.Header.Security.BinarySecurityToken` | SOAP stateful **y** REST (`Authorization: Bearer`) | VERIFICADO-SPEC | Vida de la sesion AAA. **Quitar prefijo `ATH:` si aparece.** Cerrar SIEMPRE con `SessionCloseRQ` |
-| `shop_offer_id` | `/vN/offers/shop` | `…pricingInformation[0].offer.offerId` | — (se usa el `offerItemId`) | VERIFICADO-SPEC | **[NUEVO] `offer.timeToLive`, en segundos, campo obligatorio** junto a `offerId` y `source`. Cita: `bargain-finder-max-v5.yml:8226-8244` |
-| `shop_offer_item_id` | idem | `…pricingInformation[0].fare.offerItemId` | `POST /v1/offers/price` → `query[].offerItemId` | VERIFICADO-SPEC | igual. Cita: `bargain-finder-max-v5.yml:3622-3624` |
-| `lastTicketDate` / `lastTicketTime` | idem | `…pricingInformation[0].fare.lastTicketDate` / `.lastTicketTime` | politica de emision | VERIFICADO-SPEC | **[NUEVO]** *"deadline date to purchase the ticket for this fare"*. Cita: `bargain-finder-max-v5.yml:3608-3616` |
-| `scheduleDescs[i]` | `/vN/offers/shop` | `…scheduleDescs[i].carrier.marketingFlightNumber`, `.ResBookDesigCode`, `.departure.time/.airport`, `.arrival.airport`, `.carrier.marketing/.operating` | `createBooking.flightDetails.flights[]` (ATPCO, LCC) | VERIFICADO-script + VERIFICADO-SPEC (`bargain-finder-max-v5.yml:3869-3873`) | mientras dure la disponibilidad |
-| `price_offer_id` | `POST /v1/offers/price` | `response.offers[0].id` (`^[a-zA-Z0-9]+(-[0-9]+)$`) | `createBooking.flightOffer.offerId` | VERIFICADO-SPEC | **[NUEVO] `offers[0].ttl` en segundos (obligatorio) + `offerExpirationDateTime` ISO 8601 (obligatorio).** En el ejemplo oficial: `ttl: 1200` (20 min) y expiracion 1200 s despues del `timeStamp`. Cita: `offer-price-ndc-v1.yml:383-408` y ejemplo `:2104-2108` |
-| `price_offer_item_id` | idem | `response.offers[0].offerItems[j].id` | `createBooking.flightOffer.selectedOfferItems[]` | VERIFICADO-SPEC | ligado al `ttl` de la oferta |
-| `price_passenger_id` | idem | `response.offers[0].offerItems[j].passengers[k].id` (+ `.ptc`, `.requestedPtc`) | `createBooking.travelers[].id` | VERIFICADO-SPEC | idem |
-| `paymentTimeLimitDateTime` | idem | `response.offers[0].paymentTimeLimitDateTime` (o `paymentTimeLimitText` si el proveedor manda formato libre) | politica de cobro | VERIFICADO-SPEC | **[NUEVO]** distinto y normalmente **mas largo** que el `ttl` de la oferta. Cita: `offer-price-ndc-v1.yml:410-421` |
-| `seatOfferId` + `row` + `column` | getseats | `response.offerItems[].id`; `response.seatMaps[].cabinCompartments[].seatRows[].row` + `.seats[].column` + `.seats[].offerItemRefIds[]` | `createBooking.flightOffer.seatOffers[]` | VERIFICADO-SPEC | **[NUEVO]** `response.offerExpirationDateTime` y `offerItems[].purchaseByDateTime`. Cita: `get-seats-agency-3.0.yml:222-224, 315-317` |
-| **`confirmationId` (PNR)** | `POST /createBooking` | `confirmationId`, raiz, `^[A-Z0-9]{6,}$` | **todo lo post-venta** | VERIFICADO-SPEC (`booking-management-v1.yml:814-818`) | **persistente** (clave de negocio) |
-| `order.id` (orden NDC) | `/v1/orders/view` | `order.id` (32 hex) | trazabilidad NDC | VERIFICADO (respuesta guardada) | **[NUEVO]** persistente. `order.paymentTimeLimit` y `orderItems[].ticketingTimeLimit` acompanan |
-| `bookingSignature` | **solo `getBooking`** | `bookingSignature` | `modifyBooking.bookingSignature` (**obligatorio**) | VERIFICADO-SPEC | **por operacion.** Token de concurrencia optimista: se relee inmediatamente antes de cada `modifyBooking`. **No cachear.** Cita: `booking-management-v1.yml:295-312` y `831-843` |
-| `tkt`, `tkt2` | `getBooking → flightTickets[i].number`; `fulfillFlightTickets → tickets[i].number`; `air/ticket → AirTicketRS.Summary[i].DocumentNumber` | `^[0-9A-Z/-]+$` | `checkFlightTickets`, `voidFlightTickets`, `refundFlightTickets` | VERIFICADO-SPEC | persistente (documento fiscal) |
-| `ticketStatusCode` / `ticketStatusName` | `getBooking`, `fulfill`, `check` | `^[A-Z]{1,2}$` / enum `{Issued, Voided, Refunded/Exchanged}` | maquina de estados de la venta | VERIFICADO-SPEC + VERIFICADO-script | derivado. Codigos observados en la coleccion: `TE` ticket emitido, `ME` EMD emitido, `OV` voided, `TR` ticket reembolsado, `MR` EMD reembolsado |
-| `couponStatus` / `couponStatusCode` | `getBooking` | `flightTickets[i].flightCoupons[].couponStatus` / `.couponStatusCode`; `allCoupons[]` | logica de negocio | VERIFICADO-script | derivado. Valores vistos: `"Not Flown"` / `"I"`, `"Refunded"` |
-| `offerItemId` (**cancelacion NDC**) | `checkFlightTickets` | `cancelOffers[i].offerItemId`, **filtrando por `offerType`** | `cancelBooking.offerItemId` | VERIFICADO-SPEC | **[NUEVO] caduca**: `offerExpirationDate` + `offerExpirationTime` (UTC). Pedirlo justo antes de cancelar |
-| `refundTotals` | `checkFlightTickets` | `cancelOffers[].refundTotals`, `flightRefunds[].refundTotals`, `tickets[].refundFee` | mostrar el importe al vendedor | VERIFICADO-SPEC | por operacion |
-| `ancillaryId` | `getBooking` | `travelers[i].ancillaries[j].itemId` | `fulfillFlightTickets.fulfillments[].ancillaryIds[]` | VERIFICADO-script | por operacion. **Solo ATPCO/LCC: NDC no soporta ancillaries** |
-| `rate_key` (hotel) | `/v5/get/hotelavail` | `GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelRateInfo.RateInfos.RateInfo[0].RateKey` | `/v5/hotel/pricecheck` | VERIFICADO-SPEC (`get-hotel-avail-v5.0.yml:1163-1172, 2714`) | corto |
-| `booking_key` (hotel) | `/v5/hotel/pricecheck` | `HotelPriceCheckRS.PriceCheckInfo.BookingKey` (obligatorio) | `createBooking.hotel.bookingKey` | VERIFICADO-SPEC (`hotel-price-check-v5.yml:262-275`) | corto. Error al vencer: `UNABLE_TO_BOOK_HOTEL_EXPIRED_BOOKING_KEY` |
-| `PriceChange` / `PriceDifference` | `/v5/hotel/pricecheck` | `PriceCheckInfo.PriceChange` (bool, **obligatorio**) | **decidir si se sigue vendiendo** | VERIFICADO-SPEC | **[NUEVO]** por operacion. No ignorarlo |
-| `guarantee_type` | `/v5/hotel/pricecheck` | `…HotelRateInfo.Rooms.Room[0].RatePlans.RatePlan[0].RateInfo.Guarantee.GuaranteeType` | `createBooking.hotel.paymentPolicy` | VERIFICADO-script + VERIFICADO-SPEC (`hotel-price-check-v5.yml:1501-1510`) | corto |
-| `car_rate_key` | `/v2.0.0/get/vehavail` | `GetVehAvailRS.VehAvailInfos.VehAvailInfo[i].VehRentalRate[0].RateKey` | `/v1.0.0/veh/pricecheck` | VERIFICADO-SPEC (`get-vehicle-availability-v2.yml:742-802`) | corto |
-| `carBookingKey` | `/v1.0.0/veh/pricecheck` | `VehPriceCheckRS.PriceCheckInfo.BookingKey` | `createBooking.car.bookingKey` | VERIFICADO-script (**sin spec**) | corto |
-| `profileId` / `filterId` | `Sabre_OTA_ProfileCreateRQ` | `…ProfileCreateRS.Profile[0].@UniqueID` / `.Filter[0].@FilterID` | `createBooking.profiles[].uniqueId` | VERIFICADO-script | persistente por cliente |
+| Identificador                           | Nace en                                                                                                                                  | Path                                                                                                                                                    | Consumido por                                                    | Confianza                                                                   | TTL                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_token`                          | `POST /v2/auth/token`                                                                                                                    | `access_token`                                                                                                                                          | Todo REST + `BinarySecurityToken` en SOAP stateless              | VERIFICADO-SPEC                                                             | **[NUEVO] `expires_in: 604800` = 7 dias exactos**, `token_type: "bearer"`. Refrescar al 80 % (≈5,6 dias). Cita: `specs/help/get-hotel-avail-v5.0/v5.0-index.html:76-78`                                                                                          |
+| `token` ATH (sesion)                    | `SessionCreateRQ`                                                                                                                        | `Envelope.Header.Security.BinarySecurityToken`                                                                                                          | SOAP stateful **y** REST (`Authorization: Bearer`)               | VERIFICADO-SPEC                                                             | Vida de la sesion AAA. **Quitar prefijo `ATH:` si aparece.** Cerrar SIEMPRE con `SessionCloseRQ`                                                                                                                                                                 |
+| `shop_offer_id`                         | `/vN/offers/shop`                                                                                                                        | `…pricingInformation[0].offer.offerId`                                                                                                                  | — (se usa el `offerItemId`)                                      | VERIFICADO-SPEC                                                             | **[NUEVO] `offer.timeToLive`, en segundos, campo obligatorio** junto a `offerId` y `source`. Cita: `bargain-finder-max-v5.yml:8226-8244`                                                                                                                         |
+| `shop_offer_item_id`                    | idem                                                                                                                                     | `…pricingInformation[0].fare.offerItemId`                                                                                                               | `POST /v1/offers/price` → `query[].offerItemId`                  | VERIFICADO-SPEC                                                             | igual. Cita: `bargain-finder-max-v5.yml:3622-3624`                                                                                                                                                                                                               |
+| `lastTicketDate` / `lastTicketTime`     | idem                                                                                                                                     | `…pricingInformation[0].fare.lastTicketDate` / `.lastTicketTime`                                                                                        | politica de emision                                              | VERIFICADO-SPEC                                                             | **[NUEVO]** _"deadline date to purchase the ticket for this fare"_. Cita: `bargain-finder-max-v5.yml:3608-3616`                                                                                                                                                  |
+| `scheduleDescs[i]`                      | `/vN/offers/shop`                                                                                                                        | `…scheduleDescs[i].carrier.marketingFlightNumber`, `.ResBookDesigCode`, `.departure.time/.airport`, `.arrival.airport`, `.carrier.marketing/.operating` | `createBooking.flightDetails.flights[]` (ATPCO, LCC)             | VERIFICADO-script + VERIFICADO-SPEC (`bargain-finder-max-v5.yml:3869-3873`) | mientras dure la disponibilidad                                                                                                                                                                                                                                  |
+| `price_offer_id`                        | `POST /v1/offers/price`                                                                                                                  | `response.offers[0].id` (`^[a-zA-Z0-9]+(-[0-9]+)$`)                                                                                                     | `createBooking.flightOffer.offerId`                              | VERIFICADO-SPEC                                                             | **[NUEVO] `offers[0].ttl` en segundos (obligatorio) + `offerExpirationDateTime` ISO 8601 (obligatorio).** En el ejemplo oficial: `ttl: 1200` (20 min) y expiracion 1200 s despues del `timeStamp`. Cita: `offer-price-ndc-v1.yml:383-408` y ejemplo `:2104-2108` |
+| `price_offer_item_id`                   | idem                                                                                                                                     | `response.offers[0].offerItems[j].id`                                                                                                                   | `createBooking.flightOffer.selectedOfferItems[]`                 | VERIFICADO-SPEC                                                             | ligado al `ttl` de la oferta                                                                                                                                                                                                                                     |
+| `price_passenger_id`                    | idem                                                                                                                                     | `response.offers[0].offerItems[j].passengers[k].id` (+ `.ptc`, `.requestedPtc`)                                                                         | `createBooking.travelers[].id`                                   | VERIFICADO-SPEC                                                             | idem                                                                                                                                                                                                                                                             |
+| `paymentTimeLimitDateTime`              | idem                                                                                                                                     | `response.offers[0].paymentTimeLimitDateTime` (o `paymentTimeLimitText` si el proveedor manda formato libre)                                            | politica de cobro                                                | VERIFICADO-SPEC                                                             | **[NUEVO]** distinto y normalmente **mas largo** que el `ttl` de la oferta. Cita: `offer-price-ndc-v1.yml:410-421`                                                                                                                                               |
+| `seatOfferId` + `row` + `column`        | getseats                                                                                                                                 | `response.offerItems[].id`; `response.seatMaps[].cabinCompartments[].seatRows[].row` + `.seats[].column` + `.seats[].offerItemRefIds[]`                 | `createBooking.flightOffer.seatOffers[]`                         | VERIFICADO-SPEC                                                             | **[NUEVO]** `response.offerExpirationDateTime` y `offerItems[].purchaseByDateTime`. Cita: `get-seats-agency-3.0.yml:222-224, 315-317`                                                                                                                            |
+| **`confirmationId` (PNR)**              | `POST /createBooking`                                                                                                                    | `confirmationId`, raiz, `^[A-Z0-9]{6,}$`                                                                                                                | **todo lo post-venta**                                           | VERIFICADO-SPEC (`booking-management-v1.yml:814-818`)                       | **persistente** (clave de negocio)                                                                                                                                                                                                                               |
+| `order.id` (orden NDC)                  | `/v1/orders/view`                                                                                                                        | `order.id` (32 hex)                                                                                                                                     | trazabilidad NDC                                                 | VERIFICADO (respuesta guardada)                                             | **[NUEVO]** persistente. `order.paymentTimeLimit` y `orderItems[].ticketingTimeLimit` acompanan                                                                                                                                                                  |
+| `bookingSignature`                      | **solo `getBooking`**                                                                                                                    | `bookingSignature`                                                                                                                                      | `modifyBooking.bookingSignature` (**obligatorio**)               | VERIFICADO-SPEC                                                             | **por operacion.** Token de concurrencia optimista: se relee inmediatamente antes de cada `modifyBooking`. **No cachear.** Cita: `booking-management-v1.yml:295-312` y `831-843`                                                                                 |
+| `tkt`, `tkt2`                           | `getBooking → flightTickets[i].number`; `fulfillFlightTickets → tickets[i].number`; `air/ticket → AirTicketRS.Summary[i].DocumentNumber` | `^[0-9A-Z/-]+$`                                                                                                                                         | `checkFlightTickets`, `voidFlightTickets`, `refundFlightTickets` | VERIFICADO-SPEC                                                             | persistente (documento fiscal)                                                                                                                                                                                                                                   |
+| `ticketStatusCode` / `ticketStatusName` | `getBooking`, `fulfill`, `check`                                                                                                         | `^[A-Z]{1,2}$` / enum `{Issued, Voided, Refunded/Exchanged}`                                                                                            | maquina de estados de la venta                                   | VERIFICADO-SPEC + VERIFICADO-script                                         | derivado. Codigos observados en la coleccion: `TE` ticket emitido, `ME` EMD emitido, `OV` voided, `TR` ticket reembolsado, `MR` EMD reembolsado                                                                                                                  |
+| `couponStatus` / `couponStatusCode`     | `getBooking`                                                                                                                             | `flightTickets[i].flightCoupons[].couponStatus` / `.couponStatusCode`; `allCoupons[]`                                                                   | logica de negocio                                                | VERIFICADO-script                                                           | derivado. Valores vistos: `"Not Flown"` / `"I"`, `"Refunded"`                                                                                                                                                                                                    |
+| `offerItemId` (**cancelacion NDC**)     | `checkFlightTickets`                                                                                                                     | `cancelOffers[i].offerItemId`, **filtrando por `offerType`**                                                                                            | `cancelBooking.offerItemId`                                      | VERIFICADO-SPEC                                                             | **[NUEVO] caduca**: `offerExpirationDate` + `offerExpirationTime` (UTC). Pedirlo justo antes de cancelar                                                                                                                                                         |
+| `refundTotals`                          | `checkFlightTickets`                                                                                                                     | `cancelOffers[].refundTotals`, `flightRefunds[].refundTotals`, `tickets[].refundFee`                                                                    | mostrar el importe al vendedor                                   | VERIFICADO-SPEC                                                             | por operacion                                                                                                                                                                                                                                                    |
+| `ancillaryId`                           | `getBooking`                                                                                                                             | `travelers[i].ancillaries[j].itemId`                                                                                                                    | `fulfillFlightTickets.fulfillments[].ancillaryIds[]`             | VERIFICADO-script                                                           | por operacion. **Solo ATPCO/LCC: NDC no soporta ancillaries**                                                                                                                                                                                                    |
+| `rate_key` (hotel)                      | `/v5/get/hotelavail`                                                                                                                     | `GetHotelAvailRS.HotelAvailInfos.HotelAvailInfo[0].HotelRateInfo.RateInfos.RateInfo[0].RateKey`                                                         | `/v5/hotel/pricecheck`                                           | VERIFICADO-SPEC (`get-hotel-avail-v5.0.yml:1163-1172, 2714`)                | corto                                                                                                                                                                                                                                                            |
+| `booking_key` (hotel)                   | `/v5/hotel/pricecheck`                                                                                                                   | `HotelPriceCheckRS.PriceCheckInfo.BookingKey` (obligatorio)                                                                                             | `createBooking.hotel.bookingKey`                                 | VERIFICADO-SPEC (`hotel-price-check-v5.yml:262-275`)                        | corto. Error al vencer: `UNABLE_TO_BOOK_HOTEL_EXPIRED_BOOKING_KEY`                                                                                                                                                                                               |
+| `PriceChange` / `PriceDifference`       | `/v5/hotel/pricecheck`                                                                                                                   | `PriceCheckInfo.PriceChange` (bool, **obligatorio**)                                                                                                    | **decidir si se sigue vendiendo**                                | VERIFICADO-SPEC                                                             | **[NUEVO]** por operacion. No ignorarlo                                                                                                                                                                                                                          |
+| `guarantee_type`                        | `/v5/hotel/pricecheck`                                                                                                                   | `…HotelRateInfo.Rooms.Room[0].RatePlans.RatePlan[0].RateInfo.Guarantee.GuaranteeType`                                                                   | `createBooking.hotel.paymentPolicy`                              | VERIFICADO-script + VERIFICADO-SPEC (`hotel-price-check-v5.yml:1501-1510`)  | corto                                                                                                                                                                                                                                                            |
+| `car_rate_key`                          | `/v2.0.0/get/vehavail`                                                                                                                   | `GetVehAvailRS.VehAvailInfos.VehAvailInfo[i].VehRentalRate[0].RateKey`                                                                                  | `/v1.0.0/veh/pricecheck`                                         | VERIFICADO-SPEC (`get-vehicle-availability-v2.yml:742-802`)                 | corto                                                                                                                                                                                                                                                            |
+| `carBookingKey`                         | `/v1.0.0/veh/pricecheck`                                                                                                                 | `VehPriceCheckRS.PriceCheckInfo.BookingKey`                                                                                                             | `createBooking.car.bookingKey`                                   | VERIFICADO-script (**sin spec**)                                            | corto                                                                                                                                                                                                                                                            |
+| `profileId` / `filterId`                | `Sabre_OTA_ProfileCreateRQ`                                                                                                              | `…ProfileCreateRS.Profile[0].@UniqueID` / `.Filter[0].@FilterID`                                                                                        | `createBooking.profiles[].uniqueId`                              | VERIFICADO-script                                                           | persistente por cliente                                                                                                                                                                                                                                          |
 
 ### 4.5 Que significa esto para nuestra arquitectura
 
 1. **Ya podemos fijar el TTL del cache de venta sin inventarlo.** El registro efimero
    `sabre_shopping_session { tenantId, searchId, shopOfferItemId, priceOfferId, priceOfferItemId, passengerIds[],
-   seatOffers[], expiresAt }` toma `expiresAt` **de `offers[0].offerExpirationDateTime`**, no de una constante.
+seatOffers[], expiresAt }` toma `expiresAt` **de `offers[0].offerExpirationDateTime`**, no de una constante.
    `offers[0].ttl` sirve para calcular el aviso al vendedor ("te quedan N minutos"). Encaja con
    `apps/api/src/search/memory-cache.adapter.ts`; lo que cambia es que el TTL **entra como dato, no como config**.
 2. **Hay dos relojes distintos y no hay que confundirlos.** `ttl` / `offerExpirationDateTime` es cuando muere la
    oferta (ya no se puede reservar). `paymentTimeLimitDateTime` y `orderItems[].ticketingTimeLimit` son cuando muere
    la reserva por falta de pago. El primero afecta al buscador; el segundo, al CRM y a las tareas de seguimiento.
 3. **`bookingSignature` es concurrencia optimista y solo lo da `getBooking`.** Nunca cachearlo. Y el contrato anade
-   un detalle facil de romper: *"The same `extraFeatures` data should be sent in the preceding Get Booking request
-   to avoid issues with `bookingSignature` verification."* VERIFICADO-SPEC `booking-management-v1.yml:895-899`. Es
+   un detalle facil de romper: _"The same `extraFeatures` data should be sent in the preceding Get Booking request
+   to avoid issues with `bookingSignature` verification."_ VERIFICADO-SPEC `booking-management-v1.yml:895-899`. Es
    decir, el par `getBooking`/`modifyBooking` tiene que compartir opciones.
 4. **La cancelacion NDC necesita un round-trip extra y una eleccion.** `checkFlightTickets` → elegir el
    `cancelOffers[]` cuyo `offerType` coincide → `cancelBooking`. Con ventana de expiracion. Es un paso obligatorio
@@ -1228,40 +1277,41 @@ Los TTL que la primera pasada marcaba como **desconocidos** ya no lo son. Cambio
    cotizado, que es justo lo que el pricing waterfall del consolidador va a necesitar para auditar margenes.
 
 ---
+
 ## 5. NDC vs ATPCO vs LCC — comparativa paso a paso
 
 ### 5.1 Tabla comparativa
 
-| Paso | **NDC** (WF 1, 11–14, 18, 23–25, 28–33) | **ATPCO** (WF 3, 6–8, 16, 17, 19, 26, 27) | **LCC** (WF 5, 20, 21) |
-| --- | --- | --- | --- |
-| **Auth** | `POST /v2/auth/token` (ATK) | igual | igual, **o directamente ATH** cuando hay ancillaries o refund (WF-20 no llama a `/v2/auth/token` en absoluto) |
-| **Shop** | `/v3\|v4\|v5/offers/shop` con `DataSources { NDC:"Enable", ATPCO:"Disable", LCC:"Disable" }` y opcionalmente `PreferNDCSourceOnTie` | mismo endpoint con `ATPCO:"Enable"` | mismo endpoint con `LCC:"Enable"` + `VendorPref[].Code` obligatorio (`U2`, `FR`) |
-| **Que se guarda del shop** | `pricingInformation[0].offer.offerId` + `.fare.offerItemId` (**identificadores opacos**) + `offer.timeToLive` | `scheduleDescs[i]` (**atributos del vuelo**) | igual que ATPCO |
-| **Price** | **OBLIGATORIO** `POST /v1/offers/price`. Sin el, `createBooking` responde `UNABLE_TO_CREATE_ORDER_OFFER_NOT_PRICED` — *"The offerId has not been priced. Use offers/price to reprice the offer."* VERIFICADO-SPEC `help-documentation-create-booking-error-list.txt:718-722` | **NO EXISTE.** Se va directo al `createBooking`, que internamente llama `OTA_AirPriceLLSRQ` | **NO EXISTE** |
-| **Ancillaries** | **NO SOPORTADO.** *"Ancillary services are currently not supported for NDC bookings"* — VERIFICADO-SPEC `help-documentation-create-booking.txt:97`. Solo asientos, via getseats + `flightOffer.seatOffers[]` | **SOAP `GetAncillaryOffersRQ 3.1.0` stateless** (WF-19) o dentro de sesion (WF-26/27) | **SOAP `GetAncillaryOffersRQ` dentro de sesion stateful** (WF-20) |
-| **createBooking: identificar el vuelo** | `flightOffer.offerId` + `selectedOfferItems[]` (+ `seatOffers[]`) | `flightDetails.flights[]` con `flightNumber`/`airlineCode`/`fromAirportCode`/`toAirportCode`/`departureDate`/`departureTime`/`bookingClass`/`flightStatusCode:"NN"` + `flightPricing[]` | igual que ATPCO **+ `flights[].source: "LCC"`** |
-| **createBooking: identificar al pasajero** | `travelers[].id` = `price_passenger_id` (**vinculo obligatorio con la oferta**) | `travelers[]` sin `id` | igual que ATPCO |
-| **createBooking: `agency`** | Opcional en el minimo (WF-1 no lo manda); AF exige `agency.contactInfo.phones[]` | Presente en todos los ejemplos (`agency.address`, `agencyCustomerNumber`, `ticketingPolicy:"TODAY"`) | igual que ATPCO |
-| **createBooking: pago** | Normalmente **sin** `payment`; el pago va en el `fulfillFlightTickets` | `payment.billingAddress` (+ `formsOfPayment[]` opcional) | `payment.billingAddress`; con ancillaries se anade `formsOfPayment[]` |
-| **`asynchronousUpdateWaitTime`** | Recomendado 3000–5000 ms (**opcional**, default 0, max 10000) | No aplica | No aplica |
-| **Emision** | `fulfillFlightTickets`. **FoP obligatoria** y, con tarjeta, `authentications[].channelCode` obligatorio | `fulfillFlightTickets` con `ticketingQualifiers.priceQuoteRecordIds:["1"]` | igual que ATPCO; el ejemplo LCC usa `AirTicketRQ` con `CardSecurityCode` |
-| **Cancelacion** | `checkFlightTickets` → elegir `cancelOffers[]` por `offerType` → `cancelBooking { cancelAll, offerItemId }` | `cancelBooking { cancelAll, flightTicketOperation:"VOID"\|"REFUND" }` | igual que ATPCO |
-| **Reembolso** | via `cancelBooking` con la oferta de cancelacion (`offerType: REFUND`) | `refundFlightTickets { tickets[] }` o `{ confirmationId, documentsType }` | `cancelBooking { flightTicketOperation: "REFUND" }`; el importe sale de `checkFlightTickets.flightRefunds[]` |
-| **Cierre** | — | — | **`SessionCloseRQ` obligatorio** cuando se abrio sesion |
+| Paso                                       | **NDC** (WF 1, 11–14, 18, 23–25, 28–33)                                                                                                                                                                                                                                      | **ATPCO** (WF 3, 6–8, 16, 17, 19, 26, 27)                                                                                                                                               | **LCC** (WF 5, 20, 21)                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Auth**                                   | `POST /v2/auth/token` (ATK)                                                                                                                                                                                                                                                  | igual                                                                                                                                                                                   | igual, **o directamente ATH** cuando hay ancillaries o refund (WF-20 no llama a `/v2/auth/token` en absoluto) |
+| **Shop**                                   | `/v3\|v4\|v5/offers/shop` con `DataSources { NDC:"Enable", ATPCO:"Disable", LCC:"Disable" }` y opcionalmente `PreferNDCSourceOnTie`                                                                                                                                          | mismo endpoint con `ATPCO:"Enable"`                                                                                                                                                     | mismo endpoint con `LCC:"Enable"` + `VendorPref[].Code` obligatorio (`U2`, `FR`)                              |
+| **Que se guarda del shop**                 | `pricingInformation[0].offer.offerId` + `.fare.offerItemId` (**identificadores opacos**) + `offer.timeToLive`                                                                                                                                                                | `scheduleDescs[i]` (**atributos del vuelo**)                                                                                                                                            | igual que ATPCO                                                                                               |
+| **Price**                                  | **OBLIGATORIO** `POST /v1/offers/price`. Sin el, `createBooking` responde `UNABLE_TO_CREATE_ORDER_OFFER_NOT_PRICED` — _"The offerId has not been priced. Use offers/price to reprice the offer."_ VERIFICADO-SPEC `help-documentation-create-booking-error-list.txt:718-722` | **NO EXISTE.** Se va directo al `createBooking`, que internamente llama `OTA_AirPriceLLSRQ`                                                                                             | **NO EXISTE**                                                                                                 |
+| **Ancillaries**                            | **NO SOPORTADO.** _"Ancillary services are currently not supported for NDC bookings"_ — VERIFICADO-SPEC `help-documentation-create-booking.txt:97`. Solo asientos, via getseats + `flightOffer.seatOffers[]`                                                                 | **SOAP `GetAncillaryOffersRQ 3.1.0` stateless** (WF-19) o dentro de sesion (WF-26/27)                                                                                                   | **SOAP `GetAncillaryOffersRQ` dentro de sesion stateful** (WF-20)                                             |
+| **createBooking: identificar el vuelo**    | `flightOffer.offerId` + `selectedOfferItems[]` (+ `seatOffers[]`)                                                                                                                                                                                                            | `flightDetails.flights[]` con `flightNumber`/`airlineCode`/`fromAirportCode`/`toAirportCode`/`departureDate`/`departureTime`/`bookingClass`/`flightStatusCode:"NN"` + `flightPricing[]` | igual que ATPCO **+ `flights[].source: "LCC"`**                                                               |
+| **createBooking: identificar al pasajero** | `travelers[].id` = `price_passenger_id` (**vinculo obligatorio con la oferta**)                                                                                                                                                                                              | `travelers[]` sin `id`                                                                                                                                                                  | igual que ATPCO                                                                                               |
+| **createBooking: `agency`**                | Opcional en el minimo (WF-1 no lo manda); AF exige `agency.contactInfo.phones[]`                                                                                                                                                                                             | Presente en todos los ejemplos (`agency.address`, `agencyCustomerNumber`, `ticketingPolicy:"TODAY"`)                                                                                    | igual que ATPCO                                                                                               |
+| **createBooking: pago**                    | Normalmente **sin** `payment`; el pago va en el `fulfillFlightTickets`                                                                                                                                                                                                       | `payment.billingAddress` (+ `formsOfPayment[]` opcional)                                                                                                                                | `payment.billingAddress`; con ancillaries se anade `formsOfPayment[]`                                         |
+| **`asynchronousUpdateWaitTime`**           | Recomendado 3000–5000 ms (**opcional**, default 0, max 10000)                                                                                                                                                                                                                | No aplica                                                                                                                                                                               | No aplica                                                                                                     |
+| **Emision**                                | `fulfillFlightTickets`. **FoP obligatoria** y, con tarjeta, `authentications[].channelCode` obligatorio                                                                                                                                                                      | `fulfillFlightTickets` con `ticketingQualifiers.priceQuoteRecordIds:["1"]`                                                                                                              | igual que ATPCO; el ejemplo LCC usa `AirTicketRQ` con `CardSecurityCode`                                      |
+| **Cancelacion**                            | `checkFlightTickets` → elegir `cancelOffers[]` por `offerType` → `cancelBooking { cancelAll, offerItemId }`                                                                                                                                                                  | `cancelBooking { cancelAll, flightTicketOperation:"VOID"\|"REFUND" }`                                                                                                                   | igual que ATPCO                                                                                               |
+| **Reembolso**                              | via `cancelBooking` con la oferta de cancelacion (`offerType: REFUND`)                                                                                                                                                                                                       | `refundFlightTickets { tickets[] }` o `{ confirmationId, documentsType }`                                                                                                               | `cancelBooking { flightTicketOperation: "REFUND" }`; el importe sale de `checkFlightTickets.flightRefunds[]`  |
+| **Cierre**                                 | —                                                                                                                                                                                                                                                                            | —                                                                                                                                                                                       | **`SessionCloseRQ` obligatorio** cuando se abrio sesion                                                       |
 
 ### 5.2 Emision: lo que el contrato exige y que significa para PCI
 
 VERIFICADO-SPEC `help-documentation-fulfill-flight-tickets.txt:27-63`:
 
-- **Los hibridos no se pueden emitir.** *"The fulfillment operation is currently not supported for hybrid bookings
-  that contain both traditional ATPCO and NDC flights."* Esto pone en duda directa a **WF-22** (LCC + ATPCO en el
+- **Los hibridos no se pueden emitir.** _"The fulfillment operation is currently not supported for hybrid bookings
+  that contain both traditional ATPCO and NDC flights."_ Esto pone en duda directa a **WF-22** (LCC + ATPCO en el
   mismo PNR): ese flujo emite con `/v1.3.0/air/ticket`, no con `fulfillFlightTickets`. Si migramos WF-22 a la ruta
   moderna, **puede que simplemente no se pueda**. Va a Preguntas abiertas.
-- **En NDC, la FoP es obligatoria** y Sabre calcula el total del pedido solo: *"the application automatically
-  obtains information about the total price of the order and uses this information during fulfillment."*
+- **En NDC, la FoP es obligatoria** y Sabre calcula el total del pedido solo: _"the application automatically
+  obtains information about the total price of the order and uses this information during fulfillment."_
 - **Los `channelCode` de tarjeta son tres, y elegir mal es un problema de cumplimiento, no de sintaxis:**
   `MO` (Mail Order) / `TO` (Telephone Order) para puntos de venta que **no** procesan 3DSv2, y `EC` (eCommerce)
-  para los que **si** lo hacen, en cuyo caso *"the fulfillment request is populated with the additional values"*.
+  para los que **si** lo hacen, en cuyo caso _"the fulfillment request is populated with the additional values"_.
   La coleccion usa siempre `MO`.
 
 **Consecuencia para nosotros.** `CLAUDE.md` fija hosted checkout y PCI SAQ-A: nunca tocamos PAN/CVV. Los ejemplos
@@ -1285,10 +1335,10 @@ VERIFICADO-SPEC `help-documentation-create-booking.txt:30-78, 100-140`:
   `EPS_EXT_ProfileToPNRRQ`, `EPS_EXT_ProfileReadRQ`, `GetReservationRQ`, `Order Management`,
   `UpdateReservationRQ`, `SabreCommandLLSRQ`.
 - **Reintenta el estado `NN`** hasta 5 veces con retardo progresivo (ver §3.2). Solo ATPCO; los LCC quedan fuera.
-- **Crea la SSR de infante sola:** *"When infant traveler information is provided, the API automatically creates an
-  associated INFT or INST SSR."* No hay que mandarla.
-- **Tiene un prerequisito de configuracion de cuenta:** *"the 'Store Passenger Type In PNR' option in your Travel
-  Journal Record (TJR) must be enabled."* VERIFICADO-SPEC `specs/help/index.txt` (seccion Create Booking). **Esto
+- **Crea la SSR de infante sola:** _"When infant traveler information is provided, the API automatically creates an
+  associated INFT or INST SSR."_ No hay que mandarla.
+- **Tiene un prerequisito de configuracion de cuenta:** _"the 'Store Passenger Type In PNR' option in your Travel
+  Journal Record (TJR) must be enabled."_ VERIFICADO-SPEC `specs/help/index.txt` (seccion Create Booking). **Esto
   es un item de onboarding por PCC**: en BYOC, cada agencia de la red tiene que tenerlo activado o su
   `createBooking` fallara de formas raras.
 - **`errorHandlingPolicy` de `createBooking` NO es el enum de dos valores de `cancelBooking`.** Tiene ocho:
@@ -1299,14 +1349,14 @@ VERIFICADO-SPEC `help-documentation-create-booking.txt:30-78, 100-140`:
   es `CancelErrorPolicyEnum = {HALT_ON_ERROR (default), ALLOW_PARTIAL_CANCEL}`. VERIFICADO-SPEC
   `booking-management-v1.yml:8942-8952`.
   **Esto cierra la pregunta abierta 14:** `ALLOW_PARTIAL_CANCEL` significa "no pares ante el primer error de un
-  item"; el resultado se lee en `CancelBookingResponse.booking` (*"information about the remaining booking after
-  cancellation"*, `booking-management-v1.yml:453-455`) y en `voidedTickets[]` / `refundedTickets[]`. O sea: la
+  item"; el resultado se lee en `CancelBookingResponse.booking` (_"information about the remaining booking after
+  cancellation"_, `booking-management-v1.yml:453-455`) y en `voidedTickets[]` / `refundedTickets[]`. O sea: la
   compensacion de la saga **compara lo pedido contra esas tres listas**, no confia en el codigo HTTP.
-- **`targetPcc` esta pensado para nuestro caso de uso exacto:** *"changes the context to a desired pseudo city code.
+- **`targetPcc` esta pensado para nuestro caso de uso exacto:** _"changes the context to a desired pseudo city code.
   This is particularly useful for agencies that separate their booking, fulfillment, and shopping across different
-  pseudo city codes (PCCs)."* Es la palanca del modelo consolidador. Y viene con obligacion de cabecera:
-  si mandas `targetPcc` y no mandas la cabecera, error `HEADER_DATA_MISSING_TARGET_PCC` — *"Target PCC was defined
-  but header data is missing. Please complete X-Sabre-Group (ATK) or X-Sabre-Current-City (ATH)."* VERIFICADO-SPEC
+  pseudo city codes (PCCs)."_ Es la palanca del modelo consolidador. Y viene con obligacion de cabecera:
+  si mandas `targetPcc` y no mandas la cabecera, error `HEADER_DATA_MISSING_TARGET_PCC` — _"Target PCC was defined
+  but header data is missing. Please complete X-Sabre-Group (ATK) or X-Sabre-Current-City (ATH)."_ VERIFICADO-SPEC
   `help-documentation-create-booking-error-list.txt:1166-1170`.
   **Esto cierra la pregunta abierta 10** sobre esas dos cabeceras: `X-Sabre-Group` acompana a los tokens **ATK**,
   `X-Sabre-Current-City` a los **ATH**, y solo hacen falta cuando se cambia de PCC. (WF-14 manda las dos a la vez
@@ -1316,17 +1366,17 @@ VERIFICADO-SPEC `help-documentation-create-booking.txt:30-78, 100-140`:
 
 Donde se abre sesion dentro de `Workflows` (VERIFICADO):
 
-| Workflow | Abre | Cierra | Forma | `Domain` | Motivo |
-| --- | --- | --- | --- | --- | --- |
-| WF-2 / WF-4 (Profiles) | Si | Si | A | `DEFAULT` | Las APIs EPS de perfiles son stateful |
-| WF-5 (LCC simple) | No | No | — | — | El flujo puro REST no la necesita |
-| WF-19 (ATPCO ancillaries) | **No** | No | — | — | `GetAncillaryOffersRQ` **stateless** con el ATK |
-| WF-20 (LCC ancillaries) | Si, **primer** request y **sin AUTH REST** | Si, ultimo | A | `AA` | Contenido LCC requiere contexto de sesion |
-| WF-21 (LCC refund) | Si, tras el AUTH | Si, ultimo | A | `AA` | idem |
-| WF-22 (LCC+ATPCO refund) | **No** | **Si** | A | — | **Inconsistencia de la coleccion** |
-| WF-26 (ATPCO refund EMD) | Si | Si | A | `AA` | El `GetAncillaryOffersRQ` va en sesion |
-| WF-27 (ATPCO refund EMD+tkt) | Si | **No** | A | `AA` | **Fuga de sesion** |
-| WF-28–33 (asientos NDC) | Si en 5 de 6 | **Nunca** | **B** | `DEFAULT` | Ver §3.11: hay un `assertThatSessionAuthenticationIsUsed` que sugiere que es intencional |
+| Workflow                     | Abre                                       | Cierra     | Forma | `Domain`  | Motivo                                                                                   |
+| ---------------------------- | ------------------------------------------ | ---------- | ----- | --------- | ---------------------------------------------------------------------------------------- |
+| WF-2 / WF-4 (Profiles)       | Si                                         | Si         | A     | `DEFAULT` | Las APIs EPS de perfiles son stateful                                                    |
+| WF-5 (LCC simple)            | No                                         | No         | —     | —         | El flujo puro REST no la necesita                                                        |
+| WF-19 (ATPCO ancillaries)    | **No**                                     | No         | —     | —         | `GetAncillaryOffersRQ` **stateless** con el ATK                                          |
+| WF-20 (LCC ancillaries)      | Si, **primer** request y **sin AUTH REST** | Si, ultimo | A     | `AA`      | Contenido LCC requiere contexto de sesion                                                |
+| WF-21 (LCC refund)           | Si, tras el AUTH                           | Si, ultimo | A     | `AA`      | idem                                                                                     |
+| WF-22 (LCC+ATPCO refund)     | **No**                                     | **Si**     | A     | —         | **Inconsistencia de la coleccion**                                                       |
+| WF-26 (ATPCO refund EMD)     | Si                                         | Si         | A     | `AA`      | El `GetAncillaryOffersRQ` va en sesion                                                   |
+| WF-27 (ATPCO refund EMD+tkt) | Si                                         | **No**     | A     | `AA`      | **Fuga de sesion**                                                                       |
+| WF-28–33 (asientos NDC)      | Si en 5 de 6                               | **Nunca**  | **B** | `DEFAULT` | Ver §3.11: hay un `assertThatSessionAuthenticationIsUsed` que sugiere que es intencional |
 
 **El `Domain` no es decorativo.** `DEFAULT` para perfiles y para la forma B; `AA` para los flujos con contenido
 LCC / ancillaries. Es un parametro del `UsernameToken`, no del PCC, y hay que modelarlo aparte.
@@ -1346,22 +1396,22 @@ embebido — **esta coleccion usa `/v2`**.
 Para la boveda de credenciales de `apps/api/src/provider-credentials/provider-credentials.service.ts` eso significa
 guardar, por nodo del arbol consolidador→agencia→sub-agencia:
 
-| Campo | Uso | Obligatorio para |
-| --- | --- | --- |
-| `epr` (username) | v2 secret + `UsernameToken` | todo |
-| `password` | v2 secret + `UsernameToken` | todo |
-| `pcc` | v2 secret + `Organization` + `POS.Source` | todo |
-| `domain` | `UsernameToken.Domain` (`DEFAULT` / `AA`) | SOAP stateful |
-| `targetPcc` (opcional) | `createBooking.targetPcc` + cabecera | agencias que separan shopping/booking/ticketing |
-| `printerAddress` / `country_code` | `designatePrinters[]` | emision ATPCO |
-| flag `TJR: Store Passenger Type In PNR` | prerequisito de cuenta | `createBooking` |
+| Campo                                   | Uso                                       | Obligatorio para                                |
+| --------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
+| `epr` (username)                        | v2 secret + `UsernameToken`               | todo                                            |
+| `password`                              | v2 secret + `UsernameToken`               | todo                                            |
+| `pcc`                                   | v2 secret + `Organization` + `POS.Source` | todo                                            |
+| `domain`                                | `UsernameToken.Domain` (`DEFAULT` / `AA`) | SOAP stateful                                   |
+| `targetPcc` (opcional)                  | `createBooking.targetPcc` + cabecera      | agencias que separan shopping/booking/ticketing |
+| `printerAddress` / `country_code`       | `designatePrinters[]`                     | emision ATPCO                                   |
+| flag `TJR: Store Passenger Type In PNR` | prerequisito de cuenta                    | `createBooking`                                 |
 
-Y un aviso operativo del contrato que afecta al *pricing waterfall*: en `getseats` y en hotel, *"the underlying
-session or token used to authenticate or call this API remains unchanged"* cuando se hace shopping en el PCC de una
-sucursal — *"This is different from how AAA branch shopping worked before in the legacy versions."* VERIFICADO-SPEC
+Y un aviso operativo del contrato que afecta al _pricing waterfall_: en `getseats` y en hotel, _"the underlying
+session or token used to authenticate or call this API remains unchanged"_ cuando se hace shopping en el PCC de una
+sucursal — _"This is different from how AAA branch shopping worked before in the legacy versions."_ VERIFICADO-SPEC
 `specs/help/hotel-price-check-v5/v5-index.txt:78-80`. Traducido: **el PCC de la busqueda y el PCC del token pueden
-diferir**, y hay un error dedicado a que no cuadren en NDC: *"The Pseudo City Code (PCC) information from the NDC
-offer does not match Pseudo City Code (PCC) information used for NDC order creation."* VERIFICADO-SPEC
+diferir**, y hay un error dedicado a que no cuadren en NDC: _"The Pseudo City Code (PCC) information from the NDC
+offer does not match Pseudo City Code (PCC) information used for NDC order creation."_ VERIFICADO-SPEC
 `help-documentation-create-booking-error-list.txt:1160-1163`.
 
 > **Regla dura para el ACL:** el `shop`, el `price` y el `createBooking` de una misma venta NDC **tienen que
@@ -1372,20 +1422,20 @@ offer does not match Pseudo City Code (PCC) information used for NDC order creat
 
 ## 6. Requisitos por aerolinea
 
-| Aerolinea | Workflow | Contenido | Que exige (respecto del payload base NDC) | Confianza |
-| --- | --- | --- | --- | --- |
-| **AA** American | WF-15 / AA airline | **ATPCO** (ver nota) | `loyaltyPrograms[]` con `supplierCode:"AA"`, `programType:"FREQUENT_FLYER"`, `tierLevel`, `receiverCode`; `identityDocuments` con PASSPORT + VISA + KNOWN_TRAVELER_NUMBER + REDRESS_NUMBER + SECURE_FLIGHT_PASSENGER_DATA | VERIFICADO |
-| **AA** American | WF-8 / ramas 1a, 2a | ATPCO | Tarifa reembolsable via `/v1/offers/flightShop` con `retailing.filterByOfferAttributes.isRefundAllowed=true` y `fare.brandedFareFilters[].brandCodes:["MAINFL"]` | VERIFICADO |
-| **QF** Qantas | WF-15 / QF; WF-23 | NDC | `VendorPref.Code = QF`, ruta SIN↔SYD, 3 ADT. En WF-23 admite `otherServices[]` (OSI) con `travelerIndex` + `serviceMessage` | VERIFICADO |
-| **UA** United | WF-15 / UA | NDC (`/v5/offers/shop`) | Igual al base; su ejemplo **no manda VISA** (solo PASSPORT, KTN, REDRESS) | VERIFICADO |
-| **QR** Qatar | WF-15 / QR; WF-28–33 (2 subcarpetas) | NDC | Soporta asientos en creacion, 1 y 2 segmentos. En WF-15 solo pone documentos a 2 de los 3 pax | VERIFICADO |
-| **SQ** Singapore | WF-15 / SQ | NDC (`/v5/offers/shop`) | Igual al base (PASSPORT + VISA + KTN + REDRESS) | VERIFICADO |
-| **LO** LOT | WF-28–33 (2 subcarpetas) | NDC | Asientos en creacion, 1 y 2 adultos, 1 segmento. Abre `SessionCreateRQ` (forma B) antes | VERIFICADO |
-| **AY** Finnair | WF-28–33 (2 subcarpetas) | NDC | **Infante CON asiento**: `passengerCode: "INS"` (no `INF`) y un `seatOffers[]` propio con su `travelerIndex`. Caso 2 ADT + 1 INS sobre 2 segmentos = **6 `seatOffers`** | VERIFICADO |
-| **BA** British Airways | WF-24 | NDC | `travelers[].title` y `identityDocuments[].citizenshipCountryCode` **ademas de** `issuingCountryCode` y `residenceCountryCode`. Ruta LHR↔CDG | VERIFICADO |
-| **AF** Air France | WF-25 | NDC | `agency.contactInfo.phones[]` (formato `"11234+15551239999789"`) **+ `agency.contactInfo.includePhoneLabel: true`**. Tambien `travelers[].nameReferenceCode`. Ruta ARN→PAR | VERIFICADO |
-| **U2** easyJet | WF-5, 20, 21, 22 | LCC | `VendorPref.Code = U2`, `flights[].source = "LCC"`, tarjeta con `cardSecurityCode` obligatorio en la emision | VERIFICADO |
-| **FR** Ryanair | solo `lcc_second_airline_code` en ModifyBooking | LCC | No aparece en la carpeta `Workflows` | VERIFICADO |
+| Aerolinea              | Workflow                                        | Contenido               | Que exige (respecto del payload base NDC)                                                                                                                                                                                 | Confianza  |
+| ---------------------- | ----------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **AA** American        | WF-15 / AA airline                              | **ATPCO** (ver nota)    | `loyaltyPrograms[]` con `supplierCode:"AA"`, `programType:"FREQUENT_FLYER"`, `tierLevel`, `receiverCode`; `identityDocuments` con PASSPORT + VISA + KNOWN_TRAVELER_NUMBER + REDRESS_NUMBER + SECURE_FLIGHT_PASSENGER_DATA | VERIFICADO |
+| **AA** American        | WF-8 / ramas 1a, 2a                             | ATPCO                   | Tarifa reembolsable via `/v1/offers/flightShop` con `retailing.filterByOfferAttributes.isRefundAllowed=true` y `fare.brandedFareFilters[].brandCodes:["MAINFL"]`                                                          | VERIFICADO |
+| **QF** Qantas          | WF-15 / QF; WF-23                               | NDC                     | `VendorPref.Code = QF`, ruta SIN↔SYD, 3 ADT. En WF-23 admite `otherServices[]` (OSI) con `travelerIndex` + `serviceMessage`                                                                                              | VERIFICADO |
+| **UA** United          | WF-15 / UA                                      | NDC (`/v5/offers/shop`) | Igual al base; su ejemplo **no manda VISA** (solo PASSPORT, KTN, REDRESS)                                                                                                                                                 | VERIFICADO |
+| **QR** Qatar           | WF-15 / QR; WF-28–33 (2 subcarpetas)            | NDC                     | Soporta asientos en creacion, 1 y 2 segmentos. En WF-15 solo pone documentos a 2 de los 3 pax                                                                                                                             | VERIFICADO |
+| **SQ** Singapore       | WF-15 / SQ                                      | NDC (`/v5/offers/shop`) | Igual al base (PASSPORT + VISA + KTN + REDRESS)                                                                                                                                                                           | VERIFICADO |
+| **LO** LOT             | WF-28–33 (2 subcarpetas)                        | NDC                     | Asientos en creacion, 1 y 2 adultos, 1 segmento. Abre `SessionCreateRQ` (forma B) antes                                                                                                                                   | VERIFICADO |
+| **AY** Finnair         | WF-28–33 (2 subcarpetas)                        | NDC                     | **Infante CON asiento**: `passengerCode: "INS"` (no `INF`) y un `seatOffers[]` propio con su `travelerIndex`. Caso 2 ADT + 1 INS sobre 2 segmentos = **6 `seatOffers`**                                                   | VERIFICADO |
+| **BA** British Airways | WF-24                                           | NDC                     | `travelers[].title` y `identityDocuments[].citizenshipCountryCode` **ademas de** `issuingCountryCode` y `residenceCountryCode`. Ruta LHR↔CDG                                                                             | VERIFICADO |
+| **AF** Air France      | WF-25                                           | NDC                     | `agency.contactInfo.phones[]` (formato `"11234+15551239999789"`) **+ `agency.contactInfo.includePhoneLabel: true`**. Tambien `travelers[].nameReferenceCode`. Ruta ARN→PAR                                                | VERIFICADO |
+| **U2** easyJet         | WF-5, 20, 21, 22                                | LCC                     | `VendorPref.Code = U2`, `flights[].source = "LCC"`, tarjeta con `cardSecurityCode` obligatorio en la emision                                                                                                              | VERIFICADO |
+| **FR** Ryanair         | solo `lcc_second_airline_code` en ModifyBooking | LCC                     | No aparece en la carpeta `Workflows`                                                                                                                                                                                      | VERIFICADO |
 
 > **Inconsistencia en WF-15 / AA airline.** Pese a estar dentro de "NDC All supported airlines", esa subcarpeta
 > manda `DataSources { NDC:"Disable", ATPCO:"Enable", LCC:"Disable" }`, un `PseudoCityCode` hardcodeado (`G7HE`) en
@@ -1396,10 +1446,11 @@ offer does not match Pseudo City Code (PCC) information used for NDC order creat
 > **El valor de WF-15 es la matriz de rutas y flags del shop, no el payload de booking.**
 
 **Y la pregunta que ninguna de estas filas responde:** no hay **ni un solo ejemplo de aerolinea latinoamericana** en
-toda la coleccion, y los 20 contratos oficiales tampoco enumeran carriers NDC por region. La cobertura de Avianca,
+toda la coleccion, y los 21 contratos oficiales tampoco enumeran carriers NDC por region. La cobertura de Avianca,
 LATAM, Copa, GOL y Azul sigue siendo **DESCONOCIDA** y es la pregunta comercial numero uno.
 
 ---
+
 ## 7. Recomendacion: el camino feliz minimo
 
 ### 7.1 Camino feliz #1 — WF-1 (Air NDC Shop, Price Check, Book, Cancel)
@@ -1469,14 +1520,14 @@ NDC con `offerId` opaco es estructuralmente mas seguro.
 
 ### 7.3 Orden sugerido despues
 
-| Prioridad | Workflow | Motivo | Cambio respecto de la primera pasada |
-| --- | --- | --- | --- |
-| 3 | WF-18 (ADT + CNN) | Familias es el caso #1 de LATAM; cambia la forma de `selectedOfferItems` | — |
-| 4 | WF-13 (identity documents) | Requisito legal para internacionales. El contrato trae los errores exactos (`MANDATORY_DATA_MISSING`: pais de validez de VISA, fecha de emision de VISA, `identityDocumentExpiryDate` no puede ser pasado) | Ahora hay lista de errores |
-| 5 | **WF-28–33 (asientos)** | **Sube de la posicion 6 a la 5.** El contrato de Get Seats v3 da el modelo entero de `seatMaps` y ya no dependemos de los `sharedFunctions` que faltaban. Es diferenciador comercial y el Package Studio lo puede explotar | **Se desbloquea** |
-| 6 | WF-3 (ATPCO) | Amplia cobertura a aerolineas sin NDC | Baja de 5 a 6 |
-| 7 | WF-20/21 (LCC) | El mas caro: sesiones SOAP + segundo juego de credenciales + `Domain: AA` | — |
-| — | `flightCheck` (`/v1/offers/flightCheck`) | **Candidato nuevo a evaluar**: revalida una oferta *"across content sources"*. Si funciona para ATPCO/LCC, nos da el equivalente al `price` de NDC en las otras fuentes y elimina la asimetria de §5.1 | **Nuevo** |
+| Prioridad | Workflow                                 | Motivo                                                                                                                                                                                                                     | Cambio respecto de la primera pasada |
+| --------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 3         | WF-18 (ADT + CNN)                        | Familias es el caso #1 de LATAM; cambia la forma de `selectedOfferItems`                                                                                                                                                   | —                                    |
+| 4         | WF-13 (identity documents)               | Requisito legal para internacionales. El contrato trae los errores exactos (`MANDATORY_DATA_MISSING`: pais de validez de VISA, fecha de emision de VISA, `identityDocumentExpiryDate` no puede ser pasado)                 | Ahora hay lista de errores           |
+| 5         | **WF-28–33 (asientos)**                  | **Sube de la posicion 6 a la 5.** El contrato de Get Seats v3 da el modelo entero de `seatMaps` y ya no dependemos de los `sharedFunctions` que faltaban. Es diferenciador comercial y el Package Studio lo puede explotar | **Se desbloquea**                    |
+| 6         | WF-3 (ATPCO)                             | Amplia cobertura a aerolineas sin NDC                                                                                                                                                                                      | Baja de 5 a 6                        |
+| 7         | WF-20/21 (LCC)                           | El mas caro: sesiones SOAP + segundo juego de credenciales + `Domain: AA`                                                                                                                                                  | —                                    |
+| —         | `flightCheck` (`/v1/offers/flightCheck`) | **Candidato nuevo a evaluar**: revalida una oferta _"across content sources"_. Si funciona para ATPCO/LCC, nos da el equivalente al `price` de NDC en las otras fuentes y elimina la asimetria de §5.1                     | **Nuevo**                            |
 
 ---
 
@@ -1492,20 +1543,20 @@ paso.
 De las 425 variables del entorno solo 6 traen valor y **ninguna es una credencial**. Estas son las que hay que
 rellenar para los caminos #1 y #2. Las demas se pueden dejar vacias.
 
-| Variable de entorno del guion | Que es | Quien la da | Obligatoria para |
-| --- | --- | --- | --- |
-| `SABRE_EPR` | El EPR / usuario Sabre. En el entorno Postman `username` esta definido como `{{epr}}` y **`epr` no existe**: hay que crearla | Sabre | todo |
-| `SABRE_PASSWORD` | Contrasena del EPR | Sabre | todo |
-| `SABRE_PCC` | Pseudo City Code. En BYOC **es la credencial por tenant** | Sabre | todo |
-| `SABRE_HOST` | `https://api.cert.platform.sabre.com` | fijo | todo |
-| `SABRE_SOAP` | `https://webservices.cert.platform.sabre.com` | fijo | solo carril stateful |
-| `SABRE_APPID` | Application ID (para `header_appid` SOAP) | Sabre | opcional |
-| `ROUTE_FROM` / `ROUTE_TO` | Ruta. **Para LATAM probar `BOG`→`MDE`, `LIM`→`CUZ`, `GRU`→`GIG`, y una internacional `BOG`→`MIA`** | nosotros | todo |
-| `AIRLINE` | Codigo de aerolinea para el `VendorPref` | nosotros | pasos 1b y 7 |
-| `DEP_DATE` / `RET_DATE` | La coleccion usa hoy+30 y hoy+37. Con `today = 2026-08-25` → `2026-09-24` y `2026-10-01` | nosotros | todo |
-| `TARGET_PCC` | Solo si se prueba `targetPcc` (modelo consolidador) | Sabre | paso 9 |
-| `PRINTER_ADDRESS` / `COUNTRY_CODE` | Impresora hardcopy (`{{atpco_printer_address}}`) | Sabre | emision ATPCO |
-| `NDC_CARD_NUMBER` / `NDC_CARD_EXPIRY` | Tarjeta de prueba NDC | Sabre | emision (paso 6) |
+| Variable de entorno del guion         | Que es                                                                                                                       | Quien la da | Obligatoria para     |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
+| `SABRE_EPR`                           | El EPR / usuario Sabre. En el entorno Postman `username` esta definido como `{{epr}}` y **`epr` no existe**: hay que crearla | Sabre       | todo                 |
+| `SABRE_PASSWORD`                      | Contrasena del EPR                                                                                                           | Sabre       | todo                 |
+| `SABRE_PCC`                           | Pseudo City Code. En BYOC **es la credencial por tenant**                                                                    | Sabre       | todo                 |
+| `SABRE_HOST`                          | `https://api.cert.platform.sabre.com`                                                                                        | fijo        | todo                 |
+| `SABRE_SOAP`                          | `https://webservices.cert.platform.sabre.com`                                                                                | fijo        | solo carril stateful |
+| `SABRE_APPID`                         | Application ID (para `header_appid` SOAP)                                                                                    | Sabre       | opcional             |
+| `ROUTE_FROM` / `ROUTE_TO`             | Ruta. **Para LATAM probar `BOG`→`MDE`, `LIM`→`CUZ`, `GRU`→`GIG`, y una internacional `BOG`→`MIA`**                           | nosotros    | todo                 |
+| `AIRLINE`                             | Codigo de aerolinea para el `VendorPref`                                                                                     | nosotros    | pasos 1b y 7         |
+| `DEP_DATE` / `RET_DATE`               | La coleccion usa hoy+30 y hoy+37. Con `today = 2026-08-25` → `2026-09-24` y `2026-10-01`                                     | nosotros    | todo                 |
+| `TARGET_PCC`                          | Solo si se prueba `targetPcc` (modelo consolidador)                                                                          | Sabre       | paso 9               |
+| `PRINTER_ADDRESS` / `COUNTRY_CODE`    | Impresora hardcopy (`{{atpco_printer_address}}`)                                                                             | Sabre       | emision ATPCO        |
+| `NDC_CARD_NUMBER` / `NDC_CARD_EXPIRY` | Tarjeta de prueba NDC                                                                                                        | Sabre       | emision (paso 6)     |
 
 **`secret` y `token` NO se rellenan a mano.** El `secret` se calcula. VERIFICADO (script `prerequest` a nivel
 coleccion):
@@ -1538,8 +1589,8 @@ Convencion: cada paso guarda su respuesta **completa** en `fixtures/NN-*.json` y
 
 ---
 
-**Paso 0 — Auth.** *Cierra: nada (el contrato ya dice `expires_in: 604800`). Confirma: que las credenciales y el
-PCC estan vivos.*
+**Paso 0 — Auth.** _Cierra: nada (el contrato ya dice `expires_in: 604800`). Confirma: que las credenciales y el
+PCC estan vivos._
 
 ```bash
 curl -sS -D fixtures/00-auth.headers -X POST "$SABRE_HOST/v2/auth/token" \
@@ -1556,7 +1607,7 @@ no de un spec de auth). Si difiere, ese es el numero real para la politica de re
 
 ---
 
-**Paso 1 — Shop NDC.** *Cierra la pregunta abierta 11 (¿hay contenido LATAM?) y mide el `timeToLive` real del shop.*
+**Paso 1 — Shop NDC.** _Cierra la pregunta abierta 11 (¿hay contenido LATAM?) y mide el `timeToLive` real del shop._
 
 ```bash
 cat > requests/01-shop-ndc.json <<JSON
@@ -1596,7 +1647,7 @@ es la respuesta comercial que buscamos.
 
 ---
 
-**Paso 2 — Price.** *Cierra: el TTL observado frente al `ttl` declarado. Confirma el reloj de la venta.*
+**Paso 2 — Price.** _Cierra: el TTL observado frente al `ttl` declarado. Confirma el reloj de la venta._
 
 ```bash
 curl -sS -X POST "$SABRE_HOST/v1/offers/price" \
@@ -1623,7 +1674,7 @@ jq '{ttl:.response.offers[0].ttl,
 
 ---
 
-**Paso 3 — createBooking.** *Cierra: cuanto tarda de verdad, y que trae `booking`.*
+**Paso 3 — createBooking.** _Cierra: cuanto tarda de verdad, y que trae `booking`._
 
 ```bash
 cat > requests/03-createbooking-ndc.json <<JSON
@@ -1647,7 +1698,7 @@ export PNR=$(jq -r .confirmationId fixtures/03-createbooking.json)
 
 ---
 
-**Paso 4 — getBooking.** *Cierra: la unica fuente de `bookingSignature`.*
+**Paso 4 — getBooking.** _Cierra: la unica fuente de `bookingSignature`._
 
 ```bash
 curl -sS -X POST "$SABRE_HOST/v1/trip/orders/getBooking" \
@@ -1663,7 +1714,7 @@ jq '.bookingSignature' fixtures/04-getbooking.json
 
 ---
 
-**Paso 5 — cancelBooking.** *Deja el sandbox limpio.*
+**Paso 5 — cancelBooking.** _Deja el sandbox limpio._
 
 ```bash
 curl -sS -X POST "$SABRE_HOST/v1/trip/orders/cancelBooking" \
@@ -1677,7 +1728,7 @@ Sin billetes emitidos, las tres listas de documentos deberian venir vacias o aus
 
 ---
 
-**Paso 6 — (solo si el dia 1 va bien) emision y cancelacion NDC.** *Cierra: la forma real de `cancelOffers[]`.*
+**Paso 6 — (solo si el dia 1 va bien) emision y cancelacion NDC.** _Cierra: la forma real de `cancelOffers[]`._
 
 ```bash
 # 6a fulfill (repetir 3 y 4 antes para tener un PNR nuevo)
@@ -1721,7 +1772,7 @@ curl -sS -X POST "$SABRE_HOST/v1/trip/orders/getBooking" \
 
 ---
 
-**Paso 7 — Get Seats: v1 vs v3.** *Cierra la deriva de §2.6.*
+**Paso 7 — Get Seats: v1 vs v3.** _Cierra la deriva de §2.6._
 
 ```bash
 # 7a la ruta que usa la coleccion
@@ -1745,21 +1796,21 @@ sobre v3**. Si solo responde 7a, documentamos que CERT aun sirve v1 y que v3 est
 
 ---
 
-**Paso 8 — Pruebas negativas.** *Cada una tiene ya un codigo de error esperado del contrato: se trata de
-confirmarlo, no de descubrirlo.*
+**Paso 8 — Pruebas negativas.** _Cada una tiene ya un codigo de error esperado del contrato: se trata de
+confirmarlo, no de descubrirlo._
 
-| # | Prueba | Como | Error esperado (VERIFICADO-SPEC) |
-| --- | --- | --- | --- |
-| 8a | **Oferta vencida** | Esperar `ttl + 60 s` entre el `price` y el `createBooking` | `UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER` / `BAD_REQUEST` / *"Invalid or Expired Offer. Use offers/price to reprice the offer."* — `help-documentation-create-booking-error-list.txt:690-694`. **La remediacion la dicta Sabre: re-price con el mismo `shop_offer_item_id`.** |
-| 8b | **Saltarse el price** | `createBooking` con el `offerId` del shop | `UNABLE_TO_CREATE_ORDER_OFFER_NOT_PRICED` — `…:718-722` |
-| 8c | **Token invalido** | Reusar un `access_token` viejo o basura | `UNAUTHORIZED_ACCESS` / `UNAUTHORIZED` / *"When invalid/expired ATK token is used."* — `…:1298-1303` |
-| 8d | **PCC cruzado** | Cotizar con un PCC y reservar con otro | *"The Pseudo City Code (PCC) information from the NDC offer does not match Pseudo City Code (PCC) information used for NDC order creation."* — `…:1160-1163`. **Critico para BYOC.** |
-| 8e | **`targetPcc` sin cabecera** | `createBooking` con `targetPcc` y sin `X-Sabre-Group` | `HEADER_DATA_MISSING_TARGET_PCC` — `…:1166-1170` |
-| 8f | **`offerItemId` + `flightTicketOperation` juntos** | `cancelBooking` con ambos | *"Combination of offerItemId and flightTicketOperation is not supported."* — `help-documentation-cancel-booking-error-list.txt:43` |
-| 8g | **Check de PNR hibrido por order id** | `checkFlightTickets` con order id sobre PNR NDC+ATPCO | `SCENARIO_NOT_SUPPORTED` — `help-documentation-check-flight-tickets-error-list.txt:60` |
-| 8h | **Mas de 12 documentos** | `checkFlightTickets` con 13 tickets | rechazo por limite — `help-documentation-check-flight-tickets.txt:87` |
-| 8i | **`offerItemId` inventado en price** | `query[].offerItemId` basura | forma del array `errors` (los scripts hacen `pm.response.to.not.have.property("errors")`) |
-| 8j | **PCC sin permiso NDC** | Usar un PCC sin contrato con la aerolinea | DESCONOCIDO: **capturarlo**. Es el fallo que mas veremos en la red de agencias |
+| #   | Prueba                                             | Como                                                       | Error esperado (VERIFICADO-SPEC)                                                                                                                                                                                                                                           |
+| --- | -------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8a  | **Oferta vencida**                                 | Esperar `ttl + 60 s` entre el `price` y el `createBooking` | `UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER` / `BAD_REQUEST` / _"Invalid or Expired Offer. Use offers/price to reprice the offer."_ — `help-documentation-create-booking-error-list.txt:690-694`. **La remediacion la dicta Sabre: re-price con el mismo `shop_offer_item_id`.** |
+| 8b  | **Saltarse el price**                              | `createBooking` con el `offerId` del shop                  | `UNABLE_TO_CREATE_ORDER_OFFER_NOT_PRICED` — `…:718-722`                                                                                                                                                                                                                    |
+| 8c  | **Token invalido**                                 | Reusar un `access_token` viejo o basura                    | `UNAUTHORIZED_ACCESS` / `UNAUTHORIZED` / _"When invalid/expired ATK token is used."_ — `…:1298-1303`                                                                                                                                                                       |
+| 8d  | **PCC cruzado**                                    | Cotizar con un PCC y reservar con otro                     | _"The Pseudo City Code (PCC) information from the NDC offer does not match Pseudo City Code (PCC) information used for NDC order creation."_ — `…:1160-1163`. **Critico para BYOC.**                                                                                       |
+| 8e  | **`targetPcc` sin cabecera**                       | `createBooking` con `targetPcc` y sin `X-Sabre-Group`      | `HEADER_DATA_MISSING_TARGET_PCC` — `…:1166-1170`                                                                                                                                                                                                                           |
+| 8f  | **`offerItemId` + `flightTicketOperation` juntos** | `cancelBooking` con ambos                                  | _"Combination of offerItemId and flightTicketOperation is not supported."_ — `help-documentation-cancel-booking-error-list.txt:43`                                                                                                                                         |
+| 8g  | **Check de PNR hibrido por order id**              | `checkFlightTickets` con order id sobre PNR NDC+ATPCO      | `SCENARIO_NOT_SUPPORTED` — `help-documentation-check-flight-tickets-error-list.txt:60`                                                                                                                                                                                     |
+| 8h  | **Mas de 12 documentos**                           | `checkFlightTickets` con 13 tickets                        | rechazo por limite — `help-documentation-check-flight-tickets.txt:87`                                                                                                                                                                                                      |
+| 8i  | **`offerItemId` inventado en price**               | `query[].offerItemId` basura                               | forma del array `errors` (los scripts hacen `pm.response.to.not.have.property("errors")`)                                                                                                                                                                                  |
+| 8j  | **PCC sin permiso NDC**                            | Usar un PCC sin contrato con la aerolinea                  | DESCONOCIDO: **capturarlo**. Es el fallo que mas veremos en la red de agencias                                                                                                                                                                                             |
 
 ---
 
@@ -1843,24 +1894,25 @@ usarlos para el modo mock (`isMockMode()`), igual que ya hace el proveedor LATAM
 contrato oficial son cadenas cifradas de ~1 KB: no hace falta conservarlas enteras en los fixtures de test.
 
 ---
+
 ## 9. Que cerro el contrato (registro de cambios de esta pasada)
 
 De las 14 preguntas abiertas de la primera pasada, **10 quedan cerradas** con evidencia del contrato oficial.
 
-| # original | Pregunta | Estado | Respuesta y cita |
-| --- | --- | --- | --- |
-| 1 | ¿TTL real de una oferta NDC? | **CERRADA** | `offers[0].ttl` en segundos y `offerExpirationDateTime` ISO 8601, **ambos obligatorios**. Ejemplo oficial: `ttl: 1200`. Ademas `paymentTimeLimitDateTime`, `purchaseTimeLimitDateTime`, `priceGuaranteeTimeLimitDateTime`. `offer-price-ndc-v1.yml:383-408`, ejemplo `:2104-2108`. El shop trae su propio `offer.timeToLive`: `bargain-finder-max-v5.yml:8226-8244` |
-| 2 | ¿Que devuelve `/v2/auth/token`? | **CERRADA** | `{access_token, token_type:"bearer", expires_in: 604800}` = 7 dias. `specs/help/get-hotel-avail-v5.0/v5.0-index.html:76-78` |
-| 3 | ¿Forma completa de `createBooking`? | **CERRADA (parcial)** | `{timestamp, confirmationId, booking, errors[], request}`. `booking-management-v1.yml:804-829`. **Sigue abierto** que devuelve cuando la aerolinea tarda mas que `asynchronousUpdateWaitTime` |
-| 4 | ¿Que devuelve `checkFlightTickets`? | **CERRADA** | `{timestamp, request, tickets[], errors[], cancelOffers[], flightRefunds[]}` con las tres estructuras detalladas. `booking-management-v1.yml:660-692`, `6504-6531`, `8496-8513`, `4148-4167` |
-| 5 | ¿Que devuelven void / refund / fulfill? | **CERRADA** | void: `+voidedTickets[]` (`:535-560`); refund: `+tickets[] +refundedTickets[]` (`:606-636`); fulfill: `+tickets[] +warnings[]` (`:1022-1051`, `7965-8019`) |
-| 6 | ¿Estructura de `seatMaps`? | **CERRADA** | Modelo completo `seatMaps[] → cabinCompartments[] → seatRows[] → seats[] → offerItemRefIds[]`. `get-seats-agency-3.0.yml:210-263, 265-320, 833-1010`. Ver §3.11 |
-| 7 | ¿Por que las carpetas de asientos abren sesion? | **Reducida** | Sigue sin respuesta directa, pero hay dos pistas nuevas: GetSeats *"supports ATK and ATH session tokens"* (`3.0-index.txt:22`) y los scripts llaman a `assertions.assertThatSessionAuthenticationIsUsed` — era **intencional**, no basura |
-| 8 | ¿`asynchronousUpdateWaitTime` es obligatorio? | **CERRADA (parcial)** | **Opcional.** `minimum 0`, `maximum 10000`, `default 0`. `booking-management-v1.yml:714-722` |
-| 9 | ¿`fulfillFlightTickets` vs `/v1.3.0/air/ticket`? | **CERRADA** | No son alternativas: fulfill **orquesta `AirTicketRQ` por dentro** y es la unica con soporte NDC. `help-documentation-fulfill-flight-tickets.txt:65-72` |
-| 10 | ¿Cuando hacen falta `X-Sabre-Group` / `X-Sabre-Current-City`? | **CERRADA** | Cuando se manda `targetPcc`. `X-Sabre-Group` para ATK, `X-Sabre-Current-City` para ATH. `help-documentation-create-booking-error-list.txt:1166-1170` |
-| 13 | ¿El bloque `agency` es obligatorio en NDC? | **Reducida** | El contrato **no lo marca `required`** en `CreateBookingRequest`; los requisitos son por aerolinea (AF exige `contactInfo.phones[]`). Queda como asunto de matriz por carrier, no de contrato |
-| 14 | ¿`ALLOW_PARTIAL_CANCEL` vs `HALT_ON_ERROR`? | **CERRADA** | `CancelErrorPolicyEnum = {HALT_ON_ERROR (default), ALLOW_PARTIAL_CANCEL}`. El resultado se audita en `booking` (*"remaining booking after cancellation"*) + `voidedTickets[]` + `refundedTickets[]`, no en el codigo HTTP. `booking-management-v1.yml:8942-8952`, `440-486` |
+| # original | Pregunta                                                      | Estado                | Respuesta y cita                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1          | ¿TTL real de una oferta NDC?                                  | **CERRADA**           | `offers[0].ttl` en segundos y `offerExpirationDateTime` ISO 8601, **ambos obligatorios**. Ejemplo oficial: `ttl: 1200`. Ademas `paymentTimeLimitDateTime`, `purchaseTimeLimitDateTime`, `priceGuaranteeTimeLimitDateTime`. `offer-price-ndc-v1.yml:383-408`, ejemplo `:2104-2108`. El shop trae su propio `offer.timeToLive`: `bargain-finder-max-v5.yml:8226-8244` |
+| 2          | ¿Que devuelve `/v2/auth/token`?                               | **CERRADA**           | `{access_token, token_type:"bearer", expires_in: 604800}` = 7 dias. `specs/help/get-hotel-avail-v5.0/v5.0-index.html:76-78`                                                                                                                                                                                                                                         |
+| 3          | ¿Forma completa de `createBooking`?                           | **CERRADA (parcial)** | `{timestamp, confirmationId, booking, errors[], request}`. `booking-management-v1.yml:804-829`. **Sigue abierto** que devuelve cuando la aerolinea tarda mas que `asynchronousUpdateWaitTime`                                                                                                                                                                       |
+| 4          | ¿Que devuelve `checkFlightTickets`?                           | **CERRADA**           | `{timestamp, request, tickets[], errors[], cancelOffers[], flightRefunds[]}` con las tres estructuras detalladas. `booking-management-v1.yml:660-692`, `6504-6531`, `8496-8513`, `4148-4167`                                                                                                                                                                        |
+| 5          | ¿Que devuelven void / refund / fulfill?                       | **CERRADA**           | void: `+voidedTickets[]` (`:535-560`); refund: `+tickets[] +refundedTickets[]` (`:606-636`); fulfill: `+tickets[] +warnings[]` (`:1022-1051`, `7965-8019`)                                                                                                                                                                                                          |
+| 6          | ¿Estructura de `seatMaps`?                                    | **CERRADA**           | Modelo completo `seatMaps[] → cabinCompartments[] → seatRows[] → seats[] → offerItemRefIds[]`. `get-seats-agency-3.0.yml:210-263, 265-320, 833-1010`. Ver §3.11                                                                                                                                                                                                     |
+| 7          | ¿Por que las carpetas de asientos abren sesion?               | **Reducida**          | Sigue sin respuesta directa, pero hay dos pistas nuevas: GetSeats _"supports ATK and ATH session tokens"_ (`3.0-index.txt:22`) y los scripts llaman a `assertions.assertThatSessionAuthenticationIsUsed` — era **intencional**, no basura                                                                                                                           |
+| 8          | ¿`asynchronousUpdateWaitTime` es obligatorio?                 | **CERRADA (parcial)** | **Opcional.** `minimum 0`, `maximum 10000`, `default 0`. `booking-management-v1.yml:714-722`                                                                                                                                                                                                                                                                        |
+| 9          | ¿`fulfillFlightTickets` vs `/v1.3.0/air/ticket`?              | **CERRADA**           | No son alternativas: fulfill **orquesta `AirTicketRQ` por dentro** y es la unica con soporte NDC. `help-documentation-fulfill-flight-tickets.txt:65-72`                                                                                                                                                                                                             |
+| 10         | ¿Cuando hacen falta `X-Sabre-Group` / `X-Sabre-Current-City`? | **CERRADA**           | Cuando se manda `targetPcc`. `X-Sabre-Group` para ATK, `X-Sabre-Current-City` para ATH. `help-documentation-create-booking-error-list.txt:1166-1170`                                                                                                                                                                                                                |
+| 13         | ¿El bloque `agency` es obligatorio en NDC?                    | **Reducida**          | El contrato **no lo marca `required`** en `CreateBookingRequest`; los requisitos son por aerolinea (AF exige `contactInfo.phones[]`). Queda como asunto de matriz por carrier, no de contrato                                                                                                                                                                       |
+| 14         | ¿`ALLOW_PARTIAL_CANCEL` vs `HALT_ON_ERROR`?                   | **CERRADA**           | `CancelErrorPolicyEnum = {HALT_ON_ERROR (default), ALLOW_PARTIAL_CANCEL}`. El resultado se audita en `booking` (_"remaining booking after cancellation"_) + `voidedTickets[]` + `refundedTickets[]`, no en el codigo HTTP. `booking-management-v1.yml:8942-8952`, `440-486`                                                                                         |
 
 ---
 
@@ -1883,12 +1935,12 @@ Solo las que **siguen** abiertas tras el contrato. Cada una indica quien la resp
    hibridos **NDC+ATPCO**; no dice nada de LCC+ATPCO, y WF-22 emite con la LLS antigua. Si no se puede, WF-22 no es
    migrable y el "PNR con dos fuentes" deja de ser una capacidad.
 6. **¿`flightCheck` (`/v1/offers/flightCheck`) sirve como equivalente del `price` para ATPCO y LCC?** El contrato
-   dice que *"revalidates the price of an offer, checks availability, and provides upsell capabilities across
-   content sources"* (`flightcheck-api-v1.yml:4`). Si funciona, elimina la asimetria de §5.1, donde ATPCO y LCC van
+   dice que _"revalidates the price of an offer, checks availability, and provides upsell capabilities across
+   content sources"_ (`flightcheck-api-v1.yml:4`). Si funciona, elimina la asimetria de §5.1, donde ATPCO y LCC van
    al `createBooking` sin revalidar precio. **Ninguno de los 1.077 requests lo usa.**
 7. **¿Que devuelve `createBooking` cuando la aerolinea NDC tarda mas que `asynchronousUpdateWaitTime`?** ¿PNR
    creado sin datos? ¿`errors[]` parciales? ¿`UNABLE_TO_RETRIEVE_BOOKING` (que el contrato clasifica como
-   **WARNING**, no error: *"Booking was created successfully but could not be retrieved"*,
+   **WARNING**, no error: _"Booking was created successfully but could not be retrieved"_,
    `help-documentation-create-booking-error-list.txt:1310-1314`)? Es el caso que define la compensacion de la saga.
 8. **¿Como se ve el fallo de un PCC sin permiso NDC para una aerolinea?** Es el error que mas veremos en una red de
    agencias con BYOC, y no esta en ninguna lista de errores. → **Paso 8j**.
@@ -1909,7 +1961,7 @@ Solo las que **siguen** abiertas tras el contrato. Cada una indica quien la resp
 1. **[Alto] Vencimiento de ofertas NDC entre `price` y `createBooking`.** Es el fallo mas probable en produccion:
    el vendedor cotiza, se va a WhatsApp, vuelve, la oferta murio. **Lo que cambia respecto de la primera pasada:**
    ya no es un riesgo sin datos. Sabemos que hay `ttl` (ejemplo 1200 s) y `offerExpirationDateTime`, y sabemos que
-   la remediacion que dicta Sabre es *"Use offers/price to reprice the offer"*
+   la remediacion que dicta Sabre es _"Use offers/price to reprice the offer"_
    (`UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER`). **Mitigacion concreta:** guardar `expiresAt` en
    `sabre_shopping_session`, avisar al vendedor al 75 % del `ttl`, y re-price automatico con el
    `shop_offer_item_id` original mostrando el delta de precio antes de confirmar. **Sigue abierta la decision de
@@ -1919,8 +1971,8 @@ Solo las que **siguen** abiertas tras el contrato. Cada una indica quien la resp
    (`DEFAULT` o `AA`). `apps/api/src/provider-credentials/provider-credentials.service.ts` tiene que modelar ambos,
    mas `targetPcc`, `printerAddress` y el flag TJR, con herencia consolidador → agencia → sub-agencia. Ver la tabla
    de §5.4.
-3. **[Alto] Coherencia de PCC a lo largo de la venta NDC.** El error oficial *"The PCC information from the NDC
-   offer does not match PCC information used for NDC order creation"* significa que `shop`, `price` y
+3. **[Alto] Coherencia de PCC a lo largo de la venta NDC.** El error oficial _"The PCC information from the NDC
+   offer does not match PCC information used for NDC order creation"_ significa que `shop`, `price` y
    `createBooking` deben ir con el mismo PCC. En una red con fan-out multi-agencia esto no es gratis y puede obligar
    a buscar por agencia en vez de por consolidador. → depende del **Paso 9**.
 4. **[Alto] Fuga de sesiones SOAP — cuantificada.** La coleccion abre **73** sesiones y cierra **61**: 12 fugas,
@@ -1949,7 +2001,7 @@ Solo las que **siguen** abiertas tras el contrato. Cada una indica quien la resp
 10. **[Medio] Pagos y PCI.** WF-3, 5, 9, 10, 20 y 22 mandan `cardNumber` + `cardSecurityCode` en el body. Choca con
     el principio de hosted checkout / SAQ-A de `CLAUDE.md`. El contrato ademas obliga a `authentications[].channelCode`
     en NDC (`MO`/`TO` sin 3DSv2, `EC` con 3DSv2). **Es una decision de negocio, no tecnica.** Ver §5.2.
-11. **[Medio] Ancillaries NDC no existen.** *"Ancillary services are currently not supported for NDC bookings."*
+11. **[Medio] Ancillaries NDC no existen.** _"Ancillary services are currently not supported for NDC bookings."_
     Si el roadmap comercial promete venta de equipaje sobre contenido NDC, la promesa no se puede cumplir hoy por
     esta via. Solo asientos.
 12. **[Medio] Cero contenido LATAM en la coleccion.** Podriamos integrar Sabre completo y descubrir que no aporta

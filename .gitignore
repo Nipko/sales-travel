@@ -102,3 +102,4 @@ tmp/
 
 # Snapshots crudos de docs de proveedores (fuente pesada; el contenido destilado va en .md)
 *.mhtml
+.env.sabre

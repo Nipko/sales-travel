@@ -18,7 +18,14 @@ export const AddPackageItemSchema = z
   .object({
     vertical: z.enum(PACKAGE_VERTICALS),
     providerName: z.string().min(1).max(50),
-    providerItemId: z.string().min(1).max(200),
+    /**
+     * 2.000 y no 200: los identificadores de oferta de los GDS son referencias opacas sin
+     * longitud acotada por contrato, y el límite viejo rechazaba tarifas legítimas con un
+     * error que en la UI se leía como "este vuelo no se puede agregar al paquete". La
+     * columna pasó a TEXT en 0035; el tope acá sigue existiendo como cota del borde, no
+     * como regla de negocio.
+     */
+    providerItemId: z.string().min(1).max(2000),
     /** Itinerario/tarifa tal como vino del proveedor, para reconstruir el ítem después. */
     rawDetails: z.record(z.unknown()).optional(),
     baseFareMinor: z.number().int().min(0),

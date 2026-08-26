@@ -10,8 +10,12 @@ import {
   Post,
   UseFilters,
 } from '@nestjs/common';
+import type { ProviderIssue } from '@sales-travel/domain';
 import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
+import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import type { ProviderCapability } from '../providers/provider.types.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
+import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
@@ -24,9 +28,25 @@ import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.serv
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
+/** Incidencia del proveedor tal como sale por HTTP: es `ProviderIssue` SIN `fieldValue`. */
+type PublicProviderIssue = Omit<ProviderIssue, 'fieldValue'>;
+
+/**
+ * Quita `fieldValue` antes de que la incidencia salga del backend.
+ *
+ * `fieldValue` es el valor que mandamos, devuelto tal cual por el proveedor: puede llevar el
+ * número de documento del pasajero y, si algún día se activara el flag de tarjeta, el PAN.
+ * El resto de la incidencia (`category`, `type`, `fieldPath`, `fieldName`, `message`) es lo que
+ * el vendedor necesita para entender qué falló, y no es dato del pasajero.
+ */
+function publicIssue(issue: ProviderIssue): PublicProviderIssue {
+  const { fieldValue: _descartado, ...resto } = issue;
+  return resto;
+}
+
 @Roles(...SELLING_ROLES)
 @Controller('orders')
-@UseFilters(LatamNdcExceptionFilter, AgentCarsExceptionFilter)
+@UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter, AgentCarsExceptionFilter)
 export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
@@ -34,6 +54,7 @@ export class OrdersController {
     private readonly mailer: MailerService,
     private readonly branding: BrandingService,
     private readonly activeTenant: ActiveTenantService,
+    private readonly registry: FlightProviderRegistry,
   ) {}
 
   @Post()
@@ -44,20 +65,33 @@ export class OrdersController {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
 
-    const { order, providerResult } = await this.orders.createOrder(tenantId, userId, body);
+    const { order, providerResult, saga } = await this.orders.createOrder(tenantId, userId, body);
 
     // Confirmación por email al contacto (best-effort: nunca rompe la reserva).
-    if (providerResult.success) {
+    //
+    // La condición es el desenlace del SAGA, no el del proveedor. Un `CONFIRMED` que la lectura
+    // de cierre no pudo verificar —o que el proveedor ya da por cancelado— no es una reserva
+    // confirmada: es una que todavía no sabemos si existe, y mandarle al pasajero "tu reserva
+    // está confirmada" es la mentira que se descubre en el mostrador.
+    if (saga.kind === 'settled' && saga.status === 'confirmed') {
       void this.sendConfirmationEmail(tenantId, order);
     }
 
     return {
       order: this.serialize(order),
       providerResult: {
-        success: providerResult.success,
+        outcome: providerResult.outcome,
         pnr: providerResult.pnr,
-        warnings: providerResult.warnings,
-        error: providerResult.error,
+        orderId: providerResult.orderId,
+        items: providerResult.items,
+        issues: providerResult.issues.map(publicIssue),
+      },
+      // Qué pasó con la reserva DESPUÉS de crearla. Sin esto, una compensación en curso o una
+      // reserva que necesita revisión humana se ven en la pantalla igual que una confirmada.
+      saga: {
+        kind: saga.kind,
+        status: saga.status,
+        ...(saga.kind === 'settled' ? {} : { reason: saga.reason }),
       },
     };
   }
@@ -131,15 +165,24 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    this.assertSupportsLatamOps(row);
-    const result = await this.orders.retrieveFromProvider(tenantId, row.provider_order_id);
+    this.assertSupports(row, 'retrieve');
+    const result = await this.orders.retrieveFromProvider(
+      tenantId,
+      row.provider_order_id,
+      row.provider,
+    );
     return result;
   }
 
-  /** Pago/emisión, consulta, servicios y repricing son operaciones específicas de LATAM NDC.
-   *  Para otros proveedores (ej: agent-cars) no aplican; se rechazan antes de tocar el adapter LATAM. */
-  private assertSupportsLatamOps(row: OrderRow): void {
-    if (row.provider !== 'latam-ndc') {
+  /**
+   * Rechaza la operación si el proveedor de la reserva no la sabe hacer.
+   *
+   * Antes esto era `row.provider !== '<un proveedor concreto>'`: cada proveedor nuevo obligaba
+   * a acordarse de tocar este `if`, y olvidarlo significaba mandar una operación a un adapter
+   * que no la implementa. Ahora lo decide el propio proveedor, declarando sus capacidades.
+   */
+  private assertSupports(row: OrderRow, capability: ProviderCapability): void {
+    if (!this.registry.capabilitiesOf(row.provider)?.[capability]) {
       throw new BadRequestException(
         `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
       );
@@ -184,7 +227,7 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    this.assertSupportsLatamOps(row);
+    this.assertSupports(row, 'services');
     return this.orders.listServices(tenantId, row);
   }
 
@@ -199,8 +242,8 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    this.assertSupportsLatamOps(row);
-    return this.orders.reshopOrder(tenantId, id, body, userId);
+    this.assertSupports(row, 'reshop');
+    return this.orders.reshopOrder(tenantId, row, body, userId);
   }
 
   @Post(':id/pay')
@@ -213,7 +256,7 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
-    this.assertSupportsLatamOps(row);
+    this.assertSupports(row, 'pay');
     return this.orders.payOrder(tenantId, id, row, body.payment as never, userId);
   }
 

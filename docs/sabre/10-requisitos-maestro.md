@@ -1,7 +1,7 @@
 ---
-titulo: "Sabre — Requisitos maestro de integración"
-fecha: 2026-08-25
-estado: reconciliado-contra-spec
+titulo: 'Sabre — Requisitos maestro de integración'
+fecha: 2026-08-26
+estado: reconciliado-contra-spec; D1 y D9 cerradas (§9)
 Fuentes: ver 00-fuentes.md
 ---
 
@@ -14,8 +14,9 @@ Fuentes: ver 00-fuentes.md
 > **VERIFICADO-SPEC** y están así en la matriz de §7.
 >
 > **Tres errores de procedencia erradicados:**
+>
 > 1. **Las 4 respuestas guardadas de la colección NO están vacías.** Pesan **16.479 bytes de cuerpo** cada una,
->    son las cuatro de `/v1/orders/view`, y están extraídas en `slices/responses/*.json`. Son el mismo documento
+>    son las cuatro de `/v1/orders/view`, y están extraídas en `evidence/responses/*.json`. Son el mismo documento
 >    repetido (mismo `order.id`, mismo PNR `TOSGCZ`), así que prueban la **forma** de `/v1/orders/view` pero no el
 >    efecto de cada modificación ([20 §1](./20-workflows-e2e.md), [08 §0](./08-seams-integracion-repo.md)).
 > 2. El front-matter citaba `EXTERNAL_AGENCY.postman_collection.json`, que es la colección de **LATAM NDC**, no la
@@ -33,7 +34,7 @@ refund, EMD) y **el primitivo consolidador en el contrato**: `targetPcc` está d
 "agencias que separan booking, fulfillment y shopping en distintos PCC"
 (VERIFICADO-SPEC `help-documentation-create-booking.txt:118`).
 
-Lo que cuesta: (a) **certificación de 4-8 semanas por PCC** más *branch access* gestionado por Sabre agencia por
+Lo que cuesta: (a) **certificación de 4-8 semanas por PCC** más _branch access_ gestionado por Sabre agencia por
 agencia, lo que rompe la promesa de onboarding "en horas" en la ruta BYOC; (b) un **conflicto PCI frontal** —
 **49** requests de `createBooking` y **15** de `fulfillFlightTickets` mandan PAN en claro (**46** y **12** con CVV);
 (c) **fee opaco sobre el endpoint de mayor volumen**: BFM está marcado `premium` en el propio catálogo de Sabre
@@ -53,31 +54,31 @@ las fases 1-4 es apostar ~50 días-persona sobre un contrato que nadie ha visto 
 
 ### 2.1 Lo que SÍ entra
 
-| # | Capacidad | Endpoints Sabre | Justificación |
-| --- | --- | --- | --- |
-| **A1** | Autenticación **ATK stateless** + BYOC por tenant | `POST /v2/auth/token` | Único camino ejercitado (59 requests). El contrato declara `flow: application` + `x-base64-encode-client-credentials: true` en los 21 specs y **ninguno menciona `/v3`**. Cubre todo el alcance: las operaciones de Booking Management "*accept both sessionless (ATK) and session-based (ATH) tokens*". |
-| **A2** | Búsqueda ATPCO + NDC **en una sola llamada** | `POST /v5/offers/shop` con `Version: "5"` | **Cambio de recomendación: v5, no v4.** v5 es la única con `POS.MultiSourceControl` (multi-PCC nativo = modelo consolidador), penalidades NDC estructuradas y **3 ejemplos de respuesta oficiales usables como fixtures hoy**. Coste de cambio desde el diseño v4: sólo el valor de `Version`. Ver [02 §Decisiones](./02-air-shop-bfm.md). |
-| **A3** | Revalidación de precio NDC | `POST /v1/offers/price` | Obligatorio en NDC. `ttl` (segundos) y `offerExpirationDateTime` son **campos requeridos**: el vencimiento se lee, no se inventa. |
-| **A4** | Reserva, recuperación, cancelación | `createBooking`, `getBooking`, `cancelBooking` | Núcleo del producto. |
-| **A5** | Emisión, void, refund y consulta de reembolsabilidad | `fulfillFlightTickets`, `checkFlightTickets`, `voidFlightTickets`, `refundFlightTickets` | Sin emisión, Sabre es un buscador, no un consolidador. |
-| **A6** | Emisión bajo PCC del consolidador | `targetPcc` en `createBooking` / `fulfill` / `cancel` / `void` / `getBooking` / `refund` | El modelo consolidador nativo, en contrato y no en promesa comercial. Condicionado a *branch access* (**P-10**). |
-| **A7** | Modificación de reserva **sin tocar forma de pago** | `modifyBooking` | Email, teléfono, documentos, asientos, SSR, loyalty. Capacidad que hoy no tenemos con ningún proveedor. |
-| **A8** | **Vinculación multi-producto sin PNR único** | `hotel.associatedFlightDetails`, `car.associatedFlightDetails`, `car.flightIndex` | **Nuevo en el alcance.** Entrega el gesto de Package Studio "hotel/auto con este vuelo" **con el vuelo en LATAM NDC directo**, sin SOAP, sin sesiones y sin migrar nada. Ver §6.3 y [07 §6.5](./07-hoteles-y-autos.md). |
-| **A9** | Mapas de asiento (carril NDC/REST) | Get Seats — **versión por decidir** (P-06) | REST puro. **Bloqueado por una discrepancia real**: la colección usa `/v1/offers/getseats` (32 requests) y el contrato vigente publica `/v3/offers/getseats/by*`. Nacer en v1 es deuda garantizada. |
+| #      | Capacidad                                            | Endpoints Sabre                                                                          | Justificación                                                                                                                                                                                                                                                                                                                              |
+| ------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A1** | Autenticación **ATK stateless** + BYOC por tenant    | `POST /v2/auth/token`                                                                    | Único camino ejercitado (59 requests). El contrato declara `flow: application` + `x-base64-encode-client-credentials: true` en los 21 specs y **ninguno menciona `/v3`**. Cubre todo el alcance: las operaciones de Booking Management "_accept both sessionless (ATK) and session-based (ATH) tokens_".                                   |
+| **A2** | Búsqueda ATPCO + NDC **en una sola llamada**         | `POST /v5/offers/shop` con `Version: "5"`                                                | **Cambio de recomendación: v5, no v4.** v5 es la única con `POS.MultiSourceControl` (multi-PCC nativo = modelo consolidador), penalidades NDC estructuradas y **3 ejemplos de respuesta oficiales usables como fixtures hoy**. Coste de cambio desde el diseño v4: sólo el valor de `Version`. Ver [02 §Decisiones](./02-air-shop-bfm.md). |
+| **A3** | Revalidación de precio NDC                           | `POST /v1/offers/price`                                                                  | Obligatorio en NDC. `ttl` (segundos) y `offerExpirationDateTime` son **campos requeridos**: el vencimiento se lee, no se inventa.                                                                                                                                                                                                          |
+| **A4** | Reserva, recuperación, cancelación                   | `createBooking`, `getBooking`, `cancelBooking`                                           | Núcleo del producto.                                                                                                                                                                                                                                                                                                                       |
+| **A5** | Emisión, void, refund y consulta de reembolsabilidad | `fulfillFlightTickets`, `checkFlightTickets`, `voidFlightTickets`, `refundFlightTickets` | Sin emisión, Sabre es un buscador, no un consolidador.                                                                                                                                                                                                                                                                                     |
+| **A6** | Emisión bajo PCC del consolidador                    | `targetPcc` en `createBooking` / `fulfill` / `cancel` / `void` / `getBooking` / `refund` | El modelo consolidador nativo, en contrato y no en promesa comercial. Condicionado a _branch access_ (**P-10**).                                                                                                                                                                                                                           |
+| **A7** | Modificación de reserva **sin tocar forma de pago**  | `modifyBooking`                                                                          | Email, teléfono, documentos, asientos, SSR, loyalty. Capacidad que hoy no tenemos con ningún proveedor.                                                                                                                                                                                                                                    |
+| **A8** | **Vinculación multi-producto sin PNR único**         | `hotel.associatedFlightDetails`, `car.associatedFlightDetails`, `car.flightIndex`        | **Nuevo en el alcance.** Entrega el gesto de Package Studio "hotel/auto con este vuelo" **con el vuelo en LATAM NDC directo**, sin SOAP, sin sesiones y sin migrar nada. Ver §6.3 y [07 §6.5](./07-hoteles-y-autos.md).                                                                                                                    |
+| **A9** | Mapas de asiento (carril NDC/REST)                   | Get Seats — **versión por decidir** (P-06)                                               | REST puro. **Bloqueado por una discrepancia real**: la colección usa `/v1/offers/getseats` (32 requests) y el contrato vigente publica `/v3/offers/getseats/by*`. Nacer en v1 es deuda garantizada.                                                                                                                                        |
 
 ### 2.2 Lo que NO entra
 
-| # | Capacidad excluida | Justificación (opinada) |
-| --- | --- | --- |
-| **N1** | **Carril SOAP/LLS stateful completo** (LCC con ancillaries, perfiles EPS, group bookings, disponibilidad legacy) | 243 requests, un transporte que el stack hoy no tiene (cliente XML + parser + `SabreSessionPool` con lease/keepalive/compensación). **Y no hace falta para vender:** `createBooking` ya orquesta `ContextChangeLLSRQ`, `OTA_AirBookLLSRQ`, `PassengerDetailsRQ` y `EnhancedEndTransactionRQ` **por dentro** (VERIFICADO-SPEC `help-documentation-create-booking.txt:34-61`). **Fuera de Ola 1, con hito propio y estimación propia.** Ver **D2**. |
-| **N2** | **Hoteles de Sabre** | Despegar ya está en producción. Sabre suma un segundo inventario real (6 fuentes con una credencial) pero arrastra el conflicto PCI y **el `PageSize` por defecto de 200 devuelve tarifa cacheada para 160 de cada 200 propiedades**. **Candidato de fase 5 condicionado al spike de [07 §Decisiones](./07-hoteles-y-autos.md), no de fase 1.** |
-| **N3** | **Autos de Sabre** | El argumento ya no es "el contrato es pobre" —el contrato de `get-vehicle-availability-v2` es rico—, es que **AgentCars ya cubre más superficie**: autocomplete, oficinas con horarios, ON HOLD/release, reporte diario. Sabre sólo añade entrega a domicilio con un `siteID` que **no hay forma documentada de descubrir**. Y `CarToModify` **no existe** en el contrato: los autos no son modificables, sólo cancelables. **Descartar.** |
-| **N4** | **PNR único multi-producto** (vuelo + hotel + auto bajo un solo localizador) | **La justificación anterior era falsa y se retira.** Decía que el PNR único obliga a `flightDetails` (sell GDS clásico) y por tanto a migrar la vertical vuelo entera a Sabre. **No es cierto:** existe un flujo verificado (31 requests, familia *FOP Hybrid*) donde el PNR **nace de una oferta NDC** y el hotel se agrega después por `UpdatePassengerNameRecordRQ` — sin `flightDetails` en ninguna parte ([07 §6.3](./07-hoteles-y-autos.md)). El coste real es **enrutar el aire por el shop NDC de Sabre para itinerarios concretos**, que es una decisión de enrutamiento reversible con feature flag, no una migración de plataforma. **Sigue fuera de Ola 1** por N1 (exige SOAP) y por el punto 3 de [07 §6.4](./07-hoteles-y-autos.md) (un solo `payment.formsOfPayment[]` compartido obliga a consolidar el pricing waterfall por vertical en un cobro único, lo que cambia el modelo de comisiones). **Pero deja de estar descartado: es un spike de un día** (mecanismo B: ¿acepta `createBooking` `flightOffer` NDC + `hotel` en una sola llamada? El schema lo permite, la prosa oficial lo desmiente). Mientras tanto, A8 entrega el 80 % del valor. |
-| **N5** | **Enhanced Air Ticket** `/v1.3.0/air/ticket` | Camino legacy: no soporta NDC, ni EMD, ni `targetPcc`. **Y la razón para excluirlo mejoró:** el camino REST **sí** tiene anti-billete-fantasma (`commitTicketToBookingWaitTime` + `isCommitted`) y **sí** tiene factura (`notificationEmail`, `printDocuments`, `generateSingleInvoice`). No perdemos nada. |
-| **N6** | **Sabre Profiles, colas Sabre, ancillaries ATPCO/LCC por SOAP** | Exigen el carril SOAP (N1). **Y hay un segundo argumento, que es el que manda:** Sabre Profiles es un almacén de PII de viajero que se solapa con `apps/api/src/customers/`. Ver la regla de §6.5. |
-| **N7** | **Modificación de forma de pago en reserva existente** | Exige el keyword `CCVIEW` en el EPR o reinyectar el PAN: `getBooking` devuelve la tarjeta enmascarada y el error "*Payment card must meet `^[0-9]{12,19}$`*" sugiere que cambiar de tarjeta exige el PAN completo. **Fuera mientras D1 sea "nunca PAN".** |
-| **N8** | **Cambio voluntario / reemisión por Sabre** | **Nuevo.** Falta **un solo eslabón y es insalvable hoy**: `checkFlightTickets` dice si es cambiable, Flight Reshop da las opciones y `fulfillFlightTickets` emite contra `priceQuoteReissueRecordId`, **pero nada de lo que tenemos crea el PQR** ([06 §Preguntas](./06-ticketing-void-refund.md)). Y Flight Reshop es `beta` y **sólo ATPCO** — "NDC Reshop Shop Order is under development". Nuestro contenido diferencial es NDC. **Consecuencia de producto: hay que corregir `docs/platform/12-modelo-consolidador-y-plan.md` §4.1, que da la post-venta por cerrada.** |
-| **N9** | **Sabre como fuente del documento fiscal** | Sabre no emite factura DIAN/SUNAT/NF-e y no va a hacerlo. Lo que sí entra en alcance es **RF-21**: extraer de Sabre los datos que alimentan a nuestro proveedor fiscal y fijar quién factura qué. Ver §6.6. |
+| #      | Capacidad excluida                                                                                               | Justificación (opinada)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **N1** | **Carril SOAP/LLS stateful completo** (LCC con ancillaries, perfiles EPS, group bookings, disponibilidad legacy) | 243 requests, un transporte que el stack hoy no tiene (cliente XML + parser + `SabreSessionPool` con lease/keepalive/compensación). **Y no hace falta para vender:** `createBooking` ya orquesta `ContextChangeLLSRQ`, `OTA_AirBookLLSRQ`, `PassengerDetailsRQ` y `EnhancedEndTransactionRQ` **por dentro** (VERIFICADO-SPEC `help-documentation-create-booking.txt:34-61`). **Fuera de Ola 1, con hito propio y estimación propia.** Ver **D2**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **N2** | **Hoteles de Sabre**                                                                                             | Despegar ya está en producción. Sabre suma un segundo inventario real (6 fuentes con una credencial) pero arrastra el conflicto PCI y **el `PageSize` por defecto de 200 devuelve tarifa cacheada para 160 de cada 200 propiedades**. **Candidato de fase 5 condicionado al spike de [07 §Decisiones](./07-hoteles-y-autos.md), no de fase 1.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **N3** | **Autos de Sabre**                                                                                               | El argumento ya no es "el contrato es pobre" —el contrato de `get-vehicle-availability-v2` es rico—, es que **AgentCars ya cubre más superficie**: autocomplete, oficinas con horarios, ON HOLD/release, reporte diario. Sabre sólo añade entrega a domicilio con un `siteID` que **no hay forma documentada de descubrir**. Y `CarToModify` **no existe** en el contrato: los autos no son modificables, sólo cancelables. **Descartar.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **N4** | **PNR único multi-producto** (vuelo + hotel + auto bajo un solo localizador)                                     | **La justificación anterior era falsa y se retira.** Decía que el PNR único obliga a `flightDetails` (sell GDS clásico) y por tanto a migrar la vertical vuelo entera a Sabre. **No es cierto:** existe un flujo verificado (31 requests, familia _FOP Hybrid_) donde el PNR **nace de una oferta NDC** y el hotel se agrega después por `UpdatePassengerNameRecordRQ` — sin `flightDetails` en ninguna parte ([07 §6.3](./07-hoteles-y-autos.md)). El coste real es **enrutar el aire por el shop NDC de Sabre para itinerarios concretos**, que es una decisión de enrutamiento reversible con feature flag, no una migración de plataforma. **Sigue fuera de Ola 1** por N1 (exige SOAP) y por el punto 3 de [07 §6.4](./07-hoteles-y-autos.md) (un solo `payment.formsOfPayment[]` compartido obliga a consolidar el pricing waterfall por vertical en un cobro único, lo que cambia el modelo de comisiones). **Pero deja de estar descartado: es un spike de un día** (mecanismo B: ¿acepta `createBooking` `flightOffer` NDC + `hotel` en una sola llamada? El schema lo permite, la prosa oficial lo desmiente). Mientras tanto, A8 entrega el 80 % del valor. |
+| **N5** | **Enhanced Air Ticket** `/v1.3.0/air/ticket`                                                                     | Camino legacy: no soporta NDC, ni EMD, ni `targetPcc`. **Y la razón para excluirlo mejoró:** el camino REST **sí** tiene anti-billete-fantasma (`commitTicketToBookingWaitTime` + `isCommitted`) y **sí** tiene factura (`notificationEmail`, `printDocuments`, `generateSingleInvoice`). No perdemos nada.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **N6** | **Sabre Profiles, colas Sabre, ancillaries ATPCO/LCC por SOAP**                                                  | Exigen el carril SOAP (N1). **Y hay un segundo argumento, que es el que manda:** Sabre Profiles es un almacén de PII de viajero que se solapa con `apps/api/src/customers/`. Ver la regla de §6.5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **N7** | **Modificación de forma de pago en reserva existente**                                                           | Exige el keyword `CCVIEW` en el EPR o reinyectar el PAN: `getBooking` devuelve la tarjeta enmascarada y el error "_Payment card must meet `^[0-9]{12,19}$`_" sugiere que cambiar de tarjeta exige el PAN completo. **Fuera mientras D1 sea "nunca PAN".**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **N8** | **Cambio voluntario / reemisión por Sabre**                                                                      | **Nuevo.** Falta **un solo eslabón y es insalvable hoy**: `checkFlightTickets` dice si es cambiable, Flight Reshop da las opciones y `fulfillFlightTickets` emite contra `priceQuoteReissueRecordId`, **pero nada de lo que tenemos crea el PQR** ([06 §Preguntas](./06-ticketing-void-refund.md)). Y Flight Reshop es `beta` y **sólo ATPCO** — "NDC Reshop Shop Order is under development". Nuestro contenido diferencial es NDC. **Consecuencia de producto: hay que corregir `docs/platform/12-modelo-consolidador-y-plan.md` §4.1, que da la post-venta por cerrada.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **N9** | **Sabre como fuente del documento fiscal**                                                                       | Sabre no emite factura DIAN/SUNAT/NF-e y no va a hacerlo. Lo que sí entra en alcance es **RF-21**: extraer de Sabre los datos que alimentan a nuestro proveedor fiscal y fijar quién factura qué. Ver §6.6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### 2.3 Valor esperado — la cifra que no existe en ningún documento
 
@@ -114,12 +115,31 @@ La **forma** del response es conocida — `{access_token, token_type:"bearer", e
 comercial**: se lee de la respuesta, nunca se hardcodea.
 
 **CA.**
+
 1. Test unitario: dado `{epr:'500001', pcc:'U9PK', password:'x'}`, el header producido es byte a byte el del
    algoritmo de [01 §2.1](./01-autenticacion-y-conectividad.md).
-2. **La caché vive en el port de caché (Redis), clave `sabre:atk:{ownerTenantId}:{pcc}`, no en memoria de proceso.**
+2. **La caché vive en el port de caché (Redis), clave `sabre:atk:{ownerTenantId}:{pcc}:{fingerprint}`, no en
+   memoria de proceso.**
    Ya no es preferencia: el **TAM Pool existe** y su agotamiento se manifiesta como `401 invalid_client`
    (VERIFICADO-SPEC `help/booking-management-api-v1/v1-errors.txt:41-51`). N réplicas re-autenticando en cada
    deploy es exactamente la forma de agotarlo.
+   `fingerprint` = **primeros 16 hex de `SHA-256(host ‖ EPR ‖ PCC ‖ Domain ‖ password)`**, con las partes separadas
+   por `NUL`. Test de aceptación: dos servicios que sólo difieren en EPR **no** comparten token; dos que sólo
+   difieren en password tampoco; la misma tupla (tenant, EPR, PCC, Domain, host) **sí** reusa el token cacheado.
+
+   > **Corrección (auditoría, HALLAZGO-4).** Este CA decía `sabre:atk:{ownerTenantId}:{pcc}` y el código lo cumplía
+   > al pie de la letra; **el defecto estaba en el requisito**. El ATK no lo determina el par (tenant, PCC) sino el
+   > `secret`, que se deriva de (EPR, PCC, Domain, password) — y el host lo completa, porque un ATK de CERT no vale
+   > en PROD. Con la clave anterior, dos oficinas del mismo consolidador con **EPR distinto y el mismo PCC** —el
+   > caso normal en una red de agencias BYOC— colisionaban en Redis: la segunda operaba con el token de la primera.
+   > Fallo silencioso (el token es válido, sólo que de otra oficina) y con la forma exacta de R-12, fuga de
+   > credenciales entre agencias. Rotar el password tenía el mismo problema al revés: la instancia nueva seguía
+   > sirviéndose del token viejo hasta que venciera su TTL.
+   > El `password` (y el `secret`, que es base64 **reversible** de él, R-13) **no pueden ir en claro en la clave**:
+   > una clave de caché acaba en logs, en métricas y en cualquier `SCAN` de Redis, canales que nadie trata como
+   > sensibles (RNF-07). De ahí el digest truncado: separa identidades sin revelar ninguna. `ownerTenantId` y `pcc`
+   > se quedan en claro a propósito —no son secretos y hacen la clave operable en soporte.
+
 3. TTL efectivo = `expires_in` de la respuesta menos un margen del 10 %; si el campo falta, `config.tokenTtlSeconds`
    (default 3600) **y un warning estructurado**, nunca un silencio.
 4. **Política de 401 por tipo, no genérica** (§4 RNF-03):
@@ -140,6 +160,7 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 (`PLATFORM_DEFAULT_FLIGHT_PROVIDERS`, default `latam-ndc`).
 
 **CA.**
+
 1. Test de integración (patrón `hasDb`): cuenta propia gana sobre heredada; se salta un ancestro con
    `is_inheritable=false`; un tenant con LATAM pero sin Sabre **no** resuelve Sabre.
 2. La clave de caché de instancias es `byoc:{ownerTenantId}:{homePcc}:{updatedAt}` — el `homePcc` es obligatorio
@@ -156,10 +177,11 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 **`DataSources` no es un switch de un bit:** BFM consulta ATPCO + NDC (+ LCC) **en la misma llamada**.
 
 **CA.**
+
 1. `criteria.pax` → PTC de Sabre: `ADT`, **`CNN`** (no `CHD`), `INF`/`INS`. Test de propiedad que falle si aparece
    `CHD`. `C06`..`C11` (niño con edad) se soportan porque disparan descuentos por edad que `CNN` no.
 2. **`MultipleSourcePerItinerary.Value = true` es una CONSTANTE del builder cuando se comparan ATPCO y NDC.** El contrato dice
-   literalmente "*By default, **the cheaper will stay***" (VERIFICADO-SPEC `bargain-finder-max-v5.yml:5473-5478`;
+   literalmente "\*By default, **the cheaper will stay\***" (VERIFICADO-SPEC `bargain-finder-max-v5.yml:5473-5478`;
    idéntico en `v4:3196-3200`): sin ella, **Sabre decide qué alternativa cross-source sobrevive**. Las marcas y
    upsells requieren además `MultipleBrandedFares`/`MaxNumberOfUpsells`; testear ambas palancas por separado.
 3. **`PriceRequestInformation.CurrencyCode = criteria.currency` SIEMPRE** (`v5.yml:7849`). Corrige la afirmación
@@ -182,6 +204,7 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 `OfferSchema`. **26 secciones raíz**, verificadas (`bargain-finder-max-v5.yml:3810`).
 
 **CA.**
+
 1. **Regla de proceso corregida.** La regla dura anterior ("no escribir el mapper hasta tener 6 payloads del
    sandbox") **se retira**: los campos obligatorios están verificados y hay 3 ejemplos oficiales completos.
    **El mapper se escribe ya contra esos fixtures**, y no se da por terminado hasta tener el fixture de
@@ -210,6 +233,7 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 `{code, status, count, reason?}` por proveedor.
 
 **CA.**
+
 1. Sabre falla → siguen apareciendo las ofertas de LATAM **y** `providers[sabre].status === 'error'` con razón
    humanizada. Hoy el array `failed` de `fanOut` se descarta en silencio.
 2. Ambos fallan → excepción tipada que el filtro traduce a **502**, no a 500 genérico.
@@ -223,8 +247,9 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 ### RF-06 — Deduplicación entre Sabre y LATAM
 
 **CA.**
+
 1. Clave de producto = `(carrier + flightNumber + departureAt por segmento, en orden) ‖ cabin ‖
-   baggage.checked.qty ‖ refundable ‖ changeable`. **La misma aeronave con y sin maleta son dos productos.**
+baggage.checked.qty ‖ refundable ‖ changeable`. **La misma aeronave con y sin maleta son dos productos.**
 2. `operatingFlightNumber` se añade a `SegmentSchema`: el dato **ya viene de Sabre** (`v5.yml:2908`) y lo estamos
    tirando; sin él los codeshares del mismo avión no colisionan.
 3. Horas comparadas en UTC. Si el conjunto tiene más de una moneda, **no se deduplica nada**.
@@ -238,12 +263,13 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 `createBooking`. Queda abierto si `flightCheck` sirve como equivalente para esos dos carriles (P-13).
 
 **CA.**
+
 1. El adapter devuelve `offers[0].id`, `offerItems[].id`, `offerItems[].passengers[].id`, **y** `ttl`,
    `offerExpirationDateTime`, `paymentTimeLimitDateTime` y `purchaseTimeLimitDateTime` — los cuatro últimos son
    requeridos por contrato (`offer-price-ndc-v1.yml:383-421`).
 2. `offerItemId` es **uno por tipo de pasajero**, no por pasajero. Test con ADT+CNN que verifique 2 ítems.
 3. Id expirado → `OfferExpiredError` tipado. La remediación está en el propio catálogo de errores de Sabre:
-   *"Use offers/price to reprice the offer"* (`create-booking-error-list.txt:207-211`).
+   _"Use offers/price to reprice the offer"_ (`create-booking-error-list.txt:207-211`).
 4. El parser acepta `paymentTimeLimitText` además del campo fechado: el contrato admite que hay proveedores que
    devuelven fechas fuera de formato.
 
@@ -253,6 +279,7 @@ Sabre **no** tiene fallback a credenciales de plataforma salvo habilitación exp
 hermanos opcionales; cero de los 176 requests llevan ambos.
 
 **CA.**
+
 1. **`errorHandlingPolicy` SÍ existe en `createBooking`** — VERIFICADO-SPEC `booking-management-v1.yml:698`,
    array de `CreateErrorPolicyEnum` (`:8918`) con 8 valores y default `HALT_ON_ERROR`.
    **Esto corrige una afirmación en negrita de la primera pasada** que decía lo contrario, y cambia el diseño del
@@ -272,7 +299,7 @@ hermanos opcionales; cero de los 176 requests llevan ambos.
    (`:781`), no ISO-8601 con hora como concluyó la primera pasada.
 6. **Ningún body que salga de nuestro backend contiene `cardNumber` ni `cardSecurityCode`** (RNF-06).
 7. `asynchronousUpdateWaitTime` **explícito** (no el default `0`): `min 0`, `max 10000`, `:714-722`. Con el default,
-   *la respuesta puede llegar antes de que la reserva esté completa*. Toda creación se cierra con `getBooking` de
+   _la respuesta puede llegar antes de que la reserva esté completa_. Toda creación se cierra con `getBooking` de
    verificación.
 8. **`bookingSignature` NO viene en `createBooking`** (aparece 5 veces en el contrato, ninguna en `Booking` ni en
    `CreateBookingResponse`): toda modificación posterior exige encadenar un `getBooking`.
@@ -286,9 +313,10 @@ hermanos opcionales; cero de los 176 requests llevan ambos.
 devuelve `bookingSignature`).
 
 **CA.**
+
 1. `retrieveForDisplay` no expone `bookingSignature` en su tipo. Verificable en compilación.
-   **Razón de contrato, no de estilo:** *"To obtain a valid `bookingSignature` value, you must make a Get Booking
-   call **without** the `returnOnly` parameter"*. Una lectura filtrada **no sirve** como paso previo de un modify.
+   **Razón de contrato, no de estilo:** _"To obtain a valid `bookingSignature` value, you must make a Get Booking
+   call **without** the `returnOnly` parameter"_. Una lectura filtrada **no sirve** como paso previo de un modify.
 2. `returnOnly` acepta **31 valores** (`ReturnOnlyEnum`, `:9049-9088`, `CARS` incluido) y además evita llamadas
    downline ("significant performance boost").
 3. Los cinco identificadores se modelan como campos distintos y no se confunden: `confirmationId` (PNR,
@@ -298,22 +326,25 @@ devuelve `bookingSignature`).
    `returnEmptySeatObjects:false` (sin esto **los flujos NDC de asientos fallan siempre**), `returnFiscalId:true`
    (es la vía natural del CPF/CNPJ/RUC/NIT — RF-21), `returnWalletFormsOfPayment:true`, `returnFrequentRenter:true`,
    `forceHotelUpdate:false`. **Debe coincidir entre el `get` y el `modify` o falla la firma.**
+5. **`OrderView` expone `airlineLocators[]`** — el localizador de la aerolínea, que no es el PNR de Sabre ni
+   nuestro `orderId`. Requisito completo, con su mapeo y su fixture, en **RF-23**.
 
 ### RF-10 — Cancelación
 
 **CA.**
+
 1. Default de **nuestra** API: `HALT_ON_ERROR` (que además es el default de Sabre y **hace rollback**).
    `ALLOW_PARTIAL_CANCEL` sólo con confirmación explícita del vendedor, y en ese modo un `UNABLE_TO_CANCEL` con
    `category: WARNING` se trata como **fallo parcial**, no como aviso.
 2. Cancelación NDC: sin `checkFlightTickets` previo (de donde sale `cancelOffers[].offerItemId`) el test debe
    fallar. `offerItemId` y `flightTicketOperation` son **mutuamente excluyentes**.
 3. `CancelBookingResponse` = `{timestamp, request, booking, tickets[], errors[], voidedTickets[],
-   refundedTickets[], flightRefunds[]}` (`:440-487`). **El resultado se audita ahí, no en el código HTTP.**
+refundedTickets[], flightRefunds[]}` (`:440-487`). **El resultado se audita ahí, no en el código HTTP.**
 4. El estado cancelado se lee de `isCancelable`/`isTicketed` y de `flightStatusName`/`hotelStatusName`
    (`StatusNameEnum` incluye `Cancelled`), **nunca** de la desaparición del array `flights`, que es consecuencia y
    no mecanismo.
-5. Sabre ya reintenta internamente ("*verification of the booking up to three times with progressive delays
-   (1, 2 and 3 seconds)*"). **Nuestro retry va por encima, no lo duplica.**
+5. Sabre ya reintenta internamente ("_verification of the booking up to three times with progressive delays
+   (1, 2 and 3 seconds)_"). **Nuestro retry va por encima, no lo duplica.**
 
 ### RF-11 — Emisión de billetes
 
@@ -323,6 +354,7 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 `OPERATION_NOT_SUPPORTED`).
 
 **CA.**
+
 1. **`acceptPriceChanges: false` y `priceQuoteExpirationMethod: 'Quit'` como default global.** Los defaults de
    Sabre son permisivos (`acceptPriceChanges` viene en `true`, `priceQuoteExpirationMethod` en `'Reprice'`): sin
    enviarlos explícitos, **Sabre emite aunque el precio haya subido y sólo avisa con un warning**. Un fallo rápido
@@ -335,7 +367,7 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 3. `formsOfPayment[]` es catálogo y `primaryFormOfPayment` es **índice 1-based** dentro de él.
 4. Emisión **siempre dentro de saga durable** (RNF-11), nunca dentro del request HTTP del vendedor.
    Presupuesto de espera **declarado por contrato**: hasta **15 s** de reintento de estado de vuelo ATPCO
-   (5 intentos, 1+2+3+4+5, "*regardless of whether NN is included in `haltOnFlightStatusCodes`*") **+ hasta 10 s**
+   (5 intentos, 1+2+3+4+5, "_regardless of whether NN is included in `haltOnFlightStatusCodes`_") **+ hasta 10 s**
    de `asynchronousUpdateWaitTime` = **25 s de esperas declaradas**. Timeout HTTP mínimo **45 s**.
 5. Clave de idempotencia **propia** antes de llamar. **VERIFICADO-SPEC que no existe ninguna en el contrato**
    (`CreateBookingRequest` `:694-802` no declara campo de deduplicación y la operación `:190-213` no declara header
@@ -354,9 +386,10 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 **Descripción.** `POST /v1/trip/orders/checkFlightTickets`. Máximo **12 documentos** del mismo PNR.
 
 **CA.**
+
 1. La UI de post-venta **no ofrece "reembolsar"** sin un `checkFlightTickets` previo.
 2. **El mapper ya es escribible.** `CheckTicketsResponse` (`:660`) = `{timestamp, request, tickets[CheckedTicket],
-   errors, cancelOffers, flightRefunds}`; `CheckedTicket` (`:8496`) = `Ticket` (`:6533`) + `refundFee` +
+errors, cancelOffers, flightRefunds}`; `CheckedTicket` (`:8496`) = `Ticket` (`:6533`) + `refundFee` +
    `ticketStatusCode`, con `isVoidable`, `isRefundable`, `isChangeable`, `isAutomatedRefundsEligible`,
    `refundPenalties[]`, `exchangePenalties[]`, `refundTaxes[]` y `refundTotals`. **Era "el mayor agujero del
    análisis" y está cerrado, con ejemplo oficial completo.**
@@ -365,6 +398,7 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 ### RF-13 / RF-14 — Void y refund
 
 **CA.**
+
 1. **La ventana de void se LEE, no se calcula.** Sabre la evalúa y la expone en `isVoidable` y, para NDC, en
    `cancelOffers[].offerExpirationDate` + `offerExpirationTime` **en UTC** (`:6504`, `:8890`).
    **Esto invierte la recomendación anterior:** calcularla nosotros con la zona horaria del PCC emisor pasó de
@@ -383,6 +417,7 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 ### RF-15 — Reconciliación de documentos (defensa anti billete fantasma)
 
 **CA.**
+
 1. Máquina de estados sobre `flightTickets[].ticketStatusCode`: `TE` (billete emitido), **`TO` (billete emitido en
    contenido NDC)**, `ME` (EMD emitido), `OV` (anulado), `TR`/`MR` (reembolsado).
    **`TO` es nuevo y es crítico:** el filtro de la primera pasada (sólo `TE`/`ME`) habría dado por **no emitida
@@ -395,6 +430,7 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 ### RF-16 — Asientos y ancillaries (carril NDC/REST)
 
 **CA.**
+
 1. Reglas de negocio replicadas del script oficial: sólo `occupationStatusCode` disponible; sólo ítems elegibles
    para ese pax en ese segmento; **prohibido asignar salida de emergencia a un pax cuyo `paxType` no sea `ADT`**.
 2. El número de asiento se compone de `seatRows[].row` + `seats[].column`, y `seats[].offerItemRefIds[]` enlaza con
@@ -406,20 +442,21 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
    canal conversacional. Consecuencia de producto en §6.3 y **D6**.
 5. Ports nuevos y separados: `SeatMapPort` y `AncillaryPort`. No se cuelgan de `OrderManagePort`.
 6. **Ancillaries NDC: alcance CONDICIONADO.** El contrato de `getAncillaries` v2.3 dice que muestra
-   "*free-of-charge ancillaries*" y que sus dos campos principales (`baggageGrid`, `otherBaggageCharges`)
-   "*se definirán en una versión futura*". Y `createBooking` declara que "*ancillary services are currently not
-   supported for NDC bookings*". **No se compromete venta de ancillaries NDC en fase 1 antes de la captura P-12.**
+   "_free-of-charge ancillaries_" y que sus dos campos principales (`baggageGrid`, `otherBaggageCharges`)
+   "_se definirán en una versión futura_". Y `createBooking` declara que "_ancillary services are currently not
+   supported for NDC bookings_". **No se compromete venta de ancillaries NDC en fase 1 antes de la captura P-12.**
 7. `serviceFee` es el precio **tras el markup de Sabre** y `baseFee` el anterior: **ya hay un markup del proveedor
    antes del nuestro**. El pricing waterfall se aplica encima y hay que decidir sobre cuál (P-16).
 
 ### RF-17 — Modificación de reserva sin tocar forma de pago
 
 **CA.**
+
 1. Bloqueo optimista obligatorio: **105 de 105 requests** envían `bookingSignature` de un `getBooking`
    inmediatamente anterior. El error de firma obsoleta es `UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNATURE`
    (`APPLICATION_ERROR`) y **es el disparador del retry read-modify-write**.
 2. **`modifyBooking` NO devuelve firma nueva** (`ModifyBookingResponse` `:890-914` = `{timestamp, booking, errors[],
-   request}`). Consecuencia dura: **cada cambio encadenado cuesta 2 llamadas**; `retrieveBooking:true` ahorra el
+request}`). Consecuencia dura: **cada cambio encadenado cuesta 2 llamadas**; `retrieveBooking:true` ahorra el
    get de verificación pero no el de firma del siguiente cambio. Impacto directo en coste por transacción y en el
    diseño de la UI (guardar en bloque, no campo a campo).
 3. El `after` se deriva **siempre** de un `getBooking` fresco: no es un PATCH, es un diff de documento y un campo
@@ -441,13 +478,14 @@ y es **la única ruta con soporte NDC**. ATPCO emite contra Price Quotes; NDC em
 sólo miraba los 105 requests de la colección.
 
 **CA.**
+
 1. **`X-Sabre-Group` (carril ATK) o `X-Sabre-Current-City` (carril ATH) son OBLIGATORIOS cuando el body lleva
    `targetPcc`**, y **no son intercambiables**: error `HEADER_DATA_MISSING_TARGET_PCC`
    (`create-booking-error-list.txt:1166-1170`). El pareo es un **invariante del ACL** con test.
 2. **`targetPcc` exige autoridad previa (branch access)**, con códigos verificados:
    `UNABLE_TO_CHANGE_CONTEXT_UNAUTHORIZED`, `..._NOT_ALLOWED`, `..._FINISH_IGNORE`, `..._PLEASE_WAIT`
    (`create-booking-error-list.txt:634-666`; mismos códigos en get y modify).
-3. **El contexto NO se revierte** — "*The API does not revert context after completing the booking*", literal en
+3. **El contexto NO se revierte** — "_The API does not revert context after completing the booking_", literal en
    `createBooking`, `modifyBooking` y `cancelBooking`. **Consecuencia no negociable: toda el área de post-venta usa
    ATK sessionless**, nunca ATH reutilizado. Con sesión compartida, la siguiente llamada apuntaría al PCC ajeno:
    en multi-tenant eso es un incidente de aislamiento esperando a ocurrir (R-08).
@@ -487,13 +525,14 @@ los datos necesarios salen de Sabre.
 
 **Reparto — regla de producto propuesta [DECISIÓN, ver D7]:**
 
-| Concepto | Quién factura | Documento |
-| --- | --- | --- |
-| **Billete aéreo** | La **aerolínea**, contra el BSP del PCC emisor | Billete electrónico + liquidación BSP. No lo facturamos nosotros. |
+| Concepto                                  | Quién factura                                                     | Documento                                                                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Billete aéreo**                         | La **aerolínea**, contra el BSP del PCC emisor                    | Billete electrónico + liquidación BSP. No lo facturamos nosotros.                                                   |
 | **Fee de agencia / markup del waterfall** | La **agencia vendedora** (o el consolidador, según modelo de red) | FEV-DIAN (CO) / Factura SUNAT (PE) / NFS-e **municipal** (BR). Vía `providers/alegra` \| `nubefact` \| `focus-nfe`. |
-| **Void / refund** | Quien facturó el fee | **Nota crédito electrónica** referenciando el documento original. |
+| **Void / refund**                         | Quien facturó el fee                                              | **Nota crédito electrónica** referenciando el documento original.                                                   |
 
 **CA.**
+
 1. `credentialSource` y `FulfillTicket.ticketingPcc` determinan qué cuenta y PCC ejecutaron la operación, **no
    demuestran por sí solos quién es el emisor fiscal o quién asume ADM**. Esa asignación se configura sólo después
    de confirmación contractual escrita y se prueba por cada modelo de red.
@@ -501,7 +540,7 @@ los datos necesarios salen de Sabre.
    `FulfillTicket.ticketingPcc` (quién emitió), `Value = {amount, currencyCode}` del importe,
    y el identificador fiscal del pasajero vía `extraFeatures.returnFiscalId` de `getBooking` (RF-09 CA-4).
 3. **Corrección de una inferencia presentada como hecho:** [05](./05-get-modify-cancel-booking.md) afirmaba que
-   `price.taxBreakdowns[]` es "*suficiente para la facturación DIAN/SUNAT sin llamadas extra*". **No lo es.**
+   `price.taxBreakdowns[]` es "_suficiente para la facturación DIAN/SUNAT sin llamadas extra_". **No lo es.**
    Cubre los impuestos del billete; **no cubre los datos del emisor, ni la resolución/CUFE, ni el fee de agencia**,
    que es justamente lo que facturamos nosotros. Marcado `[INFERIDO]` y degradado en ese documento.
 4. **Riesgo abierto que hay que declarar:** el enum `documentSubType` de `identityDocuments` **no tiene `CPF` ni
@@ -518,17 +557,58 @@ hotelero y a la arrendadora `arrivalAirlineCode/FlightNumber/Time` y `departure*
 Studio "el hotel con este vuelo" **con el vuelo en LATAM NDC directo**.
 
 **CA.**
+
 1. Cuando un paquete contiene vuelo + hotel/auto y el hotel/auto va por Sabre, el ACL **rellena siempre**
    `associatedFlightDetails` desde los segmentos canónicos del vuelo, sea cual sea su proveedor.
 2. Lo que **no** se obtiene y **no se promete al cliente**: localizador único ni cancelación atómica. La UI muestra
    un itinerario unificado y N localizadores.
 3. Test: un paquete con vuelo LATAM + hotel Sabre produce un `createBooking` con `associatedFlightDetails` poblado.
 
+### RF-23 — Localizador de la aerolínea expuesto al pasajero — **NUEVO**
+
+**Descripción.** El código con el que el pasajero hace **web check-in** y con el que llama a la aerolínea **no es
+el PNR de Sabre ni nuestro id de orden**: es el **localizador de la aerolínea**. En el carril NDC viaja en
+`order.externalOrders[].bookingReferences[]` como `{id, carrierCode}` — **VERIFICADO** en la respuesta real
+guardada de `/v1/orders/view` (`evidence/responses/01-Add_phone_Orders_View.json`):
+`[{ "id": "L4D79U", "carrierCode": "F1" }, { "id": "MFFPXC", "carrierCode": "UAD" }]`, citada en
+[05 §11](./05-get-modify-cancel-booking.md). En el carril de Booking Management el homólogo es
+**`Booking.flights[].confirmationId`** (`Flight` = `FlightReference` + `FlightItem`,
+`booking-management-v1.yml:1860-1866` y `:1896-1902`), cuya descripción oficial es _"The booking reference ID in
+the carrier's system. For example, this value would reflect the PNR Locator for American Airlines"_ y cuyo
+comentario `#source` lo empalma explícitamente con `OrderViewResponse.order.externalOrders.bookingReference.id`.
+**Es un dato por transportista, no por reserva:** una reserva interlínea tiene varios.
+
+Este requisito lo delegó [03 §4.8 punto 5](./03-offers-price-asientos-ancillaries.md) — _"lo que el pasajero
+necesita para hacer check-in no es nuestro id de orden ni el PNR de Sabre"_ — y lo dejó abierto
+[05, «Preguntas abiertas» nº 3](./05-get-modify-cancel-booking.md). Sin él, cerrar una venta por WhatsApp entrega al cliente
+un código con el que **no puede** hacer check-in.
+
+**CA.**
+
+1. `OrderView` (RF-09) expone **`airlineLocators: { carrierCode: string; locator: string }[]`**, mapeado desde
+   `order.externalOrders[].bookingReferences[]` (`{id → locator, carrierCode}`) en el carril NDC y desde
+   `booking.flights[].confirmationId` + `flights[].airlineCode` en el carril Booking Management. El campo es
+   **array**, nunca un escalar.
+2. El campo se distingue en el tipo del **`pnrLocator` / `confirmationId` de Sabre** y de nuestro `orderId`. No se
+   colapsan los tres en un solo "código de reserva": el compilador debe impedirlo.
+3. La UI de post-venta y **el canal conversacional muestran el localizador de la aerolínea** junto al nombre del
+   transportista, y **no sólo** el PNR de Sabre. El mensaje de confirmación de WhatsApp que cierra la venta lo
+   incluye.
+4. Si `airlineLocators` llega vacío en un `retrieveForDisplay` de una reserva ya emitida, el ACL lo trata como
+   **dato ausente y visible** (RNF-13: degradación parcial nunca silenciosa), no como "la aerolínea no da código".
+   Es exactamente el caso `RESOURCE_UNAVAILABLE` dentro de un 200 (RNF-03).
+5. Test de contrato con el fixture real de `/v1/orders/view`: `airlineLocators.length === 2` y
+   `airlineLocators[0] == { carrierCode: 'F1', locator: 'L4D79U' }`.
+6. **[INFERIDO] pendiente de CERT (P1):** hay que confirmar que `getBooking` puebla
+   `flights[].confirmationId` para NDC sin necesidad de una segunda llamada a `/v1/orders/view`. Si no lo puebla,
+   la recuperación de una orden NDC cuesta **dos** llamadas y hay que presupuestarlo en RNF-01.
+
 ---
 
 ## 4. Requisitos no funcionales
 
 ### RNF-01 — Latencia y presupuesto de espera
+
 Timeout duro de **8 s** para la rama Sabre del fan-out de búsqueda; p95 del fan-out completo ≤ **6 s**.
 Las operaciones con dinero llevan timeout HTTP **≥ 45 s** por el presupuesto **declarado en contrato**: hasta 15 s
 de reintento ATPCO de estado de vuelo + hasta 10 s de `asynchronousUpdateWaitTime` (`:714-722`), más latencia real.
@@ -538,43 +618,48 @@ magnitud. El sustento de la saga durable ya no es esa medición sino el contrato
 **Verificable:** histograma OTel `provider.search.duration` con label `provider=sabre`, alerta sobre p95.
 
 ### RNF-02 — Caché de búsqueda
+
 TTL 90 s. Clave con **el set de proveedores en claro**: `search:flights:{tenantId}:{codes.sort().join('+')}:{digest}`.
 **No se cachea** si algún proveedor está en `failed` o `simulated` — un fallo transitorio congelado 90 s son 3
 ventanas del circuit breaker ocultando a Sabre ya recuperado. **Se cachea el `Offer[]` canónico, nunca la respuesta
 cruda**, con el TTL del proveedor por oferta (`timeToLive`), no con un TTL global fijo.
 
 ### RNF-03 — Clasificación de errores y circuit breaker
+
 **Ahora es un requisito con tabla, no una intención.** Regla nº 1, no negociable: **`res.ok` no significa éxito**.
 Los contratos declaran casi sólo `200` y los fallos de negocio viajan en `errors[]`
-(`booking-management-v1.yml:461-465`: "*This array is not displayed in successful responses*").
+(`booking-management-v1.yml:461-465`: "_This array is not displayed in successful responses_").
 
-| Clase | Casos (extracto de la tabla oficial 2SG) | Política |
-| --- | --- | --- |
-| **REINTENTABLE (backoff ≥ 500 ms, jitter, máx. 3)** | `429 temporarily_unavailable`, `429 Active token count is exceeded`, `429 ERR.2SG.GATEWAY.REQUEST_THROTTLED`, `401 invalid_client`, `ATH_TOKEN_FAILURE` ("*Please retry the transaction*") | Reintentar. **Sólo en operaciones idempotentes** (RF-01 CA-5). |
-| **NO REINTENTABLE** | `400 Invalid format`, `401 Wrong clientID or clientSecret`, `401 Credentials are missing or syntax`, `403 ERR.2SG.SEC.NOT_AUTHORIZED`, `403 SERVICE_UNKNOWN`, `404 Response does not contain any data`, `405`, `406`, `413` | Fallo terminal con mensaje accionable. **`403` de entitlement NO cuenta como fallo del proveedor ni abre circuito**: es configuración de un tenant. **`404 "no data"` tampoco** — o el breaker abre en cada ruta sin vuelos. |
-| **ABRIR CIRCUITO** | `503`, `504` de inmediato; `500 ERR.2SG.GATEWAY.INVALID_PROVIDER_RESPONSE` de inmediato; el resto de `500` tras ≤ 2 reintentos | Breaker por **`provider_account` resuelta**, no por `providerCode`. |
-| **WARNING que escala a humano** | `PARTIAL_FULFILLMENT`, `FULFILLMENT_NOT_CONFIRMED`, `UNABLE_TO_RETRIEVE_TICKETS`, `UNABLE_TO_RETRIEVE_BOOKING`, `CLOSE_SESSION_WARNING` | No reintentar. Cola `NEEDS_HUMAN` + `domain_event`. |
+| Clase                                               | Casos (extracto de la tabla oficial 2SG)                                                                                                                                                                                    | Política                                                                                                                                                                                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **REINTENTABLE (backoff ≥ 500 ms, jitter, máx. 3)** | `429 temporarily_unavailable`, `429 Active token count is exceeded`, `429 ERR.2SG.GATEWAY.REQUEST_THROTTLED`, `401 invalid_client`, `ATH_TOKEN_FAILURE` ("_Please retry the transaction_")                                  | Reintentar. **Sólo en operaciones idempotentes** (RF-01 CA-5).                                                                                                                                                               |
+| **NO REINTENTABLE**                                 | `400 Invalid format`, `401 Wrong clientID or clientSecret`, `401 Credentials are missing or syntax`, `403 ERR.2SG.SEC.NOT_AUTHORIZED`, `403 SERVICE_UNKNOWN`, `404 Response does not contain any data`, `405`, `406`, `413` | Fallo terminal con mensaje accionable. **`403` de entitlement NO cuenta como fallo del proveedor ni abre circuito**: es configuración de un tenant. **`404 "no data"` tampoco** — o el breaker abre en cada ruta sin vuelos. |
+| **ABRIR CIRCUITO**                                  | `503`, `504` de inmediato; `500 ERR.2SG.GATEWAY.INVALID_PROVIDER_RESPONSE` de inmediato; el resto de `500` tras ≤ 2 reintentos                                                                                              | Breaker por **`provider_account` resuelta**, no por `providerCode`.                                                                                                                                                          |
+| **WARNING que escala a humano**                     | `PARTIAL_FULFILLMENT`, `FULFILLMENT_NOT_CONFIRMED`, `UNABLE_TO_RETRIEVE_TICKETS`, `UNABLE_TO_RETRIEVE_BOOKING`, `CLOSE_SESSION_WARNING`                                                                                     | No reintentar. Cola `NEEDS_HUMAN` + `domain_event`.                                                                                                                                                                          |
 
 El "≥ 500 ms" es la **única** cifra de espera que Sabre publica y la repite en todos los casos reintentables: es
 suelo, no política. **Verificable:** test con reloj falso por transición + test de que un 403-entitlement y un
 404-sin-datos no incrementan el contador.
 
 ### RNF-04 — Semáforo de concurrencia
-El límite de Sabre es de **CONCURRENCIA, no de TPS**: *"Maximum number of **concurrent requests** for the API has
+
+El límite de Sabre es de **CONCURRENCIA, no de TPS**: _"Maximum number of **concurrent requests** for the API has
 been exceeded… contact your Sabre account manager to determine or increase your **allocated concurrent request
-limit**"*. Semáforo **por `provider_account` resuelta** (varios tenants pueden compartir credencial heredada y
+limit**"_. Semáforo **por `provider_account` resuelta** (varios tenants pueden compartir credencial heredada y
 agotarse el cupo entre sí), **en Redis desde el primer día multi-instancia**, con el valor en
 `config.maxConcurrentRequests`. Hacerlo desde el día 1 y no "cuando aparezca el problema": el fan-out escala con el
 número de vendedores buscando, así que **una campaña de ventas exitosa nos throttlearía a nosotros mismos**.
 **Verificable:** test que lanza N+5 búsquedas concurrentes con cupo N y verifica que nunca hay más de N en vuelo.
 
 ### RNF-05 — Aislamiento multi-tenant
+
 La caché de instancias del factory se indexa por `ownerTenantId`, **nunca** por `tenantId`, con `evictStale` al
 rotar credenciales. Y **ATK sessionless siempre** en toda operación que use `targetPcc` (RF-18 CA-3).
 **Verificable:** `apps/api/src/providers/adapter-cache-isolation.test.ts` + test de aislamiento cross-tenant en CI,
 que `CLAUDE.md` ya exige.
 
 ### RNF-06 — PCI (el requisito con más peso)
+
 **Ningún body construido por nuestro backend contiene `cardNumber` ni `cardSecurityCode`, en ningún endpoint de
 Sabre.** Mantiene SAQ-A, que `CLAUDE.md` declara no negociable en fase 1.
 **Verificable en tres capas:** (1) test de CI que serializa los bodies de `createBooking`, `fulfillFlightTickets` y
@@ -582,6 +667,7 @@ Sabre.** Mantiene SAQ-A, que `CLAUDE.md` declara no negociable en fase 1.
 error es de compilación); (3) regla de lint que prohíbe esas cadenas literales en `providers/sabre/`.
 
 ### RNF-07 — Redacción de secretos y PII en logs
+
 Nunca se loguean `Authorization`, `secret`, `password`, `access_token`, `BinarySecurityToken`, el sobre SOAP
 completo, ni el body completo de `createBooking`/`getBooking` (hacen **eco de la request entera**, con pasaportes y
 fechas de nacimiento). **El `secret` es base64 reversible, no un hash**: loguearlo equivale a loguear el password de
@@ -589,21 +675,25 @@ la oficina en claro. **Verificable:** test de CI contra un transporte de logs mo
 **antes** de copiar el patrón.
 
 ### RNF-08 — Auditoría
+
 Emiten `domain_event` con actor, tenant y payload redactado: creación, emisión, void, refund, modificación, uso de
 `overrideCancelFee`, uso de comisión manual, **activación de `is_inheritable`** en una cuenta Sabre, y **todo uso de
 un `DO_NOT_HALT_ON_*`** (RF-08 CA-1).
 
 ### RNF-09 — Observabilidad
+
 Una fila en `search_logs` **por proveedor**, todas con el mismo `search_group_id`. Spans OTel por llamada con
 `provider`, `endpoint`, `status`, `duration_ms`, `credential_source` y **`requestType`** (sin él, un resultado vacío
 de BFM por tier no suscrito es indiagnosticable — RF-03 CA-5). Nunca el body.
 
 ### RNF-10 — Cuota horaria del tenant
+
 La cuota cuenta **búsquedas del vendedor**, no llamadas a proveedor:
 `count_recent_searches` pasa a `COUNT(DISTINCT COALESCE(search_group_id, id))`. Sin esto, 600/h se convierte en 300
 al sumar Sabre **y el mensaje de error miente sobre el número**, así que nadie lo diagnostica.
 
 ### RNF-11 — Durabilidad de las operaciones con dinero
+
 `createBooking`, `fulfillFlightTickets`, `voidFlightTickets` y `refundFlightTickets` corren en saga durable con
 clave de idempotencia propia, reconciliación por `getBooking` como actividad y compensación explícita.
 **Nunca en un `try/catch` dentro del handler HTTP.** El sustento es de contrato (RNF-01), no una medición ajena.
@@ -611,26 +701,34 @@ clave de idempotencia propia, reconciliación por `getBooking` como actividad y 
 reemitir.
 
 ### RNF-12 — Vencimiento de ofertas
+
 `Offer.expiresAt` refleja el TTL real del proveedor (`timeToLive`/`ttl`, **requeridos por contrato**). Id expirado →
 `OfferExpiredError` + re-shop con **confirmación explícita del vendedor si el precio cambió**, y aviso en la UI al
 **75 % del TTL**. Ataca el escenario más probable en venta por WhatsApp: el vendedor cotiza, el cliente responde 40
 minutos después, la oferta murió.
 
 ### RNF-13 — Degradación parcial nunca silenciosa
+
 Si Sabre no respondió, el vendedor **lo ve en pantalla**. Un vendedor que dice "no hay más vuelos" cuando Sabre no
 respondió es peor que un error visible.
 
 ### RNF-14 — Cobertura y red de seguridad previa
+
 `apps/api/src/search/` **no tiene un solo test hoy** y es el código que genera todos los ingresos. Los tests de
 comportamiento actual se escriben **antes** del refactor. Se añade `vitest.config.ts` con `coverage.thresholds`
 (>70 % en `domain/` y `providers/sabre/`, >50 % global): hoy los umbrales de `CLAUDE.md` no se aplican en ninguna
 parte.
 
 ### RNF-15 — Specs versionados y tests de contrato — **NUEVO**
-Los 19 `.yml` se **commitean** en `providers/sabre/spec/` con su `info.version` pineado, y CI falla si el schema
-generado diverge. Razón: **Booking Management publica una versión cada 2-3 meses** (34 releases, 1.0 en abr-2020 →
-1.33 en jul-2026) y **el propio corpus creció de 15 a 21 specs mientras se escribían estos documentos**. Sin pineo,
-el contrato cambia bajo los pies y los tests de contrato dejan de ser reproducibles.
+
+Los 21 `.yml` ya están **commiteados en `docs/sabre/evidence/specs/`**, que es la ruta que citan las ~185
+afirmaciones `VERIFICADO-SPEC` del expediente. `providers/sabre/` **no lleva copia**: dos originales divergirían,
+que es justo lo que este requisito evita. Lo que sí lleva el paquete es un `spec/manifest.json` con
+`{slug, info.version, sha256}` de cada contrato, y CI falla si el schema generado diverge del pineado.
+
+Razón: **Booking Management publica una versión cada 2-3 meses** (34 releases, 1.0 en abr-2020 → 1.33 en jul-2026)
+y **el propio corpus creció de 15 a 21 specs mientras se escribían estos documentos**. Sin pineo, el contrato
+cambia bajo los pies y los tests de contrato dejan de ser reproducibles.
 
 ---
 
@@ -652,16 +750,20 @@ apuntan sólo a v2**). **No se persiste el `secret` derivado.**
 ```json
 {
   "environment": "cert",
-  "restEndpoint": null, "soapEndpoint": null,
-  "homePcc": "U9PK", "ticketingPcc": "7KFA",
+  "restEndpoint": null,
+  "soapEndpoint": null,
+  "homePcc": "U9PK",
+  "ticketingPcc": "7KFA",
   "agencyIata": "76512345",
   "domain": "AA",
   "applicationId": null,
   "requestType": "50ITINS",
   "maxConcurrentRequests": null,
   "automatedRefundsEnabled": false,
-  "printerHardcopyLniata": null, "printerCountryCode": "CO",
-  "sabreGroup": null, "sabreCurrentCity": null,
+  "printerHardcopyLniata": null,
+  "printerCountryCode": "CO",
+  "sabreGroup": null,
+  "sabreCurrentCity": null,
   "tokenTtlSeconds": 3600,
   "mock": false
 }
@@ -672,7 +774,7 @@ Cambios respecto de la versión anterior, cada uno con su razón:
 - **`ticketingPccTimezone` ELIMINADO.** La ventana de void **se lee de Sabre** (`isVoidable`,
   `offerExpirationTime` en UTC), no se calcula. Mantener el campo invitaba a calcularla mal.
 - **`applicationId` AÑADIDO.** `Application-ID` es parámetro opcional **recomendado** en hotel y vehículo
-  ("*work with your account manager to generate one*"). No lo tenemos (P-20).
+  ("_work with your account manager to generate one_"). No lo tenemos (P-20).
 - **`requestType` AÑADIDO.** Es un **tier contratado**; pedir uno no suscrito devuelve cero resultados sin error.
   No puede estar hardcodeado.
 - **`maxConcurrentRequests` AÑADIDO.** El cupo de concurrencia es contractual por cuenta (RNF-04).
@@ -693,17 +795,17 @@ la cuenta parecería configurada y el proveedor correría en modo mock silencios
 
 ### 5.2 Estado efímero entre pasos de venta
 
-| Dato | Nace en | Muere | Dónde vive |
-| --- | --- | --- | --- |
-| `access_token` (ATK) | `/v2/auth/token` | `expires_in` de la respuesta (ejemplo oficial 604800 s) | Port de caché (Redis), `sabre:atk:{ownerTenantId}:{pcc}` |
-| `offer.timeToLive` (shop) | shop | **segundos, campo requerido** | `Offer.expiresAt` |
-| `offer.ttl` + `offerExpirationDateTime` (price) | price | **requeridos; ~20 min en el ejemplo oficial** | `Offer.expiresAt` + `Offer.provider.raw` |
-| `paymentTimeLimitDateTime` / `purchaseTimeLimitDateTime` | price | del proveedor | Saga de checkout (deadline duro) |
-| `confirmationId` (PNR) | createBooking | permanente | `orders.provider_order_id` |
-| `bookingSignature` | **sólo** `getBooking` sin `returnOnly` | al siguiente write | **Nunca cacheado.** Empaquetado con el perfil de `extraFeatures` en un `OrderVersionStamp` (viajan inseparables o falla la firma) |
-| `cancelOffers[].offerItemId` + `offerExpirationTime` (UTC) | checkFlightTickets | corto, publicado por Sabre | Saga de cancelación |
+| Dato                                                       | Nace en                                | Muere                                                   | Dónde vive                                                                                                                        |
+| ---------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `access_token` (ATK)                                       | `/v2/auth/token`                       | `expires_in` de la respuesta (ejemplo oficial 604800 s) | Port de caché (Redis), `sabre:atk:{ownerTenantId}:{pcc}`                                                                          |
+| `offer.timeToLive` (shop)                                  | shop                                   | **segundos, campo requerido**                           | `Offer.expiresAt`                                                                                                                 |
+| `offer.ttl` + `offerExpirationDateTime` (price)            | price                                  | **requeridos; ~20 min en el ejemplo oficial**           | `Offer.expiresAt` + `Offer.provider.raw`                                                                                          |
+| `paymentTimeLimitDateTime` / `purchaseTimeLimitDateTime`   | price                                  | del proveedor                                           | Saga de checkout (deadline duro)                                                                                                  |
+| `confirmationId` (PNR)                                     | createBooking                          | permanente                                              | `orders.provider_order_id`                                                                                                        |
+| `bookingSignature`                                         | **sólo** `getBooking` sin `returnOnly` | al siguiente write                                      | **Nunca cacheado.** Empaquetado con el perfil de `extraFeatures` en un `OrderVersionStamp` (viajan inseparables o falla la firma) |
+| `cancelOffers[].offerItemId` + `offerExpirationTime` (UTC) | checkFlightTickets                     | corto, publicado por Sabre                              | Saga de cancelación                                                                                                               |
 
-**Decisión de modelado:** *no* crear tabla `provider_offers`. La caché de búsqueda ya guarda las Offers y
+**Decisión de modelado:** _no_ crear tabla `provider_offers`. La caché de búsqueda ya guarda las Offers y
 `expiresAt` las hace inmutables con TTL. Se revisa **sólo** si el sandbox demuestra que los ids expiran más rápido
 que el flujo de venta.
 
@@ -724,8 +826,8 @@ Migración `00XX_multi_flight_provider.sql` ([08 §4.2](./08-seams-integracion-r
    `.max(200)` → `.max(2000)`; si sólo se toca el SQL, el 400 sigue apareciendo antes de llegar a Postgres.
    **Se hace ahora, no en la Ola 2** (D8): hoy es un `ALTER` que en Postgres 16 no reescribe la tabla ni reindexa
    (no hay índice sobre esa columna) y la tabla está casi vacía sin front-end; después es una migración con datos de
-   producción de "el corazón del producto", y el síntoma es *"el vuelo de Sabre no se puede agregar al paquete:
-   String too long"*.
+   producción de "el corazón del producto", y el síntoma es _"el vuelo de Sabre no se puede agregar al paquete:
+   String too long"_.
    **Regla que acompaña al cambio:** `provider_item_id` es la **clave** para volver a pedirle el ítem al proveedor;
    si el proveedor no da clave y hay que reconstruir el producto entero (ATPCO/LCC, hasta 16 vuelos), eso va en
    `raw_details JSONB` (`0010:100`), **no en la columna**.
@@ -765,6 +867,7 @@ miente en los dos sentidos ahora que el éxito parcial es un modo declarado del 
 ## 6. Contrato de integración con la plataforma
 
 ### 6.1 Entrada al fan-out de búsqueda
+
 `SearchService` consulta `FlightProviderRegistry.forTenant(tenantId)`, que devuelve `ResolvedProvider[]` en **orden
 estable** (alfabético por code — el orden es parte de la clave de caché). Un proveedor está habilitado si
 `resolve_provider_account` devuelve fila `active`, **o** si su code está en `PLATFORM_DEFAULT_FLIGHT_PROVIDERS`.
@@ -780,6 +883,7 @@ PCC a la vez, `ResolvedProvider.code` tiene que volverse `code+label`, y eso cam
 y `search_logs.provider_code` (P-09).
 
 ### 6.2 Pricing waterfall
+
 El waterfall (override consolidador + markup agencia + comisión vendedor) opera sobre `Offer.total` **antes** de
 cualquier fee de forma de pago. Es contable interno y **no es lo mismo** que la comisión BSP que la aerolínea
 reconoce contra el PCC emisor: son dos circuitos de liquidación y mezclarlos rompe la conciliación BSP.
@@ -796,6 +900,7 @@ consolidador** y no hay base para su override. El waterfall tiene que conocer el
 cobrará un override que nadie va a liquidar.
 
 ### 6.3 Cotizaciones y paquetes
+
 Las ofertas Sabre entran a cotizaciones como cualquier otra. **Pero `Offer.expiresAt` deja de ser decorativo**: en
 cotizaciones por WhatsApp la UI muestra el vencimiento y ofrece re-cotización con un clic (RNF-12).
 
@@ -813,6 +918,7 @@ cotizaciones por WhatsApp la UI muestra el vencimiento y ofrece re-cotización c
   nunca en silencio (**D6**).
 
 ### 6.4 Órdenes y post-venta
+
 `orders.provider` se llena desde `dto.offer.provider.name`; `orders.service` y `orders.controller` enrutan por
 `registry.byCode`. **Tres bugs latentes que estallan el día 1 de Sabre y deben arreglarse en el mismo PR que habilita
 Sabre en búsqueda** (verificados contra el repo @ `c39ac93`):
@@ -834,6 +940,22 @@ migraciones `0018`/`0034`). **Sabre Profiles queda fuera** (N6) y en `createBook
 RLS** — que en BYOC estaría además bajo el PCC del consolidador, es decir, PII de clientes de la agencia A visible
 desde el dominio del consolidador. No compensa.
 
+**Restricción que condiciona el canal conversacional: el contacto es por pasajero, no por reserva.** Varias
+aerolíneas NDC exigen `emails[]` y `phones[{number,label}]` **en cada `travelers[]`**, no un contacto único de
+reserva — **VERIFICADO**: los tres pasajeros de `Workflows / 12 - NDC Multi Adult Travelers … extra contact
+information / CreateBooking NDC` los llevan individualmente. **VERIFICADO-SPEC**, el error que produce omitirlo:
+`TRAVELER_PHONE_MISSING` / `BAD_REQUEST` — _"The traveler's phone information is required. Verify the travelers
+list and include missing phone details"_
+(`help/booking-management-api-v1/help-documentation-create-booking-error-list.txt:452-456`). Detalle de los tres
+niveles de contacto (agencia / pasajero / genérico) en [04 §3.5](./04-create-booking.md).
+
+**Consecuencia operativa, no cosmética:** el bot de WhatsApp sólo conoce el número de **quien escribe**. Para una
+reserva de varios pasajeros **le falta el dato de los acompañantes**, y eso bloquea el `createBooking` —no el
+`offers/price`—, es decir, falla **al final** del embudo. El flujo conversacional debe **pedir teléfono y email de
+cada acompañante antes de reservar**, y el CRM (`customers/`, con la PII de acompañantes ya modelada) es el
+maestro de esos datos; el ACL los emite en formato canónico `+CC-numero` (04 §3.5). Ver también
+[03 §4.8 punto 6](./03-offers-price-asientos-ancillaries.md).
+
 `apps/api/src/crm/` es **agnóstico de proveedor** y no requiere cambios: en sus 8 archivos la palabra `provider`
 sólo aparece como la clave `providers:` del decorador `@Module`, y `crm_opportunities.order_id` referencia `orders`
 por UUID, así que hereda el cambio de `orders.provider` sin código nuevo.
@@ -843,7 +965,7 @@ por UUID, así que hereda el cambio de `orders.provider` sin código nuevo.
 RF-21 fija el reparto. El contrato con la plataforma es:
 
 - El flujo de emisión **emite un `domain_event` de "venta liquidable"** con `{tenantId, credentialSource,
-  ticketingPcc, importes por concepto, moneda, identificador fiscal del pasajero}`. Ese evento es la entrada única
+ticketingPcc, importes por concepto, moneda, identificador fiscal del pasajero}`. Ese evento es la entrada única
   del módulo fiscal; el módulo fiscal **no llama a Sabre**.
 - Void y refund emiten el evento espejo, que produce **nota crédito**.
 - El proveedor fiscal se resuelve por país del emisor: `alegra` (CO), `nubefact` (PE), `focus-nfe` (BR, con la
@@ -855,35 +977,36 @@ RF-21 fija el reparto. El contrato con la plataforma es:
 
 ## 7. Matriz de trazabilidad
 
-| Req | Documento fuente | Evidencia | Estado |
-| --- | --- | --- | --- |
-| RF-01 | [01 §2, §5, §7](./01-autenticacion-y-conectividad.md) | 59 requests + `securityDefinitions` en los 21 specs + tabla 2SG | **VERIFICADO-SPEC** / valor real de `expires_in` DESCONOCIDO |
-| RF-02 | [01 §8](./01-autenticacion-y-conectividad.md), [08 §4.1](./08-seams-integracion-repo.md) | `db/migrations/0012` leída | **VERIFICADO** (schema propio) |
-| RF-03 | [02 §3-§6](./02-air-shop-bfm.md) | 88 bodies + `bargain-finder-max-v5.yml` | **VERIFICADO-SPEC** |
-| RF-04 | [02 §7](./02-air-shop-bfm.md) | Mapa de campos + **3 ejemplos oficiales completos** | **VERIFICADO-SPEC** — deja de ser bloqueante |
-| RF-05 | [08 §2](./08-seams-integracion-repo.md) | Código del repo con archivo:línea | **VERIFICADO** |
-| RF-06 | [02 §9](./02-air-shop-bfm.md), [09 §7.2](./09-referencia-externa-y-gaps.md) | `Offer.source` requerido; `MultipleSourcePerItinerary` y su default | **VERIFICADO-SPEC** / clave de producto PROPUESTA |
-| RF-07 | [03 §2-§3](./03-offers-price-asientos-ancillaries.md) | `offer-price-ndc-v1.yml` + 5 respuestas de ejemplo | **VERIFICADO-SPEC** |
-| RF-08 | [04](./04-create-booking.md) | 176 requests + `booking-management-v1.yml` (270 defs) + ~180 errores | **VERIFICADO-SPEC** |
-| RF-09 | [05 §3, §5](./05-get-modify-cancel-booking.md) | 204 getBooking + modelo `Booking` de 32 propiedades | **VERIFICADO-SPEC** |
-| RF-10 | [05 §6](./05-get-modify-cancel-booking.md) | 43 requests + `CancelBookingResponse` `:440-487` | **VERIFICADO-SPEC** |
-| RF-11 | [06 §1-§3](./06-ticketing-void-refund.md) | 19 fulfill + `FulfillTicketsResponse` `:1022` + 7 warnings oficiales | **VERIFICADO-SPEC** |
-| RF-12 | [06 §4](./06-ticketing-void-refund.md) | `CheckTicketsResponse` `:660` + ejemplo oficial | **VERIFICADO-SPEC** — era el mayor agujero, cerrado |
-| RF-13/14 | [06 §5-§6](./06-ticketing-void-refund.md) | `isVoidable`, `cancelOffers[].offerExpirationTime` (UTC) | **VERIFICADO-SPEC** / regla ATPCO DESCONOCIDA |
-| RF-15 | [06 §9-§10](./06-ticketing-void-refund.md) | `TicketStatusEnum` `:9195` + código `TO` | **VERIFICADO-SPEC** |
-| RF-16 | [03 §4-§5](./03-offers-price-asientos-ancillaries.md) | `get-seats-agency-3.0.yml`, `get-ancillaries-agency-2.3.yml` | **VERIFICADO-SPEC** / versión a usar DESCONOCIDA (P-06); utilidad real de ancillaries NDC DESCONOCIDA (P-12) |
-| RF-17 | [05 §4-§5](./05-get-modify-cancel-booking.md) | 105/105 con firma + `BookingToModify` `:1255-1325` | **VERIFICADO-SPEC** |
-| RF-18 | [01 §4.4-§4.5](./01-autenticacion-y-conectividad.md) | `targetPcc` en 8 operaciones + 4 errores de branch access | **VERIFICADO-SPEC** / autoridad concreta de nuestro EPR DESCONOCIDA (P-10) |
-| RF-19 | [08 §1.3](./08-seams-integracion-repo.md) | `orders.controller.ts:141` | **VERIFICADO** |
-| RF-20 | [01 §9](./01-autenticacion-y-conectividad.md), [06](./06-ticketing-void-refund.md) | `FulfillTicket.ticketingPcc` `:7965` | **VERIFICADO-SPEC** (el mecanismo) / política de atribución PROPUESTA |
-| RF-21 | `docs/research/04-regulacion-fiscal-latam.md`, [05](./05-get-modify-cancel-booking.md), [06](./06-ticketing-void-refund.md) | `extraFeatures.returnFiscalId`; enum `documentSubType` **sin CPF/CNPJ** | **INFERIDO** — reparto es decisión (D7); la ausencia de CPF/CNPJ es VERIFICADO-SPEC |
-| RF-22 | [07 §6.5](./07-hoteles-y-autos.md) | `AssociatedFlightDetails` `:3183`, `:5074`, `:7213` | **VERIFICADO-SPEC** |
-| RNF-01 | [04 §5](./04-create-booking.md), [09 §4.2](./09-referencia-externa-y-gaps.md) | Retry ATPCO 1+2+3+4+5 s + `asynchronousUpdateWaitTime` `:714-722` | **VERIFICADO-SPEC** / cifras de 2021 degradadas a **[TERCERO]** |
-| RNF-03 | [01 §5](./01-autenticacion-y-conectividad.md), [09 §2](./09-referencia-externa-y-gaps.md) | Tabla 2SG oficial + 746 filas de `category`/`type` | **VERIFICADO-SPEC** |
-| RNF-04 | [09 §4.1](./09-referencia-externa-y-gaps.md) | `help/errors.txt:201,213` (concurrencia, no TPS) | **VERIFICADO-SPEC** (existe) / **cifra DESCONOCIDA** (contractual, P-02) |
-| RNF-06 | [04 §6](./04-create-booking.md), [06 §2.3](./06-ticketing-void-refund.md) | **49**+15 requests con PAN, **46**+12 con CVV, **cero** con token | **VERIFICADO** (reconteo publicado en §8) |
-| RNF-15 | [09 §1](./09-referencia-externa-y-gaps.md) | 34 releases de Booking Management; corpus 15 → 21 specs | **VERIFICADO-SPEC** |
-| RNF-02/05/07/08/09/10/11/12/13/14 | [08](./08-seams-integracion-repo.md) | Código del repo | **VERIFICADO** |
+| Req                               | Documento fuente                                                                                                            | Evidencia                                                                                                                                                                                                                 | Estado                                                                                                                                                       |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| RF-01                             | [01 §2, §5, §7](./01-autenticacion-y-conectividad.md)                                                                       | 59 requests + `securityDefinitions` en los 21 specs + tabla 2SG                                                                                                                                                           | **VERIFICADO-SPEC** / valor real de `expires_in` DESCONOCIDO                                                                                                 |
+| RF-02                             | [01 §8](./01-autenticacion-y-conectividad.md), [08 §4.1](./08-seams-integracion-repo.md)                                    | `db/migrations/0012` leída                                                                                                                                                                                                | **VERIFICADO** (schema propio)                                                                                                                               |
+| RF-03                             | [02 §3-§6](./02-air-shop-bfm.md)                                                                                            | 88 bodies + `bargain-finder-max-v5.yml`                                                                                                                                                                                   | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-04                             | [02 §7](./02-air-shop-bfm.md)                                                                                               | Mapa de campos + **3 ejemplos oficiales completos**                                                                                                                                                                       | **VERIFICADO-SPEC** — deja de ser bloqueante                                                                                                                 |
+| RF-05                             | [08 §2](./08-seams-integracion-repo.md)                                                                                     | Código del repo con archivo:línea                                                                                                                                                                                         | **VERIFICADO**                                                                                                                                               |
+| RF-06                             | [02 §9](./02-air-shop-bfm.md), [09 §7.2](./09-referencia-externa-y-gaps.md)                                                 | `Offer.source` requerido; `MultipleSourcePerItinerary` y su default                                                                                                                                                       | **VERIFICADO-SPEC** / clave de producto PROPUESTA                                                                                                            |
+| RF-07                             | [03 §2-§3](./03-offers-price-asientos-ancillaries.md)                                                                       | `offer-price-ndc-v1.yml` + 5 respuestas de ejemplo                                                                                                                                                                        | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-08                             | [04](./04-create-booking.md)                                                                                                | 176 requests + `booking-management-v1.yml` (270 defs) + ~180 errores                                                                                                                                                      | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-09                             | [05 §3, §5](./05-get-modify-cancel-booking.md)                                                                              | 204 getBooking + modelo `Booking` de 32 propiedades                                                                                                                                                                       | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-10                             | [05 §6](./05-get-modify-cancel-booking.md)                                                                                  | 43 requests + `CancelBookingResponse` `:440-487`                                                                                                                                                                          | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-11                             | [06 §1-§3](./06-ticketing-void-refund.md)                                                                                   | 19 fulfill + `FulfillTicketsResponse` `:1022` + 7 warnings oficiales                                                                                                                                                      | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-12                             | [06 §4](./06-ticketing-void-refund.md)                                                                                      | `CheckTicketsResponse` `:660` + ejemplo oficial                                                                                                                                                                           | **VERIFICADO-SPEC** — era el mayor agujero, cerrado                                                                                                          |
+| RF-13/14                          | [06 §5-§6](./06-ticketing-void-refund.md)                                                                                   | `isVoidable`, `cancelOffers[].offerExpirationTime` (UTC)                                                                                                                                                                  | **VERIFICADO-SPEC** / regla ATPCO DESCONOCIDA                                                                                                                |
+| RF-15                             | [06 §9-§10](./06-ticketing-void-refund.md)                                                                                  | `TicketStatusEnum` `:9195` + código `TO`                                                                                                                                                                                  | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-16                             | [03 §4-§5](./03-offers-price-asientos-ancillaries.md)                                                                       | `get-seats-agency-3.0.yml`, `get-ancillaries-agency-2.3.yml`                                                                                                                                                              | **VERIFICADO-SPEC** / versión a usar DESCONOCIDA (P-06); utilidad real de ancillaries NDC DESCONOCIDA (P-12)                                                 |
+| RF-17                             | [05 §4-§5](./05-get-modify-cancel-booking.md)                                                                               | 105/105 con firma + `BookingToModify` `:1255-1325`                                                                                                                                                                        | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-18                             | [01 §4.4-§4.5](./01-autenticacion-y-conectividad.md)                                                                        | `targetPcc` en 8 operaciones + 4 errores de branch access                                                                                                                                                                 | **VERIFICADO-SPEC** / autoridad concreta de nuestro EPR DESCONOCIDA (P-10)                                                                                   |
+| RF-19                             | [08 §1.3](./08-seams-integracion-repo.md)                                                                                   | `orders.controller.ts:141`                                                                                                                                                                                                | **VERIFICADO**                                                                                                                                               |
+| RF-20                             | [01 §9](./01-autenticacion-y-conectividad.md), [06](./06-ticketing-void-refund.md)                                          | `FulfillTicket.ticketingPcc` `:7965`                                                                                                                                                                                      | **VERIFICADO-SPEC** (el mecanismo) / política de atribución PROPUESTA                                                                                        |
+| RF-21                             | `docs/research/04-regulacion-fiscal-latam.md`, [05](./05-get-modify-cancel-booking.md), [06](./06-ticketing-void-refund.md) | `extraFeatures.returnFiscalId`; enum `documentSubType` **sin CPF/CNPJ**                                                                                                                                                   | **INFERIDO** — reparto es decisión (D7); la ausencia de CPF/CNPJ es VERIFICADO-SPEC                                                                          |
+| RF-22                             | [07 §6.5](./07-hoteles-y-autos.md)                                                                                          | `AssociatedFlightDetails` `:3183`, `:5074`, `:7213`                                                                                                                                                                       | **VERIFICADO-SPEC**                                                                                                                                          |
+| RF-23                             | [03 §4.8](./03-offers-price-asientos-ancillaries.md), [05 §11](./05-get-modify-cancel-booking.md)                           | Respuesta real de `/v1/orders/view`: `bookingReferences: [{id:'L4D79U',carrierCode:'F1'},{id:'MFFPXC',carrierCode:'UAD'}]` + `Flight.confirmationId` `:1896-1902` con su `#source` a `externalOrders.bookingReference.id` | **VERIFICADO** (el dato NDC) / **VERIFICADO-SPEC** (el homólogo en `Booking`) / **DESCONOCIDO**: si `getBooking` lo puebla para NDC sin segunda llamada (P1) |
+| RNF-01                            | [04 §5](./04-create-booking.md), [09 §4.2](./09-referencia-externa-y-gaps.md)                                               | Retry ATPCO 1+2+3+4+5 s + `asynchronousUpdateWaitTime` `:714-722`                                                                                                                                                         | **VERIFICADO-SPEC** / cifras de 2021 degradadas a **[TERCERO]**                                                                                              |
+| RNF-03                            | [01 §5](./01-autenticacion-y-conectividad.md), [09 §2](./09-referencia-externa-y-gaps.md)                                   | Tabla 2SG oficial + 746 filas de `category`/`type`                                                                                                                                                                        | **VERIFICADO-SPEC**                                                                                                                                          |
+| RNF-04                            | [09 §4.1](./09-referencia-externa-y-gaps.md)                                                                                | `help/errors.txt:201,213` (concurrencia, no TPS)                                                                                                                                                                          | **VERIFICADO-SPEC** (existe) / **cifra DESCONOCIDA** (contractual, P-02)                                                                                     |
+| RNF-06                            | [04 §6](./04-create-booking.md), [06 §2.3](./06-ticketing-void-refund.md)                                                   | **49**+15 requests con PAN, **46**+12 con CVV, **cero** con token                                                                                                                                                         | **VERIFICADO** (reconteo publicado en §8)                                                                                                                    |
+| RNF-15                            | [09 §1](./09-referencia-externa-y-gaps.md)                                                                                  | 34 releases de Booking Management; corpus 15 → 21 specs                                                                                                                                                                   | **VERIFICADO-SPEC**                                                                                                                                          |
+| RNF-02/05/07/08/09/10/11/12/13/14 | [08](./08-seams-integracion-repo.md)                                                                                        | Código del repo                                                                                                                                                                                                           | **VERIFICADO**                                                                                                                                               |
 
 ---
 
@@ -898,15 +1021,15 @@ producto es viable estaban en P2.
 
 ### P0 — Bloquean la decisión de invertir
 
-| # | Pregunta | Cómo se resuelve | Qué decide |
-| --- | --- | --- | --- |
-| **P-01** | **¿Cuál es el fee por transacción, y se tarifa por búsqueda, por `RequestType` o por reserva?** BFM está marcado **`premium`** en el catálogo de Sabre | Account manager, por escrito | **Un fee por búsqueda mal negociado hace inviable el modelo entero**: la búsqueda es alto volumen y baja conversión. Es la entrada de la compuerta Go/No-Go |
-| **P-02** | **¿Permite Sabre que un consolidador opere múltiples PCC de terceros bajo un mismo contrato técnico, y en qué condiciones se concede el *branch access*?** (quién lo solicita, plazo, coste por agencia, límite) | Account manager, por escrito | **Decide si nuestro BYOC es viable con Sabre tal como está diseñado.** Sin esto no hay red de agencias |
-| **P-03** | **¿Acepta la aerolínea NDC una forma de pago sin PAN (CASH / ON_ACCOUNT / VIRTUAL_CARD) y la liquida por BSP?** | Account manager + una llamada a CERT | Determina si **D1** es implementable o hay que cambiar de estrategia de cobro. Ver la refutación de evidencia más abajo |
-| **P-04** | **¿Qué cobertura NDC real hay en CO/PE/BR — Copa, Gol, Azul incluidas — y qué aporte incremental da Sabre sobre LATAM NDC directo?** | 20-30 búsquedas contra CERT (§2.3) + account manager | **Es la métrica de valor esperado.** Sin ella, las fases 1-4 son una apuesta de ~50 d-p |
-| **P-05** | **¿Qué credencial nos entrega el cliente?** | **RESUELTA 2026-08-25:** EPR+PCC+password disponibles fuera de Git; falta inyección segura y smoke test | Desbloquea el arranque de CERT |
-| **P-06** | ¿Qué entitlements tiene nuestro PCC de CERT (BFM y su tier, Offers Price, Booking Mgmt, Get Seats, Get Ancillaries, Manage Ancillary, Automated Refunds)? | Smoke test: un request por familia. `403 ERR.2SG.SEC.NOT_AUTHORIZED` lo revela al instante | El alcance real de §2.1 |
-| **P-07** | ¿Decidimos **nunca** mandar PAN? (**D1**) | Decisión del founder | RF-08, RF-11, RF-17, todo el checkout |
+| #        | Pregunta                                                                                                                                                                                                         | Cómo se resuelve                                                                                                     | Qué decide                                                                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P-01** | **¿Cuál es el fee por transacción, y se tarifa por búsqueda, por `RequestType` o por reserva?** BFM está marcado **`premium`** en el catálogo de Sabre                                                           | Account manager, por escrito                                                                                         | **Un fee por búsqueda mal negociado hace inviable el modelo entero**: la búsqueda es alto volumen y baja conversión. Es la entrada de la compuerta Go/No-Go |
+| **P-02** | **¿Permite Sabre que un consolidador opere múltiples PCC de terceros bajo un mismo contrato técnico, y en qué condiciones se concede el _branch access_?** (quién lo solicita, plazo, coste por agencia, límite) | Account manager, por escrito                                                                                         | **Decide si nuestro BYOC es viable con Sabre tal como está diseñado.** Sin esto no hay red de agencias                                                      |
+| **P-03** | **¿Acepta la aerolínea NDC una forma de pago sin PAN (CASH / ON_ACCOUNT / VIRTUAL_CARD) y la liquida por BSP?**                                                                                                  | Account manager + una llamada a CERT                                                                                 | Determina si **D1** es implementable o hay que cambiar de estrategia de cobro. Ver la refutación de evidencia más abajo                                     |
+| **P-04** | **¿Qué cobertura NDC real hay en CO/PE/BR — Copa, Gol, Azul incluidas — y qué aporte incremental da Sabre sobre LATAM NDC directo?**                                                                             | 20-30 búsquedas contra CERT (§2.3) + account manager                                                                 | **Es la métrica de valor esperado.** Sin ella, las fases 1-4 son una apuesta de ~50 d-p                                                                     |
+| **P-05** | **¿Qué credencial nos entrega el cliente?**                                                                                                                                                                      | **RESUELTA 2026-08-25:** EPR+PCC+password disponibles fuera de Git; falta inyección segura y smoke test              | Desbloquea el arranque de CERT                                                                                                                              |
+| **P-06** | ¿Qué entitlements tiene nuestro PCC de CERT (BFM y su tier, Offers Price, Booking Mgmt, Get Seats, Get Ancillaries, Manage Ancillary, Automated Refunds)?                                                        | Smoke test: un request por familia. `403 ERR.2SG.SEC.NOT_AUTHORIZED` lo revela al instante                           | El alcance real de §2.1                                                                                                                                     |
+| **P-07** | ¿Decidimos **nunca** mandar PAN? (**D1**)                                                                                                                                                                        | **RESUELTA 2026-08-26:** sí — D1 opción (A). Queda abierta **P-03**, que es la que decide si es implementable en NDC | RF-08, RF-11, RF-17, todo el checkout                                                                                                                       |
 
 > **Refutación de evidencia sobre P-03 — importa porque el crítico concluyó lo contrario.**
 > Es cierto que existen 29 requests con `"type": "CASH"` y 6 de ellos son `fulfillFlightTickets`. Pero al abrir los
@@ -916,37 +1039,37 @@ producto es viable estaban en P2.
 > **`primaryFormOfPayment: 2`, que es el `PAYMENTCARD`**. Es decir: **no hay ni un solo ejemplo de emisión NDC
 > pagada sin tarjeta.** Lo que sí está verificado por contrato es que la **forma** lo permite:
 > `FulfillFormOfPaymentTypeEnum` (`booking-management-v1.yml:8659`) incluye `CASH`, `CHECK`, `INVOICE`,
-> `ON_ACCOUNT`, `MISCELLANEOUS`, `VIRTUAL_CARD` e `INSTALLMENTS` (este último, "*parcelado*" de BSP Brasil, es una
+> `ON_ACCOUNT`, `MISCELLANEOUS`, `VIRTUAL_CARD` e `INSTALLMENTS` (este último, "_parcelado_" de BSP Brasil, es una
 > capacidad de venta real en nuestro mercado que hoy no está en el roadmap). **P-03 queda entonces partida en dos:
 > la pregunta técnica está respondida (el API acepta el body); la pregunta comercial —¿la aerolínea liquida así?—
 > sigue abierta y es la que bloquea.**
 
 ### P1 — Bloquean el diseño (se puede empezar, pero rehacer sale caro)
 
-| # | Pregunta | Impacto |
-| --- | --- | --- |
-| **P-08** | ¿Cuál es el **valor real** de `expires_in` y hay límite de creación de tokens? La forma está verificada (`604800` en el ejemplo oficial) pero es un ejemplo | Dimensiona la caché. Se cierra con la primera llamada real |
-| **P-09** | ¿El cupo de concurrencia se asigna por PCC o por contrato? ¿Y las sesiones que la propia API REST abre internamente (`ATH_TOKEN_FAILURE`) consumen del mismo cupo? | RNF-04. Si es por contrato, las agencias con credencial heredada se agotan el cupo entre sí. Y si un consolidador opera N PCC, `ResolvedProvider.code` debe volverse `code+label` (§6.1) |
-| **P-10** | ¿Qué autorización de EPR hace falta para `targetPcc`, y cómo se sanea el contexto (el contrato dice que **no se revierte**)? | RF-18: una `provider_account` o dos, y si el saneo con ATK sessionless basta |
-| **P-11** | ¿Cuál es la regla exacta de la ventana de void para **ATPCO**? Sabre la valida y la expone como `isVoidable` pero no publica fórmula ni `voidableUntil` | Sin esto la UI muestra semáforo, no contador |
-| **P-12** | ¿Devuelve `getAncillaries` v2.3 algo vendible hoy, o está esperando a `baggageGrid`? El contrato dice que muestra "*free-of-charge ancillaries*" | Decide si hay venta de ancillaries NDC en fase 1 (RF-16 CA-6) |
-| **P-13** | ¿Sirve `flightCheck` como equivalente del price para ATPCO y LCC? Ninguno de los 1.077 requests lo usa | Eliminaría la asimetría de que ATPCO/LCC van a `createBooking` sin revalidar |
-| **P-14** | ¿`params.formOfPayment` es obligatorio en `/v1/offers/price`? | Si lo es, el BIN entra al flujo **antes** de reservar y roza SAQ-A (**D3**) |
-| **P-15** | ¿Se puede reconciliar un `createBooking` cuyo HTTP se cortó? No hay idempotency key y `getBooking` exige `confirmationId`, justo el dato que falta | Diseño de la saga. ¿Sirve `notification.queuePlacement` para que el PNR huérfano caiga en una cola drenable? |
-| **P-16** | ¿Sobre qué precio aplicamos el markup en ancillaries, `baseFee` o `serviceFee`? Sabre ya aplicó el suyo | Pricing waterfall (§6.2) |
-| **P-17** | ¿Qué API de Sabre crea el **PQR** (Price Quote Reissue)? | Es el único eslabón que falta para el cambio voluntario (N8). Pregunta al account manager, no capturable |
-| **P-18** | ¿Funcionan los tipos de infante en NDC? Conflicto entre dos fuentes oficiales: el error `TRAVELER_TYPE_NOT_SUPPORTED` dice que no, y la colección ejercita `INS` en NDC con AY | Reservas familiares por NDC |
+| #        | Pregunta                                                                                                                                                                       | Impacto                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P-08** | ¿Cuál es el **valor real** de `expires_in` y hay límite de creación de tokens? La forma está verificada (`604800` en el ejemplo oficial) pero es un ejemplo                    | Dimensiona la caché. Se cierra con la primera llamada real                                                                                                                               |
+| **P-09** | ¿El cupo de concurrencia se asigna por PCC o por contrato? ¿Y las sesiones que la propia API REST abre internamente (`ATH_TOKEN_FAILURE`) consumen del mismo cupo?             | RNF-04. Si es por contrato, las agencias con credencial heredada se agotan el cupo entre sí. Y si un consolidador opera N PCC, `ResolvedProvider.code` debe volverse `code+label` (§6.1) |
+| **P-10** | ¿Qué autorización de EPR hace falta para `targetPcc`, y cómo se sanea el contexto (el contrato dice que **no se revierte**)?                                                   | RF-18: una `provider_account` o dos, y si el saneo con ATK sessionless basta                                                                                                             |
+| **P-11** | ¿Cuál es la regla exacta de la ventana de void para **ATPCO**? Sabre la valida y la expone como `isVoidable` pero no publica fórmula ni `voidableUntil`                        | Sin esto la UI muestra semáforo, no contador                                                                                                                                             |
+| **P-12** | ¿Devuelve `getAncillaries` v2.3 algo vendible hoy, o está esperando a `baggageGrid`? El contrato dice que muestra "_free-of-charge ancillaries_"                               | Decide si hay venta de ancillaries NDC en fase 1 (RF-16 CA-6)                                                                                                                            |
+| **P-13** | ¿Sirve `flightCheck` como equivalente del price para ATPCO y LCC? Ninguno de los 1.077 requests lo usa                                                                         | Eliminaría la asimetría de que ATPCO/LCC van a `createBooking` sin revalidar                                                                                                             |
+| **P-14** | ¿`params.formOfPayment` es obligatorio en `/v1/offers/price`?                                                                                                                  | Si lo es, el BIN entra al flujo **antes** de reservar y roza SAQ-A (**D3**)                                                                                                              |
+| **P-15** | ¿Se puede reconciliar un `createBooking` cuyo HTTP se cortó? No hay idempotency key y `getBooking` exige `confirmationId`, justo el dato que falta                             | Diseño de la saga. ¿Sirve `notification.queuePlacement` para que el PNR huérfano caiga en una cola drenable?                                                                             |
+| **P-16** | ¿Sobre qué precio aplicamos el markup en ancillaries, `baseFee` o `serviceFee`? Sabre ya aplicó el suyo                                                                        | Pricing waterfall (§6.2)                                                                                                                                                                 |
+| **P-17** | ¿Qué API de Sabre crea el **PQR** (Price Quote Reissue)?                                                                                                                       | Es el único eslabón que falta para el cambio voluntario (N8). Pregunta al account manager, no capturable                                                                                 |
+| **P-18** | ¿Funcionan los tipos de infante en NDC? Conflicto entre dos fuentes oficiales: el error `TRAVELER_TYPE_NOT_SUPPORTED` dice que no, y la colección ejercita `INS` en NDC con AY | Reservas familiares por NDC                                                                                                                                                              |
 
 ### P2 — Bloquean el negocio pero no la decisión de invertir
 
-| # | Pregunta | A quién |
-| --- | --- | --- |
-| **P-19** | ¿Plazo real de alta productiva? Las fuentes se contradicen: "7-21 días" vs "certificación 4-8 semanas" | Account manager |
-| **P-20** | ¿Nos asignan un `Application-ID`? El contrato lo recomienda en hotel y vehículo y no lo tenemos | Account manager |
-| **P-21** | ¿La agencia tiene IATA/ARC propio? | Decide el modelo de red por defecto (**D4**) |
-| **P-22** | ¿Existe tokenización nativa (`FulfillFormOfPayment.referenceId`, la "*stored wallet form of payment*") y cómo entra una tarjeta en ese wallet? Si el alta exige que nosotros enviemos el PAN alguna vez, la vía no sirve para SAQ-A | Account manager |
-| **P-23** | ¿Cómo se aprovisiona `VIRTUAL_CARD` — lo emite Sabre o hay que traer una VCC externa (Conferma/WEX)? | Account manager |
-| **P-24** | ¿Qué cobertura NDC LATAM y qué contratos públicos tienen **Amadeus** y **Travelport**? **No verificado con el mismo rigor que Sabre** | Investigación propia — bloquea **D0** |
+| #        | Pregunta                                                                                                                                                                                                                            | A quién                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **P-19** | ¿Plazo real de alta productiva? Las fuentes se contradicen: "7-21 días" vs "certificación 4-8 semanas"                                                                                                                              | Account manager                              |
+| **P-20** | ¿Nos asignan un `Application-ID`? El contrato lo recomienda en hotel y vehículo y no lo tenemos                                                                                                                                     | Account manager                              |
+| **P-21** | ¿La agencia tiene IATA/ARC propio?                                                                                                                                                                                                  | Decide el modelo de red por defecto (**D4**) |
+| **P-22** | ¿Existe tokenización nativa (`FulfillFormOfPayment.referenceId`, la "_stored wallet form of payment_") y cómo entra una tarjeta en ese wallet? Si el alta exige que nosotros enviemos el PAN alguna vez, la vía no sirve para SAQ-A | Account manager                              |
+| **P-23** | ¿Cómo se aprovisiona `VIRTUAL_CARD` — lo emite Sabre o hay que traer una VCC externa (Conferma/WEX)?                                                                                                                                | Account manager                              |
+| **P-24** | ¿Qué cobertura NDC LATAM y qué contratos públicos tienen **Amadeus** y **Travelport**? **No verificado con el mismo rigor que Sabre**                                                                                               | Investigación propia — bloquea **D0**        |
 
 ### P3 — Detalles que se cierran con la captura
 
@@ -961,6 +1084,11 @@ si `obFees[]` está sumado dentro de `totalPrice` o es aditivo; techo real de pa
 
 ## 9. Decisiones que necesita tomar el founder
 
+> **Estado al 2026-08-26.** **D1** (nunca PAN) y **D9** (motor de las sagas con dinero) están **CERRADAS** y
+> marcadas como tal en su propia sección, con la opción elegida y la consecuencia asumida por escrito. Eran las dos
+> que bloqueaban la Fase 3 ([11 §8.1](./11-plan-implementacion.md)), que ya está construida. **El resto de este
+> apartado sigue abierto**, y D0 —qué GDS— sigue siendo la de mayor coste de salida del expediente.
+
 ### D0 — ¿Sabre, Amadeus Enterprise o Travelport como segundo source aéreo?
 
 Este expediente asume Sabre desde la primera línea. **Eso es un sesgo, no una decisión.**
@@ -968,19 +1096,19 @@ Este expediente asume Sabre desde la primera línea. **Eso es un sesgo, no una d
 desapareció de la síntesis sin un solo argumento en contra. **Elegir GDS es una decisión de años, con coste de
 integración de meses y coste de salida altísimo.**
 
-- **(A) Comprometerse con Sabre ya.** *A favor:* cobertura NDC LATAM **verificada documentalmente** (LATAM feb-2025
+- **(A) Comprometerse con Sabre ya.** _A favor:_ cobertura NDC LATAM **verificada documentalmente** (LATAM feb-2025
   en CO/PE/BR, Avianca desde 2022, 34 aerolíneas), documentación excepcional (21 specs + 81 páginas + 746 filas de
   errores catalogadas = semanas de integración ahorradas), y `targetPcc` que es **exactamente** el primitivo del
-  modelo consolidador, en contrato y no en promesa. *En contra:* precio opaco sobre el endpoint de más volumen
+  modelo consolidador, en contrato y no en promesa. _En contra:_ precio opaco sobre el endpoint de más volumen
   (BFM `premium`), certificación 4-8 semanas + branch access por agencia, **post-venta NDC inexistente** (Flight
   Reshop beta y sólo ATPCO), y dos sistemas de credenciales.
 - **(B) Evaluar Amadeus Enterprise por la vía comercial.** Amadeus Self-Service fue descontinuado el
   **17-jul-2026**, por lo que ya no existe el precio pay-as-you-go ni el onboarding instantáneo que sustentaban la
-  recomendación anterior. *A favor:* mantiene a un segundo GDS en la comparación. *En contra:* precio, acceso,
+  recomendación anterior. _A favor:_ mantiene a un segundo GDS en la comparación. _En contra:_ precio, acceso,
   certificación, cobertura NDC LATAM y modelo consolidador están todos por verificar.
 - **(C) No abrir segundo source todavía** y consolidar los compromisos abiertos de Ola 1 (pagos, fiscal, IA
-  WhatsApp, Package Studio). *A favor:* es la opción con mejor coste de oportunidad si el aporte incremental de
-  §2.3 resulta bajo. *En contra:* "contenido unificado en una sola plataforma" es lo que >80 % de las agencias
+  WhatsApp, Package Studio). _A favor:_ es la opción con mejor coste de oportunidad si el aporte incremental de
+  §2.3 resulta bajo. _En contra:_ "contenido unificado en una sola plataforma" es lo que >80 % de las agencias
   piden; llegar tarde tiene coste comercial.
 
 > **Recomendación actualizada:** ejecutar primero la compuerta de §2.3 contra Sabre CERT, porque las credenciales ya
@@ -991,37 +1119,67 @@ integración de meses y coste de salida altísimo.**
 > **Advertencia de honestidad:** la comparación es hoy **asimétrica** — Sabre está investigado a fondo y los otros
 > dos no. Antes de firmar cualquiera, hay que bajar los specs y las listas de errores de Amadeus con el mismo rigor.
 
-### D1 — Cómo se paga una reserva Sabre sin salir de PCI SAQ-A
+### D1 — Cómo se paga una reserva Sabre sin salir de PCI SAQ-A — ✅ **DECIDIDA el 2026-08-26: opción (A)**
 
 `createBooking` manda PAN en **49** requests y CVV en **46**; `fulfillFlightTickets` en **15** y **12**. En 1.077
-requests **no hay un solo ejemplo de tokenización**. `CLAUDE.md` dice, textual: "*solo hosted checkout en fase 1
-(PCI SAQ-A), nunca tocamos PAN/CVV*".
+requests **no hay un solo ejemplo de tokenización**. `CLAUDE.md` dice, textual: "_solo hosted checkout en fase 1
+(PCI SAQ-A), nunca tocamos PAN/CVV_".
 
 - **(A) Nunca mandar PAN.** Emitir con `CASH` / `ON_ACCOUNT` / `INVOICE`, cobrar por nuestro hosted checkout
   (Stripe / Mercado Pago) y liquidar contra BSP con fondos de la agencia vía wallet.
-  *Consecuencia:* SAQ-A intacto, cero coste de cumplimiento. **Y ya no es una apuesta a ciegas en ATPCO:** la
+  _Consecuencia:_ SAQ-A intacto, cero coste de cumplimiento. **Y ya no es una apuesta a ciegas en ATPCO:** la
   emisión ATPCO con `CASH` seleccionada está **verificada end-to-end** con requests reales de producción. Lo que
   sigue sin confirmar es **NDC** (P-03).
 - **(B) Aceptar PCI SAQ-D.** Vault/HSM propio, segmentación de red, escaneo ASV trimestral, pentest y auditoría
-  anual. *Consecuencia:* cobertura total de FOP, pero cambia una regla declarada no negociable, mete un coste anual
+  anual. _Consecuencia:_ cobertura total de FOP, pero cambia una regla declarada no negociable, mete un coste anual
   recurrente de cinco cifras y un requisito de personal que hoy no existe.
-- **(C) `VIRTUAL_CARD`.** El PAN que viaja no es el del cliente. *Consecuencia:* cubriría NDC manteniendo el alcance
+- **(C) `VIRTUAL_CARD`.** El PAN que viaja no es el del cliente. _Consecuencia:_ cubriría NDC manteniendo el alcance
   PCI bajo, pero depende por completo de P-23: si la VCC hay que traerla de un emisor externo, es un proveedor y un
   contrato nuevos.
 
-> **Recomendación: (A) desde el día 1, (C) como habilitador de NDC en cuanto se responda P-23, (B) descartada.**
-> `PAYMENTCARD` queda detrás de un feature flag de Unleash **apagado por defecto y por tenant**. Si NDC con tarjeta
-> resulta imprescindible antes de tener VCC, **la alternativa correcta es no vender ese contenido, no bajar la
-> postura PCI**.
+> **DECISIÓN DEL FOUNDER — 2026-08-26. Se elige (A): nunca se manda PAN ni CVV.**
+>
+> Se reserva y se emite con formas de pago **sin tarjeta** (`CASH` / `ON_ACCOUNT` / `INVOICE`) y se cobra al
+> cliente por **hosted checkout del PSP** (Stripe / Mercado Pago). (C) `VIRTUAL_CARD` queda como habilitador de NDC
+> en cuanto se responda P-23. **(B) SAQ-D queda descartada.**
+>
+> **Consecuencia asumida.** La postura PCI **SAQ-A** de `CLAUDE.md` queda intacta y el coste de cumplimiento es
+> cero, y a cambio **se renuncia a la cobertura total de formas de pago**: hay contenido que sólo se vende con
+> tarjeta y que, mientras esto siga así, **no se vende**. Esa es la parte cara de la decisión y se acepta a
+> sabiendas. `PAYMENTCARD` sólo puede existir detrás de un **feature flag de Unleash apagado por defecto y por
+> tenant**; si NDC con tarjeta resulta imprescindible antes de tener VCC, **la alternativa correcta es no vender
+> ese contenido, no bajar la postura PCI**.
+>
+> **⚠️ Matiz honesto, y hay que dejarlo escrito: la rama NDC está SIN CONFIRMAR.** La emisión **ATPCO** con `CASH`
+> seleccionada está **verificada end-to-end** con requests reales de producción. En **NDC no hay ni un solo ejemplo
+> verificado de emisión sin tarjeta** en las 1.077 requests del expediente. Esta decisión, por tanto, **se apoya en
+> evidencia en ATPCO y en una suposición en NDC**, y esa suposición **no se da por buena hasta probarla contra
+> CERT** (P-03). Si CERT la refuta, lo que se revisa es **el alcance de contenido NDC**, no la postura PCI.
+>
+> **Cómo se defiende en el código — tres capas, ninguna sola basta** (RNF-06):
+>
+> 1. **Tipo:** los siete campos de tarjeta van `?: never` en `SabreFormOfPayment`
+>    (`providers/sabre/src/booking/create.request.builder.ts`). `PAYMENTCARD` no se puede ni nombrar: el error es
+>    **de compilación**, que es la defensa más fuerte de las tres.
+> 2. **Test sobre los bytes de salida:** `providers/sabre/src/pan-egress.guard.test.ts` mide los cuerpos
+>    serializados de `offers/price`, `createBooking`, `cancelBooking` y los dos de `getBooking` **entrando por la
+>    puerta pública** (`SabreHttpClient.postJson`), no llamando a funciones internas. **Corre en la suite**, no
+>    sólo en CI: lo que sólo vive en CI se descubre tarde.
+> 3. **Lint acotado** a `**/request.builder.ts` y `**/*.serializer.ts` en `eslint.config.mjs` — sólo los ficheros
+>    que construyen lo que **sale**. **No** se aplica a todo `providers/sabre/`: `getBooking` devuelve la tarjeta
+>    **enmascarada** y mostrar los últimos 4 dígitos al vendedor es funcionalidad legítima que exige nombrar el
+>    campo en el mapper de **lectura**. La regla la fija a su vez `providers/sabre/src/pan-lint-rule.guard.test.ts`,
+>    que ejecuta ESLint de verdad y comprueba las dos mitades: que **dispara** en los builders de salida y que **no
+>    dispara** ni sobre los `?: never` ni sobre el carril de lectura.
 
 ### D2 — Alcance del carril SOAP en la primera integración
 
 - **(A) `providers/sabre` v1 sólo REST + ATK stateless.** Entrega shopping ATPCO/NDC, price, createBooking,
   getBooking, cancel, fulfill, void, refund y modify. **No** entrega LCC con ancillaries, ni perfiles, ni group
-  bookings, ni PNR único multi-producto. *Consecuencia:* ocho páginas oficiales confirman que **todo nuestro
+  bookings, ni PNR único multi-producto. _Consecuencia:_ ocho páginas oficiales confirman que **todo nuestro
   alcance corre stateless**, y `createBooking` ya orquesta la cadena LLS por dentro. **Es la decisión con más
   ahorro del expediente.**
-- **(B) REST + cliente SOAP + parser XML + `SabreSessionPool`.** *Consecuencia:* 243 requests de superficie nueva,
+- **(B) REST + cliente SOAP + parser XML + `SabreSessionPool`.** _Consecuencia:_ 243 requests de superficie nueva,
   un transporte que el stack no tiene, y un pool con lease/keepalive/compensación Temporal **que en BYOC se
   multiplica por tenant**.
 
@@ -1064,9 +1222,9 @@ antes de reservar**, lo que invierte el orden de nuestro checkout.
 
 ### D5 — Cobertura de contenido en el primer incremento
 
-- **(A) ATPCO + NDC en una sola llamada, con `MultipleSourcePerItinerary = true`.** *Consecuencia:* **ya no hay
+- **(A) ATPCO + NDC en una sola llamada, con `MultipleSourcePerItinerary = true`.** _Consecuencia:_ **ya no hay
   disyuntiva de coste** — la primera pasada creía que sumar fuentes costaba llamadas extra y no es así.
-- **(B) Añadir LCC.** *Consecuencia:* los 8 ejemplos LCC exigen **declarar el carrier**, lo que lo hace inservible
+- **(B) Añadir LCC.** _Consecuencia:_ los 8 ejemplos LCC exigen **declarar el carrier**, lo que lo hace inservible
   para una búsqueda abierta BOG→LIM, y no hay confirmación de cobertura de JetSMART/Sky/Gol.
 
 > **Recomendación: (A) en Ola 1. (B) es un `Enable` de una línea el día que se confirme cobertura, y no antes.**
@@ -1103,17 +1261,38 @@ El enum `documentSubType` declara `RUC` (Ecuador), `CUIT/CUIL` (Argentina) y `NI
   producto".
 
 > **Recomendación: (A).** Hoy el coste es un `ALTER` que en Postgres 16 no reescribe la tabla ni reindexa; después
-> es una migración con datos, y el síntoma que la dispara es *"el vuelo de Sabre no se puede agregar al paquete"*.
+> es una migración con datos, y el síntoma que la dispara es _"el vuelo de Sabre no se puede agregar al paquete"_.
 
-### D9 — Motor de las sagas con dinero
+### D9 — Motor de las sagas con dinero — ✅ **DECIDIDA el 2026-08-26: opción (B) hasta la emisión, (A) antes del primer refund real**
 
 - **(A) Traer Temporal ahora**, como prevé `CLAUDE.md`: timers durables de días, estado que sobrevive a deploys,
   compensación auditable.
 - **(B) Extender el worker BullMQ que ya existe** (`apps/api/src/orders/post-sale.worker.ts`) con tipos
   `issue`/`void`/`refund`: entrega semanas antes, pero los deadlines de días se manejan con jobs frágiles.
 
-> **Recomendación: (B) hasta la emisión, (A) antes de que exista el primer `refundFlightTickets` en producción.**
-> El punto de no retorno es la emisión: mientras sólo reservamos y cancelamos, BullMQ alcanza.
+> **DECISIÓN DEL FOUNDER — 2026-08-26. Se elige (B) hasta la emisión y (A) antes de que exista el primer
+> `refundFlightTickets` real en producción.**
+>
+> Las sagas con dinero de la Fase 3 van sobre el **BullMQ que ya existe** en `apps/api/src/queue/`, **no** sobre
+> Temporal.
+>
+> **El punto de no retorno es la emisión.** Mientras sólo reservamos y cancelamos, BullMQ alcanza: las operaciones
+> son cortas, reversibles y sin deadlines de días. En cuanto se emite, el dinero deja de ser reversible y aparecen
+> los timers durables (límites de tiempo de emisión, ventanas de void) para los que un job de BullMQ es frágil.
+> **Temporal entra antes del primer `refundFlightTickets` real**, no después.
+>
+> **Consecuencia asumida.** Es una **desviación consciente de `CLAUDE.md`**, que lista Temporal en el stack "no
+> negociable sin razón": la razón es entregar semanas antes con infraestructura que ya corre, y queda **con fecha
+> de revisión** — la Fase 4.a, que es donde se emite. Se compra tiempo ahora a cambio de una migración después, y
+> esa migración **tiene línea de esfuerzo propia** en la Fase 4.b ([11 §8.4](./11-plan-implementacion.md)) en vez de
+> ser un coste que aparece por sorpresa.
+>
+> **Y para que migrar salga barato, la restricción de diseño es explícita: la lógica de compensación NO vive
+> acoplada al runner.** Cada paso de la saga declara su compensación como una función pura del estado de la orden,
+> y BullMQ es sólo quien la invoca. Migrar a Temporal debe ser cambiar el orquestador, no reescribir el qué-se-
+> deshace. Si alguien mete lógica de negocio dentro de un `Worker` de BullMQ, esta decisión deja de ser barata y
+> hay que decirlo en la revisión, no descubrirlo en la Fase 4.b.
+>
 > **Y la cola de emisión diferida es nuestra, no de Sabre:** `futurePricingLines` es nativo y sin infraestructura,
 > pero es opaco (si falla no nos enteramos) y no sirve para LATAM NDC ni para el resto — tendríamos dos mecanismos
 > de emisión diferida con semánticas distintas.
@@ -1122,37 +1301,37 @@ El enum `documentSubType` declara `RUC` (Ecuador), `CUIT/CUIL` (Argentina) y `NI
 
 ## 10. Riesgos consolidados
 
-| # | Riesgo | Sev | Mitigación |
-| --- | --- | --- | --- |
-| **R-01** | **Compromiso comercial a ciegas.** El plan compromete 48-59 d-p sin fee conocido, sin confirmación de multi-PCC de terceros y sin cobertura NDC medida. Es la exposición más grande del expediente. | 🔴 Bloqueante | **D0** + compuerta Go/No-Go de §2.3 entre Fase 0 y Fase 1, con umbral numérico **preacordado** |
-| **R-02** | **Credenciales disponibles pero aún no inyectadas/validadas en CERT.** | 🟠 Operativo | Cargarlas fuera de Git mediante `ProviderCredentialsService`; smoke test de auth sin registrar secretos |
-| **R-03** | **Conflicto PCI.** Integrar `PAYMENTCARD` nos mueve a SAQ-D contra una regla no negociable. **Severidad rebajada de 🔴 a 🟠 en ATPCO** (emisión con `CASH` verificada end-to-end) pero **se mantiene 🔴 en NDC**, donde no hay ni un ejemplo sin tarjeta. | 🔴 (NDC) / 🟠 (ATPCO) | **D1** + RNF-06 en tres capas (tipo, test de CI, lint) + P-03 |
-| **R-04** | **Fallo dentro de un HTTP 200.** Los contratos declaran casi sólo `200` y los fallos viajan en envelopes distintos (`errors[]`, `messages[]`, `ApplicationResults`): una reserva fallida puede registrarse como confirmada y cobrarse sin billete. | 🔴 Crítico | RNF-03. Clasificador por familia de API: 2xx **y** sin error semántico en su envelope. Fixture obligatorio de 200-con-error por variante |
-| **R-05** | **Emisión "exitosa" sin documento.** Un 200 puede traer `PARTIAL_FULFILLMENT`, `FULFILLMENT_NOT_CONFIRMED` o `UNABLE_TO_RETRIEVE_TICKETS` — dinero cobrado sin billete. | 🔴 Crítico | RF-11 CA-2: los tres escalan a `NEEDS_HUMAN`, nunca se reintentan |
-| **R-06** | **Doble emisión por reintento ciego.** No hay idempotency key (VERIFICADO-SPEC como ausencia real). Atenuado por `BOOKING_FULFILLED`, que actúa como barrera del lado servidor. | 🟠 Alto | RNF-11 + RF-15: clave propia antes de llamar, reconciliación como actividad de saga, **cero reintentos automáticos** en operaciones no idempotentes |
-| **R-07** | **Reservar una oferta Sabre contra LATAM.** El día que la primera oferta Sabre aparezca en pantalla, `search.service.ts:114` y `orders.service.ts:138` la mandan a LATAM. | 🔴 Alto | Arreglar en el **mismo PR** que habilita Sabre en búsqueda (§6.4) |
-| **R-08** | **Semántica ambigua del contexto `targetPcc`.** El contrato no revierte contexto, pero Booking Management se declara stateless y limpia AAA con ATH; la persistencia entre llamadas ATK no está demostrada. | 🟠 Alto hasta CERT | RF-18 CA-3 + RNF-05 + test A→B de aislamiento cross-tenant |
-| **R-09** | **Sabre decide qué alternativa cross-source sobrevive.** Por defecto se queda con la más barata en el solapamiento ATPCO/NDC; marcas y upsells tienen controles distintos. | 🔴 Alto | `MultipleSourcePerItinerary = true` + `MultipleBrandedFares`/`MaxNumberOfUpsells`, con tests separados |
-| **R-10** | **Degradación parcial silenciosa.** El vendedor ve la mitad del mercado creyendo que ve todo. Agravado por el "No Availability" de un `RequestType` no suscrito, que es indistinguible de "no hay vuelos". | 🔴 Alto | RNF-13 + RF-03 CA-5 + RNF-09 (`requestType` en el span) |
-| **R-11** | **Ventana de void calculada por nosotros.** Era una recomendación de la primera pasada y **es un riesgo**: Sabre publica `isVoidable` y, en NDC, la hora exacta en UTC. Calcularla con la zona equivocada convierte un void gratis en un refund con penalidad **sin fallar ruidosamente**. | 🟠 Medio-alto | RF-13 CA-1: leer, nunca calcular. `ticketingPccTimezone` eliminado de `config` |
-| **R-12** | **Fuga de credenciales entre agencias** por la caché de instancias del factory. Silenciosa: tarifas plausibles contra el contrato equivocado. | 🔴 Alto | RNF-05 + test de aislamiento del caché de adapters |
-| **R-13** | **El `secret` es base64 reversible, no un hash.** Un log de debug filtra el password completo de la oficina. | 🔴 Alto | RNF-07, aplicado **antes** de la primera llamada real |
-| **R-14** | **El fan-out agota el cupo de concurrencia** y devuelve 429 a todos los tenants que comparten credencial heredada. Una campaña de ventas exitosa nos throttlea a nosotros mismos. | 🟠 Medio-alto | RNF-04 (semáforo por `provider_account`, en Redis) + P-09 |
-| **R-15** | **Post-venta NDC inexistente.** Flight Reshop es `beta` y sólo ATPCO. Nuestro contenido diferencial es NDC. Comprar Sabre esperando resolver cambios de LATAM por ahí es comprar una promesa. | 🟠 Medio-alto | N8 + corregir `12-modelo-consolidador-y-plan.md` §4.1, que da la post-venta por cerrada |
-| **R-16** | **La cuota horaria se divide entre proveedores.** 600/h pasa a 300 y el mensaje de error **miente sobre el número**. | 🟠 Medio-alto | RNF-10 + migración `search_group_id` |
-| **R-17** | **Ofertas vencidas en venta por WhatsApp.** El cliente responde 40 min después y la oferta murió. Choca con "tiempo a venta < 2 minutos". | 🟠 Medio-alto | RNF-12 + aviso al 75 % del TTL |
-| **R-18** | **`403` de entitlement o `404` sin datos clasificados como caída**: el circuito abre y degrada las búsquedas de todos los tenants por la configuración de uno solo, o por una ruta sin vuelos. | 🟠 Medio-alto | RNF-03 (matriz explícita) |
-| **R-19** | **Onboarding self-service incumplible** en la ruta BYOC: 4-8 semanas de certificación **más** branch access gestionado por Sabre agencia por agencia. | 🟠 Medio-alto | **D4** (default = herencia) + wizard bifurcado con estado `pending_provider_certification` |
-| **R-20** | **Sin documento fiscal, la venta es un incumplimiento**, no un bug menor. El enum de Sabre no tiene CPF ni CNPJ. | 🟠 Medio-alto | RF-21 + **D7** (fallback: el ID fiscal vive en nuestra DB) |
-| **R-21** | **Operaciones que devuelven error pero se aplican** (*"throws error but works and adds infant"*). Tratarlo como fallo y reintentar duplica el infante. | 🟠 Medio | RF-17 CA-3: verificación con `getBooking`, nunca reintento ciego |
-| **R-22** | **Índices 1-based en todo el API.** Un off-by-one asigna el asiento al pasajero equivocado o cobra a la tarjeta equivocada, **en silencio**. | 🟠 Medio | RF-08 CA-4: conversión en un único punto con test de propiedad |
-| **R-23** | **El refactor toca el camino crítico sin tests.** `apps/api/src/search/` tiene cero cobertura y genera todos los ingresos. | 🟠 Medio | RNF-14: tests de comportamiento actual **antes** del refactor |
-| **R-24** | **`changeOfGaugeSeats` olvidado:** en vuelos con cambio de aeronave, llenar sólo `seats[]` deja al pasajero sin asiento en la segunda mitad **sin error que lo delate**. | 🟠 Medio | RF-16 CA-3 |
-| **R-25** | **El contrato cambia bajo los pies.** Booking Management publica una versión cada 2-3 meses y el corpus creció de 15 a 21 specs mientras se escribían estos documentos. | 🟠 Medio | RNF-15: specs commiteados con `info.version` pineado y diff en CI |
-| **R-26** | **Nacer en la versión equivocada.** La colección usa `getseats` v1 y `getAncillaries` v2; el catálogo publica v3 de ambos. Escribir el ACL sobre v1 es deuda garantizada el día 1. | 🟠 Medio | P-06: dos `curl`, uno a cada ruta, **antes** de escribir una línea |
-| **R-27** | **Los ejemplos de la colección se contradicen** (`useCsl`/`useCSL`, `payment`/`payments`, `flightNumber` string vs entero, un ADT con `age: 3`, un request "v3.0.0" que apunta a /v5) y **38 de 49 nombres mienten sobre su versión**. | 🟡 Bajo-medio | Nunca portar un ejemplo literal. Todo body pasa por builder tipado + Zod contra el spec |
-| **R-28** | **PCC de ejemplo y un secreto fijo en la fuente.** U9PK, G7RE, 7KFA, G7HE, N87F, GF1I aparecen en headers y bodies, y 23 requests traían `ClientId SBR-BMAPI` con un `ClientSecret` fijo. | 🟡 Bajo-medio | Todo PCC sale de `config` (regla de lint). La copia versionada sustituye el secreto por `{{soap_client_secret}}`; el auditor exige `safeToVersion: true` |
-| **R-29** | **Distracción estratégica.** ~50 d-p en un segundo GDS mientras Ola 1 tiene abiertos pagos, fiscal, IA WhatsApp y Package Studio. **Subido de 🟡 a 🟠:** excluir hoteles y autos no reduce el coste de oportunidad, y **en los doce documentos no hay una sola cifra de valor esperado**. | 🟠 Medio-alto | §2.3 (métrica y umbral preacordado) + **D0** + la compuerta comercial de R-01. La mitigación no es "excluir verticales": es **medir el aporte antes de comprometer la Fase 1** |
+| #        | Riesgo                                                                                                                                                                                                                                                                                     | Sev                   | Mitigación                                                                                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **R-01** | **Compromiso comercial a ciegas.** El plan compromete 48-59 d-p sin fee conocido, sin confirmación de multi-PCC de terceros y sin cobertura NDC medida. Es la exposición más grande del expediente.                                                                                        | 🔴 Bloqueante         | **D0** + compuerta Go/No-Go de §2.3 entre Fase 0 y Fase 1, con umbral numérico **preacordado**                                                                                 |
+| **R-02** | **Credenciales disponibles pero aún no inyectadas/validadas en CERT.**                                                                                                                                                                                                                     | 🟠 Operativo          | Cargarlas fuera de Git mediante `ProviderCredentialsService`; smoke test de auth sin registrar secretos                                                                        |
+| **R-03** | **Conflicto PCI.** Integrar `PAYMENTCARD` nos mueve a SAQ-D contra una regla no negociable. **Severidad rebajada de 🔴 a 🟠 en ATPCO** (emisión con `CASH` verificada end-to-end) pero **se mantiene 🔴 en NDC**, donde no hay ni un ejemplo sin tarjeta.                                  | 🔴 (NDC) / 🟠 (ATPCO) | **D1** + RNF-06 en tres capas (tipo, test de CI, lint) + P-03                                                                                                                  |
+| **R-04** | **Fallo dentro de un HTTP 200.** Los contratos declaran casi sólo `200` y los fallos viajan en envelopes distintos (`errors[]`, `messages[]`, `ApplicationResults`): una reserva fallida puede registrarse como confirmada y cobrarse sin billete.                                         | 🔴 Crítico            | RNF-03. Clasificador por familia de API: 2xx **y** sin error semántico en su envelope. Fixture obligatorio de 200-con-error por variante                                       |
+| **R-05** | **Emisión "exitosa" sin documento.** Un 200 puede traer `PARTIAL_FULFILLMENT`, `FULFILLMENT_NOT_CONFIRMED` o `UNABLE_TO_RETRIEVE_TICKETS` — dinero cobrado sin billete.                                                                                                                    | 🔴 Crítico            | RF-11 CA-2: los tres escalan a `NEEDS_HUMAN`, nunca se reintentan                                                                                                              |
+| **R-06** | **Doble emisión por reintento ciego.** No hay idempotency key (VERIFICADO-SPEC como ausencia real). Atenuado por `BOOKING_FULFILLED`, que actúa como barrera del lado servidor.                                                                                                            | 🟠 Alto               | RNF-11 + RF-15: clave propia antes de llamar, reconciliación como actividad de saga, **cero reintentos automáticos** en operaciones no idempotentes                            |
+| **R-07** | **Reservar una oferta Sabre contra LATAM.** El día que la primera oferta Sabre aparezca en pantalla, `search.service.ts:114` y `orders.service.ts:138` la mandan a LATAM.                                                                                                                  | 🔴 Alto               | Arreglar en el **mismo PR** que habilita Sabre en búsqueda (§6.4)                                                                                                              |
+| **R-08** | **Semántica ambigua del contexto `targetPcc`.** El contrato no revierte contexto, pero Booking Management se declara stateless y limpia AAA con ATH; la persistencia entre llamadas ATK no está demostrada.                                                                                | 🟠 Alto hasta CERT    | RF-18 CA-3 + RNF-05 + test A→B de aislamiento cross-tenant                                                                                                                     |
+| **R-09** | **Sabre decide qué alternativa cross-source sobrevive.** Por defecto se queda con la más barata en el solapamiento ATPCO/NDC; marcas y upsells tienen controles distintos.                                                                                                                 | 🔴 Alto               | `MultipleSourcePerItinerary = true` + `MultipleBrandedFares`/`MaxNumberOfUpsells`, con tests separados                                                                         |
+| **R-10** | **Degradación parcial silenciosa.** El vendedor ve la mitad del mercado creyendo que ve todo. Agravado por el "No Availability" de un `RequestType` no suscrito, que es indistinguible de "no hay vuelos".                                                                                 | 🔴 Alto               | RNF-13 + RF-03 CA-5 + RNF-09 (`requestType` en el span)                                                                                                                        |
+| **R-11** | **Ventana de void calculada por nosotros.** Era una recomendación de la primera pasada y **es un riesgo**: Sabre publica `isVoidable` y, en NDC, la hora exacta en UTC. Calcularla con la zona equivocada convierte un void gratis en un refund con penalidad **sin fallar ruidosamente**. | 🟠 Medio-alto         | RF-13 CA-1: leer, nunca calcular. `ticketingPccTimezone` eliminado de `config`                                                                                                 |
+| **R-12** | **Fuga de credenciales entre agencias** por la caché de instancias del factory. Silenciosa: tarifas plausibles contra el contrato equivocado.                                                                                                                                              | 🔴 Alto               | RNF-05 + test de aislamiento del caché de adapters                                                                                                                             |
+| **R-13** | **El `secret` es base64 reversible, no un hash.** Un log de debug filtra el password completo de la oficina.                                                                                                                                                                               | 🔴 Alto               | RNF-07, aplicado **antes** de la primera llamada real                                                                                                                          |
+| **R-14** | **El fan-out agota el cupo de concurrencia** y devuelve 429 a todos los tenants que comparten credencial heredada. Una campaña de ventas exitosa nos throttlea a nosotros mismos.                                                                                                          | 🟠 Medio-alto         | RNF-04 (semáforo por `provider_account`, en Redis) + P-09                                                                                                                      |
+| **R-15** | **Post-venta NDC inexistente.** Flight Reshop es `beta` y sólo ATPCO. Nuestro contenido diferencial es NDC. Comprar Sabre esperando resolver cambios de LATAM por ahí es comprar una promesa.                                                                                              | 🟠 Medio-alto         | N8 + corregir `12-modelo-consolidador-y-plan.md` §4.1, que da la post-venta por cerrada                                                                                        |
+| **R-16** | **La cuota horaria se divide entre proveedores.** 600/h pasa a 300 y el mensaje de error **miente sobre el número**.                                                                                                                                                                       | 🟠 Medio-alto         | RNF-10 + migración `search_group_id`                                                                                                                                           |
+| **R-17** | **Ofertas vencidas en venta por WhatsApp.** El cliente responde 40 min después y la oferta murió. Choca con "tiempo a venta < 2 minutos".                                                                                                                                                  | 🟠 Medio-alto         | RNF-12 + aviso al 75 % del TTL                                                                                                                                                 |
+| **R-18** | **`403` de entitlement o `404` sin datos clasificados como caída**: el circuito abre y degrada las búsquedas de todos los tenants por la configuración de uno solo, o por una ruta sin vuelos.                                                                                             | 🟠 Medio-alto         | RNF-03 (matriz explícita)                                                                                                                                                      |
+| **R-19** | **Onboarding self-service incumplible** en la ruta BYOC: 4-8 semanas de certificación **más** branch access gestionado por Sabre agencia por agencia.                                                                                                                                      | 🟠 Medio-alto         | **D4** (default = herencia) + wizard bifurcado con estado `pending_provider_certification`                                                                                     |
+| **R-20** | **Sin documento fiscal, la venta es un incumplimiento**, no un bug menor. El enum de Sabre no tiene CPF ni CNPJ.                                                                                                                                                                           | 🟠 Medio-alto         | RF-21 + **D7** (fallback: el ID fiscal vive en nuestra DB)                                                                                                                     |
+| **R-21** | **Operaciones que devuelven error pero se aplican** (_"throws error but works and adds infant"_). Tratarlo como fallo y reintentar duplica el infante.                                                                                                                                     | 🟠 Medio              | RF-17 CA-3: verificación con `getBooking`, nunca reintento ciego                                                                                                               |
+| **R-22** | **Índices 1-based en todo el API.** Un off-by-one asigna el asiento al pasajero equivocado o cobra a la tarjeta equivocada, **en silencio**.                                                                                                                                               | 🟠 Medio              | RF-08 CA-4: conversión en un único punto con test de propiedad                                                                                                                 |
+| **R-23** | **El refactor toca el camino crítico sin tests.** `apps/api/src/search/` tiene cero cobertura y genera todos los ingresos.                                                                                                                                                                 | 🟠 Medio              | RNF-14: tests de comportamiento actual **antes** del refactor                                                                                                                  |
+| **R-24** | **`changeOfGaugeSeats` olvidado:** en vuelos con cambio de aeronave, llenar sólo `seats[]` deja al pasajero sin asiento en la segunda mitad **sin error que lo delate**.                                                                                                                   | 🟠 Medio              | RF-16 CA-3                                                                                                                                                                     |
+| **R-25** | **El contrato cambia bajo los pies.** Booking Management publica una versión cada 2-3 meses y el corpus creció de 15 a 21 specs mientras se escribían estos documentos.                                                                                                                    | 🟠 Medio              | RNF-15: specs commiteados con `info.version` pineado y diff en CI                                                                                                              |
+| **R-26** | **Nacer en la versión equivocada.** La colección usa `getseats` v1 y `getAncillaries` v2; el catálogo publica v3 de ambos. Escribir el ACL sobre v1 es deuda garantizada el día 1.                                                                                                         | 🟠 Medio              | P-06: dos `curl`, uno a cada ruta, **antes** de escribir una línea                                                                                                             |
+| **R-27** | **Los ejemplos de la colección se contradicen** (`useCsl`/`useCSL`, `payment`/`payments`, `flightNumber` string vs entero, un ADT con `age: 3`, un request "v3.0.0" que apunta a /v5) y **38 de 49 nombres mienten sobre su versión**.                                                     | 🟡 Bajo-medio         | Nunca portar un ejemplo literal. Todo body pasa por builder tipado + Zod contra el spec                                                                                        |
+| **R-28** | **PCC de ejemplo y un secreto fijo en la fuente.** U9PK, G7RE, 7KFA, G7HE, N87F, GF1I aparecen en headers y bodies, y 23 requests traían `ClientId SBR-BMAPI` con un `ClientSecret` fijo.                                                                                                  | 🟡 Bajo-medio         | Todo PCC sale de `config` (regla de lint). La copia versionada sustituye el secreto por `{{soap_client_secret}}`; el auditor exige `safeToVersion: true`                       |
+| **R-29** | **Distracción estratégica.** ~50 d-p en un segundo GDS mientras Ola 1 tiene abiertos pagos, fiscal, IA WhatsApp y Package Studio. **Subido de 🟡 a 🟠:** excluir hoteles y autos no reduce el coste de oportunidad, y **en los doce documentos no hay una sola cifra de valor esperado**.  | 🟠 Medio-alto         | §2.3 (métrica y umbral preacordado) + **D0** + la compuerta comercial de R-01. La mitigación no es "excluir verticales": es **medir el aporte antes de comprometer la Fase 1** |
 
 ---
 
@@ -1169,8 +1348,9 @@ Las siete P0 se agrupan en dos bloques que se resuelven por vías distintas y **
   sobre LATAM NDC directo, **P-06** entitlements de nuestro PCC. Son las que convierten **D0** en una decisión con
   dato en vez de una preferencia.
 
-**P-07** (¿nunca PAN?) es la única P0 que no depende de nadie externo: es una decisión del founder y se puede tomar
-hoy (**D1**).
+**P-07** (¿nunca PAN?) era la única P0 que no dependía de nadie externo. **Tomada el 2026-08-26: D1 opción (A),
+nunca se manda PAN.** Lo que sigue abierto no es la decisión sino su viabilidad en NDC, que es **P-03** y sí depende
+de un tercero.
 
 ## Riesgos
 
@@ -1182,8 +1362,8 @@ Consolidados en **§10**. Cambios de severidad respecto de la versión anterior,
 - **Baja:** **R-03** (PCI) baja a 🟠 **en ATPCO** — la emisión sin PAN está verificada end-to-end con requests
   reales — pero **se mantiene 🔴 en NDC**, donde no existe un solo ejemplo; **R-06** (doble emisión) baja a 🟠
   porque `BOOKING_FULFILLED` actúa como barrera de idempotencia del lado servidor.
-- **Invertido:** **R-11** — calcular la ventana de void con la zona del PCC emisor era una *recomendación* de la
-  primera pasada y es un *riesgo*: Sabre publica `isVoidable` y la hora exacta en UTC.
+- **Invertido:** **R-11** — calcular la ventana de void con la zona del PCC emisor era una _recomendación_ de la
+  primera pasada y es un _riesgo_: Sabre publica `isVoidable` y la hora exacta en UTC.
 - **Retirados:** "escribir mappers sobre respuestas que nadie vio" (los contratos los cerraron; ver RF-04) y
   "el PNR único obliga a migrar la vertical vuelo" (la premisa era falsa — N4).
 - **Nuevos:** **R-05** (emisión exitosa sin documento), **R-09** (Sabre elige la tarifa por nosotros), **R-15**

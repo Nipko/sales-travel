@@ -13,7 +13,7 @@ import type {
   OrderPayResult,
   OrderReshopRequest,
   OrderReshopResult,
-  OrderRetrieveResult,
+  OrderView,
   SearchContext,
   ServiceListRequest,
   ServiceListResult,
@@ -140,10 +140,18 @@ export class LatamNdcFlightSearchAdapter
   async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
     if (isMockMode(this.cfg)) {
       return {
-        success: true,
+        outcome: 'CONFIRMED',
         orderId: `MOCK-${Date.now()}`,
         pnr: 'MOCKPNR',
-        warnings: ['mock mode: order created (no real API call)'],
+        items: [{ kind: 'flight', status: 'CONFIRMED' }],
+        issues: [
+          {
+            severity: 'WARNING',
+            category: 'LATAM_NDC_ADAPTER',
+            type: 'MOCK_MODE',
+            message: 'mock mode: order created (no real API call)',
+          },
+        ],
       };
     }
 
@@ -163,12 +171,14 @@ export class LatamNdcFlightSearchAdapter
     return mapOrderCreateResponse(raw);
   }
 
-  async retrieveOrder(orderId: string, ctx: SearchContext): Promise<OrderRetrieveResult> {
+  async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
     if (isMockMode(this.cfg)) {
       return {
         found: true,
         orderId,
+        pnr: orderId,
         status: 'confirmed',
+        airlineLocators: [],
         warnings: ['mock mode: order retrieved (no real API call)'],
       };
     }

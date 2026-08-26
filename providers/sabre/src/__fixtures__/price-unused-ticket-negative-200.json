@@ -1,0 +1,320 @@
+{
+  "payloadAttributes": {
+    "timeStamp": "2024-12-14T02:54:00.614550106Z",
+    "trxID": "b796e387-c00d-42ca-9ddb-4f9496ad58b7",
+    "host": "offer-price-tn-blue-689b54cdc-ktvgt",
+    "baseline": "offer-price-tn-541-20231213-105955-0.2.0-20231213.085850-54-d61398e"
+  },
+  "id": "dd07bbd7fb57c88nclq4lwec84",
+  "version": "v1.0.0",
+  "response": {
+    "offers": [
+      {
+        "id": "dd07bbd7fb57c88nclq4lwec84-1",
+        "ttl": 1200,
+        "source": "NDC",
+        "offerExpirationDateTime": "2024-07-07T12:49:14Z",
+        "paymentTimeLimitText": "2024-07-08T23:59:00",
+        "journeys": [
+          {
+            "segmentRefIds": ["Isgm010042ba802b3"],
+            "priceClassRefId": "MainCabin"
+          }
+        ],
+        "offerItems": [
+          {
+            "type": "Air",
+            "id": "dd07bbd7fb57c88nclq4lwec84-1-1",
+            "mandatoryInd": true,
+            "passengers": [
+              {
+                "id": "Passenger1",
+                "ptc": "ADT",
+                "requestedPtc": "ADT",
+                "baggage": [
+                  {
+                    "type": "CarryOnBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": ["Isgm010042ba802b3"],
+                    "details": [
+                      {
+                        "quantity": 2
+                      },
+                      {
+                        "quantity": 1,
+                        "applicableBagText": "CARRY ON UP TO 45 LI 115 LCM"
+                      },
+                      {
+                        "quantity": 1,
+                        "applicableBagText": "PERSONAL ITEM  UP TO 40 LI"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CheckedBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": ["Isgm010042ba802b3"],
+                    "details": [
+                      {
+                        "quantity": 0,
+                        "constrains": [
+                          {
+                            "max": 23,
+                            "unit": "KG"
+                          },
+                          {
+                            "max": 50,
+                            "unit": "LBS"
+                          }
+                        ]
+                      },
+                      {
+                        "quantity": 0,
+                        "applicableBagText": "UPTO50LB 23KG AND62LI 158LCM"
+                      }
+                    ]
+                  }
+                ],
+                "price": {
+                  "totalAmount": {
+                    "amount": "172.90",
+                    "curCode": "USD"
+                  },
+                  "baseAmount": {
+                    "amount": "146.98",
+                    "curCode": "USD"
+                  },
+                  "taxes": {
+                    "total": {
+                      "amount": "25.92",
+                      "curCode": "USD"
+                    },
+                    "breakdown": [
+                      {
+                        "amount": {
+                          "amount": "4.50",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "XF",
+                        "taxPadisCode": "RF",
+                        "description": "US Passenger Facility Charge"
+                      },
+                      {
+                        "amount": {
+                          "amount": "4.50",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "XF",
+                        "description": "US Passenger Facility Charge"
+                      },
+                      {
+                        "amount": {
+                          "amount": "4.80",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "ZP",
+                        "taxPadisCode": "RF",
+                        "description": "United States Flight Segment Tax Domestic"
+                      },
+                      {
+                        "amount": {
+                          "amount": "4.80",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "ZP",
+                        "description": "United States Flight Segment Tax Domestic"
+                      },
+                      {
+                        "amount": {
+                          "amount": "5.60",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "AY",
+                        "description": "United States Passenger Civil Aviation Security Service Fee"
+                      },
+                      {
+                        "amount": {
+                          "amount": "14.72",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "US",
+                        "taxPadisCode": "RF",
+                        "description": "US Transportation Tax"
+                      },
+                      {
+                        "amount": {
+                          "amount": "11.02",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "US",
+                        "description": "US Transportation Tax"
+                      }
+                    ]
+                  }
+                },
+                "fareComponents": [
+                  {
+                    "price": {
+                      "baseAmount": {
+                        "amount": "146.98",
+                        "curCode": "USD"
+                      },
+                      "taxes": {
+                        "total": {
+                          "amount": "25.92",
+                          "curCode": "USD"
+                        }
+                      }
+                    },
+                    "fareBasis": {
+                      "fareBasisCode": "SVAIZNN3",
+                      "fareDescription": "Published fare",
+                      "fareCode": "70J",
+                      "fareBasisCityPair": "DFWORDAA",
+                      "rbd": "S",
+                      "cabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "ECONOMY"
+                      },
+                      "sabreCabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "Economy"
+                      }
+                    },
+                    "fareRules": {
+                      "penalty": {
+                        "cancelFeeInd": false,
+                        "changeFeeInd": false,
+                        "refundableInd": false,
+                        "details": [
+                          {
+                            "penaltyType": "Cancel",
+                            "metadata": [
+                              {
+                                "ruleId": "Cancel",
+                                "values": [
+                                  {
+                                    "instruction": "Not Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "penaltyType": "Change",
+                            "metadata": [
+                              {
+                                "ruleId": "Change",
+                                "values": [
+                                  {
+                                    "instruction": "Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "ticketing": {
+                        "endorsements": ["USD146.98 NON-REFUNDABLE", "NONREF/FAREDIF/"]
+                      }
+                    },
+                    "segments": [
+                      {
+                        "id": "Isgm010042ba802b3",
+                        "rbd": "S",
+                        "flightNumber": "679",
+                        "marketingCarrier": "AA",
+                        "marketingCarrierName": "American Airlines",
+                        "cabinType": {
+                          "cabinTypeCode": "Y",
+                          "cabinTypeName": "ECONOMY"
+                        },
+                        "departure": {
+                          "airport": "DFW",
+                          "date": "2024-09-28T06:20:00",
+                          "terminal": "0"
+                        },
+                        "arrival": {
+                          "airport": "ORD",
+                          "date": "2024-09-28T08:46:00"
+                        },
+                        "duration": "PT2H26M",
+                        "equipment": "7M8"
+                      }
+                    ],
+                    "brand": {
+                      "code": "AADOM-MAIN",
+                      "brandName": "Main Cabin",
+                      "descriptions": [
+                        {
+                          "text": "No change fees (difference in ticket price may apply)"
+                        },
+                        {
+                          "text": "Choose your seat at no charge (fee may apply for preferred or Main Cabin Extra seats)"
+                        },
+                        {
+                          "text": "General boarding"
+                        },
+                        {
+                          "text": "Elite Qualifying  Credits (EQMs, EQSs or EQDs)"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "price": {
+              "totalAmount": {
+                "amount": "172.90",
+                "curCode": "USD"
+              }
+            }
+          }
+        ],
+        "totalPrice": {
+          "totalAmount": {
+            "amount": "-220.30",
+            "curCode": "USD"
+          },
+          "totalTaxes": {
+            "amount": "-24.02",
+            "curCode": "USD"
+          },
+          "taxBreakdown": [
+            {
+              "amount": {
+                "amount": "-4.50",
+                "curCode": "USD"
+              },
+              "taxCode": "XF"
+            },
+            {
+              "amount": {
+                "amount": "-4.80",
+                "curCode": "USD"
+              },
+              "taxCode": "ZP"
+            },
+            {
+              "amount": {
+                "amount": "-14.72",
+                "curCode": "USD"
+              },
+              "taxCode": "US"
+            }
+          ],
+          "wasTicketValueUsed": true
+        }
+      }
+    ]
+  }
+}

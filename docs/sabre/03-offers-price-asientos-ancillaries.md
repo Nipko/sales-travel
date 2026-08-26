@@ -1,8 +1,8 @@
 ---
-titulo: "Sabre — Revalidación de precio, asientos y ancillaries"
+titulo: 'Sabre — Revalidación de precio, asientos y ancillaries'
 fecha: 2026-08-25
 estado: reconciliado contra contratos oficiales; laguna de ancillaries cerrada
-fuentes: "ver 00-fuentes.md"
+fuentes: 'ver 00-fuentes.md'
 ---
 
 # Sabre — Revalidación de precio, asientos y ancillaries
@@ -17,14 +17,14 @@ primera pasada marcó `[INFERIDO]` o `DESCONOCIDO` ahora está **VERIFICADO-SPEC
 
 Los specs relevantes para este documento son seis:
 
-| Spec | Qué fija |
-| --- | --- |
-| `offer-price-ndc-v1.yml` (OpenAPI 3.0.3, `info.version: 1.5`) | request **y respuesta completa** de `/v1/offers/price`, incluidos 5 ejemplos de respuesta reales |
-| `get-seats-agency-3.0.yml` (OpenAPI 3.0.0, `info.version: "3.1"`) / `get-seats-airline-3.0.yml` (`info.version: "3.0"`) | mapas de asiento — **contrato v3, que NO es el v1 que usa la colección** (§4.1) |
-| **`get-ancillaries-agency-2.3.yml`** (OpenAPI 3.0.0, `info.version: "2.3"`) — **NUEVO en esta pasada** | el contrato real de `/v2/offers/getAncillaries`. **Cierra la laguna** que las dos pasadas anteriores declararon irresoluble (§5.2) |
-| **`manage-ancillary-1.1.yml`** (OpenAPI 3.0.0, `info.version: "1.1"`) — **NUEVO en esta pasada** | `/v1/ancillaries/{add,remove,exchange}` — el carril **REST** de asientos y ancillaries sobre PNR (§5.9) |
-| `booking-management-v1.yml` (Swagger 2.0) | cómo se consumen asiento y ancillary en `createBooking` / `modifyBooking` |
-| `bargain-finder-max-v5.yml` (OpenAPI 3.0) | el origen de la cadena de IDs (`offer.offerId`, `fare.offerItemId`, `timeToLive`, `source`) |
+| Spec                                                                                                                    | Qué fija                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `offer-price-ndc-v1.yml` (OpenAPI 3.0.3, `info.version: 1.5`)                                                           | request **y respuesta completa** de `/v1/offers/price`, incluidos 5 ejemplos de respuesta reales                                   |
+| `get-seats-agency-3.0.yml` (OpenAPI 3.0.0, `info.version: "3.1"`) / `get-seats-airline-3.0.yml` (`info.version: "3.0"`) | mapas de asiento — **contrato v3, que NO es el v1 que usa la colección** (§4.1)                                                    |
+| **`get-ancillaries-agency-2.3.yml`** (OpenAPI 3.0.0, `info.version: "2.3"`) — **NUEVO en esta pasada**                  | el contrato real de `/v2/offers/getAncillaries`. **Cierra la laguna** que las dos pasadas anteriores declararon irresoluble (§5.2) |
+| **`manage-ancillary-1.1.yml`** (OpenAPI 3.0.0, `info.version: "1.1"`) — **NUEVO en esta pasada**                        | `/v1/ancillaries/{add,remove,exchange}` — el carril **REST** de asientos y ancillaries sobre PNR (§5.9)                            |
+| `booking-management-v1.yml` (Swagger 2.0)                                                                               | cómo se consumen asiento y ancillary en `createBooking` / `modifyBooking`                                                          |
+| `bargain-finder-max-v5.yml` (OpenAPI 3.0)                                                                               | el origen de la cadena de IDs (`offer.offerId`, `fare.offerItemId`, `timeToLive`, `source`)                                        |
 
 Más las **listas oficiales de errores** por endpoint, que sustituyen a las conjeturas de la
 primera pasada sobre cómo falla cada llamada.
@@ -32,14 +32,15 @@ primera pasada sobre cómo falla cada llamada.
 #### Cómo aparecieron los dos specs que "no existían"
 
 `00-fuentes.md` §2 y las dos pasadas anteriores dan por hecho que el slug de `getAncillaries`
-*"vive detrás del login del catálogo"*. **Era falso, y la prueba está en la propia
+_"vive detrás del login del catálogo"_. **Era falso, y la prueba está en la propia
 documentación oficial que ya teníamos descargada.** La página
 `help/get-ancillaries-airline-3.0/3.0-index.html` contiene dos enlaces internos con los slugs
 literales:
 
 ```html
-línea 29:  ...aimed at use by Agencies <a href="../../get-ancillaries-agency/2.3/index.html">Get Ancillaries - Agency API</a>
-línea 191: To book an ancillary, use the <a href="../../manage-ancillary/1.1/index.html">Manage Ancillary API</a>
+línea 29: ...aimed at use by Agencies
+<a href="../../get-ancillaries-agency/2.3/index.html">Get Ancillaries - Agency API</a> línea 191: To
+book an ancillary, use the <a href="../../manage-ancillary/1.1/index.html">Manage Ancillary API</a>
 ```
 
 Con esos slugs, las descargas por el patrón habitual
@@ -56,7 +57,7 @@ pasada anterior falló porque buscó `getAncillaries` como slug; el producto se 
 
 1. **"La colección no guarda respuestas de ejemplo salvo 4 … es decir, no tenemos nada."**
    Falso en su conclusión. Las 4 respuestas guardadas **existen y pesan 16.479 bytes cada
-   una** (`slices/responses/*.json`, todas `/v1/orders/view`). No traen la respuesta de
+   una** (`evidence/responses/*.json`, todas `/v1/orders/view`). No traen la respuesta de
    `offers/price`, pero **sí traen la prueba dura de que los IDs de price sobreviven a la
    orden**: `order.orderItems[0].offerItemId = "cg05grt8njtq6dou00-1-1"`, que encaja exacto
    con el patrón `^[a-zA-Z0-9]+(-[0-9]+){2}$` del `OfferItemId` de
@@ -73,10 +74,10 @@ pasada anterior falló porque buscó `getAncillaries` como slug; el producto se 
 
 ### 0.3 Los dos hallazgos de la crítica
 
-| # | Hallazgo | Resolución |
-| --- | --- | --- |
-| 1 (baja) | *"WhatsApp aparece solo como ilustración de un riesgo; no hay análisis de qué necesita el canal conversacional de Sabre."* | **ACEPTADO.** Se añade **§4.8**, con lo que estos tres endpoints imponen y ofrecen al canal conversacional. No es relleno: el hallazgo central de esa sección (la preferencia de área **no existe en NDC**) corrige además un error de esta misma pasada, ver §4.5. La parte del hallazgo que pide un RF en el documento 10 corresponde a ese documento. |
-| 2 (baja) | *"§3.2 dice 45 de 59 y §2.1 desglosa 46."* | **ACEPTADO y ya corregido**: son **46**. Ver la nota de §2.1 y la tabla de §3.2. |
+| #        | Hallazgo                                                                                                                   | Resolución                                                                                                                                                                                                                                                                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 (baja) | _"WhatsApp aparece solo como ilustración de un riesgo; no hay análisis de qué necesita el canal conversacional de Sabre."_ | **ACEPTADO.** Se añade **§4.8**, con lo que estos tres endpoints imponen y ofrecen al canal conversacional. No es relleno: el hallazgo central de esa sección (la preferencia de área **no existe en NDC**) corrige además un error de esta misma pasada, ver §4.5. La parte del hallazgo que pide un RF en el documento 10 corresponde a ese documento. |
+| 2 (baja) | _"§3.2 dice 45 de 59 y §2.1 desglosa 46."_                                                                                 | **ACEPTADO y ya corregido**: son **46**. Ver la nota de §2.1 y la tabla de §3.2.                                                                                                                                                                                                                                                                         |
 
 ### 0.4 Qué sigue siendo inferencia
 
@@ -104,8 +105,8 @@ La laguna de ancillaries **está cerrada** (§5.2). Lo que queda:
 3. **El impacto PCI es peor de lo que creíamos, y no está en `offers/price`.** El BIN son 6-8
    dígitos y no es PAN. Pero el carril **ATPCO** de Sabre no usa `offers/price`: tarifica
    dentro de `createBooking`, y ese endpoint acepta **`cardNumber` completo (12-19 dígitos)
-   y `cardSecurityCode`** (VERIFICADO-SPEC: `booking-management-v1.yml:5313-5317` y
-   `:5318-5322`). Vender ATPCO por Sabre con tarjeta **rompe SAQ-A** salvo que usemos
+   y `cardSecurityCode`** (VERIFICADO-SPEC: `booking-management-v1.yml:5314-5318` y
+   `:5319-5323`). Vender ATPCO por Sabre con tarjeta **rompe SAQ-A** salvo que usemos
    tokenización de Sabre o cobremos por PSP y liquidemos con otra forma de pago. Ver §2.4 y §2.6.
 4. **El TTL de la oferta ya no es desconocido: son 1.200 segundos (20 min) en todos los
    ejemplos oficiales**, declarados en `offers[].ttl` (entero, segundos) y
@@ -116,7 +117,7 @@ La laguna de ancillaries **está cerrada** (§5.2). Lo que queda:
    distintas, no dos versiones de la misma.** v1 usa un discriminador `requestType` y
    devuelve `aLaCarteOffer`; v3 usa **rutas separadas** (tres en el spec de agencia, dos en el
    de aerolínea) y devuelve `offerItems[] + serviceDefinitions[] + priceDefinitions[] +
-   seatMaps[]`. Hay que elegir una. Ver §4.1.
+seatMaps[]`. Hay que elegir una. Ver §4.1.
 6. **El catálogo de códigos de asiento está resuelto**: son PADIS 9825/9865 y la doc oficial
    trae los valores con descripción. `1` = `RestrictedGeneral`, `1D` = `RestrictedRecline`,
    y los códigos que de verdad importan para menores son `1A`, `1C` e `IE`, **no** `ExitRowSeat`.
@@ -140,7 +141,7 @@ La laguna de ancillaries **está cerrada** (§5.2). Lo que queda:
 10. **En NDC no se puede vender asiento sin pintar el mapa.** La preferencia de área
     (`WINDOW`, `AISLE`…) existe **solo en el carril ATPCO** (`BookSeat.areaPreferences`), no en
     el NDC (`BookSeatOffer`). Corrige un error de la pasada anterior y choca de frente con
-    *"WhatsApp es ciudadano de primera"*. Ver §4.5 y la sección nueva §4.8.
+    _"WhatsApp es ciudadano de primera"_. Ver §4.5 y la sección nueva §4.8.
 11. **`search.service.ts::priceOffer` sigue clavado a LATAM, sin circuit breaker, sin cuota y
     sin bandera `simulated`** (verificado hoy contra el repo, `:109-122`). Ver §7.
 
@@ -153,16 +154,16 @@ La laguna de ancillaries **está cerrada** (§5.2). Lo que queda:
 59 requests apuntan a `{{rest_endpoint}}/v1/offers/price`. Agrupados por el contenido real
 de `query[].offerItemId` (no por texto del body), hay **tres variantes**:
 
-| Requests | Variable en `offerItemId[]` | Dónde |
-| --- | --- | --- |
-| **46** | `{{shop_offer_item_id}}` | flujos NDC estándar (WF-1, 11-15, 18, 23-25…) |
-| 7 | `{{shop_offer_passenger_item_id}}` | `ModifyBooking / … / Form of Payment modifications (Hybrid)` |
-| 6 | `{{shopPassengerOfferItemId}}` | `Workflows / 28-33 NDC - Assign seats at order creation` |
+| Requests | Variable en `offerItemId[]`        | Dónde                                                        |
+| -------- | ---------------------------------- | ------------------------------------------------------------ |
+| **46**   | `{{shop_offer_item_id}}`           | flujos NDC estándar (WF-1, 11-15, 18, 23-25…)                |
+| 7        | `{{shop_offer_passenger_item_id}}` | `ModifyBooking / … / Form of Payment modifications (Hybrid)` |
+| 6        | `{{shopPassengerOfferItemId}}`     | `Workflows / 28-33 NDC - Assign seats at order creation`     |
 
 > **Corrección (hallazgo 2 de la crítica, ACEPTADO).** La primera pasada decía "45 de 59"
 > en §3.2 y a la vez desglosaba 45+1 en §2.1. El número correcto es **46**. Verificado
 > agrupando los 59 bodies por `JSON.stringify(body.query)`:
-> `46 :: [{"offerItemId":["{{shop_offer_item_id}}"]}]`. El 13 de 59 del nivel *passenger*
+> `46 :: [{"offerItemId":["{{shop_offer_item_id}}"]}]`. El 13 de 59 del nivel _passenger_
 > (7 + 6) sí era correcto.
 
 Los **59** llevan exactamente el mismo `params`:
@@ -173,29 +174,29 @@ Los **59** llevan exactamente el mismo `params`:
 `offer-price-ndc-v1.yml:74-101` (`OfferPriceRequestV1`). **El único campo obligatorio del
 request es `query`** (`:78-79`).
 
-| Campo | Tipo | Obligatorio | Restricción del spec | Línea |
-| --- | --- | --- | --- | --- |
-| `payloadAttributes` | objeto | no | `timeStamp`, `trxID` (≤100 chars). `host` y `baseline` son `readOnly` (solo respuesta) | `:144-172` |
-| `query` | array | **sí** | `minItems: 1` | `:84-90` |
-| `query[].offerItemId` | array de string | **sí** | `minItems: 1`, patrón `^([a-zA-Z0-9]){1,30}(-[0-9]{1,10}){2}$` | `:182-190` |
-| `query[].passengerId` | array de string | no | patrón `^([\w-]){1,200}$`, default `Passenger1` | `:191-200` |
-| `query[].formOfPayment` | **string** | no | **es una REFERENCIA al `id` de un FOP**, no un objeto. Default `FOP1` | `:201-206` |
-| `passengers` | array | no | `maxItems: 9` | `:91-96` |
-| `passengers[].id` | string | **sí** (si hay `passengers`) | patrón `^(\S+)$` | `:214-218` |
-| `passengers[].type` | string | no | PTC, patrón `^[A-Z]{1}[0-9A-Z]{2}$` | `:219-223` |
-| `passengers[].personName` | objeto | no | `surname` obligatorio | `:224-226`, `:302-318` |
-| `passengers[].frequentFlyer[]` | array | no | — | `:227-232` |
-| `passengers[].unusedTicketNumber` | string | no | 13 o 14 dígitos — **reemisión con valor residual** | `:233-240` |
-| `params` | objeto | no | **`additionalProperties: false`** (`:269`) — no se puede colar nada | `:97-99`, `:242-269` |
-| `params.formOfPayment` | array | no | **`maxItems: 1`** (`:250`) | `:247-252` |
-| `params.formOfPayment[].subCode` | string | **sí dentro del objeto** (`required` en `:274-275`) | `^([A-Z0-9]{3}\|CA\|CK)$` — `CA` efectivo, `CK` cheque | `:283-290` |
-| `params.formOfPayment[].cardType` | string | no | 2 letras mayúsculas | `:291-295` |
-| `params.formOfPayment[].binNumber` | string | no | **6 a 8 dígitos** (`^([0-9]{6,8})$` en `:300`) | `:296-300` |
-| `params.formOfPayment[].id` | string | no | ≤64 chars, default `FOP1`. Es lo que referencia `query[].formOfPayment` | `:277-282` |
-| `params.accountCode` | string | no | tarifa corporativa | `:253-257` |
-| `params.customQualifiers` | objeto libre | no | **qualifiers específicos de aerolínea NDC** | `:258-264` |
-| `params.allowBundles` | boolean | no | default `false` | `:265-268` |
-| `diags` | array de enum | no | 14 valores, uso interno de debug | `:100-104`, `:319-340` |
+| Campo                              | Tipo            | Obligatorio                                         | Restricción del spec                                                                   | Línea                  |
+| ---------------------------------- | --------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------- |
+| `payloadAttributes`                | objeto          | no                                                  | `timeStamp`, `trxID` (≤100 chars). `host` y `baseline` son `readOnly` (solo respuesta) | `:144-172`             |
+| `query`                            | array           | **sí**                                              | `minItems: 1`                                                                          | `:84-90`               |
+| `query[].offerItemId`              | array de string | **sí**                                              | `minItems: 1`, patrón `^([a-zA-Z0-9]){1,30}(-[0-9]{1,10}){2}$`                         | `:182-190`             |
+| `query[].passengerId`              | array de string | no                                                  | patrón `^([\w-]){1,200}$`, default `Passenger1`                                        | `:191-200`             |
+| `query[].formOfPayment`            | **string**      | no                                                  | **es una REFERENCIA al `id` de un FOP**, no un objeto. Default `FOP1`                  | `:201-206`             |
+| `passengers`                       | array           | no                                                  | `maxItems: 9`                                                                          | `:91-96`               |
+| `passengers[].id`                  | string          | **sí** (si hay `passengers`)                        | patrón `^(\S+)$`                                                                       | `:214-218`             |
+| `passengers[].type`                | string          | no                                                  | PTC, patrón `^[A-Z]{1}[0-9A-Z]{2}$`                                                    | `:219-223`             |
+| `passengers[].personName`          | objeto          | no                                                  | `surname` obligatorio                                                                  | `:224-226`, `:302-318` |
+| `passengers[].frequentFlyer[]`     | array           | no                                                  | —                                                                                      | `:227-232`             |
+| `passengers[].unusedTicketNumber`  | string          | no                                                  | 13 o 14 dígitos — **reemisión con valor residual**                                     | `:233-240`             |
+| `params`                           | objeto          | no                                                  | **`additionalProperties: false`** (`:269`) — no se puede colar nada                    | `:97-99`, `:242-269`   |
+| `params.formOfPayment`             | array           | no                                                  | **`maxItems: 1`** (`:250`)                                                             | `:247-252`             |
+| `params.formOfPayment[].subCode`   | string          | **sí dentro del objeto** (`required` en `:274-275`) | `^([A-Z0-9]{3}\|CA\|CK)$` — `CA` efectivo, `CK` cheque                                 | `:283-290`             |
+| `params.formOfPayment[].cardType`  | string          | no                                                  | 2 letras mayúsculas                                                                    | `:291-295`             |
+| `params.formOfPayment[].binNumber` | string          | no                                                  | **6 a 8 dígitos** (`^([0-9]{6,8})$` en `:300`)                                         | `:296-300`             |
+| `params.formOfPayment[].id`        | string          | no                                                  | ≤64 chars, default `FOP1`. Es lo que referencia `query[].formOfPayment`                | `:277-282`             |
+| `params.accountCode`               | string          | no                                                  | tarifa corporativa                                                                     | `:253-257`             |
+| `params.customQualifiers`          | objeto libre    | no                                                  | **qualifiers específicos de aerolínea NDC**                                            | `:258-264`             |
+| `params.allowBundles`              | boolean         | no                                                  | default `false`                                                                        | `:265-268`             |
+| `diags`                            | array de enum   | no                                                  | 14 valores, uso interno de debug                                                       | `:100-104`, `:319-340` |
 
 > **Nota de precisión.** Estas líneas se re-verificaron una a una en esta pasada. La versión
 > anterior del documento tenía **siete citas desplazadas entre 1 y 5 líneas** (`offerItemId`,
@@ -205,17 +206,17 @@ request es `query`** (`:78-79`).
 
 **Correcciones concretas a la primera pasada:**
 
-- ❌ *"`params.formOfPayment` array ⇒ split payment / dos tarjetas `[INFERIDO]`"* →
+- ❌ _"`params.formOfPayment` array ⇒ split payment / dos tarjetas `[INFERIDO]`"_ →
   **REFUTADO por el spec.** `maxItems: 1` (`:250`). No hay split payment aquí. Lo que sí
   hay es un mecanismo de **referencia**: `params.formOfPayment[].id` ↔
   `query[].formOfPayment`, pensado para asociar el FOP a un subconjunto de offer items.
-- ❌ *"binNumber: string, 6 dígitos"* → **son 6 a 8** (`:296`). Con la migración a BIN de 8
+- ❌ _"binNumber: string, 6 dígitos"_ → **son 6 a 8** (`:296`). Con la migración a BIN de 8
   dígitos de las marcas, esto importa: si capturamos solo 6 podemos perder precisión de fee.
-- ❌ *"No aparece ningún otro campo dentro de `params` … no hay `currency`, ni `pointOfSale`,
-  ni `travelers`"* → correcto para la colección, pero **el contrato sí tiene más**:
+- ❌ _"No aparece ningún otro campo dentro de `params` … no hay `currency`, ni `pointOfSale`,
+  ni `travelers`"_ → correcto para la colección, pero **el contrato sí tiene más**:
   `accountCode`, `customQualifiers`, `allowBundles`, y a nivel raíz `passengers[]` con
   frequent flyer y billete sin usar. La colección usa el 20% del contrato.
-- ✅ *"el contexto de PCC/agencia viaja en el token"* → **confirmado**: no hay ningún campo
+- ✅ _"el contexto de PCC/agencia viaja en el token"_ → **confirmado**: no hay ningún campo
   de POS/PCC en todo el request, y el spec declara `security: oauth2_authentication`
   (`:67-68`).
 
@@ -223,9 +224,7 @@ request es `query`** (`:78-79`).
 
 ```json
 {
-  "query": [
-    { "offerItemId": [ "dd07bbd7fb57c88nclq1qixyj3-1-1" ] }
-  ]
+  "query": [{ "offerItemId": ["dd07bbd7fb57c88nclq1qixyj3-1-1"] }]
 }
 ```
 
@@ -240,57 +239,57 @@ el fee viene **desglosado y trazable**.
 `offers[].obFees[]` (VERIFICADO-SPEC: `offer-price-ndc-v1.yml:455-460`, schema `ObFee` en
 `:1363-1424`) contiene, por cada fee de forma de pago:
 
-| Campo | Qué es | Nota |
-| --- | --- | --- |
-| `binNumber` | patrón `^[0-9\|\*]{6,8}$` — **admite comodín**, ej. `5452**` | Sabre te dice para qué rango de BIN aplica el fee |
-| `cardCode` | 2 chars: `VI`, `MC`, `AX` | |
-| `cardType` | 3 chars: `FCA` cualquier crédito, `FDA` cualquier débito, `FC1` crédito que empieza en 1… | **marcado `deprecated: true`** en el spec (`:1373`) |
-| `serviceCode` | código del fee, ej. `OB` | |
-| `subCode` | motivo del cargo, ej. `T05` | |
-| `airline` | quién cobra el fee | |
-| `paxRefs[]` / `offerItemRefs[]` | a qué pax y a qué items aplica | permite atribuir el fee |
-| `isRefundable` | boolean | |
-| `description` | texto de la aerolínea, ej. `"Credit Card Fee"` | mostrable al cliente |
-| `surcharge` | `ObFeeAmount` (`:1880-1920`) | ver abajo |
+| Campo                           | Qué es                                                                                    | Nota                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `binNumber`                     | patrón `^[0-9\|\*]{6,8}$` — **admite comodín**, ej. `5452**`                              | Sabre te dice para qué rango de BIN aplica el fee   |
+| `cardCode`                      | 2 chars: `VI`, `MC`, `AX`                                                                 |                                                     |
+| `cardType`                      | 3 chars: `FCA` cualquier crédito, `FDA` cualquier débito, `FC1` crédito que empieza en 1… | **marcado `deprecated: true`** en el spec (`:1373`) |
+| `serviceCode`                   | código del fee, ej. `OB`                                                                  |                                                     |
+| `subCode`                       | motivo del cargo, ej. `T05`                                                               |                                                     |
+| `airline`                       | quién cobra el fee                                                                        |                                                     |
+| `paxRefs[]` / `offerItemRefs[]` | a qué pax y a qué items aplica                                                            | permite atribuir el fee                             |
+| `isRefundable`                  | boolean                                                                                   |                                                     |
+| `description`                   | texto de la aerolínea, ej. `"Credit Card Fee"`                                            | mostrable al cliente                                |
+| `surcharge`                     | `ObFeeAmount` (`:1880-1920`)                                                              | ver abajo                                           |
 
-Y `ObFeeAmount` trae `amount`, `baseAmount`, `maximumAmount` (*"si no se puede computar el
-importe exacto"*), `percentageValue`, `cardCharge`, `taxes` y — clave —
-**`noCharge: boolean`** *("If `true`, there is no charge associated with the selected form
-of payment")*.
+Y `ObFeeAmount` trae `amount`, `baseAmount`, `maximumAmount` (_"si no se puede computar el
+importe exacto"_), `percentageValue`, `cardCharge`, `taxes` y — clave —
+**`noCharge: boolean`** _("If `true`, there is no charge associated with the selected form
+of payment")_.
 
 **Correcciones a la primera pasada:**
 
-- ✅ *"`subCode: FDA` es casi con seguridad un subcódigo de OB fee de forma de pago"* →
-  **CONFIRMADO-SPEC**, y con más precisión: `FDA` = *any debit card*
+- ✅ _"`subCode: FDA` es casi con seguridad un subcódigo de OB fee de forma de pago"_ →
+  **CONFIRMADO-SPEC**, y con más precisión: `FDA` = _any debit card_
   (`offer-price-ndc-v1.yml:1370-1372`). Es decir, el BIN `545251` de la colección se está
   declarando como **tarjeta de débito Mastercard**, no crédito. Si copiamos ese `subCode`
   como default estamos cotizando fees de débito para tarjetas de crédito.
-- ❌ *"Que Sabre pida esto en el paso de precio y no en el de pago confirma que el fee entra
-  en el total revalidado"* → **matizado**. El spec **no dice** que `obFees` esté sumado
+- ❌ _"Que Sabre pida esto en el paso de precio y no en el de pago confirma que el fee entra
+  en el total revalidado"_ → **matizado**. El spec **no dice** que `obFees` esté sumado
   dentro de `totalPrice.totalAmount`. `ObFee` es un array hermano de `totalPrice` dentro de
   `Offer`. Que el fee esté incluido o sea aditivo **es exactamente lo que hay que medir en
   el CERT** (§8, ítem 5). Es un `DESCONOCIDO` que la primera pasada dio por resuelto.
-- ✅ *"Nunca loguear el BIN"* → se mantiene, y se refuerza: el BIN aparece **también en la
+- ✅ _"Nunca loguear el BIN"_ → se mantiene, y se refuerza: el BIN aparece **también en la
   respuesta** (`obFees[].binNumber`), así que el filtro de logging tiene que cubrir el
   request **y** el mapper de respuesta.
 
 #### Qué pasa si NO mandamos forma de pago (VERIFICADO-SPEC, doc oficial)
 
-`help/offer-price-ndc-v1/v1-index.txt`, sección *Processing flow*, paso 7:
+`help/offer-price-ndc-v1/v1-index.txt`, sección _Processing flow_, paso 7:
 
-> El servicio *"crea mensajes de advertencia basados en la respuesta de la aerolínea o en la
+> El servicio _"crea mensajes de advertencia basados en la respuesta de la aerolínea o en la
 > configuración (p. ej., mensajes que informan de una posible subida de precio si no se
-> proporcionó la forma de pago)"*.
+> proporcionó la forma de pago)"_.
 
 Es decir: **el flujo sin FOP funciona, y Sabre te avisa por `messages[]` de que el precio
 puede subir.** Eso convierte el problema de "blocker de diseño" en "warning gestionable":
 
 1. Revalidamos **sin** FOP para mostrar precio al vendedor. Si viene el warning, la UI lo
-   refleja como *"precio sujeto a la forma de pago"*.
+   refleja como _"precio sujeto a la forma de pago"_.
 2. Tras tokenizar en el PSP, revalidamos **con** el BIN real, **antes** de capturar.
 3. Si `totalPrice` cambió, frenamos y reconfirmamos.
 
-Esto encaja con nuestro principio de *tiempo a venta < 2 min* mucho mejor que pedir 6
+Esto encaja con nuestro principio de _tiempo a venta < 2 min_ mucho mejor que pedir 6
 dígitos de tarjeta antes de cotizar.
 
 #### Impacto PCI — la parte que la primera pasada no vio
@@ -300,7 +299,7 @@ exponen el BIN del método tokenizado, así que el paso 2 de arriba es viable
 `[INFERIDO — verificar en la doc de cada PSP el campo exacto y el momento]`.
 
 **El problema real está en el carril ATPCO**, y ahí sí hay una cita dura:
-`booking-management-v1.yml:5304` (`BasicFormOfPayment`) declara, en `:5313-5317` y `:5318-5322`:
+`booking-management-v1.yml:5305` (`BasicFormOfPayment`) declara, en `:5314-5318`, `:5319-5323` y `:5324-5328`:
 
 ```yaml
 cardNumber:        pattern: '^[0-9]{12,19}|([0-9]X{7,14}[0-9]{4})$'   # ej. '4537156488578956'
@@ -316,14 +315,14 @@ es un PAN completo. Es la pista más concreta que tenemos para la pregunta abier
 y la doc oficial de createBooking dice que la tarificación ATPCO se hace **dentro** del
 createBooking vía `flightDetails.flightPricing[].qualifiers.payment` apuntando a
 `payment.formsOfPayment[]` (`help/booking-management-api-v1/help-documentation-create-booking.txt:127`
-y el ejemplo *"Create an ATPCO booking (PNR)"* en
+y el ejemplo _"Create an ATPCO booking (PNR)"_ en
 `help-documentation-create-booking-examples.txt:591`).
 
 ⇒ **Vender ATPCO por Sabre con tarjeta como forma de pago del billete implica que el PAN y
 el CVV pasan por nuestro servidor.** Eso choca frontalmente con `CLAUDE.md` §Seguridad
 ("hosted checkout únicamente en fase 1, nunca PAN/CVV en servidor"). Es una **decisión de
 alcance**, no un detalle: o vendemos solo NDC en fase 1, o cobramos por PSP y emitimos
-contra la forma de pago de la agencia (efectivo/BSP), o asumimos SAQ-D. Ver §9 y §10.
+contra la forma de pago de la agencia (efectivo/BSP), o asumimos SAQ-D. La decisión vive en [10-requisitos-maestro.md](./10-requisitos-maestro.md) §9 D1 (PCI) y D3 (captura del BIN).
 
 ### 2.5 Contrato de respuesta — VERIFICADO-SPEC campo por campo
 
@@ -345,24 +344,24 @@ Con una condición estructural notable (`:109-113`): `anyOf: [required: response
 
 #### ⚠️ Corrección importante: `errors` NO existe en `offers/price`
 
-La primera pasada afirmó: *"los tests de WF-28 hacen
+La primera pasada afirmó: _"los tests de WF-28 hacen
 `pm.response.to.not.have.property("errors")` ⇒ los errores viajan en HTTP 200 con propiedad
-`errors`"*. **Es falso, por dos motivos:**
+`errors`"_. **Es falso, por dos motivos:**
 
 1. `pm.response.to.not.have.property("errors")` en Postman se evalúa contra el **objeto
    Response de Postman**, no contra el JSON del body. El objeto Response nunca tiene una
    propiedad `errors`. **El test es un no-op**; no prueba nada sobre la forma de la respuesta.
 2. El contrato oficial **no declara ningún campo `errors`** en `OfferPriceResponseV1`. El
-   contenedor es **`messages[]`** (`:114-118`), con el schema `Message` (`:869-907`):
+   contenedor es **`messages[]`** (`:120-124`), con el schema `Message` (`:869-907`):
 
-| Campo | Obligatorio | Valores | Nota |
-| --- | --- | --- | --- |
-| `type` | **sí** | `ERROR`, `WARNING`, `INFO` | patrón `^[A-Z]{0,7}$` |
-| `message` | **sí** | texto | |
-| `service` | **sí** | paso de proceso, ej. `OFFER_STORE_PUT` | |
-| `code` | no | entero, default `0` | |
-| `system` | no | sistema origen, ej. `OFFERSTORE` | |
-| `additionalDescription` | no | ej. `"Invalid form of payment reference."` | |
+| Campo                   | Obligatorio | Valores                                    | Nota                  |
+| ----------------------- | ----------- | ------------------------------------------ | --------------------- |
+| `type`                  | **sí**      | `ERROR`, `WARNING`, `INFO`                 | patrón `^[A-Z]{0,7}$` |
+| `message`               | **sí**      | texto                                      |                       |
+| `service`               | **sí**      | paso de proceso, ej. `OFFER_STORE_PUT`     |                       |
+| `code`                  | no          | entero, default `0`                        |                       |
+| `system`                | no          | sistema origen, ej. `OFFERSTORE`           |                       |
+| `additionalDescription` | no          | ej. `"Invalid form of payment reference."` |                       |
 
 ⇒ **Nuestro ACL debe leer `messages[]`, filtrar por `type === 'ERROR'` y fallar fuerte; los
 `WARNING` (incluido el de forma de pago ausente) se propagan a `OfferPriceResult.warnings`.**
@@ -377,38 +376,38 @@ Un adapter que busque `errors` no va a ver nunca un error de Sabre.
 
 **Obligatorios: `id`, `ttl`, `source`, `offerExpirationDateTime`, `offerItems`, `totalPrice`.**
 
-| Campo | Tipo | Qué es |
-| --- | --- | --- |
-| `id` | string, patrón `^[a-zA-Z0-9]+(-[0-9]+)$` | el `price_offer_id` de la colección → `flightOffer.offerId` |
-| `ttl` | **integer, segundos** | ej. `1200` |
-| `source` | string, patrón `^(ATPCO)\|(LCC)\|(NDC)$` | **la "fuente" que la primera pasada propuso inventar ya existe y se llama `source`** |
-| `offerExpirationDateTime` | ISO 8601 | cuándo caduca la oferta |
-| `paymentTimeLimitDateTime` / `paymentTimeLimitText` | ISO 8601 / texto libre | límite para pagar. El campo `Text` existe *"por si el proveedor externo devuelve datos que no cumplen el formato"* |
-| `purchaseTimeLimitDateTime` | ISO 8601 | límite para comprar |
-| `priceGuaranteeTimeLimitDateTime` / `…Text` | ISO 8601 / texto | *"fecha y hora antes de la cual la oferta debe convertirse en orden"* |
-| `commission` | objeto | **comisión de la agencia** — relevante para el pricing waterfall |
-| `journeys[]` | array | asociación segmento↔leg |
-| `offerItems[]` | array | ver abajo |
-| `totalPrice` | `OfferTotalPrice` | ver abajo |
-| `obFees[]` | array | fees por forma de pago (§2.4) |
-| `promotions[]` | array | promos de la aerolínea |
-| `voluntaryChangeInformation[]` | array | fees y límites de cambio voluntario |
-| `penaltyRefs[]` | array de string | referencias a penalidades a nivel oferta |
-| `penalties[]` | array | **`deprecated: true`** (`:436`) — no usar |
-| `penalty` | `Price` | penalidad cuando se tarifica con billete sin usar |
+| Campo                                               | Tipo                                     | Qué es                                                                                                             |
+| --------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `id`                                                | string, patrón `^[a-zA-Z0-9]+(-[0-9]+)$` | el `price_offer_id` de la colección → `flightOffer.offerId`                                                        |
+| `ttl`                                               | **integer, segundos**                    | ej. `1200`                                                                                                         |
+| `source`                                            | string, patrón `^(ATPCO)\|(LCC)\|(NDC)$` | **la "fuente" que la primera pasada propuso inventar ya existe y se llama `source`**                               |
+| `offerExpirationDateTime`                           | ISO 8601                                 | cuándo caduca la oferta                                                                                            |
+| `paymentTimeLimitDateTime` / `paymentTimeLimitText` | ISO 8601 / texto libre                   | límite para pagar. El campo `Text` existe _"por si el proveedor externo devuelve datos que no cumplen el formato"_ |
+| `purchaseTimeLimitDateTime`                         | ISO 8601                                 | límite para comprar                                                                                                |
+| `priceGuaranteeTimeLimitDateTime` / `…Text`         | ISO 8601 / texto                         | _"fecha y hora antes de la cual la oferta debe convertirse en orden"_                                              |
+| `commission`                                        | objeto                                   | **comisión de la agencia** — relevante para el pricing waterfall                                                   |
+| `journeys[]`                                        | array                                    | asociación segmento↔leg                                                                                           |
+| `offerItems[]`                                      | array                                    | ver abajo                                                                                                          |
+| `totalPrice`                                        | `OfferTotalPrice`                        | ver abajo                                                                                                          |
+| `obFees[]`                                          | array                                    | fees por forma de pago (§2.4)                                                                                      |
+| `promotions[]`                                      | array                                    | promos de la aerolínea                                                                                             |
+| `voluntaryChangeInformation[]`                      | array                                    | fees y límites de cambio voluntario                                                                                |
+| `penaltyRefs[]`                                     | array de string                          | referencias a penalidades a nivel oferta                                                                           |
+| `penalties[]`                                       | array                                    | **`deprecated: true`** (`:436`) — no usar                                                                          |
+| `penalty`                                           | `Price`                                  | penalidad cuando se tarifica con billete sin usar                                                                  |
 
 #### `offers[].totalPrice` (`OfferTotalPrice`, `:478-506`)
 
 Responde la pregunta #3 de la primera pasada ("¿dónde viene el precio total?").
 
-| Campo | Tipo | Nota |
-| --- | --- | --- |
-| `totalAmount` | `SignedCurrencyType` | **obligatorio**. `{ amount: string, curCode: string, taxable?: bool }` |
-| `baseAmount` | `SignedCurrencyType` | sin impuestos, tasas ni recargos |
-| `equivAmount` | `SignedCurrencyType` | el base en la moneda solicitada |
-| `totalTaxes` | `SignedCurrencyType` | |
-| `taxBreakdown[]` | array | desglose por `taxCode` / `nation` / `description` |
-| `wasTicketValueUsed` | boolean | `true` si la aerolínea aplicó el valor de un billete sin usar |
+| Campo                | Tipo                 | Nota                                                                   |
+| -------------------- | -------------------- | ---------------------------------------------------------------------- |
+| `totalAmount`        | `SignedCurrencyType` | **obligatorio**. `{ amount: string, curCode: string, taxable?: bool }` |
+| `baseAmount`         | `SignedCurrencyType` | sin impuestos, tasas ni recargos                                       |
+| `equivAmount`        | `SignedCurrencyType` | el base en la moneda solicitada                                        |
+| `totalTaxes`         | `SignedCurrencyType` |                                                                        |
+| `taxBreakdown[]`     | array                | desglose por `taxCode` / `nation` / `description`                      |
+| `wasTicketValueUsed` | boolean              | `true` si la aerolínea aplicó el valor de un billete sin usar          |
 
 **Dos trampas de tipo, verificadas:**
 
@@ -416,15 +415,15 @@ Responde la pregunta #3 de la primera pasada ("¿dónde viene el precio total?")
    (`SignedCurrencyType`, `:1185-1208`). **Hasta 3 decimales**, no 2. Nuestro `Money`
    canónico usa minor units enteros: el mapper tiene que parsear con precisión decimal
    explícita, nunca con `parseFloat` sobre 3 decimales.
-2. **`amount` puede ser NEGATIVO.** El spec lo dice literalmente: *"May be negative in ticket
-   exchange scenarios"*. El ejemplo oficial `UnusedTicketResponse`
+2. **`amount` puede ser NEGATIVO.** El spec lo dice literalmente: _"May be negative in ticket
+   exchange scenarios"_. El ejemplo oficial `UnusedTicketResponse`
    (`offer-price-ndc-v1.yml:4448-4478`) devuelve `totalPrice.totalAmount = "-220.30"` — un
    **reembolso neto**. `MoneySchema` en `packages/canonical` tiene que admitir negativos o
    la reemisión revienta en el borde del ACL.
 
 Además: **el nombre del campo de moneda cambia entre productos.** `offers/price` usa
 `curCode` (`CurrencyType:1145-1168`); la respuesta real de `/v1/orders/view` que sí tenemos
-usa `code` (`slices/responses/01-Add_phone_Orders_View.json`:
+usa `code` (`evidence/responses/01-Add_phone_Orders_View.json`:
 `{"totalAmount":{"amount":"146.60","code":"USD"}}`). Un mapper de `Money` compartido entre
 los dos endpoints devuelve `undefined` en la moneda de uno de ellos.
 
@@ -435,11 +434,11 @@ Esto la primera pasada no lo vio y es estructural:
 ```yaml
 OfferItem:
   discriminator: { propertyName: type, mapping: { Air: AirOfferItem, Service: ServiceOfferItem } }
-  oneOf: [ AirOfferItem, ServiceOfferItem ]
+  oneOf: [AirOfferItem, ServiceOfferItem]
 ```
 
 - **`AirOfferItem`** (`:524-555`) — obligatorios `type`, `id`, `passengers`. Trae
-  `mandatoryInd` (*"si `true`, el item no puede quitarse de la oferta"*), `commission` y
+  `mandatoryInd` (_"si `true`, el item no puede quitarse de la oferta"_), `commission` y
   `price`.
 - **`ServiceOfferItem`** (`:556-598`) — obligatorios `type`, `id`, `passengerRefs`,
   `segmentRefs`, `serviceDefinition`, `price`. **Es un ancillary dentro de la respuesta de
@@ -453,7 +452,7 @@ solo tiene `passengerRefs[]`.
 #### `offerItems[].passengers[]` — `PassengerOffer` (`:599-663`)
 
 Obligatorios `id`, `ptc`, `requestedPtc`. El detalle valioso: **`ptc` y `requestedPtc` pueden
-diferir** (*"puede ser distinto del usado durante la tarificación"*). Si pedimos `CNN` y la
+diferir** (_"puede ser distinto del usado durante la tarificación"_). Si pedimos `CNN` y la
 aerolínea tarifica `ADT`, hay que mostrarlo al vendedor — es un cambio de precio silencioso.
 
 Trae además `baggage[]` (con `type: CarryOnBag | CheckedBag`, `quantity`, `constrains[]` con
@@ -468,7 +467,7 @@ conserva porque prueba el uso real:
 ```js
 // Workflows / 28-33 NDC - Assign seats at order creation / … / Offers (price)
 const offers = pm.response.json().response.offers;
-pm.environment.set('priceOfferId',     offers[0].id);
+pm.environment.set('priceOfferId', offers[0].id);
 pm.environment.set('priceOfferItemId', offers[0].offerItems[0].id);
 ```
 
@@ -476,7 +475,10 @@ pm.environment.set('priceOfferItemId', offers[0].offerItems[0].id);
 // Workflows / 18 - NDC Multiple traveler types (Adult+Child) / 2. Offers Price /v1
 pm.environment.set('price_offer_item_id_adt', jsonData.response.offers[0].offerItems[0].id);
 pm.environment.set('price_offer_item_id_cnn', jsonData.response.offers[0].offerItems[1].id);
-pm.environment.set('price_passenger_id1',     jsonData.response.offers[0].offerItems[0].passengers[0].id);
+pm.environment.set(
+  'price_passenger_id1',
+  jsonData.response.offers[0].offerItems[0].passengers[0].id,
+);
 ```
 
 ⇒ Confirmado que en multi-PTC hay **un `offerItem` por PTC**, y que dentro de cada uno
@@ -486,25 +488,25 @@ pm.environment.set('price_passenger_id1',     jsonData.response.offers[0].offerI
 
 Sigue siendo cierto que **los workflows ATPCO y LCC de la colección no pasan por
 `/v1/offers/price`** (WF-19 y WF-20 van de shop directo a `GetAncillaryOffersRQ` y
-`createBooking`). Pero la conclusión de la primera pasada — *"`offers/price` es específico de
-NDC"* — es **demasiado fuerte** y el spec la matiza en dos puntos:
+`createBooking`). Pero la conclusión de la primera pasada — _"`offers/price` es específico de
+NDC"_ — es **demasiado fuerte** y el spec la matiza en dos puntos:
 
 1. `Offer.source` en la **respuesta** de `offers/price` admite `ATPCO`, `LCC` y `NDC`
    (`offer-price-ndc-v1.yml:1809-1813`). Si el endpoint fuera estrictamente NDC, el enum
    sobraría.
-2. El producto se llama *"Offer Price - NDC"* y la doc lo describe como *"el segundo paso
-   después del shopping en el proceso de reserva NDC"*
+2. El producto se llama _"Offer Price - NDC"_ y la doc lo describe como _"el segundo paso
+   después del shopping en el proceso de reserva NDC"_
    (`help/offer-price-ndc-v1/v1-index.txt`). No dice "solo NDC".
 
 Lo que **sí está verificado** es dónde tarifica ATPCO: **dentro de `createBooking`**, vía
 `flightDetails.flightPricing[].qualifiers` (§2.4). Y esa es la bifurcación real de nuestro ACL:
 
-| | NDC | ATPCO / LCC |
-| --- | --- | --- |
-| Revalidación | `POST /v1/offers/price` | no existe paso separado |
-| Dónde se fija el precio | en la offer, con TTL | en `createBooking.flightDetails.flightPricing` |
-| Forma de pago para fee | `params.formOfPayment` (BIN, sin PAN) | `payment.formsOfPayment[]` (**PAN + CVV**) |
-| Qué viaja al booking | `flightOffer.offerId` + `selectedOfferItems[]` | itinerario y precio **materializados** |
+|                         | NDC                                            | ATPCO / LCC                                    |
+| ----------------------- | ---------------------------------------------- | ---------------------------------------------- |
+| Revalidación            | `POST /v1/offers/price`                        | no existe paso separado                        |
+| Dónde se fija el precio | en la offer, con TTL                           | en `createBooking.flightDetails.flightPricing` |
+| Forma de pago para fee  | `params.formOfPayment` (BIN, sin PAN)          | `payment.formsOfPayment[]` (**PAN + CVV**)     |
+| Qué viaja al booking    | `flightOffer.offerId` + `selectedOfferItems[]` | itinerario y precio **materializados**         |
 
 **El adapter de Sabre no es un proveedor homogéneo. Son dos proveedores con una fachada común.**
 
@@ -513,17 +515,18 @@ Lo que **sí está verificado** es dónde tarifica ATPCO: **dentro de `createBoo
 La lista oficial de errores HTTP del producto. Relevante para el circuit breaker y la
 política de reintentos:
 
-| HTTP | Código Sabre | Qué hacer |
-| --- | --- | --- |
-| 400 | `ERR.2SG.CLIENT.INVALID_REQUEST` | error nuestro, **no reintentar** |
-| 401 | `ERR.2SG.SEC.INVALID_CREDENTIALS`, `invalid_client` | credenciales; **`invalid_client` también sale cuando el TAM Pool está agotado** — dato operativo importante para BYOC |
-| 403 | `ERR.2SG.SEC.NOT_AUTHORIZED` | el PCC no tiene el producto habilitado |
-| 404 | *"Response does not contain any data"* | sin resultados, no es fallo |
-| 429 | `ERR.2SG.GATEWAY.REQUEST_THROTTLED`, *"Active token count is exceeded"* | **límite de concurrencia por API**; esperar ≥500 ms y reintentar |
-| 500 | `ERR.2SG.GATEWAY.TIMEOUT`, `…PROVIDER_CONNECTION_ERROR`, `…INVALID_PROVIDER_RESPONSE` | esperar ≥500 ms y reintentar |
-| 503 / 504 | Service Unavailable / Gateway Timeout | idem |
+| HTTP      | Código Sabre                                                                          | Qué hacer                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 400       | `ERR.2SG.CLIENT.INVALID_REQUEST`                                                      | error nuestro, **no reintentar**                                                                                      |
+| 401       | `ERR.2SG.SEC.INVALID_CREDENTIALS`, `invalid_client`                                   | credenciales; **`invalid_client` también sale cuando el TAM Pool está agotado** — dato operativo importante para BYOC |
+| 403       | `ERR.2SG.SEC.NOT_AUTHORIZED`                                                          | el PCC no tiene el producto habilitado                                                                                |
+| 404       | _"Response does not contain any data"_                                                | sin resultados, no es fallo                                                                                           |
+| 429       | `ERR.2SG.GATEWAY.REQUEST_THROTTLED`, _"Active token count is exceeded"_               | **límite de concurrencia por API**; esperar ≥500 ms y reintentar                                                      |
+| 500       | `ERR.2SG.GATEWAY.TIMEOUT`, `…PROVIDER_CONNECTION_ERROR`, `…INVALID_PROVIDER_RESPONSE` | esperar ≥500 ms y reintentar                                                                                          |
+| 503 / 504 | Service Unavailable / Gateway Timeout                                                 | idem                                                                                                                  |
 
 Dos consecuencias de diseño:
+
 - **El backoff mínimo que Sabre pide es 500 ms**, repetido en cada fila. Nuestro breaker debe
   respetarlo, no reintentar inmediato.
 - **429 por "active token count"** significa que el límite es de **peticiones concurrentes**,
@@ -577,20 +580,20 @@ Dos consecuencias de diseño:
 `[BFMv5:n]` = `bargain-finder-max-v5.yml:n`
 
 **Novedad frente a la primera pasada:** el `offerId` está **limitado a 49 caracteres** en
-`createBooking` (`booking-management-v1.yml:4960-4962`: `minLength: 2, maxLength: 49`), y
+`createBooking` (`booking-management-v1.yml:4961-4962`: `minLength: 2, maxLength: 49`), y
 `selectedOfferItems` a **`maxItems: 9`**. Con 9 pax y un item por PTC, cabe justo.
 
 ### 3.2 Tres niveles de granularidad de `offerItemId`
 
 Se conserva de la primera pasada, con los conteos corregidos (§2.1):
 
-| Variable | Ruta en la respuesta del shop | Uso |
-| --- | --- | --- |
-| `shop_offer_item_id` | `pricingInformation[0].fare.offerItemId` | **46** de 59 requests de price |
+| Variable                                                    | Ruta en la respuesta del shop                                               | Uso                                                                           |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `shop_offer_item_id`                                        | `pricingInformation[0].fare.offerItemId`                                    | **46** de 59 requests de price                                                |
 | `shop_offer_passenger_item_id` / `shopPassengerOfferItemId` | `pricingInformation[0].fare.passengerInfoList[0].passengerInfo.offerItemId` | 13 de 59 — **todos** los flujos de FOP y **todos** los de asientos (WF-28→33) |
 
 Que asientos y forma de pago usen el item **por pasajero** ya no es solo una inferencia: el
-spec de BFM v5 llama al segundo *"NDC Offer Item Id"* a nivel de `passengerInfo`
+spec de BFM v5 llama al segundo _"NDC Offer Item Id"_ a nivel de `passengerInfo`
 (`bargain-finder-max-v5.yml:8389-8391`), y `ObFee.paxRefs[]` / `ObFee.offerItemRefs[]` en
 offers/price existen precisamente para atribuir el fee **por pasajero y por item**
 (`offer-price-ndc-v1.yml:1396-1404`). El nivel passenger es el que permite precios
@@ -601,13 +604,13 @@ diferenciados por pax. **Sigue siendo obligatorio guardar ambos ids del shop.**
 **VERIFICADO-SPEC.** No hace falta capturar nada del CERT para saber el TTL: viene declarado
 en la propia respuesta y es **obligatorio**.
 
-| Reloj | Campo | Tipo | Valor en los ejemplos oficiales |
-| --- | --- | --- | --- |
-| Vida de la oferta | `offers[].ttl` | integer, **segundos** | `1200` (= 20 min) en los 3 ejemplos de `help/offer-price-ndc-v1/examples-offerprice-basic-query.txt:64,382,898` y en `offer-price-ndc-v1.yml:2105,2420` |
-| Caducidad absoluta | `offers[].offerExpirationDateTime` | ISO 8601 | `2024-12-12T03:00:23Z`, exactamente `timeStamp + 1200s` |
-| Límite de pago | `offers[].paymentTimeLimitDateTime` / `…Text` | ISO / texto | `"2024-12-12T23:59:00"` — **fin del día, no 20 min** |
-| Límite de compra | `offers[].purchaseTimeLimitDateTime` | ISO | — |
-| Garantía de precio | `offers[].priceGuaranteeTimeLimitDateTime` / `…Text` | ISO / texto | *"fecha antes de la cual la oferta debe convertirse en orden"* |
+| Reloj              | Campo                                                | Tipo                  | Valor en los ejemplos oficiales                                                                                                                         |
+| ------------------ | ---------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vida de la oferta  | `offers[].ttl`                                       | integer, **segundos** | `1200` (= 20 min) en los 3 ejemplos de `help/offer-price-ndc-v1/examples-offerprice-basic-query.txt:64,382,898` y en `offer-price-ndc-v1.yml:2105,2420` |
+| Caducidad absoluta | `offers[].offerExpirationDateTime`                   | ISO 8601              | `2024-12-12T03:00:23Z`, exactamente `timeStamp + 1200s`                                                                                                 |
+| Límite de pago     | `offers[].paymentTimeLimitDateTime` / `…Text`        | ISO / texto           | `"2024-12-12T23:59:00"` — **fin del día, no 20 min**                                                                                                    |
+| Límite de compra   | `offers[].purchaseTimeLimitDateTime`                 | ISO                   | —                                                                                                                                                       |
+| Garantía de precio | `offers[].priceGuaranteeTimeLimitDateTime` / `…Text` | ISO / texto           | _"fecha antes de la cual la oferta debe convertirse en orden"_                                                                                          |
 
 Y en el shop, **antes** de price: `bargain-finder-max-v5.yml:8226-8245` declara
 `Offer.timeToLive` como **obligatorio**, con ejemplo `1255`. O sea que **la oferta de
@@ -626,7 +629,7 @@ antes de revalidar, sin llamar a Sabre.
 - **La oferta vencida tiene un error con nombre.** VERIFICADO-SPEC
   (`help/booking-management-api-v1/help-documentation-create-booking-error-list.txt:689-694`):
   `UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER` / `BAD_REQUEST` /
-  *"Invalid or Expired Offer. Use offers/price to reprice the offer."*
+  _"Invalid or Expired Offer. Use offers/price to reprice the offer."_
   ⇒ **Sabre nos dice literalmente qué hacer**: volver a llamar a `offers/price` con el
   `offerItemId`, no re-shopear. Eso hace viable un `OfferExpiredError` con recuperación
   automática de un salto, no de dos.
@@ -643,7 +646,7 @@ evidencia de que la colección asume re-shop, no reuso.
 
 Esto es lo que la primera pasada se perdió al declarar vacías las 4 respuestas.
 
-`slices/responses/01-Add_phone_Orders_View.json` (16.636 bytes,
+`evidence/responses/01-Add_phone_Orders_View.json` (16.636 bytes,
 `ModifyBooking / NDC modifications flows / Modify phone / Add phone / Orders View`):
 
 ```json
@@ -693,7 +696,7 @@ fallback que **inventa un id**:
 
 ```ts
 if (pipeIdx === -1) {
-  return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] };   // <-- enmascara el error
+  return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] }; // <-- enmascara el error
 }
 ```
 
@@ -727,7 +730,7 @@ export const ProviderRefSchema = z.object({
 Reglas innegociables si tomamos este camino:
 
 - `raw` **nunca** cruza al cliente final: filtrarlo en el serializer de la API.
-- `raw` **nunca** contiene el `formOfPayment` ni el BIN (§9, R-7).
+- `raw` **nunca** contiene el `formOfPayment` ni el BIN — ver [10 §9 D1](./10-requisitos-maestro.md) y el Riesgo de fuga del BIN al final de este documento.
 - `raw` **nunca** se cachea más allá de `expiresAt`.
 - Si una oferta llega a `createBooking` vencida ⇒ `OfferExpiredError` tipado en
   `packages/core/errors/` (hoy no existe) y **re-price automático**, que es lo que Sabre
@@ -742,26 +745,29 @@ Reglas innegociables si tomamos este camino:
 
 **No son dos versiones de la misma API. Son dos APIs con contratos incompatibles.**
 
-| | **v1 — lo que usa la colección** | **v3 — el contrato oficial descargado** |
-| --- | --- | --- |
-| Ruta | **una sola**: `POST {{rest_endpoint}}/v1/offers/getseats` (32/32 requests) | **tres en el spec de agencia**: `/v3/offers/getseats/byNdcOrderId` (`:28`), `/byNdcOfferId` (`:49`), `/byReservationPayload` (`:70`). El `basePath` es `/v3/offers` (`:26`) |
-| Cómo se elige el modo | campo `requestType`: `"payload"` (17), `"orderId"` (9), `"offerId"` (6) | **por ruta**. No hay `requestType` |
-| Envoltorio | `{ requestType, request: {...}, pointOfSale, party }` | body **plano**, sin envoltorio |
-| POS / PCC | `party.sender.travelAgency.{iataNumber, pseudoCityID, agencyID, agentUserID}` en el body | **ausente**. La doc: *"ya no es necesario proporcionar el PCC en el elemento travelAgency, esta información se lee de la sesión ATK/ATH"* |
-| Respuesta | `response.aLaCarteOffer.aLaCarteOfferItems[]` + `response.seatMaps[]` + `response.dataLists.paxs[]` | `response.{offerId, segments[], passengers[], serviceDefinitions[], priceDefinitions[], offerItems[], displayOnlyItems[], seatMaps[]}` |
-| Errores | (no declarado) | `errors[]` y `warnings[]` en la raíz, con `category`/`type`/`fieldPath` |
-| Precio | `aLaCarteOfferItems[].unitPrice.totalAmount.amount` | `offerItems[].priceDefinitionRef` → `priceDefinitions[].totalPrice.amount` (**indirección**) |
-| Elegibilidad | `aLaCarteOfferItems[].eligibility.paxRefIDs[]` + `.eligibility.flightAssociations.paxSegmentRefID[]` | `offerItems[].passengerRefs[]` + `offerItems[].segmentRefs[]` (planos) |
-| Puente asiento↔oferta | `seats[].offerItemRefIDs[]` (**IDs** en mayúsculas) | `seats[].offerItemRefIds[]` (**Ids**) + `seats[].displayOnlyItemRefIds[]` |
-| Fila | `seatRows[].row` como **string** (`"12"`) | `seatRows[].row` como **integer** (`5`) — `get-seats-agency-3.0.yml:983-986` |
+|                        | **v1 — lo que usa la colección**                                                                     | **v3 — el contrato oficial descargado**                                                                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ruta                   | **una sola**: `POST {{rest_endpoint}}/v1/offers/getseats` (32/32 requests)                           | **tres en el spec de agencia**: `/v3/offers/getseats/byNdcOrderId` (`:28`), `/byNdcOfferId` (`:49`), `/byReservationPayload` (`:70`). El `basePath` es `/v3/offers` (`:26`) |
+| Cómo se elige el modo  | campo `requestType`: `"payload"` (17), `"orderId"` (9), `"offerId"` (6)                              | **por ruta**. No hay `requestType`                                                                                                                                          |
+| Envoltorio             | `{ requestType, request: {...}, pointOfSale, party }`                                                | body **plano**, sin envoltorio                                                                                                                                              |
+| POS / PCC              | `party.sender.travelAgency.{iataNumber, pseudoCityID, agencyID, agentUserID}` en el body             | **ausente**. La doc: _"ya no es necesario proporcionar el PCC en el elemento travelAgency, esta información se lee de la sesión ATK/ATH"_                                   |
+| Respuesta              | `response.aLaCarteOffer.aLaCarteOfferItems[]` + `response.seatMaps[]` + `response.dataLists.paxs[]`  | `response.{offerId, segments[], passengers[], serviceDefinitions[], priceDefinitions[], offerItems[], displayOnlyItems[], seatMaps[]}`                                      |
+| Errores                | (no declarado)                                                                                       | `errors[]` y `warnings[]` en la raíz, con `category`/`type`/`fieldPath`                                                                                                     |
+| Precio                 | `aLaCarteOfferItems[].unitPrice.totalAmount.amount`                                                  | `offerItems[].priceDefinitionRef` → `priceDefinitions[].totalPrice.amount` (**indirección**)                                                                                |
+| Elegibilidad           | `aLaCarteOfferItems[].eligibility.paxRefIDs[]` + `.eligibility.flightAssociations.paxSegmentRefID[]` | `offerItems[].passengerRefs[]` + `offerItems[].segmentRefs[]` (planos)                                                                                                      |
+| Puente asiento↔oferta | `seats[].offerItemRefIDs[]` (**IDs** en mayúsculas)                                                  | `seats[].offerItemRefIds[]` (**Ids**) + `seats[].displayOnlyItemRefIds[]`                                                                                                   |
+| Fila                   | `seatRows[].row` como **string** (`"12"`)                                                            | `seatRows[].row` como **integer** (`5`) — `get-seats-agency-3.0.yml:983-986`                                                                                                |
 
 Evidencia dura del ejemplo oficial v3 `byNdcOfferId`
 (`help/get-seats-agency-3.0/get-seats-v3-get-seats-ndc-offer-id.txt:6-16`):
 
 ```json
-{ "offerId": "ih5d79946bb5sp4lsmlj89kj27-1",
-  "passengers": [ { "id": "Passenger1", "passengerType": "ADT",
-                    "givenName": "Edmunt", "surname": "Kolodziej" } ] }
+{
+  "offerId": "ih5d79946bb5sp4lsmlj89kj27-1",
+  "passengers": [
+    { "id": "Passenger1", "passengerType": "ADT", "givenName": "Edmunt", "surname": "Kolodziej" }
+  ]
+}
 ```
 
 Nada de `requestType`, `request`, `pointOfSale` ni `party`.
@@ -792,14 +798,14 @@ escribir el adapter** (§8, ítem 6).
 
 #### Agency vs Airline: dos specs, dos catálogos de rutas
 
-| | `get-seats-agency-3.0.yml` (`info.version: "3.1"`) | `get-seats-airline-3.0.yml` (`info.version: "3.0"`) |
-| --- | --- | --- |
-| `byNdcOfferId` | ✅ `:49` | ❌ |
-| `byNdcOrderId` | ✅ `:28` | ❌ |
-| `byReservationPayload` | ✅ `:70` | ✅ `:26` |
-| `byPnrLocator` | ❌ | ✅ `:47` |
+|                        | `get-seats-agency-3.0.yml` (`info.version: "3.1"`) | `get-seats-airline-3.0.yml` (`info.version: "3.0"`) |
+| ---------------------- | -------------------------------------------------- | --------------------------------------------------- |
+| `byNdcOfferId`         | ✅ `:49`                                           | ❌                                                  |
+| `byNdcOrderId`         | ✅ `:28`                                           | ❌                                                  |
+| `byReservationPayload` | ✅ `:70`                                           | ✅ `:26`                                            |
+| `byPnrLocator`         | ❌                                                 | ✅ `:47`                                            |
 
-> **Corrección de esta pasada.** La versión anterior decía que v3 tiene *"cuatro rutas"* y que
+> **Corrección de esta pasada.** La versión anterior decía que v3 tiene _"cuatro rutas"_ y que
 > ambos specs son `info.version: 3.1`. Ninguna de las dos cosas es exacta: **las cuatro rutas
 > son la unión de los dos productos**, ninguno las tiene todas, y el spec de aerolínea declara
 > `version: "3.0"` (`get-seats-airline-3.0.yml:10`), no 3.1. Que agencia y aerolínea vayan por
@@ -807,19 +813,19 @@ escribir el adapter** (§8, ítem 6).
 > que además son hosted carriers, no comparten contrato.
 
 **Nosotros somos agencia**, así que va `get-seats-agency`. Y ojo: la doc dice
-*"GetSeats Stateless request type (por `pnrLocator`): **NOT SUPPORTED YET**"*
+_"GetSeats Stateless request type (por `pnrLocator`): **NOT SUPPORTED YET**"_
 (`help/get-seats-agency-3.0/3.0-index.txt`) — coherente con que el spec de agencia no
 declare esa ruta. **No podemos pedir mapa de asientos por PNR desde el carril de agencia.**
 
 ### 4.2 Cuándo se puede vender un asiento (VERIFICADO-SPEC — regla de negocio dura)
 
-`help/get-seats-agency-3.0/3.0-index.txt`, sección *GetSeats with request type OfferID*:
+`help/get-seats-agency-3.0/3.0-index.txt`, sección _GetSeats with request type OfferID_:
 
-> El mapa **puede** mostrarse con el `OfferID` **del shopping**, pero *"los asientos no son
+> El mapa **puede** mostrarse con el `OfferID` **del shopping**, pero _"los asientos no son
 > reservables porque los precios del mapa no están garantizados hasta que la oferta de la
 > tarifa aérea ha sido tarificada. Por eso el mapa se muestra con un indicador de solo
 > visualización (`sellable: false`). Si se intenta reservar un asiento en esta fase, se
-> devuelve un error de 'oferta inválida o expirada'."*
+> devuelve un error de 'oferta inválida o expirada'."_
 
 ⇒ **El orden es obligatorio: shop → price → getseats.** No se puede mostrar mapa vendible
 directamente desde la búsqueda. Esto tiene impacto de producto: en el Package Studio, la
@@ -832,17 +838,17 @@ de revalidar.
 > .yml completo: **cero coincidencias**.
 >
 > Lo nuevo: **`sellable` sí existe, como booleano, en el spec de ancillaries**
-> (VERIFICADO-SPEC: `get-ancillaries-agency-2.3.yml:211-214`, *"Whether the items in this offer
-> are available for sale"*, con `example: false`). O sea que no es un invento de la
+> (VERIFICADO-SPEC: `get-ancillaries-agency-2.3.yml:211-214`, _"Whether the items in this offer
+> are available for sale"_, con `example: false`). O sea que no es un invento de la
 > documentación: es un campo real del ecosistema de Offer Store de Sabre que **el spec de
 > asientos no declara**. Las dos lecturas posibles siguen abiertas: o la doc de asientos va
 > por delante del .yml publicado, o el `sellable` de asientos vive solo en el carril v1.
 > `[Verificar en el CERT — si no aparece en la respuesta de getseats v3, la señal de "solo
-> visualización" hay que derivarla de `displayOnlyItems[]`.]`
+visualización" hay que derivarla de `displayOnlyItems[]`.]`
 
-También verificado: *"La aplicación del punto de venta o el PCC pueden no estar autorizados
+También verificado: _"La aplicación del punto de venta o el PCC pueden no estar autorizados
 para vender asientos de uno o más transportistas. En ese caso, la selección de asiento no
-estará disponible."* ⇒ en BYOC, **la capacidad de vender asientos depende del PCC de cada
+estará disponible."_ ⇒ en BYOC, **la capacidad de vender asientos depende del PCC de cada
 agencia**. Hay que degradar la UI por tenant, no asumir que siempre está.
 
 ### 4.3 Forma de la respuesta v3 (VERIFICADO-SPEC)
@@ -856,17 +862,17 @@ agencia**. Hay que degradar la UI por tenant, no asumir que siempre está.
 `SeatAvailabilityResponse` (`:210-263`) — **obligatorios: `segments`, `passengers`,
 `offerItems`, `serviceDefinitions`, `seatMaps`**:
 
-| Campo | Qué es |
-| --- | --- |
-| `offerId` | *"ID único de la oferta devuelta. Se usa para añadir los seat offers a la reserva."* |
-| `offerExpirationDateTime` | *"La oferta sigue válida hasta esta hora y puede usarse para reservar asientos."* — **el mapa también caduca** |
-| `segments[]` | itinerario, con `flightLegs[]` |
-| `passengers[]` | `id`, `passengerType`, nombre, `loyaltyProgramAccounts[]`, `reservationPassengerId` |
-| `serviceDefinitions[]` | producto: `serviceCode` (SSR/ancillary), `airlineCode`, `commercialName`, `groupCode` |
-| `priceDefinitions[]` | `currencyCode`, `totalPrice` (`amount`, `amountWithoutTaxes`, `taxesTotal`, `taxes[]`, `isTaxExempt`), `referenceBasePrice` |
-| `offerItems[]` | **lo vendible**: `id`, `serviceDefinitionRef`, `priceDefinitionRef`, `segmentRefs[]`, `passengerRefs[]`, `refundableReissuableIndicator`, `isInterlineable`, `sectorPortionIndicator`, `feeApplicationMethod`, `purchaseByDateTime`, `paymentType`, `annotations[]` |
-| `displayOnlyItems[]` | **lo NO vendible**: mismos campos + `displayOnlyReason`, `displayOnlySource`, `displayOnlyReasonDetails[]` |
-| `seatMaps[]` | el mapa físico: `segmentRef`, `flightLegRef`, `cabinCompartments[]` |
+| Campo                     | Qué es                                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `offerId`                 | _"ID único de la oferta devuelta. Se usa para añadir los seat offers a la reserva."_                                                                                                                                                                                |
+| `offerExpirationDateTime` | _"La oferta sigue válida hasta esta hora y puede usarse para reservar asientos."_ — **el mapa también caduca**                                                                                                                                                      |
+| `segments[]`              | itinerario, con `flightLegs[]`                                                                                                                                                                                                                                      |
+| `passengers[]`            | `id`, `passengerType`, nombre, `loyaltyProgramAccounts[]`, `reservationPassengerId`                                                                                                                                                                                 |
+| `serviceDefinitions[]`    | producto: `serviceCode` (SSR/ancillary), `airlineCode`, `commercialName`, `groupCode`                                                                                                                                                                               |
+| `priceDefinitions[]`      | `currencyCode`, `totalPrice` (`amount`, `amountWithoutTaxes`, `taxesTotal`, `taxes[]`, `isTaxExempt`), `referenceBasePrice`                                                                                                                                         |
+| `offerItems[]`            | **lo vendible**: `id`, `serviceDefinitionRef`, `priceDefinitionRef`, `segmentRefs[]`, `passengerRefs[]`, `refundableReissuableIndicator`, `isInterlineable`, `sectorPortionIndicator`, `feeApplicationMethod`, `purchaseByDateTime`, `paymentType`, `annotations[]` |
+| `displayOnlyItems[]`      | **lo NO vendible**: mismos campos + `displayOnlyReason`, `displayOnlySource`, `displayOnlyReasonDetails[]`                                                                                                                                                          |
+| `seatMaps[]`              | el mapa físico: `segmentRef`, `flightLegRef`, `cabinCompartments[]`                                                                                                                                                                                                 |
 
 Dentro de `cabinCompartments[]` (`:851-882`): `firstRow`, `lastRow`, `columnIds[]`,
 `cabinCode`, `cabinName`, `cabinLayout` y `seatRows[]`.
@@ -879,15 +885,15 @@ verdad**: `columns[].position` (`A` aisle / `C` central / `W` window), `rows{fir
 `SeatType` (`:1012-1042`): `column`, `occupationStatusCode`, `characteristics[]`,
 `isOperative`, `offerItemRefIds[]`, `displayOnlyItemRefIds[]`.
 
-**El modelo mental se mantiene** (era correcto en la primera pasada): un lado dice *"qué
-puedo venderte y a qué precio"*, otro dice *"cómo está distribuido el avión"*, y se cruzan
+**El modelo mental se mantiene** (era correcto en la primera pasada): un lado dice _"qué
+puedo venderte y a qué precio"_, otro dice _"cómo está distribuido el avión"_, y se cruzan
 por referencias de id. Lo que cambia en v3 es que **el precio está a dos saltos**
 (`seat.offerItemRefIds` → `offerItems[].priceDefinitionRef` → `priceDefinitions[]`), no
 embebido.
 
 ### 4.4 Códigos de asiento — PREGUNTA CERRADA con el catálogo oficial
 
-La primera pasada dejó abierto *"¿qué significan los `characteristics[].code` `1` y `1D`?"* y
+La primera pasada dejó abierto _"¿qué significan los `characteristics[].code` `1` y `1D`?"_ y
 extrajo de los scripts una regla de "salida de emergencia prohibida para no-ADT".
 
 **El spec dice que son IATA PADIS 9825 (características) y 9865 (ocupación)**
@@ -895,38 +901,38 @@ extrajo de los scripts una regla de "salida de emergencia prohibida para no-ADT"
 descripción. Extraídos de los 5 ejemplos de respuesta oficiales
 (`help/get-seats-agency-3.0/*.txt`), **todos los pares `code`/`description` observados**:
 
-| Code | Descripción oficial | Relevancia |
-| --- | --- | --- |
-| `1` | `RestrictedGeneral` | **la respuesta a la pregunta abierta** |
-| `1A` | `NotAllowedForInfants` | **regla dura: infantes** |
-| `1B` | `NotAllowedForMedical` | |
-| `1C` | `NotAllowedForUnaccompaniedMinors` | **regla dura: menores no acompañados** |
-| `1D` | `RestrictedRecline` | **la otra pregunta abierta** — no reclina |
-| `1W` | `WindowSeatWithoutWindow` | ventanilla sin ventana. Mostrarlo o hay reclamo |
-| `9` | `CenterSeat` | |
-| `A` | `AisleSeat` | |
-| `AT` | `SeatAdjacentToTable` | |
-| `B` | `SeatWithBassinetFacility` | cuna — **buscar activamente si viaja INF** |
-| `BK` | `BlockedSeatForPreferredPassengerInAdjacentSeat` | |
-| `CC` | `CenterSectionSeat(S)` | |
-| `CH` | `ChargeableSeat` | **asiento de pago** |
-| `DE` | `Deportee` | |
-| `E` | `ExitRowSeat` / `ExitRow` | **dos descripciones para el mismo code** |
-| `FC` | `FrontOfCabin` | |
-| `H` | `SeatWithFacilitiesForHandicapped/IncapacitatedPassenger` | accesibilidad |
-| `I` | `SeatSuitableForAdultWithInfant` | |
-| `IE` | `SeatNotSuitableForChild` | **regla dura: menores** |
-| `K` | `BulkheadSeat` | |
-| `L` | `LegSpaceSeat` | espacio extra — argumento de venta |
-| `LA` | `NoSeatLavatory` | |
-| `LS` | `LeftSideOfAircraft` | |
-| `O` | `PreferredSeat/PreferentialSeat` | |
-| `OW` | `OverWingSeat(S)` | |
-| `PC` | `PetInCabin` | |
-| `RS` | `RightSideOf Aircraft` | **con el espacio raro incluido, tal cual lo devuelve Sabre** |
-| `U` | `SeatSuitableForUnaccompaniedMinors` | |
-| `V` | `SeatToBeLeftVacant/OfferedLast` | |
-| `W` | `Window` | |
+| Code | Descripción oficial                                       | Relevancia                                                   |
+| ---- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| `1`  | `RestrictedGeneral`                                       | **la respuesta a la pregunta abierta**                       |
+| `1A` | `NotAllowedForInfants`                                    | **regla dura: infantes**                                     |
+| `1B` | `NotAllowedForMedical`                                    |                                                              |
+| `1C` | `NotAllowedForUnaccompaniedMinors`                        | **regla dura: menores no acompañados**                       |
+| `1D` | `RestrictedRecline`                                       | **la otra pregunta abierta** — no reclina                    |
+| `1W` | `WindowSeatWithoutWindow`                                 | ventanilla sin ventana. Mostrarlo o hay reclamo              |
+| `9`  | `CenterSeat`                                              |                                                              |
+| `A`  | `AisleSeat`                                               |                                                              |
+| `AT` | `SeatAdjacentToTable`                                     |                                                              |
+| `B`  | `SeatWithBassinetFacility`                                | cuna — **buscar activamente si viaja INF**                   |
+| `BK` | `BlockedSeatForPreferredPassengerInAdjacentSeat`          |                                                              |
+| `CC` | `CenterSectionSeat(S)`                                    |                                                              |
+| `CH` | `ChargeableSeat`                                          | **asiento de pago**                                          |
+| `DE` | `Deportee`                                                |                                                              |
+| `E`  | `ExitRowSeat` / `ExitRow`                                 | **dos descripciones para el mismo code**                     |
+| `FC` | `FrontOfCabin`                                            |                                                              |
+| `H`  | `SeatWithFacilitiesForHandicapped/IncapacitatedPassenger` | accesibilidad                                                |
+| `I`  | `SeatSuitableForAdultWithInfant`                          |                                                              |
+| `IE` | `SeatNotSuitableForChild`                                 | **regla dura: menores**                                      |
+| `K`  | `BulkheadSeat`                                            |                                                              |
+| `L`  | `LegSpaceSeat`                                            | espacio extra — argumento de venta                           |
+| `LA` | `NoSeatLavatory`                                          |                                                              |
+| `LS` | `LeftSideOfAircraft`                                      |                                                              |
+| `O`  | `PreferredSeat/PreferentialSeat`                          |                                                              |
+| `OW` | `OverWingSeat(S)`                                         |                                                              |
+| `PC` | `PetInCabin`                                              |                                                              |
+| `RS` | `RightSideOf Aircraft`                                    | **con el espacio raro incluido, tal cual lo devuelve Sabre** |
+| `U`  | `SeatSuitableForUnaccompaniedMinors`                      |                                                              |
+| `V`  | `SeatToBeLeftVacant/OfferedLast`                          |                                                              |
+| `W`  | `Window`                                                  |                                                              |
 
 Y `occupationStatusCode` (PADIS 9865), enumerado **completo** en la descripción del campo
 (`get-seats-agency-3.0.yml:1021-1023`): `B` boarding pass anticipado, `C` reservado en
@@ -944,13 +950,14 @@ Los scripts de la colección codifican:
 ```js
 // pre-request de folder, Workflows / 28-33
 seat.offerItemRefIDs.includes(offerItemRefID) &&
-seat.occupationStatusCode === "F" &&
-(paxType !== "ADT" ? !seat.characteristics.some(c => c.description === "ExitRowSeat") : true)
+  seat.occupationStatusCode === 'F' &&
+  (paxType !== 'ADT' ? !seat.characteristics.some((c) => c.description === 'ExitRowSeat') : true);
 ```
 
 ```js
 // ModifyBooking
-seat.characteristics.every(char => char.code != "1" && char.code != "1D") && seat.occupationStatusCode == "F"
+seat.characteristics.every((char) => char.code != '1' && char.code != '1D') &&
+  seat.occupationStatusCode == 'F';
 ```
 
 **Eso es una heurística de demo, no la regla correcta.** Correcciones:
@@ -968,17 +975,17 @@ seat.characteristics.every(char => char.code != "1" && char.code != "1D") && sea
 
 **Reglas que debe implementar nuestro selector (en el dominio, no en el ACL):**
 
-| Regla | Base |
-| --- | --- |
-| Solo `occupationStatusCode === 'F'` | PADIS 9865 |
-| El asiento debe tener un `offerItemRefIds` que apunte a un `offerItem` cuyo `passengerRefs` incluya al pax **y** cuyo `segmentRefs` incluya al segmento | `OfferItemDetails:278-328` |
-| Un asiento con solo `displayOnlyItemRefIds` **no es comprable** | `DisplayOnlyItem:329-354` |
-| Excluir `code === '1'` (RestrictedGeneral) | catálogo oficial |
-| Para `INF`/pax con infante: excluir `1A`, preferir `B` (bassinet) e `I` | catálogo oficial |
-| Para `CHD`: excluir `IE` | catálogo oficial |
-| Para menor no acompañado (`UNN`/`UMNR`): excluir `1C`, preferir `U` | catálogo oficial |
-| Para no-ADT: excluir `code === 'E'` (exit row) | **regulatorio**; se mantiene de la primera pasada, corregido a filtrar por code |
-| `1D`, `1W`, `LA`, `V`: **mostrar, no excluir** | son advertencias al cliente |
+| Regla                                                                                                                                                   | Base                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Solo `occupationStatusCode === 'F'`                                                                                                                     | PADIS 9865                                                                      |
+| El asiento debe tener un `offerItemRefIds` que apunte a un `offerItem` cuyo `passengerRefs` incluya al pax **y** cuyo `segmentRefs` incluya al segmento | `OfferItemDetails:278-328`                                                      |
+| Un asiento con solo `displayOnlyItemRefIds` **no es comprable**                                                                                         | `DisplayOnlyItem:329-354`                                                       |
+| Excluir `code === '1'` (RestrictedGeneral)                                                                                                              | catálogo oficial                                                                |
+| Para `INF`/pax con infante: excluir `1A`, preferir `B` (bassinet) e `I`                                                                                 | catálogo oficial                                                                |
+| Para `CHD`: excluir `IE`                                                                                                                                | catálogo oficial                                                                |
+| Para menor no acompañado (`UNN`/`UMNR`): excluir `1C`, preferir `U`                                                                                     | catálogo oficial                                                                |
+| Para no-ADT: excluir `code === 'E'` (exit row)                                                                                                          | **regulatorio**; se mantiene de la primera pasada, corregido a filtrar por code |
+| `1D`, `1W`, `LA`, `V`: **mostrar, no excluir**                                                                                                          | son advertencias al cliente                                                     |
 
 ### 4.5 Cómo se consume el asiento elegido (VERIFICADO + VERIFICADO-SPEC)
 
@@ -998,29 +1005,29 @@ seat.characteristics.every(char => char.code != "1" && char.code != "1D") && sea
 
 VERIFICADO-SPEC contra `booking-management-v1.yml`:
 
-| Campo | Spec | Restricción |
-| --- | --- | --- |
-| `flightOffer.offerId` | `:4959-4964` | string, **2..49 chars**, obligatorio |
-| `flightOffer.selectedOfferItems` | `:4966-4974` | array de string, **1..9**, obligatorio |
-| `flightOffer.seatOffers` | `:4975-4980` | array, `minItems: 1`. *"Applicable for NDC flights only"* |
-| `seatOffers[].seatOfferId` | `:5280-5285` | *"The seat availability offer item ID"*, 2..49 chars |
-| `seatOffers[].number` | `:5293-5297` | **patrón `^[0-9]+[A-Z]$`** — fila+columna concatenadas, ej. `"13A"` |
-| `seatOffers[].travelerIndex` | `:5298-5304` | integer, **`minimum: 1`**, obligatorio |
+| Campo                            | Spec         | Restricción                                                         |
+| -------------------------------- | ------------ | ------------------------------------------------------------------- |
+| `flightOffer.offerId`            | `:4959-4964` | string, **2..49 chars**, obligatorio                                |
+| `flightOffer.selectedOfferItems` | `:4966-4974` | array de string, **1..9**, obligatorio                              |
+| `flightOffer.seatOffers`         | `:4975-4980` | array, `minItems: 1`. _"Applicable for NDC flights only"_           |
+| `seatOffers[].seatOfferId`       | `:5280-5285` | _"The seat availability offer item ID"_, 2..49 chars                |
+| `seatOffers[].number`            | `:5293-5297` | **patrón `^[0-9]+[A-Z]$`** — fila+columna concatenadas, ej. `"13A"` |
+| `seatOffers[].travelerIndex`     | `:5298-5303` | integer, **`minimum: 1`**, obligatorio                              |
 
-⇒ La afirmación de la primera pasada (*"`number` es la concatenación fila+columna, no un
-objeto; `travelerIndex` es 1-based"*) **queda confirmada por el patrón del spec**.
+⇒ La afirmación de la primera pasada (_"`number` es la concatenación fila+columna, no un
+objeto; `travelerIndex` es 1-based"_) **queda confirmada por el patrón del spec**.
 
 #### ⚠️ Corrección a la pasada anterior: la preferencia de área NO existe en NDC
 
-La versión anterior de este documento afirmaba: *"`BookGenericSeat` (`:5288`) permite `number`
+La versión anterior de este documento afirmaba: _"`BookGenericSeat` (`:5287`) permite `number`
 **o** `areaPreference` … se puede pedir 'ventanilla' sin elegir asiento concreto. Útil para el
-bot de WhatsApp."* **Es falso en el punto que importa**, y la jerarquía del spec lo desmiente:
+bot de WhatsApp."_ **Es falso en el punto que importa**, y la jerarquía del spec lo desmiente:
 
-| Schema | Línea | Qué añade | Dónde se usa |
-| --- | --- | --- | --- |
-| `BookGenericSeat` | `:5286-5302` | **solo** `number` (`^[0-9]+[A-Z]$`) y `travelerIndex` (obligatorio, `min: 1`) | base de los otros dos; y directo en `changeOfGaugeSeats` (`:5250-5255`) |
-| `BookSeat` | `:5257-5271` | `allOf: BookGenericSeat` **+ `areaPreferences`** — array, `minItems: 1`, **`maxItems: 3`** | `flightDetails.flights[].seats[]` (`:5243-5249`) ⇒ **carril ATPCO/LCC** |
-| `BookSeatOffer` | `:5273-5284` | `allOf: BookGenericSeat` **+ `seatOfferId`** (2..49). *"Applicable for NDC flights only"* | `flightOffer.seatOffers[]` (`:4975-4980`) ⇒ **carril NDC** |
+| Schema            | Línea        | Qué añade                                                                                  | Dónde se usa                                                            |
+| ----------------- | ------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `BookGenericSeat` | `:5287-5303` | **solo** `number` (`^[0-9]+[A-Z]$`) y `travelerIndex` (obligatorio, `min: 1`)              | base de los otros dos; y directo en `changeOfGaugeSeats` (`:5250-5255`) |
+| `BookSeat`        | `:5257-5271` | `allOf: BookGenericSeat` **+ `areaPreferences`** — array, `minItems: 1`, **`maxItems: 3`** | `flightDetails.flights[].seats[]` (`:5243-5249`) ⇒ **carril ATPCO/LCC** |
+| `BookSeatOffer`   | `:5273-5285` | `allOf: BookGenericSeat` **+ `seatOfferId`** (2..49). _"Applicable for NDC flights only"_  | `flightOffer.seatOffers[]` (`:4975-4980`) ⇒ **carril NDC**              |
 
 `areaPreferences` está **solo en `BookSeat`**, no en `BookGenericSeat` ni en `BookSeatOffer`.
 Y `flightOffer.seatOffers[]` — la única vía de asiento en NDC — referencia `BookSeatOffer`.
@@ -1031,11 +1038,11 @@ elija una celda concreta de un mapa. Consecuencia de producto en §4.8.
 
 `SeatAreaPreferenceEnum` (VERIFICADO-SPEC: `booking-management-v1.yml:8868-8881`) tiene **7
 valores**: `AISLE`, `BULKHEAD`, `FRONT`, `LEFT_SIDE`, `RIGHT_SIDE`, `TAIL`, `WINDOW`, y se
-pueden combinar *"un máximo de tres valores no conflictivos, como `FRONT` y `LEFT_SIDE`"*.
+pueden combinar _"un máximo de tres valores no conflictivos, como `FRONT` y `LEFT_SIDE`"_.
 Mutuamente excluyente con `number` (`:5297`).
 
 **Detalle adicional no visto antes:** `changeOfGaugeSeats` (`:5250-5255`). En vuelos con
-*change of gauge* o *funnel flight* (mismo número de vuelo, cambio de aeronave a mitad de
+_change of gauge_ o _funnel flight_ (mismo número de vuelo, cambio de aeronave a mitad de
 trayecto), `seats[]` asigna asiento **en la primera aeronave** y hace falta un segundo array
 para la que sale. Un mapper que solo llene `seats[]` deja al pasajero sin asiento en la
 segunda mitad del "segmento", sin ningún error que lo delate.
@@ -1053,11 +1060,23 @@ segunda mitad del "segmento", sin ningún error que lo delate.
 **(c) Sobre orden ya creada, vía `modifyBooking`** (patrón `before`/`after`):
 
 ```json
-{ "bookingSignature": "{{bookingSignature}}", "confirmationId": "{{pnr}}",
+{
+  "bookingSignature": "{{bookingSignature}}",
+  "confirmationId": "{{pnr}}",
   "before": {},
-  "after": { "flights": [ { "seats": [
-    { "number": "{{seat_row_passenger_1}}{{seat_column_passenger_1}}",
-      "offerItemId": "{{seat_offer1}}" } ] } ] } }
+  "after": {
+    "flights": [
+      {
+        "seats": [
+          {
+            "number": "{{seat_row_passenger_1}}{{seat_column_passenger_1}}",
+            "offerItemId": "{{seat_offer1}}"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 Para borrar: el asiento va en `before` y `after.flights[0]` queda `{}`.
@@ -1074,18 +1093,20 @@ Para borrar: el asiento va en `before` y `after.flights[0]` queda `{}`.
 **integer** y `column` string (VERIFICADO-SPEC: `manage-ancillary-1.1.yml:1328-1345`):
 
 ```json
-{ "pnrLocator": "ABCDEF",
-  "seats": [ { "offerItemId": "...", "passengerRef": "1", "row": 33, "column": "F" } ] }
+{
+  "pnrLocator": "ABCDEF",
+  "seats": [{ "offerItemId": "...", "passengerRef": "1", "row": 33, "column": "F" }]
+}
 ```
 
 ⇒ **CUATRO serializaciones distintas del mismo dato, en cuatro productos de la misma empresa:**
 
-| Carril | Fila+columna | Id de oferta |
-| --- | --- | --- |
+| Carril                                         | Fila+columna                                        | Id de oferta  |
+| ---------------------------------------------- | --------------------------------------------------- | ------------- |
 | `createBooking.flightOffer.seatOffers[]` (NDC) | `number: "13A"` concatenado, patrón `^[0-9]+[A-Z]$` | `seatOfferId` |
-| `orders/change.seatAdds[]` (NDC) | `row` y `column` **separados, ambos string** | `offerItemId` |
-| `createBooking.flightDetails…seats[]` (ATPCO) | `number` concatenado | **ninguno** |
-| `ancillaries/add.seats[]` (PNR) | `row` **integer** + `column` string | `offerItemId` |
+| `orders/change.seatAdds[]` (NDC)               | `row` y `column` **separados, ambos string**        | `offerItemId` |
+| `createBooking.flightDetails…seats[]` (ATPCO)  | `number` concatenado                                | **ninguno**   |
+| `ancillaries/add.seats[]` (PNR)                | `row` **integer** + `column` string                 | `offerItemId` |
 
 El ACL tiene que normalizar `{row: string, column: string}` internamente y serializar según el
 destino — incluido el cast a integer, que revienta con filas alfanuméricas si alguna aerolínea
@@ -1096,20 +1117,20 @@ las usa.
 `help/booking-management-api-v1/help-documentation-modify-booking-error-list-0.txt:711-808`.
 Sustituye a "DESCONOCIDO: cómo falla":
 
-| Código | Categoría | Significado | Qué hacemos |
-| --- | --- | --- | --- |
-| `SEATS_OFFER_EXPIRED` | `APPLICATION_ERROR` | *"al menos un seat offer ha expirado"* | re-llamar `getseats`; **el mapa tiene su propio `offerExpirationDateTime`** |
-| `SEATS_OFFER_INVALID` | `APPLICATION_ERROR` | offer inválida | re-llamar `getseats` |
-| `SEATS_OFFER_UNAVAILABLE` | `APPLICATION_ERROR` | *"no disponible para el viajero seleccionado"* | violamos la regla de `passengerRefs` |
-| `SEATS_OFFER_ID_MISSING` | `BAD_REQUEST` | falta el offer id en un vuelo NDC | bug nuestro |
-| `SEATS_NUMBER_INVALID` | `BAD_REQUEST` | *"el asiento no pertenece al mapa"* | bug de mapeo fila/columna |
-| `SEATS_ASSIGNMENT_INVALID` | `BAD_REQUEST` | asociación asiento↔viajero incorrecta | bug de `travelerIndex` |
-| `SEATS_DUPLICATE_ASSOCIATION` | `APPLICATION_ERROR` | mismo asiento asignado dos veces | validar antes de enviar |
-| `SEATS_NOT_AVAILABLE` | `APPLICATION_ERROR` | ya no está libre | carrera; re-pedir mapa |
-| `SEAT_NOT_ALLOWED_FOR_BOOKING` | **`WARNING`** | *"la selección de asiento no se procesó correctamente"* | **la reserva se crea igual, sin asiento**. Hay que detectarlo y avisar |
-| `SEATS_UPDATE_NOT_SUPPORTED` | `APPLICATION_ERROR` | *"la aerolínea %s no soporta modificación de asiento"* | ocultar la acción por carrier |
-| `SEATS_UPDATE_WITHOUT_TICKETING` | `APPLICATION_ERROR` | *"la aerolínea %s no permite cambiar asiento antes de emitir"* | **orden de operaciones por carrier** |
-| `INFANT_SPECIAL_SERVICE_MISSING` | **`WARNING`** | los infantes requieren SSR dedicado | |
+| Código                           | Categoría           | Significado                                                    | Qué hacemos                                                                 |
+| -------------------------------- | ------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `SEATS_OFFER_EXPIRED`            | `APPLICATION_ERROR` | _"al menos un seat offer ha expirado"_                         | re-llamar `getseats`; **el mapa tiene su propio `offerExpirationDateTime`** |
+| `SEATS_OFFER_INVALID`            | `APPLICATION_ERROR` | offer inválida                                                 | re-llamar `getseats`                                                        |
+| `SEATS_OFFER_UNAVAILABLE`        | `APPLICATION_ERROR` | _"no disponible para el viajero seleccionado"_                 | violamos la regla de `passengerRefs`                                        |
+| `SEATS_OFFER_ID_MISSING`         | `BAD_REQUEST`       | falta el offer id en un vuelo NDC                              | bug nuestro                                                                 |
+| `SEATS_NUMBER_INVALID`           | `BAD_REQUEST`       | _"el asiento no pertenece al mapa"_                            | bug de mapeo fila/columna                                                   |
+| `SEATS_ASSIGNMENT_INVALID`       | `BAD_REQUEST`       | asociación asiento↔viajero incorrecta                         | bug de `travelerIndex`                                                      |
+| `SEATS_DUPLICATE_ASSOCIATION`    | `APPLICATION_ERROR` | mismo asiento asignado dos veces                               | validar antes de enviar                                                     |
+| `SEATS_NOT_AVAILABLE`            | `APPLICATION_ERROR` | ya no está libre                                               | carrera; re-pedir mapa                                                      |
+| `SEAT_NOT_ALLOWED_FOR_BOOKING`   | **`WARNING`**       | _"la selección de asiento no se procesó correctamente"_        | **la reserva se crea igual, sin asiento**. Hay que detectarlo y avisar      |
+| `SEATS_UPDATE_NOT_SUPPORTED`     | `APPLICATION_ERROR` | _"la aerolínea %s no soporta modificación de asiento"_         | ocultar la acción por carrier                                               |
+| `SEATS_UPDATE_WITHOUT_TICKETING` | `APPLICATION_ERROR` | _"la aerolínea %s no permite cambiar asiento antes de emitir"_ | **orden de operaciones por carrier**                                        |
+| `INFANT_SPECIAL_SERVICE_MISSING` | **`WARNING`**       | los infantes requieren SSR dedicado                            |                                                                             |
 
 Y el kill-switch: `errorHandlingPolicy` de `createBooking` admite
 **`DO_NOT_HALT_ON_SEAT_BOOKING_ERROR`** y `DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR`
@@ -1128,24 +1149,24 @@ sesión SOAP antes**: `SessionCreateRQ 1.0.0` seguido de `OTA_AirAvailRQ 2.4.0`
 está a la vista en el pre-request:
 
 ```js
-pm.environment.set("airline_code", "QF");
-pm.environment.set("from_airport_code", "ADL");
-pm.environment.set("to_airport_code", "MEL");
+pm.environment.set('airline_code', 'QF');
+pm.environment.set('from_airport_code', 'ADL');
+pm.environment.set('to_airport_code', 'MEL');
 ```
 
 ⇒ **La sesión se abre solo para averiguar el número de vuelo**, que el modo `payload`
 necesita porque describe el vuelo entero en vez de referenciar una oferta.
 
-La doc oficial dice que en el carril payload (ATPCO/LCC) *"para reservar un asiento, usa la API
-PassengerDetails o el comando 4G"* (`help/get-seats-agency-3.0/3.0-index.txt`). Y
+La doc oficial dice que en el carril payload (ATPCO/LCC) _"para reservar un asiento, usa la API
+PassengerDetails o el comando 4G"_ (`help/get-seats-agency-3.0/3.0-index.txt`). Y
 `PassengerDetailsRQ` es SOAP stateful — hay 4 requests de ese tipo en la colección.
 
 #### ⚠️ Matización de esta pasada: esa doc está incompleta
 
-La conclusión anterior era *"vender asientos ATPCO/LCC por Sabre **exige** gestor de sesiones
-SOAP"*. **Ya no se sostiene como afirmación absoluta.** El spec descubierto en esta pasada,
-`manage-ancillary-1.1.yml`, declara `POST /v1/ancillaries/add` como *"Creates **pre-reserved
-seats** and associated ancillaries and/or other ancillaries **in a PNR-based reservation**"*
+La conclusión anterior era _"vender asientos ATPCO/LCC por Sabre **exige** gestor de sesiones
+SOAP"_. **Ya no se sostiene como afirmación absoluta.** El spec descubierto en esta pasada,
+`manage-ancillary-1.1.yml`, declara `POST /v1/ancillaries/add` como _"Creates **pre-reserved
+seats** and associated ancillaries and/or other ancillaries **in a PNR-based reservation**"_
 (`:26-28`), y su `AddAncillariesRequest` acepta `seats[]` con `offerItemId` + `passengerRef` +
 `row` + `column` (`:1237-1259`, `:1328-1345`). Es **REST y stateless**, autenticado por token
 como el resto.
@@ -1166,11 +1187,11 @@ carril REST. Ver §5.9.
 
 Tres generaciones conviviendo. Documentarlo evita que alguien intente unificarlas:
 
-| Generación | Variables | Dónde | Forma |
-| --- | --- | --- | --- |
-| v1 (legacy) | `seat_passenger`, `seat_passenger_1`, `seat_passenger_2` | `Flight modification flows / Seat modifications` | fila+columna ya concatenadas |
-| v2 | `seat_offer1`, `seat_row_passenger_1`, `seat_column_passenger_1` | `NDC modifications flows / Modify seats`, `FulfillFlightTickets` | fila y columna separadas |
-| **v3 (la buena)** | `segment1Passenger1OfferItemId`, `…PassengerRefs`, `…Row`, `…Column` | `Workflows / 28-33` | indexado por **segmento × pasajero** |
+| Generación        | Variables                                                            | Dónde                                                            | Forma                                |
+| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------ |
+| v1 (legacy)       | `seat_passenger`, `seat_passenger_1`, `seat_passenger_2`             | `Flight modification flows / Seat modifications`                 | fila+columna ya concatenadas         |
+| v2                | `seat_offer1`, `seat_row_passenger_1`, `seat_column_passenger_1`     | `NDC modifications flows / Modify seats`, `FulfillFlightTickets` | fila y columna separadas             |
+| **v3 (la buena)** | `segment1Passenger1OfferItemId`, `…PassengerRefs`, `…Row`, `…Column` | `Workflows / 28-33`                                              | indexado por **segmento × pasajero** |
 
 La v3 es la única que modela correctamente que un asiento se elige por (segmento, pasajero) y
 no por (pasajero) a secas. Es la que hay que copiar.
@@ -1179,7 +1200,7 @@ no por (pasajero) a secas. Es la que hay que copiar.
 
 > **Sección nueva, en respuesta al hallazgo 1 de la crítica.** Hasta ahora WhatsApp aparecía en
 > este documento solo como víctima de un riesgo (la oferta caduca mientras el vendedor
-> conversa). Pero `CLAUDE.md` §5 lo declara *"ciudadano de primera"*, y estos tres endpoints le
+> conversa). Pero `CLAUDE.md` §5 lo declara _"ciudadano de primera"_, y estos tres endpoints le
 > imponen restricciones duras que conviene tener escritas **antes** de diseñar el bot, no después.
 
 **1. En NDC, el asiento no se puede vender conversacionalmente. Es el hallazgo grande.**
@@ -1189,8 +1210,8 @@ pintar un mapa — **existe solo en el carril ATPCO** (`BookSeat.areaPreferences
 concreto, y para tenerlo hay que haber renderizado el mapa. Opciones reales, ninguna gratis:
 
 - **(a)** El bot no vende asiento: manda un enlace a una vista web del mapa (mobile-first) y
-  vuelve a la conversación con la selección hecha. Es lo que encaja con *"tiempo a venta < 2
-  min"* y con el mapa de `cabinLayout` que v3 sí nos da (§4.3) para dibujarlo bien.
+  vuelve a la conversación con la selección hecha. Es lo que encaja con _"tiempo a venta < 2
+  min"_ y con el mapa de `cabinLayout` que v3 sí nos da (§4.3) para dibujarlo bien.
 - **(b)** El bot implementa la preferencia **del lado nuestro**: el vendedor o el cliente dice
   "ventanilla", y **nosotros** filtramos el `seatMaps[]` por `characteristics[].code === 'W'`
   y elegimos el primer `occupationStatusCode === 'F'` vendible. Es viable con el catálogo PADIS
@@ -1228,11 +1249,15 @@ de la aerolínea (`externalOrders[].bookingReferences[]`). Es el dato que el bot
 al cerrar la venta. Enlaza con `externalOfferItemId` de §3.5: el mundo "id de Sabre" y el mundo
 "id de la aerolínea" conviven en toda la cadena, y el canal conversacional necesita **siempre el
 segundo**. `[El requisito funcional correspondiente pertenece al documento 10, no a éste.]`
+**Ya recogido: `10-requisitos-maestro.md` RF-23**, con su criterio de aceptación y su fila en la
+matriz de trazabilidad de §7.
 
 **6. Contacto por pasajero, no por reserva.** Varias aerolíneas NDC exigen datos de contacto a
 nivel de pasajero (verificado en la colección, WF-12). Un bot que solo conoce el número de
 WhatsApp de quien escribe **no tiene el dato para los acompañantes**, y eso bloquea el
 `createBooking`, no el `offers/price`. Hay que pedirlo en la conversación, antes de reservar.
+**Ya recogido: `10-requisitos-maestro.md` §6.5**, con el error oficial que lo prueba
+(`TRAVELER_PHONE_MISSING` / `BAD_REQUEST`).
 
 ---
 
@@ -1243,16 +1268,16 @@ WhatsApp de quien escribe **no tiene el dato para los acompañantes**, y eso blo
 La pasada anterior contaba dos caminos y añadía uno como nota. Con el spec recuperado en esta
 pasada (§0.1) **son cuatro**, y no compiten entre sí: cubren carriles distintos.
 
-| | **A.** REST `/v2/offers/getAncillaries` | **B.** SOAP `GetAncillaryOffersRQ` | **C.** `offers/price` con `type: "Service"` | **D.** REST `/v1/ancillaries/*` |
-| --- | --- | --- | --- | --- |
-| **Producto** | Get Ancillaries - Agency **2.3** | Merch Ancillary Offer v03 | Offer Price NDC v1 | **Manage Ancillary 1.1** |
-| **Spec** | ✅ `get-ancillaries-agency-2.3.yml` | ❌ (solo la colección) | ✅ `offer-price-ndc-v1.yml` | ✅ `manage-ancillary-1.1.yml` |
-| **Aplica a** | NDC | ATPCO y LCC | NDC | **PNR** (ATPCO/LCC) |
-| **Momento** | pre-booking (`offerId`) **y** post (`orderId`) | pre-booking (por itinerario) | durante la revalidación | **post-booking, sobre PNR** |
-| **Qué hace** | cotiza | cotiza | cotiza (de paso) | **reserva / quita / cambia** |
-| **Sesión** | stateless, token | ATPCO con token; **LCC stateful** | stateless | stateless |
-| **Cómo se aplica lo cotizado** | `modifyBooking.after.travelers[].ancillaries[].offerId` — **un id** | `createBooking.travelers[].ancillaries[]` — **8-12 campos materializados** | `flightOffer.selectedOfferItems[]` | `offerItemId` + `passengerRef` — **un id** |
-| **Requests en la colección** | 3 (idénticos) | 6 | 0 | **0 — no aparece** |
+|                                | **A.** REST `/v2/offers/getAncillaries`                             | **B.** SOAP `GetAncillaryOffersRQ`                                         | **C.** `offers/price` con `type: "Service"` | **D.** REST `/v1/ancillaries/*`            |
+| ------------------------------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------ |
+| **Producto**                   | Get Ancillaries - Agency **2.3**                                    | Merch Ancillary Offer v03                                                  | Offer Price NDC v1                          | **Manage Ancillary 1.1**                   |
+| **Spec**                       | ✅ `get-ancillaries-agency-2.3.yml`                                 | ❌ (solo la colección)                                                     | ✅ `offer-price-ndc-v1.yml`                 | ✅ `manage-ancillary-1.1.yml`              |
+| **Aplica a**                   | NDC                                                                 | ATPCO y LCC                                                                | NDC                                         | **PNR** (ATPCO/LCC)                        |
+| **Momento**                    | pre-booking (`offerId`) **y** post (`orderId`)                      | pre-booking (por itinerario)                                               | durante la revalidación                     | **post-booking, sobre PNR**                |
+| **Qué hace**                   | cotiza                                                              | cotiza                                                                     | cotiza (de paso)                            | **reserva / quita / cambia**               |
+| **Sesión**                     | stateless, token                                                    | ATPCO con token; **LCC stateful**                                          | stateless                                   | stateless                                  |
+| **Cómo se aplica lo cotizado** | `modifyBooking.after.travelers[].ancillaries[].offerId` — **un id** | `createBooking.travelers[].ancillaries[]` — **8-12 campos materializados** | `flightOffer.selectedOfferItems[]`          | `offerItemId` + `passengerRef` — **un id** |
+| **Requests en la colección**   | 3 (idénticos)                                                       | 6                                                                          | 0                                           | **0 — no aparece**                         |
 
 **Consecuencia de diseño.** Solo **B** obliga al cliente a transportar el precio, y es
 precisamente el único de los cuatro sin contrato público. Los otros tres funcionan con
@@ -1278,14 +1303,14 @@ en la oferta— pero puede evitar una llamada en el flujo feliz.
 
 `info.description` (`:9`) — y conviene leerlo dos veces:
 
-> *"The Get Ancillaries API displays **free-of-charge ancillaries** in the IATA New
-> Distribution Capability (NDC) standard format."*
+> _"The Get Ancillaries API displays **free-of-charge ancillaries** in the IATA New
+> Distribution Capability (NDC) standard format."_
 
 Y en la respuesta, `Offer.otherServices` (`:215-219`):
 
-> *"Lists the services that the system was not able to add to `baggageGrid` or
+> _"Lists the services that the system was not able to add to `baggageGrid` or
 > `otherBaggageCharges`. **Both of these fields will be defined in a future version of this
-> API.**"*
+> API.**"_
 
 ⇒ **v2.3 es un endpoint de equipaje, no un catálogo general de ancillaries, y sus dos campos
 principales todavía no existen.** Lo único que devuelve hoy son "los servicios que el sistema
@@ -1293,8 +1318,8 @@ no pudo meter en las rejillas de equipaje". Eso explica por qué el script de la
 búsqueda recursiva de `offerItemId`: el campo vive en un cajón de sastre
 (`ancillaries.offer.otherServices[].offerItemId`), no en una colección de primer nivel.
 
-**Esto es más importante que tener el spec.** La conclusión de la pasada anterior —*"cualquier
-plan que dependa de vender ancillaries NDC en fase 1 está apoyado en aire"*— **sigue siendo
+**Esto es más importante que tener el spec.** La conclusión de la pasada anterior —_"cualquier
+plan que dependa de vender ancillaries NDC en fase 1 está apoyado en aire"_— **sigue siendo
 correcta, pero por otro motivo**: no porque no supiéramos la forma, sino porque **el producto
 está incompleto por declaración propia de Sabre**.
 
@@ -1307,17 +1332,17 @@ está incompleto por declaración propia de Sabre**.
 discriminator:
   propertyName: requestType
   mapping:
-    orderId: "#/components/schemas/ServiceListOrderRequest"
-    offerId: "#/components/schemas/ServiceListOfferRequest"
+    orderId: '#/components/schemas/ServiceListOrderRequest'
+    offerId: '#/components/schemas/ServiceListOfferRequest'
 ```
 
 ⇒ **`requestType: "offerId"` EXISTE.** La pregunta abierta #4 de la pasada anterior queda
 **CERRADA en afirmativo**. Se pueden cotizar ancillaries NDC **antes** de crear la orden.
 
-| Modo | Schema | Obligatorios | Opcionales | Línea |
-| --- | --- | --- | --- | --- |
-| `offerId` | `OfferRequest` | **`offerId`**, **`passengers[]`** (`minItems: 1`) | `requestedSegmentRefs[]` | `:95-116` |
-| `orderId` | `OrderRequest` | **`orderId`** | `requestedSegmentRefs[]`, `requestedPaxRefs[]`, `groupCode` (ATPCO, `^[0-9A-Z]{2}$`) | `:118-141` |
+| Modo      | Schema         | Obligatorios                                      | Opcionales                                                                           | Línea      |
+| --------- | -------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------- |
+| `offerId` | `OfferRequest` | **`offerId`**, **`passengers[]`** (`minItems: 1`) | `requestedSegmentRefs[]`                                                             | `:95-116`  |
+| `orderId` | `OrderRequest` | **`orderId`**                                     | `requestedSegmentRefs[]`, `requestedPaxRefs[]`, `groupCode` (ATPCO, `^[0-9A-Z]{2}$`) | `:118-141` |
 
 Dos asimetrías con consecuencias:
 
@@ -1349,30 +1374,30 @@ Raíz `ServiceList` (`:143-161`). **Tres claves, ninguna obligatoria:**
 `ServiceListResponse` (`:163-198`) — **obligatorios: `segments`, `passengers`, `offer`,
 `serviceDefinitions`**:
 
-| Campo | Cardinalidad | Qué es |
-| --- | --- | --- |
-| `segments[]` | 1..**100** | itinerario, con `flightLegs[]`, `isChangeOfGauge`, `reservationStatus` (`HK`…) |
-| `passengers[]` | 1..**99** | ⚠️ **99**, mientras `offers/price` limita a **9** y `createBooking.selectedOfferItems` a **9** |
-| `offer` | 1 (objeto, **no array**) | `offerId` (obligatorio), `sellable` (bool), `otherServices[]` |
-| `serviceDefinitions[]` | 0..n | el catálogo del producto |
-| `priceDefinitions[]` | 0..n | el precio, **por referencia** |
+| Campo                  | Cardinalidad             | Qué es                                                                                         |
+| ---------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `segments[]`           | 1..**100**               | itinerario, con `flightLegs[]`, `isChangeOfGauge`, `reservationStatus` (`HK`…)                 |
+| `passengers[]`         | 1..**99**                | ⚠️ **99**, mientras `offers/price` limita a **9** y `createBooking.selectedOfferItems` a **9** |
+| `offer`                | 1 (objeto, **no array**) | `offerId` (obligatorio), `sellable` (bool), `otherServices[]`                                  |
+| `serviceDefinitions[]` | 0..n                     | el catálogo del producto                                                                       |
+| `priceDefinitions[]`   | 0..n                     | el precio, **por referencia**                                                                  |
 
 **`offer` es un objeto único, no una lista.** Toda la respuesta cuelga de una sola oferta —
 coherente con que Sabre la persista en el Offer Store (lo dice la doc de la variante airline:
-*"The API persists the returned offers temporarily in OfferStore"*).
+_"The API persists the returned offers temporarily in OfferStore"_).
 
 `OfferItem` (`:221-260`) — **obligatorios `serviceDefinitionRef` y `passengerRefs`; `offerItemId`
 NO es obligatorio**:
 
-| Campo | Nota |
-| --- | --- |
-| `offerItemId` | **opcional en el schema.** El que busca el script de la colección |
-| `serviceDefinitionRef` → `serviceDefinitions[]` | **obligatorio** |
-| `priceDefinitionRef` → `priceDefinitions[]` | opcional ⇒ **un item puede no tener precio** (es "free-of-charge") |
-| `segmentRefs[]` / `passengerRefs[]` | `minItems: 1`; `passengerRefs` obligatorio |
-| `paymentType` | `PaymentTypeEnum` — aquí **solo `Instant` \| `Deferred`** (`:873-877`) |
-| `paymentRequired` | boolean, default `false` |
-| `bundleComponents[]` | bundles: `name` + `bundledItems[]`, cada uno con su `serviceDefinitionRef` y `baggageOfferDetails` |
+| Campo                                           | Nota                                                                                               |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `offerItemId`                                   | **opcional en el schema.** El que busca el script de la colección                                  |
+| `serviceDefinitionRef` → `serviceDefinitions[]` | **obligatorio**                                                                                    |
+| `priceDefinitionRef` → `priceDefinitions[]`     | opcional ⇒ **un item puede no tener precio** (es "free-of-charge")                                 |
+| `segmentRefs[]` / `passengerRefs[]`             | `minItems: 1`; `passengerRefs` obligatorio                                                         |
+| `paymentType`                                   | `PaymentTypeEnum` — aquí **solo `Instant` \| `Deferred`** (`:873-878`)                             |
+| `paymentRequired`                               | boolean, default `false`                                                                           |
+| `bundleComponents[]`                            | bundles: `name` + `bundledItems[]`, cada uno con su `serviceDefinitionRef` y `baggageOfferDetails` |
 
 ⚠️ **Que `offerItemId` y `priceDefinitionRef` sean opcionales es una trampa de mapper**: un
 ancillary sin `offerItemId` **no se puede reservar** y un item sin `priceDefinitionRef` no tiene
@@ -1387,7 +1412,7 @@ hay nada en el canónico que lo haga.
 
 ```yaml
 pattern: '%FREETEXT%'
-variables: [ { key: 'FREETEXT', value: '[A-Z0-9\-/ ]*', description: 'Pick Up Address' } ]
+variables: [{ key: 'FREETEXT', value: '[A-Z0-9\-/ ]*', description: 'Pick Up Address' }]
 ```
 
 ⇒ **Hay ancillaries que exigen texto libre del usuario para poder reservarse** (dirección de
@@ -1399,11 +1424,11 @@ recogida, contacto…), con su propia regex de validación y su etiqueta legible
 ⇒ **Hay ancillaries que se muestran pero no se venden por API** (`Contact Airline`). Es el
 equivalente funcional de `displayOnlyItems` en asientos, y hay que pintarlos distinto.
 
-`PriceDefinition` (`:509-523`) → `serviceFee` (*"precio final tras markup/descuento"*) y
-`baseFee` (*"precio antes de la modificación"*). Cada uno es un `ServiceFee` (`:525-536`) con
-`unitPrice` (*"solo si quantity > 1"*) y `totalPrice`, y cada `PriceElement` (`:538-556`) trae
-`saleAmount` (con impuestos), `amount` (sin), **`ancillaryRecordAmount`** (*"currency as filed
-by airlines"* — o sea **una tercera moneda**) y `taxSummary`.
+`PriceDefinition` (`:509-523`) → `serviceFee` (_"precio final tras markup/descuento"_) y
+`baseFee` (_"precio antes de la modificación"_). Cada uno es un `ServiceFee` (`:525-536`) con
+`unitPrice` (_"solo si quantity > 1"_) y `totalPrice`, y cada `PriceElement` (`:538-556`) trae
+`saleAmount` (con impuestos), `amount` (sin), **`ancillaryRecordAmount`** (_"currency as filed
+by airlines"_ — o sea **una tercera moneda**) y `taxSummary`.
 
 ⇒ **Sabre ya aplica aquí un markup propio** (`serviceFee` vs `baseFee`). Nuestro pricing
 waterfall se aplica **encima** de un precio que ya viene modificado. Hay que decidir sobre cuál
@@ -1413,16 +1438,16 @@ de los dos aplicamos el markup de la agencia. Es la misma pregunta que `obFees` 
 
 `Error` (`:339-377`) y `Warning` (`:379-394`), y **no se parecen a ninguno de los otros dos**:
 
-| Producto | Contenedor | Campos |
-| --- | --- | --- |
-| `offers/price` | **`messages[]`** | `type`, `message`, `service`, `code`, `system`, `additionalDescription` |
-| `getseats` v3 | `errors[]` / `warnings[]` | `category`, `type`, `description`, `fieldName`, `fieldPath`, `fieldValue` |
+| Producto                  | Contenedor                | Campos                                                                                                               |
+| ------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `offers/price`            | **`messages[]`**          | `type`, `message`, `service`, `code`, `system`, `additionalDescription`                                              |
+| `getseats` v3             | `errors[]` / `warnings[]` | `category`, `type`, `description`, `fieldName`, `fieldPath`, `fieldValue`                                            |
 | **`getAncillaries` v2.3** | `errors[]` / `warnings[]` | **`code` (IATA 9321), `descriptionText`, `languageCode`, `ownerName`, `statusText`, `tagText[]`, `typeCode`, `url`** |
 
 **Tres productos, tres contenedores de error incompatibles**, y el de ancillaries usa nombres
 IATA puros (`descriptionText`, `ownerName`, `statusText: NotProcessed|Incomplete|Complete|Unknown`)
-que no coinciden con ninguno de los otros dos. `tagText[]` es especialmente útil: *"lista los
-elementos inválidos de la petición, como URIs relativas a la raíz del documento JSON"*, ej.
+que no coinciden con ninguno de los otros dos. `tagText[]` es especialmente útil: _"lista los
+elementos inválidos de la petición, como URIs relativas a la raíz del documento JSON"_, ej.
 `request.order.orderId`. Es lo más parecido a un error de validación accionable que da Sabre.
 
 #### Consumo (se conserva — sigue siendo correcto)
@@ -1486,9 +1511,9 @@ real tiene que salir del shop.
 > `getseats`, y ahí sí sabemos de dónde sale. `FareComponent` en
 > `get-seats-agency-3.0.yml:650-680` declara `fareBasis` como **obligatorio dentro del
 > objeto** (junto con `fareComponentId`), pero el array `fareComponents` **es opcional** en
-> `SeatAvailabilityByPayloadRq` y la doc dice: *"incluye información no obligatoria (que puede
+> `SeatAvailabilityByPayloadRq` y la doc dice: _"incluye información no obligatoria (que puede
 > influir en el precio de la oferta) como `fareComponents`, `ptc`, `currency` … siempre que
-> se conozca"*. ⇒ El fare basis **mejora el precio pero no bloquea la llamada**. Es
+> se conozca"_. ⇒ El fare basis **mejora el precio pero no bloquea la llamada**. Es
 > razonable esperar la misma semántica en `GetAncillaryOffersRQ`, pero **eso sí es inferencia
 > por analogía**: verificar.
 
@@ -1527,7 +1552,7 @@ para una de las dos fuentes. **Es una trampa real** (R-4).
 
 ### 5.5 Los CUATRO vocabularios de RFIC (VERIFICADO-SPEC — segunda corrección al alza)
 
-La primera pasada dijo *"Sabre expone dos vocabularios"* y lo apoyó en el `switch` del script:
+La primera pasada dijo _"Sabre expone dos vocabularios"_ y lo apoyó en el `switch` del script:
 
 ```js
 case 'GROUND_TRANSPORT_NON_AIR_SERVICES': → "SURFACE_TRANSPORTATION_NON_AIR_SERVICES";
@@ -1537,12 +1562,12 @@ case 'IN_FLIGHT_SERVICES':                → "INFLIGHT_SERVICES";
 **Son CUATRO** (la pasada anterior contó tres; el spec de ancillaries recuperado en §0.1
 aporta el cuarto), **y los cuatro están en fuentes oficiales:**
 
-| # | Producto | Fuente | El mismo código `B` | El mismo código `G` |
-| --- | --- | --- | --- | --- |
-| 1 | SOAP `GetAncillaryOffersRS` | script de la colección | `GROUND_TRANSPORT_NON_AIR_SERVICES` | `IN_FLIGHT_SERVICES` |
-| 2 | **Booking Management** | `booking-management-v1.yml:8692-8707` | `SURFACE_TRANSPORTATION_NON_AIR_SERVICES` | `INFLIGHT_SERVICES` |
-| 3 | **Offer Price NDC** y **Get Seats v3** | `offer-price-ndc-v1.yml:970-984`, `get-seats-agency-3.0.yml:1244-1257` | `Surface Transportation / Non Air Services` | `In-Flight Services` |
-| 4 | **Get Ancillaries Agency 2.3** | `get-ancillaries-agency-2.3.yml:676-690` | **`Ground Transportation Non Air Services`** | `In-Flight Services` |
+| #   | Producto                               | Fuente                                                                 | El mismo código `B`                          | El mismo código `G`  |
+| --- | -------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------- | -------------------- |
+| 1   | SOAP `GetAncillaryOffersRS`            | script de la colección                                                 | `GROUND_TRANSPORT_NON_AIR_SERVICES`          | `IN_FLIGHT_SERVICES` |
+| 2   | **Booking Management**                 | `booking-management-v1.yml:8692-8707`                                  | `SURFACE_TRANSPORTATION_NON_AIR_SERVICES`    | `INFLIGHT_SERVICES`  |
+| 3   | **Offer Price NDC** y **Get Seats v3** | `offer-price-ndc-v1.yml:970-984`, `get-seats-agency-3.0.yml:1244-1257` | `Surface Transportation / Non Air Services`  | `In-Flight Services` |
+| 4   | **Get Ancillaries Agency 2.3**         | `get-ancillaries-agency-2.3.yml:676-690`                               | **`Ground Transportation Non Air Services`** | `In-Flight Services` |
 
 Léase la columna del medio: **cuatro cadenas distintas para el mismo código PADIS `B`.**
 El vocabulario 4 vuelve a "Ground Transportation" (como el SOAP) pero en Title Case (como el 3),
@@ -1568,11 +1593,11 @@ argumento del Anti-Corruption Layer, escrito por Sabre.**
 
 #### Y lo mismo pasa con el nombre del campo de moneda — TRES variantes
 
-| Producto | Campo |
-| --- | --- |
-| `offers/price` | **`curCode`** (`offer-price-ndc-v1.yml:1197`) |
-| `orders/view` (respuesta real guardada) | **`code`** (`slices/responses/01-Add_phone_Orders_View.json`) |
-| `getAncillaries` v2.3 | **`currencyCode`** (`get-ancillaries-agency-2.3.yml:844-846`) |
+| Producto                                | Campo                                                           |
+| --------------------------------------- | --------------------------------------------------------------- |
+| `offers/price`                          | **`curCode`** (`offer-price-ndc-v1.yml:1197`)                   |
+| `orders/view` (respuesta real guardada) | **`code`** (`evidence/responses/01-Add_phone_Orders_View.json`) |
+| `getAncillaries` v2.3                   | **`currencyCode`** (`get-ancillaries-agency-2.3.yml:844-846`)   |
 
 Y el tipo del importe también varía: `offers/price` usa `type: string` con
 `pattern: ^-?\d+(\.\d{1,3})?$`; `getAncillaries` usa `type: string, format: number` **sin
@@ -1582,7 +1607,7 @@ la moneda de dos de ellos. Ver R-5.
 #### `PaymentTypeEnum`: el mismo enum con distinta cardinalidad según el producto
 
 - Get Seats v3 (`get-seats-agency-3.0.yml:1328-1334`): `Instant` | `Deferred` | **`Payment Not Required`**
-- Get Ancillaries 2.3 (`:873-877`): `Instant` | `Deferred` — y el tercer estado se modela
+- Get Ancillaries 2.3 (`:873-878`): `Instant` | `Deferred` — y el tercer estado se modela
   aparte, con el booleano **`OfferItem.paymentRequired`** (`:252-255`).
 
 Dos modelados distintos del mismo hecho. Nuestro `paymentTiming` tiene que normalizar los dos
@@ -1590,13 +1615,13 @@ a un solo tri-estado, no copiar ninguno.
 
 #### Tipo de EMD — PREGUNTA CERRADA
 
-La primera pasada decía *"`EMD-A` (associated) vs `EMD-S` (standalone). `[INFERIDO los
-valores exactos]`"*. Los valores exactos existen y **no son ni EMD-A ni EMD-S**:
+La primera pasada decía _"`EMD-A` (associated) vs `EMD-S` (standalone). `[INFERIDO los
+valores exactos]`"_. Los valores exactos existen y **no son ni EMD-A ni EMD-S**:
 
-| Producto | Spec | Valores |
-| --- | --- | --- |
+| Producto           | Spec                                  | Valores                                                                                               |
+| ------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Booking Management | `booking-management-v1.yml:8717-8727` | `STANDALONE`, `FLIGHT_COUPON_ASSOCIATED`, `STANDALONE_TICKET_ASSOCIATED`, `OTHER_THAN_EMD`, `ETICKET` |
-| Get Seats v3 | `get-seats-agency-3.0.yml:1226-1235` | `Standalone`, `Flight Coupon Associated`, `Standalone Ticket Associated`, `Other Than Emd`, `Eticket` |
+| Get Seats v3       | `get-seats-agency-3.0.yml:1226-1235`  | `Standalone`, `Flight Coupon Associated`, `Standalone Ticket Associated`, `Other Than Emd`, `Eticket` |
 
 **Cinco valores, no dos.** `FLIGHT_COUPON_ASSOCIATED` es el EMD-A clásico; `STANDALONE` el
 EMD-S; pero `STANDALONE_TICKET_ASSOCIATED`, `OTHER_THAN_EMD` y `ETICKET` no tienen
@@ -1648,13 +1673,13 @@ VERIFICADO-SPEC contra `booking-management-v1.yml:7042-7100` (`BookAncillary`).
 - `vendorCode` y `source` son **mutuamente excluyentes** (`:7085-7092`). El spec lo dice en
   ambos campos. La colección manda `vendorCode` en LCC; si además mandamos `source`, falla.
 - `reasonForIssuance` es opcional en el schema, pero el error
-  `UNABLE_TO_ADD_ANCILLARY_INVALID_SUBCODE` dice *"Verify reason for issuance sub-code.
-  Selected sub-code doesn't match ancillary offer details"* ⇒ en la práctica se valida contra
+  `UNABLE_TO_ADD_ANCILLARY_INVALID_SUBCODE` dice _"Verify reason for issuance sub-code.
+  Selected sub-code doesn't match ancillary offer details"_ ⇒ en la práctica se valida contra
   la oferta.
 
 **Y la confirmación del riesgo:** existe un error dedicado
-`UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH` / `BAD_REQUEST` / *"Verify ancillary fee and/or
-flight assignation. Ancillary price doesn't match Air Extras field in the reservation"*
+`UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH` / `BAD_REQUEST` / _"Verify ancillary fee and/or
+flight assignation. Ancillary price doesn't match Air Extras field in the reservation"_
 (`help/…/help-documentation-create-booking-error-list.txt:543-547`).
 
 ⇒ **El riesgo de "el cliente transporta el precio" (R-5) no es teórico: Sabre tiene un código
@@ -1662,14 +1687,14 @@ de error específico para él.** Sube de MEDIO a ALTO.
 
 Otros errores oficiales de ancillary:
 
-| Código | Categoría | Significado |
-| --- | --- | --- |
-| `UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH` | `BAD_REQUEST` | el precio que mandamos no coincide |
-| `UNABLE_TO_ADD_ANCILLARY_INVALID_SUBCODE` | `BAD_REQUEST` | subcode que no casa con la oferta |
-| `UNABLE_TO_ADD_ANCILLARY_INVALID_VENDOR_CODE` | `BAD_REQUEST` | vendor ausente o incorrecto |
-| `UNABLE_TO_ADD_ANCILLARY_INFANT_NOT_ALLOWED` | `BAD_REQUEST` | *"los ancillaries no pueden asignarse a infantes"* |
-| `UNABLE_TO_MODIFY_BOOKING_INVALID_ANCILLARY_ASSOCIATION` | `BAD_REQUEST` | *"solo pueden vincularse a viajeros incluidos en contenido aéreo"* |
-| `ANCILLARY_NOT_FOUND` (en fulfill) | `INVALID_DATA` | el item no existe en la reserva |
+| Código                                                   | Categoría      | Significado                                                        |
+| -------------------------------------------------------- | -------------- | ------------------------------------------------------------------ |
+| `UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH`                 | `BAD_REQUEST`  | el precio que mandamos no coincide                                 |
+| `UNABLE_TO_ADD_ANCILLARY_INVALID_SUBCODE`                | `BAD_REQUEST`  | subcode que no casa con la oferta                                  |
+| `UNABLE_TO_ADD_ANCILLARY_INVALID_VENDOR_CODE`            | `BAD_REQUEST`  | vendor ausente o incorrecto                                        |
+| `UNABLE_TO_ADD_ANCILLARY_INFANT_NOT_ALLOWED`             | `BAD_REQUEST`  | _"los ancillaries no pueden asignarse a infantes"_                 |
+| `UNABLE_TO_MODIFY_BOOKING_INVALID_ANCILLARY_ASSOCIATION` | `BAD_REQUEST`  | _"solo pueden vincularse a viajeros incluidos en contenido aéreo"_ |
+| `ANCILLARY_NOT_FOUND` (en fulfill)                       | `INVALID_DATA` | el item no existe en la reserva                                    |
 
 LCC añade además `flightApplicabilityType: "Single"`, `specialServiceIndex`,
 `commercialName`, `vendorCode`, y un bloque hermano
@@ -1677,17 +1702,17 @@ LCC añade además `flightApplicabilityType: "Single"`, `specialServiceIndex`,
 
 ### 5.7 Qué significa cada variable (y por qué existe el EMD)
 
-| Variable | Origen | Para qué sirve |
-| --- | --- | --- |
-| `ancillaryId` | `AncillaryDefinition.@id` | id del servicio en la respuesta. Va a `fulfillFlightTickets.fulfillments[].ancillaryIds[]` |
-| `ancillarySubCode` | `AncillaryDefinition.SubCode` | **RFISC ATPCO** (equipaje, comida, mascota, upgrade…) |
-| `ancillaryGroup` | `AncillaryDefinition.Group` | familia del subcode. `SA` = asientos, verificado en `serviceDefinitions[].groupCode: "SA"` del ejemplo oficial de getseats |
-| `ancillaryElectronicMiscDocType` | `AncillaryDefinition.ElectronicMiscDocType` | tipo de EMD — 5 valores, §5.5 |
-| `ancillaryReasonForIssuance` | `AncillaryDefinition.ReasonForIssuance` | **RFIC** (PADIS 4183), obligatorio por IATA |
-| `ancillaryVendor`, `ancillarySpecialService`, `ancillaryCommercialName` | idem | solo en el camino **LCC** |
-| `ancillaryBasePrice`, `ancillaryCurrencyCode`, `ancillarySubtotal`, `ancillaryTaxes`, `ancillaryTotal` | `Offers[].AncillaryFee…` | el precio, que en ATPCO/LCC **lo transportamos nosotros** |
+| Variable                                                                                               | Origen                                      | Para qué sirve                                                                                                             |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `ancillaryId`                                                                                          | `AncillaryDefinition.@id`                   | id del servicio en la respuesta. Va a `fulfillFlightTickets.fulfillments[].ancillaryIds[]`                                 |
+| `ancillarySubCode`                                                                                     | `AncillaryDefinition.SubCode`               | **RFISC ATPCO** (equipaje, comida, mascota, upgrade…)                                                                      |
+| `ancillaryGroup`                                                                                       | `AncillaryDefinition.Group`                 | familia del subcode. `SA` = asientos, verificado en `serviceDefinitions[].groupCode: "SA"` del ejemplo oficial de getseats |
+| `ancillaryElectronicMiscDocType`                                                                       | `AncillaryDefinition.ElectronicMiscDocType` | tipo de EMD — 5 valores, §5.5                                                                                              |
+| `ancillaryReasonForIssuance`                                                                           | `AncillaryDefinition.ReasonForIssuance`     | **RFIC** (PADIS 4183), obligatorio por IATA                                                                                |
+| `ancillaryVendor`, `ancillarySpecialService`, `ancillaryCommercialName`                                | idem                                        | solo en el camino **LCC**                                                                                                  |
+| `ancillaryBasePrice`, `ancillaryCurrencyCode`, `ancillarySubtotal`, `ancillaryTaxes`, `ancillaryTotal` | `Offers[].AncillaryFee…`                    | el precio, que en ATPCO/LCC **lo transportamos nosotros**                                                                  |
 
-**Qué es el EMD.** Un *Electronic Miscellaneous Document* es el documento fiscal de un
+**Qué es el EMD.** Un _Electronic Miscellaneous Document_ es el documento fiscal de un
 servicio auxiliar: el equivalente al billete electrónico, pero para el equipaje extra o el
 asiento premium. Se emite, se cobra, se puede void y se puede reembolsar **por separado** del
 billete. Por eso `reasonForIssuance` es obligatorio: es lo que la aerolínea reporta en la
@@ -1723,21 +1748,21 @@ la página oficial de ancillaries (§0.1), y es relevante porque cambia dos conc
 
 `manage-ancillary-1.1.yml`, `basePath` **`/v1/ancillaries`** (`:15-16`), tres rutas:
 
-| Ruta | Descripción del spec | Línea |
-| --- | --- | --- |
-| `POST /add` | *"Creates **pre-reserved seats** and associated ancillaries and/or other ancillaries in a **PNR-based reservation**"* | `:26-28` |
-| `POST /remove` | quita asientos y/o ancillaries de la reserva | `:63` |
-| `POST /exchange` | **intercambia asientos** ya pre-reservados | `:98` |
+| Ruta             | Descripción del spec                                                                                                  | Línea    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- | -------- |
+| `POST /add`      | _"Creates **pre-reserved seats** and associated ancillaries and/or other ancillaries in a **PNR-based reservation**"_ | `:26-28` |
+| `POST /remove`   | quita asientos y/o ancillaries de la reserva                                                                          | `:63`    |
+| `POST /exchange` | **intercambia asientos** ya pre-reservados                                                                            | `:98`    |
 
 Contratos (VERIFICADO-SPEC):
 
-| Schema | Obligatorio | Campos | Línea |
-| --- | --- | --- | --- |
-| `AddAncillariesRequest` | `pnrLocator` | `seats[]`, `ancillaries[]` (ambos `minItems: 1`, `uniqueItems: true`) | `:1237-1259` |
-| `AddAncillary` | **`offerItemId`**, **`passengerRef`** | `numberOfItems` (default 1), `productText` (ej. `'A/0BV/STANDBY'`), `productTextDetails[]` | `:1299-1327` |
-| `AddSeat` | *(ninguno)* | `offerItemId`, `passengerRef`, `row` **integer**, `column` string | `:1328-1345` |
-| `ExchangeSeat` | *(ninguno)* | `seatId` + `offerItemId` + `passengerRef` + `row`/`column` | `:1346-1366` |
-| `SeatId` / `AncillaryId` | — | **integer**, *"obtenido de la respuesta de la Retrieve Itinerary API"* | `:1367-1373` |
+| Schema                   | Obligatorio                           | Campos                                                                                     | Línea        |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------ | ------------ |
+| `AddAncillariesRequest`  | `pnrLocator`                          | `seats[]`, `ancillaries[]` (ambos `minItems: 1`, `uniqueItems: true`)                      | `:1237-1259` |
+| `AddAncillary`           | **`offerItemId`**, **`passengerRef`** | `numberOfItems` (default 1), `productText` (ej. `'A/0BV/STANDBY'`), `productTextDetails[]` | `:1299-1327` |
+| `AddSeat`                | _(ninguno)_                           | `offerItemId`, `passengerRef`, `row` **integer**, `column` string                          | `:1328-1345` |
+| `ExchangeSeat`           | _(ninguno)_                           | `seatId` + `offerItemId` + `passengerRef` + `row`/`column`                                 | `:1346-1366` |
+| `SeatId` / `AncillaryId` | —                                     | **integer**, _"obtenido de la respuesta de la Retrieve Itinerary API"_                     | `:1367-1373` |
 
 **Las tres cosas que esto cambia:**
 
@@ -1749,7 +1774,7 @@ Contratos (VERIFICADO-SPEC):
    de esta pasada.
 2. **Asigna asientos sobre PNR por REST**, lo que matiza la afirmación de §4.6 de que hace falta
    `PassengerDetailsRQ` (SOAP stateful). Ver la corrección allí y R-17.
-3. **Introduce un tipo de id que no teníamos: `SeatId`/`AncillaryId` son *integers*** y salen de
+3. **Introduce un tipo de id que no teníamos: `SeatId`/`AncillaryId` son _integers_** y salen de
    la **Retrieve Itinerary API (SOAP)**, no de `getseats` ni de `getBooking`. Para `remove` y
    `exchange` hacen falta esos enteros, así que **el carril PNR sigue teniendo una dependencia
    SOAP**, solo que en la lectura y no en la escritura.
@@ -1757,11 +1782,11 @@ Contratos (VERIFICADO-SPEC):
 **Lo que NO sabemos y hay que verificar antes de apoyarse en esto:**
 
 - Si el `offerItemId` que acepta `/add` es el de `getAncillaries` v2.3, el de `getseats` v3, o
-  el del SOAP `GetAncillaryOffersRS`. El spec dice *"The offer item ID of the ancillary"* y no
+  el del SOAP `GetAncillaryOffersRS`. El spec dice _"The offer item ID of the ancillary"_ y no
   lo ata a ningún productor. `[Bloqueante — captura #13.]`
 - Si nuestro PCC de agencia tiene el producto habilitado. La página que lo enlaza es la de
   **airline**; el producto no declara `targetAudience` accesible sin login.
-- Si funciona para NDC o solo para PNR. La descripción dice *"PNR-based reservation"* de forma
+- Si funciona para NDC o solo para PNR. La descripción dice _"PNR-based reservation"_ de forma
   consistente en las tres rutas, así que **[INFERIDO: es carril PNR/ATPCO, no NDC]**. Para NDC
   ya tenemos `orders/change` y `modifyBooking`, que sí están en la colección.
 
@@ -1771,13 +1796,13 @@ Contratos (VERIFICADO-SPEC):
 
 ### 6.1 Equivalencias
 
-| Concepto | LATAM NDC (implementado) | Sabre |
-| --- | --- | --- |
-| Revalidar precio | `IATA_OfferPriceRQ` — `providers/latam-ndc/src/offerprice/request.builder.ts` | `POST /v1/offers/price` |
-| Servicios auxiliares | `IATA_ServiceListRQ` — `providers/latam-ndc/src/servicelist/request.builder.ts` | cuatro caminos (§5.1): `/v2/offers/getAncillaries` (NDC), `GetAncillaryOffersRQ` (ATPCO/LCC), `offerItems[].type === "Service"` en price, y `/v1/ancillaries/*` (PNR) |
-| Reservar un ancillary | dentro de `OrderCreate` | tres formas incompatibles: `modifyBooking` (id), `createBooking` (materializado), `/v1/ancillaries/add` (id) |
-| Mapa de asientos | **no existe** | `/v3/offers/getseats/by*` (o `/v1/offers/getseats`) |
-| Estructura "a la carta" | `ALaCarteOffer.ALaCarteOfferItem` (`servicelist/response.mapper.ts`) | v1: `response.aLaCarteOffer.aLaCarteOfferItems` — **mismo modelo IATA**. v3: **ya no**, se aplana a `offerItems[]` |
+| Concepto                | LATAM NDC (implementado)                                                        | Sabre                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Revalidar precio        | `IATA_OfferPriceRQ` — `providers/latam-ndc/src/offerprice/request.builder.ts`   | `POST /v1/offers/price`                                                                                                                                               |
+| Servicios auxiliares    | `IATA_ServiceListRQ` — `providers/latam-ndc/src/servicelist/request.builder.ts` | cuatro caminos (§5.1): `/v2/offers/getAncillaries` (NDC), `GetAncillaryOffersRQ` (ATPCO/LCC), `offerItems[].type === "Service"` en price, y `/v1/ancillaries/*` (PNR) |
+| Reservar un ancillary   | dentro de `OrderCreate`                                                         | tres formas incompatibles: `modifyBooking` (id), `createBooking` (materializado), `/v1/ancillaries/add` (id)                                                          |
+| Mapa de asientos        | **no existe**                                                                   | `/v3/offers/getseats/by*` (o `/v1/offers/getseats`)                                                                                                                   |
+| Estructura "a la carta" | `ALaCarteOffer.ALaCarteOfferItem` (`servicelist/response.mapper.ts`)            | v1: `response.aLaCarteOffer.aLaCarteOfferItems` — **mismo modelo IATA**. v3: **ya no**, se aplana a `offerItems[]`                                                    |
 
 **Hallazgo de la primera pasada, matizado.** Era cierto que el `aLaCarteOffer` de `getseats`
 v1 y el `ALaCarteOffer` de `IATA_ServiceListRS` de LATAM son la misma estructura IATA NDC en
@@ -1792,23 +1817,31 @@ copiar la forma IATA cruda de LATAM.
 `packages/domain/src/ports/offer-price.port.ts`:
 
 ```ts
-export interface OfferPriceResult { offer: Offer; priceChanged: boolean; warnings: string[]; }
+export interface OfferPriceResult {
+  offer: Offer;
+  priceChanged: boolean;
+  warnings: string[];
+}
 export interface OfferPricePort {
-  priceOffer(offer: Offer, criteria: FlightSearchCriteria, ctx: SearchContext): Promise<OfferPriceResult>;
+  priceOffer(
+    offer: Offer,
+    criteria: FlightSearchCriteria,
+    ctx: SearchContext,
+  ): Promise<OfferPriceResult>;
 }
 ```
 
-| Necesidad Sabre | ¿Cubierto? |
-| --- | --- |
-| Revalidar por `offerItemId` | ✅ vía `offer.provider.offerRef` (con el hack del pipe) |
-| Devolver precio nuevo y `priceChanged` | ✅ |
-| **Pasar forma de pago (BIN/subCode/cardType)** | ❌ no hay dónde ponerlo |
-| **Devolver los IDs nuevos (`priceOfferId`, `priceOfferItemId[]`, `passengerIds[]`)** | ⚠️ solo el offerId, embutido en el string |
-| **Devolver `obFees[]` desglosados** | ❌ |
-| **Devolver `ttl` / `offerExpirationDateTime` del proveedor** | ❌ — y ahora sabemos que **siempre vienen** |
-| **Distinguir `source` (ATPCO/LCC/NDC)** | ❌ |
-| **Propagar `messages[]` de tipo WARNING** (p. ej. "precio puede subir sin FOP") | ⚠️ hay `warnings: string[]`, pero sin código ni severidad |
-| **Manejar totales NEGATIVOS (reemisión)** | ❌ `MoneySchema` hay que revisarlo |
+| Necesidad Sabre                                                                      | ¿Cubierto?                                                |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Revalidar por `offerItemId`                                                          | ✅ vía `offer.provider.offerRef` (con el hack del pipe)   |
+| Devolver precio nuevo y `priceChanged`                                               | ✅                                                        |
+| **Pasar forma de pago (BIN/subCode/cardType)**                                       | ❌ no hay dónde ponerlo                                   |
+| **Devolver los IDs nuevos (`priceOfferId`, `priceOfferItemId[]`, `passengerIds[]`)** | ⚠️ solo el offerId, embutido en el string                 |
+| **Devolver `obFees[]` desglosados**                                                  | ❌                                                        |
+| **Devolver `ttl` / `offerExpirationDateTime` del proveedor**                         | ❌ — y ahora sabemos que **siempre vienen**               |
+| **Distinguir `source` (ATPCO/LCC/NDC)**                                              | ❌                                                        |
+| **Propagar `messages[]` de tipo WARNING** (p. ej. "precio puede subir sin FOP")      | ⚠️ hay `warnings: string[]`, pero sin código ni severidad |
+| **Manejar totales NEGATIVOS (reemisión)**                                            | ❌ `MoneySchema` hay que revisarlo                        |
 
 ### 6.3 Cambio propuesto a `OfferPricePort`
 
@@ -1847,7 +1880,7 @@ export interface FormOfPaymentFee {
 }
 
 export interface OfferPriceResult {
-  offer: Offer;               // con expiresAt tomado de offerExpirationDateTime del proveedor
+  offer: Offer; // con expiresAt tomado de offerExpirationDateTime del proveedor
   priceChanged: boolean;
   /** TTL declarado por el proveedor, en segundos. Sabre siempre lo manda. */
   ttlSeconds?: number;
@@ -1883,16 +1916,24 @@ export interface OfferPricePort {
 
 /** Espeja las rutas reales de Get Seats v3 (agency): byNdcOfferId, byNdcOrderId, byReservationPayload. */
 export type SeatMapQuery =
-  | { kind: 'offer';  offer: Offer; passengers: SeatMapPaxQuery[] }
-  | { kind: 'order';  orderId: string }
-  | { kind: 'flight'; segments: SeatMapSegmentQuery[]; passengers: SeatMapPaxQuery[];
-      currency?: string; fareComponents?: SeatMapFareComponent[]; checkinMode?: boolean };
+  | { kind: 'offer'; offer: Offer; passengers: SeatMapPaxQuery[] }
+  | { kind: 'order'; orderId: string }
+  | {
+      kind: 'flight';
+      segments: SeatMapSegmentQuery[];
+      passengers: SeatMapPaxQuery[];
+      currency?: string;
+      fareComponents?: SeatMapFareComponent[];
+      checkinMode?: boolean;
+    };
 
 export interface SeatMapSegmentQuery {
   segmentId: string;
-  origin: string; destination: string;
-  departureDate: string;              // YYYY-MM-DD
-  carrierCode: string; flightNumber: string;
+  origin: string;
+  destination: string;
+  departureDate: string; // YYYY-MM-DD
+  carrierCode: string;
+  flightNumber: string;
   bookingClass: string;
   cabin: CabinClass;
 }
@@ -1907,14 +1948,15 @@ export interface SeatMapFareComponent {
 }
 
 export interface SeatMapPaxQuery {
-  paxId: string; paxType: PaxType;
+  paxId: string;
+  paxType: PaxType;
   accompaniedByInfant?: boolean;
   loyaltyAccounts?: { programCode: string; accountNumber: string }[];
 }
 
 /** Un asiento del mapa. `sellable` distingue OfferItem de DisplayOnlyItem. */
 export interface SeatOption {
-  row: string;                         // Sabre v3 lo manda como integer; normalizamos a string
+  row: string; // Sabre v3 lo manda como integer; normalizamos a string
   column: string;
   segmentId: string;
   /** Id que hay que devolver al reservar. Ausente si el asiento NO es vendible. */
@@ -1924,8 +1966,8 @@ export interface SeatOption {
   /** Motivo cuando sellable === false: 'UNAVAILABLE' | 'UNABLE_TO_BOOK' | 'RESTRICTED' | 'UNKNOWN'. */
   notSellableReason?: SeatNotSellableReason;
   eligiblePaxIds: string[];
-  price?: Money;                       // undefined o 0 => asiento gratuito
-  available: boolean;                  // occupationStatusCode === 'F'
+  price?: Money; // undefined o 0 => asiento gratuito
+  available: boolean; // occupationStatusCode === 'F'
   /** Hueco de layout (PADIS 9865 'Q' = No seat here). No es un asiento ocupado. */
   isGap: boolean;
   /** Normalizadas desde PADIS 9825. */
@@ -1940,13 +1982,18 @@ export interface SeatMapResult {
   maps: {
     segmentId: string;
     cabins: {
-      code: string; name?: string;
+      code: string;
+      name?: string;
       /** Para dibujar el fuselaje: posiciones de ala, salidas, filas ausentes. */
-      layout?: { columns: { id: string; position: string[] }[];
-                 firstRow: number; lastRow: number;
-                 exitRows?: { firstRow: number; lastRow: number }[];
-                 wingRows?: { firstRow: number; lastRow: number }[];
-                 missingRows?: number[]; missingSeats?: string[] };
+      layout?: {
+        columns: { id: string; position: string[] }[];
+        firstRow: number;
+        lastRow: number;
+        exitRows?: { firstRow: number; lastRow: number }[];
+        wingRows?: { firstRow: number; lastRow: number }[];
+        missingRows?: number[];
+        missingSeats?: string[];
+      };
       seats: SeatOption[];
     }[];
   }[];
@@ -1955,7 +2002,11 @@ export interface SeatMapResult {
 
 /** Selección del vendedor, lista para createBooking / orderChange. */
 export interface SeatSelection {
-  segmentId: string; paxId: string; row: string; column: string; offerItemId: string;
+  segmentId: string;
+  paxId: string;
+  row: string;
+  column: string;
+  offerItemId: string;
 }
 
 export interface SeatMapPort {
@@ -1979,10 +2030,19 @@ filas de la tabla de §4.4, más `sellable === true` y `available === true`.
  * admite groupCode (:139-141).
  */
 export type AncillaryQuery =
-  | { kind: 'offer'; offer: Offer; passengers: { paxId: string; paxType: PaxType }[];
-      segmentIds?: string[] }
-  | { kind: 'order'; orderId: string;
-      segmentIds?: string[]; paxIds?: string[]; groupCode?: string };
+  | {
+      kind: 'offer';
+      offer: Offer;
+      passengers: { paxId: string; paxType: PaxType }[];
+      segmentIds?: string[];
+    }
+  | {
+      kind: 'order';
+      orderId: string;
+      segmentIds?: string[];
+      paxIds?: string[];
+      groupCode?: string;
+    };
 
 /**
  * Un servicio auxiliar cotizado. `providerPayload` existe porque hay proveedores
@@ -1997,8 +2057,8 @@ export interface AncillaryOffer {
    * El dominio debe tratar su ausencia como "solo informativo", no como bug del mapper.
    */
   offerItemId?: string;
-  name: string;                        // CommercialName
-  category: AncillaryCategory;         // 'BAGGAGE' | 'MEAL' | 'SEAT' | 'LOUNGE' | 'PET' | 'OTHER'
+  name: string; // CommercialName
+  category: AncillaryCategory; // 'BAGGAGE' | 'MEAL' | 'SEAT' | 'LOUNGE' | 'PET' | 'OTHER'
   /** RFISC/subcódigo ATPCO crudo. Es el vocabulario de la industria: se conserva. */
   subCode?: string;
   /**
@@ -2007,14 +2067,19 @@ export interface AncillaryOffer {
    */
   price?: Money;
   /** Precio antes del markup del propio Sabre (2.3: baseFee vs serviceFee). Decide sobre
-   *  cuál aplicamos el pricing waterfall de la agencia. Ver §10. */
+   *  cuál aplicamos el pricing waterfall de la agencia. Ver 10-requisitos-maestro.md §6. */
   providerBasePrice?: Money;
   /**
    * Cómo se reserva. `CONTACT_AIRLINE` y `NO_BOOKING_REQUIRED` NO son vendibles por API
    * (2.3 BookingMethodEnum, :660-668). Es el equivalente de displayOnlyItems en asientos.
    */
-  bookingMethod?: 'SSR' | 'AUXILIARY_SEGMENT' | 'CONTACT_AIRLINE' | 'NO_BOOKING_REQUIRED'
-                | 'PER_SERVICE_RECORD' | 'ANY_ALLOWED';
+  bookingMethod?:
+    | 'SSR'
+    | 'AUXILIARY_SEGMENT'
+    | 'CONTACT_AIRLINE'
+    | 'NO_BOOKING_REQUIRED'
+    | 'PER_SERVICE_RECORD'
+    | 'ANY_ALLOWED';
   /**
    * Input adicional que el usuario debe teclear para poder reservar (dirección de recogida,
    * teléfono…). Sabre lo da como patrón + variables con regex y etiqueta legible
@@ -2195,11 +2260,11 @@ de cache**.
 cliente manda una oferta con `provider.name` arbitrario, el registry tira
 `UnknownProviderError` — correcto. Pero conviene además **firmar la oferta** (HMAC de
 `provider.raw` + `expiresAt` con clave del servidor) para que un cliente no pueda alterar el
-`offerRef` y reservar algo distinto de lo cotizado. **Decisión pendiente** (§10).
+`offerRef` y reservar algo distinto de lo cotizado. **Decisión pendiente** ([10 §9](./10-requisitos-maestro.md)).
 
 **Paso 5 — el pricing waterfall y el fee de forma de pago.** Con `obFees` desglosados (§2.4)
 ya es posible decidir sobre qué base aplicar el markup. Sigue siendo **decisión de negocio**
-(§10), pero ya no es un impedimento técnico.
+([10 §6](./10-requisitos-maestro.md)), pero ya no es un impedimento técnico.
 
 **Paso 6 — nada de esto sirve sin un adapter de Sabre.** Orden razonable:
 (a) capturar respuestas del CERT → (b) fixtures → (c) `providers/sabre/` siguiendo la
@@ -2217,22 +2282,22 @@ no pregunta "qué forma tiene" sino "**sirve para algo**". Endpoint
 `providers/sabre/src/fixtures/`. Ordenadas por lo que bloquean, la #13 y la #7 son las que
 más arquitectura mueven:
 
-| # | Llamada | Qué resuelve |
-| --- | --- | --- |
-| 1 | `POST /v2/auth/token` | forma del token, `expires_in`, comportamiento del TAM Pool (el 401 `invalid_client` sale también con pool agotado — §2.7) |
-| 2 | `POST /v1/offers/price` **sin** `formOfPayment` | **el warning de "posible subida de precio"**: código, `service`, texto exacto. Sabemos que existe (doc oficial); no sabemos cómo se identifica |
-| 3 | `POST /v1/offers/price` **con** `formOfPayment`, y con **dos BIN distintos** | **¿`obFees` está sumado en `totalPrice.totalAmount` o es aditivo?** Es el único `DESCONOCIDO` grande que queda de §2 |
-| 4 | `POST /v1/offers/price` con un `offerItemId` **vencido** | forma exacta del error `UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER` en `messages[]` y confirmar que el re-price funciona sin re-shop |
-| 5 | `POST /v3/offers/getseats/byNdcOfferId` **y** `POST /v1/offers/getseats` | **¿qué versión tiene habilitada nuestro PCC?** Bloqueante para §4.1. Y capturar el catálogo completo de `characteristics[].code` que devuelve el carrier real |
-| 6 | `getseats` con el `offerId` **del shop** (sin price) | confirmar si existe `sellable: false` o si hay que derivarlo de `displayOnlyItems` (§4.2) |
-| 7 | `POST /v2/offers/getAncillaries` (`orderId`) | ya **no** es una caja negra (§5.2), pero el spec **no trae ni un ejemplo de respuesta**. Hace falta el fixture, y sobre todo saber **si `baggageGrid` / `otherBaggageCharges` ya existen en el CERT** aunque el contrato 2.3 diga que se definirán "en una versión futura". De eso depende que el endpoint sirva para algo |
-| 8 | `POST /v2/offers/getAncillaries` con `requestType: "offerId"` | el modo **existe** (VERIFICADO-SPEC `:66-70`); lo que falta medir es si devuelve **lo mismo** que el modo `orderId` o menos. Determina si el carrito del Package Studio puede ofrecer equipaje antes de reservar |
-| 9 | `POST /v1/offers/price` con `params.allowBundles: true` sobre una oferta con servicios | **¿vienen ancillaries como `offerItems[].type === "Service"`?** Si sí, ahorra una llamada en el flujo feliz |
-| 10 | SOAP `GetAncillaryOffersRQ` ATPCO **y** LCC | confirmar que `AncillaryFee.Base.TotalEquivalentAmount` difiere de `AncillaryFee.TotalBaseEquiv.Amount` (R-11) |
-| 11 | `GetAncillaryOffersRQ` **sin** `FareBasisCode` | ¿falla o solo empeora el precio? (§5.3) |
-| 12 | `createBooking` ATPCO con tarjeta | **medir exactamente qué campos de PAN/CVV son obligatorios**, y si el `pattern` enmascarado de `cardNumber` (§2.4) se acepta. Decide si SAQ-A sobrevive |
-| **13** | **`POST /v1/ancillaries/add`** con un `offerItemId` de `getAncillaries` y otro de `getseats` | **¿está habilitado para nuestro PCC de agencia, y qué productor de ids acepta?** Si funciona, R-3 deja de aplicar al camino principal y R-17 se reduce (§5.9). Alta prioridad: cambia la arquitectura del carril PNR |
-| **14** | `POST /v1/offers/price` sobre una oferta con **9 pax** | `getAncillaries` admite `passengers[] maxItems: 99` mientras `offers/price` admite 9 y `selectedOfferItems` 9 (§5.2). Confirmar dónde está el techo real de un grupo |
+| #      | Llamada                                                                                      | Qué resuelve                                                                                                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1      | `POST /v2/auth/token`                                                                        | forma del token, `expires_in`, comportamiento del TAM Pool (el 401 `invalid_client` sale también con pool agotado — §2.7)                                                                                                                                                                                                  |
+| 2      | `POST /v1/offers/price` **sin** `formOfPayment`                                              | **el warning de "posible subida de precio"**: código, `service`, texto exacto. Sabemos que existe (doc oficial); no sabemos cómo se identifica                                                                                                                                                                             |
+| 3      | `POST /v1/offers/price` **con** `formOfPayment`, y con **dos BIN distintos**                 | **¿`obFees` está sumado en `totalPrice.totalAmount` o es aditivo?** Es el único `DESCONOCIDO` grande que queda de §2                                                                                                                                                                                                       |
+| 4      | `POST /v1/offers/price` con un `offerItemId` **vencido**                                     | forma exacta del error `UNABLE_TO_CREATE_ORDER_EXPIRED_OFFER` en `messages[]` y confirmar que el re-price funciona sin re-shop                                                                                                                                                                                             |
+| 5      | `POST /v3/offers/getseats/byNdcOfferId` **y** `POST /v1/offers/getseats`                     | **¿qué versión tiene habilitada nuestro PCC?** Bloqueante para §4.1. Y capturar el catálogo completo de `characteristics[].code` que devuelve el carrier real                                                                                                                                                              |
+| 6      | `getseats` con el `offerId` **del shop** (sin price)                                         | confirmar si existe `sellable: false` o si hay que derivarlo de `displayOnlyItems` (§4.2)                                                                                                                                                                                                                                  |
+| 7      | `POST /v2/offers/getAncillaries` (`orderId`)                                                 | ya **no** es una caja negra (§5.2), pero el spec **no trae ni un ejemplo de respuesta**. Hace falta el fixture, y sobre todo saber **si `baggageGrid` / `otherBaggageCharges` ya existen en el CERT** aunque el contrato 2.3 diga que se definirán "en una versión futura". De eso depende que el endpoint sirva para algo |
+| 8      | `POST /v2/offers/getAncillaries` con `requestType: "offerId"`                                | el modo **existe** (VERIFICADO-SPEC `:66-70`); lo que falta medir es si devuelve **lo mismo** que el modo `orderId` o menos. Determina si el carrito del Package Studio puede ofrecer equipaje antes de reservar                                                                                                           |
+| 9      | `POST /v1/offers/price` con `params.allowBundles: true` sobre una oferta con servicios       | **¿vienen ancillaries como `offerItems[].type === "Service"`?** Si sí, ahorra una llamada en el flujo feliz                                                                                                                                                                                                                |
+| 10     | SOAP `GetAncillaryOffersRQ` ATPCO **y** LCC                                                  | confirmar que `AncillaryFee.Base.TotalEquivalentAmount` difiere de `AncillaryFee.TotalBaseEquiv.Amount` (R-11)                                                                                                                                                                                                             |
+| 11     | `GetAncillaryOffersRQ` **sin** `FareBasisCode`                                               | ¿falla o solo empeora el precio? (§5.3)                                                                                                                                                                                                                                                                                    |
+| 12     | `createBooking` ATPCO con tarjeta                                                            | **medir exactamente qué campos de PAN/CVV son obligatorios**, y si el `pattern` enmascarado de `cardNumber` (§2.4) se acepta. Decide si SAQ-A sobrevive                                                                                                                                                                    |
+| **13** | **`POST /v1/ancillaries/add`** con un `offerItemId` de `getAncillaries` y otro de `getseats` | **¿está habilitado para nuestro PCC de agencia, y qué productor de ids acepta?** Si funciona, R-3 deja de aplicar al camino principal y R-17 se reduce (§5.9). Alta prioridad: cambia la arquitectura del carril PNR                                                                                                       |
+| **14** | `POST /v1/offers/price` sobre una oferta con **9 pax**                                       | `getAncillaries` admite `passengers[] maxItems: 99` mientras `offers/price` admite 9 y `selectedOfferItems` 9 (§5.2). Confirmar dónde está el techo real de un grupo                                                                                                                                                       |
 
 Cerradas por el spec, ya no hace falta capturarlas: el TTL de la oferta, la ruta del precio
 total, si `formOfPayment` es obligatorio, el significado de `characteristics` `1` y `1D`, la
@@ -2246,8 +2311,8 @@ estructura completa de `getAncillaries`.
 **Cerradas en esta pasada** (además de las 6 que cerró la anterior: FOP obligatorio, TTL, ruta
 del precio total, códigos `1`/`1D`, forma de los errores, y si `offers/price` desglosa el fee):
 
-- ~~*¿Cuál es la estructura de `/v2/offers/getAncillaries`?*~~ → **contrato completo en §5.2.**
-- ~~*¿Existe `requestType: "offerId"` en `getAncillaries`?*~~ → **sí**, discriminador declarado en
+- ~~_¿Cuál es la estructura de `/v2/offers/getAncillaries`?_~~ → **contrato completo en §5.2.**
+- ~~_¿Existe `requestType: "offerId"` en `getAncillaries`?_~~ → **sí**, discriminador declarado en
   `get-ancillaries-agency-2.3.yml:66-70`. Los ancillaries NDC **se pueden cotizar pre-booking**,
   así que el carrito del Package Studio **no** necesita crear la orden antes de ofrecer equipaje.
 
@@ -2256,27 +2321,27 @@ Quedan:
 1. **¿`obFees` está sumado dentro de `totalPrice.totalAmount` o es aditivo?** El spec declara
    ambos como hermanos de `Offer` y no dice cómo se relacionan. De la respuesta depende si el
    markup se aplica antes o después del fee, y si el vendedor ve un total correcto.
-   *(Captura #3.)*
+   _(Captura #3.)_
 2. **¿Qué versión de Get Seats tiene habilitada nuestro PCC: v1 o v3?** Son contratos
    incompatibles (§4.1) y la colección oficial usa v1 mientras el catálogo publica v3.
-   Bloquea el diseño del `SeatMapPort`. *(Captura #5.)*
+   Bloquea el diseño del `SeatMapPort`. _(Captura #5.)_
 3. **¿`getAncillaries` v2.3 devuelve algo útil hoy, o está esperando a `baggageGrid`?** El
-   contrato dice que sus dos campos principales *"se definirán en una versión futura"* y que el
-   endpoint muestra *"free-of-charge ancillaries"*. Si en el CERT solo llega `otherServices[]`
+   contrato dice que sus dos campos principales _"se definirán en una versión futura"_ y que el
+   endpoint muestra _"free-of-charge ancillaries"_. Si en el CERT solo llega `otherServices[]`
    vacío o casi, **no hay venta de ancillaries NDC en fase 1** y hay que decirlo en el
-   roadmap, no descubrirlo implementando. *(Captura #7.)* **Es la pregunta que sustituye a la
+   roadmap, no descubrirlo implementando. _(Captura #7.)_ **Es la pregunta que sustituye a la
    antigua laguna, y es peor que ella: antes no sabíamos la forma; ahora sabemos que la forma
    está incompleta a propósito.**
 4. **¿Está `Manage Ancillary 1.1` habilitado para nuestro PCC, y qué `offerItemId` acepta?**
    De esto depende si el carril PNR se puede servir con ids opacos (adiós a R-3) o hay que
-   materializar el precio en `createBooking`. *(Captura #13, §5.9.)*
+   materializar el precio en `createBooking`. _(Captura #13, §5.9.)_
 5. **¿`offers/price` con `allowBundles` devuelve ancillaries como `offerItems[].type ===
-   "Service"`?** Si sí, es un atajo que evita un endpoint entero en fase 1. *(Captura #9.)*
+"Service"`?** Si sí, es un atajo que evita un endpoint entero en fase 1. _(Captura #9.)_
 6. **¿`FareBasisCode` es obligatorio en `GetAncillaryOffersRQ`?** En `getseats` payload el
    análogo (`fareComponents`) es opcional y solo mejora el precio; asumir lo mismo para el
-   SOAP es inferencia por analogía. *(Captura #11.)*
-6b. **¿Sobre qué precio aplicamos el markup de la agencia en ancillaries?** Sabre ya devuelve
-   `baseFee` y `serviceFee` (*"el precio final tras el markup"*, `get-ancillaries-agency-2.3.yml:518-523`),
+   SOAP es inferencia por analogía. _(Captura #11.)_
+   6b. **¿Sobre qué precio aplicamos el markup de la agencia en ancillaries?** Sabre ya devuelve
+   `baseFee` y `serviceFee` (_"el precio final tras el markup"_, `get-ancillaries-agency-2.3.yml:518-523`),
    es decir, **ya hay un markup del proveedor antes del nuestro**. Es la misma pregunta que
    `obFees` pero con respuesta posiblemente distinta. Decisión de negocio, no de sandbox.
 7. **¿Podemos obtener el BIN del PSP sin tocar el PAN?** De la respuesta depende que el paso
@@ -2290,8 +2355,8 @@ Quedan:
    `pcc_tkt` (PCC de emisión, distinto del de reserva). Con v3 de getseats **el PCC ya no va
    en el body** (se lee del token), lo que simplifica: hay que mapear esto a
    `provider_credentials` y decidir cuáles heredan del consolidador.
-10. **¿Cuál es el límite de concurrencia por PCC?** El 429 es *"Active token count is
-    exceeded"* (§2.7), o sea concurrencia, no rate. Sin el número no podemos dimensionar el
+10. **¿Cuál es el límite de concurrencia por PCC?** El 429 es _"Active token count is
+    exceeded"_ (§2.7), o sea concurrencia, no rate. Sin el número no podemos dimensionar el
     pool ni el fan-out multi-agencia. Es una pregunta comercial para Sabre.
 11. **¿Se puede usar `offers/price` para ATPCO/LCC?** El enum `source` de la respuesta admite
     los tres valores, pero ningún workflow lo hace y la tarificación ATPCO está en
@@ -2306,13 +2371,13 @@ Quedan:
 1. **[ALTO] El carril ATPCO de Sabre rompe PCI SAQ-A.** `createBooking` acepta `cardNumber`
    (12-19 dígitos) y `cardSecurityCode` (VERIFICADO-SPEC: `booking-management-v1.yml:5314`,
    `:5319`), y la tarificación ATPCO ocurre ahí dentro. Nuestro principio de hosted checkout
-   es explícito en `CLAUDE.md`. *Mitigación:* fase 1 solo NDC; o cobrar por PSP y emitir
+   es explícito en `CLAUDE.md`. _Mitigación:_ fase 1 solo NDC; o cobrar por PSP y emitir
    contra forma de pago no-tarjeta; o pedir a Sabre tokenización. **No es un detalle de
    implementación: define qué contenido podemos vender.**
 
 2. **[ALTO] Precio revalidado ≠ precio cobrado.** El fee de forma de pago depende del BIN. Si
    revalidamos con un BIN distinto del real, mostramos un precio y cobramos otro. En Colombia
-   y Brasil eso es exposición legal, no solo mala UX. *Mitigación:* revalidar con el BIN real
+   y Brasil eso es exposición legal, no solo mala UX. _Mitigación:_ revalidar con el BIN real
    tras la tokenización y **antes** de capturar; si el total cambió, frenar. Sabre facilita
    esto avisando por `messages[]` cuando falta la forma de pago (§2.4).
 
@@ -2320,25 +2385,25 @@ Quedan:
    tiene un error dedicado para cuando no coincide.** `UNABLE_TO_ADD_ANCILLARY_PRICE_MISMATCH`
    (VERIFICADO-SPEC). Si el precio cambió entre la cotización y el createBooking, la reserva
    falla; y si pasa después de emitir el EMD, corregirlo implica void o refund.
-   *Novedad de esta pasada:* **existe un camino que evita el problema**. `/v1/ancillaries/add`
-   acepta `offerItemId` + `passengerRef` y nada más (§5.9). *(Estaba en ALTO; baja a MEDIO-ALTO
-   condicionado a la captura #13. Si el carril D funciona para nuestro PCC, baja a BAJO.)*
+   _Novedad de esta pasada:_ **existe un camino que evita el problema**. `/v1/ancillaries/add`
+   acepta `offerItemId` + `passengerRef` y nada más (§5.9). _(Estaba en ALTO; baja a MEDIO-ALTO
+   condicionado a la captura #13. Si el carril D funciona para nuestro PCC, baja a BAJO.)_
 
 4. **[ALTO] Escribir mappers sobre respuestas que no vimos.** Se reduce otra vez: ya tenemos
    contrato de price, de seats v3, de ancillaries 2.3 y de manage-ancillary 1.1. Pero
    **`get-ancillaries-agency-2.3.yml` no trae ni un solo ejemplo de respuesta** (frente a los 5
    de `offers/price`), el SOAP `GetAncillaryOffersRQ` sigue sin spec, y las respuestas reales
-   del CERT pueden diferir de los ejemplos. *Mitigación:* fixtures del CERT primero, código
+   del CERT pueden diferir de los ejemplos. _Mitigación:_ fixtures del CERT primero, código
    después; Zod estricto en el borde del ACL, que **falle** en vez de devolver `undefined`.
 
 4b. **[ALTO — NUEVO] `getAncillaries` v2.3 puede no servir para vender.** Sabre declara en el
-   propio contrato que muestra *"free-of-charge ancillaries"* y que sus dos campos principales,
-   `baggageGrid` y `otherBaggageCharges`, **"se definirán en una versión futura de esta API"**
-   (`get-ancillaries-agency-2.3.yml:9`, `:215-219`). Si eso es literal en el CERT, **no hay
-   catálogo de ancillaries NDC de pago vía este endpoint en fase 1**, por mucho que ahora
-   tengamos el contrato. *Mitigación:* medirlo antes de comprometer ancillaries NDC en el
-   roadmap (captura #7); y tener listo el plan B, que es el camino C —`offers/price` con
-   `offerItems[].type === "Service"`— (captura #9).
+propio contrato que muestra _"free-of-charge ancillaries"_ y que sus dos campos principales,
+`baggageGrid` y `otherBaggageCharges`, **"se definirán en una versión futura de esta API"**
+(`get-ancillaries-agency-2.3.yml:9`, `:215-219`). Si eso es literal en el CERT, **no hay
+catálogo de ancillaries NDC de pago vía este endpoint en fase 1**, por mucho que ahora
+tengamos el contrato. _Mitigación:_ medirlo antes de comprometer ancillaries NDC en el
+roadmap (captura #7); y tener listo el plan B, que es el camino C —`offers/price` con
+`offerItems[].type === "Service"`— (captura #9).
 
 5. **[MEDIO-ALTO] Tipos de dinero incompatibles.** Cuatro trampas verificadas: `amount` es
    **string**, admite **3 decimales**, puede ser **negativo** en reemisión
@@ -2348,22 +2413,22 @@ Quedan:
    Encima, `getAncillaries` declara el importe como `type: string, format: number` **sin
    patrón** (`:839-843`), o sea sin garantía de decimales. Un `Money` mapeado con `parseFloat`
    y `Math.round(x*100)` pierde dinero en el tercer decimal y explota en negativos.
-   *Mitigación:* parser decimal explícito, `MoneySchema` con signo, y un mapper de moneda **por
+   _Mitigación:_ parser decimal explícito, `MoneySchema` con signo, y un mapper de moneda **por
    endpoint**, no compartido.
 
 5b. **[MEDIO — NUEVO] Ancillaries sin `offerItemId` o sin precio, tratados como bug.** En el
-   contrato 2.3, `OfferItem.offerItemId` y `OfferItem.priceDefinitionRef` son **opcionales**
-   (`:228-236`): hay items informativos, no reservables, y items sin precio que no son
-   gratuitos. Un mapper que exija ambos descarta contenido válido; uno que ponga `price: 0` por
-   defecto **muestra como gratis lo que no lo es**. *Mitigación:* `price?: Money` y
-   `offerItemId?` explícitos en el canónico, con la semántica documentada (§6.5).
+contrato 2.3, `OfferItem.offerItemId` y `OfferItem.priceDefinitionRef` son **opcionales**
+(`:228-236`): hay items informativos, no reservables, y items sin precio que no son
+gratuitos. Un mapper que exija ambos descarta contenido válido; uno que ponga `price: 0` por
+defecto **muestra como gratis lo que no lo es**. _Mitigación:_ `price?: Money` y
+`offerItemId?` explícitos en el canónico, con la semántica documentada (§6.5).
 
 5c. **[MEDIO — NUEVO] Ancillaries que exigen input libre del usuario.**
-   `additionalInputRequirements` (`:708-744`) trae un patrón (`%FREETEXT%`) y variables con su
-   propia regex y etiqueta (*"Pick Up Address"*). Sin capturar ese dato el `add` falla, y no
-   hay forma de saber de antemano qué ancillaries lo piden salvo leyendo cada
-   `serviceDefinition`. Impacta especialmente al canal conversacional (§4.8), donde pedir un
-   campo libre validado por regex es una interacción entera.
+`additionalInputRequirements` (`:708-744`) trae un patrón (`%FREETEXT%`) y variables con su
+propia regex y etiqueta (_"Pick Up Address"_). Sin capturar ese dato el `add` falla, y no
+hay forma de saber de antemano qué ancillaries lo piden salvo leyendo cada
+`serviceDefinition`. Impacta especialmente al canal conversacional (§4.8), donde pedir un
+campo libre validado por regex es una interacción entera.
 
 6. **[MEDIO] `offerItems[]` es un `oneOf` y el mapper puede asumir que todo es un vuelo.**
    `AirOfferItem` tiene `passengers[]`; `ServiceOfferItem` tiene `passengerRefs[]` y ni
@@ -2372,7 +2437,7 @@ Quedan:
 
 7. **[MEDIO] Los IDs efímeros vencen. 20 minutos.** El vendedor cotiza por WhatsApp, el
    cliente responde 40 minutos después y la oferta ya no existe. Choca con nuestro
-   posicionamiento conversacional. *Mitigación:* ahora sabemos que el remedio de Sabre es
+   posicionamiento conversacional. _Mitigación:_ ahora sabemos que el remedio de Sabre es
    **re-price, no re-shop** (`"Use offers/price to reprice the offer"`), que es un salto y no
    dos; guardar el criterio de búsqueda junto a la oferta; avisar al vendedor cuando el
    precio cambió.
@@ -2389,7 +2454,7 @@ Quedan:
    `provider.raw`.
 
 10. **[MEDIO] Copiar `subCode: "FDA"` como default es cotizar débito para todo.** `FDA` =
-    *any debit card* (VERIFICADO-SPEC). Toda la colección lo usa, y copiarlo sin pensar
+    _any debit card_ (VERIFICADO-SPEC). Toda la colección lo usa, y copiarlo sin pensar
     significa aplicar fees de débito a tarjetas de crédito. El `subCode` tiene que derivarse
     del método de pago real del PSP.
 
@@ -2419,23 +2484,23 @@ Quedan:
     vocabulario de RFIC (`Ground Transportation Non Air Services`) **no se obtiene del tercero
     con una transformación mecánica**: es otra palabra, no otro casing. Y el tipo de EMD tiene
     **5 valores, no 2**. Un enum canónico mal dimensionado pierde información necesaria para el
-    reembolso. *Mitigación (nueva):* guardar la **letra PADIS**, que el spec de ancillaries
-    documenta (`:677-679`), y traducir en cada borde. *(Sube de BAJO-MEDIO a MEDIO: con cuatro
-    vocabularios, la probabilidad de que un mapper falle en silencio deja de ser marginal.)*
+    reembolso. _Mitigación (nueva):_ guardar la **letra PADIS**, que el spec de ancillaries
+    documenta (`:677-679`), y traducir en cada borde. _(Sube de BAJO-MEDIO a MEDIO: con cuatro
+    vocabularios, la probabilidad de que un mapper falle en silencio deja de ser marginal.)_
 
 16. **[BAJO] Modelos de precio de ancillary que no representamos.**
-    `FeeApplicationMethodEnum` incluye *"Percentage 1 Of Fare Per Kg"* y *"Per 5kg Over Free
-    Baggage Allowance"*; `PaymentTypeEnum` incluye `Deferred`. Un `AncillaryOffer` con un
+    `FeeApplicationMethodEnum` incluye _"Percentage 1 Of Fare Per Kg"_ y _"Per 5kg Over Free
+    Baggage Allowance"_; `PaymentTypeEnum` incluye `Deferred`. Un `AncillaryOffer` con un
     `Money` fijo no puede mostrar ninguno de los dos correctamente.
 
 17. **[BAJO, REDUCIDO] LCC y el carril payload exigen sesión SOAP stateful.** WF-20 abre
-    `SessionCreateRQ` y cierra `SessionCloseRQ`. *Reducción de esta pasada:* la parte del
-    riesgo que decía *"y el asiento se reserva con `PassengerDetailsRQ`, no por REST"* **ya no
+    `SessionCreateRQ` y cierra `SessionCloseRQ`. _Reducción de esta pasada:_ la parte del
+    riesgo que decía _"y el asiento se reserva con `PassengerDetailsRQ`, no por REST"_ **ya no
     se sostiene como absoluto**: `Manage Ancillary 1.1` asigna asientos sobre PNR por REST
     stateless (§5.9), y la página de `getseats` que afirmaba lo contrario es del mismo lote de
     documentación desactualizada que ya detectamos en §4.1. Queda como riesgo la **cotización**
     LCC (`GetAncillaryOffersRQ`, que sí abre sesión en la colección) y la lectura de
-    `SeatId`/`AncillaryId`, que salen de la Retrieve Itinerary API, que es SOAP. *Mitigación:*
+    `SeatId`/`AncillaryId`, que salen de la Retrieve Itinerary API, que es SOAP. _Mitigación:_
     agotar el carril REST antes de construir un pool de sesiones. Verificar con la captura #13.
 
 18. **[BAJO] Restricciones por carrier que no conocemos hasta que fallan.**
@@ -2447,8 +2512,8 @@ Quedan:
 19. **[MEDIO — NUEVO] El asiento NDC no se puede vender conversacionalmente.** La preferencia
     de área (`WINDOW`, `AISLE`…) existe **solo en el carril ATPCO** (`BookSeat.areaPreferences`)
     y no en el NDC (`BookSeatOffer`), §4.5. Fase 1 apunta a NDC, y NDC exige devolver un
-    `seatOfferId` de una celda concreta del mapa. Choca de frente con *"WhatsApp es ciudadano de
-    primera"* (`CLAUDE.md` §5). *Mitigación:* enlace a vista web del mapa desde la conversación,
+    `seatOfferId` de una celda concreta del mapa. Choca de frente con _"WhatsApp es ciudadano de
+    primera"_ (`CLAUDE.md` §5). _Mitigación:_ enlace a vista web del mapa desde la conversación,
     o preferencia resuelta **por nosotros** filtrando `characteristics[].code`, asumiendo la
     responsabilidad de la elección. Nunca lo segundo en silencio. Ver §4.8.
 
@@ -2458,6 +2523,6 @@ Quedan:
     **no en su .yml** (§4.2); la página de getseats manda usar `PassengerDetailsRQ` para
     reservar asiento cuando existe un endpoint REST que lo hace (§4.6); y el slug que dos
     pasadas dieron por inaccesible estaba **enlazado en la propia documentación descargada**
-    (§0.1). *Mitigación de método:* **el .yml manda sobre la página de ayuda**, y ante una
+    (§0.1). _Mitigación de método:_ **el .yml manda sobre la página de ayuda**, y ante una
     discrepancia se marca y se lleva al CERT — no se elige la fuente que conviene. Y antes de
     declarar que algo "no está disponible", agotar los enlaces internos de lo que ya tenemos.

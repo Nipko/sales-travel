@@ -90,8 +90,9 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
   async function seedOrder(tenantId: string, status: string): Promise<void> {
     seq += 1;
     await pool.query(
-      `INSERT INTO orders (tenant_id, user_id, search_criteria, selected_offer, passengers, contact_info, total_amount, order_number, status)
-       VALUES ($1, $2, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 1000, $3, $4)`,
+      // `provider` explícito: 0035 le quitó el DEFAULT a la columna.
+      `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers, contact_info, total_amount, order_number, status)
+       VALUES ($1, $2, 'latam-ndc', '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 1000, $3, $4)`,
       [tenantId, userId, seq, status],
     );
   }

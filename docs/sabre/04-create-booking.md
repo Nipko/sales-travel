@@ -1,5 +1,5 @@
 ---
-titulo: "Sabre — POST /v1/trip/orders/createBooking (contrato completo)"
+titulo: 'Sabre — POST /v1/trip/orders/createBooking (contrato completo)'
 fecha: 2026-08-25
 estado: reconciliado contra contrato oficial
 ---
@@ -18,7 +18,7 @@ colección), **VERIFICADO-SPEC** (contrato OpenAPI oficial; se cita `archivo.yml
 
 1. **La primera pasada afirmaba que las 4 respuestas guardadas de la colección "están vacías"
    (`bodyLen = 0`). Es FALSO y queda retirado.** Cada una pesa **16.479 bytes** y están extraídas
-   en `slices/responses/*.json`. El error venía de leer `requests.jsonl`, que guarda por respuesta
+   en `evidence/responses/*.json`. El error venía de leer `requests.jsonl`, que guarda por respuesta
    sólo `{name, len}` sin `body`; nunca se comprobó contra el `.json` original. Regla de método:
    **no derivar afirmaciones de ausencia desde un extracto**. Esas 4 respuestas se usan en §6.5.
 2. **El front-matter citaba `EXTERNAL_AGENCY.postman_collection.json`. Es FALSO**: ese archivo es
@@ -35,44 +35,44 @@ definiciones) más 81 páginas oficiales, incluida la **lista de errores de crea
 todo lo que estaba `[INFERIDO]` o `DESCONOCIDO` en §3 se resuelve. Los cinco cambios de mayor
 impacto:
 
-| # | La primera pasada decía | El contrato dice | Dónde |
-| --- | --- | --- | --- |
-| 1 | «`errorHandlingPolicy` **no existe** en createBooking; es de `cancelBooking`» | **Sí existe**, es un **array** de 8 valores diseñado exactamente para el éxito parcial | §5 |
-| 2 | «`AGENCY_IATA` es la FOP recomendada para el canal aéreo» | `AGENCY_IATA`/`AGENCY_NAME`/`CORPORATE`/`COMPANY_NAME`/`VIRTUAL_CARD` son **de hotel**. Para aéreo sin PAN la respuesta es **`CASH`** | §7 |
-| 3 | «`title` es texto libre; `"Congressman"` rompe nuestro enum» | `TitleEnum` es un **enum cerrado de 18 valores** que **incluye** `Congressman` | §3.4 |
-| 4 | «no sabemos si `createBooking` devuelve `bookingSignature`» | **No lo devuelve.** Sólo `getBooking`. Hay que encadenar | §6.3 |
-| 5 | «`flightPricing[].qualifiers.validatingAirlineCode` fija la aerolínea validadora» | `validatingAirlineCode` y `commissionPercentage` **no están** en `PricingQualifiers`; viven en `TicketingQualifiers` de **fulfill** | §3.3.2 |
+| #   | La primera pasada decía                                                           | El contrato dice                                                                                                                                                                                                                          | Dónde  |
+| --- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | «`errorHandlingPolicy` **no existe** en createBooking; es de `cancelBooking`»     | **Sí existe**, es un **array** de 8 valores diseñado exactamente para el éxito parcial                                                                                                                                                    | §5     |
+| 2   | «`AGENCY_IATA` es la FOP recomendada para el canal aéreo»                         | `AGENCY_IATA`/`AGENCY_NAME`/`CORPORATE`/`COMPANY_NAME`/`VIRTUAL_CARD` son **de hotel**. Para aéreo sin PAN la respuesta es **`CASH`**                                                                                                     | §7     |
+| 3   | «`title` es texto libre; `"Congressman"` rompe nuestro enum»                      | `TitleEnum` es un **enum cerrado de 18 valores** que **incluye** `Congressman`                                                                                                                                                            | §3.4   |
+| 4   | «no sabemos si `createBooking` devuelve `bookingSignature`»                       | **No lo devuelve.** Sólo `getBooking`. Hay que encadenar                                                                                                                                                                                  | §6.3   |
+| 5   | «`flightPricing[].qualifiers.validatingAirlineCode` fija la aerolínea validadora» | **Confirmado, con matiz:** `PricingQualifiers` hereda `TicketingQualifiers` por `allOf`, así que `validatingAirlineCode` y `commissionPercentage` **sí valen dentro de `qualifiers`** — pero **no** sueltos al nivel de `flightPricing[]` | §3.3.2 |
 
 ---
 
 ## 1. El endpoint
 
-| Aspecto | Valor | Marca |
-| --- | --- | --- |
-| Método + ruta | `POST {{rest_endpoint}}/v1/trip/orders/createBooking` | [V] + [VS] `booking-management-v1.yml:14` (`basePath: /v1/trip/orders`) y `:190` |
-| `operationId` | `createBooking` | [VS] `booking-management-v1.yml:192` |
-| Descripción oficial | «Creates an air booking (NDC/ATPCO/LCC).» | [VS] `booking-management-v1.yml:193` |
-| Host CERT | `https://api.cert.platform.sabre.com` | [V] + [VS] `booking-management-v1.yml:10` |
-| Versión del contrato | Booking Management **v1.33** | [VS] `booking-management-v1.yml:8` |
-| Nº de requests que lo usan | **176** (169 URL literal + 7 vía `{{createBooking_endpoint}}`) | [V] |
-| Auth | OAuth2 `client_credentials`, Bearer de `POST /v2/auth/token`, credenciales en Basic base64 | [V] + [VS] `booking-management-v1.yml:19-26` |
-| Header `Authorization` | **required: true**, `Bearer TOKEN` | [VS] `booking-management-v1.yml:203-207` |
-| Body | **required: true**, `$ref CreateBookingRequest` | [VS] `booking-management-v1.yml:196-202` |
-| Content-Type / Accept | `application/json` (declarado global en el spec) | [V] 176/176 + [VS] `booking-management-v1.yml:15-18` |
-| Query params | **Ninguno**. Todo va en el body | [V] + [VS] (el spec no declara ningún parámetro `in: query`) |
-| Respuestas declaradas | **Sólo `200`** con `CreateBookingResponse` | [VS] `booking-management-v1.yml:208-213` |
-| `Conversation-ID` (request) | 33/176 | [V] |
-| `x-request-id` (request) | 10/176 | [V] |
-| `X-Sabre-Group` / `X-Sabre-Current-City` | 28/176 (`G7RE`, `U9PK`) — actuar sobre otro PCC del grupo | [V] |
+| Aspecto                                  | Valor                                                                                      | Marca                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Método + ruta                            | `POST {{rest_endpoint}}/v1/trip/orders/createBooking`                                      | [V] + [VS] `booking-management-v1.yml:15` (`basePath: /v1/trip/orders`) y `:190`                   |
+| `operationId`                            | `createBooking`                                                                            | [VS] `booking-management-v1.yml:192`                                                               |
+| Descripción oficial                      | «Creates an air booking (NDC/ATPCO/LCC).»                                                  | [VS] `booking-management-v1.yml:193`                                                               |
+| Host CERT                                | `https://api.cert.platform.sabre.com`                                                      | [V] + [VS] `booking-management-v1.yml:12`                                                          |
+| Versión del contrato                     | Booking Management **v1.33**                                                               | [VS] `booking-management-v1.yml:8`                                                                 |
+| Nº de requests que lo usan               | **176** (169 URL literal + 7 vía `{{createBooking_endpoint}}`)                             | [V]                                                                                                |
+| Auth                                     | OAuth2 `client_credentials`, Bearer de `POST /v2/auth/token`, credenciales en Basic base64 | [V] + [VS] `booking-management-v1.yml:20-27` (`x-base64-encode-client-credentials: true` en `:27`) |
+| Header `Authorization`                   | **required: true**, `Bearer TOKEN`                                                         | [VS] `booking-management-v1.yml:203-207`                                                           |
+| Body                                     | **required: true**, `$ref CreateBookingRequest`                                            | [VS] `booking-management-v1.yml:196-202`                                                           |
+| Content-Type / Accept                    | `application/json` (declarado global en el spec)                                           | [V] 176/176 + [VS] `booking-management-v1.yml:16-19`                                               |
+| Query params                             | **Ninguno**. Todo va en el body                                                            | [V] + [VS] (el spec no declara ningún parámetro `in: query`)                                       |
+| Respuestas declaradas                    | **Sólo `200`** con `CreateBookingResponse`                                                 | [VS] `booking-management-v1.yml:209-213`                                                           |
+| `Conversation-ID` (request)              | 33/176                                                                                     | [V]                                                                                                |
+| `x-request-id` (request)                 | 10/176                                                                                     | [V]                                                                                                |
+| `X-Sabre-Group` / `X-Sabre-Current-City` | 28/176 (`G7RE`, `U9PK`) — actuar sobre otro PCC del grupo                                  | [V]                                                                                                |
 
 Headers de respuesta verificados: `x-request-id` y `ConversationId`.
 [V] — `Create Booking / Flights - NDC/ATPCO/LCC / CreateBooking - retention segment (OTH) only`:
 
 ```js
-pm.test("response must include x-request-id and ConversationId", function () {
-    pm.response.to.have.header("x-request-id");
-    pm.response.to.have.header("ConversationId");
-})
+pm.test('response must include x-request-id and ConversationId', function () {
+  pm.response.to.have.header('x-request-id');
+  pm.response.to.have.header('ConversationId');
+});
 ```
 
 > **[VS] El spec declara únicamente el código `200`.** No hay `400`/`401`/`5xx` declarados. Junto
@@ -125,16 +125,19 @@ respuesta de `POST /v1/offers/price` [V] — extraídos de los scripts `test` de
 // Workflows / 18 - NDC Multiple traveler types (Adult+Child) / 2. Offers Price /v1
 pm.environment.set('price_offer_item_id_adt', jsonData.response.offers[0].offerItems[0].id);
 pm.environment.set('price_offer_item_id_cnn', jsonData.response.offers[0].offerItems[1].id);
-pm.environment.set('price_passenger_id1',     jsonData.response.offers[0].offerItems[0].passengers[0].id);
+pm.environment.set(
+  'price_passenger_id1',
+  jsonData.response.offers[0].offerItems[0].passengers[0].id,
+);
 ```
 
-| Campo de createBooking | Origen exacto | Marca |
-| --- | --- | --- |
-| `flightOffer.offerId` | `/v1/offers/price` → `response.offers[0].id` | [V] + [VS] `booking-management-v1.yml:4959` («returned in a shopping response») |
-| `flightOffer.selectedOfferItems[]` | `response.offers[0].offerItems[n].id` | [V] + [VS] `:4966` |
-| `travelers[].id` | `response.offers[0].offerItems[n].passengers[m].id` | [V] + [VS] `:6156` («Price traveler's id as returned from Offer Price») |
-| `flightOffer.seatOffers[].seatOfferId` | `/v1/offers/getseats` → `aLaCarteOffer.aLaCarteOfferItems[].offerItemID` | [V] + [VS] `:5279` |
-| `flightOffer.seatOffers[].number` | `seatMaps[0].cabinCompartments[0].seatRows[].row` + `.seats[].column` | [V] |
+| Campo de createBooking                 | Origen exacto                                                            | Marca                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `flightOffer.offerId`                  | `/v1/offers/price` → `response.offers[0].id`                             | [V] + [VS] `booking-management-v1.yml:4959` («returned in a shopping response») |
+| `flightOffer.selectedOfferItems[]`     | `response.offers[0].offerItems[n].id`                                    | [V] + [VS] `:4966`                                                              |
+| `travelers[].id`                       | `response.offers[0].offerItems[n].passengers[m].id`                      | [V] + [VS] `:6156` («Price traveler's id as returned from Offer Price»)         |
+| `flightOffer.seatOffers[].seatOfferId` | `/v1/offers/getseats` → `aLaCarteOffer.aLaCarteOfferItems[].offerItemID` | [V] + [VS] `:5280`                                                              |
+| `flightOffer.seatOffers[].number`      | `seatMaps[0].cabinCompartments[0].seatRows[].row` + `.seats[].column`    | [V]                                                                             |
 
 > **Dato crítico de diseño:** hay un `offerId` **por oferta** y un `offerItemId` **por tipo de
 > pasajero**. En un ADT+CNN se mandan **dos** `selectedOfferItems`.
@@ -163,23 +166,23 @@ implementar el `xor` a mano.
 
 ### 2.1 Tabla de variantes
 
-| Variante | Bloques del body | Cuándo se usa | Evidencia [V] |
-| --- | --- | --- | --- |
-| **NDC** | `flightOffer{offerId, selectedOfferItems[]}` + `travelers[]` (con `id`) + `contactInfo` | Vuelo comprado como *oferta NDC*. El itinerario ya está dentro de la oferta: **no se re-declaran segmentos**. | `createBooking - Air NDC Payload`; `Workflows / 1 … / 3. createBooking` |
-| **NDC + asientos** | idem + `flightOffer.seatOffers[]` | Asignar asiento **al crear la orden**. | `Workflows / 28-33 NDC - Assign seats at order creation` |
-| **ATPCO** | `flightDetails{flights[], flightPricing[]}` + `travelers[]` (sin `id`) + `agency{}` + `payment{}` | Vuelo GDS clásico. **Hay que re-declarar cada segmento.** | `Workflows / 3 - Air Shop, Book, Cancel / 2. createBooking - ATPCO payload` |
-| **LCC** | ATPCO + `flightDetails.flights[].source: "LCC"` | Low-cost integrada por Sabre (FR, U2…). | `createBooking - Air LCC`; `Workflows / 20` |
-| **Híbrido LCC+ATPCO** | `flights[]` con `source` distinto por segmento + `flightPricing[]` por `flightIndices` + **dos** `formsOfPayment` | Ida LCC, vuelta ATPCO, en la misma reserva. | `Workflows / 22 - LCC + ATPCO - Check, Refund Booking / CreateBooking` |
-| **Pasiva** | `flights[]` con `flightStatusCode: "YK"` + `confirmationId` **por vuelo**, sin `flightPricing` | Registrar un segmento reservado fuera de Sabre. **[VS]** `booking-management-v1.yml:5221` lo confirma: «Populate this value if you made a booking directly with the airline and wish to build a Sabre passive booking.» El spec añade `arrivalDate`/`arrivalTime` **específicos para pasivas** (`:5227`, `:5233`), que la colección **no ejercita**. | `createBooking - Passive Air segment` |
-| **Con perfil (ProfileName)** | `profiles[{profileName, profileTypeCode:"TVL", domainId}]` | Traer datos del viajero desde Sabre Profiles por **nombre**. | `createBooking - Air NDC with ProfileName` |
-| **Con perfil (ProfileId)** | `profiles[{uniqueId, profileTypeCode:"TVL", domainId}]` | Igual por **ID único**. | `createBooking - Air NDC with ProfileId`; `Workflows / 2` y `/ 4` |
-| **Retention segment (OTH)** | `retentionEndDate` + `retentionLabel`, con o sin vuelo | Mantener el PNR vivo sin segmento activo. Puede ir **solo**. | `CreateBooking - retention segment (OTH) only` |
-| **Hotel CSL** | `hotel{bookingKey, rooms[], paymentPolicy, formOfPayment}` + `payment.formsOfPayment[]` | Reserva de hotel vía Content Services for Lodging. | `Create Booking / CSL Hotel / …`; `Workflows / 9` |
-| **Coche** | `car{bookingKey, travelerIndex, …}` | Reserva de vehículo. | `Create Booking / Vehicle / createBooking - simple vehicle` |
-| **Multi-producto (aéreo + hotel)** | `flightDetails` **+** `hotel` en la misma llamada | Un PNR con vuelo y hotel. **Es la variante donde el éxito parcial duele.** | `Create Booking / CSL Hotel / createBooking - Air with CSL hotel` |
-| **Ancillaries** | `travelers[].ancillaries[]` (+ opcional `specialServices[]`) | Equipaje / servicios de pago en la creación. **[VS] NO soportado en NDC** (ver §3.4.4). | `createBooking - Ancillaries baggage`; `Workflows / 19` y `/ 20` |
-| **Branded fares** | `flightPricing[].qualifiers.brandedFares[]` + `specificFares[]` | Forzar marca tarifaria y fare basis por tramo. | `createBooking - Branded fares` |
-| **Cambio de PCC** | `targetPcc` en la raíz | Emitir bajo otro PCC del grupo (**central para consolidador**). | `createBooking - Air with Changed PCC` |
+| Variante                           | Bloques del body                                                                                                  | Cuándo se usa                                                                                                                                                                                                                                                                                                                                        | Evidencia [V]                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **NDC**                            | `flightOffer{offerId, selectedOfferItems[]}` + `travelers[]` (con `id`) + `contactInfo`                           | Vuelo comprado como _oferta NDC_. El itinerario ya está dentro de la oferta: **no se re-declaran segmentos**.                                                                                                                                                                                                                                        | `createBooking - Air NDC Payload`; `Workflows / 1 … / 3. createBooking`     |
+| **NDC + asientos**                 | idem + `flightOffer.seatOffers[]`                                                                                 | Asignar asiento **al crear la orden**.                                                                                                                                                                                                                                                                                                               | `Workflows / 28-33 NDC - Assign seats at order creation`                    |
+| **ATPCO**                          | `flightDetails{flights[], flightPricing[]}` + `travelers[]` (sin `id`) + `agency{}` + `payment{}`                 | Vuelo GDS clásico. **Hay que re-declarar cada segmento.**                                                                                                                                                                                                                                                                                            | `Workflows / 3 - Air Shop, Book, Cancel / 2. createBooking - ATPCO payload` |
+| **LCC**                            | ATPCO + `flightDetails.flights[].source: "LCC"`                                                                   | Low-cost integrada por Sabre (FR, U2…).                                                                                                                                                                                                                                                                                                              | `createBooking - Air LCC`; `Workflows / 20`                                 |
+| **Híbrido LCC+ATPCO**              | `flights[]` con `source` distinto por segmento + `flightPricing[]` por `flightIndices` + **dos** `formsOfPayment` | Ida LCC, vuelta ATPCO, en la misma reserva.                                                                                                                                                                                                                                                                                                          | `Workflows / 22 - LCC + ATPCO - Check, Refund Booking / CreateBooking`      |
+| **Pasiva**                         | `flights[]` con `flightStatusCode: "YK"` + `confirmationId` **por vuelo**, sin `flightPricing`                    | Registrar un segmento reservado fuera de Sabre. **[VS]** `booking-management-v1.yml:5221` lo confirma: «Populate this value if you made a booking directly with the airline and wish to build a Sabre passive booking.» El spec añade `arrivalDate`/`arrivalTime` **específicos para pasivas** (`:5227`, `:5233`), que la colección **no ejercita**. | `createBooking - Passive Air segment`                                       |
+| **Con perfil (ProfileName)**       | `profiles[{profileName, profileTypeCode:"TVL", domainId}]`                                                        | Traer datos del viajero desde Sabre Profiles por **nombre**.                                                                                                                                                                                                                                                                                         | `createBooking - Air NDC with ProfileName`                                  |
+| **Con perfil (ProfileId)**         | `profiles[{uniqueId, profileTypeCode:"TVL", domainId}]`                                                           | Igual por **ID único**.                                                                                                                                                                                                                                                                                                                              | `createBooking - Air NDC with ProfileId`; `Workflows / 2` y `/ 4`           |
+| **Retention segment (OTH)**        | `retentionEndDate` + `retentionLabel`, con o sin vuelo                                                            | Mantener el PNR vivo sin segmento activo. Puede ir **solo**.                                                                                                                                                                                                                                                                                         | `CreateBooking - retention segment (OTH) only`                              |
+| **Hotel CSL**                      | `hotel{bookingKey, rooms[], paymentPolicy, formOfPayment}` + `payment.formsOfPayment[]`                           | Reserva de hotel vía Content Services for Lodging.                                                                                                                                                                                                                                                                                                   | `Create Booking / CSL Hotel / …`; `Workflows / 9`                           |
+| **Coche**                          | `car{bookingKey, travelerIndex, …}`                                                                               | Reserva de vehículo.                                                                                                                                                                                                                                                                                                                                 | `Create Booking / Vehicle / createBooking - simple vehicle`                 |
+| **Multi-producto (aéreo + hotel)** | `flightDetails` **+** `hotel` en la misma llamada                                                                 | Un PNR con vuelo y hotel. **Es la variante donde el éxito parcial duele.**                                                                                                                                                                                                                                                                           | `Create Booking / CSL Hotel / createBooking - Air with CSL hotel`           |
+| **Ancillaries**                    | `travelers[].ancillaries[]` (+ opcional `specialServices[]`)                                                      | Equipaje / servicios de pago en la creación. **[VS] NO soportado en NDC** (ver §3.4.4).                                                                                                                                                                                                                                                              | `createBooking - Ancillaries baggage`; `Workflows / 19` y `/ 20`            |
+| **Branded fares**                  | `flightPricing[].qualifiers.brandedFares[]` + `specificFares[]`                                                   | Forzar marca tarifaria y fare basis por tramo.                                                                                                                                                                                                                                                                                                       | `createBooking - Branded fares`                                             |
+| **Cambio de PCC**                  | `targetPcc` en la raíz                                                                                            | Emitir bajo otro PCC del grupo (**central para consolidador**).                                                                                                                                                                                                                                                                                      | `createBooking - Air with Changed PCC`                                      |
 
 ### 2.2 Matriz de combinación observada — **corregida**
 
@@ -187,21 +190,21 @@ implementar el `xor` a mano.
 request sin ningún bloque de producto**. Los totales no cuadraban. Cifras corregidas (parseo
 tolerante de **175 de 176** bodies):
 
-| Combinación de bloques | Nº requests |
-| --- | --- |
-| `flightDetails` sola | 77 |
-| `flightOffer` sola | 60 |
-| `hotel` sola | 20 |
-| `car` sola | **5** |
-| `flightOffer` + `profiles` | 3 |
-| `flightDetails` + `profiles` | 3 |
-| `flightOffer` + retención OTH | 2 |
-| `flightDetails` + retención OTH | 1 |
-| retención OTH sola | 1 |
-| `hotel` + `profiles` | 1 |
-| `flightDetails` + `hotel` | 1 |
-| **(ningún bloque de producto)** | **1** |
-| **Total** | **175** |
+| Combinación de bloques          | Nº requests |
+| ------------------------------- | ----------- |
+| `flightDetails` sola            | 77          |
+| `flightOffer` sola              | 60          |
+| `hotel` sola                    | 20          |
+| `car` sola                      | **5**       |
+| `flightOffer` + `profiles`      | 3           |
+| `flightDetails` + `profiles`    | 3           |
+| `flightOffer` + retención OTH   | 2           |
+| `flightDetails` + retención OTH | 1           |
+| retención OTH sola              | 1           |
+| `hotel` + `profiles`            | 1           |
+| `flightDetails` + `hotel`       | 1           |
+| **(ningún bloque de producto)** | **1**       |
+| **Total**                       | **175**     |
 
 El único body que **no parsea** es `Create Booking / Vehicle / createBooking - vehicle with
 Collection Site` (comentarios `//` inline no-JSON). Se nombra para que quien audite sepa cuál
@@ -228,45 +231,45 @@ realmente ejercita**, que no es lo mismo y ambos importan.
 > definición (`:694-802`). Toda la obligatoriedad es de negocio y se manifiesta como **error en
 > tiempo de ejecución**, no como rechazo de esquema. Esto obliga a validar en nuestro borde.
 
-| Campo | Tipo / contrato | Línea spec | Visto en | Obligatorio | Notas |
-| --- | --- | --- | --- | --- | --- |
-| `errorHandlingPolicy` | `array<CreateErrorPolicyEnum>` | `:698` | **0** | No (default `HALT_ON_ERROR`) | **NUEVO — ver §5.** La colección **nunca** lo usa |
-| `targetPcc` | string, `^[A-Z0-9]{3,4}$` | `:704` | 2 | No | «The API **does not revert context** after completing the booking» [VS] `:707`. Central para consolidador — y peligroso: deja el contexto cambiado |
-| `receivedFrom` | string, default `"Create Booking"` | `:709` | 1 | No | Auditoría PNR. Valor visto: `"Wakanow"` |
-| `asynchronousUpdateWaitTime` | integer int32, **min 0, max 10000, default 0** | `:714` | 28 | No | Ver §3.1.1 |
-| `profiles` | array, **minItems 1, maxItems 13** | `:723` | 7 | No | Ver §3.11 |
-| `agency` | `Agency` | `:733` | 121 | De facto en ATPCO/hotel | Ver §3.6 |
-| `flightOffer` | `FlightOffer` | `:736` | 65 | Sí en NDC (por prosa oficial) | Ver §3.2 |
-| `flightDetails` | `FlightDetails` | `:739` | 82 | Sí en ATPCO/LCC/pasiva | Ver §3.3 |
-| `hotel` | `HotelToBook` | `:742` | 22 | Sólo variante hotel | Ver §3.8 |
-| `car` | `CarToBook` | `:745` | 5 | Sólo variante coche | Ver §3.8 |
-| `travelers` | array de `BookTraveler` | `:748` | 170/176 | De facto | Ver §3.4 |
-| `contactInfo` | `BookContactInformation` | `:754` | 167/176 | De facto | Ver §3.5 |
-| `payment` | `Payment` | `:759` | 94 | Depende de FOP | Ver §3.7 |
-| `remarks` | array de `BookRemark` | `:762` | 3 | No | Ver §3.9 |
-| **`notification`** | `Notification` | `:770` | **0** | No | **NUEVO.** Email o cola tras crear. Ver §3.12 |
-| `otherServices` | array de `OtherServiceInformation` | `:775` | 3 (9 elementos) | No | OSI. **[VS]** «Not supported for hotel chains and/or car rental vendors» `:777` |
-| `retentionEndDate` | string **`format: date`** | `:781` | 4 | Sólo variante OTH | ⚠️ Ver §3.10 — **corrección** |
-| `retentionLabel` | string, `^[a-zA-Z0-9 ,.*?\-\/]{0,215}$` | `:787` | 4 | Sólo variante OTH | Máx. 215 caracteres |
-| **`travelersEmployers`** | array de `TravelersEmployer` | `:792` | **0** | No | **NUEVO.** `idType`, `employerId`, `employerName`, `phones`, `emails`, dirección. Se enlaza con `travelers[].employerIndex` |
-| **`sendLoyaltiesToAllAirlines`** | boolean | `:798` | **0** | No | **NUEVO.** Manda todos los FF a todos los carriers del itinerario |
+| Campo                            | Tipo / contrato                                | Línea spec | Visto en        | Obligatorio                   | Notas                                                                                                                                              |
+| -------------------------------- | ---------------------------------------------- | ---------- | --------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errorHandlingPolicy`            | `array<CreateErrorPolicyEnum>`                 | `:698`     | **0**           | No (default `HALT_ON_ERROR`)  | **NUEVO — ver §5.** La colección **nunca** lo usa                                                                                                  |
+| `targetPcc`                      | string, `^[A-Z0-9]{3,4}$`                      | `:704`     | 2               | No                            | «The API **does not revert context** after completing the booking» [VS] `:708`. Central para consolidador — y peligroso: deja el contexto cambiado |
+| `receivedFrom`                   | string, default `"Create Booking"`             | `:709`     | 1               | No                            | Auditoría PNR. Valor visto: `"Wakanow"`                                                                                                            |
+| `asynchronousUpdateWaitTime`     | integer int32, **min 0, max 10000, default 0** | `:714`     | 28              | No                            | Ver §3.1.1                                                                                                                                         |
+| `profiles`                       | array, **minItems 1, maxItems 13**             | `:723`     | 7               | No                            | Ver §3.11                                                                                                                                          |
+| `agency`                         | `Agency`                                       | `:733`     | 121             | De facto en ATPCO/hotel       | Ver §3.6                                                                                                                                           |
+| `flightOffer`                    | `FlightOffer`                                  | `:736`     | 65              | Sí en NDC (por prosa oficial) | Ver §3.2                                                                                                                                           |
+| `flightDetails`                  | `FlightDetails`                                | `:739`     | 82              | Sí en ATPCO/LCC/pasiva        | Ver §3.3                                                                                                                                           |
+| `hotel`                          | `HotelToBook`                                  | `:742`     | 22              | Sólo variante hotel           | Ver §3.8                                                                                                                                           |
+| `car`                            | `CarToBook`                                    | `:745`     | 5               | Sólo variante coche           | Ver §3.8                                                                                                                                           |
+| `travelers`                      | array de `BookTraveler`                        | `:748`     | 170/176         | De facto                      | Ver §3.4                                                                                                                                           |
+| `contactInfo`                    | `BookContactInformation`                       | `:754`     | 167/176         | De facto                      | Ver §3.5                                                                                                                                           |
+| `payment`                        | `Payment`                                      | `:759`     | 94              | Depende de FOP                | Ver §3.7                                                                                                                                           |
+| `remarks`                        | array de `BookRemark`                          | `:762`     | 3               | No                            | Ver §3.9                                                                                                                                           |
+| **`notification`**               | `Notification`                                 | `:770`     | **0**           | No                            | **NUEVO.** Email o cola tras crear. Ver §3.12                                                                                                      |
+| `otherServices`                  | array de `OtherServiceInformation`             | `:775`     | 3 (9 elementos) | No                            | OSI. **[VS]** «Not supported for hotel chains and/or car rental vendors» `:777`                                                                    |
+| `retentionEndDate`               | string **`format: date`**                      | `:781`     | 4               | Sólo variante OTH             | ⚠️ Ver §3.10 — **corrección**                                                                                                                      |
+| `retentionLabel`                 | string, `^[a-zA-Z0-9 ,.*?\-\/]{0,215}$`        | `:787`     | 4               | Sólo variante OTH             | Máx. 215 caracteres                                                                                                                                |
+| **`travelersEmployers`**         | array de `TravelersEmployer`                   | `:792`     | **0**           | No                            | **NUEVO.** `idType`, `employerId`, `employerName`, `phones`, `emails`, dirección. Se enlaza con `travelers[].employerIndex`                        |
+| **`sendLoyaltiesToAllAirlines`** | boolean                                        | `:798`     | **0**           | No                            | **NUEVO.** Manda todos los FF a todos los carriers del itinerario                                                                                  |
 
 **Campos que la colección envía y el contrato NO declara** — se están **ignorando en silencio**:
 
-| Campo enviado | Dónde | Veredicto |
-| --- | --- | --- |
-| `payments` (plural) en la raíz | 1 request (`ModifyBooking / … (LCC) / Delete FOP / CreateBooking`) | No existe. Copy-paste de la respuesta (donde sí es `payments`, §6.2). Resuelve la duda: **request `payment`, respuesta `payments`, sin excepción** |
-| `confirmationId` en la raíz | 1 request | No existe en `CreateBookingRequest`. Sólo existe **por vuelo** (pasivas, `:5221`) |
-| `travelers[].type` | 4 requests | No existe en `BookTraveler`. **Sí existe en `Traveler` (respuesta), `:1740`.** Ver §3.4 |
-| `travelers[].customerNumber` | 2 requests | No existe. El DK number vive en `agency.agencyCustomerNumber` (`:4747`) |
-| `hotel.useCSL` (mayúscula) | 1 request | El contrato dice **`useCsl`** (`:5024`), default `true` |
-| `flightPricing[].commissionPercentage` / `.validatingAirlineCode` / `.baggageAllowance` / `.passengersPricing` fuera de `qualifiers` | varios | `PricingDetails` sólo tiene `priceComparisons` y `qualifiers` (`:5759-5773`) |
-| `qualifiers.validatingAirline` (sin `Code`) | 1 request | No existe en ninguna versión. Ver §3.3.2 |
-| `ancillaries[].reasonForIssuanceCode` + `reasonForIssuanceName` | 1 request | Sólo existe `reasonForIssuance` (enum, `:7059`) |
+| Campo enviado                                                                                                                        | Dónde                                                              | Veredicto                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `payments` (plural) en la raíz                                                                                                       | 1 request (`ModifyBooking / … (LCC) / Delete FOP / CreateBooking`) | No existe. Copy-paste de la respuesta (donde sí es `payments`, §6.2). Resuelve la duda: **request `payment`, respuesta `payments`, sin excepción** |
+| `confirmationId` en la raíz                                                                                                          | 1 request                                                          | No existe en `CreateBookingRequest`. Sólo existe **por vuelo** (pasivas, `:5221`)                                                                  |
+| `travelers[].type`                                                                                                                   | 4 requests                                                         | No existe en `BookTraveler`. **Sí existe en `Traveler` (respuesta), `:1740`.** Ver §3.4                                                            |
+| `travelers[].customerNumber`                                                                                                         | 2 requests                                                         | No existe. El DK number vive en `agency.agencyCustomerNumber` (`:4750`)                                                                            |
+| `hotel.useCSL` (mayúscula)                                                                                                           | 1 request                                                          | El contrato dice **`useCsl`** (`:5026`), default `true`                                                                                            |
+| `flightPricing[].commissionPercentage` / `.validatingAirlineCode` / `.baggageAllowance` / `.passengersPricing` fuera de `qualifiers` | varios                                                             | `PricingDetails` sólo tiene `priceComparisons` y `qualifiers` (`:5759-5773`)                                                                       |
+| `qualifiers.validatingAirline` (sin `Code`)                                                                                          | 1 request                                                          | No existe en ninguna versión; el nombre correcto es `validatingAirlineCode`. Ver §3.3.2                                                            |
+| `ancillaries[].reasonForIssuanceCode` + `reasonForIssuanceName`                                                                      | 1 request                                                          | Sólo existe `reasonForIssuance` (enum, `:7058`)                                                                                                    |
 
 #### 3.1.1 `asynchronousUpdateWaitTime` — ahora con límites del contrato
 
-**[VS]** `booking-management-v1.yml:714-719`: `integer int32`, **mínimo 0, máximo 10000, default
+**[VS]** `booking-management-v1.yml:714-722`: `integer int32`, **mínimo 0, máximo 10000, default
 0**, «The maximum wait time in milliseconds applied to asynchronous updates related to booking
 creation. **Mainly used for the redisplay operation of NDC bookings**.»
 
@@ -293,14 +296,14 @@ bajar de 45 s**, y cortar antes produce PNRs huérfanos. Ver §5.5 y §Riesgos.
 }
 ```
 
-| Campo | Tipo / contrato | Línea | Obligatorio | Notas |
-| --- | --- | --- | --- | --- |
-| `offerId` | string, **minLength 2, maxLength 49** | `:4959` | **Sí — `required`** `:4956` | De `/v1/offers/price` |
-| `selectedOfferItems` | `string[]`, **minItems 1, maxItems 9** | `:4966` | **Sí — `required`** `:4957` | **Máximo 9**: techo duro de offer items por orden NDC |
-| `seatOffers[]` | array de `BookSeatOffer`, minItems 1 | `:4975` | No | Sólo NDC |
-| `seatOffers[].seatOfferId` | string, minLength 2, maxLength 49 | `:5279` | No en el esquema | Pero el error `SEATS_OFFER_ID_MISSING` / `BAD_REQUEST` («At least one of the selected seats of the NDC flights does not have the required offer ID») lo hace **obligatorio de facto en NDC** |
-| `seatOffers[].number` | string, **`^[0-9]+[A-Z]$`** | `:5292` | No | `"12A"`. **No admite** columna con letra doble |
-| `seatOffers[].travelerIndex` | integer, min 1 | `:5298` | **Sí — `required`** `:5291` | 1-based |
+| Campo                        | Tipo / contrato                        | Línea   | Obligatorio                 | Notas                                                                                                                                                                                        |
+| ---------------------------- | -------------------------------------- | ------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `offerId`                    | string, **minLength 2, maxLength 49**  | `:4959` | **Sí — `required`** `:4956` | De `/v1/offers/price`                                                                                                                                                                        |
+| `selectedOfferItems`         | `string[]`, **minItems 1, maxItems 9** | `:4966` | **Sí — `required`** `:4957` | **Máximo 9**: techo duro de offer items por orden NDC                                                                                                                                        |
+| `seatOffers[]`               | array de `BookSeatOffer`, minItems 1   | `:4975` | No                          | Sólo NDC                                                                                                                                                                                     |
+| `seatOffers[].seatOfferId`   | string, minLength 2, maxLength 49      | `:5280` | No en el esquema            | Pero el error `SEATS_OFFER_ID_MISSING` / `BAD_REQUEST` («At least one of the selected seats of the NDC flights does not have the required offer ID») lo hace **obligatorio de facto en NDC** |
+| `seatOffers[].number`        | string, **`^[0-9]+[A-Z]$`**            | `:5293` | No                          | `"12A"`. **No admite** columna con letra doble                                                                                                                                               |
+| `seatOffers[].travelerIndex` | integer, min 1                         | `:5298` | **Sí — `required`** `:5291` | 1-based                                                                                                                                                                                      |
 
 > **`selectedOfferItems` maxItems 9** [VS] es un dato de producto, no de implementación: **una
 > orden NDC de Sabre no admite más de 9 offer items**. Grupos grandes obligan a partir la reserva.
@@ -319,15 +322,15 @@ combina con `DO_NOT_HALT_ON_SEAT_BOOKING_ERROR` (§5).
 
 `FlightDetails` no declara `required`. Sus cuatro propiedades:
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `flights[]` | array de `FlightToBook`, **minItems 1, maxItems 16** | `:4987` |
-| `flightPricing[]` | array de `PricingDetails`, **minItems 1, maxItems 10** | `:4995` |
-| `haltOnFlightStatusCodes[]` | array de `HaltOnFlightStatusCodeEnum` | `:5004` |
-| `retryBookingUnconfirmedFlights` | boolean | `:5011` |
+| Campo                            | Contrato                                               | Línea   |
+| -------------------------------- | ------------------------------------------------------ | ------- |
+| `flights[]`                      | array de `FlightToBook`, **minItems 1, maxItems 16**   | `:4987` |
+| `flightPricing[]`                | array de `PricingDetails`, **minItems 1, maxItems 10** | `:4995` |
+| `haltOnFlightStatusCodes[]`      | array de `HaltOnFlightStatusCodeEnum`                  | `:5004` |
+| `retryBookingUnconfirmedFlights` | boolean                                                | `:5011` |
 
-> **`flights` maxItems 16** [VS] `:4989` — techo duro de 16 segmentos por PNR.
-> **`flightPricing` maxItems 10** [VS] `:4997` — «If you wish to assign different mark-ups or
+> **`flights` maxItems 16** [VS] `:4990` — techo duro de 16 segmentos por PNR.
+> **`flightPricing` maxItems 10** [VS] `:4998` — «If you wish to assign different mark-ups or
 > commissions per specific passenger type, you can send separate pricing instructions per type.»
 > Esto es exactamente el gancho del **pricing waterfall** del modelo consolidador.
 
@@ -336,27 +339,27 @@ combina con `DO_NOT_HALT_ON_SEAT_BOOKING_ERROR` (§5).
 **Ocho campos `required`** [VS] `:5164-5172`: `flightNumber`, `airlineCode`, `departureDate`,
 `departureTime`, `fromAirportCode`, `toAirportCode`, `bookingClass`, `flightStatusCode`.
 
-| Campo | Tipo / pattern | Línea | Req. | Corrección respecto a la 1ª pasada |
-| --- | --- | --- | --- | --- |
-| `flightNumber` | **`integer` int32, min 1, max 9999** | `:5174` | Sí | ⚠️ **Resuelto:** el contrato dice **entero, no string**. La colección lo manda entre comillas en **20 requests** (`"{{oFlightNumber}}"` ×16, `"{{firstFlightNumber}}"`, `"{{oReturnFlightNumber}}"`, `"{{oFirstFlightNumber}}"` ×2) y sin comillas en el resto. **Nuestro ACL debe emitir SIEMPRE número.** Que Sabre coerza el string es [?] |
-| `airlineCode` | string `^[A-Z0-9]{2}$` | `:5181` | Sí | Admite dígito (p. ej. `4M`, `2Z`) — relevante en LATAM |
-| `fromAirportCode` / `toAirportCode` | string `^[A-Z]{3}$` | `:5187`/`:5192` | Sí | IATA, sólo letras |
-| `departureDate` | `format: date` (`YYYY-MM-DD`) | `:5197` | Sí | «in the airport's time zone» |
-| `departureTime` | `^([0-1][0-9]\|2[0-3]):[0-5][0-9]$` | `:5202` | Sí | `HH:MM`, sin segundos |
-| `bookingClass` | **`^[A-Za-z ]+$`** | `:5207` | Sí | ⚠️ **No es `string(1)`**: el pattern admite varias letras y espacios |
-| `flightStatusCode` | **`^[A-Za-z ]+$`**, default `NN` | `:5216` | Sí | ⚠️ Tampoco es un enum cerrado en el request |
-| `isMarriageGroup` | boolean | `:5212` | No | Segmentos casados |
-| `confirmationId` | string `^[A-Z0-9]{5,}$` | `:5221` | Sólo pasivas | **5+** caracteres, no 6 |
-| **`arrivalDate`** | `format: date` | `:5227` | No | **NUEVO** — «Used for the purpose of creating passive bookings». La colección no lo usa |
-| **`arrivalTime`** | `^([0-1][0-9]\|2[0-3]):[0-5][0-9]$` | `:5233` | No | **NUEVO** — idem |
-| `source` | `FlightToBookSourceEnum`, **default `ATPCO`** | `:5238` | No | `ATPCO` \| `LCC` |
-| `seats[]` | array de `BookSeat` | `:5243` | No | Ver abajo |
-| `changeOfGaugeSeats[]` | array de `BookGenericSeat` | `:5250` | No | Asientos del **primer** avión en un change-of-gauge |
+| Campo                               | Tipo / pattern                                | Línea           | Req.         | Corrección respecto a la 1ª pasada                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------- | --------------------------------------------- | --------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flightNumber`                      | **`integer` int32, min 1, max 9999**          | `:5174`         | Sí           | ⚠️ **Resuelto:** el contrato dice **entero, no string**. La colección lo manda entre comillas en **20 requests** (`"{{oFlightNumber}}"` ×16, `"{{firstFlightNumber}}"`, `"{{oReturnFlightNumber}}"`, `"{{oFirstFlightNumber}}"` ×2) y sin comillas en el resto. **Nuestro ACL debe emitir SIEMPRE número.** Que Sabre coerza el string es [?] |
+| `airlineCode`                       | string `^[A-Z0-9]{2}$`                        | `:5181`         | Sí           | Admite dígito (p. ej. `4M`, `2Z`) — relevante en LATAM                                                                                                                                                                                                                                                                                        |
+| `fromAirportCode` / `toAirportCode` | string `^[A-Z]{3}$`                           | `:5187`/`:5192` | Sí           | IATA, sólo letras                                                                                                                                                                                                                                                                                                                             |
+| `departureDate`                     | `format: date` (`YYYY-MM-DD`)                 | `:5197`         | Sí           | «in the airport's time zone»                                                                                                                                                                                                                                                                                                                  |
+| `departureTime`                     | `^([0-1][0-9]\|2[0-3]):[0-5][0-9]$`           | `:5202`         | Sí           | `HH:MM`, sin segundos                                                                                                                                                                                                                                                                                                                         |
+| `bookingClass`                      | **`^[A-Za-z ]+$`**                            | `:5207`         | Sí           | ⚠️ **No es `string(1)`**: el pattern admite varias letras y espacios                                                                                                                                                                                                                                                                          |
+| `flightStatusCode`                  | **`^[A-Za-z ]+$`**, default `NN`              | `:5216`         | Sí           | ⚠️ Tampoco es un enum cerrado en el request                                                                                                                                                                                                                                                                                                   |
+| `isMarriageGroup`                   | boolean                                       | `:5212`         | No           | Segmentos casados                                                                                                                                                                                                                                                                                                                             |
+| `confirmationId`                    | string `^[A-Z0-9]{5,}$`                       | `:5221`         | Sólo pasivas | **5+** caracteres, no 6                                                                                                                                                                                                                                                                                                                       |
+| **`arrivalDate`**                   | `format: date`                                | `:5227`         | No           | **NUEVO** — «Used for the purpose of creating passive bookings». La colección no lo usa                                                                                                                                                                                                                                                       |
+| **`arrivalTime`**                   | `^([0-1][0-9]\|2[0-3]):[0-5][0-9]$`           | `:5233`         | No           | **NUEVO** — idem                                                                                                                                                                                                                                                                                                                              |
+| `source`                            | `FlightToBookSourceEnum`, **default `ATPCO`** | `:5238`         | No           | `ATPCO` \| `LCC`                                                                                                                                                                                                                                                                                                                              |
+| `seats[]`                           | array de `BookSeat`                           | `:5243`         | No           | Ver abajo                                                                                                                                                                                                                                                                                                                                     |
+| `changeOfGaugeSeats[]`              | array de `BookGenericSeat`                    | `:5250`         | No           | Asientos del **primer** avión en un change-of-gauge                                                                                                                                                                                                                                                                                           |
 
 **`BookSeat`** [VS] `:5257` = `BookGenericSeat` (`number`, `travelerIndex` required) **más**
 `areaPreferences[]` (`SeatAreaPreferenceEnum`, minItems 1, **maxItems 3**), **NUEVO** y no
 ejercitado por la colección: permite pedir zona (`FRONT`, `LEFT_SIDE`…) en vez de asiento
-concreto. **[VS] `areaPreferences` no puede combinarse con `number`** (`:5265`), y el error
+concreto. **[VS] `areaPreferences` no puede combinarse con `number`** (`:5268`), y el error
 `INVALID_COMBINATION` añade: «`seats.areaPreferences` cannot be combined with
 `changeOfGaugeSeats.number` in the case of a change of gauge flight».
 
@@ -368,19 +371,29 @@ demás va dentro de `qualifiers`.** Los cuatro campos que la colección pone al 
 `flightPricing[]` (`commissionPercentage`, `validatingAirlineCode`, `baggageAllowance`,
 `passengersPricing`) **no existen ahí**.
 
-**Corrección mayor sobre comisión y aerolínea validadora.** `PricingQualifiers` (`:5802-6029`, 36
-propiedades) **no contiene `commissionPercentage` ni `validatingAirlineCode`**. Ambos viven en
-`TicketingQualifiers` (`:7678`), que pertenece a **`fulfillFlightTickets`** (`commissionPercentage`
-`:7687`, `validatingAirlineCode` `:7724`).
+**Corrección sobre comisión y aerolínea validadora (rectifica la pasada anterior de este mismo
+documento).** `PricingQualifiers` (`:5802-6027`) es un **`allOf`**: `$ref TicketingQualifiers`
+(`:5806`) **más** 37 propiedades propias (`:5809-6027`). Es decir: **`commissionPercentage`
+(`:7687`) y `validatingAirlineCode` (`:7724`) SÍ son alcanzables desde `createBooking`**, por
+herencia, en `flightPricing[].qualifiers`. La afirmación anterior —«no están en
+`PricingQualifiers`, viven en `TicketingQualifiers` de fulfill»— era falsa: `TicketingQualifiers`
+(`:7678`) es el bloque **compartido** por los dos pasos, no exclusivo de `fulfillFlightTickets`.
 
-> **Consecuencia directa para el modelo consolidador:** la **comisión de la agencia y la
-> aerolínea validadora se fijan al EMITIR, no al reservar.** El pricing waterfall
-> (override consolidador + markup agencia + comisión vendedor) tiene que resolverse en el paso
-> `fulfillFlightTickets`, no en `createBooking`. Esto mueve una pieza del diseño de
-> `docs/platform/12-modelo-consolidador-y-plan.md`. El `"commissionPercentage": "10.00"` que
-> aparece en 1 request de createBooking se está **ignorando en silencio**.
+La colección lo confirma [V]: `flightPricing[].qualifiers.validatingAirlineCode: "EY"` aparece en
+varios `createBooking`, y `flightPricing[].qualifiers.commissionPercentage: "10.00"` en uno.
+Lo que **sí** se ignora en silencio son los mismos campos puestos **fuera** de `qualifiers`, al
+nivel de `flightPricing[]` (ej. `"commissionPercentage": "0"` + `"validatingAirlineCode": "KL"` en
+`createBooking - Air with pricing Complex`): ahí `PricingDetails` no los declara.
 
-Los 36 qualifiers reales de createBooking incluyen (`:5802`+): `accountCode`,
+> **Consecuencia para el modelo consolidador:** el pricing waterfall (override consolidador +
+> markup agencia + comisión vendedor) **puede fijarse ya en `createBooking`**, dentro de
+> `flightPricing[].qualifiers`, y **también** en `fulfillFlightTickets`. Los dos pasos comparten
+> el mismo bloque `TicketingQualifiers`. **[?]** Queda por confirmar en CERT cuál gana si se
+> mandan valores distintos en los dos, y si Sabre honra la comisión declarada al reservar o sólo
+> la del momento de emitir. Se propaga a `docs/platform/12-modelo-consolidador-y-plan.md`.
+
+Los **37 qualifiers propios** de `PricingQualifiers` (`:5809`+, sin contar los heredados de
+`TicketingQualifiers`) son: `accountCode`,
 `adjustedSellingLevel`, `flightIndices`, `baggageAllowance`, `rebookLowestFares`, `brandedFares`,
 `breakFareFlightIndices`, `cabinCode`, `commissionContractNames`, `corporateFare`,
 `currencyPricing`, `exchangePenalties`, `excludeBasicEconomyFares`, `exemptTaxes`,
@@ -389,7 +402,11 @@ Los 36 qualifiers reales de createBooking incluyen (`:5802`+): `accountCode`,
 `priceWithTaxes`, `overrideTaxes`, `passengerStatus`, `passengerStatusCountryCode`, `payment`,
 `usePrivateFare`, `usePublicFare`, `retailerRule`, `useRoundTheWorldFare`, `sideTripFlightIndices`,
 `specificFares`, `spanishLargeFamilyDiscountLevel`, `spanishIslandResidentDiscountCode`,
-`passengersPricing`, `settlementMethod`, `endorsements`.
+`passengersPricing`, `settlementMethod`.
+
+Heredados de `TicketingQualifiers` y por tanto **también válidos aquí**: `commissionAmount`,
+`commissionPercentage`, `endorsements`, `excludeFareFocusFares`, `travelerIndices`, `tourCode`,
+`tourCodeOverrides`, `validatingAirlineCode`.
 
 De ellos, los relevantes para nosotros y no documentados antes: **`usePrivateFare`/`usePublicFare`**
 (tarifas negociadas del consolidador), **`accountCode`** y **`corporateFare`** (tarifas
@@ -398,11 +415,11 @@ corporativas), **`useNetFare`/`netRemit`** (net remit BSP), **`currencyPricing`*
 
 **`qualifiers.payment` es `PaymentMethod`** [VS] `:5730`, **no** un objeto de tarjeta:
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `primaryFormOfPayment` | integer, **min 1, max 11**, **`required`** | `:5741` |
-| `secondaryFormOfPayment` | integer, min 1, max 11 | `:5749` |
-| `amountOnSecondFormOfPayment` | string `^[0-9]+(\.[0-9]{1,3})?$` | `:5756` |
+| Campo                         | Contrato                                   | Línea   |
+| ----------------------------- | ------------------------------------------ | ------- |
+| `primaryFormOfPayment`        | integer, **min 1, max 11**, **`required`** | `:5738` |
+| `secondaryFormOfPayment`      | integer, min 1, max 11                     | `:5745` |
+| `amountOnSecondFormOfPayment` | string `^[0-9]+(\.[0-9]{1,3})?$`           | `:5752` |
 
 > Confirma la lectura de la primera pasada: **es un índice 1-based dentro de
 > `payment.formsOfPayment[]`**, no un objeto. Lo mismo `hotel.formOfPayment` (`:5064`, min 1
@@ -412,7 +429,7 @@ corporativas), **`useNetFare`/`netRemit`** (net remit BSP), **`currencyPricing`*
 > of payment list bounds») es la prueba de que este off-by-one **se castiga**.
 
 `priceComparisons[]` — `PriceComparison` [VS] `:5775`, **required `desiredAmount` +
-`comparisonType`**; `amount` y `percent` son **mutuamente excluyentes** (`:5799`). La primera
+`comparisonType`**; `amount` y `percent` son **mutuamente excluyentes** (`:5791` y `:5796`). La primera
 pasada sólo vio `amount`; **`percent` (`^[0-9]{1,2}(\.[0-9]{1,2})?$`) también existe** y es el
 control de tolerancia de precio que necesitamos contra el cache de búsqueda.
 
@@ -446,27 +463,27 @@ Y el ejemplo oficial de "Create an NDC booking and use profile information" mand
 > «Profile contains insufficient data to create a booking. Mandatory values:
 > **Name/Surname/PassengerType** are missing.»
 
-| Campo | Tipo / pattern | Línea | Visto | Obligatorio | Notas |
-| --- | --- | --- | --- | --- | --- |
-| `id` | string | `:6156` | 129 | Sí en NDC | «Price traveler's id as returned from Offer Price» |
-| `title` | **`TitleEnum` — enum CERRADO** | `:6160` | 1 | No | ⚠️ **Ver 3.4.0** |
-| `givenName` | string `^[^\s]+(\s[^\s]+)*$` | `:6163` | 318/321 | Sí (salvo perfil) | Sin espacios al inicio/fin ni dobles |
-| `surname` | string **`^[^\d\s]+( [^\d\s]+)*$`** | `:6168` | 318/321 | Sí (salvo perfil) | ⚠️ **El apellido NO puede contener dígitos.** El nombre sí |
-| `birthDate` | `format: date` | `:6173` | 271 | Condicional | «If you make a booking that includes **infant** travelers, you **must** provide their date of birth (INFT SSR)» |
-| `gender` | `GenderEnum` | `:6179` | 5 | No | «**Applies to NDC content only**» |
-| `age` | integer, **min 1 max 120** | `:6182` | 17 | Condicional | «Applies **only to hotel bookings**. It is **mandatory** to pass the age of the child travelers/guests when booking a hotel room» |
-| `passengerCode` | string **`^[A-Z][A-Z0-9]{2}$`** | `:6190` | 318/321 | Sí (salvo perfil) | ⚠️ **No es un enum.** Es un patrón de 3 caracteres. Ver 3.4.0 |
-| `nameReferenceCode` | string `^[a-zA-Z0-9 ,.*\-]{0,29}$`, ej. `"C05"` | `:6197` | 14 | No | ⚠️ **Corrección:** NO es el sufijo `-1.1`. Es «the so-called **MAN number** or statement information, used for accounting or identification». Máx. 29 car. El `{{$randomPhoneNumber}}` de los ejemplos **puede violar el pattern** (paréntesis) |
-| `identityDocuments[]` | array de `BookIdentityDocument` | `:6203` | 90 | No en esquema | Ver 3.4.2 |
-| `loyaltyPrograms[]` | array de `LoyaltyProgram` | `:6208` | 47 | No | Ver 3.4.3 |
-| **`useNotificationContactType`** | boolean | `:6213` | 0 | No | **NUEVO.** «Required by some airlines (e.g., **Hawaiian**). Applicable to NDC only». Error asociado: `NOTIFICATION_CONTACT_TYPE_REQUIRED` |
-| `emails[]` | `string[]` `format: email` | `:6218` | 43 | No | |
-| `phones[]` | array de `Phone` | `:6226` | 53 | No | Ver 3.5 |
-| `specialServices[]` | array de `BookSpecialService` (**`code` required**) | `:6231` | 4 | No | Códigos vistos: `FBAG`, `SPEQ` |
-| `ancillaries[]` | array de `BookAncillary` | `:6237` | 9 | No | Ver 3.4.4 |
-| **`formOfPaymentIndices[]`** | `integer[]`, min 1 | `:6242` | 0 | No | **NUEVO.** FOP **por pasajero** — permite cobrar cada pax a una tarjeta distinta |
-| **`infantTravelerIndex`** | integer, min 1 | `:6251` | 0 | No | **NUEVO.** Empareja infante↔adulto explícitamente. Sin él, Sabre empareja **secuencialmente** (1º infante con 1º adulto…). **Sólo se pone en el objeto del ADULTO** |
-| **`employerIndex`** | integer, min 1 | `:6260` | 0 | No | **NUEVO.** Índice en `travelersEmployers[]`. Errores: `INVALID_EMPLOYER_INDEX`, `INVALID_PASSENGER_CODE` («Employer cannot be associated to a traveler with this passengerCode») |
+| Campo                            | Tipo / pattern                                      | Línea   | Visto   | Obligatorio       | Notas                                                                                                                                                                                                                                           |
+| -------------------------------- | --------------------------------------------------- | ------- | ------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                             | string                                              | `:6156` | 129     | Sí en NDC         | «Price traveler's id as returned from Offer Price»                                                                                                                                                                                              |
+| `title`                          | **`TitleEnum` — enum CERRADO**                      | `:6160` | 1       | No                | ⚠️ **Ver 3.4.0**                                                                                                                                                                                                                                |
+| `givenName`                      | string `^[^\s]+(\s[^\s]+)*$`                        | `:6163` | 318/321 | Sí (salvo perfil) | Sin espacios al inicio/fin ni dobles                                                                                                                                                                                                            |
+| `surname`                        | string **`^[^\d\s]+( [^\d\s]+)*$`**                 | `:6168` | 318/321 | Sí (salvo perfil) | ⚠️ **El apellido NO puede contener dígitos.** El nombre sí                                                                                                                                                                                      |
+| `birthDate`                      | `format: date`                                      | `:6173` | 271     | Condicional       | «If you make a booking that includes **infant** travelers, you **must** provide their date of birth (INFT SSR)»                                                                                                                                 |
+| `gender`                         | `GenderEnum`                                        | `:6179` | 5       | No                | «**Applies to NDC content only**»                                                                                                                                                                                                               |
+| `age`                            | integer, **min 1 max 120**                          | `:6182` | 17      | Condicional       | «Applies **only to hotel bookings**. It is **mandatory** to pass the age of the child travelers/guests when booking a hotel room»                                                                                                               |
+| `passengerCode`                  | string **`^[A-Z][A-Z0-9]{2}$`**                     | `:6190` | 318/321 | Sí (salvo perfil) | ⚠️ **No es un enum.** Es un patrón de 3 caracteres. Ver 3.4.0                                                                                                                                                                                   |
+| `nameReferenceCode`              | string `^[a-zA-Z0-9 ,.*\-]{0,29}$`, ej. `"C05"`     | `:6197` | 14      | No                | ⚠️ **Corrección:** NO es el sufijo `-1.1`. Es «the so-called **MAN number** or statement information, used for accounting or identification». Máx. 29 car. El `{{$randomPhoneNumber}}` de los ejemplos **puede violar el pattern** (paréntesis) |
+| `identityDocuments[]`            | array de `BookIdentityDocument`                     | `:6203` | 90      | No en esquema     | Ver 3.4.2                                                                                                                                                                                                                                       |
+| `loyaltyPrograms[]`              | array de `LoyaltyProgram`                           | `:6208` | 47      | No                | Ver 3.4.3                                                                                                                                                                                                                                       |
+| **`useNotificationContactType`** | boolean                                             | `:6213` | 0       | No                | **NUEVO.** «Required by some airlines (e.g., **Hawaiian**). Applicable to NDC only». Error asociado: `NOTIFICATION_CONTACT_TYPE_REQUIRED`                                                                                                       |
+| `emails[]`                       | `string[]` `format: email`                          | `:6218` | 43      | No                |                                                                                                                                                                                                                                                 |
+| `phones[]`                       | array de `Phone`                                    | `:6226` | 53      | No                | Ver 3.5                                                                                                                                                                                                                                         |
+| `specialServices[]`              | array de `BookSpecialService` (**`code` required**) | `:6231` | 4       | No                | Códigos vistos: `FBAG`, `SPEQ`                                                                                                                                                                                                                  |
+| `ancillaries[]`                  | array de `BookAncillary`                            | `:6237` | 9       | No                | Ver 3.4.4                                                                                                                                                                                                                                       |
+| **`formOfPaymentIndices[]`**     | `integer[]`, min 1                                  | `:6242` | 0       | No                | **NUEVO.** FOP **por pasajero** — permite cobrar cada pax a una tarjeta distinta                                                                                                                                                                |
+| **`infantTravelerIndex`**        | integer, min 1                                      | `:6251` | 0       | No                | **NUEVO.** Empareja infante↔adulto explícitamente. Sin él, Sabre empareja **secuencialmente** (1º infante con 1º adulto…). **Sólo se pone en el objeto del ADULTO**                                                                            |
+| **`employerIndex`**              | integer, min 1                                      | `:6260` | 0       | No                | **NUEVO.** Índice en `travelersEmployers[]`. Errores: `INVALID_EMPLOYER_INDEX`, `INVALID_PASSENGER_CODE` («Employer cannot be associated to a traveler with this passengerCode»)                                                                |
 
 #### 3.4.0 `title` y `passengerCode` — dos correcciones importantes
 
@@ -481,9 +498,9 @@ cerrado de 18 valores**:
 > sigue siendo insuficiente, pero la solución **no es abrirlo a `string`**: es adoptar el enum de
 > 18 valores. Riesgo revisado a la baja, corrección igualmente obligatoria.
 
-**`passengerCode` NO es un enum.** [VS] `:6193` es `^[A-Z][A-Z0-9]{2}$` — cualquier código de 3
+**`passengerCode` NO es un enum.** [VS] `:6192` es `^[A-Z][A-Z0-9]{2}$` — cualquier código de 3
 caracteres que empiece por letra. La descripción oficial documenta los de infante: **`INF`**
-(sin asiento, con adulto), **`INY`** (sin asiento, con *youth*), **`INS`** (con asiento asignado).
+(sin asiento, con adulto), **`INY`** (sin asiento, con _youth_), **`INS`** (con asiento asignado).
 `CNN` (child) y `SRC` (senior) aparecen en la colección [V] y encajan en el patrón.
 
 > ⚠️ **Conflicto abierto entre fuentes oficiales.** La lista de errores dice:
@@ -491,7 +508,7 @@ caracteres que empiece por letra. La descripción oficial documenta los de infan
 > ITF, INE, JNF) **currently not supported for NDC booking**.»
 > Pero la colección ejercita **`INS` en NDC con AY (Finnair)** en dos requests
 > (`Workflows / 28-33 / Seats - 1 Adult 1 Infant with seat | 1 Segment | AY` y `… 2 Adults 1
-> Infant with Seats | 2 Segments | AY`), y `BookTraveler` documenta los tres códigos sin reserva.
+Infant with Seats | 2 Segments | AY`), y `BookTraveler` documenta los tres códigos sin reserva.
 > **No se puede resolver sin sandbox.** Va a Preguntas abiertas. Hasta entonces, tratar el infante
 > en NDC como **capacidad no garantizada por carrier**.
 
@@ -524,27 +541,27 @@ de respuesta de createBooking**, que devuelve `"type": "ADULT"` junto a `"passen
 **`MILITARY`**, **`NATURALIZATION_CERTIFICATE`**, `REFUGEE_REENTRY_PERMIT`,
 **`BORDER_CROSSING_CARD`**, `FISCAL_ID`.
 
-| Campo | Contrato | Línea | Nota |
-| --- | --- | --- | --- |
-| `documentNumber` | string **`^[a-zA-Z0-9]+$`** | `:5559` | **Sin guiones ni espacios.** Muchos DNI/CE LATAM los llevan → normalizar en el ACL |
-| `documentType` | `DocumentTypeEnum` | `:5564` | **required** |
-| `documentSubType` | **`DocumentSubTypeEnum`: `RUC` \| `CUIT/CUIL` \| `NIT`** | `:5567` | ⚠️ **Enum cerrado**, sólo con `FISCAL_ID`. [VS] `:9320`: RUC (Ecuador), CUIT/CUIL (Argentina), NIT (Bolivia). **Ver 3.4.2.1 — impacto LATAM** |
-| **`visaType`** | `VisaTypeEnum` | `:5570` | **NUEVO.** Sólo con `documentType: VISA` |
-| **`passportType`** | `PassportTypeEnum` | `:5574` | **NUEVO.** Sólo con `PASSPORT` |
-| `expiryDate` / `issueDate` | `format: date` | `:5578`/`:5609` | |
-| `issuingCountryCode` | **`^[A-Z]{2,3}$`** | `:5583` | «**Not applicable to the `VISA` document type**» |
-| `residenceCountryCode` | string, ISO-2 o ISO-3 | `:5589` | ⚠️ «**For NDC bookings, only two-letter codes are allowed**» |
-| `placeOfIssue` | `^[A-Z]{2,3}$` | `:5594` | Sólo `VISA` |
-| `placeOfBirth` | string, **maxLength 35** | `:5599` | Ej. `"LYON FR"` |
-| `hostCountryCode` | `^[A-Z]{2,3}$` | `:5604` | Sólo `VISA` |
-| `givenName` / `middleName` / `surname` | string | `:5615`-`:5623` | ⚠️ `middleName`: «**NDC not supported**» |
-| `birthDate` | `format: date` | `:5627` | |
-| `gender` | `GenderEnum` | `:5632` | Ver abajo |
-| `isPrimaryDocumentHolder` | boolean | `:5635` | «primary passport holder of a document issued for **multiple travelers**» |
-| **`isLapChildDocument`** | boolean | `:5639` | **NUEVO.** Sólo combinable con `VISA`, `KNOWN_TRAVELER_NUMBER`, `REDRESS_NUMBER`, `RESIDENCE_ADDRESS`, `DESTINATION_ADDRESS` |
-| **`residenceOrDestinationAddress`** | `Address` | `:5643` | **NUEVO.** Para `RESIDENCE_ADDRESS` / `DESTINATION_ADDRESS` (requisito APIS de EE. UU.) |
-| `flightIndices[]` | `integer[]`, min 1 | `:5646` | 1-based. Restringe el documento a tramos concretos |
-| `citizenshipCountryCode` | `^[A-Z]{2,3}$` | `:5655` | Requisito BA |
+| Campo                                  | Contrato                                                 | Línea           | Nota                                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `documentNumber`                       | string **`^[a-zA-Z0-9]+$`**                              | `:5559`         | **Sin guiones ni espacios.** Muchos DNI/CE LATAM los llevan → normalizar en el ACL                                                            |
+| `documentType`                         | `DocumentTypeEnum`                                       | `:5564`         | **required**                                                                                                                                  |
+| `documentSubType`                      | **`DocumentSubTypeEnum`: `RUC` \| `CUIT/CUIL` \| `NIT`** | `:5567`         | ⚠️ **Enum cerrado**, sólo con `FISCAL_ID`. [VS] `:9320`: RUC (Ecuador), CUIT/CUIL (Argentina), NIT (Bolivia). **Ver 3.4.2.1 — impacto LATAM** |
+| **`visaType`**                         | `VisaTypeEnum`                                           | `:5570`         | **NUEVO.** Sólo con `documentType: VISA`                                                                                                      |
+| **`passportType`**                     | `PassportTypeEnum`                                       | `:5574`         | **NUEVO.** Sólo con `PASSPORT`                                                                                                                |
+| `expiryDate` / `issueDate`             | `format: date`                                           | `:5578`/`:5609` |                                                                                                                                               |
+| `issuingCountryCode`                   | **`^[A-Z]{2,3}$`**                                       | `:5583`         | «**Not applicable to the `VISA` document type**»                                                                                              |
+| `residenceCountryCode`                 | string, ISO-2 o ISO-3                                    | `:5589`         | ⚠️ «**For NDC bookings, only two-letter codes are allowed**»                                                                                  |
+| `placeOfIssue`                         | `^[A-Z]{2,3}$`                                           | `:5594`         | Sólo `VISA`                                                                                                                                   |
+| `placeOfBirth`                         | string, **maxLength 35**                                 | `:5599`         | Ej. `"LYON FR"`                                                                                                                               |
+| `hostCountryCode`                      | `^[A-Z]{2,3}$`                                           | `:5604`         | Sólo `VISA`                                                                                                                                   |
+| `givenName` / `middleName` / `surname` | string                                                   | `:5615`-`:5623` | ⚠️ `middleName`: «**NDC not supported**»                                                                                                      |
+| `birthDate`                            | `format: date`                                           | `:5627`         |                                                                                                                                               |
+| `gender`                               | `GenderEnum`                                             | `:5632`         | Ver abajo                                                                                                                                     |
+| `isPrimaryDocumentHolder`              | boolean                                                  | `:5635`         | «primary passport holder of a document issued for **multiple travelers**»                                                                     |
+| **`isLapChildDocument`**               | boolean                                                  | `:5639`         | **NUEVO.** Sólo combinable con `VISA`, `KNOWN_TRAVELER_NUMBER`, `REDRESS_NUMBER`, `RESIDENCE_ADDRESS`, `DESTINATION_ADDRESS`                  |
+| **`residenceOrDestinationAddress`**    | `Address`                                                | `:5643`         | **NUEVO.** Para `RESIDENCE_ADDRESS` / `DESTINATION_ADDRESS` (requisito APIS de EE. UU.)                                                       |
+| `flightIndices[]`                      | `integer[]`, min 1                                       | `:5646`         | 1-based. Restringe el documento a tramos concretos                                                                                            |
+| `citizenshipCountryCode`               | `^[A-Z]{2,3}$`                                           | `:5655`         | Requisito BA                                                                                                                                  |
 
 ⚠️ **Se retira el riesgo [BAJO] 13 de la primera pasada.** Decía que `residenceCountryCode: "POL"`
 (ISO-3) junto a `"PL"` (ISO-2) era una inconsistencia de los ejemplos. **El contrato admite las
@@ -580,13 +597,13 @@ the country where the VISA document is valid» / «…about the issue date of th
 
 **Único `required`: `programNumber`** (`:4474`).
 
-| Campo | Contrato | Línea | Corrección |
-| --- | --- | --- | --- |
-| `supplierCode` | string `^[A-Z0-9]{2}$` | `:4476` | |
-| `programType` | `ProgramTypeEnum` | `:4482` | **4 valores** (`:8968`): `FREQUENT_FLYER` (default), **`FREQUENT_RENTER`**, `LOYALTY_ID`, `CORPORATE_LOYALTY_ID`. ⚠️ `FREQUENT_RENTER` exige activar el `extraFeature` `returnFrequentRenter` (`:7427`) |
-| `programNumber` | string | `:4486` | **required** |
-| `tierLevel` | **`integer` int32** | `:4491` | ⚠️ **Resuelto:** es **entero**. Los ejemplos con `"1"` / `"17"` (string) violan el contrato. **Responde la pregunta abierta 10** |
-| `receiverCode` | string `^[A-Z0-9]{2}$` | `:4497` | «Not sourced for NDC» |
+| Campo           | Contrato               | Línea   | Corrección                                                                                                                                                                                              |
+| --------------- | ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supplierCode`  | string `^[A-Z0-9]{2}$` | `:4476` |                                                                                                                                                                                                         |
+| `programType`   | `ProgramTypeEnum`      | `:4482` | **4 valores** (`:8968`): `FREQUENT_FLYER` (default), **`FREQUENT_RENTER`**, `LOYALTY_ID`, `CORPORATE_LOYALTY_ID`. ⚠️ `FREQUENT_RENTER` exige activar el `extraFeature` `returnFrequentRenter` (`:7425`) |
+| `programNumber` | string                 | `:4486` | **required**                                                                                                                                                                                            |
+| `tierLevel`     | **`integer` int32**    | `:4491` | ⚠️ **Resuelto:** es **entero**. Los ejemplos con `"1"` / `"17"` (string) violan el contrato. **Responde la pregunta abierta 10**                                                                        |
+| `receiverCode`  | string `^[A-Z0-9]{2}$` | `:4497` | «Not sourced for NDC»                                                                                                                                                                                   |
 
 Se pueden mandar **varios programas por pasajero** [V] (WF-15 manda AA + OM a cada uno), y el
 ejemplo oficial de respuesta muestra el patrón real: **un mismo `programNumber` de `LO` repetido
@@ -610,25 +627,25 @@ are not allowed. Use the `loyaltyPrograms` parameter instead» (no mandar FF com
 **Siete campos `required`** [VS] `:7045-7052`: `subcode`, `airlineCode`,
 `electronicMiscellaneousDocumentType`, `basePrice`, `currencyCode`, `groupCode`, `flightIndices`.
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `subcode` | string **`^[A-Z0-9]{3}$`** (RFISC) | `:7069` |
-| `airlineCode` | `^[A-Z0-9]{2}$` — «airline that **owns** the service» | `:7078` |
-| `vendorCode` | `^[A-Z0-9]{2}$` — «airline **providing**». **Mutuamente excluyente con `source`** | `:7084` |
-| `source` | `AncillarySourceEnum`. **Mutuamente excluyente con `vendorCode`** | `:7091` |
-| `electronicMiscellaneousDocumentType` | `ElectronicMiscellaneousDocumentTypeEnum` | `:7095` |
-| `basePrice` | string `^[0-9]+(\.[0-9]{1,3})?$` | `:7104` |
-| **`totalPrice`** | string, «total price **after taxation**» | `:7098` |
-| `currencyCode` | `^[A-Z]{3}$` | `:7110` |
-| **`taxes[]`** | array de `Tax`, minItems 1 **maxItems 99** | `:7116` |
-| **`numberOfItems`** | integer, min 1, default 1 | `:7124` |
-| **`firstTravelDate` / `lastTravelDate` / `purchaseDateTime`** | fechas ATPCO de validez | `:7131`-`:7145` |
-| `specialServiceIndex` | integer, min 1 | `:7152` | **Required when booking ancillaries from low-cost carriers, such as `U2` or `FR`** |
-| `groupCode` | `^[A-Z]{2}$` | `:7159` |
-| `flightApplicabilityType` | `Single` \| `Multiple` \| `Unknown` | `:7166` — «required when `electronicMiscellaneousDocumentType` = `OTHER_THAN_EMD`» |
-| `flightIndices[]` | `integer[]`, minItems 1 | `:7170` |
-| `commercialName` | string | `:7054` |
-| `reasonForIssuance` | `ReasonForIssuanceEnum` (`:8692`) | `:7059` |
+| Campo                                                         | Contrato                                                                          | Línea                                                                              |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `subcode`                                                     | string **`^[A-Z0-9]{3}$`** (RFISC)                                                | `:7063`                                                                            |
+| `airlineCode`                                                 | `^[A-Z0-9]{2}$` — «airline that **owns** the service»                             | `:7073`                                                                            |
+| `vendorCode`                                                  | `^[A-Z0-9]{2}$` — «airline **providing**». **Mutuamente excluyente con `source`** | `:7079`                                                                            |
+| `source`                                                      | `AncillarySourceEnum`. **Mutuamente excluyente con `vendorCode`**                 | `:7085`                                                                            |
+| `electronicMiscellaneousDocumentType`                         | `ElectronicMiscellaneousDocumentTypeEnum`                                         | `:7088`                                                                            |
+| `basePrice`                                                   | string `^[0-9]+(\.[0-9]{1,3})?$`                                                  | `:7097`                                                                            |
+| **`totalPrice`**                                              | string, «total price **after taxation**»                                          | `:7092`                                                                            |
+| `currencyCode`                                                | `^[A-Z]{3}$`                                                                      | `:7102`                                                                            |
+| **`taxes[]`**                                                 | array de `Tax`, minItems 1 **maxItems 99**                                        | `:7107`                                                                            |
+| **`numberOfItems`**                                           | integer, min 1, default 1                                                         | `:7116`                                                                            |
+| **`firstTravelDate` / `lastTravelDate` / `purchaseDateTime`** | fechas ATPCO de validez                                                           | `:7123`/`:7130`/`:7137`                                                            |
+| `specialServiceIndex`                                         | integer, min 1                                                                    | `:7143`                                                                            | **Required when booking ancillaries from low-cost carriers, such as `U2` or `FR`** |
+| `groupCode`                                                   | `^[A-Z]{2}$`                                                                      | `:7151`                                                                            |
+| `flightApplicabilityType`                                     | `Single` \| `Multiple` \| `Unknown`                                               | `:7158` — «required when `electronicMiscellaneousDocumentType` = `OTHER_THAN_EMD`» |
+| `flightIndices[]`                                             | `integer[]`, minItems 1                                                           | `:7164`                                                                            |
+| `commercialName`                                              | string                                                                            | `:7054`                                                                            |
+| `reasonForIssuance`                                           | `ReasonForIssuanceEnum` (`:8692`)                                                 | `:7058`                                                                            |
 
 ⚠️ **Resuelto:** `reasonForIssuanceCode` + `reasonForIssuanceName` **no existen**. Sólo
 `reasonForIssuance`. El único request que usa el par (`createBooking - Ancillaries baggage with
@@ -650,19 +667,19 @@ estaba**:
 > followed by the main contact number for the traveler.**»
 > — [VS] `booking-management-v1.yml:754-758`
 
-| Nivel | Campo | Forma | Semántica en el PNR |
-| --- | --- | --- | --- |
-| Agencia | `agency.contactInfo.phones[]` + `includePhoneLabel: true` | `string[]`, pattern `^[0-9+-]+$` [VS] `:1660` | Teléfono de agencia, sufijo **`-A`** |
-| Pasajero | `travelers[].emails[]` / `travelers[].phones[]` | `Phone` **objeto** `{number, label}` [VS] `:7006` | Asociado al pasajero **`-1.1`** |
-| Genérico | `contactInfo.emails[]` / `contactInfo.phones[]` | **`string[]` planos** [VS] `:1589` | Contacto de agencia genérico, sin asociación |
+| Nivel    | Campo                                                     | Forma                                             | Semántica en el PNR                          |
+| -------- | --------------------------------------------------------- | ------------------------------------------------- | -------------------------------------------- |
+| Agencia  | `agency.contactInfo.phones[]` + `includePhoneLabel: true` | `string[]`, pattern `^[0-9+-]+$` [VS] `:1656`     | Teléfono de agencia, sufijo **`-A`**         |
+| Pasajero | `travelers[].emails[]` / `travelers[].phones[]`           | `Phone` **objeto** `{number, label}` [VS] `:7006` | Asociado al pasajero **`-1.1`**              |
+| Genérico | `contactInfo.emails[]` / `contactInfo.phones[]`           | **`string[]` planos** [VS] `:1582`                | Contacto de agencia genérico, sin asociación |
 
 Confirmado por el contrato: la asimetría **es real**. `BookContactInformation.phones` es
-`array<string>` con pattern `^[0-9+-]+$` (`:1592`); `travelers[].phones` es `array<Phone>` con
+`array<string>` con pattern `^[0-9+-]+$` (`:1591`); `travelers[].phones` es `array<Phone>` con
 `number` **required** y `label` `^[A-Z]{1}$` (`:7006-7022`). `label`: `H` home, `B` business,
-`C` cell, `M` mobile [VS] `:7018` — la primera pasada acertó los cuatro.
+`C` cell, `M` mobile [VS] `:7017` — la primera pasada acertó los cuatro.
 
-**Campos de `BookContactInformation` que la colección nunca usa** [VS]: **`faxes[]`** (`:1596`)
-y **`emergencyPhones[]`** (`:1606`).
+**Campos de `BookContactInformation` que la colección nunca usa** [VS]: **`faxes[]`** (`:1600`)
+y **`emergencyPhones[]`** (`:1609`).
 
 `AgencyContacts` [VS] `:1644`: `emails[]`, `phones[]`, `includePhoneLabel` (boolean,
 **default `false`**). Nada más — no hay dirección de agencia aquí, esa vive en `agency.address`.
@@ -679,12 +696,12 @@ Errores relacionados: `TRAVELER_PHONE_MISSING`, `AGENCY_PHONE_MISSING`.
 
 `Agency` = `GenericAgency` (`address`: `GenericAddress`; `contactInfo`: `AgencyContacts`) **más**:
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `ticketingPolicy` | `TicketingPolicyEnum` | `:4740` |
-| **`futureTicketingPolicy`** | `FutureTicketingPolicy` | `:4743` |
-| `ticketingTimeLimitPolicy` | `TicketingTimeLimitPolicy` | `:4746` |
-| `agencyCustomerNumber` | string **`^[0-9A-Z]{6}([1-9A-Z*]{1}\|[0-9A-Z]{4})?$`** | `:4750` |
+| Campo                       | Contrato                                               | Línea   |
+| --------------------------- | ------------------------------------------------------ | ------- |
+| `ticketingPolicy`           | `TicketingPolicyEnum`                                  | `:4740` |
+| **`futureTicketingPolicy`** | `FutureTicketingPolicy`                                | `:4743` |
+| `ticketingTimeLimitPolicy`  | `TicketingTimeLimitPolicy`                             | `:4746` |
+| `agencyCustomerNumber`      | string **`^[0-9A-Z]{6}([1-9A-Z*]{1}\|[0-9A-Z]{4})?$`** | `:4750` |
 
 ⚠️ **`TicketingPolicyEnum` tiene 4 valores** [VS] `:8742`, no 2: `TODAY`, **`ALREADY_TICKETED`**,
 **`FUTURE_TICKETING`**, `TICKETING_TIME_LIMIT`.
@@ -726,22 +743,22 @@ booking**», `:5704`) y `formsOfPayment[]` (array de `FormOfPayment`, **minItems
 `FormOfPaymentTypeEnum` [VS] `booking-management-v1.yml:8792` tiene **14 valores**, no 10. Y —
 esto es lo decisivo — **la propia descripción del enum dice para qué sirve cada uno**:
 
-| `type` | Ámbito según el contrato | Campos propios | Visto en createBooking |
-| --- | --- | --- | --- |
-| `PAYMENTCARD` | Universal | `cardTypeCode`, `cardNumber`, `cardSecurityCode`, `expiryDate`, `cardHolder`, `manualApproval`, `authentications[]`, `corporateId`, `isAgencyPaymentCard` | 36 |
-| **`CASH`** | **Universal — sin campos** | ninguno | **8** |
-| `CHECK` | Universal | ninguno | 2 |
-| `MISCELLANEOUS` | «must be activated on the agency level; requires a specific payment credit code» | `miscellaneousCreditCode` (2–18), `extendedPayment` | 1 |
-| `INSTALLMENTS` | «**BSP Brazil customers only** — parcelado» | `numberOfInstallments` (1–96), `airlinePlanCode`, `installmentAmount`, `netBalance` | 1 |
-| `VIRTUAL_CARD` | **«used for hotel bookings»** | `virtualCard{}` | 3 |
-| `AGENCY_NAME` | **«used for hotel bookings»** | `agencyAddress{}` | 3 |
-| `AGENCY_IATA` | **«used for hotel bookings»** | `agencyIataNumber` (1–12) | 3 |
-| `CORPORATE` | **«used for hotel bookings»** | `corporateId` | 4 |
-| `COMPANY_NAME` | **«used for hotel bookings»** | `companyAddress{}` | 3 |
-| **`VOUCHER`** | **«used for vehicle booking»** | `voucher{billingNumber, type}` | 0 |
-| **`DOCKET`** | Universal (wallet) | `docketPrefix` (`^D$\|^AGT\*V$`), `docketNumber` (`^[0-9]{6}$`), `docketIssuingAgentInitials`, `docketDescription` | 0 |
-| **`GOVERNMENT_TRAVEL_REQUEST`** | Universal (wallet) | `governmentTravelRequestDescription` | 0 |
-| **`INVOICE`** | Universal (wallet) | `invoiceDescription`, `addInvoiceDescriptionPrefix` | 0 |
+| `type`                          | Ámbito según el contrato                                                         | Campos propios                                                                                                                                            | Visto en createBooking |
+| ------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `PAYMENTCARD`                   | Universal                                                                        | `cardTypeCode`, `cardNumber`, `cardSecurityCode`, `expiryDate`, `cardHolder`, `manualApproval`, `authentications[]`, `corporateId`, `isAgencyPaymentCard` | 36                     |
+| **`CASH`**                      | **Universal — sin campos**                                                       | ninguno                                                                                                                                                   | **8**                  |
+| `CHECK`                         | Universal                                                                        | ninguno                                                                                                                                                   | 2                      |
+| `MISCELLANEOUS`                 | «must be activated on the agency level; requires a specific payment credit code» | `miscellaneousCreditCode` (2–18), `extendedPayment`                                                                                                       | 1                      |
+| `INSTALLMENTS`                  | «**BSP Brazil customers only** — parcelado»                                      | `numberOfInstallments` (1–96), `airlinePlanCode`, `installmentAmount`, `netBalance`                                                                       | 1                      |
+| `VIRTUAL_CARD`                  | **«used for hotel bookings»**                                                    | `virtualCard{}`                                                                                                                                           | 3                      |
+| `AGENCY_NAME`                   | **«used for hotel bookings»**                                                    | `agencyAddress{}`                                                                                                                                         | 3                      |
+| `AGENCY_IATA`                   | **«used for hotel bookings»**                                                    | `agencyIataNumber` (1–12)                                                                                                                                 | 3                      |
+| `CORPORATE`                     | **«used for hotel bookings»**                                                    | `corporateId`                                                                                                                                             | 4                      |
+| `COMPANY_NAME`                  | **«used for hotel bookings»**                                                    | `companyAddress{}`                                                                                                                                        | 3                      |
+| **`VOUCHER`**                   | **«used for vehicle booking»**                                                   | `voucher{billingNumber, type}`                                                                                                                            | 0                      |
+| **`DOCKET`**                    | Universal (wallet)                                                               | `docketPrefix` (`^D$\|^AGT\*V$`), `docketNumber` (`^[0-9]{6}$`), `docketIssuingAgentInitials`, `docketDescription`                                        | 0                      |
+| **`GOVERNMENT_TRAVEL_REQUEST`** | Universal (wallet)                                                               | `governmentTravelRequestDescription`                                                                                                                      | 0                      |
+| **`INVOICE`**                   | Universal (wallet)                                                               | `invoiceDescription`, `addInvoiceDescriptionPrefix`                                                                                                       | 0                      |
 
 ⚠️ **Corrección directa a la recomendación de la primera pasada (hallazgo 7 del crítico,
 aceptado y ampliado).** La primera pasada recomendaba **`AGENCY_IATA`** como forma de pago de
@@ -759,13 +776,13 @@ arranque para el canal aéreo B2B. **Es incorrecta por dos vías independientes:
 **La forma de pago sin PAN del carril aéreo es `CASH`.** Ver §7.
 
 **Campos nuevos de `GenericFormOfPayment`** [VS] `:5398` que la primera pasada no tenía:
-`useType` / `useTypes[]` (`FormOfPaymentUseTypeEnum`, 17 valores: `All`, `Ancillary`, `Airline`,
+`useType` / `useTypes[]` (`FormOfPaymentUseTypeEnum`, 15 valores: `All`, `Ancillary`, `Airline`,
 `Car`, `Hotel`, `Low-Cost Carrier`, `Interface Record`…), `tripType` / `tripTypes[]`
 (`Corporate/Business`, `Leisure`, `Emergency`, `Family`, `Group`…), `isAgencyPaymentCard`.
 
 > **`useTypes[]` es relevante para el multi-producto:** permite decir «esta FOP es para el hotel,
 > aquella para el vuelo» sin depender sólo de los índices. Los `useType`/`tripType` singulares
-> están marcados como **deprecados** en el propio contrato (`:5474`, `:5481`).
+> están marcados como **deprecados** en el propio contrato (`:5472`, `:5477`).
 > Errores: `INVALID_COMBINATION` — «The `useType: Interface Record` is only allowed for payment
 > type `PAYMENTCARD`» y «…cannot be combined with other useTypes».
 
@@ -773,13 +790,13 @@ arranque para el canal aéreo B2B. **Es incorrecta por dos vías independientes:
 
 `BasicFormOfPayment` [VS] `:5305`:
 
-| Campo | Pattern | Línea |
-| --- | --- | --- |
-| `cardTypeCode` | `^[A-Z]{2}$` | `:5309` |
-| `cardNumber` | **`^[0-9]{12,19}\|([0-9]X{7,14}[0-9]{4})$`** | `:5314` |
-| `cardSecurityCode` | `^[0-9]{3,4}$` | `:5319` |
-| `expiryDate` | **`^(20)\d\d-(0[1-9]\|1[012])$`** | `:5324` |
-| `extendedPayment` | integer 1–96 (meses) | `:5329` |
+| Campo              | Pattern                                      | Línea   |
+| ------------------ | -------------------------------------------- | ------- |
+| `cardTypeCode`     | `^[A-Z]{2}$`                                 | `:5309` |
+| `cardNumber`       | **`^[0-9]{12,19}\|([0-9]X{7,14}[0-9]{4})$`** | `:5314` |
+| `cardSecurityCode` | `^[0-9]{3,4}$`                               | `:5319` |
+| `expiryDate`       | **`^(20)\d\d-(0[1-9]\|1[012])$`**            | `:5324` |
+| `extendedPayment`  | integer 1–96 (meses)                         | `:5329` |
 
 ⚠️ **`expiryDate` es `YYYY-MM`** (ej. `2024-07`). No `MMYY`, no `MM/YY`. **Responde la pregunta
 abierta de la primera pasada.** Error asociado: `UNABLE_TO_ADD_FORM_OF_PAYMENT_EXPIRY_DATE`.
@@ -791,7 +808,7 @@ primera pasada: el ciclo modify **no obliga necesariamente** a reinyectar el PAN
 script de la colección que lo hace (`jsonData.payments.formsOfPayment[0].cardNumber =
 pm.environment.get('creditCardNumber')`) es **una opción, no un requisito del contrato**.
 La vía documentada para trabajar con datos desenmascarados es `unmaskPaymentCardNumbers` en
-`modifyBooking` (`:880`), que además **exige el keyword `CCVIEW` en el EPR**. **[?]** Falta
+`modifyBooking` (`:878`), que además **exige el keyword `CCVIEW` en el EPR**. **[?]** Falta
 confirmar en sandbox si un `modifyBooking` con el PAN enmascarado tal cual pasa la verificación
 de `bookingSignature`.
 
@@ -801,13 +818,13 @@ allowed. Check your agency settings»).
 
 #### 3.7.3 `authentications[]` — SCA / PSD2 [VS] `StrongCustomerAuthentication:6407`
 
-**19 campos**, minItems 1 **maxItems 10** (`:5411`), «For use with `PAYMENTCARD`»:
+**17 campos**, minItems 1 **maxItems 10** (`:5411`), «For use with `PAYMENTCARD`»:
 `secureAuthenticationValue`, `secureTransactionId`, **`issueCode`**, `resultCode`,
 `cardNumberCollectionCode`, **`channelCode`**, `electronicCommerceIndicator`, `exemptionTypeCode`,
 `updatedDateTime`, `mandateTypeCode`, `merchantName`, `originalPaymentReference`, `amount`,
 `currencyCode`, `tokenAuthenticationValue`, `verificationResultCode`, `version`.
 
-⚠️ El ejemplo oficial escribe **`issuesCode`**; el contrato dice **`issueCode`** (`:6425`). El
+⚠️ El ejemplo oficial escribe **`issuesCode`**; el contrato dice **`issueCode`** (`:6420`). El
 ejemplo está mal.
 
 **`channelCode`** [VS] `:6438`, `^[A-Z0-9]{2}$`: `MO` Mail Order, `TO` Telephone Order, `EC`
@@ -844,24 +861,24 @@ additional forms of payment — `DOCKET`, `GOVERNMENT_TRAVEL_REQUEST`, `INVOICE`
 
 ### 3.8 `hotel` y `car`
 
-**`HotelToBook`** [VS] `:5020` — **`bookingKey` required** (`:5023`, minLength 1 **maxLength 240**,
+**`HotelToBook`** [VS] `:5020` — **`bookingKey` required** (`:5024`; propiedad en `:5032`, minLength 1 **maxLength 240**,
 «returned in the Hotel Price Check API response»).
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `useCsl` | boolean, **default `true`** | `:5024` |
-| `corporateDiscountCode` | **integer** int32, min 1 | `:5040` |
-| `rooms[]` | array de `RoomToBook`, minItems 1 **maxItems 99**. «Multiple room bookings are **currently not supported by GDS hotels**» | `:5048` |
-| `specialInstruction` | string (**singular**) | `:5057` |
-| `paymentPolicy` | `HotelPaymentPolicyEnum` | `:5061` |
-| `formOfPayment` | integer 1–11 | `:5064` |
-| **`associatedFlightDetails`** | `AssociatedFlightDetails` | `:5073` |
+| Campo                         | Contrato                                                                                                                  | Línea   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `useCsl`                      | boolean, **default `true`**                                                                                               | `:5026` |
+| `corporateDiscountCode`       | **integer** int32, min 1                                                                                                  | `:5039` |
+| `rooms[]`                     | array de `RoomToBook`, minItems 1 **maxItems 99**. «Multiple room bookings are **currently not supported by GDS hotels**» | `:5046` |
+| `specialInstruction`          | string (**singular**)                                                                                                     | `:5054` |
+| `paymentPolicy`               | `HotelPaymentPolicyEnum`                                                                                                  | `:5058` |
+| `formOfPayment`               | integer 1–11                                                                                                              | `:5064` |
+| **`associatedFlightDetails`** | `AssociatedFlightDetails`                                                                                                 | `:5072` |
 
 ⚠️ **`useCsl` es la grafía correcta** (`useCSL` se ignora), y su **default ya es `true`** — no hay
 que mandarlo. Además: «**Legacy content has been blocked in Sabre due to the migration to CSL
 content only**» (`help-documentation-create-booking.txt`). **`useCsl: false` está muerto.**
 
-**`paymentPolicy`** [VS] `:5061-5069` — la descripción es crítica para §7:
+**`paymentPolicy`** [VS] `:5060-5063` — la descripción es crítica para §7:
 
 > «`DEPOSIT` can only be used with **credit card, agency, or corporate**. `GUARANTEE` can only be
 > used with **credit card, agency, IATA, company, or corporate**. When using **`LATE`** payment
@@ -897,11 +914,11 @@ booking key con HotelPriceCheck** → el key **caduca**),
 `CLIENT_ADDRESS`, `ALPHA_CODED`, `DELIVERY_ADDRESS`, `ITINERARY`, `INVOICE`, `HIDDEN`,
 `CORPORATE`, `FORM_OF_PAYMENT`, `PRINT_ON_TICKET`, `FILLER_STRIP`, `INTERFACE`, `QUEUE_PLACE`.
 
-**Cuatro NO están soportados** [VS] `:6042-6045`: «`PRINT_ON_TICKET`, `FILLER_STRIP`, `INTERFACE`,
+**Cuatro NO están soportados** [VS] `:6044-6046`: «`PRINT_ON_TICKET`, `FILLER_STRIP`, `INTERFACE`,
 and `FORM_OF_PAYMENT` remark types are **currently not supported**. The `FORM_OF_PAYMENT` remark
 type is **automatically added** to a booking upon populating the `formsOfPayment` array.»
 
-**`BookRemark` = `Remark` + `queuePlacement`** (`Queue`, para el tipo `QUEUE_PLACE`, `:6049`).
+**`BookRemark` = `Remark` + `queuePlacement`** (`Queue`, para el tipo `QUEUE_PLACE`, `:6051`).
 `Queue` [VS] `:4552`: `queueNumber` (0–999), `queueName`, `pcc`, **`prefatoryInstructionCode`
 (required, 0–254)**, `futureQueuePlacementDate`.
 
@@ -937,16 +954,16 @@ localizador). Encaja con el flujo «cotización reservada sin emitir» del Packa
 
 ### 3.11 `profiles` — `BookProfile` [VS] `booking-management-v1.yml:6075`
 
-**Required: `profileTypeCode` + `domainId`** (`:6079-6081`). Array **minItems 1, maxItems 13**
+**Required: `profileTypeCode` + `domainId`** (`:6080-6082`). Array **minItems 1, maxItems 13**
 (`:723`).
 
-| Campo | Contrato | Línea |
-| --- | --- | --- |
-| `profileName` | string. **No combinable con `uniqueId`** | `:6083` |
-| `profileTypeCode` | string **maxLength 3** | `:6089` |
-| `uniqueId` | string. **No combinable con `profileName`** | `:6095` |
-| `domainId` | string — «typically the user PCC, but can be a customer-specific domain» | `:6101` |
-| **`filterId`** | string — «predefined subset of profile data» | `:6105` |
+| Campo             | Contrato                                                                 | Línea   |
+| ----------------- | ------------------------------------------------------------------------ | ------- |
+| `profileName`     | string. **No combinable con `uniqueId`**                                 | `:6084` |
+| `profileTypeCode` | string **maxLength 3**                                                   | `:6089` |
+| `uniqueId`        | string. **No combinable con `profileName`**                              | `:6095` |
+| `domainId`        | string — «typically the user PCC, but can be a customer-specific domain» | `:6100` |
+| **`filterId`**    | string — «predefined subset of profile data»                             | `:6104` |
 
 `profileTypeCode` es **maxLength 3 libre**, no un enum: la primera pasada sólo vio `TVL`, y
 `CRP`/`AGY` son [I] pero el patrón los admite. La descripción confirma el propósito: «Based on
@@ -962,7 +979,8 @@ localizador). Encaja con el flujo «cotización reservada sin emitir» del Packa
 `queuePlacement` or email notification. It is not possible to combine both.** Additionally, for
 booking creation purposes, **only `DEFAULT` e-mail notification is supported**» (`:770-774`).
 
-- `email`: `NotificationEmailEnum` (`:8954`) — `DEFAULT`, `INVOICE`, `ETICKET`, `ITINERARY`.
+- `email`: `NotificationEmailEnum` (`:8954`) — **6 valores**: `DEFAULT`, `INVOICE`, `ETICKET`,
+  **`ETICKET_PDF`**, `ITINERARY`, **`ITINERARY_PDF`**. En creación **sólo `DEFAULT` está soportado**.
   Error si se usa otro: `EMAIL_METHOD_NOT_SUPPORTED` / `BAD_REQUEST`.
 - `queuePlacement[]`: array de `NotificationQueue`, minItems 1 **maxItems 3**.
   Errores: `INVALID_RECURRENT_QUEUE_IDENTIFIER_NUMBER` («select a queue number between **0 and
@@ -980,39 +998,52 @@ se crea un workflow entero para un campo opcional) y ahora, además, **varios ti
 oficial dedicado** en `help-documentation-create-booking-error-list.txt`, que es la confirmación
 definitiva.
 
-| Aerolínea | Campo obligatorio | Dónde va | Evidencia |
-| --- | --- | --- | --- |
-| **BA** (British Airways) | `identityDocuments[].citizenshipCountryCode` **+** `travelers[].title` | traveler / documento | [V] `Workflows / 24` + **[VS] error oficial** `INVALID_IDENTITY_DOCUMENT` / `APPLICATION_ERROR`: «**Citizenship country code is required under identity document for this carrier**» |
-| **AF** (Air France) | `agency.contactInfo.phones[]` con `includePhoneLabel: true` | agencia | [V] `Workflows / 25` + [VS] errores `AGENCY_PHONE_MISSING` y `AGENCY_EMAIL_ISSUE` |
-| **AA** (American) | `loyaltyPrograms[].programType: "CORPORATE_LOYALTY_ID"` para tarifas corporativas | traveler | [V] `createBooking - Air NDC - Corporate Loyalty Id` + [VS] `ProgramTypeEnum:8968` |
-| **Hawaiian (HA)** | **`travelers[].useNotificationContactType: true`** | traveler | **[VS] NUEVO** `booking-management-v1.yml:6213`: «Required by some airlines (e.g., Hawaiian)» + error `NOTIFICATION_CONTACT_TYPE_REQUIRED` |
-| **Mercados con ID fiscal** | `identityDocuments[]` con `documentType: "FISCAL_ID"` + `documentSubType` | traveler | [V] `createBooking - Air NDC - fiscal Id` + [VS] `DocumentSubTypeEnum:9320`. ⚠️ **Sólo `RUC`/`CUIT-CUIL`/`NIT`** — ver §3.4.2.1 |
-| **QR, LO, AY** (asientos NDC) | `flightOffer.seatOffers[].seatOfferId` | flightOffer | [V] `Workflows / 28-33` + [VS] error `SEATS_OFFER_ID_MISSING` |
-| **AA, QF, UA, QR, SQ** | Baterías de `identityDocuments` (PASSPORT + VISA + KTN + REDRESS + SFPD) y `loyaltyPrograms` duplicados por `receiverCode` | traveler | [V] `Workflows / 15 - NDC All supported airlines` |
-| **AY** (Finnair) | `passengerCode: "INS"` para infante **con** asiento | traveler | [V] `Workflows / 28-33 / Seats - 1 Adult 1 Infant with seat \| 1 Segment \| AY`. ⚠️ **En conflicto con el error oficial `TRAVELER_TYPE_NOT_SUPPORTED`** — ver §3.4.0 |
-| **Cualquiera con VISA** | `hostCountryCode` **+** `issueDate` del visado | documento | **[VS] NUEVO** errores `MANDATORY_DATA_MISSING`: «The airline requires information about **the country where the VISA document is valid**» / «…about **the issue date** of the VISA document» |
+| Aerolínea                     | Campo obligatorio                                                                                                          | Dónde va             | Evidencia                                                                                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **BA** (British Airways)      | `identityDocuments[].citizenshipCountryCode` **+** `travelers[].title`                                                     | traveler / documento | [V] `Workflows / 24` + **[VS] error oficial** `INVALID_IDENTITY_DOCUMENT` / `APPLICATION_ERROR`: «**Citizenship country code is required under identity document for this carrier**»          |
+| **AF** (Air France)           | `agency.contactInfo.phones[]` con `includePhoneLabel: true`                                                                | agencia              | [V] `Workflows / 25` + [VS] errores `AGENCY_PHONE_MISSING` y `AGENCY_EMAIL_ISSUE`                                                                                                             |
+| **AA** (American)             | `loyaltyPrograms[].programType: "CORPORATE_LOYALTY_ID"` para tarifas corporativas                                          | traveler             | [V] `createBooking - Air NDC - Corporate Loyalty Id` + [VS] `ProgramTypeEnum:8968`                                                                                                            |
+| **Hawaiian (HA)**             | **`travelers[].useNotificationContactType: true`**                                                                         | traveler             | **[VS] NUEVO** `booking-management-v1.yml:6213`: «Required by some airlines (e.g., Hawaiian)» + error `NOTIFICATION_CONTACT_TYPE_REQUIRED`                                                    |
+| **Mercados con ID fiscal**    | `identityDocuments[]` con `documentType: "FISCAL_ID"` + `documentSubType`                                                  | traveler             | [V] `createBooking - Air NDC - fiscal Id` + [VS] `DocumentSubTypeEnum:9320`. ⚠️ **Sólo `RUC`/`CUIT-CUIL`/`NIT`** — ver §3.4.2.1                                                               |
+| **QR, LO, AY** (asientos NDC) | `flightOffer.seatOffers[].seatOfferId`                                                                                     | flightOffer          | [V] `Workflows / 28-33` + [VS] error `SEATS_OFFER_ID_MISSING`                                                                                                                                 |
+| **AA, QF, UA, QR, SQ**        | Baterías de `identityDocuments` (PASSPORT + VISA + KTN + REDRESS + SFPD) y `loyaltyPrograms` duplicados por `receiverCode` | traveler             | [V] `Workflows / 15 - NDC All supported airlines`                                                                                                                                             |
+| **AY** (Finnair)              | `passengerCode: "INS"` para infante **con** asiento                                                                        | traveler             | [V] `Workflows / 28-33 / Seats - 1 Adult 1 Infant with seat \| 1 Segment \| AY`. ⚠️ **En conflicto con el error oficial `TRAVELER_TYPE_NOT_SUPPORTED`** — ver §3.4.0                          |
+| **Cualquiera con VISA**       | `hostCountryCode` **+** `issueDate` del visado                                                                             | documento            | **[VS] NUEVO** errores `MANDATORY_DATA_MISSING`: «The airline requires information about **the country where the VISA document is valid**» / «…about **the issue date** of the VISA document» |
 
 ### 4.1 Detalle BA — el ejemplo completo
 
 ```jsonc
 {
-  "flightOffer": { "offerId": "{{price_offer_id}}", "selectedOfferItems": ["{{price_offer_item_id}}"] },
-  "travelers": [{
-    "id": "{{price_passenger_id1}}",
-    "title": "Congressman",                 // ← requisito BA — VÁLIDO: TitleEnum lo incluye
-    "givenName": "Jack", "surname": "Smith",
-    "birthDate": "1972-03-23", "passengerCode": "ADT",
-    "identityDocuments": [{
-      "documentNumber": "…", "documentType": "PASSPORT",
-      "expiryDate": "{{identityDocumentExpiryDate}}",
-      "issuingCountryCode": "GB",
-      "residenceCountryCode": "PL",
-      "citizenshipCountryCode": "US",       // ← requisito BA
-      "givenName": "Jack", "surname": "Smith", "birthDate": "1972-03-23", "gender": "MALE"
-    }]
-  }],
+  "flightOffer": {
+    "offerId": "{{price_offer_id}}",
+    "selectedOfferItems": ["{{price_offer_item_id}}"],
+  },
+  "travelers": [
+    {
+      "id": "{{price_passenger_id1}}",
+      "title": "Congressman", // ← requisito BA — VÁLIDO: TitleEnum lo incluye
+      "givenName": "Jack",
+      "surname": "Smith",
+      "birthDate": "1972-03-23",
+      "passengerCode": "ADT",
+      "identityDocuments": [
+        {
+          "documentNumber": "…",
+          "documentType": "PASSPORT",
+          "expiryDate": "{{identityDocumentExpiryDate}}",
+          "issuingCountryCode": "GB",
+          "residenceCountryCode": "PL",
+          "citizenshipCountryCode": "US", // ← requisito BA
+          "givenName": "Jack",
+          "surname": "Smith",
+          "birthDate": "1972-03-23",
+          "gender": "MALE",
+        },
+      ],
+    },
+  ],
   "agency": { "contactInfo": { "emails": ["agency@sabre.com"] } },
-  "contactInfo": { "emails": ["travel@sabre.com"], "phones": ["123456"] }
+  "contactInfo": { "emails": ["travel@sabre.com"], "phones": ["123456"] },
 }
 ```
 
@@ -1020,9 +1051,9 @@ definitiva.
 `residenceCountryCode: PL`, `citizenshipCountryCode: US`. [V] confirmado por las aserciones:
 
 ```js
-pm.expect(jsonData.booking.travelers[0].identityDocuments[0].issuingCountryCode).is.eql("GB");
-pm.expect(jsonData.booking.travelers[0].identityDocuments[0].residenceCountryCode).is.eql("PL");
-pm.expect(jsonData.booking.travelers[0].identityDocuments[0].citizenshipCountryCode).is.eql("US");
+pm.expect(jsonData.booking.travelers[0].identityDocuments[0].issuingCountryCode).is.eql('GB');
+pm.expect(jsonData.booking.travelers[0].identityDocuments[0].residenceCountryCode).is.eql('PL');
+pm.expect(jsonData.booking.travelers[0].identityDocuments[0].citizenshipCountryCode).is.eql('US');
 ```
 
 Y [VS] los tres son propiedades distintas de `BookIdentityDocument` (`:5583`, `:5589`, `:5655`).
@@ -1059,16 +1090,16 @@ es de `cancelBooking`». **Falso.**
 **[VS] `CreateBookingRequest.errorHandlingPolicy`** — `booking-management-v1.yml:698-702`, es un
 **array** de `CreateErrorPolicyEnum` (`:8918`), **default `HALT_ON_ERROR`**, con **8 valores**:
 
-| Valor | Efecto |
-| --- | --- |
-| `HALT_ON_ERROR` | **Default.** Para ante cualquier error de un servicio downline |
-| `DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR` | Sigue si falla el pricing (**sólo ATPCO**) |
-| `DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR` | Sigue si falla el hotel |
-| `DO_NOT_HALT_ON_CAR_BOOKING_ERROR` | Sigue si falla el coche |
-| `DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR` | Sigue si falla un ancillary |
-| `DO_NOT_HALT_ON_SEAT_BOOKING_ERROR` | Sigue si falla un asiento |
-| `HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR` | **Para** si no se cumple el MCT (**sólo ATPCO**) |
-| `DO_NOT_HALT_ON_IDENTITY_DOCUMENT_WARNING` | Sigue ante warning de documento (**sólo NDC**) |
+| Valor                                           | Efecto                                                         |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `HALT_ON_ERROR`                                 | **Default.** Para ante cualquier error de un servicio downline |
+| `DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR`           | Sigue si falla el pricing (**sólo ATPCO**)                     |
+| `DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR`            | Sigue si falla el hotel                                        |
+| `DO_NOT_HALT_ON_CAR_BOOKING_ERROR`              | Sigue si falla el coche                                        |
+| `DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR`        | Sigue si falla un ancillary                                    |
+| `DO_NOT_HALT_ON_SEAT_BOOKING_ERROR`             | Sigue si falla un asiento                                      |
+| `HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR` | **Para** si no se cumple el MCT (**sólo ATPCO**)               |
+| `DO_NOT_HALT_ON_IDENTITY_DOCUMENT_WARNING`      | Sigue ante warning de documento (**sólo NDC**)                 |
 
 > **Esto cambia el diseño del ACL.** El éxito parcial en `createBooking` no es un accidente que
 > hay que detectar a posteriori: es un **modo de operación que el cliente elige, por dominio de
@@ -1080,8 +1111,8 @@ es de `cancelBooking`». **Falso.**
 - **Vuelo + asiento:** `["DO_NOT_HALT_ON_SEAT_BOOKING_ERROR"]`. Perder el 12A no debe tumbar la
   venta; el asiento se reintenta después con `modifyBooking`.
 - **Paquete multi-producto (Package Studio):** `["DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR",
-  "DO_NOT_HALT_ON_CAR_BOOKING_ERROR", "DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR",
-  "DO_NOT_HALT_ON_SEAT_BOOKING_ERROR"]` **+** `HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR`,
+"DO_NOT_HALT_ON_CAR_BOOKING_ERROR", "DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR",
+"DO_NOT_HALT_ON_SEAT_BOOKING_ERROR"]` **+** `HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR`,
   y compensación Temporal por ítem.
 - **Nunca** `DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR` sin revisión: deja el PNR sin price quote y el
   billete puede acabar emitiéndose a otra tarifa.
@@ -1101,7 +1132,7 @@ pasada acertó en esto. No confundir con `errorHandlingPolicy`.
 > **Responde la pregunta abierta 11 de la primera pasada.** La lista de 7 códigos del request de
 > Wakanow **es exactamente el default**. Mandarla es redundante. `["NN"]` (en
 > `createBooking - Air with custom haltOnStatus`) **sustituye** el default, no lo amplía: aborta
-> con *need* pero **acepta** `UC`/`UN`. Contraintuitivo y peligroso.
+> con _need_ pero **acepta** `UC`/`UN`. Contraintuitivo y peligroso.
 
 `HaltOnFlightStatusCodeEnum` [VS] `:8777` — **8 valores**: `NO`, `NN`, `UC`, `US`, `UN`, `UU`,
 `LL`, `HL`. ⚠️ **`YK` (pasiva confirmada) NO está en el enum**, aunque sí es un valor válido de
@@ -1114,7 +1145,54 @@ them in the lowest available fare**… **may result in a price increase**».
 > de la reserva sin avisar**. Nunca activarlo sin combinarlo con
 > `flightPricing[].priceComparisons[]` (§3.3.2), que es el único freno de precio del endpoint.
 > El request de la colección que lo usa (`Ancillary Modifications / Add ancillaries /
-> CreateBooking`) **no lleva `priceComparisons`** [V].
+CreateBooking`) **no lleva `priceComparisons`** [V].
+
+#### 5.2.1 El control de éxito parcial del carril SOAP — `haltOnAirPriceError` / `haltOnHotelBookError`
+
+Los tres controles anteriores (`errorHandlingPolicy`, `haltOnFlightStatusCodes`,
+`retryBookingUnconfirmedFlights`) son del carril **REST**. El carril **SOAP/LLS** tiene el suyo
+propio, y hay que documentarlo aquí porque decide exactamente lo mismo: **si una reserva queda a
+medias**. Son dos **atributos del elemento raíz** de `UpdatePassengerNameRecordRQ` 1.1.0 — el
+mensaje con el que se añade un segmento de hotel CSL a un PNR ya existente (§9, y
+`07-hoteles-y-autos.md` §6.3).
+
+| Atributo               | Dónde                                       | Semántica                                                                                                                                                                     | Marca                                            | Valor por defecto          |
+| ---------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------- |
+| `haltOnAirPriceError`  | atributo de `<UpdatePassengerNameRecordRQ>` | Si `"true"`, aborta toda la transacción cuando falla la **cotización del aire** del PNR. Si `"false"`, continúa y deja el aire sin re-cotizar                                 | **[V]** el atributo; **[I]** la semántica exacta | **DESCONOCIDO** — ver nota |
+| `haltOnHotelBookError` | idem                                        | Si `"true"`, aborta toda la transacción cuando falla la **reserva del hotel**. Si `"false"`, el `EndTransaction` se ejecuta igual y el PNR queda **sin el segmento de hotel** | **[V]** el atributo; **[I]** la semántica exacta | **DESCONOCIDO** — ver nota |
+
+**[V]** Los tres únicos usos de la colección son
+`ModifyBooking (various workflows) / Flight modification flows / Form of Payment modifications
+(Hybrid) / {Add,Update,Delete} FOP / UpdatePassengerNameRecordRQ 1.1.0 - add CSL hotel segment`:
+
+```xml
+<!-- Add FOP -->
+<UpdatePassengerNameRecordRQ version="1.1.0"
+    haltOnAirPriceError="false" haltOnHotelBookError="true">
+<!-- Update FOP y Delete FOP -->
+<UpdatePassengerNameRecordRQ version="1.1.0" targetCity="G7HE"
+    haltOnAirPriceError="false" haltOnHotelBookError="false">
+```
+
+> **DESCONOCIDO — el valor por defecto no está en ninguna fuente disponible.** No hay contrato
+> OpenAPI del carril SOAP/LLS (`00-fuentes.md`, pregunta abierta 2) y las 81 páginas oficiales no
+> mencionan estos atributos: `grep haltOnAirPriceError` sobre los 21 `.yml` y sobre `specs/help/`
+> devuelve **0 resultados**. Los tres requests los declaran **siempre de forma explícita**, así que
+> ni siquiera se puede inferir el default por omisión. **Regla para el ACL: emitirlos siempre
+> explícitos, nunca confiar en el default.** Se resuelve con el XSD o con una llamada a CERT.
+
+> **Son el análogo SOAP de `CreateErrorPolicyEnum`** (§5.1), con dos diferencias que importan:
+> son **booleanos independientes**, no un array de políticas, y su polaridad es **inversa**
+> (`haltOn*="true"` = abortar; `DO_NOT_HALT_ON_*` = continuar). En el ejemplo real de `Add FOP` los
+> valores son **asimétricos** —`haltOnAirPriceError="false"` + `haltOnHotelBookError="true"`—:
+> «tolera un fallo de precio del aire, pero **no** dejes el PNR sin el hotel». Es la política
+> contraria a la del multi-producto REST del §5.1, donde el hotel es el producto tolerable.
+> Elegirla al revés por descuido es exactamente cómo se produce una reserva a medias.
+
+**Mapeo al dominio:** `OrderCreateRequest.partialFailureTolerance` (§8.4) cubre el carril REST.
+Para el carril SOAP el ACL debe traducir `'PRICING' ∈ tolerance → haltOnAirPriceError="false"` y
+`'HOTEL' ∈ tolerance → haltOnHotelBookError="false"`, y al revés. La conversión vive en
+`providers/sabre/`, nunca en `packages/domain/`.
 
 ### 5.3 El éxito parcial es un modo declarado, no una anomalía
 
@@ -1154,30 +1232,30 @@ export type OrderCreateOutcome = 'CONFIRMED' | 'PARTIAL' | 'PENDING' | 'FAILED';
 
 export interface ProviderIssue {
   severity: 'ERROR' | 'WARNING';
-  category: string;              // Sabre: Error.category  — 'BAD_REQUEST' | 'APPLICATION_ERROR' | …
-  type: string;                  // Sabre: Error.type      — 'REQUIRED_FIELD_MISSING' | …
-  message?: string;              // Sabre: Error.description
-  fieldPath?: string;            // Sabre: Error.fieldPath
+  category: string; // Sabre: Error.category  — 'BAD_REQUEST' | 'APPLICATION_ERROR' | …
+  type: string; // Sabre: Error.type      — 'REQUIRED_FIELD_MISSING' | …
+  message?: string; // Sabre: Error.description
+  fieldPath?: string; // Sabre: Error.fieldPath
   fieldName?: string;
   fieldValue?: string;
 }
 
 export interface OrderItemResult {
   kind: 'flight' | 'hotel' | 'car' | 'ancillary' | 'seat';
-  providerItemId?: string;       // Sabre: flights[].itemId / hotels[].itemId
+  providerItemId?: string; // Sabre: flights[].itemId / hotels[].itemId
   status: 'CONFIRMED' | 'UNCONFIRMED' | 'FAILED';
-  statusCode?: string;           // 'NN' | 'UC' | 'HL' | 'HK' | 'YK'
+  statusCode?: string; // 'NN' | 'UC' | 'HL' | 'HK' | 'YK'
   message?: string;
 }
 
 export interface OrderCreateResult {
   outcome: OrderCreateOutcome;
-  orderId?: string;              // Sabre NDC: booking.bookingId cuando es orderId
-  pnr?: string;                  // Sabre: confirmationId (raíz)
+  orderId?: string; // Sabre NDC: booking.bookingId cuando es orderId
+  pnr?: string; // Sabre: confirmationId (raíz)
   /** Firma de concurrencia. Sabre NO la devuelve en create: exige getBooking. Ver §6.3 */
   revision?: string;
   items: OrderItemResult[];
-  issues: ProviderIssue[];       // ← mapea 1:1 con CreateBookingResponse.errors[]
+  issues: ProviderIssue[]; // ← mapea 1:1 con CreateBookingResponse.errors[]
   compensation?: { cancellableItemIds: string[] };
 }
 ```
@@ -1191,8 +1269,9 @@ los `itemId` de los ítems fallidos o sobrantes, **nunca** `cancelAll: true` cie
 ### 5.5 Regla operativa de timeout e idempotencia
 
 **Presupuesto de latencia real** (§1.3 + §3.1.1): hasta **15 s** de retry de estado de vuelo
-+ hasta **10 s** de `asynchronousUpdateWaitTime` + latencia de ~13 servicios internos.
-**Timeout HTTP mínimo razonable: 45 s.** Un timeout de 10 s garantiza PNRs huérfanos.
+
+- hasta **10 s** de `asynchronousUpdateWaitTime` + latencia de ~13 servicios internos.
+  **Timeout HTTP mínimo razonable: 45 s.** Un timeout de 10 s garantiza PNRs huérfanos.
 
 ⚠️ **`createBooking` no expone ninguna idempotency key.** Confirmado contra el contrato:
 `CreateBookingRequest` (`:694-802`) **no tiene ningún campo de deduplicación**, y no hay ningún
@@ -1223,13 +1302,13 @@ sólo tenía aserciones `pm.test`. **Ahora tenemos el contrato, un ejemplo ofici
 
 **Sin `required`.** Cinco propiedades, y **sólo cinco**:
 
-| Campo | Tipo | Línea | Notas |
-| --- | --- | --- | --- |
-| `timestamp` | string `format: date-time` | `:808` | UTC, `YYYY-MM-DDTHH:MM:SSZ` |
+| Campo            | Tipo                        | Línea  | Notas                                                                                                 |
+| ---------------- | --------------------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| `timestamp`      | string `format: date-time`  | `:808` | UTC, `YYYY-MM-DDTHH:MM:SSZ`                                                                           |
 | `confirmationId` | string **`^[A-Z0-9]{6,}$`** | `:814` | «The booking ID generated by the Create Booking API. **The Sabre system considers it a PNR locator**» |
-| `booking` | `Booking` | `:819` | El objeto normalizado. Ver §6.2 |
-| `errors` | `array<Error>` | `:822` | «**This array is not displayed in successful responses**» |
-| `request` | `CreateBookingRequest` | `:827` | **Eco del request completo** |
+| `booking`        | `Booking`                   | `:819` | El objeto normalizado. Ver §6.2                                                                       |
+| `errors`         | `array<Error>`              | `:822` | «**This array is not displayed in successful responses**»                                             |
+| `request`        | `CreateBookingRequest`      | `:827` | **Eco del request completo**                                                                          |
 
 > ⚠️ **`request` es un eco íntegro del payload enviado, incluida `payment.formsOfPayment[]`.**
 > Si el request llevó PAN y CVV, **vuelven en la respuesta**. Consecuencia directa: **el body de
@@ -1238,7 +1317,7 @@ sólo tenía aserciones `pm.test`. **Ahora tenemos el contrato, un ejemplo ofici
 
 > ⚠️ La estructura confirma la observación de la primera pasada: **`confirmationId` está en la
 > raíz y los travelers cuelgan de `booking.`**. La forma es `{timestamp, confirmationId, booking,
-> errors, request}`. Nada más.
+errors, request}`. Nada más.
 
 Verificado en el ejemplo oficial de respuesta
 (`help-documentation-create-booking-examples.txt`, «Sample response with ancillaries stored under
@@ -1279,23 +1358,23 @@ Observaciones de ese ejemplo, todas nuevas:
 ### 6.2 `booking` — `Booking` [VS] `booking-management-v1.yml:1053`
 
 Es el **mismo objeto que devuelve `getBooking`** (`GetBookingResponse` = `Booking` + 4 campos,
-`:296-320`). Sus 30 propiedades:
+`:296-321`). Sus 32 propiedades:
 
-| Grupo | Campos |
-| --- | --- |
-| **Identidad** | `bookingId` (`^[A-Z0-9]{6,14}$` — «For `SABRE`, this is the **PNR Locator or NDC `orderId`**, depending on content type»), `agencyCustomerNumber`, `creationDetails` |
-| **Estado** | `startDate`, `endDate`, `isCancelable`, `isTicketed` |
-| **Personas** | `travelers[]` (`Traveler`), `travelersGroup`, `travelersEmployers[]`, `profiles[]`, `contactInfo` |
-| **Productos** | `flights[]`, `hotels[]`, `cars[]`, **`trains[]`**, **`cruises[]`**, `journeys[]`, `allSegments[]` |
-| **Dinero** | `fares[]`, `fareRules[]`, `fareOffers[]`, `payments` (`TotalPayments`), `accountingItems[]` |
-| **Documentos** | `flightTickets[]`, `nonElectronicTickets[]` |
-| **Anotaciones** | `remarks[]`, `otherServices[]`, `specialServices[]` |
-| **Ticketing** | `futureTicketingPolicy` |
-| **Retención** | `retentionEndDate`, `retentionLabel` |
+| Grupo           | Campos                                                                                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Identidad**   | `bookingId` (`^[A-Z0-9]{6,14}$` — «For `SABRE`, this is the **PNR Locator or NDC `orderId`**, depending on content type»), `agencyCustomerNumber`, `creationDetails` |
+| **Estado**      | `startDate`, `endDate`, `isCancelable`, `isTicketed`                                                                                                                 |
+| **Personas**    | `travelers[]` (`Traveler`), `travelersGroup`, `travelersEmployers[]`, `profiles[]`, `contactInfo`                                                                    |
+| **Productos**   | `flights[]`, `hotels[]`, `cars[]`, **`trains[]`**, **`cruises[]`**, `journeys[]`, `allSegments[]`                                                                    |
+| **Dinero**      | `fares[]`, `fareRules[]`, `fareOffers[]`, `payments` (`TotalPayments`), `accountingItems[]`                                                                          |
+| **Documentos**  | `flightTickets[]`, `nonElectronicTickets[]`                                                                                                                          |
+| **Anotaciones** | `remarks[]`, `otherServices[]`, `specialServices[]`                                                                                                                  |
+| **Ticketing**   | `futureTicketingPolicy`                                                                                                                                              |
+| **Retención**   | `retentionEndDate`, `retentionLabel`                                                                                                                                 |
 
 Puntos que importan al mapper:
 
-- **`payments` es PLURAL en la respuesta** [VS] `:1195` (`TotalPayments`: `flightTotals`,
+- **`payments` es PLURAL en la respuesta** [VS] `:1200` (`TotalPayments`: `flightTotals`,
   `flightCurrentTotals`, `hotelTotals`, `carTotals`, `trainTotals`, `ancillaryTotals`,
   `formsOfPayment[]`). El request usa `payment` singular. **La asimetría es del contrato, no un
   error de los ejemplos.** Queda confirmada la sospecha de la primera pasada.
@@ -1320,12 +1399,12 @@ el contrato: en `GetBookingResponse` (`:309`), y en `ModifyBookingRequest` (`:83
 
 Además, el propio contrato explica por qué: «The unique ID of **the Get Booking response**. It is
 used to verify the state of the booking during the modification operation. **Available only if
-obtaining the booking state does not result in any errors**» (`:311-313`).
+obtaining the booking state does not result in any errors**» (`:312-313`).
 
 > **Consecuencia dura:** para poder modificar una reserva recién creada **hay que encadenar un
 > `getBooking` inmediatamente después de cada `createBooking`**. Eso es lo que hace la colección
 > en **todos** los flujos de modificación: `CreateBookingNDC` → `GetBooking - retrieve
-> bookingSignature` → `ModifyBooking` [V] (verificado en las 4 familias de
+bookingSignature` → `ModifyBooking` [V] (verificado en las 4 familias de
 > `NDC modifications flows` y en las de `Flight modification flows`).
 >
 > Impacto en el principio #1 de `CLAUDE.md` (tiempo a venta < 2 min): **una llamada extra
@@ -1338,14 +1417,14 @@ obtaining the booking state does not result in any errors**» (`:311-313`).
 
 **Required: `category` + `type`.** Seis campos:
 
-| Campo | Ejemplo del contrato | Línea |
-| --- | --- | --- |
-| `category` | `'BAD_REQUEST'` | `:4277` |
-| `type` | `'REQUIRED_FIELD_MISSING'` | `:4281` |
-| `description` | `'may not be null'` | `:4285` |
-| `fieldPath` | `'someObject.someFieldName'` | `:4289` |
-| `fieldName` | `'someName'` | `:4293` |
-| `fieldValue` | `'field value'` | `:4297` |
+| Campo         | Ejemplo del contrato         | Línea   |
+| ------------- | ---------------------------- | ------- |
+| `category`    | `'BAD_REQUEST'`              | `:4278` |
+| `type`        | `'REQUIRED_FIELD_MISSING'`   | `:4282` |
+| `description` | `'may not be null'`          | `:4286` |
+| `fieldPath`   | `'someObject.someFieldName'` | `:4290` |
+| `fieldName`   | `'someName'`                 | `:4294` |
+| `fieldValue`  | `'field value'`              | `:4298` |
 
 **`Warning`** [VS] `:4305` tiene la **misma forma** (`category`, `type` required + `description`,
 `fieldPath`, `fieldName`, `fieldValue`).
@@ -1355,12 +1434,12 @@ obtaining the booking state does not result in any errors**» (`:311-313`).
 
 **Clasificación para el circuit breaker** (esto es lo que la primera pasada no podía escribir):
 
-| `category` | Tratamiento |
-| --- | --- |
-| `BAD_REQUEST` | **Terminal.** Bug nuestro o dato del cliente. No reintentar. Mapear a error de validación de dominio |
-| `APPLICATION_ERROR` | **Depende del `type`.** `TIMEOUT`, `DOWNLINE_SERVICE_FAILURE`, `ATH_TOKEN_FAILURE` («Please retry the transaction»), `FAULT_RESPONSE` → **reintentable con backoff**. `PROFILE_DATA_INSUFFICIENT`, `INVALID_IDENTITY_DOCUMENT` → terminal |
-| `EXTERNAL_SERVER_ERROR` | **Reintentable.** «The request was unsuccessful due to the timeout within the **external airline vendor** infrastructure. Please retry» |
-| `WARNING` | No corta la reserva. Registrar en `issues[]` con `severity: 'WARNING'` |
+| `category`              | Tratamiento                                                                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BAD_REQUEST`           | **Terminal.** Bug nuestro o dato del cliente. No reintentar. Mapear a error de validación de dominio                                                                                                                                      |
+| `APPLICATION_ERROR`     | **Depende del `type`.** `TIMEOUT`, `DOWNLINE_SERVICE_FAILURE`, `ATH_TOKEN_FAILURE` («Please retry the transaction»), `FAULT_RESPONSE` → **reintentable con backoff**. `PROFILE_DATA_INSUFFICIENT`, `INVALID_IDENTITY_DOCUMENT` → terminal |
+| `EXTERNAL_SERVER_ERROR` | **Reintentable.** «The request was unsuccessful due to the timeout within the **external airline vendor** infrastructure. Please retry»                                                                                                   |
+| `WARNING`               | No corta la reserva. Registrar en `issues[]` con `severity: 'WARNING'`                                                                                                                                                                    |
 
 **Errores de infraestructura que exigen kill-switch por proveedor** (principio #9 de `CLAUDE.md`):
 `TIMEOUT` («No response from service provider»), `DOWNLINE_SERVICE_FAILURE`,
@@ -1388,7 +1467,7 @@ no Booking Management. Su modelo es `{ order: { … } }`, **crudo NDC**, mientra
 `createBooking.booking` es el modelo **normalizado** de Sabre. Son dos vistas del mismo PNR. La
 primera es lo que Sabre recibe de la aerolínea; la segunda es lo que Sabre nos promete.
 
-Forma real observada (`slices/responses/01-Add_phone_Orders_View.json`):
+Forma real observada (`evidence/responses/01-Add_phone_Orders_View.json`):
 
 ```jsonc
 { "order": {
@@ -1474,25 +1553,25 @@ Lo que esta evidencia dura nos enseña, y que ninguna otra fuente daba:
 
 ### 7.1 Lo que viaja en claro dentro del body
 
-| Dato | Campo | Requests | Marca |
-| --- | --- | --- | --- |
-| **PAN completo** | `payment.formsOfPayment[].cardNumber` | **48** | [V] |
-| **CVV / CVC** | `payment.formsOfPayment[].cardSecurityCode` | **45** | [V] |
-| Caducidad | `expiryDate` (`YYYY-MM`) | 48 | [V] + [VS] |
-| Titular + dirección | `cardHolder{givenName,surname,email,phone,address{}}` | 42 | [V] |
-| Nº de pasaporte / visado | `identityDocuments[].documentNumber` | 131 | [V] |
-| KTN / Redress | `documentType: KNOWN_TRAVELER_NUMBER` / `REDRESS_NUMBER` | — | [V] |
-| Fecha y lugar de nacimiento | `birthDate`, `placeOfBirth` | 271 / 12 | [V] |
-| Género | `gender` | 121 | [V] |
-| ID fiscal | `documentType: FISCAL_ID` | 1 | [V] |
-| Nº de fidelización | `loyaltyPrograms[].programNumber` | 64 | [V] |
+| Dato                        | Campo                                                    | Requests | Marca      |
+| --------------------------- | -------------------------------------------------------- | -------- | ---------- |
+| **PAN completo**            | `payment.formsOfPayment[].cardNumber`                    | **48**   | [V]        |
+| **CVV / CVC**               | `payment.formsOfPayment[].cardSecurityCode`              | **45**   | [V]        |
+| Caducidad                   | `expiryDate` (`YYYY-MM`)                                 | 48       | [V] + [VS] |
+| Titular + dirección         | `cardHolder{givenName,surname,email,phone,address{}}`    | 42       | [V]        |
+| Nº de pasaporte / visado    | `identityDocuments[].documentNumber`                     | 131      | [V]        |
+| KTN / Redress               | `documentType: KNOWN_TRAVELER_NUMBER` / `REDRESS_NUMBER` | —        | [V]        |
+| Fecha y lugar de nacimiento | `birthDate`, `placeOfBirth`                              | 271 / 12 | [V]        |
+| Género                      | `gender`                                                 | 121      | [V]        |
+| ID fiscal                   | `documentType: FISCAL_ID`                                | 1        | [V]        |
+| Nº de fidelización          | `loyaltyPrograms[].programNumber`                        | 64       | [V]        |
 
 Y, nuevo respecto a la primera pasada: **todo eso vuelve en la respuesta**, porque
 `CreateBookingResponse.request` es un eco íntegro del payload (§6.1).
 
 ### 7.2 El conflicto, enunciado sin rodeos
 
-`CLAUDE.md`: *«Hosted checkout únicamente en fase 1 (PCI SAQ-A). **Nunca PAN/CVV en servidor**.»*
+`CLAUDE.md`: _«Hosted checkout únicamente en fase 1 (PCI SAQ-A). **Nunca PAN/CVV en servidor**.»_
 
 Si usamos `type: "PAYMENTCARD"`, el PAN atraviesa nuestro backend. **Transmitir ya mete en scope
 PCI**; no hay atajo por «no lo logueamos» ni por «lo aislamos en un microservicio» (eso acota el
@@ -1502,10 +1581,10 @@ scope, no lo elimina). Eso es SAQ-D: auditoría anual, escaneo trimestral, segme
 
 El ciclo de venta aérea tiene **dos** pasos con forma de pago, y **son enums distintos**:
 
-| Paso | Enum aplicable | Valores sin PAN |
-| --- | --- | --- |
-| **`createBooking`** (reservar) | `FormOfPaymentTypeEnum` [VS] `:8792` — 14 valores | `CASH`, `CHECK`, `MISCELLANEOUS`, `INSTALLMENTS`, `DOCKET`, `GOVERNMENT_TRAVEL_REQUEST`, `INVOICE` — **y también omitir `payment` por completo** |
-| **`fulfillFlightTickets`** (emitir) | `FulfillFormOfPaymentTypeEnum` [VS] `:8659` — **8 valores**: `PAYMENTCARD`, `CASH`, `CHECK`, `MISCELLANEOUS`, `INSTALLMENTS`, `VIRTUAL_CARD`, `INVOICE`, **`ON_ACCOUNT`** | `CASH`, `CHECK`, `INVOICE`, `ON_ACCOUNT`, `MISCELLANEOUS` |
+| Paso                                | Enum aplicable                                                                                                                                                            | Valores sin PAN                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`createBooking`** (reservar)      | `FormOfPaymentTypeEnum` [VS] `:8792` — 14 valores                                                                                                                         | `CASH`, `CHECK`, `MISCELLANEOUS`, `INSTALLMENTS`, `DOCKET`, `GOVERNMENT_TRAVEL_REQUEST`, `INVOICE` — **y también omitir `payment` por completo** |
+| **`fulfillFlightTickets`** (emitir) | `FulfillFormOfPaymentTypeEnum` [VS] `:8659` — **8 valores**: `PAYMENTCARD`, `CASH`, `CHECK`, `MISCELLANEOUS`, `INSTALLMENTS`, `VIRTUAL_CARD`, `INVOICE`, **`ON_ACCOUNT`** | `CASH`, `CHECK`, `INVOICE`, `ON_ACCOUNT`, `MISCELLANEOUS`                                                                                        |
 
 Tres conclusiones que sólo se ven mirando los dos enums a la vez:
 
@@ -1534,15 +1613,17 @@ caso de uso: un consolidador reservando bajo el PCC de otra agencia y pagando si
 
 ```jsonc
 // Workflows / 26 - ATPCO - Refund ancillaries with list of tickets / fulfillFlightTickets
-{ "confirmationId": "{{pnr}}",
-  "fulfillments": [ { "payment": { "primaryFormOfPayment": 1 } } ],
-  "formsOfPayment": [ { "type": "CASH" } ] }
+{
+  "confirmationId": "{{pnr}}",
+  "fulfillments": [{ "payment": { "primaryFormOfPayment": 1 } }],
+  "formsOfPayment": [{ "type": "CASH" }],
+}
 ```
 
 También `Workflows / 27` y `FulfillFlightTickets / Generic Examples / fulfillFlightTickets Two FOPs`.
 **El ciclo ATPCO completo — reservar y emitir — está demostrado PAN-free en la propia colección.**
 
-**c) Hotel PAN-free por contrato.** `hotel.paymentPolicy: "LATE"` [VS] `:5061-5069`: «When using
+**c) Hotel PAN-free por contrato.** `hotel.paymentPolicy: "LATE"` [VS] `:5060-5063`: «When using
 `LATE` payment **do not indicate `formOfPayment`** as this method allows customers to **make a
 booking without any form of payment**.»
 
@@ -1592,11 +1673,11 @@ Evidencia empírica: no.**
 
 **La forma de pago exacta es:**
 
-| Carril | Reservar (`createBooking`) | Emitir (`fulfillFlightTickets`) | Estado |
-| --- | --- | --- | --- |
-| **Aéreo ATPCO / LCC** | `payment.formsOfPayment: [{ "type": "CASH" }]` **+** `agency.ticketingPolicy: "TICKETING_TIME_LIMIT"` con `ticketingTimeLimitPolicy` | `formsOfPayment: [{ "type": "CASH" }]` + `fulfillments[].payment.primaryFormOfPayment: 1` | ✅ **VERIFICADO end-to-end** en la colección |
-| **Hotel** | `hotel.paymentPolicy: "LATE"` **sin** `hotel.formOfPayment` | n/a | ✅ **VERIFICADO-SPEC** (`:5061-5069`) |
-| **Aéreo NDC** | `payment.formsOfPayment: [{ "type": "CASH" }]` | `formsOfPayment: [{ "type": "CASH" }]` | ⚠️ **Permitido por el contrato, sin ejemplo que lo ejercite.** Hay que probarlo en CERT antes de comprometer el canal NDC |
+| Carril                | Reservar (`createBooking`)                                                                                                           | Emitir (`fulfillFlightTickets`)                                                           | Estado                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Aéreo ATPCO / LCC** | `payment.formsOfPayment: [{ "type": "CASH" }]` **+** `agency.ticketingPolicy: "TICKETING_TIME_LIMIT"` con `ticketingTimeLimitPolicy` | `formsOfPayment: [{ "type": "CASH" }]` + `fulfillments[].payment.primaryFormOfPayment: 1` | ✅ **VERIFICADO end-to-end** en la colección                                                                              |
+| **Hotel**             | `hotel.paymentPolicy: "LATE"` **sin** `hotel.formOfPayment`                                                                          | n/a                                                                                       | ✅ **VERIFICADO-SPEC** (`:5060-5063`)                                                                                     |
+| **Aéreo NDC**         | `payment.formsOfPayment: [{ "type": "CASH" }]`                                                                                       | `formsOfPayment: [{ "type": "CASH" }]`                                                    | ⚠️ **Permitido por el contrato, sin ejemplo que lo ejercite.** Hay que probarlo en CERT antes de comprometer el canal NDC |
 
 **Semántica de `CASH` frente a Sabre:** «esta venta se liquida fuera del canal Sabre». **El cobro
 real al cliente lo hacemos nosotros por hosted checkout (Stripe / Mercado Pago), y la liquidación
@@ -1621,13 +1702,13 @@ el checkout hosted del PSP.
 
 ### 7.7 Opciones descartadas y por qué
 
-| Opción | Veredicto |
-| --- | --- |
-| **`AGENCY_IATA` / `AGENCY_NAME` / `COMPANY_NAME` / `CORPORATE`** | ❌ **Descartada.** El contrato las declara «used for **hotel** bookings» (`:8795`) y **no existen en `FulfillFormOfPaymentTypeEnum`**: no se puede emitir un billete con ellas. Las 6 apariciones en la colección son todas de hotel |
-| **`VIRTUAL_CARD`** | ⚠️ Existe en los dos enums (en fulfill como `virtualCardCode`), pero **todas sus apariciones en la colección son de hotel**, y exige un `customerAccountCode` que **[?]** requiere contrato VCC previo con Sabre. Descartada para fase 1 |
-| **Tokenización vía `originalPaymentReference`** | ❌ **Descartada.** El contrato dice que es un **Authorization Trace ID**, no un token de tarjeta (`:6473`). §3.7.3 |
-| **Wallet `referenceId` de fulfillment** | ⚠️ **La única referencia tokenizada real del contrato** (§3.7.4), pero sólo en fulfill y **[?]** sin saber cómo entra la tarjeta al wallet. No apta para fase 1, pero **es la vía a explorar en fase 2** si se quiere aceptar tarjeta |
-| **Aceptar SAQ-D** | Fuera del alcance declarado de la fase 1. Requiere decisión explícita del founder |
+| Opción                                                           | Veredicto                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`AGENCY_IATA` / `AGENCY_NAME` / `COMPANY_NAME` / `CORPORATE`** | ❌ **Descartada.** El contrato las declara «used for **hotel** bookings» (`:8795`) y **no existen en `FulfillFormOfPaymentTypeEnum`**: no se puede emitir un billete con ellas. Las 6 apariciones en la colección son todas de hotel     |
+| **`VIRTUAL_CARD`**                                               | ⚠️ Existe en los dos enums (en fulfill como `virtualCardCode`), pero **todas sus apariciones en la colección son de hotel**, y exige un `customerAccountCode` que **[?]** requiere contrato VCC previo con Sabre. Descartada para fase 1 |
+| **Tokenización vía `originalPaymentReference`**                  | ❌ **Descartada.** El contrato dice que es un **Authorization Trace ID**, no un token de tarjeta (`:6473`). §3.7.3                                                                                                                       |
+| **Wallet `referenceId` de fulfillment**                          | ⚠️ **La única referencia tokenizada real del contrato** (§3.7.4), pero sólo en fulfill y **[?]** sin saber cómo entra la tarjeta al wallet. No apta para fase 1, pero **es la vía a explorar en fase 2** si se quiere aceptar tarjeta    |
+| **Aceptar SAQ-D**                                                | Fuera del alcance declarado de la fase 1. Requiere decisión explícita del founder                                                                                                                                                        |
 
 ### 7.8 PII de documentos — no es sólo la tarjeta
 
@@ -1659,47 +1740,47 @@ los dos. Hoy no sirve.
 
 ### 8.2 Campos que YA existen y mapean directo
 
-| Nuestro campo | Campo Sabre | Nota |
-| --- | --- | --- |
-| `offer.provider.offerRef` (`offerId\|item1,item2`) | `flightOffer.offerId` + `selectedOfferItems[]` | El formato que ya usa `parseOfferRef()` encaja tal cual. **Máx. 9 items** [VS] |
-| `Passenger.paxId` | `travelers[].id` | |
-| `Passenger.givenName` / `surname` | `travelers[].givenName` / `surname` | ⚠️ `surname` **no admite dígitos** [VS] `:6170` |
-| `Passenger.birthdate` | `travelers[].birthDate` | ⚠️ minúscula vs `birthDate` |
-| `Passenger.paxType` (`ADT\|CHD\|INF`) | `travelers[].passengerCode` | ⚠️ **Sabre usa `CNN`, no `CHD`** |
-| `Passenger.identityDoc.*` | `identityDocuments[].*` | |
-| `Passenger.citizenshipCountryCode` | `identityDocuments[].citizenshipCountryCode` | ⚠️ En nosotros vive en el **pasajero**, en Sabre en el **documento** |
-| `Passenger.loyaltyProgramAccount.*` | `loyaltyPrograms[].programNumber` / `.supplierCode` | |
-| `BookingContactInfo.email` / `phone` | `contactInfo.emails[0]` / `phones[0]` | ⚠️ Nosotros **uno**, Sabre **array** |
-| `PaymentInfo.card.*` | `formsOfPayment[].*` | **Ver §7 antes de usarlo** |
-| `PaymentInfo.payer.taxId` | `identityDocuments[]` con `FISCAL_ID` | ⚠️ `documentSubType` sólo admite RUC/CUIT-CUIL/NIT (§3.4.2.1) |
+| Nuestro campo                                      | Campo Sabre                                         | Nota                                                                           |
+| -------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `offer.provider.offerRef` (`offerId\|item1,item2`) | `flightOffer.offerId` + `selectedOfferItems[]`      | El formato que ya usa `parseOfferRef()` encaja tal cual. **Máx. 9 items** [VS] |
+| `Passenger.paxId`                                  | `travelers[].id`                                    |                                                                                |
+| `Passenger.givenName` / `surname`                  | `travelers[].givenName` / `surname`                 | ⚠️ `surname` **no admite dígitos** [VS] `:6170`                                |
+| `Passenger.birthdate`                              | `travelers[].birthDate`                             | ⚠️ minúscula vs `birthDate`                                                    |
+| `Passenger.paxType` (`ADT\|CHD\|INF`)              | `travelers[].passengerCode`                         | ⚠️ **Sabre usa `CNN`, no `CHD`**                                               |
+| `Passenger.identityDoc.*`                          | `identityDocuments[].*`                             |                                                                                |
+| `Passenger.citizenshipCountryCode`                 | `identityDocuments[].citizenshipCountryCode`        | ⚠️ En nosotros vive en el **pasajero**, en Sabre en el **documento**           |
+| `Passenger.loyaltyProgramAccount.*`                | `loyaltyPrograms[].programNumber` / `.supplierCode` |                                                                                |
+| `BookingContactInfo.email` / `phone`               | `contactInfo.emails[0]` / `phones[0]`               | ⚠️ Nosotros **uno**, Sabre **array**                                           |
+| `PaymentInfo.card.*`                               | `formsOfPayment[].*`                                | **Ver §7 antes de usarlo**                                                     |
+| `PaymentInfo.payer.taxId`                          | `identityDocuments[]` con `FISCAL_ID`               | ⚠️ `documentSubType` sólo admite RUC/CUIT-CUIL/NIT (§3.4.2.1)                  |
 
 ### 8.3 Campos que FALTAN — lista actualizada contra el contrato
 
-| Falta | Por qué importa | Prioridad |
-| --- | --- | --- |
-| `paxType` con `CNN`, `INS`, `INY`, `SRC` | `CHD` **no existe en Sabre**. `passengerCode` es `^[A-Z][A-Z0-9]{2}$`, no un enum: modelar como string validado, no como unión cerrada | **Alta** |
-| `title` con el **`TitleEnum` de 18 valores** | Hoy `'Mr'\|'Mrs'\|'Miss'\|'Dr'`. **Corrección revisada: adoptar el enum tal cual, NO abrir a `string`** | **Alta** |
-| `documents[]` como **array** | AA/QF/UA/QR/SQ exigen PASSPORT + VISA + KTN + REDRESS + SFPD a la vez | **Alta** |
-| `documentType` con los **17 valores** de `DocumentTypeEnum` | Hoy sólo `'P'\|'DNI'\|'CC'\|'CE'` | **Alta** |
-| `residenceCountryCode`, `hostCountryCode`, `placeOfIssue`, `placeOfBirth` | Sabre distingue emisor / residencia / ciudadanía / host(visa) | **Alta** |
-| `documentSubType` con enum cerrado + **plan B para CO/PE/BR** | Bloquea facturación DIAN/SUNAT/NF-e. Ver §3.4.2.1 | **Alta** |
-| Formas de pago **no-tarjeta** con `CASH` como default | Es lo que nos mantiene en SAQ-A (§7) | **Alta** |
-| `targetPcc` + `futureTicketingPolicy.ticketingPcc` | **Central para el consolidador**: reservar en un PCC, emitir en otro | **Alta** |
-| `ticketingPolicy` (4 valores) + `ticketingTimeLimitPolicy` | Habilita el flujo «reservar hoy, cobrar y emitir después» | **Alta** |
-| `errorHandlingPolicy[]` | Sin él no hay éxito parcial controlado (§5.1) | **Alta** |
-| Resultado con **éxito parcial** + `issues[]` tipados | §5.4 | **Alta** |
-| `revision` / `bookingSignature` **obtenido por getBooking** | Sin él no se puede modificar (§6.3) | **Alta** |
-| Comisión y aerolínea validadora **en el paso de emisión** | Viven en `TicketingQualifiers`, no en createBooking (§3.3.2). **Reubica una pieza del pricing waterfall** | **Alta** |
-| Contacto **por pasajero** (`emails[]`, `phones[{number,label}]`) | Requisito de varias NDC | **Media** |
-| Contacto **de agencia** separado (`agency.contactInfo`) | Requisito AF | **Media** |
-| `agencyCustomerNumber` (DK, 6/7/10 car.) | Identidad de la agencia en el PNR | **Media** |
-| Selección de asientos (`seatOffers[]` / `seats[]` / `areaPreferences[]`) | | **Media** |
-| Ancillaries | ⚠️ **No disponibles en NDC** (§3.4.4) | **Media** |
-| Retención OTH (`YYYY-MM-DD`) | «Cotización reservada» del Package Studio | **Media** |
-| `notification.queuePlacement` / `remarks[QUEUE_PLACE]` | Flujo de revisión del consolidador y posible vía de reconciliación (§5.5) | **Media** |
-| `priceComparisons[]` (`amount` **o** `percent`) | Único freno de precio del endpoint | **Media** |
-| `formOfPaymentIndices` por pasajero, `infantTravelerIndex`, `employerIndex` | Casos B2B y familias | **Baja** |
-| Remarks / OSI | | **Baja** |
+| Falta                                                                                                          | Por qué importa                                                                                                                        | Prioridad |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `paxType` con `CNN`, `INS`, `INY`, `SRC`                                                                       | `CHD` **no existe en Sabre**. `passengerCode` es `^[A-Z][A-Z0-9]{2}$`, no un enum: modelar como string validado, no como unión cerrada | **Alta**  |
+| `title` con el **`TitleEnum` de 18 valores**                                                                   | Hoy `'Mr'\|'Mrs'\|'Miss'\|'Dr'`. **Corrección revisada: adoptar el enum tal cual, NO abrir a `string`**                                | **Alta**  |
+| `documents[]` como **array**                                                                                   | AA/QF/UA/QR/SQ exigen PASSPORT + VISA + KTN + REDRESS + SFPD a la vez                                                                  | **Alta**  |
+| `documentType` con los **17 valores** de `DocumentTypeEnum`                                                    | Hoy sólo `'P'\|'DNI'\|'CC'\|'CE'`                                                                                                      | **Alta**  |
+| `residenceCountryCode`, `hostCountryCode`, `placeOfIssue`, `placeOfBirth`                                      | Sabre distingue emisor / residencia / ciudadanía / host(visa)                                                                          | **Alta**  |
+| `documentSubType` con enum cerrado + **plan B para CO/PE/BR**                                                  | Bloquea facturación DIAN/SUNAT/NF-e. Ver §3.4.2.1                                                                                      | **Alta**  |
+| Formas de pago **no-tarjeta** con `CASH` como default                                                          | Es lo que nos mantiene en SAQ-A (§7)                                                                                                   | **Alta**  |
+| `targetPcc` + `futureTicketingPolicy.ticketingPcc`                                                             | **Central para el consolidador**: reservar en un PCC, emitir en otro                                                                   | **Alta**  |
+| `ticketingPolicy` (4 valores) + `ticketingTimeLimitPolicy`                                                     | Habilita el flujo «reservar hoy, cobrar y emitir después»                                                                              | **Alta**  |
+| `errorHandlingPolicy[]`                                                                                        | Sin él no hay éxito parcial controlado (§5.1)                                                                                          | **Alta**  |
+| Resultado con **éxito parcial** + `issues[]` tipados                                                           | §5.4                                                                                                                                   | **Alta**  |
+| `revision` / `bookingSignature` **obtenido por getBooking**                                                    | Sin él no se puede modificar (§6.3)                                                                                                    | **Alta**  |
+| Comisión y aerolínea validadora (`flightPricing[].qualifiers.commissionPercentage` / `.validatingAirlineCode`) | `PricingQualifiers` hereda `TicketingQualifiers`: valen al **reservar** y al **emitir** (§3.3.2). Pieza del pricing waterfall          | **Alta**  |
+| Contacto **por pasajero** (`emails[]`, `phones[{number,label}]`)                                               | Requisito de varias NDC                                                                                                                | **Media** |
+| Contacto **de agencia** separado (`agency.contactInfo`)                                                        | Requisito AF                                                                                                                           | **Media** |
+| `agencyCustomerNumber` (DK, 6/7/10 car.)                                                                       | Identidad de la agencia en el PNR                                                                                                      | **Media** |
+| Selección de asientos (`seatOffers[]` / `seats[]` / `areaPreferences[]`)                                       |                                                                                                                                        | **Media** |
+| Ancillaries                                                                                                    | ⚠️ **No disponibles en NDC** (§3.4.4)                                                                                                  | **Media** |
+| Retención OTH (`YYYY-MM-DD`)                                                                                   | «Cotización reservada» del Package Studio                                                                                              | **Media** |
+| `notification.queuePlacement` / `remarks[QUEUE_PLACE]`                                                         | Flujo de revisión del consolidador y posible vía de reconciliación (§5.5)                                                              | **Media** |
+| `priceComparisons[]` (`amount` **o** `percent`)                                                                | Único freno de precio del endpoint                                                                                                     | **Media** |
+| `formOfPaymentIndices` por pasajero, `infantTravelerIndex`, `employerIndex`                                    | Casos B2B y familias                                                                                                                   | **Baja**  |
+| Remarks / OSI                                                                                                  |                                                                                                                                        | **Baja**  |
 
 ### 8.4 Shape propuesto (actualizado)
 
@@ -1707,38 +1788,68 @@ los dos. Hoy no sirve.
 // packages/domain/src/ports/order-create.port.ts  (propuesta)
 
 /** No es enum cerrado en Sabre: patrón ^[A-Z][A-Z0-9]{2}$ */
-export type PaxTypeCode = string;                 // 'ADT' | 'CNN' | 'INF' | 'INS' | 'INY' | 'SRC' | …
+export type PaxTypeCode = string; // 'ADT' | 'CNN' | 'INF' | 'INS' | 'INY' | 'SRC' | …
 
 export type TravelerTitle =
-  | 'Mr' | 'Mrs' | 'Ms' | 'Dr' | 'Miss' | 'Mstr' | 'Mlle' | 'Sir' | 'Father'
-  | 'Sister' | 'Brother' | 'Reverend' | 'Lt' | 'Capt' | 'Congressman'
-  | 'Duke' | 'Duchess' | 'Prof';                  // = TitleEnum, booking-management-v1.yml:9398
+  | 'Mr'
+  | 'Mrs'
+  | 'Ms'
+  | 'Dr'
+  | 'Miss'
+  | 'Mstr'
+  | 'Mlle'
+  | 'Sir'
+  | 'Father'
+  | 'Sister'
+  | 'Brother'
+  | 'Reverend'
+  | 'Lt'
+  | 'Capt'
+  | 'Congressman'
+  | 'Duke'
+  | 'Duchess'
+  | 'Prof'; // = TitleEnum, booking-management-v1.yml:9398
 
 export type IdentityDocType =
-  | 'PASSPORT' | 'VISA' | 'SECURE_FLIGHT_PASSENGER_DATA' | 'RESIDENCE_ADDRESS'
-  | 'DESTINATION_ADDRESS' | 'KNOWN_TRAVELER_NUMBER' | 'REDRESS_NUMBER' | 'ALIEN_RESIDENT'
-  | 'PERMANENT_RESIDENT' | 'FACILITATION_DOCUMENT' | 'NATIONAL_ID_CARD' | 'NEXUS_CARD'
-  | 'MILITARY' | 'NATURALIZATION_CERTIFICATE' | 'REFUGEE_REENTRY_PERMIT'
-  | 'BORDER_CROSSING_CARD' | 'FISCAL_ID';
+  | 'PASSPORT'
+  | 'VISA'
+  | 'SECURE_FLIGHT_PASSENGER_DATA'
+  | 'RESIDENCE_ADDRESS'
+  | 'DESTINATION_ADDRESS'
+  | 'KNOWN_TRAVELER_NUMBER'
+  | 'REDRESS_NUMBER'
+  | 'ALIEN_RESIDENT'
+  | 'PERMANENT_RESIDENT'
+  | 'FACILITATION_DOCUMENT'
+  | 'NATIONAL_ID_CARD'
+  | 'NEXUS_CARD'
+  | 'MILITARY'
+  | 'NATURALIZATION_CERTIFICATE'
+  | 'REFUGEE_REENTRY_PERMIT'
+  | 'BORDER_CROSSING_CARD'
+  | 'FISCAL_ID';
 
 export interface IdentityDocument {
   type: IdentityDocType;
-  subType?: 'RUC' | 'CUIT/CUIL' | 'NIT';          // enum CERRADO en Sabre
+  subType?: 'RUC' | 'CUIT/CUIL' | 'NIT'; // enum CERRADO en Sabre
   /** ^[a-zA-Z0-9]+$ — sin guiones ni espacios. Normalizar en el ACL. */
   number?: string;
-  issuingCountryCode?: string;                    // ISO-2 o ISO-3
-  residenceCountryCode?: string;                  // NDC: SÓLO ISO-2
+  issuingCountryCode?: string; // ISO-2 o ISO-3
+  residenceCountryCode?: string; // NDC: SÓLO ISO-2
   citizenshipCountryCode?: string;
-  hostCountryCode?: string;                       // sólo VISA
-  placeOfIssue?: string;                          // sólo VISA
-  placeOfBirth?: string;                          // máx 35
-  issueDate?: string; expiryDate?: string;
-  givenName?: string; middleName?: string; surname?: string;   // middleName: no soportado en NDC
+  hostCountryCode?: string; // sólo VISA
+  placeOfIssue?: string; // sólo VISA
+  placeOfBirth?: string; // máx 35
+  issueDate?: string;
+  expiryDate?: string;
+  givenName?: string;
+  middleName?: string;
+  surname?: string; // middleName: no soportado en NDC
   birthDate?: string;
   gender?: 'MALE' | 'FEMALE' | 'INFANT_MALE' | 'INFANT_FEMALE' | 'UNDISCLOSED' | 'UNDEFINED';
   isPrimary?: boolean;
   isLapChild?: boolean;
-  segmentIndices?: number[];                      // 0-based hacia adentro
+  segmentIndices?: number[]; // 0-based hacia adentro
 }
 
 export interface Passenger {
@@ -1748,39 +1859,48 @@ export interface Passenger {
   givenName: string;
   /** Sabre rechaza dígitos en el apellido. */
   surname: string;
-  birthdate?: string;                             // obligatorio si infante
-  age?: number;                                   // obligatorio si menor + hotel
+  birthdate?: string; // obligatorio si infante
+  age?: number; // obligatorio si menor + hotel
   gender?: 'M' | 'F' | 'U';
   documents: IdentityDocument[];
-  contact?: { emails?: string[]; phones?: Array<{ number: string; label?: 'M'|'B'|'C'|'H' }> };
+  contact?: {
+    emails?: string[];
+    phones?: Array<{ number: string; label?: 'M' | 'B' | 'C' | 'H' }>;
+  };
   loyalty?: Array<{
-    accountNumber: string; supplierCode?: string; receiverCode?: string;
+    accountNumber: string;
+    supplierCode?: string;
+    receiverCode?: string;
     programType?: 'FREQUENT_FLYER' | 'FREQUENT_RENTER' | 'LOYALTY_ID' | 'CORPORATE_LOYALTY_ID';
-    tierLevel?: number;                           // ENTERO — Sabre lo declara int32
+    tierLevel?: number; // ENTERO — Sabre lo declara int32
   }>;
   /** Empareja este infante con un adulto concreto. 0-based hacia adentro. */
   linkedInfantPaxIndex?: number;
-  requiresNotificationContactType?: boolean;      // requisito HA
+  requiresNotificationContactType?: boolean; // requisito HA
 }
 
 export type FormOfPaymentKind =
-  | 'NONE'            // ← default: no mandar bloque payment
-  | 'CASH'            // ← default cuando hay que declarar algo (§7)
-  | 'CHECK' | 'INVOICE' | 'ON_ACCOUNT' | 'MISCELLANEOUS' | 'INSTALLMENTS'
-  | 'PAYMENT_CARD';   // ← SÓLO detrás de feature flag SAQ-D
+  | 'NONE' // ← default: no mandar bloque payment
+  | 'CASH' // ← default cuando hay que declarar algo (§7)
+  | 'CHECK'
+  | 'INVOICE'
+  | 'ON_ACCOUNT'
+  | 'MISCELLANEOUS'
+  | 'INSTALLMENTS'
+  | 'PAYMENT_CARD'; // ← SÓLO detrás de feature flag SAQ-D
 
 export interface FormOfPayment {
   kind: FormOfPaymentKind;
   /** SÓLO existe si el tenant está habilitado para SAQ-D. Nunca cruza a packages/domain. */
-  card?: never;                                   // el tipo card vive en providers/sabre/
+  card?: never; // el tipo card vive en providers/sabre/
   installments?: { count: number; planCode?: string; amount?: string; netBalance?: string };
-  accountCode?: string;                           // ON_ACCOUNT / customPaymentCode
+  accountCode?: string; // ON_ACCOUNT / customPaymentCode
   invoiceDescription?: string;
 }
 
 export interface AgencyIdentity {
-  address?: PostalAddress;                        // OBLIGATORIA en ATPCO; omitir si viene del perfil
-  customerNumber?: string;                        // DK: 6, 7 o 10 caracteres
+  address?: PostalAddress; // OBLIGATORIA en ATPCO; omitir si viene del perfil
+  customerNumber?: string; // DK: 6, 7 o 10 caracteres
   contact?: { phones?: string[]; includePhoneLabel?: boolean; emails?: string[] };
   ticketing?: {
     policy: 'TODAY' | 'ALREADY_TICKETED' | 'FUTURE_TICKETING' | 'TICKETING_TIME_LIMIT';
@@ -1800,17 +1920,32 @@ export interface OrderCreateRequest {
   targetPointOfSale?: string;
   formsOfPayment?: FormOfPayment[];
   /** Tolerancias de fallo por dominio de producto. Mapea a errorHandlingPolicy[]. */
-  partialFailureTolerance?: Array<'PRICING'|'HOTEL'|'CAR'|'ANCILLARY'|'SEAT'|'IDENTITY_DOC_WARNING'>;
+  partialFailureTolerance?: Array<
+    'PRICING' | 'HOTEL' | 'CAR' | 'ANCILLARY' | 'SEAT' | 'IDENTITY_DOC_WARNING'
+  >;
   haltOnInvalidConnectingTime?: boolean;
-  seatSelections?: Array<{ paxIndex: number; segmentIndex: number; seatNumber?: string;
-                           areaPreferences?: string[]; providerSeatOfferId?: string }>;
-  ancillaries?: Array<{ paxIndex: number; providerRef: string; price?: Money;
-                        segmentIndices?: number[] }>;
-  remarks?: Array<{ kind: 'GENERAL'|'HISTORICAL'|'OSI'|'QUEUE_PLACE'; text: string;
-                    paxIndex?: number; airlineCode?: string }>;
-  retention?: { until: string; label?: string };  // until = YYYY-MM-DD
+  seatSelections?: Array<{
+    paxIndex: number;
+    segmentIndex: number;
+    seatNumber?: string;
+    areaPreferences?: string[];
+    providerSeatOfferId?: string;
+  }>;
+  ancillaries?: Array<{
+    paxIndex: number;
+    providerRef: string;
+    price?: Money;
+    segmentIndices?: number[];
+  }>;
+  remarks?: Array<{
+    kind: 'GENERAL' | 'HISTORICAL' | 'OSI' | 'QUEUE_PLACE';
+    text: string;
+    paxIndex?: number;
+    airlineCode?: string;
+  }>;
+  retention?: { until: string; label?: string }; // until = YYYY-MM-DD
   priceGuard?: { expected: Money; tolerance: { amount?: string; percent?: string } };
-  abortOnSegmentStatus?: Array<'NO'|'NN'|'UC'|'US'|'UN'|'UU'|'LL'|'HL'>;
+  abortOnSegmentStatus?: Array<'NO' | 'NN' | 'UC' | 'US' | 'UN' | 'UU' | 'LL' | 'HL'>;
   /** Idempotencia NUESTRA. Sabre no la ofrece (§5.5). */
   idempotencyKey: string;
 }
@@ -1821,9 +1956,9 @@ Notas de diseño:
 - **Índices**: hacia adentro **todo 0-based**; la conversión a 1-based es responsabilidad
   **exclusiva** de `providers/sabre/`. Ningún índice 1-based cruza a `packages/domain/`.
 - **`targetPointOfSale`** es el gancho del modelo consolidador. `apps/api/src/providers-latam/
-  latam-ndc.factory.ts` ya resuelve credenciales por herencia; el equivalente Sabre resolvería
+latam-ndc.factory.ts` ya resuelve credenciales por herencia; el equivalente Sabre resolvería
   también el **PCC** del nodo. ⚠️ Con la advertencia del contrato: **`targetPcc` no revierte el
-  contexto** (`:707`), así que el pool de conexiones tiene que asumir contexto sucio o forzar
+  contexto** (`:708`), así que el pool de conexiones tiene que asumir contexto sucio o forzar
   reset entre llamadas de tenants distintos. **Es un riesgo de aislamiento multi-tenant.**
 - **`FormOfPaymentKind.NONE` / `CASH` son los defaults**, no `PAYMENT_CARD`.
 - **`tierLevel` es number**, no string.
@@ -1840,20 +1975,20 @@ Notas de diseño:
 
 Recuento sobre los 1.077 requests (`POST {{soap_endpoint}}` / `{{lls_endpoint}}` = **243**):
 
-| Mensaje | Nº | Para qué |
-| --- | --- | --- |
-| `SessionCloseRQ` | 61 | Cerrar la sesión ATH |
-| `SessionCreateRQ` | 50 | Abrir sesión ATH (`UsernameToken` + `Organization` = PCC) |
-| `OTA_AirAvailRQ` (v2.4.0) | 30 | Disponibilidad — de aquí sale el `FlightNumber` real |
-| `GetHotelAvailRQ` (v5.0.0) | 26 | Disponibilidad hotel → `RateKey` |
-| `HotelPriceCheckRQ` (v5.0.0) | 25 | `RateKey` → `BookingKey` |
-| `PassengerDetailsRQ` (3.4.0) | 4 | Nombres, tipo de pasajero, contacto, **grupos** |
-| `OTA_AirBookRQ` (v2.2.0) | 4 | *Sell*: vender el segmento en la AAA |
-| `EnhancedEndTransactionRQ` (1.0.0) | 4 | *End transaction*: materializa el PNR y **devuelve el localizador** |
-| `Sabre_OTA_ProfileCreateRQ` / `EPS_EXT_ProfileCreateRQ` | 4 | Crear perfil de prueba |
-| `UpdatePassengerNameRecordRQ` (1.1.0) | 3 | Añadir un segmento de hotel CSL a un PNR existente |
-| `GetVehAvailRQ` (v2.0.0) | 2 | Disponibilidad coche |
-| `VehPriceCheckRQ` | 1 | → `BookingKey` de coche |
+| Mensaje                                                 | Nº  | Para qué                                                            |
+| ------------------------------------------------------- | --- | ------------------------------------------------------------------- |
+| `SessionCloseRQ`                                        | 61  | Cerrar la sesión ATH                                                |
+| `SessionCreateRQ`                                       | 50  | Abrir sesión ATH (`UsernameToken` + `Organization` = PCC)           |
+| `OTA_AirAvailRQ` (v2.4.0)                               | 30  | Disponibilidad — de aquí sale el `FlightNumber` real                |
+| `GetHotelAvailRQ` (v5.0.0)                              | 26  | Disponibilidad hotel → `RateKey`                                    |
+| `HotelPriceCheckRQ` (v5.0.0)                            | 25  | `RateKey` → `BookingKey`                                            |
+| `PassengerDetailsRQ` (3.4.0)                            | 4   | Nombres, tipo de pasajero, contacto, **grupos**                     |
+| `OTA_AirBookRQ` (v2.2.0)                                | 4   | _Sell_: vender el segmento en la AAA                                |
+| `EnhancedEndTransactionRQ` (1.0.0)                      | 4   | _End transaction_: materializa el PNR y **devuelve el localizador** |
+| `Sabre_OTA_ProfileCreateRQ` / `EPS_EXT_ProfileCreateRQ` | 4   | Crear perfil de prueba                                              |
+| `UpdatePassengerNameRecordRQ` (1.1.0)                   | 3   | Añadir un segmento de hotel CSL a un PNR existente                  |
+| `GetVehAvailRQ` (v2.0.0)                                | 2   | Disponibilidad coche                                                |
+| `VehPriceCheckRQ`                                       | 1   | → `BookingKey` de coche                                             |
 
 ### 9.2 La secuencia canónica de construcción de PNR
 
@@ -1873,7 +2008,7 @@ SessionCloseRQ
 `ModifyBooking / Group booking modification flows`: `Add (ADT + INF)`, `Update (Name ADT + INF)`,
 `Update (Type ADT + INF)`, `Delete (ADT + INF)`, 8 requests cada una.
 
-> **Corolario que corrige a `05-modify-booking.md`:** el flujo de **grupo** NO es `modifyBooking`
+> **Corolario que corrige a `05-get-modify-cancel-booking.md`:** el flujo de **grupo** NO es `modifyBooking`
 > REST puro. Requiere **cuatro mensajes SOAP en sesión ATH** antes de poder llamar a
 > `getBooking`/`modifyBooking`. El bloque `travelersGroup` del `ModifyBooking` es sólo el último
 > tramo.
@@ -1946,7 +2081,7 @@ real del PNR, que en la respuesta REST se llama `nameAssociationId`, §6.1), `Ph
 equivalente en `CreateBookingRequest`**. También `TicketType="7TAW"` (ticketing time limit en
 formato host).
 
-**`OTA_AirBookRQ` 2.2.0** — el *sell*:
+**`OTA_AirBookRQ` 2.2.0** — el _sell_:
 
 ```xml
 <OTA_AirBookRQ Version="2.2.0" xmlns="http://webservices.sabre.com/sabreXML/2011/10">
@@ -1986,19 +2121,18 @@ multi-producto cuando `createBooking` ya no puede usarse porque el PNR existe.
 
 ### 9.4 En qué se diferencia del `createBooking` REST
 
-| | REST `createBooking` | Carril LLS |
-| --- | --- | --- |
-| Transporte | JSON sobre HTTP | SOAP/XML |
-| Auth | OAuth2 `client_credentials` (Bearer ATK) | `SessionCreateRQ` con **usuario+password+PCC** → token ATH con estado |
-| Estado | **Stateless.** Limpia la AAA antes y después (§1.1) | **Stateful.** Todo ocurre dentro de una AAA viva; hay que cerrarla |
-| Nº de llamadas | **1** | **≥6** (create, avail, details, book, EET, close) |
-| Atomicidad | El API orquesta y aplica `errorHandlingPolicy` | **El cliente es el orquestador.** Si algo falla a mitad, la AAA queda sucia y **hay que hacer `SessionCloseRQ` sí o sí** |
-| Modelo de datos | Canónico Sabre (`BookTraveler`, `FlightToBook`…) | Crudo del host (`NameNumber`, `GroupInfo`, `TicketType="7TAW"`) |
-| Capacidades exclusivas | `errorHandlingPolicy`, NDC (`flightOffer`), CSL hotel por `bookingKey`, perfiles, `notification` | **Grupos** (`GroupInfo`/`NumberInParty`), `OperatingAirline` explícito, control fino del *sell* |
-| Cobertura de la colección | 176 requests | 243 requests |
+|                           | REST `createBooking`                                                                             | Carril LLS                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Transporte                | JSON sobre HTTP                                                                                  | SOAP/XML                                                                                                                 |
+| Auth                      | OAuth2 `client_credentials` (Bearer ATK)                                                         | `SessionCreateRQ` con **usuario+password+PCC** → token ATH con estado                                                    |
+| Estado                    | **Stateless.** Limpia la AAA antes y después (§1.1)                                              | **Stateful.** Todo ocurre dentro de una AAA viva; hay que cerrarla                                                       |
+| Nº de llamadas            | **1**                                                                                            | **≥6** (create, avail, details, book, EET, close)                                                                        |
+| Atomicidad                | El API orquesta y aplica `errorHandlingPolicy`                                                   | **El cliente es el orquestador.** Si algo falla a mitad, la AAA queda sucia y **hay que hacer `SessionCloseRQ` sí o sí** |
+| Modelo de datos           | Canónico Sabre (`BookTraveler`, `FlightToBook`…)                                                 | Crudo del host (`NameNumber`, `GroupInfo`, `TicketType="7TAW"`)                                                          |
+| Capacidades exclusivas    | `errorHandlingPolicy`, NDC (`flightOffer`), CSL hotel por `bookingKey`, perfiles, `notification` | **Grupos** (`GroupInfo`/`NumberInParty`), `OperatingAirline` explícito, control fino del _sell_                          |
+| Cobertura de la colección | 176 requests                                                                                     | 243 requests                                                                                                             |
 
-> **Y no son alternativas independientes:** la documentación oficial dice que `createBooking`
-> **orquesta internamente** `PassengerDetailsRQ`, `OTA_AirBookLLSRQ` y `EnhancedEndTransactionRQ`
+> **Y no son alternativas independientes:** la documentación oficial dice que `createBooking` > **orquesta internamente** `PassengerDetailsRQ`, `OTA_AirBookLLSRQ` y `EnhancedEndTransactionRQ`
 > (§1.2). El REST es el mismo carril con una capa de abstracción y `errorHandlingPolicy` encima.
 
 ### 9.5 Qué implica para nosotros
@@ -2025,25 +2159,25 @@ multi-producto cuando `createBooking` ya no puede usarse porque el PNR existe.
 
 Se dejan listadas para que nadie las vuelva a abrir:
 
-| Pregunta de la 1ª pasada | Respuesta |
-| --- | --- |
-| Forma completa de la respuesta de `createBooking` | `{timestamp, confirmationId, booking, errors, request}` — §6.1 |
-| ¿Devuelve `bookingSignature`? | **No.** Sólo `getBooking` — §6.3 |
-| ¿Cómo se ve un error? | `{category, type, description, fieldPath, fieldName, fieldValue}`, con lista oficial de ~180 tipos — §6.4 |
-| Formato de `expiryDate` de tarjeta | **`YYYY-MM`** — §3.7.2 |
-| ¿`flightNumber` acepta string y número? | El contrato dice **`integer` 1–9999** — §3.3.1 |
-| ¿`tierLevel` string o entero? | **Entero** (`int32`) — §3.4.3 |
-| Default de `haltOnFlightStatusCodes` | `NO, UC, US, UN, UU, LL, HL` — §5.2 |
-| Relación `travelers[].type` ↔ `passengerCode` | `type` es **sólo de respuesta**; `passengerCode` es el código de tarifa — §3.4.1 |
-| ¿`retentionEndDate` es ISO-8601 o fecha simple? | **`YYYY-MM-DD`** — §3.10 |
-| Catálogo de `title` que acepta BA | `TitleEnum`, **18 valores cerrados**, incluye `Congressman` — §3.4.0 |
-| `useCsl` vs `useCSL` | **`useCsl`**, default `true` — §3.8 |
-| `payment` vs `payments` | **Request `payment`, respuesta `payments`.** Es del contrato — §6.2 |
-| `validatingAirline` vs `validatingAirlineCode` | **Ninguno de los dos existe en createBooking**; están en fulfill — §3.3.2 |
-| `reasonForIssuance` vs `Code`+`Name` | Sólo **`reasonForIssuance`** — §3.4.4 |
-| ¿Máximo de `asynchronousUpdateWaitTime`? | **10000 ms** — §3.1.1 |
-| ¿Se puede pagar sin PAN? | **Sí en ATPCO/LCC y hotel, con `CASH` / `LATE`** — §7.6 |
-| ¿Existe idempotency key? | **No.** Confirmado contra el contrato — §5.5 |
+| Pregunta de la 1ª pasada                          | Respuesta                                                                                                                                                   |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forma completa de la respuesta de `createBooking` | `{timestamp, confirmationId, booking, errors, request}` — §6.1                                                                                              |
+| ¿Devuelve `bookingSignature`?                     | **No.** Sólo `getBooking` — §6.3                                                                                                                            |
+| ¿Cómo se ve un error?                             | `{category, type, description, fieldPath, fieldName, fieldValue}`, con lista oficial de ~180 tipos — §6.4                                                   |
+| Formato de `expiryDate` de tarjeta                | **`YYYY-MM`** — §3.7.2                                                                                                                                      |
+| ¿`flightNumber` acepta string y número?           | El contrato dice **`integer` 1–9999** — §3.3.1                                                                                                              |
+| ¿`tierLevel` string o entero?                     | **Entero** (`int32`) — §3.4.3                                                                                                                               |
+| Default de `haltOnFlightStatusCodes`              | `NO, UC, US, UN, UU, LL, HL` — §5.2                                                                                                                         |
+| Relación `travelers[].type` ↔ `passengerCode`    | `type` es **sólo de respuesta**; `passengerCode` es el código de tarifa — §3.4.1                                                                            |
+| ¿`retentionEndDate` es ISO-8601 o fecha simple?   | **`YYYY-MM-DD`** — §3.10                                                                                                                                    |
+| Catálogo de `title` que acepta BA                 | `TitleEnum`, **18 valores cerrados**, incluye `Congressman` — §3.4.0                                                                                        |
+| `useCsl` vs `useCSL`                              | **`useCsl`**, default `true` — §3.8                                                                                                                         |
+| `payment` vs `payments`                           | **Request `payment`, respuesta `payments`.** Es del contrato — §6.2                                                                                         |
+| `validatingAirline` vs `validatingAirlineCode`    | **`validatingAirlineCode`**, dentro de `flightPricing[].qualifiers` (heredado de `TicketingQualifiers` por `allOf`). `validatingAirline` no existe — §3.3.2 |
+| `reasonForIssuance` vs `Code`+`Name`              | Sólo **`reasonForIssuance`** — §3.4.4                                                                                                                       |
+| ¿Máximo de `asynchronousUpdateWaitTime`?          | **10000 ms** — §3.1.1                                                                                                                                       |
+| ¿Se puede pagar sin PAN?                          | **Sí en ATPCO/LCC y hotel, con `CASH` / `LATE`** — §7.6                                                                                                     |
+| ¿Existe idempotency key?                          | **No.** Confirmado contra el contrato — §5.5                                                                                                                |
 
 ---
 
@@ -2126,7 +2260,7 @@ Se dejan listadas para que nadie las vuelva a abrir:
    Sin un identificador fiscal válido en el PNR, la facturación DIAN/SUNAT/NF-e no puede
    derivarse de la reserva. **Afecta a los tres mercados iniciales.** §3.4.2.1.
 
-6. **[ALTO — aislamiento multi-tenant, NUEVO] `targetPcc` no revierte el contexto.** [VS] `:707`.
+6. **[ALTO — aislamiento multi-tenant, NUEVO] `targetPcc` no revierte el contexto.** [VS] `:708`.
    Con conexiones reutilizadas entre tenants, una reserva puede acabar en el PCC de otra agencia.
    Contra el principio #6 de `CLAUDE.md`. Mitigación: contexto explícito en cada llamada y/o
    aislamiento de pool por tenant, con test de aislamiento cross-tenant en CI.
@@ -2183,10 +2317,13 @@ Se dejan listadas para que nadie las vuelva a abrir:
     confirma, el Package Studio con vuelo NDC + hotel necesita dos reservas y una saga de
     compensación cruzada.
 
-18. **[MEDIO, NUEVO] La comisión y la aerolínea validadora se fijan al EMITIR, no al reservar.**
-    Viven en `TicketingQualifiers` de `fulfillFlightTickets`. El pricing waterfall del modelo
-    consolidador tiene que resolverse en ese paso, no en `createBooking`. Un
-    `commissionPercentage` puesto en `createBooking` se **ignora en silencio**. §3.3.2.
+18. **[MEDIO] La comisión y la aerolínea validadora se declaran en DOS pasos y no sabemos cuál
+    gana.** `TicketingQualifiers` es un bloque compartido: `createBooking` lo alcanza por `allOf`
+    dentro de `flightPricing[].qualifiers`, y `fulfillFlightTickets` lo usa directo. El pricing
+    waterfall del consolidador puede fijarse en cualquiera de los dos, pero **[?]** el contrato no
+    dice qué ocurre si difieren. Lo que sí se **ignora en silencio** es ponerlos **fuera** de
+    `qualifiers`, al nivel de `flightPricing[]` — que es lo que hace un request de la colección.
+    §3.3.2.
 
 19. **[BAJO] `agencyCustomerNumber` (DK number) no se puede borrar** una vez puesto. Formato:
     6, 7 o 10 caracteres alfanuméricos mayúscula. Validar antes de enviar.

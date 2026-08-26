@@ -91,6 +91,21 @@ jobs:
       - name: Build workspace deps for tests
         run: pnpm --filter "@sales-travel/api^..." build
 
+      # `providers/sabre` se buildea aparte porque TODAVÍA no es dependencia de `apps/api`, así que
+      # el filtro `^...` de arriba no lo alcanza (verificado: 0 coincidencias).
+      #
+      # Sin este paso su `dist/` no existe en el job de tests, y los dos guards del artefacto
+      # —`dist-artifact.guard.test.ts` y `dist-surface.guard.test.ts`— son
+      # `describe.skipIf(!existsSync(DIST_DIR))`: se SALTAN en silencio y el CI queda verde sin
+      # haberlos corrido. El primero de ellos es justo el que atrapa la reserva fantasma de la
+      # ronda 2 —un `dist/` rancio que devolvía `{ ok: true }` para un sobre con `errors[]`—, o sea
+      # que el guard del incidente sería el único que nunca se ejecuta. Es el mismo patrón que la
+      # nota de las PG* de más abajo: verde por omisión no es verde.
+      #
+      # Se puede borrar cuando `apps/api` declare la dependencia y el filtro lo cubra solo.
+      - name: Build sabre (sus guards de artefacto se saltan sin dist/)
+        run: pnpm --filter @sales-travel/sabre build
+
       - name: Create extensions
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -d sales_travel -v ON_ERROR_STOP=1 <<'SQL'

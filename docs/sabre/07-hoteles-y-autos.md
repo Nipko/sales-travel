@@ -1,5 +1,5 @@
 ---
-titulo: "Sabre — Hoteles y Autos"
+titulo: 'Sabre — Hoteles y Autos'
 fecha: 2026-08-25
 estado: revisado contra contratos oficiales
 Fuentes: ver 00-fuentes.md
@@ -15,7 +15,7 @@ Se usa la convención de marcado de `00-fuentes.md` (§4): **VERIFICADO** (colec
 
 ### 0.1 Tres correcciones de procedencia respecto de la primera pasada
 
-1. **Las 4 respuestas guardadas de la colección NO están vacías.** Pesan 16.479 bytes cada una y están extraídas en `slices/responses/*.json`. **Pero no sirven para esta vertical:** las 4 son `POST /v1/orders/view` de un **Order NDC de aire** (`order.pnrLocator: "TOSGCZ"`, 1 `orderItem`, `fareDetails`, `journeys`, `segments`). Un grep sobre ellas devuelve **0 apariciones** de `hotel`, y las 10 de `car` son `carrierCode` / `carrierName` / `marketingCarrier`. **VERIFICADO.** Conclusión: la colección sigue sin aportar ni una respuesta de hotel ni de auto — pero eso ya **no** es un bloqueante, porque los contratos oficiales sí las especifican (§2.1.6, §4.1.1).
+1. **Las 4 respuestas guardadas de la colección NO están vacías.** Pesan 16.479 bytes cada una y están extraídas en `evidence/responses/*.json`. **Pero no sirven para esta vertical:** las 4 son `POST /v1/orders/view` de un **Order NDC de aire** (`order.pnrLocator: "TOSGCZ"`, 1 `orderItem`, `fareDetails`, `journeys`, `segments`). Un grep sobre ellas devuelve **0 apariciones** de `hotel`, y las 10 de `car` son `carrierCode` / `carrierName` / `marketingCarrier`. **VERIFICADO.** Conclusión: la colección sigue sin aportar ni una respuesta de hotel ni de auto — pero eso ya **no** es un bloqueante, porque los contratos oficiales sí las especifican (§2.1.6, §4.1.1).
 2. **La fuente Sabre es** `sabre/Booking Management API v2026.04.postman_collection.json` (1.077 requests). `EXTERNAL_AGENCY.postman_collection.json` es la colección de **LATAM NDC** y no tiene relación. Ver `00-fuentes.md` §1.
 3. **El carril SOAP/LLS stateful es central en esta vertical, no marginal.** De los 243 requests SOAP de la colección, **54 son de hotel/auto**: `GetHotelAvailRQ` 26, `HotelPriceCheckRQ` 25, `GetVehAvailRQ` 2, `VehPriceCheckRQ` 1. Se documenta en §1.2 y §6.3.
 
@@ -23,13 +23,13 @@ Se usa la convención de marcado de `00-fuentes.md` (§4): **VERIFICADO** (colec
 
 **VERIFICADO** (conteo sobre `requests.jsonl`):
 
-| Métrica | Valor |
-| --- | --- |
-| Requests con `hotel` en la ruta | **148** |
+| Métrica                                           | Valor                                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Requests con `hotel` en la ruta                   | **148**                                                                                |
 | Requests con `vehicle` / `veh` / `car` en la ruta | **14** — 9 en `Create Booking / Vehicle`, 4 en `Workflows / 10`, 1 en `Cancel Booking` |
-| Endpoints REST propios de hotel | 2 (`/v5/get/hotelavail`, `/v5/hotel/pricecheck`) |
-| Endpoints REST propios de auto | 2 (`/v2.0.0/get/vehavail`, `/v1.0.0/veh/pricecheck`) |
-| Variantes de bloque `car` en `createBooking` | 5 |
+| Endpoints REST propios de hotel                   | 2 (`/v5/get/hotelavail`, `/v5/hotel/pricecheck`)                                       |
+| Endpoints REST propios de auto                    | 2 (`/v2.0.0/get/vehavail`, `/v1.0.0/veh/pricecheck`)                                   |
+| Variantes de bloque `car` en `createBooking`      | 5                                                                                      |
 
 > **Corrección explícita.** La primera pasada dijo «13 requests de auto» aquí, y el documento `10` dijo «3 requests funcionales». Ambas cifras eran incompatibles y ninguna declaraba su criterio. La cifra correcta por nombre de carpeta es **14**; los endpoints REST distintos son **2**. La conclusión de §5.4 (descartar autos de Sabre) se sostiene igual, pero por coste de oportunidad, no por escasez de contrato — el contrato de autos resultó ser rico (§4).
 
@@ -39,14 +39,14 @@ Se usa la convención de marcado de `00-fuentes.md` (§4): **VERIFICADO** (colec
 
 **VERIFICADO** (`sabre/BM API TEST CERT - EPR.postman_environment.json`, 425 variables, sólo 6 con valor):
 
-| Variable | Valor |
-| --- | --- |
-| `rest_endpoint` | `https://api.cert.platform.sabre.com` |
+| Variable        | Valor                                         |
+| --------------- | --------------------------------------------- |
+| `rest_endpoint` | `https://api.cert.platform.sabre.com`         |
 | `soap_endpoint` | `https://webservices.cert.platform.sabre.com` |
-| `lls_endpoint` | `https://webservices.cert.platform.sabre.com` |
-| `username` | `{{epr}}` |
-| `pcc_tkt` | `{{your_target_pcc}}` |
-| `ptrta` | `{{atpco_printer_address}}` |
+| `lls_endpoint`  | `https://webservices.cert.platform.sabre.com` |
+| `username`      | `{{epr}}`                                     |
+| `pcc_tkt`       | `{{your_target_pcc}}`                         |
+| `ptrta`         | `{{atpco_printer_address}}`                   |
 
 El `rest_endpoint` coincide con el `servers.url` de los contratos de esta vertical: **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:8`, `get-vehicle-availability-v2.yml:14`.
 
@@ -68,10 +68,10 @@ Es el mismo patrón que ya tenemos en `providers/latam-ndc/src/auth/token.servic
 > **CORRECCIÓN — el algoritmo del `secret` NO es [INFERIDO].** La primera pasada afirmó que «la colección no lo genera en ningún script». **Es falso.** El script pre-request **a nivel de colección** (`event[listen=prerequest]`, rama `case 'token'`) lo deriva literalmente:
 >
 > ```js
-> const clientidRaw    = `V1:${username}:${pcc}:AA`;
+> const clientidRaw = `V1:${username}:${pcc}:AA`;
 > const clientidBase64 = CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(clientidRaw));
 > const passwordBase64 = CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(passwordRaw));
-> const secretRaw      = `${clientidBase64}:${passwordBase64}`;
+> const secretRaw = `${clientidBase64}:${passwordBase64}`;
 > pm.environment.set('secret', CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(secretRaw)));
 > ```
 >
@@ -83,38 +83,106 @@ Es el mismo patrón que ya tenemos en `providers/latam-ndc/src/auth/token.servic
 
 ### 1.2 Los dos transportes conviven — y ahora sabemos cuál escoger
 
-| Flujo | Shop (avail) | PriceCheck | Book / Cancel / Modify |
-| --- | --- | --- | --- |
-| `Workflows / 9 - Hotel Shop, Book, Cancel` | **REST JSON** `POST /v5/get/hotelavail` | **REST JSON** `POST /v5/hotel/pricecheck` | REST JSON `/v1/trip/orders/*` |
-| `Create Booking / CSL Hotel / Hotel Preparation` | **SOAP XML** | **SOAP XML** | REST JSON `/v1/trip/orders/createBooking` |
-| `ModifyBooking / Hotel modification flows` (6 familias) | **SOAP XML** | **SOAP XML** | REST JSON `/v1/trip/orders/modifyBooking` |
-| `ModifyBooking / … / FoP (Hybrid)` (§6.3) | **SOAP XML** | **SOAP XML** | SOAP `UpdatePassengerNameRecordRQ` + REST `modifyBooking` |
-| `Workflows / 10 - Vehicle` | **REST JSON** `POST /v2.0.0/get/vehavail` | **REST JSON** `POST /v1.0.0/veh/pricecheck` | REST JSON `createBooking` |
-| `Create Booking / Vehicle / Vehicle preparation` | **SOAP XML** | **SOAP XML** | REST JSON |
+| Flujo                                                   | Shop (avail)                              | PriceCheck                                  | Book / Cancel / Modify                                    |
+| ------------------------------------------------------- | ----------------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| `Workflows / 9 - Hotel Shop, Book, Cancel`              | **REST JSON** `POST /v5/get/hotelavail`   | **REST JSON** `POST /v5/hotel/pricecheck`   | REST JSON `/v1/trip/orders/*`                             |
+| `Create Booking / CSL Hotel / Hotel Preparation`        | **SOAP XML**                              | **SOAP XML**                                | REST JSON `/v1/trip/orders/createBooking`                 |
+| `ModifyBooking / Hotel modification flows` (6 familias) | **SOAP XML**                              | **SOAP XML**                                | REST JSON `/v1/trip/orders/modifyBooking`                 |
+| `ModifyBooking / … / FoP (Hybrid)` (§6.3)               | **SOAP XML**                              | **SOAP XML**                                | SOAP `UpdatePassengerNameRecordRQ` + REST `modifyBooking` |
+| `Workflows / 10 - Vehicle`                              | **REST JSON** `POST /v2.0.0/get/vehavail` | **REST JSON** `POST /v1.0.0/veh/pricecheck` | REST JSON `createBooking`                                 |
+| `Create Booking / Vehicle / Vehicle preparation`        | **SOAP XML**                              | **SOAP XML**                                | REST JSON                                                 |
 
-**VERIFICADO-SPEC.** La documentación oficial zanja la duda: *«Get Hotel Avail supports two API designs: SOAP/XML and REST/JSON. […] you will find the SOAP edition of the API has the same features and capabilities»* (`help/get-hotel-avail-v4/help-documentation-content-services-for-lodging-get-hotel-avail.txt`). **No se pierde funcionalidad usando sólo REST en shop/pricecheck.**
+**VERIFICADO-SPEC.** La documentación oficial zanja la duda: _«Get Hotel Avail supports two API designs: SOAP/XML and REST/JSON. […] you will find the SOAP edition of the API has the same features and capabilities»_ (`help/get-hotel-avail-v4/help-documentation-content-services-for-lodging-get-hotel-avail.txt`). **No se pierde funcionalidad usando sólo REST en shop/pricecheck.**
 
 #### Versiones: hay tres conviviendo en el carril SOAP
 
 **CORRECCIÓN a la primera pasada.** El documento advertía que «no existe ningún endpoint `/v3.0.0` de hotel en la colección». Eso es cierto **sólo para las URLs REST**. En el carril SOAP la versión va en el `xmlns` y en `@version`, y hay **tres versiones activas** (**VERIFICADO**, conteo sobre `requests.jsonl`):
 
-| Mensaje | v3.0.0 | v4.0.0 | v5.0.0 | Total |
-| --- | --- | --- | --- | --- |
-| `GetHotelAvailRQ` | 1 | 3 | 22 | **26** |
-| `HotelPriceCheckRQ` | 4 | — | 21 | **25** |
-| `GetVehAvailRQ` | — | — | 2 (v2.0.0) | **2** |
-| `VehPriceCheckRQ` | — | — | 1 (v1.0.0) | **1** |
+| Mensaje             | v3.0.0 | v4.0.0 | v5.0.0     | Total  |
+| ------------------- | ------ | ------ | ---------- | ------ |
+| `GetHotelAvailRQ`   | 1      | 3      | 22         | **26** |
+| `HotelPriceCheckRQ` | 4      | —      | 21         | **25** |
+| `GetVehAvailRQ`     | —      | —      | 2 (v2.0.0) | **2**  |
+| `VehPriceCheckRQ`   | —      | —      | 1 (v1.0.0) | **1**  |
 
 Namespaces vistos: `http://services.sabre.com/hotel/avail/v{3,4,5}_0_0` y `http://services.sabre.com/hotel/pricecheck/v{3,5}_0_0`. Los 3 `GetHotelAvailRQ v4.0.0` son precisamente los de la familia **Hybrid** (§6.3).
 
-| Carril | URL / namespace | ¿Tenemos el contrato? |
-| --- | --- | --- |
-| REST v5 (el que usa `Workflows / 9`) | `POST /v5/get/hotelavail` | ❌ **no** — laguna conocida |
-| REST v4 | `POST /v4.0.0/get/hotelavail` — **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:12` | ✅ |
-| REST v3 | `POST /v3.0.0/get/hotelavail` — **VERIFICADO-SPEC** `get-hotel-avail-v3.yml:15` | ✅ |
-| SOAP v5 / v4 / v3 | mismo payload lógico | por equivalencia declarada arriba |
+| Carril                               | URL / namespace                                                                 | ¿Tenemos el contrato?             |
+| ------------------------------------ | ------------------------------------------------------------------------------- | --------------------------------- |
+| REST v5 (el que usa `Workflows / 9`) | `POST /v5/get/hotelavail` — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:19`   | ✅                                |
+| REST v4                              | `POST /v4.0.0/get/hotelavail` — **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:12` | ✅                                |
+| REST v3                              | `POST /v3.0.0/get/hotelavail` — **VERIFICADO-SPEC** `get-hotel-avail-v3.yml:15` | ✅                                |
+| SOAP v5 / v4 / v3                    | mismo payload lógico                                                            | por equivalencia declarada arriba |
 
-> **Laguna declarada:** todo lo marcado VERIFICADO-SPEC en §2 sale de **v4**. La colección usa **v5**. La diferencia v4→v5 es **DESCONOCIDA** y es el primer diff que hay que pedir o capturar. Los campos citados aquí son estructurales (nombres OTA), así que el riesgo de que hayan desaparecido es bajo, pero **v5 puede haber añadido campos que este documento no lista**.
+#### 1.2.1 Diff real v4 → v5 del avail — reconciliado
+
+> **CORRECCIÓN a las pasadas anteriores.** Este documento declaraba la diferencia v4→v5 «DESCONOCIDA» y mandaba pedir el spec al account manager. **Ya no aplica.** `get-hotel-avail-v5.0.yml` (4.001 líneas, OpenAPI 3.0.2, **127 schemas**) está congelado en `docs/sabre/evidence/specs/` y cuenta dentro de los 21 contratos de `00-fuentes.md` §2. Lo que sigue es el diff completo, obtenido comparando `-v4.yml` contra `-v5.0.yml` schema a schema y propiedad a propiedad, con `-v3.yml` como control — los tres están en el mismo directorio.
+
+**Lo primero, y lo que más importa: la estructura no cambió.** **113 de los 127** nombres de schema de v5 existen igual en v4 (v4 tiene 121), y el árbol `GetHotelAvailRS → HotelAvailInfos → HotelAvailInfo[] → {HotelInfo, HotelRateInfo, HotelImageInfo}` es idéntico. **Todo lo marcado VERIFICADO-SPEC en §2 contra v4 sigue siendo válido en v5**, salvo las seis rupturas de la tabla C. Los nombres de propiedad JSON no cambian en ningún caso; los renombres de tabla E son internos del YAML.
+
+**A. Campos nuevos en el request** — todas las citas de las tablas A a E son a `get-hotel-avail-v5.0.yml` (**VERIFICADO-SPEC**):
+
+| Campo                                  | Qué hace                                                                                                                                                                                                                           | Cita (v5)                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `GetHotelAvailRQ.CorporateNumber`      | Número corporativo de la agencia para la que se compra en CSL. Habilita preferenciación y credenciales a nivel corporativo.                                                                                                        | `:1152`, `:1198`          |
+| `GetHotelAvailRQ.TPAExtensions`        | Contenedor libre (`additionalProperties: true`) para campos de partner, también en la respuesta.                                                                                                                                   | `:1156`, `:1173`, `:1256` |
+| `GeoRef.RestrictSearchToCountry`       | Acota una búsqueda por radio a un país. **Directamente útil en LATAM:** un radio de 200 mi desde Leticia, Foz do Iguaçu o Tacna cruza dos o tres fronteras.                                                                        | `:1331`                   |
+| `HotelPref.LenientHotelName`           | Búsqueda por nombre **parcial** (mín. 3 caracteres), mutuamente excluyente con `HotelName`, que exige coincidencia exacta. Es lo que necesita el canal conversacional: el cliente escribe «hilton bogota», no el nombre registral. | `:1783`                   |
+| `RateInfoRef.RateFilters.RateFilter[]` | Filtro `{Type, Value, Action}` con `Type` ∈ `RateCode` \| `RateType` \| `Commission` y `Action` ∈ `Include` \| `Exclude`.                                                                                                          | `:1573`, `:1642`          |
+
+> 🟢 **`RateFilter Type="Commission"` acepta `C` (comisionable) o `NC` (no comisionable)** — **VERIFICADO-SPEC**, `help/get-hotel-avail-v5.0/v5.0-index.txt`, sección «Rate filters». Es decir: **se puede pedir a Sabre que devuelva sólo inventario comisionable**, en origen, sin filtrarlo nosotros después. Encaja con el pricing waterfall del consolidador igual que `Commission` en la respuesta (§2.1.6).
+>
+> ⚠️ **Trampa documentada:** varios `RateFilter` en el mismo request se combinan como **OR, no como AND** (misma fuente). Excluir «no comisionables» y «gubernamentales» a la vez excluye las que sean _cualquiera de las dos_, no las que sean ambas.
+
+**B. Campos nuevos en la respuesta:**
+
+| Campo                                           | Qué aporta                                                                                                                                                                                                                                                                                                                                                                              | Cita (v5)        |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `HotelInfo.CanReturnRequestedNegotiatedRate`    | Booleano **por propiedad**: dice si el `ClientId` / `RatePlanCode` negociado que pediste es válido para esa cadena. Se puebla sólo si `SortBy: NegotiatedRateAvailability`. **Es diagnóstico directo del BYOC:** distingue «la agencia no tiene tarifa negociada aquí» de «la tarifa existe pero no hubo disponibilidad».                                                               | `:2235`          |
+| `HotelAvailInfos.TranslatedHotelAvailInfo[]`    | Mismo contenido que `HotelAvailInfo` más un `LanguageCode`: **el estático de la propiedad en más de un idioma dentro de la misma respuesta**. Si soporta ES y PT resuelve el contenido multi-idioma de `packages/i18n` sin un segundo viaje. ⚠️ **Qué idiomas admite de verdad y cómo se piden no está en el contrato — el único ejemplo es `"en"`. DESCONOCIDO, medible en el spike.** | `:2114`          |
+| `HotelRateInfo.RateUnavailability.RateSource[]` | `{Source, Reason, DisplayMessage}` por cada fuente que **no** devolvió tarifa. Ya lo teníamos en el pricecheck (§2.8.1); ahora está también en el avail. Es degradación parcial explicada por proveedor, y encaja con `apps/api/src/search/provider-fanout.ts`.                                                                                                                         | `:2601`, `:2666` |
+| `HotelRateInfo.RateRanges.RateRange[]`          | `MinRate` / `MaxRate` aproximados (+ convertidos + `RateSource`) de la propiedad. Sólo con `BestOnly: "4"` y sólo para tarifas Sabre GDS.                                                                                                                                                                                                                                               | `:2589`, `:2605` |
+| `RateInfoBasic.HighestNightlyRate`              | La nocturna más alta que mandó el proveedor, sin impuestos ni fees.                                                                                                                                                                                                                                                                                                                     | `:2793`          |
+| `RateInfoBasic.ApproxTotalPrice`                | **Precio all-inclusive tal como lo manda el proveedor**, con impuestos y fees conocidos aunque no estén en `AmountAfterTax`. El contrato lo marca «for display purposes only», y avisa de que en prepago lo que se cobra es `AmountAfterTax`, no esto.                                                                                                                                  | `:2799`          |
+| `RatePlan.RatePlanTypeDescription`              | La descripción OTA del `RatePlanType`, resuelta por Sabre (ejemplos reales del spec: `13` → «Regular/rack», `25` → «Net»).                                                                                                                                                                                                                                                              | `:3102`          |
+| `RatePlan.Ordinal`                              | Orden de presentación de las tarifas dentro de la habitación.                                                                                                                                                                                                                                                                                                                           | `:3150`          |
+| `response.Room.Adults` / `.Children`            | Eco de la ocupación que Sabre realmente consideró. **`Children` vuelve `0` en GDS**, lo que hace verificable en la respuesta la degradación de §2.1.4 en vez de tener que inferirla.                                                                                                                                                                                                    | `:2930`, `:2935` |
+| `response.Room.AccessibleAmenities`             | Amenities de accesibilidad separadas de las generales.                                                                                                                                                                                                                                                                                                                                  | `:2948`          |
+| `LocationInfo.Contact.Email`                    | Correo de la propiedad, junto a `Phone` y `Fax`.                                                                                                                                                                                                                                                                                                                                        | `:2467`          |
+
+**C. Cambios que rompen un mapper escrito contra v4** — son seis y hay que tenerlos presentes al escribir `response.mapper.ts`:
+
+| #   | Elemento                     | v4                                                                                   | v5                                                                                                                                                                                  | Cita v5 |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1   | `CommissionDescription.Text` | `string`                                                                             | **array de `string`**                                                                                                                                                               | `:2854` |
+| 2   | `PenaltyDescription.Text`    | `string`                                                                             | **array de `string`**                                                                                                                                                               | `:3618` |
+| 3   | `RatePlanDescription.Text`   | `string`                                                                             | **array de `string`**                                                                                                                                                               | `:3201` |
+| 4   | `SearchCriteria.SortBy`      | enum cerrado `TotalRate` \| `DistanceFrom` \| `SabreRating`, default **`TotalRate`** | sin enum; valores `NegotiatedRateAvailability` (nuevo **default**), `DistanceFrom`, `SabreRating`, `AverageNightlyRate`, `AverageNightlyRateBeforeTax`. **`TotalRate` desaparece.** | `:1214` |
+| 5   | `RateInfoRef.BestOnly`       | enum `"1"` \| `"2"` \| `"3"`                                                         | pattern abierto; **añade `"4"`** = tarifa pública más baja + negociada más baja, y puebla `RateRanges` en GDS                                                                       | `:1538` |
+| 6   | `HotelInfo.CodeContext`      | enum `SABRE` \| `GLOBAL`                                                             | enum **sólo `GLOBAL`** — la respuesta siempre devuelve el Global ID                                                                                                                 | `:2157` |
+
+> ⚠️ **El nº 4 es el que muerde en silencio.** Un builder portado de v4 que mande `SortBy: "TotalRate"` pide un valor que v5 ya no conoce; y omitir `SortBy` ya **no** ordena por precio, ordena por disponibilidad de tarifa negociada. El equivalente de precio en v5 es `AverageNightlyRate` o `AverageNightlyRateBeforeTax`.
+
+**D. Campos eliminados** — todos los que v4 marcaba explícitamente «This is a placeholder for now», más dos de penalidades:
+
+| Elemento                                                                                                   | Cita v5 |
+| ---------------------------------------------------------------------------------------------------------- | ------- |
+| `StayDateTimeRange.CheckInTime`, `.CheckOutTime`, `.DurationInHours`                                       | `:1599` |
+| `response.Room.AccessibleRoom`, `.RoomSize`, `.NumberOfBedRooms`                                           | `:2878` |
+| `AmountPercent.BasisType`, `.ApplyAs` (penalidades y depósitos)                                            | `:3762` |
+| `RatePlanCandidate.RatePlanType`: v4 lo daba como enum `"1"`..`"33"`; v5 deja sólo `pattern: ^[0-9]{1,2}$` | `:1739` |
+
+`StayDateTimeRange` gana a cambio los límites reales: `StartDate` hasta **330 días** en el futuro y `EndDate` hasta **220 días** desde `StartDate`, ambos «may vary for certain rate sources» (`:1608`, `:1613`). Son los topes que hay que validar en el borde antes de llamar.
+
+**E. Renombres internos, sin efecto sobre el JSON:** `SearchCriteria` → `SearchCriteriaAvail`; `RateInfos.RateInfo` y `Room.RateInfo` → un `RateInfoBasic` compuesto con `allOf`; `Rates`/`Rate` → `NightlyRates`/`NightlyRate` (las propiedades JSON siguen llamándose `Rates.Rate`); `RoomAmenities`/`RoomAmenity`/`Attributes` desaparecen y la habitación reutiliza `Amenities`.
+
+> ⚠️ **Aviso para codegen:** v5 declara dos schemas, `PropertyLabels` y `PropertyLabel` (`:2294`, `:2302`), que **ningún otro schema referencia**. Están definidos y colgando. Un generador los materializará como tipos huérfanos; no son evidencia de que el campo se devuelva.
+
+**F. Tres hechos operativos que sólo están en la página oficial de v5** (**VERIFICADO-SPEC**, `help/get-hotel-avail-v5.0/v5.0-index.txt`):
+
+1. **`SortBy` por precio ordena sólo la página pedida, no el conjunto.** Literal: _«Applies to one requested page […] properties with cheaper rates may also be displayed on later pages»_. Con `PageSize` pequeño esto produce un «más barato» falso en el fan-out. **Ordenar del lado nuestro después de paginar, nunca confiar en el orden de una página.**
+2. **La preferenciación manda sobre `SortBy`.** El orden final es siempre: promovidas por agencia o proveedor → normales → degradadas, sea cual sea el `SortBy` pedido.
+3. **`PageSize > 40` cambia el modo de obtención**: tarifas de agregador en vivo para todas las propiedades, GDS en vivo **sólo para 40**, y **caché para el resto** (`:1231`). Es un compromiso frescura/cobertura que hay que decidir explícitamente, no heredar del default `200`.
 
 #### Sesiones stateful — dónde hacen falta de verdad
 
@@ -133,7 +201,7 @@ Los requests SOAP usan `{{header}}` / `{{footer}}`: el sobre `SOAP-ENV:Envelope`
 </SessionCreateRQ>
 ```
 
-**Matiz importante que la primera pasada no tenía.** La documentación oficial de `createBooking` dice: *«This API is designed to operate in a **stateless** way, and accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution»* (**VERIFICADO-SPEC**, `help/help-documentation-create-booking.txt`). Es decir:
+**Matiz importante que la primera pasada no tenía.** La documentación oficial de `createBooking` dice: _«This API is designed to operate in a **stateless** way, and accepts both sessionless (ATK) and session-based (ATH) tokens. When a call is made to this API via a session-based token, the session (AAA) is cleared before and after execution»_ (**VERIFICADO-SPEC**, `help/help-documentation-create-booking.txt`). Es decir:
 
 - `createBooking`, `getBooking`, `modifyBooking` y `cancelBooking` son **stateless**. No necesitan sesión.
 - La sesión aparece en la colección porque esos flujos usan **también** `UpdatePassengerNameRecordRQ` u otros LLS que sí son stateful (§6.3).
@@ -150,7 +218,7 @@ Los requests SOAP usan `{{header}}` / `{{footer}}`: el sobre `SOAP-ENV:Envelope`
 
 > ⚠️ El request llamado `1. Get Hotel Avail /v3.0.0 Latitude Longitude Krakow` tiene URL `/v5/get/hotelavail`. El nombre está heredado de una copia. **No hay dos versiones REST que implementar.**
 
-**VERIFICADO-SPEC** — el spec añade un header opcional `Application-ID` («work with your account manager to generate an application ID») que la colección no usa: `get-hotel-avail-v4.yml:17-21`.
+**VERIFICADO-SPEC** — el spec añade un header opcional `Application-ID` («to generate a new application ID, contact your account manager») que la colección no usa: `get-hotel-avail-v5.0.yml:25-29`, igual en `get-hotel-avail-v4.yml:17-21`.
 
 #### 2.1.1 Búsqueda por punto de referencia (código IATA)
 
@@ -160,17 +228,27 @@ Los requests SOAP usan `{{header}}` / `{{footer}}`: el sobre `SOAP-ENV:Envelope`
 {
   "GetHotelAvailRQ": {
     "SearchCriteria": {
-      "OffSet": 1, "SortBy": "SabreRating", "SortOrder": "ASC",
-      "PageSize": 20, "TierLabels": false,
-      "GeoSearch": { "GeoRef": {
-        "Radius": 200, "UOM": "MI",
-        "RefPoint": { "Value": "HAM", "ValueContext": "CODE", "RefPointType": "6" } } },
+      "OffSet": 1,
+      "SortBy": "SabreRating",
+      "SortOrder": "ASC",
+      "PageSize": 20,
+      "TierLabels": false,
+      "GeoSearch": {
+        "GeoRef": {
+          "Radius": 200,
+          "UOM": "MI",
+          "RefPoint": { "Value": "HAM", "ValueContext": "CODE", "RefPointType": "6" }
+        }
+      },
       "RateInfoRef": {
-        "ConvertedRateInfoOnly": false, "CurrencyCode": "USD", "BestOnly": "2",
+        "ConvertedRateInfoOnly": false,
+        "CurrencyCode": "USD",
+        "BestOnly": "2",
         "PrepaidQualifier": "IncludePrepaid",
         "StayDateTimeRange": { "StartDate": "{{start_date}}", "EndDate": "{{end_date}}" },
-        "Rooms": { "Room": [ { "Index": 1, "Adults": 2, "Children": 0 } ] },
-        "RateSource": "100" },
+        "Rooms": { "Room": [{ "Index": 1, "Adults": 2, "Children": 0 }] },
+        "RateSource": "100"
+      },
       "HotelPref": { "SabreRating": { "Min": "3", "Max": "5" } },
       "ImageRef": { "Type": "MEDIUM", "LanguageCode": "EN" }
     }
@@ -202,29 +280,34 @@ Códigos reales útiles como datos de prueba en CERT: `100035516`, `100095894`, 
 
 #### 2.1.3 `SearchCriteria` — ahora contra el contrato
 
-| Campo | Colección | Contrato (v4) |
-| --- | --- | --- |
-| `OffSet` | `1`, `2` | `minimum: 1`. Nº de páginas = `MaxSearchResults / PageSize`. **VERIFICADO-SPEC** `:102` |
-| `PageSize` | `20`, `200` | **`maximum: 200`**, default 200. **VERIFICADO-SPEC** `:125` |
-| `SortBy` | `SabreRating`, `DistanceFrom` | **enum cerrado: `TotalRate` \| `DistanceFrom` \| `SabreRating`**, default `TotalRate`. **VERIFICADO-SPEC** `:108` |
-| `SortOrder` | `ASC`, `DESC` | Default derivado: `TotalRate`→ASC, `DistanceFrom`→ASC, `SabreRating`→DESC. **VERIFICADO-SPEC** `:116` |
-| `TierLabels` | `true`, `false` | **Resuelto:** si `true`, devuelve `TierLabel` para propiedades preferenciadas (etiquetas de agencia o proveedor). Default `true`. **VERIFICADO-SPEC** `:131`, `:1149` |
-| `RateDetailsInd` | `true` | **Resuelto — y no era lo que decía la primera pasada:** controla *«whether only properties with rates should be returned»*, no el desglose de tarifa. Default `true`. **VERIFICADO-SPEC** `:144` |
-| `ShopKey` | no usado | Clave cifrada para paginar; con ella sólo se considera `OffSet` y **el resto del request se ignora**. Es el mecanismo correcto de paginación. **VERIFICADO-SPEC** `:137` |
-| `RefPointType` | `"6"` | **enum: `5`, `6`, `7`, `11`, `16`, `18`, `37`**. **VERIFICADO-SPEC** `:262` |
-| `ValueContext` | `CODE` | enum `NAME` \| `CODE` — se puede buscar por **nombre** de referencia. **VERIFICADO-SPEC** `:255` |
-| `BestOnly` | `"1"`, `"2"`, `"3"` | **Resuelto:** `1` = tarifa más baja de todas las fuentes; `2` = la más baja de **cada** fuente; `3` = la mejor de cada fuente **más la negociada/contractual más baja**. **VERIFICADO-SPEC** `:408` |
-| `PrepaidQualifier` | `IncludePrepaid` | enum `IncludePrepaid` \| `PrepaidOnly` \| `ExcludePrepaid`. **Todas las tarifas con `RateSource 112` se tratan como prepaid.** **VERIFICADO-SPEC** `:419` |
-| `RefundableOnly` | `false` | default `false`. **VERIFICADO-SPEC** `:429` |
-| `ConvertedRateInfoOnly` | `false` | Controla si las tarifas vuelven bajo `RateInfo`, `ConvertedRateInfo` o ambos, según haya o no `CurrencyCode`. **VERIFICADO-SPEC** `:435` |
-| `TravellerCountry` | no usado | Envía el país del viajero al proveedor para obtener tarifas país-específicas. **Relevante para LATAM.** **VERIFICADO-SPEC** `:449` |
-| `RateRange` | sólo en el SOAP de Hybrid (`Min="0.10" Max="1000.0"`) | Requiere `CurrencyCode`; si falta, error `5097`. **VERIFICADO-SPEC** `:456` |
-| `CorpDiscount` | no usado en avail | Código de descuento corporativo del viajero, 1-20 alfanum. **VERIFICADO-SPEC** `:468` |
-| `LoyaltyIds` / `FrequentFlyerNumber` | no usados | Tarifas de socio de programa de fidelidad. **VERIFICADO-SPEC** `:462`, `:465` |
-| `RatePlanCandidates` | `RatePlanCode="AMX"` | Hasta **11** candidatos: máx. 3 con `RatePlanType`, máx. 8 con `RatePlanCode`. `ExactMatchOnly` y `OtherAvailableRatePlans` como modificadores. **VERIFICADO-SPEC** `:561`, `:580` |
-| `RateSource` | `"100"`, `"113"` | Ver §2.2 |
-| `HotelPref` | `SabreRating{Min,Max}` | Además: `BrandCodes`, `ChainCodes`, `AmenityCodes`, `SecurityFeatureCodes`, `PropertyTypeCodes`, `PropertyQualityCodes`. **VERIFICADO-SPEC** `:678`-`:880`. El SOAP de Hybrid usa `<BrandCodes><BrandCode>10002</BrandCode>` (**VERIFICADO**) |
-| `ImageRef` | `{Type, LanguageCode}` | **VERIFICADO-SPEC** `:881` |
+> Las citas de esta tabla son a `get-hotel-avail-v4.yml`, que es donde se hizo la primera reconciliación. **Todas siguen siendo válidas en v5 salvo donde la fila lo dice.** El diff completo v4→v5, con sus cinco campos de request nuevos, está en §1.2.1.
+
+| Campo                                                              | Colección                                             | Contrato (v4, salvo nota)                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OffSet`                                                           | `1`, `2`                                              | `minimum: 1`. Nº de páginas = `MaxSearchResults / PageSize`. **VERIFICADO-SPEC** `:102`                                                                                                                                                                                                                                                                                 |
+| `PageSize`                                                         | `20`, `200`                                           | **`maximum: 200`**, default 200. **VERIFICADO-SPEC** `:125`. ⚠️ **v5 añade la letra pequeña:** por encima de `40` sólo 40 propiedades traen GDS en vivo y el resto vienen de caché — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1231`                                                                                                                                |
+| `SortBy`                                                           | `SabreRating`, `DistanceFrom`                         | **enum cerrado: `TotalRate` \| `DistanceFrom` \| `SabreRating`**, default `TotalRate`. **VERIFICADO-SPEC** `:108`. ⚠️ **Cambia en v5:** `TotalRate` desaparece, entran `NegotiatedRateAvailability` (nuevo default), `AverageNightlyRate` y `AverageNightlyRateBeforeTax` — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1214`. Ver §1.2.1 tabla C nº 4                |
+| `SortOrder`                                                        | `ASC`, `DESC`                                         | Default derivado: `TotalRate`→ASC, `DistanceFrom`→ASC, `SabreRating`→DESC. **VERIFICADO-SPEC** `:116`. En v5 el default se deriva de los valores nuevos y **se ignora** con `SortBy: NegotiatedRateAvailability` — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1219`                                                                                                  |
+| `TierLabels`                                                       | `true`, `false`                                       | **Resuelto:** si `true`, devuelve `TierLabel` para propiedades preferenciadas (etiquetas de agencia o proveedor). Default `true`. **VERIFICADO-SPEC** `:131`, `:1149`                                                                                                                                                                                                   |
+| `RateDetailsInd`                                                   | `true`                                                | **Resuelto — y no era lo que decía la primera pasada:** controla _«whether only properties with rates should be returned»_, no el desglose de tarifa. Default `true`. **VERIFICADO-SPEC** `:144`                                                                                                                                                                        |
+| `ShopKey`                                                          | no usado                                              | Clave cifrada para paginar; con ella sólo se considera `OffSet` y **el resto del request se ignora**. Es el mecanismo correcto de paginación. **VERIFICADO-SPEC** `:137`                                                                                                                                                                                                |
+| `RefPointType`                                                     | `"6"`                                                 | **enum: `5`, `6`, `7`, `11`, `16`, `18`, `37`**. **VERIFICADO-SPEC** `:262`                                                                                                                                                                                                                                                                                             |
+| `ValueContext`                                                     | `CODE`                                                | enum `NAME` \| `CODE` — se puede buscar por **nombre** de referencia. **VERIFICADO-SPEC** `:255`                                                                                                                                                                                                                                                                        |
+| `BestOnly`                                                         | `"1"`, `"2"`, `"3"`                                   | **Resuelto:** `1` = tarifa más baja de todas las fuentes; `2` = la más baja de **cada** fuente; `3` = la mejor de cada fuente **más la negociada/contractual más baja**. **VERIFICADO-SPEC** `:408`. **v5 añade `4`**: la pública más baja + la negociada más baja, y además puebla `RateRanges` con el techo GDS — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1538` |
+| `PrepaidQualifier`                                                 | `IncludePrepaid`                                      | enum `IncludePrepaid` \| `PrepaidOnly` \| `ExcludePrepaid`. **Todas las tarifas con `RateSource 112` se tratan como prepaid.** **VERIFICADO-SPEC** `:419`                                                                                                                                                                                                               |
+| `RefundableOnly`                                                   | `false`                                               | default `false`. **VERIFICADO-SPEC** `:429`                                                                                                                                                                                                                                                                                                                             |
+| `ConvertedRateInfoOnly`                                            | `false`                                               | Controla si las tarifas vuelven bajo `RateInfo`, `ConvertedRateInfo` o ambos, según haya o no `CurrencyCode`. **VERIFICADO-SPEC** `:435`                                                                                                                                                                                                                                |
+| `TravellerCountry`                                                 | no usado                                              | Envía el país del viajero al proveedor para obtener tarifas país-específicas. **Relevante para LATAM.** **VERIFICADO-SPEC** `:449`                                                                                                                                                                                                                                      |
+| `RateRange`                                                        | sólo en el SOAP de Hybrid (`Min="0.10" Max="1000.0"`) | Requiere `CurrencyCode`; si falta, error `5097`. **VERIFICADO-SPEC** `:456`                                                                                                                                                                                                                                                                                             |
+| `CorpDiscount`                                                     | no usado en avail                                     | Código de descuento corporativo del viajero, 1-20 alfanum. **VERIFICADO-SPEC** `:468`                                                                                                                                                                                                                                                                                   |
+| `LoyaltyIds` / `FrequentFlyerNumber`                               | no usados                                             | Tarifas de socio de programa de fidelidad. **VERIFICADO-SPEC** `:462`, `:465`                                                                                                                                                                                                                                                                                           |
+| `RatePlanCandidates`                                               | `RatePlanCode="AMX"`                                  | Hasta **11** candidatos: máx. 3 con `RatePlanType`, máx. 8 con `RatePlanCode`. `ExactMatchOnly` y `OtherAvailableRatePlans` como modificadores. **VERIFICADO-SPEC** `:561`, `:580`                                                                                                                                                                                      |
+| `RateSource`                                                       | `"100"`, `"113"`                                      | Ver §2.2                                                                                                                                                                                                                                                                                                                                                                |
+| `HotelPref`                                                        | `SabreRating{Min,Max}`                                | Además: `BrandCodes`, `ChainCodes`, `AmenityCodes`, `SecurityFeatureCodes`, `PropertyTypeCodes`, `PropertyQualityCodes`. **VERIFICADO-SPEC** `:678`-`:880`. El SOAP de Hybrid usa `<BrandCodes><BrandCode>10002</BrandCode>` (**VERIFICADO**)                                                                                                                           |
+| `ImageRef`                                                         | `{Type, LanguageCode}`                                | **VERIFICADO-SPEC** `:881`. `Type` ∈ `THUMBNAIL` (100×150, default) \| `SMALL` (200×200) \| `MEDIUM` (400×400) \| `LARGE` (800×800) \| `ORIGINAL`, y `CategoryCode` es la tabla OTA `PIC` — **v5 lo detalla, v4 no** (`get-hotel-avail-v5.0.yml:1977`, `:1988`). ⚠️ **Sin `ImageRef` no vuelve ninguna imagen** (`:1998`)                                               |
+| `ImageRef.LanguageCode`                                            | `EN`                                                  | 🟢 **v5 enumera los idiomas soportados: `EN`, `ES`, `IT`, `DE`, `ZH`, `JA`, `RU`, `PT`, `zh_TW`** — **ES y PT están dentro**. v4 sólo decía «two-letter ISO 639-1». **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1993-1996`. Aplica a la **descripción de la imagen**, no al resto del estático                                                                        |
+| `RateFilters`                                                      | no existe                                             | 🆕 **sólo v5.** Filtro `{Type, Value, Action}`; con `Type: "Commission"` y `Value: "C"`/`"NC"` se pide **sólo inventario comisionable**. **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1573`, `:1642`. Ver §1.2.1                                                                                                                                                       |
+| `RestrictSearchToCountry` / `LenientHotelName` / `CorporateNumber` | no existen                                            | 🆕 **sólo v5.** **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1331`, `:1783`, `:1198`. Ver §1.2.1                                                                                                                                                                                                                                                                       |
 
 #### 2.1.4 Ocupación y multi-habitación — resuelto, con una restricción cara
 
@@ -237,27 +320,31 @@ Códigos reales útiles como datos de prueba en CERT: `100035516`, `100095894`, 
 **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:532-560`:
 
 - `Room` es array con `minItems: 1`. **El multi-habitación existe** — la primera pasada lo marcó [INFERIDO] porque la colección no lo ejemplifica.
-- ⚠️ *«Room Index must be in order if multiple rooms are specified. **All rooms must have the exact same Adult and Child guest count.**»* Confirmado por dos errores oficiales: `0767` («Room Indexes for a multi-room shopping are not sequential») y **`5029`** («Pax configuration should be same across the rooms requested»).
+- ⚠️ _«Room Index must be in order if multiple rooms are specified. **All rooms must have the exact same Adult and Child guest count.**»_ Confirmado por dos errores oficiales: `0767` («Room Indexes for a multi-room shopping are not sequential») y **`5029`** («Pax configuration should be same across the rooms requested»).
 - `ChildAges` es **string con edades separadas por comas** (`"11,12"`), no un array. Edad máxima 18 (error `0852`).
-- *«Rates from the GDS do not support infants, so a GDS availability call for 1 adult and 1 child will be treated as a 1 adult shop.»*
-- ⚠️ Y en la reserva: *«Multiple room bookings are currently **not supported by GDS hotels**»* — **VERIFICADO-SPEC** `booking-management-v1.yml:5046-5051`.
+- _«Rates from the GDS do not support infants, so a GDS availability call for 1 adult and 1 child will be treated as a 1 adult shop.»_
+- ⚠️ Y en la reserva: _«Multiple room bookings are currently **not supported by GDS hotels**»_ — **VERIFICADO-SPEC** `booking-management-v1.yml:5046-5051`.
+- ✅ **La restricción sigue idéntica en v5**, palabra por palabra: _«All rooms must have the same adult and child guest counts»_ — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1693`. Y v5 la hace **verificable en la respuesta**: `response.Room.Adults` / `.Children` devuelven la ocupación que Sabre realmente consideró, con `Children: 0` en GDS (`:2930`, `:2935`).
+- 🆕 **Existe un rodeo oficial para el multi-habitación, y tiene coste de arquitectura.** La página de v5 lo describe: `HotelPriceCheck` → _sell initiate_ (no commit) → segundo `HotelPriceCheck` para generar un **`BookingKey` nuevo** → añadir el segundo segmento **a la misma sesión de PNR** → `ET` (commit). **VERIFICADO-SPEC** `help/get-hotel-avail-v5.0/v5.0-index.txt`, sección «Booking multiple rooms», y el mismo texto en el comentario del spec (`get-hotel-avail-v5.0.yml:1682`). Es decir: **el multi-habitación real exige el carril SOAP stateful** (§6.3), no el REST sin sesión. No cambia la conclusión de R5, la encarece.
 
 > **Consecuencia directa sobre el canónico.** Nuestro `RoomDistribution[]` de Despegar admite habitaciones con ocupaciones distintas (2 adultos + 1 adulto y 1 niño). **Sabre no.** Una búsqueda familiar mixta que Despegar resuelve en una llamada, con Sabre son N llamadas o no se puede. Degrada el «tiempo a venta < 2 min» en el caso familiar y hay que decidirlo antes de meterlo al fan-out. **Nuevo riesgo R5.**
 
 #### 2.1.5 Capacidades del contrato que la colección no ejemplifica
 
-Y que sí necesitamos: `AddressRef`, `ShopKey` (paginación correcta), `TravellerCountry`, `ChainCodes` / `AmenityCodes` / `PropertyTypeCodes` como filtros, `LoyaltyIds`.
+Y que sí necesitamos: `AddressRef`, `ShopKey` (paginación correcta), `TravellerCountry`, `ChainCodes` / `AmenityCodes` / `PropertyTypeCodes` como filtros, `LoyaltyIds`. **Y, sólo en v5:** `RateFilters` con `Type: "Commission"` (inventario comisionable en origen), `RestrictSearchToCountry` (búsquedas por radio en zona de frontera), `LenientHotelName` (búsqueda por nombre parcial, la que necesita WhatsApp) y `CorporateNumber`. Ninguno aparece en la colección; los cuatro están en el contrato — §1.2.1 tabla A.
 
 #### 2.1.6 Forma de la respuesta — **ya no es DESCONOCIDA**
 
 Esto era el bloqueante nº 1 de la primera pasada. **El contrato la especifica entera.** La evidencia de la colección (script de test SOAP) sólo daba la ruta al `RateKey`:
 
 ```js
-result.Envelope.Body[0].GetHotelAvailRS[0].HotelAvailInfos[0].HotelAvailInfo[0]
-      .HotelRateInfo[0].RateInfos[0].RateInfo[0].$.RateKey
+result.Envelope.Body[0].GetHotelAvailRS[0].HotelAvailInfos[0].HotelAvailInfo[0].HotelRateInfo[0]
+  .RateInfos[0].RateInfo[0].$.RateKey;
 ```
 
-Y coincide exactamente con el contrato. **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:65-76` y siguientes:
+Y coincide exactamente con el contrato. **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:65-76` y siguientes.
+
+> Las líneas de este bloque y de los párrafos que siguen son de **v4**, donde se hizo la reconciliación original. El árbol es idéntico en v5 — la raíz equivalente está en `get-hotel-avail-v5.0.yml:1159-1174`, `HotelAvailInfos` en `:2081` y `HotelAvailInfo[]` en `:2127`. Los campos que v5 **añade o retira** están todos en §1.2.1, y los señalados aquí abajo caso por caso.
 
 ```
 GetHotelAvailRS
@@ -270,23 +357,27 @@ GetHotelAvailRS
         └── HotelImageInfo      (:2572)  ← media
 ```
 
-**`HotelInfo`** — **VERIFICADO-SPEC** `:1050`: `HotelCode` (siempre el **Global ID**), `CodeContext` (`SABRE` \| `GLOBAL`), **`SabreHotelCode`** (el ID Sabre si la propiedad está mapeada), `HotelName`, `ChainCode`, `ChainName`, `BrandCode`, `BrandName`, `Distance` + `Direction` + `UOM`, `Logo` (URI), **`SabreRating`** (string, ej. `"3.5"`), `Ordinal`, `TierLabels`, `LocationInfo` (`Address`, `CityName`, `StateProv`, `CountryName`, `Neighborhoods`, `Contact`), `Amenities`, `SecurityFeatures`, `PropertyTypeInfo`, `PropertyQualityInfo`.
+**`HotelInfo`** — **VERIFICADO-SPEC** `:1050`: `HotelCode` (siempre el **Global ID**), `CodeContext` (`SABRE` \| `GLOBAL` en v4; **sólo `GLOBAL`** en v5), **`SabreHotelCode`** (el ID Sabre si la propiedad está mapeada), `HotelName`, `ChainCode`, `ChainName`, `BrandCode`, `BrandName`, `Distance` + `Direction` + `UOM`, `Logo` (URI), **`SabreRating`** (string, ej. `"3.5"`), `Ordinal`, `TierLabels`, **`LocationInfo`** (**`Latitude`**, **`Longitude`**, `Address`, `CityName`, `StateProv`, `CountryName`, `Neighborhoods`, `Contact`), `Amenities`, `SecurityFeatures`, `PropertyTypeInfo`, `PropertyQualityInfo`. En v5 se añade **`CanReturnRequestedNegotiatedRate`** (§1.2.1).
+
+> 🟢 **CORRECCIÓN — el lat/long por propiedad sí existe, y existía ya en v4.** Una pasada anterior afirmó que `HotelInfo` sólo traía `Distance` / `Direction` respecto al punto de búsqueda y mandó la pregunta al sandbox. **Es falso.** `HotelInfo.LocationInfo.Latitude` y `.Longitude` son campos de primer nivel de la propiedad, string de hasta 20 caracteres: **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2319-2332` (y `get-hotel-avail-v4.yml:1183`, `:1189` — no es novedad de v5). El spec de v5 los trae además en su ejemplo de respuesta real: `"Latitude": "32.75341", "Longitude": "-97.06569"` dentro del `HotelInfo` de un Baymont de Arlington, **VERIFICADO-SPEC** `:236-238`.
+>
+> Nótese la diferencia de nombres, que es lo que confundió la primera lectura: `HotelAvailInfos.SearchLatitude` / `SearchLongitude` (`:2101`, `:2105`) son el **punto de búsqueda**; `HotelAvailInfo.HotelInfo.LocationInfo.Latitude` / `.Longitude` son **la propiedad**. El campo está en las tres versiones de la familia — también en `get-hotel-avail-v3.yml:867`. **El mapa de resultados es pintable. `Hotel.location` del canónico tiene origen.**
 
 > ⚠️ `SabreRating` sigue siendo un **rating propietario de Sabre**, no estrellas oficiales. El error oficial `0822` acota el filtro a 0..5. **Riesgo R12 vigente: no mapearlo directo a `Hotel.starRating`.**
 >
 > ⚠️ **No hay GIATA.** `HotelCode` es el «Global ID» de Sabre y `SabreHotelCode` el legacy. La deduplicación cross-provider contra Despegar sigue sin resolverse. **Riesgo R4 intacto.**
 
 **`RateInfos.RateInfo[]`** (tarifa cabecera del hotel) — **VERIFICADO-SPEC** `:1439`:
-`StartDate`, `EndDate`, **`AmountBeforeTax`**, **`AmountAfterTax`**, `MinSellingRate` (recomendado del proveedor cuando se trabaja con net rates), **`AverageNightlyRate`**, `AverageNightlyRateBeforeTax`, `CurrencyCode`, `TaxInclusive`, `AdditionalFeesInclusive`, `LocalFeesInclusive`, `IncidentalsInclusive`, **`RateSource`**, **`RateKey`** (obligatorio), **`Commission`**.
+`StartDate`, `EndDate`, **`AmountBeforeTax`**, **`AmountAfterTax`**, `MinSellingRate` (recomendado del proveedor cuando se trabaja con net rates), **`AverageNightlyRate`**, `AverageNightlyRateBeforeTax`, `CurrencyCode`, `TaxInclusive`, `AdditionalFeesInclusive`, `LocalFeesInclusive`, `IncidentalsInclusive`, **`RateSource`**, **`RateKey`** (obligatorio), **`Commission`**; y en v5, además, **`HighestNightlyRate`** y **`ApproxTotalPrice`** (**VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2793`, `:2799`).
 Hermano: `RateInfos.ConvertedRateInfo`, misma forma, en la moneda pedida.
 
-**`Commission`** — **VERIFICADO-SPEC** `:1525`: `Percent`, `Amount`, `CurrencyCode`, `Type` (`FlatRate` \| `Amount` \| `Percentage` \| `Variable` \| `None`), `CommissionDescription.Text`.
+**`Commission`** — **VERIFICADO-SPEC** `:1525`: `Percent`, `Amount`, `CurrencyCode`, `Type` (`FlatRate` \| `Amount` \| `Percentage` \| `Variable` \| `None`), `CommissionDescription.Text` (**string en v4, array de string en v5** — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2854`).
 
 > 🟢 **Esto responde la pregunta 33 de la primera pasada y desbloquea el pricing waterfall.** Sabre **sí** expone la comisión de agencia en la respuesta de avail. Es la base numérica sobre la que el consolidador aplica su override y la agencia su markup (`apps/api/src/pricing/`). Era una de las tres condiciones de gate; queda cumplida documentalmente.
 
-**`HotelRateInfo.Rooms.Room[]`** (`response.Room`, `:1568`) → por habitación: `BedTypeOptions.BedTypes.BedType[]` (`Code` OTA BED + `Description` + `Count`), `RoomDescription{Name, Text[]}`, `AdditionalDetails`, `RoomAmenities`, **`Occupancy{Min,Max}`**, `RatePlans.RatePlan[]`.
+**`HotelRateInfo.Rooms.Room[]`** (`response.Room`, `:1568`) → por habitación: `BedTypeOptions.BedTypes.BedType[]` (`Code` OTA BED + `Description` + `Count`), `RoomDescription{Name, Text[]}`, `AdditionalDetails`, `RoomAmenities` (en v5 pasa a ser el `Amenities` común, más un `AccessibleAmenities` aparte), **`Occupancy{Min,Max}`**, `RatePlans.RatePlan[]`. v5 añade `Adults` / `Children` y retira `AccessibleRoom`, `RoomSize` y `NumberOfBedRooms`, que v4 declaraba «placeholder» (§1.2.1 tablas B y D).
 
-**`RatePlan[]`** — **VERIFICADO-SPEC** `:1792`: `RatePlanName`, `RatePlanCode`, `RatePlanType` (OTA RPT, enum `"1"`..`"33"`), **`PrepaidIndicator`** (obligatorio; *«all rates from RateSource 100 are treated as post paid and from rateSource 112 are treated as pre-paid»*), `AvailableQuantity`, `LimitedAvailability`, `RateSource`, `RateKey`, **`ClientId`** (el ID negociado/contractual), **`ProductCode`** (*Inventory Block Code*, sólo GDS), `LoyaltyMemberRate` / `LoyaltyId` / `LoyaltyPoints` / `LoyaltyProgramName` (placeholders), `RatePlanDescription`, `RatePlanInclusions`, **`MealsIncluded`**; y bajo `Room.RateInfo` (`:1980`) los `Rates`/`Rate[]`, `Taxes`/`Tax[]`/`TaxGroups`, `Fees`/`Fee[]`/`FeeGroups`, `RoomExtras`, **`CancelPenalties`**, **`Guarantee`**.
+**`RatePlan[]`** — **VERIFICADO-SPEC** `:1792`: `RatePlanName`, `RatePlanCode`, `RatePlanType` (OTA RPT, enum `"1"`..`"33"` en v4; en v5 `pattern` abierto **y acompañado de `RatePlanTypeDescription`**, la descripción ya resuelta por Sabre — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:3102`), **`PrepaidIndicator`** (obligatorio; _«all rates from RateSource 100 are treated as post paid and from rateSource 112 are treated as pre-paid»_), `AvailableQuantity`, `LimitedAvailability`, `RateSource`, `RateKey`, **`ClientId`** (el ID negociado/contractual), **`ProductCode`** (_Inventory Block Code_, sólo GDS), `LoyaltyMemberRate` / `LoyaltyId` / `LoyaltyPoints` / `LoyaltyProgramName` (placeholders), `RatePlanDescription`, `RatePlanInclusions`, **`MealsIncluded`**; y bajo `Room.RateInfo` (`:1980`) los `Rates`/`Rate[]`, `Taxes`/`Tax[]`/`TaxGroups`, `Fees`/`Fee[]`/`FeeGroups`, `RoomExtras`, **`CancelPenalties`**, **`Guarantee`**.
 
 **`MealsIncluded`** — **VERIFICADO-SPEC** `:1944`: `BreakFast`, `Lunch`, `Dinner` (booleanos), `MealPlanIndicator`, **`MealPlanCode`** (OTA MPT), `MealPlanDescription`, `GuestCount`.
 
@@ -294,7 +385,7 @@ Hermano: `RateInfos.ConvertedRateInfo`, misma forma, en la moneda pedida.
 
 **`CancelPenalties.CancelPenalty[]`** — **VERIFICADO-SPEC** `:2342`: `Refundable` (obligatorio), `Deadline`, `AmountPercent`, `PenaltyDescription.Text`.
 **`Deadline`** (`:2461`): `AbsoluteDeadline`, o `OffsetTimeUnit` + `OffsetUnitMultiplier` + **`OffsetDropTime`** (enum `BeforeArrival` \| `AfterBooking` \| `AfterConfirmation` \| `AfterArrival` \| `AfterDeparture`).
-**`AmountPercent`** (`:2488`): `Amount`, `Percent`, `CurrencyCode`, `NmbrOfNights`, `BasisType`, `ApplyAs`, `TaxInclusive`, `FeesInclusive`.
+**`AmountPercent`** (`:2488`): `Amount`, `Percent`, `CurrencyCode`, `NmbrOfNights`, `TaxInclusive`, `FeesInclusive` — más `BasisType` y `ApplyAs`, que **v5 elimina** (**VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:3762`). Escribir el mapper contra los seis que sobreviven.
 
 > 🟢 **Esto resuelve la política de cancelación estructurada**, el otro «gap crítico» de la primera pasada. Mapea directamente a `RatePlan.cancellation.{refundable, freeCancellationUntil, fees[]}` del canónico. **Bloqueante levantado.**
 
@@ -304,6 +395,10 @@ Hermano: `RateInfos.ConvertedRateInfo`, misma forma, en la moneda pedida.
 > 🟢 **`CVVRequired` es una pieza nueva directamente relevante al conflicto PCI (§2.5):** el contrato dice, por tarifa, si la propiedad exige CVV. Existen tarifas que **no** lo exigen.
 
 **`HotelImageInfo.ImageItem[]`** (`:2578`) → `Image[]` con URL, `Category`, `Description` y dimensiones.
+
+> 🆕 **Dos hermanos de `HotelRateInfo` que sólo existen en v5** y que este documento no listaba: **`RateUnavailability.RateSource[]`** (**VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2601`, `:2666`) — `{Source, Reason, DisplayMessage}` por cada fuente que no devolvió tarifa, el mismo mecanismo que ya conocíamos del pricecheck (§2.8.1), ahora también en el shop — y **`RateRanges.RateRange[]`** (`:2589`, `:2605`), con el mín./máx. aproximado de la propiedad, sólo con `BestOnly: "4"` y sólo GDS.
+>
+> El primero importa de verdad: **hace explicable la degradación parcial del fan-out en la pantalla de resultados**. Con v4 sólo se sabía que faltaban tarifas; con v5 se sabe de qué fuente y por qué. Encaja directo con `apps/api/src/search/provider-fanout.ts`.
 
 **Errores y warnings** — **VERIFICADO-SPEC** (`help/get-hotel-avail-v4/v4-errors.txt`). Formato REST:
 
@@ -316,56 +411,59 @@ Hermano: `RateInfos.ConvertedRateInfo`, misma forma, en la moneda pedida.
 
 Un mismo código puede volver como `ERR.*` o `WARN.*` según el endpoint y los parámetros. Códigos a tratar en `sabre-hotels-errors.ts`:
 
-| Código | Significado | Acción del ACL |
-| --- | --- | --- |
-| `0161` | Search Criteria Invalid | Error de validación nuestro |
-| `0822` | Rating inválido (Min>Max, Min<0, Max>5) | Validar con Zod antes de salir |
-| `0788` | `SortBy=DistanceFrom` con `HotelRefs` | Corregir el builder |
-| `0404` | Combinación check-in/check-out inválida | Validación previa |
-| `0767` | Índices de habitación no secuenciales | Validación previa |
-| **`5029`** | **Config de pax distinta entre habitaciones** | **Rechazar en el borde: Sabre no soporta ocupación mixta** |
-| `0852` | `ChildAges` faltante o >18 | Validación previa |
-| `0408` | Última página ya mostrada | Fin de paginación, no error |
+| Código                            | Significado                                       | Acción del ACL                                                  |
+| --------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- |
+| `0161`                            | Search Criteria Invalid                           | Error de validación nuestro                                     |
+| `0822`                            | Rating inválido (Min>Max, Min<0, Max>5)           | Validar con Zod antes de salir                                  |
+| `0788`                            | `SortBy=DistanceFrom` con `HotelRefs`             | Corregir el builder                                             |
+| `0404`                            | Combinación check-in/check-out inválida           | Validación previa                                               |
+| `0767`                            | Índices de habitación no secuenciales             | Validación previa                                               |
+| **`5029`**                        | **Config de pax distinta entre habitaciones**     | **Rechazar en el borde: Sabre no soporta ocupación mixta**      |
+| `0852`                            | `ChildAges` faltante o >18                        | Validación previa                                               |
+| `0408`                            | Última página ya mostrada                         | Fin de paginación, no error                                     |
 | `0790` / `0424` / `0775` / `0263` | Nada encontrado / hotel inexistente / sin tarifas | **Resultado vacío, no fallo** — degradación parcial del fan-out |
-| `0001` / `0366` / `0448` | Timeout / excepción interna / system error | **Reintento + circuit breaker** |
-| `0102` | Sin imágenes | Ignorable |
-| `5097` | Falta `CurrencyCode` con `RateRange` | Validación previa |
-| `0249` | RateKey inválido en pricecheck | Re-shop |
-| `0724` | Error del proveedor | Degradación parcial + log |
-| **`5276`** | **«Not authorized to switch to \<pcc\>»** | **Ver §2.3.1 — es el error clave del BYOC** |
-| `5099` | PCC de sign-in no es de 4 caracteres | Config de credencial |
-| `5027` | Excede el nº máximo de propiedades pedidas | Trocear el `HotelRefs` |
+| `0001` / `0366` / `0448`          | Timeout / excepción interna / system error        | **Reintento + circuit breaker**                                 |
+| `0102`                            | Sin imágenes                                      | Ignorable                                                       |
+| `5097`                            | Falta `CurrencyCode` con `RateRange`              | Validación previa                                               |
+| `0249`                            | RateKey inválido en pricecheck                    | Re-shop                                                         |
+| `0724`                            | Error del proveedor                               | Degradación parcial + log                                       |
+| **`5276`**                        | **«Not authorized to switch to \<pcc\>»**         | **Ver §2.3.1 — es el error clave del BYOC**                     |
+| `5099`                            | PCC de sign-in no es de 4 caracteres              | Config de credencial                                            |
+| `5027`                            | Excede el nº máximo de propiedades pedidas        | Trocear el `HotelRefs`                                          |
 
 ### 2.2 `RateSource` — el hallazgo comercial, ahora con catálogo
 
 **VERIFICADO** — dos requests hermanos idénticos salvo un campo:
 
-| Request | `RateSource` | Etiqueta |
-| --- | --- | --- |
-| `Workflows / 9 / 1. Get Hotel Avail /v5 Sabre GDS Rate` | `"100"` | "Sabre GDS Rate" |
-| `Workflows / 9 / 1. Get Hotel Avail /v5 Booking.com rate` | `"113"` | "Booking.com rate" |
+| Request                                                   | `RateSource` | Etiqueta           |
+| --------------------------------------------------------- | ------------ | ------------------ |
+| `Workflows / 9 / 1. Get Hotel Avail /v5 Sabre GDS Rate`   | `"100"`      | "Sabre GDS Rate"   |
+| `Workflows / 9 / 1. Get Hotel Avail /v5 Booking.com rate` | `"113"`      | "Booking.com rate" |
 
 `GetHotelAvailRQ Aggregator` (SOAP) también usa `113` (**VERIFICADO**).
 
 **Lo que el contrato añade, y es mucho:**
 
-1. **`RateSource` acepta una LISTA separada por comas.** El ejemplo del spec es literalmente `100,112,110,113`, y la descripción dice *«Specifies the sources to be checked for rates. **When blank, all allowed rate sources are used** to fetch the rates.»* — **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:473-478`.
+1. **`RateSource` acepta una LISTA separada por comas.** El ejemplo del spec es literalmente `100,112,110,113`, y la descripción dice _«Specifies the sources to be checked for rates. **When blank, all allowed rate sources are used** to fetch the rates.»_ — **VERIFICADO-SPEC** `get-hotel-avail-v4.yml:473-478`.
    > 🟢 **Esto responde la pregunta 27.** El fan-out GDS + agregador es **una sola llamada**, no dos. Y omitir el campo consulta todas las fuentes autorizadas. **Corrige la lectura de la primera pasada** («es un fan-out de dos llamadas»).
 2. **Existen al menos cuatro códigos**: `100`, `110`, `112`, `113`. El `112` es la fuente **prepaid** (`PrepaidQualifier` la trata como tal; `PrepaidIndicator` de `RatePlan` también). **VERIFICADO-SPEC** `:419`, `:1849`.
 3. **El catálogo nominal está en `booking-management-v1.yml:9306` (`HotelSourceEnum`)**, aplicado a `hotels[].sourceTypeName` en la respuesta de `getBooking`: **`Legacy`, `Sabre GDS`, `Expedia Associate Network`, `HotelBeds.com`, `Booking.com`, `CMNet`, `Unknown`**. El campo hermano `sourceTypeCode` es el numérico (ejemplo `100`). **VERIFICADO-SPEC** `:3030-3040`.
 
 > **Lectura de negocio, reforzada:** con **una sola credencial Sabre** se accede a **seis inventarios** — GDS clásico (contratos de cadena, negociados de la agencia, corporativos por `RatePlanCode`/`ClientId`), Expedia Affiliate Network, HotelBeds, Booking.com, CMNet y legacy. `HotelBeds.com` es especialmente notable: **ya figura como proveedor en nuestro roadmap** (`docs/research/03-integraciones-ecosistema.md`) y Sabre lo revende. Habría que comparar condiciones antes de integrarlo por duplicado.
 >
-> **Correspondencia código↔nombre:** confirmada sólo para `100` (ejemplo del spec en `sourceTypeCode` junto a `Sabre GDS`) y `113`↔Booking.com (por el nombre del request de la colección más el campo `pinCode`, que el spec describe como *«Identifier of the hotel reservation as provided by **Booking.com**»*). El mapeo de `110` y `112` sigue **DESCONOCIDO**.
+> **Correspondencia código↔nombre:** confirmada sólo para `100` (ejemplo del spec en `sourceTypeCode` junto a `Sabre GDS`) y `113`↔Booking.com (por el nombre del request de la colección más el campo `pinCode`, que el spec describe como _«Identifier of the hotel reservation as provided by **Booking.com**»_). El mapeo de `110` y `112` sigue **DESCONOCIDO**.
 
 ### 2.3 `POST /v5/hotel/pricecheck` — verificación de tarifa
 
 **VERIFICADO** — `Workflows / 9 / 2. Hotel Price Check /v5`:
 
 ```json
-{ "HotelPriceCheckRQ": {
+{
+  "HotelPriceCheckRQ": {
     "POS": { "Source": { "PseudoCityCode": "{{pcc}}" } },
-    "RateInfoRef": { "RateKey": "{{rate_key}}" } } }
+    "RateInfoRef": { "RateKey": "{{rate_key}}" }
+  }
+}
 ```
 
 **VERIFICADO-SPEC** `hotel-price-check-v5.yml:19` — **este contrato sí es el de la versión que usa la colección** (`/v5/hotel/pricecheck`). No hay laguna de versión aquí.
@@ -373,15 +471,15 @@ Un mismo código puede volver como `ERR.*` o `WARN.*` según el endpoint y los p
 Lo que el contrato añade al request (`:106-161`):
 
 - `RateInfoRef.StayDateTimeRange` y `RateInfoRef.Rooms` son **opcionales en el pricecheck**: se puede **re-precificar el mismo `RateKey` con otras fechas u otra ocupación** sin repetir el avail. Aplican las mismas restricciones de multi-room (`:150`).
-- **`CorporateNumber`** a nivel de `HotelPriceCheckRQ`: *«The corporate number of the agency for whom the shopping request in CSL is made. Useful for corporate-level functionalities, such as **preferencing and credentials**»* (`:100-104`).
+- **`CorporateNumber`** a nivel de `HotelPriceCheckRQ`: _«The corporate number of the agency for whom the shopping request in CSL is made. Useful for corporate-level functionalities, such as **preferencing and credentials**»_ (`:100-104`).
 
 #### 2.3.1 `POS.Source.PseudoCityCode` — el punto exacto del BYOC
 
 La primera pasada marcó esto [INFERIDO] y era la pregunta 28. **Resuelto.** **VERIFICADO-SPEC** `hotel-price-check-v5.yml:79-98`:
 
-> *«Contains Point of Sale information to support shopping in an **authorized (AAA Access) branch location (PCC)** while remaining signed-into the home branch or IPCC. […] Although the shopping happens in the branch location PCC given in the request, **the underlying Session or Token used to authenticate or call this API remains unchanged**.»*
+> _«Contains Point of Sale information to support shopping in an **authorized (AAA Access) branch location (PCC)** while remaining signed-into the home branch or IPCC. […] Although the shopping happens in the branch location PCC given in the request, **the underlying Session or Token used to authenticate or call this API remains unchanged**.»_
 
-Y el error oficial **`5276`** cierra el círculo: *«Not authorized to switch to \<pcc\> — The PCC under the POS element should have **branch access relationship** with your sign-in PCC. Add the correct branch access relationship as necessary, and then wait for five (5) mins for the changes to take effect»* (**VERIFICADO-SPEC**, `help/get-hotel-avail-v4/v4-errors.txt`).
+Y el error oficial **`5276`** cierra el círculo: _«Not authorized to switch to \<pcc\> — The PCC under the POS element should have **branch access relationship** with your sign-in PCC. Add the correct branch access relationship as necessary, and then wait for five (5) mins for the changes to take effect»_ (**VERIFICADO-SPEC**, `help/get-hotel-avail-v4/v4-errors.txt`).
 
 > 🟢 **Esto responde la pregunta 29 y define la arquitectura del BYOC de Sabre.** El modelo es **una credencial del consolidador + N PCCs de agencia con branch access**, no N juegos de credenciales. Encaja casi exactamente con `apps/api/src/provider-credentials/provider-credentials.service.ts` y con la jerarquía `consolidador → agencia → sub-agencia` de `docs/platform/12-modelo-consolidador-y-plan.md`:
 >
@@ -391,18 +489,23 @@ Y el error oficial **`5276`** cierra el círculo: *«Not authorized to switch to
 > - La propagación tarda **5 minutos**: modelarlo como estado «pendiente de activación» en el onboarding de agencia, no como alta inmediata.
 > - `5099` obliga a validar en el formulario de alta que el PCC sea alfanumérico de 4 caracteres.
 >
-> **Pendiente:** si el mismo `POS` existe en el body REST de `get/hotelavail` v5. En v4 el spec lo declara (`get-hotel-avail-v4.yml:77`) pero los ejemplos REST de la colección no lo mandan. El error `5276` está listado para «las CSL shopping APIs» en plural, lo que sugiere que sí. **Confirmar en CERT.**
+> 🟢 **CERRADO — el `POS` sí existe en `get/hotelavail` v5.** Este documento dejaba la duda abierta «a confirmar en CERT» porque los ejemplos REST de la colección no mandan `POS`. **El contrato la responde sin ambigüedad:** `GetHotelAvailRQ.POS` está declarado en el request de v5 (**VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1150`), con `POS.Source.PseudoCityCode` obligatorio, patrón `^[a-zA-Z0-9]{4}$` (**VERIFICADO-SPEC** `:1176-1196`). La descripción del schema lo dice explícitamente: es _«Point of Sale information used to support shopping in an authorized branch location (AAA Access to the PCC) while remaining logged in to the home branch or IPCC»_, y añade la alternativa con token de sesión (`ChangeContextLLSRQ`). La misma página oficial de v5 lo repite (`help/get-hotel-avail-v5.0/v5.0-index.txt`, línea 65).
+>
+> **Consecuencia para el BYOC:** el PCC por agencia aplica **también al shop**, no sólo al pricecheck. Una sola credencial OAuth del consolidador + `POS.Source.PseudoCityCode` distinto por agencia cubre la cascada entera: buscar, revalidar y reservar en el PCC de cada nodo. Es exactamente lo que necesita la bóveda de credenciales de `docs/platform/12-modelo-consolidador-y-plan.md`.
+>
+> ⚠️ Sigue siendo requisito la **relación de branch access** entre el PCC del `POS` y el PCC de sign-in — es el error `5276` — y sigue sin cuantificar cuánto tarda de verdad la propagación de 5 minutos que promete el mensaje (pregunta abierta 13).
 
 #### 2.3.2 Respuesta del pricecheck
 
 Evidencia de la colección (**VERIFICADO**, script de test):
 
 ```js
-pm.environment.set("booking_key", jsonData.HotelPriceCheckRS.PriceCheckInfo.BookingKey);
-const rawGuaranteeType = jsonData.HotelPriceCheckRS.PriceCheckInfo
-  .HotelRateInfo.Rooms.Room[0].RatePlans.RatePlan[0].RateInfo.Guarantee.GuaranteeType;
-const guaranteeMap = { GUAR: "GUARANTEE", DEP: "DEPOSIT" };
-pm.environment.set("guarantee_type", guaranteeMap[rawGuaranteeType] || rawGuaranteeType);
+pm.environment.set('booking_key', jsonData.HotelPriceCheckRS.PriceCheckInfo.BookingKey);
+const rawGuaranteeType =
+  jsonData.HotelPriceCheckRS.PriceCheckInfo.HotelRateInfo.Rooms.Room[0].RatePlans.RatePlan[0]
+    .RateInfo.Guarantee.GuaranteeType;
+const guaranteeMap = { GUAR: 'GUARANTEE', DEP: 'DEPOSIT' };
+pm.environment.set('guarantee_type', guaranteeMap[rawGuaranteeType] || rawGuaranteeType);
 ```
 
 Equivalente SOAP (**VERIFICADO**): `Envelope.Body[0].HotelPriceCheckRS[0].PriceCheckInfo[0].$.BookingKey`.
@@ -411,14 +514,14 @@ El contrato confirma las rutas y añade lo que faltaba. **`PriceCheckInfo`** —
 
 > 🟢 **`PriceChange` + `PriceDifference` es exactamente el contrato de UX del prebook** que ya implementamos con Despegar («la tarifa subió X, ¿continúas?»). Se mapea 1:1 y no hay que inventar nada.
 
-**`HotelRateInfo.RateUnavailability.RateSource[]`** (`:505-535`) — cuando una fuente **no** devolvió tarifa, explica por qué: `{Source, Reason, DisplayMessage}` (ej. `"110"` / *«Results filtered due to rate range search criteria»*). Es **degradación parcial explicada por proveedor**; encaja directo con `apps/api/src/search/provider-fanout.ts`.
+**`HotelRateInfo.RateUnavailability.RateSource[]`** (`:505-535`) — cuando una fuente **no** devolvió tarifa, explica por qué: `{Source, Reason, DisplayMessage}` (ej. `"110"` / _«Results filtered due to rate range search criteria»_). Es **degradación parcial explicada por proveedor**; encaja directo con `apps/api/src/search/provider-fanout.ts`.
 
 **Hechos operativos** (**VERIFICADO-SPEC**, `help/hotel-price-check-v5/v5-index.txt`):
 
-1. *«Hotel Price Check is a **mandatory step** you need to take before you can proceed with booking a product.»*
-2. ⚠️ **CORRECCIÓN:** *«the rateKey returned in shopping responses **does not expire**, so it can be used in the Hotel Price Check request at any time. **The rate may have expired**, which will be reflected in the Hotel Price Check response.»* La primera pasada llamó al `RateKey` «token efímero de tarifa». **No lo es.** Se puede persistir indefinidamente (en una cotización del Package Studio, por ejemplo) y revalidar cuando haga falta. **Es una ventaja de producto real frente al `choiceId` de Despegar.**
+1. _«Hotel Price Check is a **mandatory step** you need to take before you can proceed with booking a product.»_
+2. ⚠️ **CORRECCIÓN:** _«the rateKey returned in shopping responses **does not expire**, so it can be used in the Hotel Price Check request at any time. **The rate may have expired**, which will be reflected in the Hotel Price Check response.»_ La primera pasada llamó al `RateKey` «token efímero de tarifa». **No lo es.** Se puede persistir indefinidamente (en una cotización del Package Studio, por ejemplo) y revalidar cuando haga falta. **Es una ventaja de producto real frente al `choiceId` de Despegar.**
 3. El `RateKey` se descifra del lado de Sabre para reconstruir el request original de avail. No hay que guardar el contexto.
-4. Existe también un **`Get Hotel Details`** que devuelve `RateKey`: endpoint que **no está en la colección** y del que no tenemos spec.
+4. Existe también un **`Get Hotel Details`** que devuelve `RateKey`. **No está en la colección**, pero **sí tenemos su contrato**: `get-hotel-details-v2.yml:15` declara `POST /v2.0.0/get/hoteldetails` (**VERIFICADO-SPEC**), y entra en los 21 de `00-fuentes.md` §2. No hace falta pedirlo a nadie; si se necesita la ficha ampliada de una propiedad, el contrato está en `docs/sabre/evidence/specs/`.
 
 **El mapeo `GUAR`/`DEP` → `GUARANTEE`/`DEPOSIT` sigue siendo obligación del cliente.** El spec no lo automatiza: `Guarantee.GuaranteeType` devuelve el código corto (ejemplo `GUAR`, `get-hotel-avail-v4.yml:2384`) y `hotel.paymentPolicy` en `createBooking` exige el largo (enum `DEPOSIT` \| `GUARANTEE` \| `LATE`, `booking-management-v1.yml:8909`). **Hay que replicar el `guaranteeMap` en el ACL.** El código corto de `LATE` sigue **DESCONOCIDO**; la vía correcta para determinarlo es `GuaranteesAccepted.GuaranteeAccepted[].GuaranteeTypeCode` (OTA PMT), que sí es un catálogo público.
 
@@ -439,7 +542,7 @@ En los flujos de ModifyBooking el valor es `U9PK` (**VERIFICADO**). Los tests ve
 
 > ⚠️ **CORRECCIÓN a la primera pasada.** El documento afirmaba que `X-Sabre-Group` / `X-Sabre-Current-City` «son el vehículo natural del BYOC por PCC». **El contrato no menciona esos headers en ninguna parte** (grep sobre `booking-management-v1.yml`: 0 apariciones). El mecanismo **documentado** es distinto y hay que preferirlo:
 >
-> - **`targetPcc`** en el body, presente en `createBooking`, `modifyBooking`, `cancelBooking`, `getBooking` y `fulfillTickets` (8 apariciones: `booking-management-v1.yml:257, 397, 495, 569, 642, 704, 873, 953`). Patrón `^[A-Z0-9]{3,4}$`. ⚠️ *«The API **does not revert context** after completing the booking»* — hay que asumir que la sesión queda apuntando al PCC destino. **Nuevo riesgo R6.**
+> - **`targetPcc`** en el body, presente en `createBooking`, `modifyBooking`, `cancelBooking`, `getBooking` y `fulfillTickets` (8 apariciones: `booking-management-v1.yml:257, 397, 495, 569, 642, 704, 873, 953`). Patrón `^[A-Z0-9]{3,4}$`. ⚠️ _«The API **does not revert context** after completing the booking»_ — hay que asumir que la sesión queda apuntando al PCC destino. **Nuevo riesgo R6.**
 > - **`POS.Source.PseudoCityCode`** en shop y pricecheck (§2.3.1).
 >
 > Los headers son **VERIFICADO** en la colección pero **no contractuales**. Implementar contra `targetPcc`; mandar los headers, si acaso, como refuerzo.
@@ -450,43 +553,54 @@ En los flujos de ModifyBooking el valor es `U9PK` (**VERIFICADO**). Los tests ve
 
 ```json
 {
-  "agency": { "address": { "…": "…" }, "agencyCustomerNumber": "1234567", "ticketingPolicy": "TODAY" },
+  "agency": {
+    "address": { "…": "…" },
+    "agencyCustomerNumber": "1234567",
+    "ticketingPolicy": "TODAY"
+  },
   "travelers": [
     { "givenName": "John", "surname": "Kowalski", "passengerCode": "ADT" },
-    { "givenName": "Mary", "surname": "Kowalski", "passengerCode": "ADT" } ],
+    { "givenName": "Mary", "surname": "Kowalski", "passengerCode": "ADT" }
+  ],
   "contactInfo": { "emails": ["travel@sabre.com"], "phones": ["+123456"] },
   "hotel": {
     "bookingKey": "{{booking_key}}",
     "corporateDiscountCode": 6878700,
-    "rooms": [ { "isSmoking": false, "bedTypeCode": 3, "physicalDisabilityCode": 3,
-                 "travelerIndices": [1, 2] } ],
+    "rooms": [
+      {
+        "isSmoking": false,
+        "bedTypeCode": 3,
+        "physicalDisabilityCode": 3,
+        "travelerIndices": [1, 2]
+      }
+    ],
     "specialInstruction": "Need a wi-fi in the room.",
     "paymentPolicy": "{{guarantee_type}}",
     "formOfPayment": 1
   },
-  "payment": { "formsOfPayment": [ "…" ] }
+  "payment": { "formsOfPayment": ["…"] }
 }
 ```
 
 **Contrastado con `HotelToBook`** (**VERIFICADO-SPEC** `booking-management-v1.yml:5020-5108`):
 
-| Campo | Estado tras el contraste |
-| --- | --- |
-| `bookingKey` | **Obligatorio** (`required: [bookingKey]`), 1..240 chars. *«createBooking will automatically decode the booking key, obtain the hotel property ID, rate details, and **determine the source (GDS or Aggregator)**»* (help oficial). **No hay que decirle a Sabre de qué fuente vino.** |
-| **`useCsl`** | ✅ **AMBIGÜEDAD RESUELTA.** El contrato sólo conoce **`useCsl`** (`:5026`), booleano, **default `true`**. `useCSL` (la grafía de `createBooking - Air with CSL hotel`) es **un error del ejemplo de Postman**. Además: *«Legacy content has been blocked in Sabre due to the migration to CSL content only»* — **el campo es hoy inútil: siempre CSL.** |
-| `corporateDiscountCode` | `integer`, `minimum: 1`. *«Applies to **GDS hotels only**»*. |
-| `rooms` | array 1..99, pero *«**Multiple room bookings are currently not supported by GDS hotels**»* (`:5050`). |
-| `rooms[].isSmoking` | booleano, default `false`. |
-| **`rooms[].bedTypeCode`** | ✅ **Catálogo identificado:** *«Pass OTA Code Table (**BED**) for EAN aggregator hotel bookings»* (`:5085`). Es la tabla pública OTA `BED`, la misma que devuelve `BedType.Code` en el avail. |
-| **`rooms[].physicalDisabilityCode`** | ✅ **Catálogo identificado:** OTA Code Table **`PHY`** (`:5090`). |
-| **`rooms[].roomExtras[].roomExtraType`** | ✅ **Valores soportados enumerados:** **`26` = Crib, `91` = Roll-away Bed, `196` = Extra Person** (`:5120`). La tabla completa es OTA `RMA`. |
-| `rooms[].roomExtras[].quantity` / `.amount` | 1..99 / patrón decimal. |
-| `rooms[].travelerIndices` | 1-based sobre `travelers`. *«It is assumed that the **first traveler will be considered the lead guest**»*. |
-| `specialInstruction` | **Singular confirmado en `createBooking`** (`:5054`) y **plural (`specialInstructions`) confirmado en `modifyBooking`** (`:2824`) y en `car` (`:7234`). ✅ **No es un typo del análisis: la API es inconsistente por diseño.** |
-| `paymentPolicy` | enum `DEPOSIT` \| `GUARANTEE` \| `LATE` (`:8909`). ⚠️ Reglas: *«`DEPOSIT` sólo con tarjeta, agencia o corporate; `GUARANTEE` sólo con tarjeta, agencia, IATA, company o corporate; con `LATE` **no indicar `formOfPayment`**»*. |
-| `formOfPayment` | entero 1..**11**, índice 1-based. *«Forms of payment applicable to hotel booking are `PAYMENTCARD`, `AGENCY_NAME`, `AGENCY_IATA`, `CORPORATE`, `COMPANY_NAME`, `VIRTUAL_CARD`»*. |
-| **`associatedFlightDetails`** | 🆕 **Campo ausente de todos los ejemplos de la colección** (`:5074`, definición `:3183`): `arrivalAirlineCode`, `arrivalFlightNumber`, `arrivalTime`, `departureAirlineCode`, `departureFlightNumber`, `departureTime`. Envía al hotel la info de llegada/salida del vuelo. **Es el gesto de Package Studio «este hotel va con este vuelo» sin necesidad de PNR único.** Ver §6.5. |
-| `rooms[].productCode` | No existe en `RoomToBook`; sí en `RoomToModify` (`:5143`). Confirmado. |
+| Campo                                       | Estado tras el contraste                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bookingKey`                                | **Obligatorio** (`required: [bookingKey]`), 1..240 chars. _«createBooking will automatically decode the booking key, obtain the hotel property ID, rate details, and **determine the source (GDS or Aggregator)**»_ (help oficial). **No hay que decirle a Sabre de qué fuente vino.**                                                                                             |
+| **`useCsl`**                                | ✅ **AMBIGÜEDAD RESUELTA.** El contrato sólo conoce **`useCsl`** (`:5026`), booleano, **default `true`**. `useCSL` (la grafía de `createBooking - Air with CSL hotel`) es **un error del ejemplo de Postman**. Además: _«Legacy content has been blocked in Sabre due to the migration to CSL content only»_ — **el campo es hoy inútil: siempre CSL.**                            |
+| `corporateDiscountCode`                     | `integer`, `minimum: 1`. _«Applies to **GDS hotels only**»_.                                                                                                                                                                                                                                                                                                                       |
+| `rooms`                                     | array 1..99, pero _«**Multiple room bookings are currently not supported by GDS hotels**»_ (`:5050`).                                                                                                                                                                                                                                                                              |
+| `rooms[].isSmoking`                         | booleano, default `false`.                                                                                                                                                                                                                                                                                                                                                         |
+| **`rooms[].bedTypeCode`**                   | ✅ **Catálogo identificado:** _«Pass OTA Code Table (**BED**) for EAN aggregator hotel bookings»_ (`:5085`). Es la tabla pública OTA `BED`, la misma que devuelve `BedType.Code` en el avail.                                                                                                                                                                                      |
+| **`rooms[].physicalDisabilityCode`**        | ✅ **Catálogo identificado:** OTA Code Table **`PHY`** (`:5090`).                                                                                                                                                                                                                                                                                                                  |
+| **`rooms[].roomExtras[].roomExtraType`**    | ✅ **Valores soportados enumerados:** **`26` = Crib, `91` = Roll-away Bed, `196` = Extra Person** (`:5120`). La tabla completa es OTA `RMA`.                                                                                                                                                                                                                                       |
+| `rooms[].roomExtras[].quantity` / `.amount` | 1..99 / patrón decimal.                                                                                                                                                                                                                                                                                                                                                            |
+| `rooms[].travelerIndices`                   | 1-based sobre `travelers`. _«It is assumed that the **first traveler will be considered the lead guest**»_.                                                                                                                                                                                                                                                                        |
+| `specialInstruction`                        | **Singular confirmado en `createBooking`** (`:5054`) y **plural (`specialInstructions`) confirmado en `modifyBooking`** (`:2824`) y en `car` (`:7234`). ✅ **No es un typo del análisis: la API es inconsistente por diseño.**                                                                                                                                                     |
+| `paymentPolicy`                             | enum `DEPOSIT` \| `GUARANTEE` \| `LATE` (`:8909`). ⚠️ Reglas: _«`DEPOSIT` sólo con tarjeta, agencia o corporate; `GUARANTEE` sólo con tarjeta, agencia, IATA, company o corporate; con `LATE` **no indicar `formOfPayment`**»_.                                                                                                                                                    |
+| `formOfPayment`                             | entero 1..**11**, índice 1-based. _«Forms of payment applicable to hotel booking are `PAYMENTCARD`, `AGENCY_NAME`, `AGENCY_IATA`, `CORPORATE`, `COMPANY_NAME`, `VIRTUAL_CARD`»_.                                                                                                                                                                                                   |
+| **`associatedFlightDetails`**               | 🆕 **Campo ausente de todos los ejemplos de la colección** (`:5074`, definición `:3183`): `arrivalAirlineCode`, `arrivalFlightNumber`, `arrivalTime`, `departureAirlineCode`, `departureFlightNumber`, `departureTime`. Envía al hotel la info de llegada/salida del vuelo. **Es el gesto de Package Studio «este hotel va con este vuelo» sin necesidad de PNR único.** Ver §6.5. |
+| `rooms[].productCode`                       | No existe en `RoomToBook`; sí en `RoomToModify` (`:5143`). Confirmado.                                                                                                                                                                                                                                                                                                             |
 
 **`errorHandlingPolicy`** en `createBooking` — **VERIFICADO-SPEC** `:698-703`, `CreateErrorPolicyEnum` (`:8918`), array de:
 `HALT_ON_ERROR` (default) · `DO_NOT_HALT_ON_FLIGHT_PRICING_ERROR` (sólo ATPCO) · **`DO_NOT_HALT_ON_HOTEL_BOOKING_ERROR`** · **`DO_NOT_HALT_ON_CAR_BOOKING_ERROR`** · `DO_NOT_HALT_ON_ANCILLARY_BOOKING_ERROR` · `DO_NOT_HALT_ON_SEAT_BOOKING_ERROR` · `HALT_ON_INVALID_MINIMUM_CONNECTING_TIME_ERROR`.
@@ -495,29 +609,29 @@ En los flujos de ModifyBooking el valor es `U9PK` (**VERIFICADO**). Los tests ve
 
 **Otros campos de `CreateBookingRequest` relevantes** (**VERIFICADO-SPEC** `:694-800`): `asynchronousUpdateWaitTime` (0..10.000 ms, para el redisplay de NDC), `remarks[]`, `notification` (email o queue placement, no ambos), `retentionEndDate` + `retentionLabel` (mantener el PNR vivo tras el último ítem — útil para paquetes con hueco), `profiles[]` (1..13).
 
-**Respuesta** (`CreateBookingResponse`, **VERIFICADO-SPEC** `:804-830`): `timestamp`, **`confirmationId`** (*«The Sabre system considers it a PNR locator»*, patrón `^[A-Z0-9]{6,}$`), **`booking`** (la estructura completa de `getBooking`, §2.8), `errors[]`, `request` (eco del request).
+**Respuesta** (`CreateBookingResponse`, **VERIFICADO-SPEC** `:804-830`): `timestamp`, **`confirmationId`** (_«The Sabre system considers it a PNR locator»_, patrón `^[A-Z0-9]{6,}$`), **`booking`** (la estructura completa de `getBooking`, §2.8), `errors[]`, `request` (eco del request).
 
 > 🟢 **Pregunta 4 de la primera pasada resuelta.** El PNR viene en `confirmationId`; el número de confirmación del hotel en `booking.hotels[].confirmationId`; los errores en `errors[]`, cada uno con `{category, description, type, fieldPath, fieldName, fieldValue}` (**VERIFICADO-SPEC**, `help/help-documentation-create-booking.txt`, sección «Error structure»).
 
 #### Variante con perfil
 
-`createBooking - CSL hotel with profile` (**VERIFICADO**) añade `profiles: [{ uniqueId, profileTypeCode: "TVL", domainId: "{{pcc}}" }]` y **omite `travelers` y `contactInfo`**. El contrato lo confirma: *«When a traveler profile is loaded, traveler fields in the booking request may be partially or fully pre-populated»* (`:722`). Interesante para que `apps/api/src/crm/` sincronice clientes recurrentes como perfiles TVL. Fuera de alcance de fase 1.
+`createBooking - CSL hotel with profile` (**VERIFICADO**) añade `profiles: [{ uniqueId, profileTypeCode: "TVL", domainId: "{{pcc}}" }]` y **omite `travelers` y `contactInfo`**. El contrato lo confirma: _«When a traveler profile is loaded, traveler fields in the booking request may be partially or fully pre-populated»_ (`:722`). Interesante para que `apps/api/src/crm/` sincronice clientes recurrentes como perfiles TVL. Fuera de alcance de fase 1.
 
 ### 2.5 Formas de pago (`payment.formsOfPayment[]`)
 
 **VERIFICADO** — tipos vistos en los ejemplos de hotel/auto:
 
-| `type` | Campos propios |
-| --- | --- |
-| `PAYMENTCARD` | `cardTypeCode` (`VI`), `cardNumber`, `cardSecurityCode`, `expiryDate` (`YYYY-MM`), `cardHolder{givenName,surname,email,phone,address{…}}`, opcional `authentications[]` (§2.6), opcional `manualApproval{…}` |
-| `VIRTUAL_CARD` | `virtualCard{customerAccountCode, agencyEmail, hotelFax, hotelName, roomType, roomDescription, rateAmount{amount,currencyCode}, virtualCardCharges[]}` |
-| `AGENCY_NAME` | `agencyAddress{name,street,city,stateProvince,postalCode,countryCode}` |
-| `AGENCY_IATA` | `agencyIataNumber` |
-| `CORPORATE` | `corporateId` |
-| `COMPANY_NAME` | `companyAddress{…}` |
-| `CASH` / `CHECK` | sin campos |
-| `MISCELLANEOUS` | `miscellaneousCreditCode`, `extendedPayment`, `boardingTaxAmount` |
-| `INSTALLMENTS` | `numberOfInstallments`, `airlinePlanCode`, `installmentAmount`, `netBalance` |
+| `type`           | Campos propios                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PAYMENTCARD`    | `cardTypeCode` (`VI`), `cardNumber`, `cardSecurityCode`, `expiryDate` (`YYYY-MM`), `cardHolder{givenName,surname,email,phone,address{…}}`, opcional `authentications[]` (§2.6), opcional `manualApproval{…}` |
+| `VIRTUAL_CARD`   | `virtualCard{customerAccountCode, agencyEmail, hotelFax, hotelName, roomType, roomDescription, rateAmount{amount,currencyCode}, virtualCardCharges[]}`                                                       |
+| `AGENCY_NAME`    | `agencyAddress{name,street,city,stateProvince,postalCode,countryCode}`                                                                                                                                       |
+| `AGENCY_IATA`    | `agencyIataNumber`                                                                                                                                                                                           |
+| `CORPORATE`      | `corporateId`                                                                                                                                                                                                |
+| `COMPANY_NAME`   | `companyAddress{…}`                                                                                                                                                                                          |
+| `CASH` / `CHECK` | sin campos                                                                                                                                                                                                   |
+| `MISCELLANEOUS`  | `miscellaneousCreditCode`, `extendedPayment`, `boardingTaxAmount`                                                                                                                                            |
+| `INSTALLMENTS`   | `numberOfInstallments`, `airlinePlanCode`, `installmentAmount`, `netBalance`                                                                                                                                 |
 
 **Restricciones contractuales** (**VERIFICADO-SPEC**):
 
@@ -529,10 +643,11 @@ En los flujos de ModifyBooking el valor es `U9PK` (**VERIFICADO**). Los tests ve
 
 `CLAUDE.md` fija **hosted checkout únicamente en fase 1 (PCI SAQ-A), nunca PAN/CVV en servidor**. `createBooking` con `PAYMENTCARD` exige `cardNumber` + `cardSecurityCode` en el body. **El conflicto sigue siendo real.** Pero el contrato aporta dos hechos que la primera pasada no tenía:
 
-1. **`paymentPolicy: "LATE"` es contractual y explícito**: *«When using `LATE` payment **do not indicate `formOfPayment`** as this method (supported by some hotel suppliers) allows customers to **make a booking without any form of payment**»* (`:5058-5062`). No es un workaround: es una política de pago de primera clase. Cubre el caso «pago en destino».
+1. **`paymentPolicy: "LATE"` es contractual y explícito**: _«When using `LATE` payment **do not indicate `formOfPayment`** as this method (supported by some hotel suppliers) allows customers to **make a booking without any form of payment**»_ (`:5058-5062`). No es un workaround: es una política de pago de primera clase. Cubre el caso «pago en destino».
 2. **`GuaranteesAccepted` + `PaymentCards.CVVRequired` en la respuesta de avail** (**VERIFICADO-SPEC** `get-hotel-avail-v4.yml:2394-2443`) permiten **saber, por tarifa y antes de mostrarla, qué garantías acepta la propiedad y si exige CVV**. Es decir: se puede **filtrar el inventario en el fan-out** para mostrar sólo tarifas reservables con `AGENCY_IATA` / `CORPORATE` / `LATE`, y nunca tocar un PAN.
 
 > **Esto convierte un bloqueante binario en una decisión de alcance.** Ver §5.4 y «Decisiones». Las salidas son:
+>
 > - **(a)** Filtrar por `GuaranteeTypeCode` y vender sólo tarifas garantizables con IATA / corporate / LATE → SAQ-A intacto, inventario recortado (cuánto: **DESCONOCIDO**, medible en el spike).
 > - **(b)** `VIRTUAL_CARD` con un emisor externo tipo Conferma/WEX → PAN virtual de un solo uso; sigue viajando en el body pero **no es el PAN del cliente**. Reduce el alcance PCI drásticamente. La colección no muestra de dónde sale el número virtual — **[INFERIDO]** es un emisor externo.
 > - **(c)** Asumir SAQ-D. No recomendado.
@@ -544,23 +659,38 @@ En los flujos de ModifyBooking el valor es `U9PK` (**VERIFICADO**). Los tests ve
 **VERIFICADO** — `Create Booking / CSL Hotel / createBooking - CSL hotel with profile + Strong Customer Authentication`. Array `authentications[]` **dentro** de la forma de pago `PAYMENTCARD`:
 
 ```json
-{ "type": "PAYMENTCARD", "cardTypeCode": "VI",
-  "cardNumber": "{{creditCardNumber}}", "cardSecurityCode": "{{cardSecurityCode}}",
+{
+  "type": "PAYMENTCARD",
+  "cardTypeCode": "VI",
+  "cardNumber": "{{creditCardNumber}}",
+  "cardSecurityCode": "{{cardSecurityCode}}",
   "expiryDate": "{{creditCardExpiryDate}}",
-  "authentications": [ {
-    "secureTransactionId": "ABCDEFGHI123456789012!.1234567890123",
-    "issuesCode": "AO", "channelCode": "SC", "resultCode": "OK",
-    "electronicCommerceIndicator": "AB", "cardNumberCollectionCode": "K",
-    "exemptionTypeCode": "EC", "mandateTypeCode": "NS",
-    "originalPaymentReference": "{{creditCardNumber}}", "merchantName": "TEST CREDIT CARD",
-    "secureAuthenticationValue": "ABC123455533533444455555678",
-    "updatedDateTime": "2019-08-19T09:35:10", "amount": "1234.56", "currencyCode": "USD",
-    "version": "120", "verificationResultCode": "PASS",
-    "tokenAuthenticationValue": "ABC3434334343556677487312567" } ],
-  "cardHolder": { } }
+  "authentications": [
+    {
+      "secureTransactionId": "ABCDEFGHI123456789012!.1234567890123",
+      "issuesCode": "AO",
+      "channelCode": "SC",
+      "resultCode": "OK",
+      "electronicCommerceIndicator": "AB",
+      "cardNumberCollectionCode": "K",
+      "exemptionTypeCode": "EC",
+      "mandateTypeCode": "NS",
+      "originalPaymentReference": "{{creditCardNumber}}",
+      "merchantName": "TEST CREDIT CARD",
+      "secureAuthenticationValue": "ABC123455533533444455555678",
+      "updatedDateTime": "2019-08-19T09:35:10",
+      "amount": "1234.56",
+      "currencyCode": "USD",
+      "version": "120",
+      "verificationResultCode": "PASS",
+      "tokenAuthenticationValue": "ABC3434334343556677487312567"
+    }
+  ],
+  "cardHolder": {}
+}
 ```
 
-**VERIFICADO-SPEC** (help oficial de `createBooking`): *«Starting in **v1.9** of the Booking Management API, the Create Booking method supports **Payment Service Directive 2 (PSD2) compliant Strong Customer Authentication (SCA)** for payment cards. When using payment cards for hotel bookings, specify SCA information under `payment.formsOfPayment.authentications`»*.
+**VERIFICADO-SPEC** (help oficial de `createBooking`): _«Starting in **v1.9** of the Booking Management API, the Create Booking method supports **Payment Service Directive 2 (PSD2) compliant Strong Customer Authentication (SCA)** for payment cards. When using payment cards for hotel bookings, specify SCA information under `payment.formsOfPayment.authentications`»_.
 
 Lectura correcta, confirmada: **Sabre no hace el 3DS; recibe el resultado de un 3DS hecho fuera** (por nosotros o por un PSP). `secureAuthenticationValue` es el CAVV, `electronicCommerceIndicator` el ECI, `version: "120"` la versión del protocolo. Es pass-through de evidencia hacia el proveedor del hotel.
 
@@ -573,22 +703,30 @@ Catálogos de `issuesCode`, `channelCode`, `exemptionTypeCode`, `mandateTypeCode
 **VERIFICADO** — `Workflows / 9 / 4. cancelBooking`:
 
 ```json
-{ "confirmationId": "{{pnr}}", "retrieveBooking": true,
-  "cancelAll": true, "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL" }
+{
+  "confirmationId": "{{pnr}}",
+  "retrieveBooking": true,
+  "cancelAll": true,
+  "errorHandlingPolicy": "ALLOW_PARTIAL_CANCEL"
+}
 ```
 
 Cancelación selectiva por ítem (**VERIFICADO**, `Cancel Booking /v1 Cancel by Item Id - Hotels`):
 
 ```json
-{ "confirmationId": "{{pnr}}", "retrieveBooking": true, "cancelAll": false,
+{
+  "confirmationId": "{{pnr}}",
+  "retrieveBooking": true,
+  "cancelAll": false,
   "errorHandlingPolicy": "HALT_ON_ERROR",
-  "hotels": [ { "itemId": 42 }, { "itemId": 43 }, { "itemId": 44 } ] }
+  "hotels": [{ "itemId": 42 }, { "itemId": 43 }, { "itemId": 44 }]
+}
 ```
 
 Y `Cancel by Item Id - Flights, Hotels, Cars` (**VERIFICADO**) cancela `cars[]`, `flights[]` y `hotels[]` del mismo PNR en una llamada.
 
 **VERIFICADO-SPEC** `booking-management-v1.yml:8942`: **`CancelErrorPolicyEnum` tiene exactamente dos valores** — `HALT_ON_ERROR` (default) y `ALLOW_PARTIAL_CANCEL`. **Pregunta 18 cerrada: no hay más.**
-`cancelAll: true` → *«segments of all kinds will be cancelled […] Flights, Hotels, Cars, Trains, Cruises and all other segments included in the response **are ignored**»* (`:356`).
+`cancelAll: true` → _«segments of all kinds will be cancelled […] Flights, Hotels, Cars, Trains, Cruises and all other segments included in the response **are ignored**»_ (`:356`).
 
 ⚠️ **Discrepancia de tipo detectada:** la colección manda `"itemId": 42` (número); el contrato declara `itemId` como **string** con patrón `^[A-Z0-9]+$` (`HotelReference`, `:2850`; `CarReference`, `:3251`). **Emitir string en el ACL.**
 
@@ -599,10 +737,10 @@ Y `Cancel by Item Id - Flights, Hotels, Cars` (**VERIFICADO**) cancela `cars[]`,
 Campos que la colección demuestra leer (**VERIFICADO**, scripts de test):
 
 ```js
-jsonData.bookingSignature                        // concurrencia optimista
-jsonData.hotels[0].itemId
-jsonData.hotels[0].room.productCode
-jsonData.payments.formsOfPayment[0].cardNumber   // nótese "payments" (plural)
+jsonData.bookingSignature; // concurrencia optimista
+jsonData.hotels[0].itemId;
+jsonData.hotels[0].room.productCode;
+jsonData.payments.formsOfPayment[0].cardNumber; // nótese "payments" (plural)
 ```
 
 ⚠️ **Asimetría confirmada:** request `payment` (singular) vs respuesta y `after` de modify `payments` (plural). **VERIFICADO** en la colección; el contrato usa `payment` en `CreateBookingRequest` (`:758`) y la respuesta hereda de `Booking`.
@@ -613,28 +751,28 @@ jsonData.payments.formsOfPayment[0].cardNumber   // nótese "payments" (plural)
 
 **`hotels[]`** (`HotelReference` + `HotelItem`, `:2850` / `:2863`) — obligatorios: `hotelName`, `address`, `checkInDate`, `checkInTime`, `checkOutDate`, `checkOutTime`, `isRefundable`. Además:
 
-| Campo | Qué es |
-| --- | --- |
-| `itemId` | string `^[A-Z0-9]+$` — el id del ítem dentro del PNR |
-| **`confirmationId`** | **el localizador del proveedor del hotel** |
-| `hotelName`, `address`, `contactInfo` | estático de la propiedad |
-| `checkInDate/Time`, `checkOutDate/Time` | en **hora local del hotel** |
-| `corporateDiscountCode`, `leadTravelerIndex`, `numberOfGuests`, `specialInstructions` | eco de la reserva |
-| **`room`** | ver abajo |
-| **`isRefundable`** + **`refundPenalties[]`** | condiciones y coste de cancelación (`HotelDateRangeRefundPenalty`, `:8544`) |
-| `refundPenaltyPolicyCode` | código de penalidad para contenido GDS legacy |
-| **`hotelStatusCode`** / `hotelStatusName` | estado de la reserva en el proveedor (1-2 letras + descripción) |
-| `chainCode`, `chainName`, `propertyId`, `sabrePropertyId` | identificación |
-| **`guaranteeTypeCode`** / `guaranteeTypeName` | **OTA Payment Type Code** — el catálogo que faltaba para `GuaranteeType` |
-| `guaranteePaymentNote`, `paymentPolicy`, `payment` | pago |
-| **`associatedFlightDetails`** | el vínculo con el vuelo |
-| **`sourceTypeCode`** / **`sourceTypeName`** | `100` / `HotelSourceEnum` (§2.2) |
-| **`pinCode`** | identificador de reserva **de Booking.com** — sólo se puebla en ese origen |
-| `forceUpdate` | si se aplicó force update |
+| Campo                                                                                 | Qué es                                                                      |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `itemId`                                                                              | string `^[A-Z0-9]+$` — el id del ítem dentro del PNR                        |
+| **`confirmationId`**                                                                  | **el localizador del proveedor del hotel**                                  |
+| `hotelName`, `address`, `contactInfo`                                                 | estático de la propiedad                                                    |
+| `checkInDate/Time`, `checkOutDate/Time`                                               | en **hora local del hotel**                                                 |
+| `corporateDiscountCode`, `leadTravelerIndex`, `numberOfGuests`, `specialInstructions` | eco de la reserva                                                           |
+| **`room`**                                                                            | ver abajo                                                                   |
+| **`isRefundable`** + **`refundPenalties[]`**                                          | condiciones y coste de cancelación (`HotelDateRangeRefundPenalty`, `:8544`) |
+| `refundPenaltyPolicyCode`                                                             | código de penalidad para contenido GDS legacy                               |
+| **`hotelStatusCode`** / `hotelStatusName`                                             | estado de la reserva en el proveedor (1-2 letras + descripción)             |
+| `chainCode`, `chainName`, `propertyId`, `sabrePropertyId`                             | identificación                                                              |
+| **`guaranteeTypeCode`** / `guaranteeTypeName`                                         | **OTA Payment Type Code** — el catálogo que faltaba para `GuaranteeType`    |
+| `guaranteePaymentNote`, `paymentPolicy`, `payment`                                    | pago                                                                        |
+| **`associatedFlightDetails`**                                                         | el vínculo con el vuelo                                                     |
+| **`sourceTypeCode`** / **`sourceTypeName`**                                           | `100` / `HotelSourceEnum` (§2.2)                                            |
+| **`pinCode`**                                                                         | identificador de reserva **de Booking.com** — sólo se puebla en ese origen  |
+| `forceUpdate`                                                                         | si se aplicó force update                                                   |
 
-**`hotels[].room`** (`Room`, `:3065`) — obligatorios `roomType` y `quantity`. Además: `description`, **`roomTypeCode`** (id único de tipo de habitación por proveedor), **`productCode`** (*Inventory Block Code*, **sólo GDS**), **`roomRate`** (`Value{amount, currency}` **por noche**), `roomExtras[]`, `travelerIndices[]`.
+**`hotels[].room`** (`Room`, `:3065`) — obligatorios `roomType` y `quantity`. Además: `description`, **`roomTypeCode`** (id único de tipo de habitación por proveedor), **`productCode`** (_Inventory Block Code_, **sólo GDS**), **`roomRate`** (`Value{amount, currency}` **por noche**), `roomExtras[]`, `travelerIndices[]`.
 
-> 🟢 **Bloqueante nº 1 de la primera pasada levantado.** *«Sin la forma completa de la respuesta de `getBooking` no se puede construir un `after` correcto»* — ahora está especificada campo por campo. **Ya se puede escribir el `response.mapper.ts` y el constructor del `after`.**
+> 🟢 **Bloqueante nº 1 de la primera pasada levantado.** _«Sin la forma completa de la respuesta de `getBooking` no se puede construir un `after` correcto»_ — ahora está especificada campo por campo. **Ya se puede escribir el `response.mapper.ts` y el constructor del `after`.**
 
 ---
 
@@ -660,17 +798,22 @@ getBooking         (REST)  → verifica (algunas variantes: ":printDiff")
 Envelope (**VERIFICADO**):
 
 ```json
-{ "bookingSignature": "{{bookingSignature}}", "confirmationId": "{{pnr}}",
-  "before": { }, "after": { }, "retrieveBooking": true,
-  "receivedFrom": "Booking Management API testing" }
+{
+  "bookingSignature": "{{bookingSignature}}",
+  "confirmationId": "{{pnr}}",
+  "before": {},
+  "after": {},
+  "retrieveBooking": true,
+  "receivedFrom": "Booking Management API testing"
+}
 ```
 
 #### 3.1.1 CORRECCIÓN: no es «declarativo», es un **diff de dos estados**
 
-La primera pasada escribió: *«El `after` es declarativo, no un delta»*. **El contrato lo precisa y cambia el modelo mental** — **VERIFICADO-SPEC** `booking-management-v1.yml:830-870`:
+La primera pasada escribió: _«El `after` es declarativo, no un delta»_. **El contrato lo precisa y cambia el modelo mental** — **VERIFICADO-SPEC** `booking-management-v1.yml:830-870`:
 
 - `before` **y** `after` son **ambos obligatorios** (`required: [confirmationId, bookingSignature, after, before]`), ambos del tipo `BookingToModify`.
-- *«**Based on the difference between the `before` and `after` properties**, appropriate add, update, or delete operations are performed on the booking.»*
+- _«**Based on the difference between the `before` and `after` properties**, appropriate add, update, or delete operations are performed on the booking.»_
 
 Es decir: **Sabre computa el diff**. `"before": {}` no significa «Sabre resuelve el estado previo por sí mismo» — significa «el estado previo es vacío», por lo que **todo lo que aparezca en `after` se interpreta como alta o actualización, y nada se borra**. Para **borrar** algo (p. ej. eliminar una forma de pago, como hace `Delete FOP` de §6.3) **hay que poblar `before` con el estado real**. Eso explica limpiamente por qué las variantes que borran o sustituyen usan `{{getBookingResponseBody}}` y las que sólo añaden usan `{}`.
 
@@ -678,15 +821,15 @@ Es decir: **Sabre computa el diff**. `"before": {}` no significa «Sabre resuelv
 
 #### 3.1.2 `bookingSignature` y el enmascarado del PAN
 
-`bookingSignature` es un token de concurrencia optimista (patrón `If-Match`/ETag). **VERIFICADO-SPEC** `:840`: *«The unique identifier of a booking, obtained by the means of the Get Booking method. **Used to verify the state of the booking prior to a modification operation.**»*
+`bookingSignature` es un token de concurrencia optimista (patrón `If-Match`/ETag). **VERIFICADO-SPEC** `:840`: _«The unique identifier of a booking, obtained by the means of the Get Booking method. **Used to verify the state of the booking prior to a modification operation.**»_
 
 Y la primera pasada infirió que `getBooking` devuelve el `cardNumber` enmascarado. **Confirmado y explicado** — **VERIFICADO-SPEC** `:877-888`:
 
-> `unmaskPaymentCardNumbers`: *«If `true`, unmasks payment card information during the `bookingSignature` verification step. To use unmasked data, the **Employee Profile Record (EPR) needs to include the CCVIEW keyword**.»*
+> `unmaskPaymentCardNumbers`: _«If `true`, unmasks payment card information during the `bookingSignature` verification step. To use unmasked data, the **Employee Profile Record (EPR) needs to include the CCVIEW keyword**.»_
 
 Por eso el script de la colección re-inyecta el PAN desde la variable de entorno: sin `unmaskPaymentCardNumbers: true` **y** sin el keyword `CCVIEW` en el EPR, el `before` llevaría el número enmascarado y la verificación de firma fallaría.
 
-> 🚨 **Esto agrava el punto PCI, y ahora sabemos exactamente por qué.** Modificar una reserva con tarjeta almacenada exige **o bien** re-inyectar el PAN completo desde nuestro lado, **o bien** activar `CCVIEW` en el EPR — que es literalmente un permiso para *ver números de tarjeta completos*. Ninguna de las dos es compatible con SAQ-A. **Nuevo riesgo R2.**
+> 🚨 **Esto agrava el punto PCI, y ahora sabemos exactamente por qué.** Modificar una reserva con tarjeta almacenada exige **o bien** re-inyectar el PAN completo desde nuestro lado, **o bien** activar `CCVIEW` en el EPR — que es literalmente un permiso para _ver números de tarjeta completos_. Ninguna de las dos es compatible con SAQ-A. **Nuevo riesgo R2.**
 >
 > Nota adicional: `extraFeatures` debe mandarse **igual** en el `getBooking` previo y en el `modifyBooking`, o la verificación de firma falla (`:886`).
 
@@ -694,18 +837,18 @@ También aparece **`targetPcc`** en `modifyBooking` (`:873`) — misma semántic
 
 ### 3.2 Las 6 familias
 
-| # | Familia | Sub-variantes | Campos que cambian en `after.hotels[0]` | Sesión stateful | Re-shop |
-| --- | --- | --- | --- | --- | --- |
-| 1 | **modify common fields** | 1 | `checkInDate`, `checkOutDate`, `corporateDiscountCode`, `leadTravelerIndex`, `paymentPolicy`, `room.travelerIndices`, `specialInstructions`, `numberOfGuests` + `after.travelers[]` completo | No | No |
-| 2 | **modify checkin/checkout dates** | 1 | `checkInDate` / `checkOutDate` | No | **Sí, si las fechas salen del rango original** |
-| 3 | **modify number of guests** | 1 | `numberOfGuests`, `room.travelerIndices`, **+ `bookingKey` nuevo** | No | **Sí** |
-| 4 | **modify lead guest** | 1 | `leadTravelerIndex: 1 → 2` | No | No |
-| 5 | **modify hotel room productCode** | 1 | `room.productCode`, `bookingKey`, fechas; `before` poblado | No | **Sí** |
-| 6 | **Modify Form of Payment** | **12** | `paymentPolicy`, `formOfPaymentIndex`, `after.payments.formsOfPayment[]` | **Sí en 8/12** | No |
+| #   | Familia                           | Sub-variantes | Campos que cambian en `after.hotels[0]`                                                                                                                                                      | Sesión stateful | Re-shop                                        |
+| --- | --------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------- |
+| 1   | **modify common fields**          | 1             | `checkInDate`, `checkOutDate`, `corporateDiscountCode`, `leadTravelerIndex`, `paymentPolicy`, `room.travelerIndices`, `specialInstructions`, `numberOfGuests` + `after.travelers[]` completo | No              | No                                             |
+| 2   | **modify checkin/checkout dates** | 1             | `checkInDate` / `checkOutDate`                                                                                                                                                               | No              | **Sí, si las fechas salen del rango original** |
+| 3   | **modify number of guests**       | 1             | `numberOfGuests`, `room.travelerIndices`, **+ `bookingKey` nuevo**                                                                                                                           | No              | **Sí**                                         |
+| 4   | **modify lead guest**             | 1             | `leadTravelerIndex: 1 → 2`                                                                                                                                                                   | No              | No                                             |
+| 5   | **modify hotel room productCode** | 1             | `room.productCode`, `bookingKey`, fechas; `before` poblado                                                                                                                                   | No              | **Sí**                                         |
+| 6   | **Modify Form of Payment**        | **12**        | `paymentPolicy`, `formOfPaymentIndex`, `after.payments.formsOfPayment[]`                                                                                                                     | **Sí en 8/12**  | No                                             |
 
 **VERIFICADO-SPEC** — `HotelDetailsToModify` (`:2783`) confirma exactamente qué se puede modificar y qué es obligatorio: **`room`, `numberOfGuests`, `leadTravelerIndex` y `paymentPolicy` son `required`** en todo `after.hotels[]`. Y precisa cuándo hace falta un `bookingKey` nuevo:
 
-> *«`bookingKey`: A **mandatory value to provide in case of changes to the room type, number of guests, and check-in or check-out dates outside of the original date range**.»* (`:2791-2796`)
+> _«`bookingKey`: A **mandatory value to provide in case of changes to the room type, number of guests, and check-in or check-out dates outside of the original date range**.»_ (`:2791-2796`)
 
 Eso valida y afina la columna «Re-shop»: la familia 2 **también** necesita re-shop si las fechas nuevas caen fuera del rango original. La colección no lo ejemplifica porque mueve las fechas dentro del rango. **Corrección respecto de la primera pasada, que marcaba «No» sin matices.**
 
@@ -715,39 +858,59 @@ Campos modificables: `bookingKey`, `checkInDate`, `checkOutDate`, `corporateDisc
 
 **VERIFICADO** (`tree.txt` líneas 133–231):
 
-| # | Sub-variante | Sesión | `before` | Notas |
-| --- | --- | --- | --- | --- |
-| 1 | modify FoP LATE to CC | No | `{}` | `paymentPolicy: LATE → DEPOSIT`, `formOfPaymentIndex: 1` |
-| 2 | modify FoP change CC | No | `{}` | Cambia sólo la tarjeta |
-| 3 | modify FoP — PAYMENTCARD, CHECK, CASH, MISCELLANEOUS, INSTALLMENTS | **Sí** | `{{getBookingResponseBody}}` | 5 formas de pago a la vez |
-| 4 | modify FoP including 'before' section — CC | No | `{{request}}` | "modify one card to another" |
-| 5 | modify — add FoP Company Name | **Sí** | `{{getBookingResponseBody}}` | `formOfPaymentIndex: 2` |
-| 6 | modify FoP Agency IATA | **Sí** | — | |
-| 7 | modify FoP Virtual Card | **Sí** | — | |
-| 8 | modify FoP LATE to DEPOSIT (CC) | **Sí** | — | Incluye `GetBooking :printDiff` |
-| 9 | modify FoP LATE to DEPOSIT (TRAVEL_AGENCY_NAME_ADDRESS) | **Sí** | — | Segundo `HotelPriceCheckRQ` antes del modify |
-| 10 | modify FoP LATE to DEPOSIT (TRAVEL_AGENCY_IATA) | **Sí** | — | Idem |
-| 11 | modify FoP change CC with populated before section | **Sí** | poblado | |
-| 12 | Add credit card when another CC stored in the booking | **Sí** | — | Añadir sin reemplazar |
+| #   | Sub-variante                                                       | Sesión | `before`                     | Notas                                                    |
+| --- | ------------------------------------------------------------------ | ------ | ---------------------------- | -------------------------------------------------------- |
+| 1   | modify FoP LATE to CC                                              | No     | `{}`                         | `paymentPolicy: LATE → DEPOSIT`, `formOfPaymentIndex: 1` |
+| 2   | modify FoP change CC                                               | No     | `{}`                         | Cambia sólo la tarjeta                                   |
+| 3   | modify FoP — PAYMENTCARD, CHECK, CASH, MISCELLANEOUS, INSTALLMENTS | **Sí** | `{{getBookingResponseBody}}` | 5 formas de pago a la vez                                |
+| 4   | modify FoP including 'before' section — CC                         | No     | `{{request}}`                | "modify one card to another"                             |
+| 5   | modify — add FoP Company Name                                      | **Sí** | `{{getBookingResponseBody}}` | `formOfPaymentIndex: 2`                                  |
+| 6   | modify FoP Agency IATA                                             | **Sí** | —                            |                                                          |
+| 7   | modify FoP Virtual Card                                            | **Sí** | —                            |                                                          |
+| 8   | modify FoP LATE to DEPOSIT (CC)                                    | **Sí** | —                            | Incluye `GetBooking :printDiff`                          |
+| 9   | modify FoP LATE to DEPOSIT (TRAVEL_AGENCY_NAME_ADDRESS)            | **Sí** | —                            | Segundo `HotelPriceCheckRQ` antes del modify             |
+| 10  | modify FoP LATE to DEPOSIT (TRAVEL_AGENCY_IATA)                    | **Sí** | —                            | Idem                                                     |
+| 11  | modify FoP change CC with populated before section                 | **Sí** | poblado                      |                                                          |
+| 12  | Add credit card when another CC stored in the booking              | **Sí** | —                            | Añadir sin reemplazar                                    |
 
 Ejemplo real, sub-variante 1 (**VERIFICADO**, recortado):
 
 ```json
-{ "bookingSignature": "{{bookingSignature}}", "confirmationId": "{{pnr}}",
+{
+  "bookingSignature": "{{bookingSignature}}",
+  "confirmationId": "{{pnr}}",
   "before": {},
   "after": {
     "creationDetails": { "agencyIataNumber": "12344321" },
-    "hotels": [ { "itemId": "{{itemId}}",
-                  "checkInDate": "{{start_date}}", "checkOutDate": "{{end_date}}",
-                  "leadTravelerIndex": 1, "paymentPolicy": "DEPOSIT",
-                  "formOfPaymentIndex": 1,
-                  "room": { "travelerIndices": [1] }, "numberOfGuests": 1 } ],
-    "payments": { "formsOfPayment": [ { "type": "PAYMENTCARD", "cardTypeCode": "VI",
-                    "cardNumber": "{{creditCardNumber}}",
-                    "cardSecurityCode": "{{cardSecurityCode}}",
-                    "expiryDate": "{{creditCardExpiryDate}}", "cardHolder": { } } ] },
-    "travelers": [ ] },
-  "retrieveBooking": true, "receivedFrom": "Booking Management API testing" }
+    "hotels": [
+      {
+        "itemId": "{{itemId}}",
+        "checkInDate": "{{start_date}}",
+        "checkOutDate": "{{end_date}}",
+        "leadTravelerIndex": 1,
+        "paymentPolicy": "DEPOSIT",
+        "formOfPaymentIndex": 1,
+        "room": { "travelerIndices": [1] },
+        "numberOfGuests": 1
+      }
+    ],
+    "payments": {
+      "formsOfPayment": [
+        {
+          "type": "PAYMENTCARD",
+          "cardTypeCode": "VI",
+          "cardNumber": "{{creditCardNumber}}",
+          "cardSecurityCode": "{{cardSecurityCode}}",
+          "expiryDate": "{{creditCardExpiryDate}}",
+          "cardHolder": {}
+        }
+      ]
+    },
+    "travelers": []
+  },
+  "retrieveBooking": true,
+  "receivedFrom": "Booking Management API testing"
+}
 ```
 
 `formOfPaymentIndex` (1-based) enlaza el ítem hotel con la forma de pago concreta; es el mismo mecanismo que `formOfPayment` en `createBooking` con otro nombre (**confirmado en el contrato**: `:2843` vs `:5064`).
@@ -775,44 +938,54 @@ Ejemplo real, sub-variante 1 (**VERIFICADO**, recortado):
 **VERIFICADO** — `Workflows / 10 / Get Vehicle Avail`:
 
 ```json
-{ "GetVehAvailRQ": { "SearchCriteria": {
-  "PickUpDate": "{{start_date}}", "PickUpTime": "10:30",
-  "ReturnDate": "{{end_date}}", "ReturnTime": "16:30",
-  "SortBy": "Price", "SortOrder": "ASC",
-  "RentalLocRef": { "PickUpLocation": { "LocationCode": "MIA" },
-                    "ReturnLocation": { "LocationCode": "MCO" } },
-  "ImageRef": { "Image": { "Type": "ORIGINAL" } },
-  "LocPolicyRef": { "Include": true },
-  "RatePrefs": { "ConvertedRateInfoOnly": false, "SupplierCurrencyOnly": true },
-  "CarExtrasPrefs": { "CarExtrasPref": [ { "Type": "NAV" } ] },
-  "VendorPrefs": { "VendorPref": [ { "Code": "ET" } ] } } } }
+{
+  "GetVehAvailRQ": {
+    "SearchCriteria": {
+      "PickUpDate": "{{start_date}}",
+      "PickUpTime": "10:30",
+      "ReturnDate": "{{end_date}}",
+      "ReturnTime": "16:30",
+      "SortBy": "Price",
+      "SortOrder": "ASC",
+      "RentalLocRef": {
+        "PickUpLocation": { "LocationCode": "MIA" },
+        "ReturnLocation": { "LocationCode": "MCO" }
+      },
+      "ImageRef": { "Image": { "Type": "ORIGINAL" } },
+      "LocPolicyRef": { "Include": true },
+      "RatePrefs": { "ConvertedRateInfoOnly": false, "SupplierCurrencyOnly": true },
+      "CarExtrasPrefs": { "CarExtrasPref": [{ "Type": "NAV" }] },
+      "VendorPrefs": { "VendorPref": [{ "Code": "ET" }] }
+    }
+  }
+}
 ```
 
 La variante SOAP usa `<AirportRef>` en lugar de `RentalLocRef` y añade `<VehPrefs><VehPref><VehType>ECAR</VehType>` (**VERIFICADO**).
 
 **VERIFICADO-SPEC** `get-vehicle-availability-v2.yml:16` — el path del contrato coincide exactamente con el de la colección. **No hay laguna de versión en autos.**
 
-| Campo | Colección | Contrato (v2) |
-| --- | --- | --- |
-| `PickUpTime` / `ReturnTime` | `"10:30"` | Patrón de reloj de 24 h con minutos — **`HH:MM`**, obligatorio. **VERIFICADO-SPEC** `:130`, `:748`. (AgentCars usa `"1000"` militar: hay conversión.) |
-| **Modo de ubicación** | `RentalLocRef` / `AirportRef` | **Tres modos mutuamente excluyentes**: `RentalLocRef` (hasta 5 `PickUpLocation`, con `ExtendedLocationCode` de 2-4 chars además del IATA), `AirportRef` (*«This will NOT get car rental locations around the Geo Point of the airport»* — sólo oficinas con servicio de aeropuerto) y **`GeoRef`**. **VERIFICADO-SPEC** `:326`, `:361`, `:383` |
-| **Búsqueda por lat/long** | ❌ sin ejemplos | ✅ **EXISTE.** `GeoRef` → `GeoLocRef` con `GeoCode{Latitude, Longitude}`, o `RefPoint` (`RefPointType` **6=Airport, 11=Hotel**), o `AddressRef`. Más `Direction` (N/S/E/W/NE/…). **VERIFICADO-SPEC** `:383`, `:425`, `:435`, `:475`, `:493` |
-| `SortBy` | `Price` | enum `Preferred` \| `Distance` \| `Price` \| `Vendor` \| `CarType`, con defaults según el modo de ubicación. **VERIFICADO-SPEC** `:141` |
-| `VendorPrefs.VendorPref[].Code` | `ET`, `ZE`, `ZI` | Código de arrendadora, 2 letras. |
-| `VehPrefs.VehPref.VehType` | `ECAR` | **SIPP/ACRISS**, igual que AgentCars. Ejemplos oficiales: `ECAR`, `CCAR`, `ICAR`, `SCAR`, `FCAR`, `IFAR`. **VERIFICADO-SPEC** `help/get-vehicle-availability-v2/v2-index.txt` |
-| `CarExtrasPrefs.CarExtrasPref[].Type` | `NAV` | Patrón de 3 alfanuméricos. **Catálogo parcialmente resuelto:** *«e.g. **NAV** - Navigation Equipment or **CDW** - Collision Damage Waiver Insurance»*. **VERIFICADO-SPEC** `:631` |
-| `LocPolicyRef.Include` | `true` | **Resuelto:** trae `VehLocPolicyInfo` con horarios y dirección de la oficina. Ver §4.1.1. **VERIFICADO-SPEC** `:171`, `:869` |
-| `RatePrefs` | `ConvertedRateInfoOnly`, `SupplierCurrencyOnly` | Además: **`Commission`** (booleano — *«If true, the suppliers return the commission information»*), `CurrencyCode`, `CustLoyalty[]`, **`GuaranteePrepaid.Type`** (enum `G`/`P`/`R` y sus 15 combinaciones: garantizadas, prepagadas, retail), `RateAssured`, `RateCategory`, **`RateRule[]{RateCode, VendorCode}`** (tarifas negociadas por arrendadora — **el equivalente BYOC en autos**), **`RatePlan`** (`D` diaria \| `W` semanal \| `E` fin de semana \| `M` mensual \| `B` bundled). **VERIFICADO-SPEC** `:177-272` |
-| `ImageRef` | `{Type: ORIGINAL}` | enum `ORIGINAL` \| `THUMBNAIL` \| `SMALL` \| `MEDIUM` \| `LARGE`. **VERIFICADO-SPEC** `:687` |
+| Campo                                 | Colección                                       | Contrato (v2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PickUpTime` / `ReturnTime`           | `"10:30"`                                       | Patrón de reloj de 24 h con minutos — **`HH:MM`**, obligatorio. **VERIFICADO-SPEC** `:130`, `:748`. (AgentCars usa `"1000"` militar: hay conversión.)                                                                                                                                                                                                                                                                                                                                                                      |
+| **Modo de ubicación**                 | `RentalLocRef` / `AirportRef`                   | **Tres modos mutuamente excluyentes**: `RentalLocRef` (hasta 5 `PickUpLocation`, con `ExtendedLocationCode` de 2-4 chars además del IATA), `AirportRef` (_«This will NOT get car rental locations around the Geo Point of the airport»_ — sólo oficinas con servicio de aeropuerto) y **`GeoRef`**. **VERIFICADO-SPEC** `:326`, `:361`, `:383`                                                                                                                                                                             |
+| **Búsqueda por lat/long**             | ❌ sin ejemplos                                 | ✅ **EXISTE.** `GeoRef` → `GeoLocRef` con `GeoCode{Latitude, Longitude}`, o `RefPoint` (`RefPointType` **6=Airport, 11=Hotel**), o `AddressRef`. Más `Direction` (N/S/E/W/NE/…). **VERIFICADO-SPEC** `:383`, `:425`, `:435`, `:475`, `:493`                                                                                                                                                                                                                                                                                |
+| `SortBy`                              | `Price`                                         | enum `Preferred` \| `Distance` \| `Price` \| `Vendor` \| `CarType`, con defaults según el modo de ubicación. **VERIFICADO-SPEC** `:141`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `VendorPrefs.VendorPref[].Code`       | `ET`, `ZE`, `ZI`                                | Código de arrendadora, 2 letras.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `VehPrefs.VehPref.VehType`            | `ECAR`                                          | **SIPP/ACRISS**, igual que AgentCars. Ejemplos oficiales: `ECAR`, `CCAR`, `ICAR`, `SCAR`, `FCAR`, `IFAR`. **VERIFICADO-SPEC** `help/get-vehicle-availability-v2/v2-index.txt`                                                                                                                                                                                                                                                                                                                                              |
+| `CarExtrasPrefs.CarExtrasPref[].Type` | `NAV`                                           | Patrón de 3 alfanuméricos. **Catálogo parcialmente resuelto:** _«e.g. **NAV** - Navigation Equipment or **CDW** - Collision Damage Waiver Insurance»_. **VERIFICADO-SPEC** `:631`                                                                                                                                                                                                                                                                                                                                          |
+| `LocPolicyRef.Include`                | `true`                                          | **Resuelto:** trae `VehLocPolicyInfo` con horarios y dirección de la oficina. Ver §4.1.1. **VERIFICADO-SPEC** `:171`, `:869`                                                                                                                                                                                                                                                                                                                                                                                               |
+| `RatePrefs`                           | `ConvertedRateInfoOnly`, `SupplierCurrencyOnly` | Además: **`Commission`** (booleano — _«If true, the suppliers return the commission information»_), `CurrencyCode`, `CustLoyalty[]`, **`GuaranteePrepaid.Type`** (enum `G`/`P`/`R` y sus 15 combinaciones: garantizadas, prepagadas, retail), `RateAssured`, `RateCategory`, **`RateRule[]{RateCode, VendorCode}`** (tarifas negociadas por arrendadora — **el equivalente BYOC en autos**), **`RatePlan`** (`D` diaria \| `W` semanal \| `E` fin de semana \| `M` mensual \| `B` bundled). **VERIFICADO-SPEC** `:177-272` |
+| `ImageRef`                            | `{Type: ORIGINAL}`                              | enum `ORIGINAL` \| `THUMBNAIL` \| `SMALL` \| `MEDIUM` \| `LARGE`. **VERIFICADO-SPEC** `:687`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-> ⚠️ **CORRECCIÓN a la primera pasada.** El documento afirmaba: *«Búsqueda por lat/long para autos: no existe en la colección […] Esto es un **retroceso** frente a AgentCars»*. La primera mitad es cierta (la colección no la ejemplifica); **la segunda es falsa**: el contrato la soporta explícitamente. **No hay retroceso.**
+> ⚠️ **CORRECCIÓN a la primera pasada.** El documento afirmaba: _«Búsqueda por lat/long para autos: no existe en la colección […] Esto es un **retroceso** frente a AgentCars»_. La primera mitad es cierta (la colección no la ejemplifica); **la segunda es falsa**: el contrato la soporta explícitamente. **No hay retroceso.**
 
 #### 4.1.1 Forma de la respuesta — **ya no es DESCONOCIDA**
 
 Evidencia de la colección (**VERIFICADO**, scripts):
 
 ```js
-jsonData.GetVehAvailRS.VehAvailInfos.VehAvailInfo[2].VehRentalRate[0].RateKey
+jsonData.GetVehAvailRS.VehAvailInfos.VehAvailInfo[2].VehRentalRate[0].RateKey;
 // SOAP: result.Envelope.Body[0].GetVehAvailRS[0].VehAvailInfos[0]
 //        .VehAvailInfo[0].VehRentalRate[0].$.RateKey
 // comentado en el original: … .ConvertedVehRentalRate[0].$.RateKey
@@ -838,7 +1011,7 @@ GetVehAvailRS
 
 **`Vehicle`** (`:1060`): **`VehMakeAndModel`**, **`VehNumOfDoors`**, **`VehType`** (SIPP), **`Images`** (`Image[]{Url, Type, Width, Height}`), `SeatBeltsAndBagsInfo{ BagsInfo.Bags[]{Quantity, Size: Small|Large}, SeatBelts.Quantity }`.
 
-> `SeatBelts.Quantity` es *«number of SeatBelts (**The Legal Passenger capacity**)»* — la capacidad legal de pasajeros, exactamente el dato que AgentCars expone como `passengers`.
+> `SeatBelts.Quantity` es _«number of SeatBelts (**The Legal Passenger capacity**)»_ — la capacidad legal de pasajeros, exactamente el dato que AgentCars expone como `passengers`.
 
 **`VehicleCharges.VehicleCharge[]`** (`:1093`): `Amount`, `CurrencyCode`, **`ChargeType`** con enum cerrado — `DropOffCharge`, `ExtraDay`, `ExtraHour`, `BaseRateTotal`, `SubtotalExcludingMandatoryCharges`, `DailyChargesTotal`, `HourlyChargesTotal`, `MandatoryCharges`, `MandatoryChargesTotal`, **`ApproximateTotalPrice`**, `CarExtraTotalCharge` — más **`MileageAllowance`** + `ExtraMileageCharge` + `UOM`.
 
@@ -864,7 +1037,7 @@ Respuesta (**VERIFICADO** por script): `jsonData.VehPriceCheckRS.PriceCheckInfo.
 
 Simetría perfecta con hotel: `…PriceCheckRS.PriceCheckInfo.BookingKey` en ambas verticales. **Un solo mapper de pricecheck sirve para las dos.**
 
-> **DESCONOCIDO:** no tenemos spec de Vehicle Price Check (no está entre los 15 descargados). Es la única laguna de contrato de la vertical auto.
+> **DESCONOCIDO:** no hay contrato de Vehicle Price Check. Verificado sobre el corpus congelado: ningún `.yml` de `docs/sabre/evidence/specs/` declara `/veh/pricecheck` ni un `VehPriceCheckRQ`; los dos de autos (`get-vehicle-availability-v1.yml:20`, `-v2.yml:16`) cubren sólo `get/vehavail`. **Es la única laguna de contrato que queda en esta vertical** — la de hotel se cerró con `get-hotel-avail-v5.0.yml` (§1.2.1).
 
 ⚠️ **Diferencia respecto a hotel:** el pricecheck de auto **no devuelve `GuaranteeType`** (ningún script lo lee). `createBooking` sí exige `car.paymentPolicy`, y todos los ejemplos lo hardcodean a `"DEPOSIT"`. ✅ **Parcialmente resuelto:** `CarPaymentPolicyEnum` tiene exactamente **dos** valores, `DEPOSIT` y `GUARANTEE` (**VERIFICADO-SPEC** `booking-management-v1.yml:9298`) — pregunta 12 cerrada. Cómo se determina cuál aplica sigue **DESCONOCIDO**; lo más probable es derivarlo de `VehRentalRate.GuaranteeInd` / `SellGuaranteeReq` / `PrepayDeposit` del avail. **[INFERIDO]**
 
@@ -880,25 +1053,25 @@ Simetría perfecta con hotel: `…PriceCheckRS.PriceCheckInfo.BookingKey` en amb
 
 **Contrastado con `CarToBook`** (**VERIFICADO-SPEC** `booking-management-v1.yml:7175-7245`):
 
-| Campo | Nota |
-| --- | --- |
-| `bookingKey` | *«returned in the **Vehicle Price Check** API response and is a mandatory value»* (help oficial). |
-| `travelerIndex` | **Singular** 1-based (el hotel usa `travelerIndices`, array). Confirmado. |
-| **`emailIndex`** | 🆕 **Ausente de todos los ejemplos.** Índice del email del viajero que se comparte con la arrendadora; si el viajero no tiene, apunta a `contactInfo.emails`. |
-| `paymentPolicy` | enum `DEPOSIT` \| `GUARANTEE`. |
-| `formOfPayment` | 1..11. **Sólo `PAYMENTCARD` y `VOUCHER` aplican a autos.** |
-| `quantity` | default `1`. |
-| `specialInstructions` | **Plural** confirmado. |
-| `flightIndex` | ✅ **Resuelto:** *«Index of the flight **in the reservation**. Corresponding flight details (**airline code and flight number**) are provided to the car vendor»* (`:7238`). Es 1-based sobre los vuelos **de la reserva**, no del payload. |
-| **`associatedFlightDetails`** | 🆕 `AssociatedArrivalFlight` — alternativa a `flightIndex` cuando el vuelo **no** está en el PNR. **Permite el gesto de Package Studio sin PNR único.** Ver §6.5. |
-| `collectionAddress` / `deliveryAddress` | `Address` |
-| `collectionSite` / `deliverySite` | `CarRentalSite{id, name, phone}` |
+| Campo                                   | Nota                                                                                                                                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bookingKey`                            | _«returned in the **Vehicle Price Check** API response and is a mandatory value»_ (help oficial).                                                                                                                                           |
+| `travelerIndex`                         | **Singular** 1-based (el hotel usa `travelerIndices`, array). Confirmado.                                                                                                                                                                   |
+| **`emailIndex`**                        | 🆕 **Ausente de todos los ejemplos.** Índice del email del viajero que se comparte con la arrendadora; si el viajero no tiene, apunta a `contactInfo.emails`.                                                                               |
+| `paymentPolicy`                         | enum `DEPOSIT` \| `GUARANTEE`.                                                                                                                                                                                                              |
+| `formOfPayment`                         | 1..11. **Sólo `PAYMENTCARD` y `VOUCHER` aplican a autos.**                                                                                                                                                                                  |
+| `quantity`                              | default `1`.                                                                                                                                                                                                                                |
+| `specialInstructions`                   | **Plural** confirmado.                                                                                                                                                                                                                      |
+| `flightIndex`                           | ✅ **Resuelto:** _«Index of the flight **in the reservation**. Corresponding flight details (**airline code and flight number**) are provided to the car vendor»_ (`:7238`). Es 1-based sobre los vuelos **de la reserva**, no del payload. |
+| **`associatedFlightDetails`**           | 🆕 `AssociatedArrivalFlight` — alternativa a `flightIndex` cuando el vuelo **no** está en el PNR. **Permite el gesto de Package Studio sin PNR único.** Ver §6.5.                                                                           |
+| `collectionAddress` / `deliveryAddress` | `Address`                                                                                                                                                                                                                                   |
+| `collectionSite` / `deliverySite`       | `CarRentalSite{id, name, phone}`                                                                                                                                                                                                            |
 
 #### Las 4 variantes de recogida/entrega
 
 **VERIFICADO** — `createBooking - vehicle with {Collection Address | Delivery Address | Delivery Site | Collection Site}`.
 
-Semántica: el contrato no la explica en prosa, pero los comentarios `#source` del spec la revelan — ambos mapean a `…/Vehicle/VehicleVendorAvail/VehicleResCore/CollectionDeliveryInfo/{DeliveryInfo|CollectionInfo}/@siteID|@siteName` (**VERIFICADO-SPEC** `:7246-7262`). Es el par OTA estándar *delivery* (la arrendadora lleva el auto) / *collection* (lo recoge). La inferencia de la primera pasada queda **confirmada por estructura**, no por prosa.
+Semántica: el contrato no la explica en prosa, pero los comentarios `#source` del spec la revelan — ambos mapean a `…/Vehicle/VehicleVendorAvail/VehicleResCore/CollectionDeliveryInfo/{DeliveryInfo|CollectionInfo}/@siteID|@siteName` (**VERIFICADO-SPEC** `:7246-7262`). Es el par OTA estándar _delivery_ (la arrendadora lleva el auto) / _collection_ (lo recoge). La inferencia de la primera pasada queda **confirmada por estructura**, no por prosa.
 
 ⚠️ **`Site.id` — origen resuelto a medias.** El `#source` dice que en `getBooking` el `id` viene de `CollectionDeliveryInfo/…/@siteID`, o sea que **es un dato que devuelve el proveedor**, no un catálogo que consultemos. En el avail, `VehLocPolicyInfo.DeliveryCollectionInfo` existe pero está marcado **«FUTURE USE ONLY»**. **Conclusión: hoy no hay forma documentada de descubrir los `siteID` válidos antes de reservar.** Sigue siendo un hueco operativo real.
 
@@ -922,64 +1095,67 @@ Respuesta de `getBooking` para autos: `cars[]` = `CarReference{itemId}` + **`Car
 
 ### 5.1 Hoteles: Sabre vs `providers/despegar-hotels/`
 
-| Dimensión | Despegar (en producción) | Sabre (a integrar) |
-| --- | --- | --- |
-| Transporte | REST JSON puro | REST JSON suficiente; SOAP opcional |
-| Autenticación | funcionando | OAuth `client_credentials`, mismo patrón que LATAM NDC |
-| Contenido | 1 bedbank agregador, fuerte en LATAM | **≥6 fuentes en una sola llamada**: GDS, Expedia Affiliate, HotelBeds, Booking.com, CMNet, legacy |
-| Tarifas negociadas de la agencia | ❌ | ✅ PCC propio + `RatePlanCandidates` / `ClientId` |
-| Tarifas corporativas | ❌ | ✅ `CorpDiscount` / `corporateDiscountCode` |
-| Tarifas por país del viajero | ❌ | ✅ `TravellerCountry` |
-| Búsqueda por lat/long | ✅ | ✅ |
-| Búsqueda por dirección | ✅ | ✅ `AddressRef` |
-| Búsqueda por código de hotel | ✅ | ✅ `HotelRefs` |
-| **Multi-habitación** | ✅ `RoomDistribution[]` con **ocupaciones distintas** | ⚠️ soportado, pero **todas las habitaciones deben tener la misma configuración de pax** (error `5029`), y **no soportado en absoluto para hoteles GDS** |
-| Board type | ✅ mapeado a canónico | ✅ **derivable** de `MealsIncluded` + `MealPlanCode` (OTA MPT) |
-| Política de cancelación estructurada | ✅ `HotelCancellation` | ✅ `CancelPenalties` con `Deadline` / `AmountPercent` / `Refundable` |
-| **Comisión de agencia expuesta** | ✅ `HotelPrice.agencyCommission` | ✅ **`Commission{Percent, Amount, Type}`** |
-| Imágenes / contenido | ✅ | ✅ `HotelImageInfo` + amenities + property type + security features |
-| Verificación de precio | ✅ `prebook` | ✅ `pricecheck` con `PriceChange` / `PriceDifference` |
-| **Persistencia del token de tarifa** | `choiceId` efímero | ✅ **`RateKey` no expira** — la cotización sobrevive |
-| Pago | hosted / modalidades | ⚠️ **PAN + CVV en el body** (salvo `LATE` / IATA / corporate) |
-| SCA / 3DS | vía PSP | pass-through `authentications[]` (PSD2, desde v1.9) |
-| **Modificación post-venta** | ❌ **no existe** | ✅ 6 familias, 12 variantes de FoP |
-| Cancelación | ✅ | ✅ + selectiva por `itemId` + `ALLOW_PARTIAL_CANCEL` |
-| **Deduplicación (GIATA)** | ✅ | ❌ **sólo `HotelCode` global de Sabre** |
-| **PNR compartido con vuelo** | ❌ | ✅ (§6) |
-| Certificación previa | pasada | Sabre exige certificación formal |
+| Dimensión                                | Despegar (en producción)                              | Sabre (a integrar)                                                                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transporte                               | REST JSON puro                                        | REST JSON suficiente; SOAP opcional                                                                                                                     |
+| Autenticación                            | funcionando                                           | OAuth `client_credentials`, mismo patrón que LATAM NDC                                                                                                  |
+| Contenido                                | 1 bedbank agregador, fuerte en LATAM                  | **≥6 fuentes en una sola llamada**: GDS, Expedia Affiliate, HotelBeds, Booking.com, CMNet, legacy                                                       |
+| Tarifas negociadas de la agencia         | ❌                                                    | ✅ PCC propio + `RatePlanCandidates` / `ClientId`                                                                                                       |
+| Tarifas corporativas                     | ❌                                                    | ✅ `CorpDiscount` / `corporateDiscountCode`                                                                                                             |
+| Tarifas por país del viajero             | ❌                                                    | ✅ `TravellerCountry`                                                                                                                                   |
+| Búsqueda por lat/long                    | ✅                                                    | ✅                                                                                                                                                      |
+| Búsqueda por dirección                   | ✅                                                    | ✅ `AddressRef`                                                                                                                                         |
+| Búsqueda por código de hotel             | ✅                                                    | ✅ `HotelRefs`                                                                                                                                          |
+| **Multi-habitación**                     | ✅ `RoomDistribution[]` con **ocupaciones distintas** | ⚠️ soportado, pero **todas las habitaciones deben tener la misma configuración de pax** (error `5029`), y **no soportado en absoluto para hoteles GDS** |
+| Board type                               | ✅ mapeado a canónico                                 | ✅ **derivable** de `MealsIncluded` + `MealPlanCode` (OTA MPT)                                                                                          |
+| Política de cancelación estructurada     | ✅ `HotelCancellation`                                | ✅ `CancelPenalties` con `Deadline` / `AmountPercent` / `Refundable`                                                                                    |
+| **Comisión de agencia expuesta**         | ✅ `HotelPrice.agencyCommission`                      | ✅ **`Commission{Percent, Amount, Type}`**                                                                                                              |
+| **Filtrar sólo inventario comisionable** | ❌ se filtra después, en nuestro lado                 | ✅ 🆕 **en origen**, `RateFilter Type="Commission"` (sólo v5, §1.2.1)                                                                                   |
+| Contenido estático multi-idioma          | fuera del alcance de este expediente                  | 🆕 `TranslatedHotelAvailInfo[]` con `LanguageCode` (sólo v5; **qué idiomas admite, DESCONOCIDO**)                                                       |
+| Imágenes / contenido                     | ✅                                                    | ✅ `HotelImageInfo` + amenities + property type + security features                                                                                     |
+| Verificación de precio                   | ✅ `prebook`                                          | ✅ `pricecheck` con `PriceChange` / `PriceDifference`                                                                                                   |
+| **Persistencia del token de tarifa**     | `choiceId` efímero                                    | ✅ **`RateKey` no expira** — la cotización sobrevive                                                                                                    |
+| Pago                                     | hosted / modalidades                                  | ⚠️ **PAN + CVV en el body** (salvo `LATE` / IATA / corporate)                                                                                           |
+| SCA / 3DS                                | vía PSP                                               | pass-through `authentications[]` (PSD2, desde v1.9)                                                                                                     |
+| **Modificación post-venta**              | ❌ **no existe**                                      | ✅ 6 familias, 12 variantes de FoP                                                                                                                      |
+| Cancelación                              | ✅                                                    | ✅ + selectiva por `itemId` + `ALLOW_PARTIAL_CANCEL`                                                                                                    |
+| **Deduplicación (GIATA)**                | ✅                                                    | ❌ **sólo `HotelCode` global de Sabre**                                                                                                                 |
+| **PNR compartido con vuelo**             | ❌                                                    | ✅ (§6)                                                                                                                                                 |
+| Certificación previa                     | pasada                                                | Sabre exige certificación formal                                                                                                                        |
 
 ### 5.2 Autos: Sabre vs `providers/agent-cars/`
 
 Corregida contra el contrato — **casi todas las «❌ desconocido» de la primera pasada eran falsas**:
 
-| Dimensión | AgentCars (integrado) | Sabre |
-| --- | --- | --- |
-| Cobertura de la colección | 12 endpoints en `docs/cars/agentcars-api-reference.md` | **14 requests, 2 endpoints REST** |
-| Cobertura del contrato | — | **completa** (`get-vehicle-availability-v2.yml`) |
-| Autocomplete de ubicaciones | ✅ `/suggest` | ❌ **no existe** |
-| Oficinas + horarios | ✅ `findOffices` con `schedule` | ✅ **embebido**: `VehLocPolicyInfo.OperationSchedule` (hasta 7 días) + lat/long + dirección |
-| Tipos de tarifa | ✅ `/rates` | ✅ **en el request**: `RatePlan` D/W/E/M/B + `RateCategory` + `RateRule` |
-| Búsqueda por lat/long | ✅ | ✅ `GeoRef.GeoLocRef.GeoCode` |
-| Datos del vehículo | ✅ `CarOffer` | ✅ `VehMakeAndModel`, `VehNumOfDoors`, `VehType` (SIPP), bolsas (cantidad + tamaño), **capacidad legal de pasajeros** |
-| Imágenes de auto y logo de arrendadora | ✅ | ✅ `Vehicle.Images[]` (5 tamaños) + `Vendor.Logo` |
-| PPD / POD | ✅ `paymentType` | ✅ `GuaranteePrepaid.Type` (G/P/R y combinaciones) |
-| Desglose de precio | ✅ | ✅ `VehicleCharge[]` con 11 `ChargeType` + `MileageAllowance` |
-| Política de cancelación | ✅ | ✅ `CancellationRefundAmount[]{Amount, DaysPrior}` |
-| Comisión | ✅ | ✅ `Commission` (pedir con `RatePrefs.Commission`) |
-| **Reserva ON HOLD + `release`** | ✅ | ❌ |
-| **Reporte diario consolidado** | ✅ `getDailyReport` | ❌ |
-| Entrega/recogida a domicilio | ❌ | ✅ 4 variantes (pero `siteID` no descubrible) |
-| **Modificación** | ❌ | ❌ **confirmado por contrato** |
-| **PNR compartido con vuelo** | ❌ | ✅ |
+| Dimensión                              | AgentCars (integrado)                                  | Sabre                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Cobertura de la colección              | 12 endpoints en `docs/cars/agentcars-api-reference.md` | **14 requests, 2 endpoints REST**                                                                                     |
+| Cobertura del contrato                 | —                                                      | **completa** (`get-vehicle-availability-v2.yml`)                                                                      |
+| Autocomplete de ubicaciones            | ✅ `/suggest`                                          | ❌ **no existe**                                                                                                      |
+| Oficinas + horarios                    | ✅ `findOffices` con `schedule`                        | ✅ **embebido**: `VehLocPolicyInfo.OperationSchedule` (hasta 7 días) + lat/long + dirección                           |
+| Tipos de tarifa                        | ✅ `/rates`                                            | ✅ **en el request**: `RatePlan` D/W/E/M/B + `RateCategory` + `RateRule`                                              |
+| Búsqueda por lat/long                  | ✅                                                     | ✅ `GeoRef.GeoLocRef.GeoCode`                                                                                         |
+| Datos del vehículo                     | ✅ `CarOffer`                                          | ✅ `VehMakeAndModel`, `VehNumOfDoors`, `VehType` (SIPP), bolsas (cantidad + tamaño), **capacidad legal de pasajeros** |
+| Imágenes de auto y logo de arrendadora | ✅                                                     | ✅ `Vehicle.Images[]` (5 tamaños) + `Vendor.Logo`                                                                     |
+| PPD / POD                              | ✅ `paymentType`                                       | ✅ `GuaranteePrepaid.Type` (G/P/R y combinaciones)                                                                    |
+| Desglose de precio                     | ✅                                                     | ✅ `VehicleCharge[]` con 11 `ChargeType` + `MileageAllowance`                                                         |
+| Política de cancelación                | ✅                                                     | ✅ `CancellationRefundAmount[]{Amount, DaysPrior}`                                                                    |
+| Comisión                               | ✅                                                     | ✅ `Commission` (pedir con `RatePrefs.Commission`)                                                                    |
+| **Reserva ON HOLD + `release`**        | ✅                                                     | ❌                                                                                                                    |
+| **Reporte diario consolidado**         | ✅ `getDailyReport`                                    | ❌                                                                                                                    |
+| Entrega/recogida a domicilio           | ❌                                                     | ✅ 4 variantes (pero `siteID` no descubrible)                                                                         |
+| **Modificación**                       | ❌                                                     | ❌ **confirmado por contrato**                                                                                        |
+| **PNR compartido con vuelo**           | ❌                                                     | ✅                                                                                                                    |
 
 ### 5.3 Qué aporta Sabre — el resumen sin adornos
 
-**Aporta cuatro cosas de verdad:**
+**Aporta cinco cosas de verdad:**
 
-1. **Contenido multi-fuente + tarifas negociadas propias de cada agencia.** Con BYOC por PCC vía `POS.Source.PseudoCityCode` / `targetPcc` y branch access, cada agencia de la red ve **sus** contratos. **No se puede replicar con Despegar.** Es el argumento estratégico fuerte del modelo consolidador.
+1. **Contenido multi-fuente + tarifas negociadas propias de cada agencia.** Con BYOC por PCC vía `POS.Source.PseudoCityCode` / `targetPcc` y branch access, cada agencia de la red ve **sus** contratos. **No se puede replicar con Despegar.** Es el argumento estratégico fuerte del modelo consolidador. El contrato de v5 lo refuerza en dos puntos concretos: el `POS` está declarado también en el **shop**, no sólo en el pricecheck (§2.3.1), y `CanReturnRequestedNegotiatedRate` dice **por propiedad** si la tarifa negociada de esa agencia aplica ahí (§1.2.1).
 2. **Modificación post-venta de hoteles.** Hoy no la tenemos con ningún proveedor.
 3. **Multi-producto en un solo PNR**, con **tres mecanismos** y política de error configurable (§6).
 4. **`RateKey` que no expira** — una cotización del Package Studio puede revalidarse días después sin re-shop.
+5. 🆕 **Filtrado de inventario comisionable en origen.** `RateFilter Type="Commission" Value="NC" Action="Exclude"` deja fuera las tarifas sin comisión antes de que crucen la red (§1.2.1). Ningún otro proveedor nuestro lo ofrece, y va directo al pricing waterfall del consolidador.
 
 **Cuesta:**
 
@@ -1015,17 +1191,19 @@ A favor de fase 2:
 
 **Gate de entrada a fase 2 — actualizado (de 3 condiciones a 2 y media):**
 
-1. ~~Respuestas reales capturadas de CERT~~ → **cumplida documentalmente** por los contratos. Queda una **validación** (no un descubrimiento): confirmar el diff v4→v5 de `get/hotelavail` y capturar un `HotelPriceCheckRS` real.
+1. ~~Respuestas reales capturadas de CERT~~ → **cumplida documentalmente** por los contratos, incluido el de v5 del avail (§1.2.1). Queda una **validación** (no un descubrimiento): capturar un `GetHotelAvailRS` y un `HotelPriceCheckRS` reales y comprobar que casan con el contrato v5, con atención a las tres rupturas de tipo `Text: string → array`.
 2. **Decisión tomada sobre el pago** (§2.5 y «Decisiones»). Sigue abierta y es la que manda.
 3. **Coste y calendario de la certificación de Sabre.** Sigue abierta.
 
-**Lo que conviene hacer ya, y es barato:** un **spike de 1 día contra CERT** para (a) pedir el spec de Get Hotel Avail v5 al account manager, (b) capturar un `GetHotelAvailRS` y un `HotelPriceCheckRS` reales y guardarlos como fixtures en `docs/sabre/fixtures/`, y (c) **medir qué porcentaje del inventario es reservable sin PAN** filtrando por `GuaranteesAccepted.GuaranteeTypeCode`. Ese último número es el que decide si Sabre entra o no.
+**Lo que conviene hacer ya, y es barato:** un **spike de 1 día contra CERT** para (a) capturar un `GetHotelAvailRS` y un `HotelPriceCheckRS` reales y guardarlos como fixtures en `docs/sabre/fixtures/`, contrastándolos contra `get-hotel-avail-v5.0.yml`, y (b) **medir qué porcentaje del inventario es reservable sin PAN** filtrando por `GuaranteesAccepted.GuaranteeTypeCode`. Ese último número es el que decide si Sabre entra o no.
+
+> El spike ya **no** incluye pedir nada al account manager sobre el avail: el contrato de v5 está en el repo y reconciliado (§1.2.1). Lo único que sigue dependiendo de Sabre como interlocutor es el alcance de la certificación (R8) y el spec de Vehicle Price Check (§4.2), que no afecta a la decisión de hoteles.
 
 ---
 
 ## 6. Multi-producto en un solo PNR — la oportunidad para el Package Studio
 
-> **Sección reescrita.** La primera pasada concluyó que *«el PNR único no es un extra de la vertical hotel: arrastra la vertical vuelo entera»* y que exigía migrar el aire a Sabre GDS. **Esa conclusión era incorrecta y era la decisión de producto más cara del expediente.** Hay **tres** mecanismos, no uno, y al menos uno de ellos es compatible con contenido NDC.
+> **Sección reescrita.** La primera pasada concluyó que _«el PNR único no es un extra de la vertical hotel: arrastra la vertical vuelo entera»_ y que exigía migrar el aire a Sabre GDS. **Esa conclusión era incorrecta y era la decisión de producto más cara del expediente.** Hay **tres** mecanismos, no uno, y al menos uno de ellos es compatible con contenido NDC.
 
 ### 6.1 Mecanismo A — `createBooking` único con `flightDetails` (sell GDS clásico)
 
@@ -1034,24 +1212,51 @@ A favor de fase 2:
 ```json
 {
   "agency": { "…": "…" },
-  "hotel": { "useCSL": true, "bookingKey": "{{bookingKey}}",
-             "paymentPolicy": "DEPOSIT", "formOfPayment": 3 },
-  "travelers": [ { "givenName": "John", "surname": "Kowalski", "birthDate": "1970-01-23",
-                   "passengerCode": "ADT" } ],
+  "hotel": {
+    "useCSL": true,
+    "bookingKey": "{{bookingKey}}",
+    "paymentPolicy": "DEPOSIT",
+    "formOfPayment": 3
+  },
+  "travelers": [
+    {
+      "givenName": "John",
+      "surname": "Kowalski",
+      "birthDate": "1970-01-23",
+      "passengerCode": "ADT"
+    }
+  ],
   "flightDetails": {
     "flights": [
-      { "flightNumber": "{{flight_number}}", "airlineCode": "EY",
-        "fromAirportCode": "MEL", "toAirportCode": "AUH",
-        "departureDate": "{{start_date}}", "departureTime": "16:15",
-        "bookingClass": "Y", "isMarriageGroup": false, "flightStatusCode": "NN" } ],
-    "flightPricing": [ { "qualifiers": { "payment": {
-        "primaryFormOfPayment": 1, "secondaryFormOfPayment": 3,
-        "amountOnSecondFormOfPayment": "100.00" } } } ] },
-  "payment": { "billingAddress": { }, "formsOfPayment": [ ] }
+      {
+        "flightNumber": "{{flight_number}}",
+        "airlineCode": "EY",
+        "fromAirportCode": "MEL",
+        "toAirportCode": "AUH",
+        "departureDate": "{{start_date}}",
+        "departureTime": "16:15",
+        "bookingClass": "Y",
+        "isMarriageGroup": false,
+        "flightStatusCode": "NN"
+      }
+    ],
+    "flightPricing": [
+      {
+        "qualifiers": {
+          "payment": {
+            "primaryFormOfPayment": 1,
+            "secondaryFormOfPayment": 3,
+            "amountOnSecondFormOfPayment": "100.00"
+          }
+        }
+      }
+    ]
+  },
+  "payment": { "billingAddress": {}, "formsOfPayment": [] }
 }
 ```
 
-`flightDetails.flights[]` con `airlineCode` + `bookingClass` + `flightStatusCode: "NN"` es un **sell de segmento GDS clásico (ATPCO/LCC)**, no NDC. **VERIFICADO-SPEC** (help oficial de `createBooking`): *«the method can also create a **Sabre PNR** that includes **traditional air (ATPCO) or low-cost carrier (LCC)** content, book hotel content, **book a combination of flight and hotel content**, or book car content»*.
+`flightDetails.flights[]` con `airlineCode` + `bookingClass` + `flightStatusCode: "NN"` es un **sell de segmento GDS clásico (ATPCO/LCC)**, no NDC. **VERIFICADO-SPEC** (help oficial de `createBooking`): _«the method can also create a **Sabre PNR** that includes **traditional air (ATPCO) or low-cost carrier (LCC)** content, book hotel content, **book a combination of flight and hotel content**, or book car content»_.
 
 El `car` sigue la misma lógica: `createBooking - vehicle with Delivery Site` incluye `car.flightIndex: 1` (**VERIFICADO**), que apunta a un vuelo **de la reserva**. Y `cancelBooking` cierra el círculo: `Cancel by Item Id - Flights, Hotels, Cars` cancela ítems de las tres verticales del mismo `confirmationId` en una llamada (**VERIFICADO**).
 
@@ -1132,7 +1337,7 @@ Body del paso 8 (**VERIFICADO**, recortado):
 1. El PNR nació de una **oferta NDC** (`flightOffer.offerId`), **sin `flightDetails` en ninguna parte**.
 2. El hotel CSL se **agrega al PNR existente** por SOAP, referenciado por `<Itinerary id="{{pnr}}"/>`.
 3. `bookGDSviaCSL="true"` es el equivalente SOAP de `hotel.useCsl`.
-4. **`haltOnAirPriceError` / `haltOnHotelBookError` son la política de éxito parcial de este carril** — el análogo de `CreateErrorPolicyEnum` de `createBooking` (§2.4). En el ejemplo: no detenerse por error de precio de aire, **sí** detenerse por error de reserva de hotel. **Añadir a la tabla de éxito parcial de `04-*` §5.2, que hoy sólo documenta los `haltOn…` de `createBooking`.**
+4. **`haltOnAirPriceError` / `haltOnHotelBookError` son la política de éxito parcial de este carril** — el análogo de `CreateErrorPolicyEnum` de `createBooking` (§2.4). En el ejemplo: no detenerse por error de precio de aire, **sí** detenerse por error de reserva de hotel. **Documentados con su semántica, su polaridad inversa y su default DESCONOCIDO en `04-create-booking.md` §5.2.1.**
 5. `PostProcessing.EndTransaction` es lo que confirma el PNR (equivalente al `EnhancedEndTransactionRQ` de los LLS, presente 4 veces en la colección).
 6. `Guest.Type="10"` es un código OTA de tipo de huésped; `LeadGuest="true"` marca el titular.
 7. El PAN y el CSC viajan **en el XML**. Mismo problema PCI de §2.5, en otro transporte.
@@ -1154,9 +1359,16 @@ Body del paso 8 (**VERIFICADO**, recortado):
 
 ### 6.5 Y una cuarta vía, sin PNR único: `associatedFlightDetails`
 
-**VERIFICADO-SPEC** `booking-management-v1.yml:3183` (`AssociatedFlightDetails`), `:5074` (hotel) y `:7213` (car).
+**VERIFICADO-SPEC** `booking-management-v1.yml:3183` (`AssociatedFlightDetails`), `:5072` (`HotelToBook.associatedFlightDetails`) y `:7212` (`CarToBook.associatedFlightDetails`).
 
-Tanto `hotel` como `car` aceptan `associatedFlightDetails` con `arrivalAirlineCode`, `arrivalFlightNumber`, `arrivalTime`, `departureAirlineCode`, `departureFlightNumber`, `departureTime`. Es información que se **transmite al proveedor del hotel o a la arrendadora** para que sepan cuándo llega el cliente.
+> **Corrección de citas y de contenido.** Este documento citaba `:5074` y `:7213`; `:5074` es la segunda línea de la `description` de la propiedad de hotel y `:7213` la primera de la del auto. Las líneas de las propiedades son `:5072` y `:7212`. Al verificarlas aparece además una **diferencia real que el texto anterior borraba: hotel y auto no reciben el mismo tipo.**
+
+- **Hotel** (`:5072`) apunta a `AssociatedFlightDetails` (`:3183`), que es `AssociatedArrivalFlight` **más** `arrivalTime`, `departureAirlineCode`, `departureFlightNumber` y `departureTime`. Seis campos, llegada y salida.
+- **Auto** (`:7212`) apunta directamente a **`AssociatedArrivalFlight`** (`:7267`), que sólo tiene **`arrivalAirlineCode` y `arrivalFlightNumber`**. Ni horas ni vuelo de regreso.
+
+Es información que se **transmite al proveedor del hotel o a la arrendadora** para que sepan cuándo llega el cliente.
+
+> ⚠️ **Consecuencia para el Package Studio:** a la arrendadora se le puede decir _qué vuelo_ trae al cliente, pero **no a qué hora llega** por esta vía. `CarToBook` no tiene ningún campo de hora — sus trece propiedades son `bookingKey`, `travelerIndex`, `emailIndex`, `collectionAddress`, `collectionSite`, `deliveryAddress`, `deliverySite`, `associatedFlightDetails`, `paymentPolicy`, `formOfPayment`, `quantity`, `specialInstructions` y `flightIndex` (**VERIFICADO-SPEC** `booking-management-v1.yml:7175-7245`): la ventana de recogida viaja dentro del `bookingKey` que salió del `vehavail`. Al hotel sí se le transmite la hora de llegada, y ahí es donde está el valor real del gesto de late check-in.
 
 > 🟢 **Esto entrega el grueso del valor de producto del PNR único a una fracción del coste.** El gesto de Package Studio «arrastra el auto debajo del vuelo de llegada» se puede implementar **con el vuelo en LATAM NDC directo y el hotel en Sabre**: el hotel sabe la hora de llegada, la arrendadora sabe el vuelo, el cliente ve un solo itinerario en nuestra UI. Lo que **no** se obtiene es el localizador único ni la cancelación atómica.
 >
@@ -1179,53 +1391,55 @@ Con Sabre, vuelo + hotel + auto pueden ser **un solo PNR**: un localizador, una 
 
 ### 7.1 `packages/canonical/src/hotel.ts` ← Sabre
 
-| Campo canónico | Origen en Sabre | Estado |
-| --- | --- | --- |
-| `Hotel.code` | `HotelInfo.HotelCode` (Global ID) + `HotelInfo.SabreHotelCode` | ✅ **VERIFICADO-SPEC** `:1053`, `:1075` |
-| `Hotel.giataId` | — | ❌ **no existe.** Sin GIATA no hay deduplicación cross-provider. Con ≥3 fuentes de hotel el mismo hotel aparece N veces. **Bloqueante de UX. Riesgo R4.** |
-| `Hotel.name` | `HotelInfo.HotelName` | ✅ **VERIFICADO-SPEC** `:1085` |
-| `Hotel.category` | `HotelInfo.PropertyTypeInfo.PropertyType` | ✅ existe; tabla OTA de tipos de propiedad → mapeo pendiente |
-| `Hotel.starRating` | `HotelInfo.SabreRating` (string, ej. `"3.5"`) | ⚠️ **Es un rating propietario de Sabre, no estrellas oficiales.** Llevarlo a campo propio. **Riesgo R12 vigente.** |
-| `Hotel.chainCode` | `HotelInfo.ChainCode` / `ChainName` / `BrandCode` / `BrandName` | ✅ **VERIFICADO-SPEC** `:1091`-`:1109` |
-| `Hotel.address` | `HotelInfo.LocationInfo.Address` + `CityName` / `StateProv` / `CountryName` / `Neighborhoods` | ✅ **VERIFICADO-SPEC** `:1180`-`:1303` |
-| `Hotel.location` (lat/lng) | `HotelAvailInfos.SearchLatitude/Longitude` es el **punto de búsqueda**, no el hotel | ⚠️ **el lat/long por propiedad no aparece en `HotelInfo` de v4.** Sí hay `Distance` + `Direction` + `UOM` respecto al punto de búsqueda. **DESCONOCIDO** si v5 lo añade. |
-| `Hotel.amenities` | `HotelInfo.Amenities.Amenity[]` (+ `SecurityFeatures`) | ✅ **VERIFICADO-SPEC** `:1320` |
-| `Hotel.images` | `HotelImageInfo.ImageItem[].Image[]` con `Category` y `Description` | ✅ **VERIFICADO-SPEC** `:2572` |
-| `Hotel.logo` | `HotelInfo.Logo` (URI) | ✅ campo nuevo, no existe en el canónico |
-| `Room.code` | `Room.roomTypeCode` (getBooking) / `RatePlan.ProductCode` | ✅ **VERIFICADO-SPEC** `:3095`, `:1885` |
-| `Room.roomType` / `description` | `RoomDescription.Name` / `.Text[]`; en getBooking `room.roomType` + `room.description` | ✅ **VERIFICADO-SPEC** `:1680`, `:3072` |
-| `Room.capacity` | `Occupancy{Min, Max}` | ✅ **VERIFICADO-SPEC** `:1773` |
-| `Room.beds` | `BedTypeOptions.BedTypes.BedType[]{Code (OTA BED), Description, Count}` | ✅ **Catálogo identificado: tabla OTA `BED`.** El mapeo a `BedTypeSchema` (`single`\|`double`\|`queen`\|`king`\|`sofa`\|`bunk`) es una tabla estática, ya no un bloqueante. |
-| `Room.sizeSqm` | — | ❌ no existe |
-| `Room.smoking` | `rooms[].isSmoking` (request); en respuesta vía `RoomAmenities` | ⚠️ parcial |
-| `RatePlan.code` | `RatePlan.RatePlanCode` / `RatePlanType` (OTA RPT) / `ClientId` | ✅ **VERIFICADO-SPEC** `:1805`, `:1811`, `:1881` |
-| `RatePlan.boardType` | **derivar** de `MealsIncluded{BreakFast, Lunch, Dinner, MealPlanCode}` | ✅ **derivable.** Ya no es gap crítico. |
-| `RatePlan.ratePerNight` | `RateInfo.AverageNightlyRate` / `AverageNightlyRateBeforeTax`; en getBooking `room.roomRate` | ✅ **VERIFICADO-SPEC** `:1479`, `:3099` |
-| `RatePlan.totalRate` / `taxes` | `RateInfo.AmountBeforeTax` / `AmountAfterTax` + `Taxes.Tax[]` + `TaxGroups` + `Fees.Fee[]` + `FeeGroups` | ✅ **VERIFICADO-SPEC** `:1459`, `:2102`, `:2203` |
-| `RatePlan.cancellation` | `CancelPenalties.CancelPenalty[]{Refundable, Deadline, AmountPercent, PenaltyDescription}` | ✅ **VERIFICADO-SPEC** `:2342`. **Gap crítico cerrado.** |
-| `RatePlan.paymentDueAtProperty` | `PrepaidIndicator` (booleano por `RatePlan`) + `paymentPolicy: LATE` | ✅ **VERIFICADO-SPEC** `:1849` |
-| `HotelStay.checkIn/checkOut/nights` | `StayDateTimeRange` / `RateInfo.StartDate`-`EndDate` | ✅ |
-| `HotelStay.occupancy` | `Rooms.Room[]{Adults, Children, ChildAges}` | ⚠️ mapea a `PaxCountSchema`, **pero sólo ocupación homogénea** (§2.1.4) |
+| Campo canónico                      | Origen en Sabre                                                                                          | Estado                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Hotel.code`                        | `HotelInfo.HotelCode` (Global ID) + `HotelInfo.SabreHotelCode`                                           | ✅ **VERIFICADO-SPEC** `:1053`, `:1075`                                                                                                                                                                                                                                                                                                                                                 |
+| `Hotel.giataId`                     | —                                                                                                        | ❌ **no existe.** Sin GIATA no hay deduplicación cross-provider. Con ≥3 fuentes de hotel el mismo hotel aparece N veces. **Bloqueante de UX. Riesgo R4.**                                                                                                                                                                                                                               |
+| `Hotel.name`                        | `HotelInfo.HotelName`                                                                                    | ✅ **VERIFICADO-SPEC** `:1085`                                                                                                                                                                                                                                                                                                                                                          |
+| `Hotel.category`                    | `HotelInfo.PropertyTypeInfo.PropertyType`                                                                | ✅ existe; tabla OTA de tipos de propiedad → mapeo pendiente                                                                                                                                                                                                                                                                                                                            |
+| `Hotel.starRating`                  | `HotelInfo.SabreRating` (string, ej. `"3.5"`)                                                            | ⚠️ **Es un rating propietario de Sabre, no estrellas oficiales.** Llevarlo a campo propio. **Riesgo R12 vigente.**                                                                                                                                                                                                                                                                      |
+| `Hotel.chainCode`                   | `HotelInfo.ChainCode` / `ChainName` / `BrandCode` / `BrandName`                                          | ✅ **VERIFICADO-SPEC** `:1091`-`:1109`                                                                                                                                                                                                                                                                                                                                                  |
+| `Hotel.address`                     | `HotelInfo.LocationInfo.Address` + `CityName` / `StateProv` / `CountryName` / `Neighborhoods`            | ✅ **VERIFICADO-SPEC** `:1180`-`:1303`                                                                                                                                                                                                                                                                                                                                                  |
+| `Hotel.location` (lat/lng)          | `HotelInfo.LocationInfo.Latitude` / `.Longitude`                                                         | ✅ **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2319-2332`, con ejemplo real en `:236-238`; existe también en v4 (`:1183`, `:1189`). **Corrige la afirmación anterior de que no existía.** No confundir con `HotelAvailInfos.SearchLatitude/Longitude` (`:2101`, `:2105`), que es el punto de búsqueda. `Distance` + `Direction` + `UOM` siguen siendo un dato aparte y complementario |
+| `Hotel.amenities`                   | `HotelInfo.Amenities.Amenity[]` (+ `SecurityFeatures`)                                                   | ✅ **VERIFICADO-SPEC** `:1320`                                                                                                                                                                                                                                                                                                                                                          |
+| `Hotel.images`                      | `HotelImageInfo.ImageItem[].Image[]` con `Category` y `Description`                                      | ✅ **VERIFICADO-SPEC** `:2572`                                                                                                                                                                                                                                                                                                                                                          |
+| `Hotel.logo`                        | `HotelInfo.Logo` (URI)                                                                                   | ✅ campo nuevo, no existe en el canónico                                                                                                                                                                                                                                                                                                                                                |
+| `Room.code`                         | `Room.roomTypeCode` (getBooking) / `RatePlan.ProductCode`                                                | ✅ **VERIFICADO-SPEC** `:3095`, `:1885`                                                                                                                                                                                                                                                                                                                                                 |
+| `Room.roomType` / `description`     | `RoomDescription.Name` / `.Text[]`; en getBooking `room.roomType` + `room.description`                   | ✅ **VERIFICADO-SPEC** `:1680`, `:3072`                                                                                                                                                                                                                                                                                                                                                 |
+| `Room.capacity`                     | `Occupancy{Min, Max}`                                                                                    | ✅ **VERIFICADO-SPEC** `:1773`                                                                                                                                                                                                                                                                                                                                                          |
+| `Room.beds`                         | `BedTypeOptions.BedTypes.BedType[]{Code (OTA BED), Description, Count}`                                  | ✅ **Catálogo identificado: tabla OTA `BED`.** El mapeo a `BedTypeSchema` (`single`\|`double`\|`queen`\|`king`\|`sofa`\|`bunk`) es una tabla estática, ya no un bloqueante.                                                                                                                                                                                                             |
+| `Room.sizeSqm`                      | —                                                                                                        | ❌ no existe. v4 tenía `RoomSize`, pero declarado «placeholder for now» y **v5 lo elimina** (`get-hotel-avail-v5.0.yml:2878`). No contar con él                                                                                                                                                                                                                                         |
+| `Room.smoking`                      | `rooms[].isSmoking` (request); en respuesta vía `RoomAmenities`                                          | ⚠️ parcial                                                                                                                                                                                                                                                                                                                                                                              |
+| `RatePlan.code`                     | `RatePlan.RatePlanCode` / `RatePlanType` (OTA RPT) / `ClientId`                                          | ✅ **VERIFICADO-SPEC** `:1805`, `:1811`, `:1881`                                                                                                                                                                                                                                                                                                                                        |
+| `RatePlan.boardType`                | **derivar** de `MealsIncluded{BreakFast, Lunch, Dinner, MealPlanCode}`                                   | ✅ **derivable.** Ya no es gap crítico.                                                                                                                                                                                                                                                                                                                                                 |
+| `RatePlan.ratePerNight`             | `RateInfo.AverageNightlyRate` / `AverageNightlyRateBeforeTax`; en getBooking `room.roomRate`             | ✅ **VERIFICADO-SPEC** `:1479`, `:3099`                                                                                                                                                                                                                                                                                                                                                 |
+| `RatePlan.totalRate` / `taxes`      | `RateInfo.AmountBeforeTax` / `AmountAfterTax` + `Taxes.Tax[]` + `TaxGroups` + `Fees.Fee[]` + `FeeGroups` | ✅ **VERIFICADO-SPEC** `:1459`, `:2102`, `:2203`                                                                                                                                                                                                                                                                                                                                        |
+| `RatePlan.cancellation`             | `CancelPenalties.CancelPenalty[]{Refundable, Deadline, AmountPercent, PenaltyDescription}`               | ✅ **VERIFICADO-SPEC** `:2342`. **Gap crítico cerrado.**                                                                                                                                                                                                                                                                                                                                |
+| `RatePlan.paymentDueAtProperty`     | `PrepaidIndicator` (booleano por `RatePlan`) + `paymentPolicy: LATE`                                     | ✅ **VERIFICADO-SPEC** `:1849`                                                                                                                                                                                                                                                                                                                                                          |
+| `HotelStay.checkIn/checkOut/nights` | `StayDateTimeRange` / `RateInfo.StartDate`-`EndDate`                                                     | ✅                                                                                                                                                                                                                                                                                                                                                                                      |
+| `HotelStay.occupancy`               | `Rooms.Room[]{Adults, Children, ChildAges}`                                                              | ⚠️ mapea a `PaxCountSchema`, **pero sólo ocupación homogénea** (§2.1.4)                                                                                                                                                                                                                                                                                                                 |
 
 **Campos de Sabre sin hueco en el canónico** (ampliar el modelo o guardarlos en `providerMetadata`):
 
-| Campo Sabre | Por qué importa |
-| --- | --- |
-| `RateKey` | Token de tarifa. Concepto igual al `choiceId` de Despegar, **pero no expira** — se puede persistir en una cotización. |
-| `BookingKey` | Token bookable post-pricecheck. Análogo al resultado del `prebook` de Despegar. |
-| `Guarantee.GuaranteeType` → `paymentPolicy` (`GUARANTEE` \| `DEPOSIT` \| `LATE`) | Concepto GDS que Despegar no tiene. Ampliar `RatePlanSchema`. |
-| `GuaranteesAccepted[].GuaranteeTypeCode` + `PaymentCards.CVVRequired` | **Determina si la tarifa se puede vender sin tocar un PAN.** Imprescindible para el filtro PCI de §2.5(a). |
-| `RateSource` / `sourceTypeCode` + `HotelSourceEnum` | De qué inventario salió la tarifa → qué condiciones aplican. Candidato a `Offer.providerMetadata`. |
-| `Commission{Percent, Amount, Type}` | **Base del pricing waterfall del consolidador.** |
-| `MinSellingRate` | Precio recomendado del proveedor cuando se trabaja con net rates — techo natural del markup. |
-| `corporateDiscountCode`, `RatePlanCandidates`, `ClientId` | Tarifas negociadas: el corazón del BYOC. |
-| `itemId` | Id del ítem dentro del PNR. Necesario para cancelación selectiva y modify. |
-| `bookingSignature` | Concurrencia optimista. |
-| `roomExtras[]` (`26` Crib, `91` Roll-away, `196` Extra Person) | Ancillaries de hotel. |
-| `associatedFlightDetails` | Vínculo hotel↔vuelo sin PNR único (§6.5). |
-| `pinCode` | Localizador de Booking.com — hay que mostrarlo al cliente en ese origen. |
-| `hotelStatusCode` / `hotelStatusName` | Estado real de la reserva en el proveedor. |
-| `ShopKey` | Paginación correcta. |
+| Campo Sabre                                                                      | Por qué importa                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RateKey`                                                                        | Token de tarifa. Concepto igual al `choiceId` de Despegar, **pero no expira** — se puede persistir en una cotización.                                                                                                                                                                |
+| `BookingKey`                                                                     | Token bookable post-pricecheck. Análogo al resultado del `prebook` de Despegar.                                                                                                                                                                                                      |
+| `Guarantee.GuaranteeType` → `paymentPolicy` (`GUARANTEE` \| `DEPOSIT` \| `LATE`) | Concepto GDS que Despegar no tiene. Ampliar `RatePlanSchema`.                                                                                                                                                                                                                        |
+| `GuaranteesAccepted[].GuaranteeTypeCode` + `PaymentCards.CVVRequired`            | **Determina si la tarifa se puede vender sin tocar un PAN.** Imprescindible para el filtro PCI de §2.5(a).                                                                                                                                                                           |
+| `RateSource` / `sourceTypeCode` + `HotelSourceEnum`                              | De qué inventario salió la tarifa → qué condiciones aplican. Candidato a `Offer.providerMetadata`.                                                                                                                                                                                   |
+| `Commission{Percent, Amount, Type}`                                              | **Base del pricing waterfall del consolidador.**                                                                                                                                                                                                                                     |
+| `MinSellingRate`                                                                 | Precio recomendado del proveedor cuando se trabaja con net rates — techo natural del markup.                                                                                                                                                                                         |
+| `corporateDiscountCode`, `RatePlanCandidates`, `ClientId`, `CorporateNumber`     | Tarifas negociadas: el corazón del BYOC. `CorporateNumber` es nuevo en v5 (`get-hotel-avail-v5.0.yml:1198`).                                                                                                                                                                         |
+| `CanReturnRequestedNegotiatedRate`                                               | 🆕 v5. Dice, por propiedad, si el `ClientId`/`RatePlanCode` de la agencia es válido para esa cadena. **Distingue «la agencia no tiene tarifa aquí» de «no hubo disponibilidad»** — es el diagnóstico que necesita el alta self-service de agencias. `get-hotel-avail-v5.0.yml:2235`. |
+| `ApproxTotalPrice`                                                               | 🆕 v5. Precio all-inclusive tal como lo manda el proveedor, para display. No es lo que se cobra en prepago. `get-hotel-avail-v5.0.yml:2799`.                                                                                                                                         |
+| `itemId`                                                                         | Id del ítem dentro del PNR. Necesario para cancelación selectiva y modify.                                                                                                                                                                                                           |
+| `bookingSignature`                                                               | Concurrencia optimista.                                                                                                                                                                                                                                                              |
+| `roomExtras[]` (`26` Crib, `91` Roll-away, `196` Extra Person)                   | Ancillaries de hotel.                                                                                                                                                                                                                                                                |
+| `associatedFlightDetails`                                                        | Vínculo hotel↔vuelo sin PNR único (§6.5).                                                                                                                                                                                                                                           |
+| `pinCode`                                                                        | Localizador de Booking.com — hay que mostrarlo al cliente en ese origen.                                                                                                                                                                                                             |
+| `hotelStatusCode` / `hotelStatusName`                                            | Estado real de la reserva en el proveedor.                                                                                                                                                                                                                                           |
+| `ShopKey`                                                                        | Paginación correcta.                                                                                                                                                                                                                                                                 |
 
 ### 7.2 Autos ← Sabre
 
@@ -1236,23 +1450,31 @@ Con Sabre, vuelo + hotel + auto pueden ser **un solo PNR**: un localizador, una 
 
 ### 7.3 Gaps de plataforma
 
-| Gap | Detalle | Estado |
-| --- | --- | --- |
-| **Sin transporte SOAP** | Ningún adapter habla XML. Cliente SOAP + parser (`fast-xml-parser`) en `packages/core/ports/`, no en el dominio. | **Sólo necesario para el mecanismo C de §6.3.** Degradado de bloqueante a opcional. |
-| **Sin sesiones stateful** | `SessionCreateRQ` / `SessionCloseRQ` con afinidad y cierre garantizado. | **Sólo para §6.3 y 8 variantes de FoP.** Un v1 sin ellas es viable (§3.4). |
-| **Sin concurrencia optimista** | `bookingSignature` no tiene equivalente en nuestro modelo de orden. | Abierto |
-| **Sin `itemId` por vertical** | Nuestro modelo asume 1 reserva = 1 proveedor = 1 vertical. | Abierto |
-| **Sin operación de modificación** | Ni el puerto ni el dominio contemplan modificar una reserva confirmada. Es un `HotelModifyPort` nuevo. | Abierto |
-| **PCI** | §2.5 y §3.1.2. | **El bloqueante mayor** |
-| **Deduplicación cross-provider** | Sin GIATA, ≥3 fuentes de hotel producen duplicados. | Abierto (M1.6) |
-| **Ocupación mixta** | Sabre exige la misma config de pax en todas las habitaciones; GDS no soporta multi-room. | 🆕 **Nuevo, descubierto en el contrato** |
-| **`targetPcc` no revierte contexto** | *«The API does not revert context after completing the booking»* — hay que gestionarlo por conexión. | 🆕 **Nuevo** |
+| Gap                                  | Detalle                                                                                                          | Estado                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Sin transporte SOAP**              | Ningún adapter habla XML. Cliente SOAP + parser (`fast-xml-parser`) en `packages/core/ports/`, no en el dominio. | **Sólo necesario para el mecanismo C de §6.3.** Degradado de bloqueante a opcional. |
+| **Sin sesiones stateful**            | `SessionCreateRQ` / `SessionCloseRQ` con afinidad y cierre garantizado.                                          | **Sólo para §6.3 y 8 variantes de FoP.** Un v1 sin ellas es viable (§3.4).          |
+| **Sin concurrencia optimista**       | `bookingSignature` no tiene equivalente en nuestro modelo de orden.                                              | Abierto                                                                             |
+| **Sin `itemId` por vertical**        | Nuestro modelo asume 1 reserva = 1 proveedor = 1 vertical.                                                       | Abierto                                                                             |
+| **Sin operación de modificación**    | Ni el puerto ni el dominio contemplan modificar una reserva confirmada. Es un `HotelModifyPort` nuevo.           | Abierto                                                                             |
+| **PCI**                              | §2.5 y §3.1.2.                                                                                                   | **El bloqueante mayor**                                                             |
+| **Deduplicación cross-provider**     | Sin GIATA, ≥3 fuentes de hotel producen duplicados.                                                              | Abierto (M1.6)                                                                      |
+| **Ocupación mixta**                  | Sabre exige la misma config de pax en todas las habitaciones; GDS no soporta multi-room.                         | 🆕 **Nuevo, descubierto en el contrato**                                            |
+| **`targetPcc` no revierte contexto** | _«The API does not revert context after completing the booking»_ — hay que gestionarlo por conexión.             | 🆕 **Nuevo**                                                                        |
 
 ---
 
 ## Preguntas abiertas
 
 > Se han eliminado las ~20 preguntas que los contratos respondieron: forma de las cinco respuestas, catálogos `bedTypeCode` / `physicalDisabilityCode` / `roomExtraType`, semántica de `BestOnly` / `TierLabels` / `RateDetailsInd`, `RefPointType`, valores de `errorHandlingPolicy`, `CarExtrasPref`, `paymentPolicy` de auto, `useCsl` vs `useCSL`, `payment` anidado en `car`, `flightIndex`, `RateSource` como lista, `POS.PseudoCityCode`, PCC por agencia, comisión expuesta, multi-habitación, modificación de vehículos y formato de errores.
+>
+> **Y cinco más que cierra el contrato de `get/hotelavail` v5**, incorporado al corpus congelado y reconciliado en §1.2.1:
+>
+> - **Diff v4 → v5 del avail.** Ya no es DESCONOCIDO: 5 campos nuevos de request, 11 de respuesta, 6 rupturas y 4 eliminaciones, todos citados por línea. **§1.2.1.**
+> - **¿Existe `POS.Source.PseudoCityCode` en el body REST de v5?** **Sí.** **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:1150`, schema en `:1176-1196`. El BYOC por PCC aplica también al shop, no sólo al pricecheck. **§2.3.1.**
+> - **¿Hay lat/long por propiedad en la respuesta de avail?** **Sí, y ya lo había en v4.** `HotelInfo.LocationInfo.Latitude` / `.Longitude` — **VERIFICADO-SPEC** `get-hotel-avail-v5.0.yml:2319-2332`, ejemplo real en `:236-238`. El mapa de resultados es pintable. **§2.1.6, §7.1.**
+> - **Tabla OTA `RPT` para `RatePlanType`.** No hace falta construirla: v5 devuelve `RatePlanTypeDescription` ya resuelta junto al código (**VERIFICADO-SPEC** `:3102`; ejemplos reales del propio spec: `13` → «Regular/rack», `25` → «Net»). Queda como tarea opcional de catálogo estático, no como laguna.
+> - **Spec de `Get Hotel Details`.** Sí lo tenemos: `get-hotel-details-v2.yml:15` → `POST /v2.0.0/get/hoteldetails`, dentro de los 21 de `00-fuentes.md` §2.
 
 **Bloqueantes de decisión:**
 
@@ -1261,46 +1483,43 @@ Con Sabre, vuelo + hotel + auto pueden ser **un solo PNR**: un localizador, una 
 3. **¿Qué exige la certificación de Sabre?** Alcance, duración, coste. No está en ninguna fuente disponible.
 4. **¿Funciona el mecanismo B de §6.2** — `createBooking` único con `flightOffer` NDC + `hotel`/`car`? El schema lo permite; la prosa oficial y la colección sugieren que no. **Si funciona, el PNR único no necesita SOAP y cambia por completo la ecuación de coste.**
 
-**Lagunas de contrato:**
+**Lagunas de contrato — queda una, y no es de hotel:**
 
-5. **Diff `get/hotelavail` v4 → v5.** Todo lo VERIFICADO-SPEC de §2 sale de v4; la colección usa v5. Pedir el spec al account manager (el slug vive detrás del login del catálogo).
-6. **Spec de Vehicle Price Check.** No está entre los 15 descargados. Única laguna de la vertical auto.
-7. **Spec de `Get Hotel Details`.** Mencionado en el help de pricecheck como fuente alternativa de `RateKey`; no está en la colección ni tenemos contrato.
+5. **Spec de Vehicle Price Check.** Ningún `.yml` del corpus congelado declara `/veh/pricecheck` ni `VehPriceCheckRQ`; los dos contratos de autos cubren sólo `get/vehavail`. Es la única laguna de contrato que sobrevive en esta vertical (§4.2), y no afecta a la decisión sobre hoteles.
 
 **Catálogos que siguen faltando:**
 
-8. **Correspondencia numérica completa `RateSource` ↔ `HotelSourceEnum`.** Confirmados `100`↔Sabre GDS y `113`↔Booking.com. Faltan `110` y `112`.
-9. **Código corto de `LATE` en `Guarantee.GuaranteeType`.** El `guaranteeMap` de la colección sólo cubre `GUAR` y `DEP`. La vía correcta es la tabla OTA PMT vía `GuaranteeTypeCode`.
-10. Catálogos SCA: `issuesCode`, `channelCode`, `exemptionTypeCode`, `mandateTypeCode`, `cardNumberCollectionCode`, `verificationResultCode`, `electronicCommerceIndicator`. El spec los declara string libre.
-11. Tabla OTA `RPT` completa para `RatePlanType` (el enum va de `"1"` a `"33"` sin descripciones).
+6. **Correspondencia numérica completa `RateSource` ↔ `HotelSourceEnum`.** Confirmados `100`↔Sabre GDS y `113`↔Booking.com. Faltan `110` y `112` — y los ejemplos de respuesta de v5 añaden un **`204`** que ninguna fuente disponible explica (`get-hotel-avail-v5.0.yml:1034`). El catálogo no se estrecha con v5: se ensancha.
+7. **Código corto de `LATE` en `Guarantee.GuaranteeType`.** El `guaranteeMap` de la colección sólo cubre `GUAR` y `DEP`. La vía correcta es la tabla OTA PMT vía `GuaranteeTypeCode`. v5 no lo añade: sigue con el mismo ejemplo `GUAR` (`get-hotel-avail-v5.0.yml:3644`).
+8. Catálogos SCA: `issuesCode`, `channelCode`, `exemptionTypeCode`, `mandateTypeCode`, `cardNumberCollectionCode`, `verificationResultCode`, `electronicCommerceIndicator`. El spec los declara string libre.
 
 **Ambigüedades operativas:**
 
-12. **¿Existe `POS.Source.PseudoCityCode` en el body REST de `get/hotelavail` v5?** En v4 el spec lo declara pero los ejemplos REST de la colección no lo mandan. El error `5276` sugiere que sí. Determina si el BYOC aplica también al shop o sólo al pricecheck.
-13. **Lat/long por propiedad en la respuesta de avail.** `HotelInfo` de v4 no lo trae (sólo `Distance`/`Direction`). ¿Lo añade v5? Sin él no se puede pintar el mapa de resultados.
-14. **¿Es `creationDetails.agencyIataNumber` obligatorio en `modifyBooking`?** Aparece en las 6 familias, pero el contrato declara `creationDetails` opcional.
-15. Contenido de la variable `{{request}}` usada como `before` en «modify FoP including 'before' section - CC».
-16. **`deliverySite.id` / `collectionSite.id`** — el `#source` del spec indica que vienen del proveedor en `getBooking`, y `DeliveryCollectionInfo` del avail está marcado «FUTURE USE ONLY». **¿Hay alguna forma documentada de descubrirlos antes de reservar?**
-17. **¿Hay mapeo GIATA o equivalente** para deduplicar hoteles Sabre contra Despegar? Sin él, el fan-out multi-fuente es inviable en la UI.
-18. **¿Cuánto tarda realmente la propagación del branch access?** El error `5276` dice 5 minutos. Determina el UX del alta de agencia.
+9. **¿Es `creationDetails.agencyIataNumber` obligatorio en `modifyBooking`?** Aparece en las 6 familias, pero el contrato declara `creationDetails` opcional.
+10. Contenido de la variable `{{request}}` usada como `before` en «modify FoP including 'before' section - CC».
+11. **`deliverySite.id` / `collectionSite.id`** — el `#source` del spec indica que vienen del proveedor en `getBooking`, y `DeliveryCollectionInfo` del avail está marcado «FUTURE USE ONLY». **¿Hay alguna forma documentada de descubrirlos antes de reservar?**
+12. **¿Hay mapeo GIATA o equivalente** para deduplicar hoteles Sabre contra Despegar? Sin él, el fan-out multi-fuente es inviable en la UI.
+13. **¿Cuánto tarda realmente la propagación del branch access?** El error `5276` dice 5 minutos. Determina el UX del alta de agencia — y ahora también la del shop, porque el `POS` del avail exige la misma relación (§2.3.1).
+14. **¿En qué proporción entra el inventario por caché con `PageSize > 40`?** El contrato dice que sólo 40 propiedades traen GDS en vivo (`get-hotel-avail-v5.0.yml:1231`), pero no cuánta antigüedad tiene el resto. Es una decisión de frescura vs. cobertura que hoy no se puede tomar con datos.
+15. 🆕 **¿Qué idiomas admite `TranslatedHotelAvailInfo` y cómo se piden?** El schema declara `LanguageCode` (`get-hotel-avail-v5.0.yml:2114`) con un único ejemplo `"en"`, y **no hay ningún parámetro de request en el contrato que controle el idioma del estático**. El único `LanguageCode` del request es `ImageRef.LanguageCode` (`:1993`), que aplica sólo a la descripción de la imagen y sí enumera `ES` y `PT`. Si el estático completo admite lo mismo, ahorra una fuente de contenido entera. **DESCONOCIDO**, medible en el spike.
 
 ---
 
 ## Riesgos
 
-| # | Riesgo | Impacto | Prob. | Mitigación |
-| --- | --- | --- | --- | --- |
-| R1 | **Conflicto PCI.** `createBooking` y `modifyBooking` exigen `cardNumber` + `cardSecurityCode` en el body, y el `UpdatePassengerNameRecordRQ` de §6.3 en el XML, contra la regla explícita de `CLAUDE.md` (hosted checkout, SAQ-A). | **Crítico** — puede invalidar la integración | **Alta** (verificado en el 100 % de los ejemplos con tarjeta) | Medir en CERT qué porcentaje del inventario es reservable con `AGENCY_IATA` / `CORPORATE` / `LATE`, filtrando por `GuaranteesAccepted`. Si es aceptable, vender sólo eso. Si no, evaluar `VIRTUAL_CARD` con emisor externo. Último recurso: descartar la vertical. |
-| R2 | 🆕 **`CCVIEW` en modificación.** El `before` poblado exige PAN sin enmascarar, y la alternativa oficial es activar el keyword `CCVIEW` en el EPR — un permiso para ver números de tarjeta completos. | **Crítico** | Alta | **No implementar en v1 ninguna modificación que toque la forma de pago.** Las otras 5 familias (fechas, huéspedes, titular, `productCode`, campos comunes) no lo requieren. |
-| R3 | **Sesiones SOAP stateful** para el mecanismo C de §6.3 y 8 de 12 variantes de FoP. Rompen el fan-out sin estado y exigen cierre garantizado o se filtran sesiones. | Medio *(rebajado)* | Media | Alcance recortado: v1 sólo REST. `modifyBooking` / `createBooking` son stateless por contrato (§1.2). Si se adopta §6.3, hacerlo en Temporal con compensación. |
-| R4 | **Duplicación de hoteles en resultados.** Sin GIATA, el mismo hotel aparece desde Despegar y desde ≥5 fuentes de Sabre en la misma llamada. | Alto — daña «tiempo a venta < 2 min» | Alta | Resolver el mapeo GIATA **antes** de habilitar Sabre en el fan-out. Ya en roadmap como M1.6. Mitigación intermedia: `BestOnly: "1"` (una tarifa por propiedad, la más baja de todas las fuentes). |
-| R5 | 🆕 **Ocupación mixta no soportada.** Sabre exige la misma configuración de pax en todas las habitaciones (error `5029`), y GDS no soporta multi-room en absoluto. | Alto para el caso familiar | **Certeza** (contrato + error oficial) | Detectarlo en el borde y **no llamar a Sabre** cuando la petición tenga ocupación mixta: degradar a Despegar. Nunca fallar la búsqueda entera. |
-| R6 | 🆕 **`targetPcc` no revierte el contexto** tras la operación. Una reserva de la agencia A puede dejar la conexión apuntando al PCC de A para la siguiente petición. | Alto — **fuga cross-tenant** | Media | Mandar `targetPcc` **explícitamente en cada request**, nunca confiar en el contexto heredado. Test de aislamiento cross-tenant obligatorio en CI (ya exigido por `CLAUDE.md`). |
-| R7 | **`before`/`after` mal construidos → corrupción de reserva.** Sabre computa el diff entre ambos; un campo omitido en `before` puede interpretarse como alta, y uno omitido en `after` como borrado. | Alto | Media *(rebajada: ya conocemos la forma completa)* | `before` = respuesta literal del `getBooking` inmediatamente anterior; `after` = esa estructura mutada. Nunca construir ninguna de las dos a mano. Tests de integración con `GetBooking :printDiff`. |
-| R8 | **Certificación de Sabre no cuantificada.** Alcance, duración y coste desconocidos. | Medio | Media | Preguntar al account manager antes de comprometer fecha. |
-| R9 | **Duplicación funcional sin ganancia neta en autos.** AgentCars ya cubre lo mismo, más ON HOLD/`release`, `suggest` y reporte diario. | Medio (coste de oportunidad) | Alta | **Descartar autos de Sabre** (§5.4). |
-| R10 | **Ejemplos de la colección con errores.** `useCSL` (el contrato sólo conoce `useCsl`), `payment` anidado en `car` (no existe en `CarToBook`), `"age": 3` en un `ADT`, `itemId` numérico (el contrato lo declara string). | Medio *(rebajado: los 4 están identificados)* | Media | **Construir el `request.builder.ts` contra el contrato, no contra los ejemplos.** Los 4 errores conocidos están documentados aquí. |
-| R11 | **`bookingSignature` por PNR, no por ítem.** Dos vendedores tocando el mismo paquete chocan. | Medio | Media (crece con el uso del Package Studio) | Lock pesimista a nivel de reserva en nuestra capa, por encima del optimista de Sabre. |
-| R12 | **`SabreRating` ≠ estrellas oficiales.** Mapearlo a `Hotel.starRating` produciría rankings inconsistentes entre proveedores en la misma pantalla. | Medio | Media | Llevarlo a un campo propio. El contrato lo describe como «The Sabre Property Rating», no como clasificación oficial. |
-| R13 | 🆕 **Laguna de versión v4 vs v5.** Todo lo verificado del avail sale del contrato v4; la colección usa v5. | Medio | Media | Pedir el spec de v5. Mientras tanto, no dar por cerrado ningún campo del avail sin validarlo contra una respuesta real. |
-| R14 | **Distracción estratégica.** Sabre es grande y tentador; hoteles y autos ya están en producción y la fase 1 tiene compromisos abiertos. | Medio | Media | Este documento es el gate: **no entra a fase 1.** Reevaluar sólo con las condiciones de §5.4 cumplidas. |
+| #   | Riesgo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Impacto                                       | Prob.                                                         | Mitigación                                                                                                                                                                                                                                                                                                                                   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | **Conflicto PCI.** `createBooking` y `modifyBooking` exigen `cardNumber` + `cardSecurityCode` en el body, y el `UpdatePassengerNameRecordRQ` de §6.3 en el XML, contra la regla explícita de `CLAUDE.md` (hosted checkout, SAQ-A).                                                                                                                                                                                                                                                                | **Crítico** — puede invalidar la integración  | **Alta** (verificado en el 100 % de los ejemplos con tarjeta) | Medir en CERT qué porcentaje del inventario es reservable con `AGENCY_IATA` / `CORPORATE` / `LATE`, filtrando por `GuaranteesAccepted`. Si es aceptable, vender sólo eso. Si no, evaluar `VIRTUAL_CARD` con emisor externo. Último recurso: descartar la vertical.                                                                           |
+| R2  | 🆕 **`CCVIEW` en modificación.** El `before` poblado exige PAN sin enmascarar, y la alternativa oficial es activar el keyword `CCVIEW` en el EPR — un permiso para ver números de tarjeta completos.                                                                                                                                                                                                                                                                                              | **Crítico**                                   | Alta                                                          | **No implementar en v1 ninguna modificación que toque la forma de pago.** Las otras 5 familias (fechas, huéspedes, titular, `productCode`, campos comunes) no lo requieren.                                                                                                                                                                  |
+| R3  | **Sesiones SOAP stateful** para el mecanismo C de §6.3 y 8 de 12 variantes de FoP. Rompen el fan-out sin estado y exigen cierre garantizado o se filtran sesiones.                                                                                                                                                                                                                                                                                                                                | Medio _(rebajado)_                            | Media                                                         | Alcance recortado: v1 sólo REST. `modifyBooking` / `createBooking` son stateless por contrato (§1.2). Si se adopta §6.3, hacerlo en Temporal con compensación.                                                                                                                                                                               |
+| R4  | **Duplicación de hoteles en resultados.** Sin GIATA, el mismo hotel aparece desde Despegar y desde ≥5 fuentes de Sabre en la misma llamada.                                                                                                                                                                                                                                                                                                                                                       | Alto — daña «tiempo a venta < 2 min»          | Alta                                                          | Resolver el mapeo GIATA **antes** de habilitar Sabre en el fan-out. Ya en roadmap como M1.6. Mitigación intermedia: `BestOnly: "1"` (una tarifa por propiedad, la más baja de todas las fuentes).                                                                                                                                            |
+| R5  | 🆕 **Ocupación mixta no soportada.** Sabre exige la misma configuración de pax en todas las habitaciones (error `5029`), y GDS no soporta multi-room en absoluto. **Confirmado también en v5**, con el mismo texto (`get-hotel-avail-v5.0.yml:1693`).                                                                                                                                                                                                                                             | Alto para el caso familiar                    | **Certeza** (contrato + error oficial, en v4 y v5)            | Detectarlo en el borde y **no llamar a Sabre** cuando la petición tenga ocupación mixta: degradar a Despegar. Nunca fallar la búsqueda entera. El rodeo oficial para multi-habitación (N `pricecheck` + N segmentos en una sesión de PNR, §2.1.4) **exige el carril SOAP stateful**: no es una mitigación barata, es el mecanismo C de §6.3. |
+| R6  | 🆕 **`targetPcc` no revierte el contexto** tras la operación. Una reserva de la agencia A puede dejar la conexión apuntando al PCC de A para la siguiente petición.                                                                                                                                                                                                                                                                                                                               | Alto — **fuga cross-tenant**                  | Media                                                         | Mandar `targetPcc` **explícitamente en cada request**, nunca confiar en el contexto heredado. Test de aislamiento cross-tenant obligatorio en CI (ya exigido por `CLAUDE.md`).                                                                                                                                                               |
+| R7  | **`before`/`after` mal construidos → corrupción de reserva.** Sabre computa el diff entre ambos; un campo omitido en `before` puede interpretarse como alta, y uno omitido en `after` como borrado.                                                                                                                                                                                                                                                                                               | Alto                                          | Media _(rebajada: ya conocemos la forma completa)_            | `before` = respuesta literal del `getBooking` inmediatamente anterior; `after` = esa estructura mutada. Nunca construir ninguna de las dos a mano. Tests de integración con `GetBooking :printDiff`.                                                                                                                                         |
+| R8  | **Certificación de Sabre no cuantificada.** Alcance, duración y coste desconocidos.                                                                                                                                                                                                                                                                                                                                                                                                               | Medio                                         | Media                                                         | Preguntar al account manager antes de comprometer fecha.                                                                                                                                                                                                                                                                                     |
+| R9  | **Duplicación funcional sin ganancia neta en autos.** AgentCars ya cubre lo mismo, más ON HOLD/`release`, `suggest` y reporte diario.                                                                                                                                                                                                                                                                                                                                                             | Medio (coste de oportunidad)                  | Alta                                                          | **Descartar autos de Sabre** (§5.4).                                                                                                                                                                                                                                                                                                         |
+| R10 | **Ejemplos de la colección con errores.** `useCSL` (el contrato sólo conoce `useCsl`), `payment` anidado en `car` (no existe en `CarToBook`), `"age": 3` en un `ADT`, `itemId` numérico (el contrato lo declara string).                                                                                                                                                                                                                                                                          | Medio _(rebajado: los 4 están identificados)_ | Media                                                         | **Construir el `request.builder.ts` contra el contrato, no contra los ejemplos.** Los 4 errores conocidos están documentados aquí.                                                                                                                                                                                                           |
+| R11 | **`bookingSignature` por PNR, no por ítem.** Dos vendedores tocando el mismo paquete chocan.                                                                                                                                                                                                                                                                                                                                                                                                      | Medio                                         | Media (crece con el uso del Package Studio)                   | Lock pesimista a nivel de reserva en nuestra capa, por encima del optimista de Sabre.                                                                                                                                                                                                                                                        |
+| R12 | **`SabreRating` ≠ estrellas oficiales.** Mapearlo a `Hotel.starRating` produciría rankings inconsistentes entre proveedores en la misma pantalla.                                                                                                                                                                                                                                                                                                                                                 | Medio                                         | Media                                                         | Llevarlo a un campo propio. El contrato lo describe como «The Sabre Property Rating», no como clasificación oficial.                                                                                                                                                                                                                         |
+| R13 | ~~**Laguna de versión v4 vs v5.**~~ **CERRADO.** El contrato de v5 está en el corpus congelado y reconciliado campo por campo (§1.2.1). Lo que queda no es una laguna sino una **deuda de mapper**: si el `response.mapper.ts` se escribe contra v4, seis diferencias lo rompen en silencio — tres `*Description.Text` que pasan de `string` a array, el default de `SortBy` que cambia a `NegotiatedRateAvailability`, `TotalRate` que desaparece y `CodeContext` que ya sólo devuelve `GLOBAL`. | Bajo _(rebajado de Medio)_                    | Baja                                                          | **Escribir el ACL contra `get-hotel-avail-v5.0.yml`, no contra v4**, y cubrir las seis rupturas con un test de contrato. El expediente cita ambos porque la reconciliación de §2 se hizo sobre v4; la implementación va sobre v5.                                                                                                            |
+| R14 | **Distracción estratégica.** Sabre es grande y tentador; hoteles y autos ya están en producción y la fase 1 tiene compromisos abiertos.                                                                                                                                                                                                                                                                                                                                                           | Medio                                         | Media                                                         | Este documento es el gate: **no entra a fase 1.** Reevaluar sólo con las condiciones de §5.4 cumplidas.                                                                                                                                                                                                                                      |

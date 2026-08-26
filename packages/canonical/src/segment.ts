@@ -40,5 +40,16 @@ export const SegmentSchema = z.object({
     .regex(/^[A-Z]$/),
   aircraft: z.string().min(1).max(10).optional(),
   operatingCarrier: IataCarrierCodeSchema.optional(),
+
+  /**
+   * Número de vuelo del operador real cuando difiere del comercializado (codeshare).
+   * Sin él, el mismo avión vendido por dos aerolíneas no colisiona en el dedupe: la clave
+   * usa `operatingCarrier ?? carrier`, y sin número operado siguen siendo dos vuelos
+   * distintos. El dato ya viene de Sabre (`bargain-finder-max-v5.yml:2952`) y hoy se tira.
+   */
+  operatingFlightNumber: z
+    .string()
+    .regex(/^\d{1,4}[A-Z]?$/)
+    .optional(),
 });
 export type Segment = z.infer<typeof SegmentSchema>;

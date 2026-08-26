@@ -21,7 +21,12 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Label } from '../../../components/ui/label';
 import { PaxPicker } from '../../../components/ui/pax-picker';
-import { searchFlightsAction, type Offer, type SearchResult } from './actions';
+import {
+  searchFlightsAction,
+  type Offer,
+  type ProviderOutcome,
+  type SearchResult,
+} from './actions';
 import { createQuotationAction } from './quotation-actions';
 import { FlightRow, type FlightGroup } from './_components/flight-row';
 import {
@@ -34,7 +39,32 @@ import { ResultsHeader } from './_components/results-header';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import type { SortKey } from './_components/sort-toggle';
 
-const initialState: SearchResult = { ok: true, offers: [] };
+const initialState: SearchResult = { ok: true, offers: [], providers: [] };
+
+/** Qué proveedores devolvieron tarifas inventadas en esta búsqueda. */
+type SimulatedProviders =
+  | { readonly kind: 'all' }
+  | { readonly kind: 'codes'; readonly codes: ReadonlySet<string> };
+
+/**
+ * Si el sobre no trae `providers[]` —un API anterior al fan-out— se cae al flag global con
+ * su semántica vieja: `true` = TODO el resultado es falso. Nunca al revés: la ausencia del
+ * parte de daños no se puede leer como "ninguna tarifa es simulada", que es justo el error
+ * que dejaría a un vendedor pasándole precios inventados a un cliente.
+ */
+function simulatedProviders(result: SearchResult): SimulatedProviders {
+  if (result.providers.length === 0) {
+    return result.simulated === true ? { kind: 'all' } : { kind: 'codes', codes: new Set() };
+  }
+  return {
+    kind: 'codes',
+    codes: new Set(result.providers.filter((p) => p.simulated).map((p) => p.code)),
+  };
+}
+
+function isSimulatedOffer(offer: Offer, simulated: SimulatedProviders): boolean {
+  return simulated.kind === 'all' || simulated.codes.has(offer.provider.name);
+}
 
 function todayISO(): string {
   const d = new Date();
@@ -586,6 +616,77 @@ function TravelLoader() {
   );
 }
 
+/**
+ * Degradación parcial: alguien no contestó y la lista está incompleta.
+ *
+ * Antes esto no se veía en ninguna parte —el fan-out descartaba los fallos— y una búsqueda
+ * a la que le faltaba medio catálogo se leía igual que una búsqueda normal, sólo que más
+ * corta. El vendedor cotizaba el vuelo caro creyendo que era el único.
+ */
+function DegradedProvidersNotice({ providers }: { providers: ProviderOutcome[] }) {
+  const failed = providers.filter((p) => p.status === 'error');
+  if (failed.length === 0) return null;
+
+  return (
+    <div
+      role="alert"
+      className="mb-4 flex items-start gap-2.5 rounded-xl border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/8 px-4 py-3 text-sm text-[var(--color-fg)]"
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[var(--color-danger)]" />
+      <div>
+        <strong className="font-semibold">
+          Resultados incompletos:{' '}
+          {failed.length === 1
+            ? 'un proveedor no respondió'
+            : `${failed.length} proveedores no respondieron`}
+          .
+        </strong>{' '}
+        Puede haber vuelos y tarifas que no se están mostrando. Volvé a buscar en unos minutos antes
+        de darle un precio al cliente.
+        <ul className="mt-1.5 space-y-0.5 text-xs text-[var(--color-fg-muted)]">
+          {failed.map((p) => (
+            <li key={p.code}>
+              <span className="font-medium">{p.code}</span>
+              {p.reason ? ` · ${p.reason}` : null}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Aviso de tarifas simuladas. El detalle por vuelo lo lleva el badge de cada fila; esto
+ * dice cuánto del resultado es falso, que es lo que decide si la búsqueda sirve para algo.
+ */
+function SimulatedFaresNotice({ result }: { result: SearchResult }) {
+  const simulated = simulatedProviders(result);
+  const total = result.offers.length;
+  const fake = result.offers.filter((offer) => isSimulatedOffer(offer, simulated)).length;
+  if (fake === 0) return null;
+
+  const todas = fake === total;
+  return (
+    <div
+      role="alert"
+      className="mb-4 flex items-start gap-2.5 rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-sm text-[var(--color-fg)]"
+    >
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]" />
+      <span>
+        <strong className="font-semibold">
+          {todas ? 'Tarifas simuladas.' : 'Algunas tarifas son simuladas.'}
+        </strong>{' '}
+        {todas
+          ? 'Faltan credenciales del proveedor para esta agencia, así que estos precios son de prueba y '
+          : `${fake} de ${total} tarifas vienen de un proveedor sin credenciales cargadas: están marcadas y `}
+        <strong className="font-semibold">no se le pueden cotizar a un cliente</strong>. Cargá las
+        credenciales en Mi Red → Credenciales.
+      </span>
+    </div>
+  );
+}
+
 function SearchResults({
   hasSearched,
   result,
@@ -608,6 +709,7 @@ function SearchResults({
   onQuote: (offer: Offer) => Promise<void>;
 }) {
   const { pending } = useFormStatus();
+  const simulated = useMemo(() => simulatedProviders(result), [result]);
 
   if (pending) {
     return (
@@ -630,20 +732,8 @@ function SearchResults({
   if (allGroups.length > 0) {
     return (
       <section className="animate-fade-in-up mt-8">
-        {result.simulated ? (
-          <div
-            role="alert"
-            className="mb-4 flex items-start gap-2.5 rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-sm text-[var(--color-fg)]"
-          >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]" />
-            <span>
-              <strong className="font-semibold">Tarifas simuladas.</strong> Faltan credenciales del
-              proveedor para esta agencia, así que estos precios son de prueba y{' '}
-              <strong className="font-semibold">no se le pueden cotizar a un cliente</strong>.
-              Cargalas en Configuración → Credenciales.
-            </span>
-          </div>
-        ) : null}
+        <DegradedProvidersNotice providers={result.providers} />
+        <SimulatedFaresNotice result={result} />
         <FlightFilters
           groups={allGroups}
           value={filters}
@@ -664,15 +754,25 @@ function SearchResults({
         ) : (
           <div className="space-y-4">
             {flightGroups.map((group) => (
-              <FlightRow
-                key={group.key}
-                group={group}
-                formatMoney={formatMoney}
-                formatTime={formatTime}
-                formatDate={formatDate}
-                formatDuration={formatDuration}
-                onQuote={onQuote}
-              />
+              <div key={group.key}>
+                {/* El badge acompaña a las tarifas de ESTE vuelo, no a la búsqueda entera:
+                    con dos proveedores, uno real y otro sin credenciales, el aviso global
+                    o mentía sobre las tarifas buenas o callaba sobre las falsas. */}
+                {group.offers.some((offer) => isSimulatedOffer(offer, simulated)) && (
+                  <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--color-fg)]">
+                    <AlertTriangle className="size-3 shrink-0 text-[var(--color-warning)]" />
+                    Tarifa simulada · no cotizable
+                  </div>
+                )}
+                <FlightRow
+                  group={group}
+                  formatMoney={formatMoney}
+                  formatTime={formatTime}
+                  formatDate={formatDate}
+                  formatDuration={formatDuration}
+                  onQuote={onQuote}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -681,18 +781,24 @@ function SearchResults({
   }
 
   if (hasSearched && result.ok && !result.error) {
+    // El aviso de degradación va TAMBIÉN acá, y sobre todo acá: sin él, "no se encontraron
+    // vuelos" es una afirmación falsa cuando el proveedor que los tenía se cayó, y el
+    // vendedor se la repite al cliente.
     return (
-      <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)] mt-8 animate-fade-in-up">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-fg-subtle)]/5 text-[var(--color-fg-subtle)]">
-          <Search className="size-6" />
+      <div className="mt-8 animate-fade-in-up">
+        <DegradedProvidersNotice providers={result.providers} />
+        <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)]">
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-fg-subtle)]/5 text-[var(--color-fg-subtle)]">
+            <Search className="size-6" />
+          </div>
+          <p className="text-base font-bold text-[var(--color-fg)]">
+            No se encontraron vuelos disponibles
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-xs text-[var(--color-fg-muted)]">
+            Pruebe seleccionando otras fechas, aeropuertos alternativos o cambie el tipo de cabina
+            solicitado.
+          </p>
         </div>
-        <p className="text-base font-bold text-[var(--color-fg)]">
-          No se encontraron vuelos disponibles
-        </p>
-        <p className="mx-auto mt-1 max-w-sm text-xs text-[var(--color-fg-muted)]">
-          Pruebe seleccionando otras fechas, aeropuertos alternativos o cambie el tipo de cabina
-          solicitado.
-        </p>
       </div>
     );
   }

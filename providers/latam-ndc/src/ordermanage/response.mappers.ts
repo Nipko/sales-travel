@@ -1,11 +1,19 @@
-import type { OrderCancelResult, OrderRetrieveResult } from '@sales-travel/domain';
+import type { OrderCancelResult, OrderView } from '@sales-travel/domain';
 
-export function mapOrderRetrieveResponse(raw: unknown): OrderRetrieveResult {
+/**
+ * `airlineLocators` va vacío en TODAS las ramas: LATAM NDC es la propia aerolínea, y su
+ * `OrderViewRS` no nos ha dado hasta ahora ningún `BookingRef` que mapear. Vacío significa
+ * "no lo tenemos", que es lo que el consumidor debe ver; el día que aparezca en una respuesta
+ * real se mapea aquí y nada más cambia.
+ */
+const SIN_LOCALIZADORES_DE_AEROLINEA = [] as const;
+
+export function mapOrderRetrieveResponse(raw: unknown): OrderView {
   const warnings: string[] = [];
   const root = pick(raw, 'IATA_OrderViewRS', 'OrderViewRS', 'IATA_OrderRetrieveRS');
 
   if (!root) {
-    return { found: false, warnings: ['No root element in OrderRetrieve response.'] };
+    return notFound('No root element in OrderRetrieve response.');
   }
 
   const errorNode = pick(root, 'Error', 'Errors') as
@@ -13,20 +21,17 @@ export function mapOrderRetrieveResponse(raw: unknown): OrderRetrieveResult {
     | undefined;
   if (errorNode) {
     const inner = errorNode.Error ?? errorNode;
-    return {
-      found: false,
-      warnings: [`LATAM error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`],
-    };
+    return notFound(`LATAM error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`);
   }
 
   const response = pick(root, 'Response');
   if (!response) {
-    return { found: false, warnings: ['No Response element.'] };
+    return notFound('No Response element.');
   }
 
   const order = pick(response, 'Order') as Record<string, unknown> | undefined;
   if (!order) {
-    return { found: false, warnings: ['No Order in response.'] };
+    return notFound('No Order in response.');
   }
 
   const orderId = extractText(order.OrderID);
@@ -53,9 +58,22 @@ export function mapOrderRetrieveResponse(raw: unknown): OrderRetrieveResult {
   return {
     found: true,
     orderId: orderId ?? undefined,
+    // En LATAM NDC el `OrderID` ES el localizador que el vendedor lee: no hay un PNR de GDS
+    // distinto por debajo. Se puebla en los dos campos porque son dos conceptos distintos
+    // que aquí coinciden, no porque sean lo mismo.
+    pnr: orderId ?? undefined,
     status,
     ticketNumbers: ticketNumbers.length > 0 ? ticketNumbers : undefined,
+    airlineLocators: [...SIN_LOCALIZADORES_DE_AEROLINEA],
     warnings,
+  };
+}
+
+function notFound(warning: string): OrderView {
+  return {
+    found: false,
+    airlineLocators: [...SIN_LOCALIZADORES_DE_AEROLINEA],
+    warnings: [warning],
   };
 }
 

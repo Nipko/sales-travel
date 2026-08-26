@@ -1,0 +1,896 @@
+{
+  "groupedItineraryResponse": {
+    "version": "6.9.0",
+    "messages": [
+      {
+        "severity": "Info",
+        "type": "SERVER",
+        "code": "GCA14-ISELL-TN-00-2024-12-01-WL5P",
+        "text": "27131"
+      },
+      {
+        "severity": "Info",
+        "type": "WORKERTHREAD",
+        "code": "TRANSACTIONID",
+        "text": "7233738799275894881"
+      },
+      {
+        "severity": "Info",
+        "type": "DRE",
+        "code": "RULEID",
+        "text": "21728"
+      },
+      {
+        "severity": "Info",
+        "type": "DEFAULT",
+        "code": "RULEID",
+        "text": "25238"
+      }
+    ],
+    "statistics": {
+      "itineraryCount": 1
+    },
+    "scheduleDescs": [
+      {
+        "id": 1,
+        "dotRating": "8",
+        "frequency": "**TW*F*",
+        "stopCount": 0,
+        "eTicketable": true,
+        "totalMilesFlown": 1437,
+        "elapsedTime": 217,
+        "departure": {
+          "airport": "ORD",
+          "city": "CHI",
+          "state": "IL",
+          "country": "US",
+          "time": "09:55:00-05:00",
+          "terminal": "3"
+        },
+        "arrival": {
+          "airport": "TUS",
+          "city": "TUS",
+          "state": "AZ",
+          "country": "US",
+          "time": "11:32:00-07:00"
+        },
+        "carrier": {
+          "marketing": "AA",
+          "marketingFlightNumber": 639,
+          "operating": "AA",
+          "operatingFlightNumber": 639,
+          "alliances": "OW ",
+          "equipment": {
+            "code": "738",
+            "typeForFirstLeg": "N",
+            "typeForLastLeg": "N"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "dotRating": "6",
+        "frequency": "**TW*F*",
+        "stopCount": 0,
+        "eTicketable": true,
+        "totalMilesFlown": 1437,
+        "elapsedTime": 214,
+        "departure": {
+          "airport": "TUS",
+          "city": "TUS",
+          "state": "AZ",
+          "country": "US",
+          "time": "12:11:00-07:00"
+        },
+        "arrival": {
+          "airport": "ORD",
+          "city": "CHI",
+          "state": "IL",
+          "country": "US",
+          "time": "17:45:00-05:00",
+          "terminal": "3"
+        },
+        "carrier": {
+          "marketing": "AA",
+          "marketingFlightNumber": 639,
+          "operating": "AA",
+          "operatingFlightNumber": 639,
+          "alliances": "OW ",
+          "equipment": {
+            "code": "738",
+            "typeForFirstLeg": "N",
+            "typeForLastLeg": "N"
+          }
+        }
+      }
+    ],
+    "taxDescs": [
+      {
+        "id": 1,
+        "code": "ZP",
+        "amount": 4.41,
+        "currency": "EUR",
+        "description": "FLIGHT SEGMENT TAX DOMESTIC",
+        "publishedAmount": 4.8,
+        "publishedCurrency": "USD",
+        "station": "TUS",
+        "country": "US"
+      },
+      {
+        "id": 2,
+        "code": "AY",
+        "amount": 5.14,
+        "currency": "EUR",
+        "description": "PASSENGER CIVIL AVIATION SECURITY SERVICE FEE",
+        "publishedAmount": 5.6,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 3,
+        "code": "XF",
+        "amount": 4.13,
+        "currency": "EUR",
+        "description": "PASSENGER FACILITY CHARGES",
+        "publishedAmount": 4.5,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 4,
+        "code": "XF",
+        "amount": 4.13,
+        "currency": "EUR",
+        "description": "PASSENGER FACILITY CHARGES",
+        "publishedAmount": 4.5,
+        "publishedCurrency": "USD",
+        "station": "TUS",
+        "country": "US"
+      },
+      {
+        "id": 5,
+        "code": "US1",
+        "amount": 74.1,
+        "currency": "EUR",
+        "description": "TRANSPORTATION TAX DOMESTIC WHOLLY WITHIN US AND 225 MILE BUFFER ZONE",
+        "publishedAmount": 80.8,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 6,
+        "code": "AY",
+        "amount": 5.14,
+        "currency": "EUR",
+        "description": "PASSENGER CIVIL AVIATION SECURITY SERVICE FEE",
+        "publishedAmount": 5.6,
+        "publishedCurrency": "USD",
+        "station": "TUS",
+        "country": "US"
+      },
+      {
+        "id": 7,
+        "code": "ZP",
+        "amount": 4.41,
+        "currency": "EUR",
+        "description": "FLIGHT SEGMENT TAX DOMESTIC",
+        "publishedAmount": 4.8,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      }
+    ],
+    "taxSummaryDescs": [
+      {
+        "id": 1,
+        "code": "ZP",
+        "amount": 8.82,
+        "currency": "EUR",
+        "description": "FLIGHT SEGMENT TAX DOMESTIC",
+        "publishedAmount": 4.8,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 2,
+        "code": "US1",
+        "amount": 74.1,
+        "currency": "EUR",
+        "description": "TRANSPORTATION TAX DOMESTIC WHOLLY WITHIN US AND 225 MILE BUFFER ZONE",
+        "publishedAmount": 0.075,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 3,
+        "code": "AY",
+        "amount": 10.28,
+        "currency": "EUR",
+        "description": "PASSENGER CIVIL AVIATION SECURITY SERVICE FEE",
+        "publishedAmount": 5.6,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      },
+      {
+        "id": 4,
+        "code": "XF",
+        "amount": 8.26,
+        "currency": "EUR",
+        "description": "PASSENGER FACILITY CHARGE",
+        "publishedAmount": 4.5,
+        "publishedCurrency": "USD",
+        "station": "ORD",
+        "country": "US"
+      }
+    ],
+    "fareComponentDescs": [
+      {
+        "id": 1,
+        "governingCarrier": "AA",
+        "fareAmount": 0,
+        "fareCurrency": "USD",
+        "fareBasisCode": "L0AWZRN1IN",
+        "farePassengerType": "INF",
+        "publishedFareAmount": 0,
+        "publishedFareCurrency": "USD",
+        "oneWayFare": true,
+        "directionality": "FROM",
+        "direction": "WH",
+        "notValidAfter": "2025-06-04",
+        "applicablePricingCategories": "2 4 5 6 7 8 10 11 12 15 16 18 19",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "01",
+        "fareType": "EU",
+        "fareTariff": "0",
+        "fareRule": "M11W",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {}
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "governingCarrier": "AA",
+        "fareAmount": 520,
+        "fareCurrency": "USD",
+        "fareBasisCode": "L0AWZRN1",
+        "farePassengerType": "ADT",
+        "publishedFareAmount": 520,
+        "publishedFareCurrency": "USD",
+        "oneWayFare": true,
+        "directionality": "FROM",
+        "direction": "WH",
+        "notValidAfter": "2025-06-04",
+        "applicablePricingCategories": "2 4 5 6 7 8 10 11 12 15 16 18",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "00",
+        "fareType": "EU",
+        "fareTariff": "0",
+        "fareRule": "M11W",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {
+              "surcharges": [
+                {
+                  "amount": 18.6,
+                  "currency": "USD",
+                  "description": "MISCELLANEOUS/OTHER",
+                  "type": "Q"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "governingCarrier": "AA",
+        "fareAmount": 520,
+        "fareCurrency": "USD",
+        "fareBasisCode": "L0AWZRN1",
+        "farePassengerType": "ADT",
+        "publishedFareAmount": 520,
+        "publishedFareCurrency": "USD",
+        "oneWayFare": true,
+        "directionality": "FROM",
+        "direction": "WH",
+        "notValidAfter": "2025-06-04",
+        "applicablePricingCategories": "2 4 5 6 7 8 10 11 12 15 16 18",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "00",
+        "fareType": "EU",
+        "fareTariff": "0",
+        "fareRule": "M11W",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {
+              "stopover": true,
+              "surcharges": [
+                {
+                  "amount": 18.6,
+                  "currency": "USD",
+                  "description": "MISCELLANEOUS/OTHER",
+                  "type": "Q"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "governingCarrier": "AA",
+        "fareAmount": 0,
+        "fareCurrency": "USD",
+        "fareBasisCode": "L0AWZRN1IN",
+        "farePassengerType": "INF",
+        "publishedFareAmount": 0,
+        "publishedFareCurrency": "USD",
+        "oneWayFare": true,
+        "directionality": "FROM",
+        "direction": "WH",
+        "notValidAfter": "2025-06-04",
+        "applicablePricingCategories": "2 4 5 6 7 8 10 11 12 15 16 18 19",
+        "vendorCode": "ATP",
+        "fareTypeBitmap": "01",
+        "fareType": "EU",
+        "fareTariff": "0",
+        "fareRule": "M11W",
+        "cabinCode": "Y",
+        "segments": [
+          {
+            "segment": {
+              "stopover": true
+            }
+          }
+        ]
+      }
+    ],
+    "validatingCarrierDescs": [
+      {
+        "id": 1,
+        "settlementMethod": "BSP",
+        "newVcxProcess": true,
+        "default": {
+          "code": "AA"
+        }
+      }
+    ],
+    "baggageAllowanceDescs": [
+      {
+        "id": 1,
+        "pieceCount": 0
+      }
+    ],
+    "legDescs": [
+      {
+        "id": 1,
+        "elapsedTime": 214,
+        "schedules": [
+          {
+            "ref": 2
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "elapsedTime": 217,
+        "schedules": [
+          {
+            "ref": 1
+          }
+        ]
+      }
+    ],
+    "itineraryGroups": [
+      {
+        "groupDescription": {
+          "legDescriptions": [
+            {
+              "departureDate": "2026-06-04",
+              "departureLocation": "ORD",
+              "arrivalLocation": "TUS"
+            },
+            {
+              "departureDate": "2026-06-11",
+              "departureLocation": "TUS",
+              "arrivalLocation": "ORD"
+            }
+          ]
+        },
+        "itineraries": [
+          {
+            "id": 1,
+            "pricingSource": "ADVJR1",
+            "legs": [
+              {
+                "ref": 2
+              },
+              {
+                "ref": 1
+              }
+            ],
+            "pricingInformation": [
+              {
+                "pricingSubsource": "MIP",
+                "fare": {
+                  "validatingCarrierCode": "AA",
+                  "vita": true,
+                  "eTicketable": true,
+                  "lastTicketDate": "2026-11-28",
+                  "lastTicketTime": "23:59",
+                  "governingCarriers": "AA AA",
+                  "passengerInfoList": [
+                    {
+                      "passengerInfo": {
+                        "passengerType": "ADT",
+                        "passengerNumber": 2,
+                        "nonRefundable": false,
+                        "fareComponents": [
+                          {
+                            "ref": 3,
+                            "beginAirport": "ORD",
+                            "endAirport": "TUS",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "ref": 2,
+                            "beginAirport": "TUS",
+                            "endAirport": "ORD",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "taxes": [
+                          {
+                            "ref": 2
+                          },
+                          {
+                            "ref": 6
+                          },
+                          {
+                            "ref": 5
+                          },
+                          {
+                            "ref": 7
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 4
+                          }
+                        ],
+                        "taxSummaries": [
+                          {
+                            "ref": 2
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 4
+                          }
+                        ],
+                        "currencyConversion": {
+                          "from": "USD",
+                          "to": "EUR",
+                          "exchangeRateUsed": 0.91704566
+                        },
+                        "passengerTotalFare": {
+                          "totalFare": 1089.46,
+                          "totalTaxAmount": 101.46,
+                          "currency": "EUR",
+                          "baseFareAmount": 1077.2,
+                          "baseFareCurrency": "USD",
+                          "equivalentAmount": 988,
+                          "equivalentCurrency": "EUR",
+                          "constructionAmount": 1077.2,
+                          "constructionCurrency": "USD",
+                          "commissionPercentage": 0,
+                          "commissionAmount": 0,
+                          "exchangeRateOne": 1
+                        },
+                        "baggageInformation": [
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 0
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          },
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 1
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          }
+                        ],
+                        "penaltiesInfo": {
+                          "penalties": [
+                            {
+                              "type": "Exchange",
+                              "applicability": "Before",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Exchange",
+                              "applicability": "After",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "Before",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "After",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "passengerInfo": {
+                        "passengerType": "ADT",
+                        "passengerNumber": 1,
+                        "nonRefundable": false,
+                        "fareComponents": [
+                          {
+                            "ref": 3,
+                            "beginAirport": "ORD",
+                            "endAirport": "TUS",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "ref": 2,
+                            "beginAirport": "TUS",
+                            "endAirport": "ORD",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "taxes": [
+                          {
+                            "ref": 2
+                          },
+                          {
+                            "ref": 6
+                          },
+                          {
+                            "ref": 5
+                          },
+                          {
+                            "ref": 7
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 4
+                          }
+                        ],
+                        "taxSummaries": [
+                          {
+                            "ref": 2
+                          },
+                          {
+                            "ref": 1
+                          },
+                          {
+                            "ref": 3
+                          },
+                          {
+                            "ref": 4
+                          }
+                        ],
+                        "currencyConversion": {
+                          "from": "USD",
+                          "to": "EUR",
+                          "exchangeRateUsed": 0.91704566
+                        },
+                        "passengerTotalFare": {
+                          "totalFare": 1089.46,
+                          "totalTaxAmount": 101.46,
+                          "currency": "EUR",
+                          "baseFareAmount": 1077.2,
+                          "baseFareCurrency": "USD",
+                          "equivalentAmount": 988,
+                          "equivalentCurrency": "EUR",
+                          "constructionAmount": 1077.2,
+                          "constructionCurrency": "USD",
+                          "commissionPercentage": 0,
+                          "commissionAmount": 0,
+                          "exchangeRateOne": 1
+                        },
+                        "baggageInformation": [
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 0
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          },
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 1
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          }
+                        ],
+                        "penaltiesInfo": {
+                          "penalties": [
+                            {
+                              "type": "Exchange",
+                              "applicability": "Before",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Exchange",
+                              "applicability": "After",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "Before",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "After",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "passengerInfo": {
+                        "passengerType": "INF",
+                        "passengerNumber": 1,
+                        "nonRefundable": false,
+                        "fareComponents": [
+                          {
+                            "ref": 4,
+                            "beginAirport": "ORD",
+                            "endAirport": "TUS",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "ref": 1,
+                            "beginAirport": "TUS",
+                            "endAirport": "ORD",
+                            "segments": [
+                              {
+                                "segment": {
+                                  "bookingCode": "L",
+                                  "cabinCode": "Y",
+                                  "mealCode": "F",
+                                  "seatsAvailable": 7,
+                                  "availabilityBreak": true,
+                                  "fareBreakPoint": true
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "currencyConversion": {
+                          "from": "USD",
+                          "to": "EUR",
+                          "exchangeRateUsed": 0.91704566
+                        },
+                        "passengerTotalFare": {
+                          "totalFare": 0,
+                          "totalTaxAmount": 0,
+                          "currency": "EUR",
+                          "baseFareAmount": 0,
+                          "baseFareCurrency": "USD",
+                          "equivalentAmount": 0,
+                          "equivalentCurrency": "EUR",
+                          "constructionAmount": 0,
+                          "constructionCurrency": "USD",
+                          "commissionPercentage": 0,
+                          "commissionAmount": 0,
+                          "exchangeRateOne": 1
+                        },
+                        "baggageInformation": [
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 0
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          },
+                          {
+                            "provisionType": "A",
+                            "airlineCode": "AA",
+                            "segments": [
+                              {
+                                "id": 1
+                              }
+                            ],
+                            "allowance": {
+                              "ref": 1
+                            }
+                          }
+                        ],
+                        "penaltiesInfo": {
+                          "penalties": [
+                            {
+                              "type": "Exchange",
+                              "applicability": "Before",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Exchange",
+                              "applicability": "After",
+                              "changeable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "Before",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            },
+                            {
+                              "type": "Refund",
+                              "applicability": "After",
+                              "refundable": true,
+                              "amount": 0,
+                              "currency": "EUR"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "totalFare": {
+                    "totalPrice": 3268.38,
+                    "totalTaxAmount": 304.38,
+                    "currency": "EUR",
+                    "baseFareAmount": 3231.6,
+                    "baseFareCurrency": "USD",
+                    "constructionAmount": 3231.6,
+                    "constructionCurrency": "USD",
+                    "equivalentAmount": 2964,
+                    "equivalentCurrency": "EUR"
+                  },
+                  "validatingCarriers": [
+                    {
+                      "ref": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "diversitySwapper": {
+              "weighedPrice": 980.514
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

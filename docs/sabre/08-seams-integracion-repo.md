@@ -1,5 +1,5 @@
 ---
-titulo: "Seams de integración en el repo para un segundo proveedor de vuelos (Sabre)"
+titulo: 'Seams de integración en el repo para un segundo proveedor de vuelos (Sabre)'
 fecha: 2026-08-25
 estado: revisado (3ª pasada — citas de spec y de colección re-verificadas una por una)
 Fuentes: ver 00-fuentes.md
@@ -26,55 +26,55 @@ integración Sabre está **en estos seams, no en el ACL**.
 
 ### Qué cambió en la 2ª pasada
 
-| Cambio | Dónde |
-| --- | --- |
-| Se corrigió el front-matter: la primera pasada citaba `EXTERNAL_AGENCY.postman_collection.json`, que es la colección de **LATAM NDC**, no la de Sabre | front-matter |
-| Se añadieron los tres módulos que la primera pasada omitió: `apps/api/src/packages/`, `apps/api/src/quotations/`, `apps/api/src/crm/` | §1.3, §1.4, §1.7 |
-| Se encontró y verificó el `VARCHAR(200)` que rompe el transporte de ids crudos de Sabre, y se calculó el presupuesto real de caracteres contra el contrato | §1.4 (ítem 45), §4.2, §5.4 |
-| El largo y la vida de los ids de Sabre pasaron de DESCONOCIDO a **VERIFICADO-SPEC** (`maxLength: 49`, `maxItems: 9`, `pattern` de 52 chars, `ttl: 1200`) | §5.2, §5.4 |
-| Sección nueva sobre el **carril SOAP/LLS stateful** (243 de 1.077 requests) y por qué la documentación oficial nos permite **no** construir un pool de sesiones | §8 |
-| Sección nueva sobre el encaje con `docs/discovery/07-roadmap-olas.md`, que **ningún** documento de la primera pasada leyó | §9 |
-| Se corrigió la derivación de `SABRE_CLIENT_SECRET`: **el PCC va dentro del secreto**, no al lado | §6.1, §6.2 |
-| **Todo el inventario de acoplamiento a LATAM (ítems 1-44) se mantiene intacto**: la crítica lo verificó como exacto | §1.1-§1.6 |
+| Cambio                                                                                                                                                          | Dónde                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Se corrigió el front-matter: la primera pasada citaba `EXTERNAL_AGENCY.postman_collection.json`, que es la colección de **LATAM NDC**, no la de Sabre           | front-matter               |
+| Se añadieron los tres módulos que la primera pasada omitió: `apps/api/src/packages/`, `apps/api/src/quotations/`, `apps/api/src/crm/`                           | §1.3, §1.4, §1.7           |
+| Se encontró y verificó el `VARCHAR(200)` que rompe el transporte de ids crudos de Sabre, y se calculó el presupuesto real de caracteres contra el contrato      | §1.4 (ítem 45), §4.2, §5.4 |
+| El largo y la vida de los ids de Sabre pasaron de DESCONOCIDO a **VERIFICADO-SPEC** (`maxLength: 49`, `maxItems: 9`, `pattern` de 52 chars, `ttl: 1200`)        | §5.2, §5.4                 |
+| Sección nueva sobre el **carril SOAP/LLS stateful** (243 de 1.077 requests) y por qué la documentación oficial nos permite **no** construir un pool de sesiones | §8                         |
+| Sección nueva sobre el encaje con `docs/discovery/07-roadmap-olas.md`, que **ningún** documento de la primera pasada leyó                                       | §9                         |
+| Se corrigió la derivación de `SABRE_CLIENT_SECRET`: **el PCC va dentro del secreto**, no al lado                                                                | §6.1, §6.2                 |
+| **Todo el inventario de acoplamiento a LATAM (ítems 1-44) se mantiene intacto**: la crítica lo verificó como exacto                                             | §1.1-§1.6                  |
 
 ### Qué cambió en la 3ª pasada
 
 Esta pasada no añadió secciones: **re-verificó una por una** todas las citas de la 2ª y corrigió
 las que no resistieron. Resultado: 6 correcciones, ninguna que invalide una conclusión.
 
-| Cambio | Dónde |
-| --- | --- |
-| **`Conversation-ID`: la afirmación "aparece en todos los requests" era FALSA.** Va en 334 de 1.077 (31%); conviven tres literales distintos. Corregido con el conteo exacto | §3.6, §6.2, §8.2, Preguntas cerradas |
-| Refutación explícita de la premisa de que el carril SOAP **obliga** a un pool de sesiones: cierto para ese carril, falso para nuestro alcance | §8.3 |
-| Se anotó que las 8 páginas del argumento stateless **no comparten redacción literal** (sí contenido normativo); antes se citaban como una sola frase | §8.3 |
-| Citas corregidas por desfase de línea: `offer-price-ndc-v1.yml:213-215` → `:214-216`; `:200` → `:198-200` | §5.2 |
-| Se añadió `Passenger.id pattern: ^(\S+)$` (`:218`) como evidencia adicional en la contradicción de `travelers[].id` | §5.2 |
-| **Re-verificado y CONFIRMADO** (sin cambios): los 15 ports, los 3 `providers/`, las citas de `07-roadmap-olas.md`, los ítems 45-49, el `VARCHAR(200)`, los largos del spec (49 / 9 / 52 / 16), el `ttl: 1200`, las 4 respuestas de **16.479 bytes** de cuerpo y su id más largo de **57 caracteres** | todo el doc |
+| Cambio                                                                                                                                                                                                                                                                                               | Dónde                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **`Conversation-ID`: la afirmación "aparece en todos los requests" era FALSA.** Va en 334 de 1.077 (31%); conviven tres literales distintos. Corregido con el conteo exacto                                                                                                                          | §3.6, §6.2, §8.2, Preguntas cerradas |
+| Refutación explícita de la premisa de que el carril SOAP **obliga** a un pool de sesiones: cierto para ese carril, falso para nuestro alcance                                                                                                                                                        | §8.3                                 |
+| Se anotó que las 8 páginas del argumento stateless **no comparten redacción literal** (sí contenido normativo); antes se citaban como una sola frase                                                                                                                                                 | §8.3                                 |
+| Citas corregidas por desfase de línea: `offer-price-ndc-v1.yml:213-215` → `:214-216`; `:200` → `:198-200`                                                                                                                                                                                            | §5.2                                 |
+| Se añadió `Passenger.id pattern: ^(\S+)$` (`:218`) como evidencia adicional en la contradicción de `travelers[].id`                                                                                                                                                                                  | §5.2                                 |
+| **Re-verificado y CONFIRMADO** (sin cambios): los 15 ports, los 3 `providers/`, las citas de `07-roadmap-olas.md`, los ítems 45-49, el `VARCHAR(200)`, los largos del spec (49 / 9 / 52 / 16), el `ttl: 1200`, las 4 respuestas de **16.479 bytes** de cuerpo y su id más largo de **57 caracteres** | todo el doc                          |
 
 ---
 
 ## 0. Mapa rápido: qué ya sirve y qué no
 
-| Pieza | Archivo | ¿Multi-proveedor hoy? | Veredicto |
-| --- | --- | --- | --- |
-| Fan-out paralelo con degradación parcial | `apps/api/src/search/provider-fanout.ts:27` | Sí (genérico `ProviderRun[]`) | **Sirve tal cual** |
-| Dedupe de ofertas equivalentes | `apps/api/src/search/provider-fanout.ts:59` | Sí, pero **nunca se llama** | Código muerto que se activa con Sabre |
-| Circuit breaker por código | `apps/api/src/search/circuit-breaker.service.ts:31` | Sí (`Map<providerCode, Circuit>`) | **Sirve tal cual** |
-| Kill-switch `PROVIDERS_DISABLED` | `apps/api/src/search/circuit-breaker.service.ts:33-41` | Sí (lista CSV por code) | **Sirve tal cual** |
-| BYOC con herencia consolidador→agencia | `db/migrations/0012_provider_accounts.sql:59` | Sí (`provider_code` es TEXT libre) | **Sirve tal cual** |
-| Cifrado de credenciales | `apps/api/src/provider-credentials/credentials-cipher.ts` | Sí (agnóstico) | **Sirve tal cual** |
-| Telemetría `search_logs` | `db/migrations/0032_search_logs.sql:18` | Columna sí; **el uso no** | Hay que cambiar el uso + la cuota |
-| Caché de búsqueda | `apps/api/src/search/memory-cache.adapter.ts` | Adaptador sí; **la clave no** | Hay que cambiar la clave |
-| `SearchService` | `apps/api/src/search/search.service.ts:13` | **No** | Reescritura del método |
-| Factory por tenant | `apps/api/src/providers-latam/latam-ndc.factory.ts:22` | **No** (devuelve clase concreta) | Nuevo registry |
-| Filtro de excepciones | `apps/api/src/providers-latam/latam-ndc-exception.filter.ts:17` | **No** (`@Catch(LatamApiError)`) | Filtro espejo para Sabre |
-| `orders.provider` | `db/migrations/0005_orders.sql:9` | Columna sí; **default `'latam-ndc'`** | Quitar el default |
-| Operaciones post-venta | `apps/api/src/orders/orders.controller.ts:141` | **No** (`assertSupportsLatamOps`) | Capability map por proveedor |
-| UI de credenciales | `apps/web-b2b/src/app/(app)/red/page.tsx:111` | Sí (mapa `PROVIDERS`) | Agregar una entrada |
-| UI de resultados | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:65` | **No** (`simulated?: boolean`) | Por-proveedor |
-| Cotizaciones simples | `apps/api/src/quotations/dto.ts:14` | Sí (`selectedOffer` es JSONB opaco) | **Sirve tal cual** — ver §1.7 |
-| CRM (oportunidades / tareas) | `apps/api/src/crm/crm.schemas.ts` | Sí (no toca proveedor) | **Sirve tal cual** — ver §1.7 |
-| **Package Studio** | `db/migrations/0010_sprint1_core_suite.sql:99` | **No** (`provider_item_id VARCHAR(200)`) | **Bloquea el transporte de ids Sabre** — ver §1.7 y §5.4 |
+| Pieza                                    | Archivo                                                         | ¿Multi-proveedor hoy?                    | Veredicto                                                |
+| ---------------------------------------- | --------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| Fan-out paralelo con degradación parcial | `apps/api/src/search/provider-fanout.ts:27`                     | Sí (genérico `ProviderRun[]`)            | **Sirve tal cual**                                       |
+| Dedupe de ofertas equivalentes           | `apps/api/src/search/provider-fanout.ts:59`                     | Sí, pero **nunca se llama**              | Código muerto que se activa con Sabre                    |
+| Circuit breaker por código               | `apps/api/src/search/circuit-breaker.service.ts:31`             | Sí (`Map<providerCode, Circuit>`)        | **Sirve tal cual**                                       |
+| Kill-switch `PROVIDERS_DISABLED`         | `apps/api/src/search/circuit-breaker.service.ts:33-41`          | Sí (lista CSV por code)                  | **Sirve tal cual**                                       |
+| BYOC con herencia consolidador→agencia   | `db/migrations/0012_provider_accounts.sql:59`                   | Sí (`provider_code` es TEXT libre)       | **Sirve tal cual**                                       |
+| Cifrado de credenciales                  | `apps/api/src/provider-credentials/credentials-cipher.ts`       | Sí (agnóstico)                           | **Sirve tal cual**                                       |
+| Telemetría `search_logs`                 | `db/migrations/0032_search_logs.sql:18`                         | Columna sí; **el uso no**                | Hay que cambiar el uso + la cuota                        |
+| Caché de búsqueda                        | `apps/api/src/search/memory-cache.adapter.ts`                   | Adaptador sí; **la clave no**            | Hay que cambiar la clave                                 |
+| `SearchService`                          | `apps/api/src/search/search.service.ts:13`                      | **No**                                   | Reescritura del método                                   |
+| Factory por tenant                       | `apps/api/src/providers-latam/latam-ndc.factory.ts:22`          | **No** (devuelve clase concreta)         | Nuevo registry                                           |
+| Filtro de excepciones                    | `apps/api/src/providers-latam/latam-ndc-exception.filter.ts:17` | **No** (`@Catch(LatamApiError)`)         | Filtro espejo para Sabre                                 |
+| `orders.provider`                        | `db/migrations/0005_orders.sql:9`                               | Columna sí; **default `'latam-ndc'`**    | Quitar el default                                        |
+| Operaciones post-venta                   | `apps/api/src/orders/orders.controller.ts:141`                  | **No** (`assertSupportsLatamOps`)        | Capability map por proveedor                             |
+| UI de credenciales                       | `apps/web-b2b/src/app/(app)/red/page.tsx:111`                   | Sí (mapa `PROVIDERS`)                    | Agregar una entrada                                      |
+| UI de resultados                         | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:65`         | **No** (`simulated?: boolean`)           | Por-proveedor                                            |
+| Cotizaciones simples                     | `apps/api/src/quotations/dto.ts:14`                             | Sí (`selectedOffer` es JSONB opaco)      | **Sirve tal cual** — ver §1.7                            |
+| CRM (oportunidades / tareas)             | `apps/api/src/crm/crm.schemas.ts`                               | Sí (no toca proveedor)                   | **Sirve tal cual** — ver §1.7                            |
+| **Package Studio**                       | `db/migrations/0010_sprint1_core_suite.sql:99`                  | **No** (`provider_item_id VARCHAR(200)`) | **Bloquea el transporte de ids Sabre** — ver §1.7 y §5.4 |
 
 ---
 
@@ -84,77 +84,77 @@ Este es **el trabajo real**. Ordenado por criticidad.
 
 ### 1.1 Núcleo de búsqueda — bloqueante
 
-| # | Archivo:línea | Qué está acoplado | Por qué duele con Sabre |
-| --- | --- | --- | --- |
-| 1 | `apps/api/src/search/search.service.ts:13` | `const FLIGHTS_PROVIDER = 'latam-ndc'` | Constante única de vertical. Es el ancla de todo el resto. |
-| 2 | `apps/api/src/search/search.service.ts:5,27` | `import { LatamNdcProviderFactory }` + `private readonly latam: LatamNdcProviderFactory` | DI a una clase **concreta**, no a un port ni a un registry. |
-| 3 | `apps/api/src/search/search.service.ts:70` | `const adapter = await this.latam.forTenant(tenantId)` | Un solo adapter resuelto antes del fan-out. |
-| 4 | `apps/api/src/search/search.service.ts:75-83` | Arreglo literal de **una** entrada pasado a `fanOut` | El comentario en `:72-74` ya lo admite: _"hoy hay un solo proveedor"_. |
-| 5 | `apps/api/src/search/search.service.ts:81` | `this.breaker.execute(FLIGHTS_PROVIDER, …)` | Correcto por diseño (el breaker es por code), pero el code viene de la constante. |
-| 6 | `apps/api/src/search/search.service.ts:43,94,98` | `simulated: boolean` global, derivado de `adapter.isMock` | **Con dos proveedores es semánticamente falso.** Ver §2.4. |
-| 7 | `apps/api/src/search/search.service.ts:19-22` | `flightsCacheKey(tenantId, criteria)` — hashea **sólo** el criterio | Dos búsquedas idénticas con distinto set de proveedores efectivo colisionan. Ver §2.3. |
-| 8 | `apps/api/src/search/search.service.ts:55-68` | `telemetry.instrument({ providerCode: FLIGHTS_PROVIDER })` envuelve **todo el fan-out** | Una sola fila en `search_logs` para N proveedores → se pierde la latencia por proveedor, que es exactamente para lo que se creó la tabla (`db/migrations/0032_search_logs.sql:4-7`). |
-| 9 | `apps/api/src/search/search.service.ts:114` | `priceOffer` llama a `this.latam.forTenant(tenantId)` **ignorando `offer.provider.name`** | Una oferta de Sabre se re-cotizaría contra LATAM. **Es un bug latente el día 1 de Sabre.** |
-| 10 | `apps/api/src/search/search.module.ts:2,11` | `imports: [LatamNdcProviderModule, …]` | Registro DI del único proveedor. |
-| 11 | `apps/api/src/search/search.controller.ts:14,21` | `@UseFilters(LatamNdcExceptionFilter)` | Sólo traduce `LatamApiError`. |
-| 12 | `apps/api/src/search/search.controller.ts:34` | Firma de respuesta `Promise<{ offers: Offer[]; simulated: boolean }>` | Contrato público del endpoint; cambia con §2.4. |
+| #   | Archivo:línea                                    | Qué está acoplado                                                                         | Por qué duele con Sabre                                                                                                                                                              |
+| --- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `apps/api/src/search/search.service.ts:13`       | `const FLIGHTS_PROVIDER = 'latam-ndc'`                                                    | Constante única de vertical. Es el ancla de todo el resto.                                                                                                                           |
+| 2   | `apps/api/src/search/search.service.ts:5,27`     | `import { LatamNdcProviderFactory }` + `private readonly latam: LatamNdcProviderFactory`  | DI a una clase **concreta**, no a un port ni a un registry.                                                                                                                          |
+| 3   | `apps/api/src/search/search.service.ts:70`       | `const adapter = await this.latam.forTenant(tenantId)`                                    | Un solo adapter resuelto antes del fan-out.                                                                                                                                          |
+| 4   | `apps/api/src/search/search.service.ts:75-83`    | Arreglo literal de **una** entrada pasado a `fanOut`                                      | El comentario en `:72-74` ya lo admite: _"hoy hay un solo proveedor"_.                                                                                                               |
+| 5   | `apps/api/src/search/search.service.ts:81`       | `this.breaker.execute(FLIGHTS_PROVIDER, …)`                                               | Correcto por diseño (el breaker es por code), pero el code viene de la constante.                                                                                                    |
+| 6   | `apps/api/src/search/search.service.ts:43,94,98` | `simulated: boolean` global, derivado de `adapter.isMock`                                 | **Con dos proveedores es semánticamente falso.** Ver §2.4.                                                                                                                           |
+| 7   | `apps/api/src/search/search.service.ts:19-22`    | `flightsCacheKey(tenantId, criteria)` — hashea **sólo** el criterio                       | Dos búsquedas idénticas con distinto set de proveedores efectivo colisionan. Ver §2.3.                                                                                               |
+| 8   | `apps/api/src/search/search.service.ts:55-68`    | `telemetry.instrument({ providerCode: FLIGHTS_PROVIDER })` envuelve **todo el fan-out**   | Una sola fila en `search_logs` para N proveedores → se pierde la latencia por proveedor, que es exactamente para lo que se creó la tabla (`db/migrations/0032_search_logs.sql:4-7`). |
+| 9   | `apps/api/src/search/search.service.ts:114`      | `priceOffer` llama a `this.latam.forTenant(tenantId)` **ignorando `offer.provider.name`** | Una oferta de Sabre se re-cotizaría contra LATAM. **Es un bug latente el día 1 de Sabre.**                                                                                           |
+| 10  | `apps/api/src/search/search.module.ts:2,11`      | `imports: [LatamNdcProviderModule, …]`                                                    | Registro DI del único proveedor.                                                                                                                                                     |
+| 11  | `apps/api/src/search/search.controller.ts:14,21` | `@UseFilters(LatamNdcExceptionFilter)`                                                    | Sólo traduce `LatamApiError`.                                                                                                                                                        |
+| 12  | `apps/api/src/search/search.controller.ts:34`    | Firma de respuesta `Promise<{ offers: Offer[]; simulated: boolean }>`                     | Contrato público del endpoint; cambia con §2.4.                                                                                                                                      |
 
 ### 1.2 Factory y errores del proveedor
 
-| # | Archivo:línea | Qué está acoplado |
-| --- | --- | --- |
-| 13 | `apps/api/src/providers-latam/latam-ndc.factory.ts:5` | `const PROVIDER_CODE = 'latam-ndc'` |
-| 14 | `apps/api/src/providers-latam/latam-ndc.factory.ts:22` | `forTenant(): Promise<LatamNdcFlightSearchAdapter>` — **devuelve la clase concreta**, no `FlightSearchPort & OfferPricePort` |
-| 15 | `apps/api/src/providers-latam/latam-ndc.factory.ts:54-72` | `toConfig()` mapea llaves específicas (`agencyIata`, `travelAgentId`, `accountCode`) |
-| 16 | `apps/api/src/providers-latam/latam-ndc.factory.ts:74-86` | `envConfig()` lee 9 vars `LATAM_*` |
-| 17 | `apps/api/src/providers-latam/latam-ndc.factory.ts:30-34` | Fallback silencioso a env cuando el tenant no resuelve cuenta. **Con dos proveedores este fallback se vuelve peligroso** — ver §2.2 y Riesgos. |
-| 18 | `apps/api/src/providers-latam/latam-ndc-exception.filter.ts:17` | `@Catch(LatamApiError)` |
-| 19 | `apps/api/src/providers-latam/latam-ndc-errors.ts:20-55` | `humanizeLatamError()` — 6 mensajes con la marca "LATAM" incrustada (`:25,:28,:43,:48,:52,:54`) |
-| 20 | `apps/api/src/providers-latam/latam-ndc.module.ts:11-12` | Provee/exporta sólo `LatamNdcProviderFactory` |
+| #   | Archivo:línea                                                   | Qué está acoplado                                                                                                                              |
+| --- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 13  | `apps/api/src/providers-latam/latam-ndc.factory.ts:5`           | `const PROVIDER_CODE = 'latam-ndc'`                                                                                                            |
+| 14  | `apps/api/src/providers-latam/latam-ndc.factory.ts:22`          | `forTenant(): Promise<LatamNdcFlightSearchAdapter>` — **devuelve la clase concreta**, no `FlightSearchPort & OfferPricePort`                   |
+| 15  | `apps/api/src/providers-latam/latam-ndc.factory.ts:54-72`       | `toConfig()` mapea llaves específicas (`agencyIata`, `travelAgentId`, `accountCode`)                                                           |
+| 16  | `apps/api/src/providers-latam/latam-ndc.factory.ts:74-86`       | `envConfig()` lee 9 vars `LATAM_*`                                                                                                             |
+| 17  | `apps/api/src/providers-latam/latam-ndc.factory.ts:30-34`       | Fallback silencioso a env cuando el tenant no resuelve cuenta. **Con dos proveedores este fallback se vuelve peligroso** — ver §2.2 y Riesgos. |
+| 18  | `apps/api/src/providers-latam/latam-ndc-exception.filter.ts:17` | `@Catch(LatamApiError)`                                                                                                                        |
+| 19  | `apps/api/src/providers-latam/latam-ndc-errors.ts:20-55`        | `humanizeLatamError()` — 6 mensajes con la marca "LATAM" incrustada (`:25,:28,:43,:48,:52,:54`)                                                |
+| 20  | `apps/api/src/providers-latam/latam-ndc.module.ts:11-12`        | Provee/exporta sólo `LatamNdcProviderFactory`                                                                                                  |
 
 ### 1.3 Órdenes y post-venta
 
-| # | Archivo:línea | Qué está acoplado | Impacto |
-| --- | --- | --- | --- |
-| 21 | `apps/api/src/orders/orders.service.ts:23,86` | Inyecta `LatamNdcProviderFactory` | — |
-| 22 | `apps/api/src/orders/orders.service.ts:138` | `createOrder` → `this.latam.forTenant()` **sin mirar `dto.offer.provider.name`** | Reservar una oferta Sabre la mandaría a LATAM. Bug idéntico al #9. |
-| 23 | `apps/api/src/orders/orders.service.ts:162` | `provider: 'latam-ndc'` **hardcodeado en el INSERT** | Toda orden de vuelo quedaría etiquetada LATAM. |
-| 24 | `apps/api/src/orders/orders.service.ts:210,319,332,446` | `retrieveFromProvider`, `listServices`, `reshopOrder`, `payOrder` → `this.latam.forTenant()` | — |
-| 25 | `apps/api/src/orders/orders.service.ts:229-231` | Enrutamiento por proveedor **con un ternario** (`agent-cars` vs. todo lo demás → LATAM) | Con 3 proveedores el ternario deja de escalar. |
-| 26 | `apps/api/src/orders/orders.controller.ts:141-147` | `assertSupportsLatamOps()`: `if (row.provider !== 'latam-ndc') throw` | **Bloquearía retrieve/pay/services/reshop de toda orden Sabre**, aunque Sabre soporte el equivalente. Llamado en `:134, :187, :202, :216`. |
-| 27 | `apps/api/src/orders/orders.controller.ts:29` | `@UseFilters(LatamNdcExceptionFilter, AgentCarsExceptionFilter)` | Ya demuestra el patrón de N filtros; falta el de Sabre. |
-| 28 | `apps/api/src/orders/orders.module.ts:3,9` | `imports: [LatamNdcProviderModule, AgentCarsProviderModule]` | — |
-| 29 | `apps/api/src/reports/reports.service.ts:49` | `verticalMap = { 'latam-ndc': 'Vuelos', … }` y fallback `?? 'Vuelos'` en `:62` | Las ventas Sabre caerían en "Vuelos" **por el fallback**, no por el mapa. Funciona por accidente. |
-| **45** | `apps/api/src/packages/packages.service.ts:103-104` | `provider_name: dto.providerName`, `provider_item_id: dto.providerItemId` — el ítem del paquete guarda el par (proveedor, id crudo) **pasado por el cliente** | Es el segundo lugar del repo, además de `Offer.provider`, donde viaja un id crudo de proveedor. Y el que tiene el límite más estrecho: ver ítem 47. |
-| **46** | `apps/api/src/packages/packages.controller.ts:98-99` (`serializeItem`) | Devuelve `providerName` / `providerItemId` al cliente sin interpretarlos | Correcto por diseño (opaco), pero significa que el id crudo hace **otro** round-trip por el navegador, igual que en `Offer.provider.offerRef` (§4.3). |
+| #      | Archivo:línea                                                          | Qué está acoplado                                                                                                                                             | Impacto                                                                                                                                               |
+| ------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 21     | `apps/api/src/orders/orders.service.ts:23,86`                          | Inyecta `LatamNdcProviderFactory`                                                                                                                             | —                                                                                                                                                     |
+| 22     | `apps/api/src/orders/orders.service.ts:138`                            | `createOrder` → `this.latam.forTenant()` **sin mirar `dto.offer.provider.name`**                                                                              | Reservar una oferta Sabre la mandaría a LATAM. Bug idéntico al #9.                                                                                    |
+| 23     | `apps/api/src/orders/orders.service.ts:162`                            | `provider: 'latam-ndc'` **hardcodeado en el INSERT**                                                                                                          | Toda orden de vuelo quedaría etiquetada LATAM.                                                                                                        |
+| 24     | `apps/api/src/orders/orders.service.ts:210,319,332,446`                | `retrieveFromProvider`, `listServices`, `reshopOrder`, `payOrder` → `this.latam.forTenant()`                                                                  | —                                                                                                                                                     |
+| 25     | `apps/api/src/orders/orders.service.ts:229-231`                        | Enrutamiento por proveedor **con un ternario** (`agent-cars` vs. todo lo demás → LATAM)                                                                       | Con 3 proveedores el ternario deja de escalar.                                                                                                        |
+| 26     | `apps/api/src/orders/orders.controller.ts:141-147`                     | `assertSupportsLatamOps()`: `if (row.provider !== 'latam-ndc') throw`                                                                                         | **Bloquearía retrieve/pay/services/reshop de toda orden Sabre**, aunque Sabre soporte el equivalente. Llamado en `:134, :187, :202, :216`.            |
+| 27     | `apps/api/src/orders/orders.controller.ts:29`                          | `@UseFilters(LatamNdcExceptionFilter, AgentCarsExceptionFilter)`                                                                                              | Ya demuestra el patrón de N filtros; falta el de Sabre.                                                                                               |
+| 28     | `apps/api/src/orders/orders.module.ts:3,9`                             | `imports: [LatamNdcProviderModule, AgentCarsProviderModule]`                                                                                                  | —                                                                                                                                                     |
+| 29     | `apps/api/src/reports/reports.service.ts:49`                           | `verticalMap = { 'latam-ndc': 'Vuelos', … }` y fallback `?? 'Vuelos'` en `:62`                                                                                | Las ventas Sabre caerían en "Vuelos" **por el fallback**, no por el mapa. Funciona por accidente.                                                     |
+| **45** | `apps/api/src/packages/packages.service.ts:103-104`                    | `provider_name: dto.providerName`, `provider_item_id: dto.providerItemId` — el ítem del paquete guarda el par (proveedor, id crudo) **pasado por el cliente** | Es el segundo lugar del repo, además de `Offer.provider`, donde viaja un id crudo de proveedor. Y el que tiene el límite más estrecho: ver ítem 47.   |
+| **46** | `apps/api/src/packages/packages.controller.ts:98-99` (`serializeItem`) | Devuelve `providerName` / `providerItemId` al cliente sin interpretarlos                                                                                      | Correcto por diseño (opaco), pero significa que el id crudo hace **otro** round-trip por el navegador, igual que en `Offer.provider.offerRef` (§4.3). |
 
 ### 1.4 Base de datos
 
-| # | Archivo:línea | Qué está acoplado |
-| --- | --- | --- |
-| 30 | `db/migrations/0005_orders.sql:9` | `provider TEXT NOT NULL DEFAULT 'latam-ndc'` — **default de columna** |
-| 31 | `db/migrations/0005_orders.sql:10` | Comentario `-- PNR / OrderID from LATAM` |
-| 32 | `db/migrations/0010_sprint1_core_suite.sql:98` | `package_items.provider_name VARCHAR(50)` con comentario `'latam-ndc', 'hotelbeds', …` |
-| 33 | `apps/api/src/validation-dtos.test.ts:105` | Fixture con `providerCode: 'latam-ndc'` |
+| #      | Archivo:línea                                  | Qué está acoplado                                                                                                                                                                                                   |
+| ------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 30     | `db/migrations/0005_orders.sql:9`              | `provider TEXT NOT NULL DEFAULT 'latam-ndc'` — **default de columna**                                                                                                                                               |
+| 31     | `db/migrations/0005_orders.sql:10`             | Comentario `-- PNR / OrderID from LATAM`                                                                                                                                                                            |
+| 32     | `db/migrations/0010_sprint1_core_suite.sql:98` | `package_items.provider_name VARCHAR(50)` con comentario `'latam-ndc', 'hotelbeds', …`                                                                                                                              |
+| 33     | `apps/api/src/validation-dtos.test.ts:105`     | Fixture con `providerCode: 'latam-ndc'`                                                                                                                                                                             |
 | **47** | `db/migrations/0010_sprint1_core_suite.sql:99` | `package_items.provider_item_id VARCHAR(200) NOT NULL` — **el límite más estrecho del repo para un id de proveedor**, 55 caracteres por debajo de los 255 de `ProviderRefSchema.offerRef`. **Bloqueante**: ver §5.4 |
-| **48** | `apps/api/src/packages/packages.schemas.ts:21` | `providerItemId: z.string().min(1).max(200)` — el mismo techo, replicado en el borde Zod. Rechaza con 400 antes de llegar a Postgres, que al menos evita el `22001` crudo |
-| **49** | `db/migrations/0004_quotations.sql:14` | `quotations.selected_offer JSONB NOT NULL` — **sin límite de tamaño ni forma**. Es el contraejemplo: así debería verse `package_items` |
+| **48** | `apps/api/src/packages/packages.schemas.ts:21` | `providerItemId: z.string().min(1).max(200)` — el mismo techo, replicado en el borde Zod. Rechaza con 400 antes de llegar a Postgres, que al menos evita el `22001` crudo                                           |
+| **49** | `db/migrations/0004_quotations.sql:14`         | `quotations.selected_offer JSONB NOT NULL` — **sin límite de tamaño ni forma**. Es el contraejemplo: así debería verse `package_items`                                                                              |
 
 ### 1.5 Front-end (web-b2b)
 
-| # | Archivo:línea | Qué está acoplado |
-| --- | --- | --- |
-| 34 | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:57-66` | `SearchResult { simulated?: boolean }` — booleano global |
-| 35 | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:164,179` | Consume `{ offers, simulated }` del endpoint |
-| 36 | `apps/web-b2b/src/app/(app)/cotizaciones/page.tsx:633-646` | Banner "Tarifas simuladas" **para toda la lista** |
-| 37 | `apps/web-b2b/src/app/(app)/red/page.tsx:85-98` | `const LATAM_NDC: ProviderForm` (8 campos de credencial + 1 de config) |
-| 38 | `apps/web-b2b/src/app/(app)/red/page.tsx:111-114` | `const PROVIDERS = { 'latam-ndc': …, 'agent-cars': … }` |
-| 39 | `apps/web-b2b/src/app/(app)/red/page.tsx:600` | `useState('latam-ndc')` como default del selector |
-| 40 | `apps/web-b2b/src/app/(app)/red/page.tsx:607` | `PROVIDERS[providerCode] ?? LATAM_NDC` — **fallback a LATAM** para códigos desconocidos |
-| 41 | `apps/web-b2b/src/app/(app)/carteras/CarterasClient.tsx:517` | `o.provider === 'latam-ndc' ? 'Vuelos (LATAM NDC)' : o.provider` — Sabre se mostraría como `sabre` crudo |
-| 42 | `apps/web-b2b/src/app/(app)/reservas/page.tsx:87-89` | `isCarOrder()` — la única discriminación es coches vs. "todo lo demás" |
-| 43 | `apps/web-b2b/src/app/(app)/reservas/page.tsx:908,912` | Botones de pago/emisión gateados por `!isCar` → se ofrecerían para órdenes Sabre y morirían en el 400 del #26 |
-| 44 | `apps/web-b2b/src/lib/provider-errors.ts:25-30` | Regex `^latam(?:\s+\w+)*\s+error\b…` y mensaje con "credenciales de LATAM" |
+| #   | Archivo:línea                                                | Qué está acoplado                                                                                             |
+| --- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 34  | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:57-66`   | `SearchResult { simulated?: boolean }` — booleano global                                                      |
+| 35  | `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts:164,179` | Consume `{ offers, simulated }` del endpoint                                                                  |
+| 36  | `apps/web-b2b/src/app/(app)/cotizaciones/page.tsx:633-646`   | Banner "Tarifas simuladas" **para toda la lista**                                                             |
+| 37  | `apps/web-b2b/src/app/(app)/red/page.tsx:85-98`              | `const LATAM_NDC: ProviderForm` (8 campos de credencial + 1 de config)                                        |
+| 38  | `apps/web-b2b/src/app/(app)/red/page.tsx:111-114`            | `const PROVIDERS = { 'latam-ndc': …, 'agent-cars': … }`                                                       |
+| 39  | `apps/web-b2b/src/app/(app)/red/page.tsx:600`                | `useState('latam-ndc')` como default del selector                                                             |
+| 40  | `apps/web-b2b/src/app/(app)/red/page.tsx:607`                | `PROVIDERS[providerCode] ?? LATAM_NDC` — **fallback a LATAM** para códigos desconocidos                       |
+| 41  | `apps/web-b2b/src/app/(app)/carteras/CarterasClient.tsx:517` | `o.provider === 'latam-ndc' ? 'Vuelos (LATAM NDC)' : o.provider` — Sabre se mostraría como `sabre` crudo      |
+| 42  | `apps/web-b2b/src/app/(app)/reservas/page.tsx:87-89`         | `isCarOrder()` — la única discriminación es coches vs. "todo lo demás"                                        |
+| 43  | `apps/web-b2b/src/app/(app)/reservas/page.tsx:908,912`       | Botones de pago/emisión gateados por `!isCar` → se ofrecerían para órdenes Sabre y morirían en el 400 del #26 |
+| 44  | `apps/web-b2b/src/lib/provider-errors.ts:25-30`              | Regex `^latam(?:\s+\w+)*\s+error\b…` y mensaje con "credenciales de LATAM"                                    |
 
 ### 1.6 Defectos preexistentes que **hay que arreglar en el mismo trabajo**
 
@@ -242,7 +242,7 @@ Tres observaciones que ningún documento de la serie había cruzado:
    pero cualquier oferta que entre a un paquete tiene que caber en 200. El sistema tiene
    **dos techos distintos para el mismo dato**, y el más bajo no está documentado en ningún lado.
 2. **Con los números del contrato de Sabre, 200 no alcanza.** El cálculo completo está en §5.4:
-   el peor caso admitido por el spec son **526 caracteres**, y hasta el caso *típico* de una
+   el peor caso admitido por el spec son **526 caracteres**, y hasta el caso _típico_ de una
    familia de 9 ítems con los largos de los propios ejemplos de Sabre da **227**. Rompe.
 3. **Hoy no lo detecta nadie porque el Package Studio no tiene front-end.** Verificado por grep:
    no hay una sola referencia a `providerItemId` ni a `/packages` en `apps/web-b2b/src/`. Los
@@ -263,11 +263,19 @@ Ubicación propuesta: `apps/api/src/providers/` (nuevo directorio, hermano de `p
 
 ```ts
 // apps/api/src/providers/provider.types.ts
-import type { FlightSearchPort, OfferPricePort, OrderCreatePort, OrderManagePort } from '@sales-travel/domain';
+import type {
+  FlightSearchPort,
+  OfferPricePort,
+  OrderCreatePort,
+  OrderManagePort,
+} from '@sales-travel/domain';
 
 /** Un adapter de vuelos = los cuatro ports + la señal de modo mock. */
 export interface FlightProviderAdapter
-  extends FlightSearchPort, OfferPricePort, OrderCreatePort, OrderManagePort {
+  extends FlightSearchPort,
+    OfferPricePort,
+    OrderCreatePort,
+    OrderManagePort {
   readonly isMock: boolean;
 }
 
@@ -275,14 +283,14 @@ export interface FlightProviderAdapter
 export interface ProviderCapabilities {
   readonly retrieve: boolean;
   readonly cancel: boolean;
-  readonly pay: boolean;        // pago/emisión diferida (BNPL LATAM); Sabre usa fulfill
-  readonly services: boolean;   // ancillaries
+  readonly pay: boolean; // pago/emisión diferida (BNPL LATAM); Sabre usa fulfill
+  readonly services: boolean; // ancillaries
   readonly reshop: boolean;
 }
 
 /** Contrato que hoy cumplen de facto los tres factories, sin declararlo. */
 export interface TenantProviderFactory<TAdapter> {
-  readonly code: string;                       // 'latam-ndc' | 'sabre'
+  readonly code: string; // 'latam-ndc' | 'sabre'
   readonly vertical: 'flights' | 'hotels' | 'cars';
   readonly capabilities: ProviderCapabilities;
   /** Lanza NotFoundException si el tenant no resuelve credenciales y no hay fallback. */
@@ -292,7 +300,7 @@ export interface TenantProviderFactory<TAdapter> {
 export interface ResolvedProvider<TAdapter> {
   readonly code: string;
   readonly adapter: TAdapter;
-  readonly simulated: boolean;                       // = adapter.isMock
+  readonly simulated: boolean; // = adapter.isMock
   readonly credentialSource: 'own' | 'inherited' | 'env';
   readonly capabilities: ProviderCapabilities;
 }
@@ -374,11 +382,11 @@ function flightsCacheKey(tenantId: string, c: FlightSearchCriteria, codes: strin
 
 Reglas de escritura de caché, actualizadas (hoy: `search.service.ts:103-105`, sólo mira `simulated`):
 
-| Condición | ¿Cachear? | Motivo |
-| --- | --- | --- |
-| Todos OK, ninguno simulado | Sí, 90 s | Igual que hoy |
-| Algún proveedor `simulated` | **No** | Motivo actual (`search.service.ts:101-102`), sigue valiendo |
-| Algún proveedor en `failed` | **No** (hoy sí se cachea) | Un resultado parcial cacheado 90 s congela la degradación aunque el proveedor ya se haya recuperado |
+| Condición                     | ¿Cachear?                                                                | Motivo                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Todos OK, ninguno simulado    | Sí, 90 s                                                                 | Igual que hoy                                                                                                      |
+| Algún proveedor `simulated`   | **No**                                                                   | Motivo actual (`search.service.ts:101-102`), sigue valiendo                                                        |
+| Algún proveedor en `failed`   | **No** (hoy sí se cachea)                                                | Un resultado parcial cacheado 90 s congela la degradación aunque el proveedor ya se haya recuperado                |
 | Circuito abierto para un code | No aplica: ese code no entra en `codes`, así que la clave ya es distinta | El breaker cambia el set efectivo; incluirlo en la clave evita servir el resultado "sin Sabre" cuando Sabre volvió |
 
 Y conectar el código muerto **D**: llamar
@@ -395,7 +403,7 @@ Propuesto:
 
 ```ts
 export interface ProviderOutcome {
-  code: string;                                     // 'latam-ndc' | 'sabre'
+  code: string; // 'latam-ndc' | 'sabre'
   status: 'ok' | 'empty' | 'error' | 'simulated';
   count: number;
   /** Ya humanizado por el filtro del proveedor. Sólo si status === 'error'. */
@@ -478,32 +486,32 @@ Ubicación: dentro de `SearchService.searchFlights`, **antes** de `withPricing`
 
 ### 2.7 Diff conceptual, archivo por archivo
 
-| Archivo | Cambio | Tamaño |
-| --- | --- | --- |
-| `apps/api/src/providers/provider.types.ts` | **Nuevo.** Interfaces de §2.1 | ~60 líneas |
-| `apps/api/src/providers/flight-provider.registry.ts` | **Nuevo.** Resolución + orden estable + `byCode` | ~120 líneas |
-| `apps/api/src/providers/providers.module.ts` | **Nuevo.** Importa `LatamNdcProviderModule` + `SabreProviderModule`, exporta el registry | ~15 líneas |
-| `apps/api/src/providers-latam/latam-ndc.factory.ts` | Declarar `implements TenantProviderFactory<FlightProviderAdapter>`; exponer `code`, `vertical`, `capabilities`; devolver el tipo del port en `:22`; devolver `credentialSource` | Quirúrgico |
-| `apps/api/src/providers-sabre/sabre.factory.ts` | **Nuevo.** Espejo exacto del anterior (incluido el caché por `ownerTenantId:updatedAt` de `:29` y el `evictStale` de `:46-52`) | ~110 líneas |
-| `apps/api/src/providers-sabre/sabre-errors.ts` | **Nuevo.** Espejo de `latam-ndc-errors.ts` | ~50 líneas |
-| `apps/api/src/providers-sabre/sabre-exception.filter.ts` | **Nuevo.** `@Catch(SabreApiError)` → 502 | ~30 líneas |
-| `apps/api/src/providers-sabre/sabre.module.ts` | **Nuevo.** Espejo de `latam-ndc.module.ts` | ~15 líneas |
-| `apps/api/src/search/search.service.ts` | **Reescritura del cuerpo de `searchFlights`** (L40-107): registry → fan-out N ramas → instrument por rama → dedupe → pricing → caché con codes. Y `priceOffer` (L109-122) enruta por `offer.provider.name` vía `registry.byCode` | El grueso |
-| `apps/api/src/search/search.controller.ts` | Nuevo tipo de respuesta (L34); `@UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter)` (L21) | 4 líneas |
-| `apps/api/src/search/search.module.ts` | `imports: [ProvidersModule, PricingModule]` | 2 líneas |
-| `apps/api/src/search/search-telemetry.service.ts` | `SearchRecord` + `searchGroupId` (L13-23); insertar la columna (L76-86) | 3 líneas |
-| `apps/api/src/search/provider-fanout.ts` | Sin cambios de firma. Opcional: que `FanoutResult` exponga también los `succeeded` con su count para armar `ProviderOutcome[]` | Opcional |
-| `apps/api/src/orders/orders.service.ts` | Reemplazar `this.latam` por `registry.byCode(tenantId, order.provider)`; `provider:` del INSERT (L162) sale de `dto.offer.provider.name` | Medio |
-| `apps/api/src/orders/orders.controller.ts` | `assertSupportsLatamOps` (L141-147) → `assertSupports(row, 'pay' \| 'services' \| …)` consultando `capabilities` | ~20 líneas |
-| `apps/api/src/reports/reports.service.ts` | Agregar `'sabre': 'Vuelos'` al mapa (L49) | 1 línea |
-| `apps/web-b2b/src/app/(app)/red/page.tsx` | Nuevo `const SABRE: ProviderForm` + entrada en `PROVIDERS` (L111) | ~20 líneas |
-| `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts` | Tipo `SearchResult` con `providers[]` (L57-66) | ~10 líneas |
-| `apps/web-b2b/src/app/(app)/cotizaciones/page.tsx` | Banner global → badge por oferta + aviso de degradación parcial (L633) | Medio |
-| `apps/web-b2b/src/app/(app)/carteras/CarterasClient.tsx` | Mapa de etiquetas en vez del ternario (L517) | 3 líneas |
-| `apps/web-b2b/src/lib/provider-errors.ts` | Generalizar el regex de prefijo (L30) | 2 líneas |
-| `apps/api/src/packages/packages.schemas.ts` | `providerItemId` de `.max(200)` a `.max(2000)` (L21). **Bloqueante del Package Studio con Sabre** — ver §1.7 y §5.4 | 1 línea |
-| `db/migrations/00XX_multi_flight_provider.sql` | Ver §4.2 (incluye el `ALTER TABLE package_items … TYPE TEXT`) | ~55 líneas |
-| `apps/api/src/quotations/`, `apps/api/src/crm/` | **Sin cambios.** Verificado en §1.7: `selected_offer` es JSONB opaco y el CRM no toca proveedor | — |
+| Archivo                                                  | Cambio                                                                                                                                                                                                                           | Tamaño      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `apps/api/src/providers/provider.types.ts`               | **Nuevo.** Interfaces de §2.1                                                                                                                                                                                                    | ~60 líneas  |
+| `apps/api/src/providers/flight-provider.registry.ts`     | **Nuevo.** Resolución + orden estable + `byCode`                                                                                                                                                                                 | ~120 líneas |
+| `apps/api/src/providers/providers.module.ts`             | **Nuevo.** Importa `LatamNdcProviderModule` + `SabreProviderModule`, exporta el registry                                                                                                                                         | ~15 líneas  |
+| `apps/api/src/providers-latam/latam-ndc.factory.ts`      | Declarar `implements TenantProviderFactory<FlightProviderAdapter>`; exponer `code`, `vertical`, `capabilities`; devolver el tipo del port en `:22`; devolver `credentialSource`                                                  | Quirúrgico  |
+| `apps/api/src/providers-sabre/sabre.factory.ts`          | **Nuevo.** Espejo exacto del anterior (incluido el caché por `ownerTenantId:updatedAt` de `:29` y el `evictStale` de `:46-52`)                                                                                                   | ~110 líneas |
+| `apps/api/src/providers-sabre/sabre-errors.ts`           | **Nuevo.** Espejo de `latam-ndc-errors.ts`                                                                                                                                                                                       | ~50 líneas  |
+| `apps/api/src/providers-sabre/sabre-exception.filter.ts` | **Nuevo.** `@Catch(SabreApiError)` → 502                                                                                                                                                                                         | ~30 líneas  |
+| `apps/api/src/providers-sabre/sabre.module.ts`           | **Nuevo.** Espejo de `latam-ndc.module.ts`                                                                                                                                                                                       | ~15 líneas  |
+| `apps/api/src/search/search.service.ts`                  | **Reescritura del cuerpo de `searchFlights`** (L40-107): registry → fan-out N ramas → instrument por rama → dedupe → pricing → caché con codes. Y `priceOffer` (L109-122) enruta por `offer.provider.name` vía `registry.byCode` | El grueso   |
+| `apps/api/src/search/search.controller.ts`               | Nuevo tipo de respuesta (L34); `@UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter)` (L21)                                                                                                                                | 4 líneas    |
+| `apps/api/src/search/search.module.ts`                   | `imports: [ProvidersModule, PricingModule]`                                                                                                                                                                                      | 2 líneas    |
+| `apps/api/src/search/search-telemetry.service.ts`        | `SearchRecord` + `searchGroupId` (L13-23); insertar la columna (L76-86)                                                                                                                                                          | 3 líneas    |
+| `apps/api/src/search/provider-fanout.ts`                 | Sin cambios de firma. Opcional: que `FanoutResult` exponga también los `succeeded` con su count para armar `ProviderOutcome[]`                                                                                                   | Opcional    |
+| `apps/api/src/orders/orders.service.ts`                  | Reemplazar `this.latam` por `registry.byCode(tenantId, order.provider)`; `provider:` del INSERT (L162) sale de `dto.offer.provider.name`                                                                                         | Medio       |
+| `apps/api/src/orders/orders.controller.ts`               | `assertSupportsLatamOps` (L141-147) → `assertSupports(row, 'pay' \| 'services' \| …)` consultando `capabilities`                                                                                                                 | ~20 líneas  |
+| `apps/api/src/reports/reports.service.ts`                | Agregar `'sabre': 'Vuelos'` al mapa (L49)                                                                                                                                                                                        | 1 línea     |
+| `apps/web-b2b/src/app/(app)/red/page.tsx`                | Nuevo `const SABRE: ProviderForm` + entrada en `PROVIDERS` (L111)                                                                                                                                                                | ~20 líneas  |
+| `apps/web-b2b/src/app/(app)/cotizaciones/actions.ts`     | Tipo `SearchResult` con `providers[]` (L57-66)                                                                                                                                                                                   | ~10 líneas  |
+| `apps/web-b2b/src/app/(app)/cotizaciones/page.tsx`       | Banner global → badge por oferta + aviso de degradación parcial (L633)                                                                                                                                                           | Medio       |
+| `apps/web-b2b/src/app/(app)/carteras/CarterasClient.tsx` | Mapa de etiquetas en vez del ternario (L517)                                                                                                                                                                                     | 3 líneas    |
+| `apps/web-b2b/src/lib/provider-errors.ts`                | Generalizar el regex de prefijo (L30)                                                                                                                                                                                            | 2 líneas    |
+| `apps/api/src/packages/packages.schemas.ts`              | `providerItemId` de `.max(200)` a `.max(2000)` (L21). **Bloqueante del Package Studio con Sabre** — ver §1.7 y §5.4                                                                                                              | 1 línea     |
+| `db/migrations/00XX_multi_flight_provider.sql`           | Ver §4.2 (incluye el `ALTER TABLE package_items … TYPE TEXT`)                                                                                                                                                                    | ~55 líneas  |
+| `apps/api/src/quotations/`, `apps/api/src/crm/`          | **Sin cambios.** Verificado en §1.7: `selected_offer` es JSONB opaco y el CRM no toca proveedor                                                                                                                                  | —           |
 
 ---
 
@@ -517,9 +525,10 @@ El patrón está fijado por `providers/latam-ndc/` y `providers/agent-cars/`; se
 packages:
   - 'apps/*'
   - 'packages/*'
-  - 'providers/*'   # ← ya cubre providers/sabre
+  - 'providers/*' # ← ya cubre providers/sabre
   - 'tools/*'
 ```
+
 (`pnpm-workspace.yaml:1-5`, verificado.)
 
 ### 3.2 `providers/sabre/package.json`
@@ -654,12 +663,13 @@ primera parte ya no es cierta y la segunda era imprecisa:
   `order.orderOwner` (`"1S"`), `orderItems[].id` / `.externalId` / `.externalOrderRefId` (UUID).
   El id más largo observado mide **57 caracteres**, consistente con los techos del spec (§5.2).
 
-  > **Nota de procedencia (3ª pasada).** Los cuatro archivos de `slices/responses/` pesan en disco
+  > **Nota de procedencia (3ª pasada).** Los cuatro archivos de `evidence/responses/` pesan en disco
   > 16.636 / 16.639 / 16.639 / 16.659 bytes, **no** 16.479. La diferencia es la línea de comentario
   > `//` que el extractor antepone con la ruta del request. Descontada, **los cuatro cuerpos miden
   > exactamente 16.479 bytes** y los cuatro parsean como JSON válido. Se anota para que nadie
   > vuelva a leer esa discrepancia como un error del conteo canónico: el número de `00-fuentes.md`
   > es el del cuerpo, y es correcto.
+
 - Y sobre todo: **ahora tenemos los contratos oficiales**. `bargain-finder-max-v5.yml` trae 3
   ejemplos completos de respuesta de shop y `offer-price-ndc-v1.yml` varios de price. Los mappers
   **se pueden escribir**; lo que falta validar contra el sandbox está acotado a las Preguntas
@@ -816,22 +826,22 @@ codifica `OfferID|ItemID1,ItemID2` en `offerRef`, y
 
 De la colección (VERIFICADO, Workflows/1):
 
-| Paso | Request | Ids que consume |
-| --- | --- | --- |
-| Price | `POST /v1/offers/price` | `query[].offerItemId[]` (del shop) |
-| Book | `POST /v1/trip/orders/createBooking` | `flightOffer.offerId`, `flightOffer.selectedOfferItems[]`, **`travelers[].id`** |
+| Paso  | Request                              | Ids que consume                                                                 |
+| ----- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| Price | `POST /v1/offers/price`              | `query[].offerItemId[]` (del shop)                                              |
+| Book  | `POST /v1/trip/orders/createBooking` | `flightOffer.offerId`, `flightOffer.selectedOfferItems[]`, **`travelers[].id`** |
 
 La primera pasada marcó los largos como DESCONOCIDO. **El contrato oficial los fija:**
 
-| Dato | Restricción | Fuente |
-| --- | --- | --- |
-| `flightOffer.offerId` | `minLength: 2`, **`maxLength: 49`**; ejemplo `dx369rfr7jt8dnd2i0-1` (20 chars) | VERIFICADO-SPEC: `booking-management-v1.yml:4959-4964` |
-| `flightOffer.selectedOfferItems[]` | `minItems: 1`, **`maxItems: 9`**; ejemplo `dx369rfr7jt8dnd2i0-1-1` (22 chars) | VERIFICADO-SPEC: `booking-management-v1.yml:4966-4974` |
-| `offerItemId` (formato) | `pattern: ^([a-zA-Z0-9]){1,30}(-[0-9]{1,10}){2}$` → **máximo 52 caracteres** | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:190` |
-| `query[].passengerId[]` | `default: Passenger1` (`:198`), `pattern: ^([\w-]){1,200}$` (`:200`) | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:198-200` |
-| `Offer.source` | `pattern: (ATPCO)\|(LCC)\|(NDC)` — el ACL **tiene** que ramificar por esto | VERIFICADO-SPEC: `bargain-finder-max-v5.yml:8238-8240` |
-| Vida de la oferta priced | `"ttl": 1200` segundos = **20 minutos**, con `offerExpirationDateTime` explícito | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:2105-2107` |
-| Vida de la oferta de shop | `Offer.timeToLive` entero en segundos, ejemplo `1255` | VERIFICADO-SPEC: `bargain-finder-max-v5.yml:8242-8246` |
+| Dato                               | Restricción                                                                      | Fuente                                                 |
+| ---------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `flightOffer.offerId`              | `minLength: 2`, **`maxLength: 49`**; ejemplo `dx369rfr7jt8dnd2i0-1` (20 chars)   | VERIFICADO-SPEC: `booking-management-v1.yml:4959-4964` |
+| `flightOffer.selectedOfferItems[]` | `minItems: 1`, **`maxItems: 9`**; ejemplo `dx369rfr7jt8dnd2i0-1-1` (22 chars)    | VERIFICADO-SPEC: `booking-management-v1.yml:4966-4974` |
+| `offerItemId` (formato)            | `pattern: ^([a-zA-Z0-9]){1,30}(-[0-9]{1,10}){2}$` → **máximo 52 caracteres**     | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:190`          |
+| `query[].passengerId[]`            | `default: Passenger1` (`:198`), `pattern: ^([\w-]){1,200}$` (`:200`)             | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:198-200`      |
+| `Offer.source`                     | `pattern: (ATPCO)\|(LCC)\|(NDC)` — el ACL **tiene** que ramificar por esto       | VERIFICADO-SPEC: `bargain-finder-max-v5.yml:8238-8240` |
+| Vida de la oferta priced           | `"ttl": 1200` segundos = **20 minutos**, con `offerExpirationDateTime` explícito | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:2105-2107`    |
+| Vida de la oferta de shop          | `Offer.timeToLive` entero en segundos, ejemplo `1255`                            | VERIFICADO-SPEC: `bargain-finder-max-v5.yml:8242-8246` |
 
 **Sobre `travelers[].id` — el spec se contradice consigo mismo, y hay que decirlo:**
 
@@ -896,6 +906,7 @@ export interface Passenger {
 ```
 
 **Por qué es aditivo y seguro:**
+
 - `raw` es `.optional()` → toda Offer LATAM existente sigue validando contra `OfferSchema`.
 - Importa porque `OfferSchema` se usa como **validación de borde real** en
   `apps/api/src/search/search.schemas.ts:12-14` (`OfferPriceBodySchema`): un campo requerido nuevo
@@ -914,11 +925,11 @@ contaminar el modelo canónico.
 Este es el hallazgo de la crítica llevado hasta el número. Hay **tres techos distintos** para el
 mismo dato, y ninguno está documentado junto a los otros:
 
-| Techo | Valor | Dónde |
-| --- | --- | --- |
-| `ProviderRefSchema.offerRef` | 255 | `packages/canonical/src/offer.ts:29` (`z.string().min(1).max(255)`) |
-| `package_items.provider_item_id` | **200** | `db/migrations/0010_sprint1_core_suite.sql:99` (`VARCHAR(200) NOT NULL`) |
-| `packages.schemas.ts` (borde Zod) | **200** | `apps/api/src/packages/packages.schemas.ts:21` |
+| Techo                             | Valor   | Dónde                                                                    |
+| --------------------------------- | ------- | ------------------------------------------------------------------------ |
+| `ProviderRefSchema.offerRef`      | 255     | `packages/canonical/src/offer.ts:29` (`z.string().min(1).max(255)`)      |
+| `package_items.provider_item_id`  | **200** | `db/migrations/0010_sprint1_core_suite.sql:99` (`VARCHAR(200) NOT NULL`) |
+| `packages.schemas.ts` (borde Zod) | **200** | `apps/api/src/packages/packages.schemas.ts:21`                           |
 
 Y el tamaño que Sabre puede producir, con la codificación estilo LATAM
 (`offerId|item1,item2,…` — `providers/latam-ndc/src/airshopping/response.mapper.ts:197-205`):
@@ -927,12 +938,12 @@ Y el tamaño que Sabre puede producir, con la codificación estilo LATAM
 largo(offerRef) = largo(offerId) + 1 + Σ largo(offerItemId_i) + (n − 1)
 ```
 
-| Escenario | offerId | n ítems | largo ítem | Total | ¿255? | ¿200? |
-| --- | --- | --- | --- | --- | --- | --- |
-| Típico, 1 pax, ida y vuelta | 20 | 2 | 22 | **65** | OK | OK |
-| Típico, familia de 4 con extras | 20 | 6 | 22 | **153** | OK | OK |
-| Típico, tope del contrato (`maxItems: 9`) | 20 | 9 | 22 | **227** | OK | **ROMPE** |
-| Peor caso admitido por el spec | 49 | 9 | 52 | **526** | **ROMPE** | **ROMPE** |
+| Escenario                                 | offerId | n ítems | largo ítem | Total   | ¿255?     | ¿200?     |
+| ----------------------------------------- | ------- | ------- | ---------- | ------- | --------- | --------- |
+| Típico, 1 pax, ida y vuelta               | 20      | 2       | 22         | **65**  | OK        | OK        |
+| Típico, familia de 4 con extras           | 20      | 6       | 22         | **153** | OK        | OK        |
+| Típico, tope del contrato (`maxItems: 9`) | 20      | 9       | 22         | **227** | OK        | **ROMPE** |
+| Peor caso admitido por el spec            | 49      | 9       | 52         | **526** | **ROMPE** | **ROMPE** |
 
 Los números de entrada son todos VERIFICADO-SPEC (§5.2): `maxLength: 49`
 (`booking-management-v1.yml:4962`), `maxItems: 9` (`:4969`), y el `pattern` de `offerItemId` que
@@ -966,16 +977,16 @@ son los de los ejemplos del propio contrato (`dx369rfr7jt8dnd2i0-1` = 20,
 Espejo de las `LATAM_*` (`infrastructure/hostinger/docker-compose.prod.yml:103-111` y
 `.github/workflows/deploy.yml:130-137`):
 
-| Variable | Tipo | Default propuesto | Notas |
-| --- | --- | --- | --- |
-| `SABRE_REST_URL` | var | `https://api.cert.platform.sabre.com` | **VERIFICADO** (ya no `[INFERIDO]`): es el valor literal de `rest_endpoint` en `sabre/BM API TEST CERT - EPR.postman_environment.json` |
-| `SABRE_SOAP_URL` | var | `https://webservices.cert.platform.sabre.com` | **VERIFICADO**: `soap_endpoint` y `lls_endpoint` en el mismo environment tienen **el mismo valor**. Sólo hace falta si se activa el carril del §8 |
-| `SABRE_EPR` | var | — | Usuario/EPR. **VERIFICADO**: el environment define `username = {{epr}}` |
-| `SABRE_PASSWORD` | **secret** | — | Ver la corrección de abajo: el secreto Basic se **deriva**, no se guarda |
-| `SABRE_PCC` | var | — | Pseudo-city / `POS.Source[].PseudoCityCode`. **Entra en la derivación del secreto** |
-| `SABRE_FORCE_MOCK` | var | `false` | Espejo de `LATAM_FORCE_MOCK` |
-| `PLATFORM_DEFAULT_FLIGHT_PROVIDERS` | var | `latam-ndc` | **Nueva y transversal.** CSV de codes con fallback a env. Ver §2.2 |
-| `PROVIDERS_DISABLED` | var | `''` | **Ya existe** (`circuit-breaker.service.ts:35`), no está declarada en compose ni deploy. Habría que declararla |
+| Variable                            | Tipo       | Default propuesto                             | Notas                                                                                                                                             |
+| ----------------------------------- | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SABRE_REST_URL`                    | var        | `https://api.cert.platform.sabre.com`         | **VERIFICADO** (ya no `[INFERIDO]`): es el valor literal de `rest_endpoint` en `sabre/BM API TEST CERT - EPR.postman_environment.json`            |
+| `SABRE_SOAP_URL`                    | var        | `https://webservices.cert.platform.sabre.com` | **VERIFICADO**: `soap_endpoint` y `lls_endpoint` en el mismo environment tienen **el mismo valor**. Sólo hace falta si se activa el carril del §8 |
+| `SABRE_EPR`                         | var        | —                                             | Usuario/EPR. **VERIFICADO**: el environment define `username = {{epr}}`                                                                           |
+| `SABRE_PASSWORD`                    | **secret** | —                                             | Ver la corrección de abajo: el secreto Basic se **deriva**, no se guarda                                                                          |
+| `SABRE_PCC`                         | var        | —                                             | Pseudo-city / `POS.Source[].PseudoCityCode`. **Entra en la derivación del secreto**                                                               |
+| `SABRE_FORCE_MOCK`                  | var        | `false`                                       | Espejo de `LATAM_FORCE_MOCK`                                                                                                                      |
+| `PLATFORM_DEFAULT_FLIGHT_PROVIDERS` | var        | `latam-ndc`                                   | **Nueva y transversal.** CSV de codes con fallback a env. Ver §2.2                                                                                |
+| `PROVIDERS_DISABLED`                | var        | `''`                                          | **Ya existe** (`circuit-breaker.service.ts:35`), no está declarada en compose ni deploy. Habría que declararla                                    |
 
 **Corrección respecto a la primera pasada.** El documento decía que `SABRE_CLIENT_SECRET` es
 _"un credential compuesto ya codificado, no user/pass sueltos"_. Eso es cierto a medias y la mitad
@@ -1024,27 +1035,27 @@ La jerarquía de resolución **ya está construida** y no cambia:
 
 Reparto propuesto entre `credentials` (cifrado) y `config` (claro):
 
-| Campo | Dónde | Por qué |
-| --- | --- | --- |
-| `epr` | `credentials` | Es el usuario del GDS. No es "público": identifica al agente ante Sabre. `credentials_enc`, AES-256-GCM (`0012:12`) |
-| `password` | `credentials` | Secreto |
-| `pcc` | `config` | No es secreto pero **sí determina precio** — `0012:26` lo dice: _"PCC define tarifas privadas visibles"_. Va en claro para poder auditarlo desde la UI. **Ojo: entra en la derivación del Basic (§6.1), así que cambiarlo invalida la sesión** |
-| `restUrl` | `config` | Endpoint, permite apuntar una agencia a cert y otra a prod |
-| ~~`clientSecret`~~ | — | **Eliminado respecto a la primera pasada.** Es un valor derivado de los tres anteriores; guardarlo duplicaría la verdad y se desincronizaría al cambiar el PCC. Ver §6.1 |
-| `conversationIdPrefix` | `config` | Ver la corrección de abajo. Conviene que sea trazable por agencia `[INFERIDO]` |
+| Campo                  | Dónde         | Por qué                                                                                                                                                                                                                                        |
+| ---------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `epr`                  | `credentials` | Es el usuario del GDS. No es "público": identifica al agente ante Sabre. `credentials_enc`, AES-256-GCM (`0012:12`)                                                                                                                            |
+| `password`             | `credentials` | Secreto                                                                                                                                                                                                                                        |
+| `pcc`                  | `config`      | No es secreto pero **sí determina precio** — `0012:26` lo dice: _"PCC define tarifas privadas visibles"_. Va en claro para poder auditarlo desde la UI. **Ojo: entra en la derivación del Basic (§6.1), así que cambiarlo invalida la sesión** |
+| `restUrl`              | `config`      | Endpoint, permite apuntar una agencia a cert y otra a prod                                                                                                                                                                                     |
+| ~~`clientSecret`~~     | —             | **Eliminado respecto a la primera pasada.** Es un valor derivado de los tres anteriores; guardarlo duplicaría la verdad y se desincronizaría al cambiar el PCC. Ver §6.1                                                                       |
+| `conversationIdPrefix` | `config`      | Ver la corrección de abajo. Conviene que sea trazable por agencia `[INFERIDO]`                                                                                                                                                                 |
 
 **Corrección de la 3ª pasada — `Conversation-ID` no es lo que decían las pasadas anteriores.**
 El documento afirmaba que el header _"aparece en todos los requests de la colección"_. **Es falso**,
 y el conteo exacto importa porque decide si el cliente HTTP lo pone siempre o no:
 
-| Hecho | Valor | Cómo se verificó |
-| --- | --- | --- |
-| Requests con header `Conversation-ID` | **334 de 1.077** (31%), de los cuales **333 son REST** | Tally sobre `requests.jsonl`, header en formato `"Clave: valor"` |
-| Valores literales del header | `{{conv_id}}` (243) y el placeholder crudo `conversation-id-value` (91) | idem |
-| Requests REST **sin** el header | **475 de 808** | idem |
-| Valor en runtime de `{{conv_id}}` | `2021.01.DevStudio` | VERIFICADO: `pm.environment.set('conv_id', "2021.01.DevStudio")`, línea 25 del `prerequest` de la **raíz** de la colección |
-| `<ConversationId>` del sobre SOAP | `2021.01.DevStudio` cuando se arma con `{{header}}`; pero **73 requests lo llevan hardcodeado**: `2019.09.DevStudio` (46) y `STX_2019_Postman` (27) | Tally de `<ConversationId>` sobre los bodies |
-| `conv_id` en el environment | `""` — **vacío**; lo puebla el script, no el archivo | `sabre/BM API TEST CERT - EPR.postman_environment.json` |
+| Hecho                                 | Valor                                                                                                                                               | Cómo se verificó                                                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Requests con header `Conversation-ID` | **334 de 1.077** (31%), de los cuales **333 son REST**                                                                                              | Tally sobre `requests.jsonl`, header en formato `"Clave: valor"`                                                           |
+| Valores literales del header          | `{{conv_id}}` (243) y el placeholder crudo `conversation-id-value` (91)                                                                             | idem                                                                                                                       |
+| Requests REST **sin** el header       | **475 de 808**                                                                                                                                      | idem                                                                                                                       |
+| Valor en runtime de `{{conv_id}}`     | `2021.01.DevStudio`                                                                                                                                 | VERIFICADO: `pm.environment.set('conv_id', "2021.01.DevStudio")`, línea 25 del `prerequest` de la **raíz** de la colección |
+| `<ConversationId>` del sobre SOAP     | `2021.01.DevStudio` cuando se arma con `{{header}}`; pero **73 requests lo llevan hardcodeado**: `2019.09.DevStudio` (46) y `STX_2019_Postman` (27) | Tally de `<ConversationId>` sobre los bodies                                                                               |
+| `conv_id` en el environment           | `""` — **vacío**; lo puebla el script, no el archivo                                                                                                | `sabre/BM API TEST CERT - EPR.postman_environment.json`                                                                    |
 
 Es decir: la afirmación _"constante para toda la colección"_ también era falsa. El valor de runtime
 sí es único (`2021.01.DevStudio`), pero conviven **tres literales distintos** en la colección porque
@@ -1097,31 +1108,31 @@ solos** sin Postgres con `const d = hasDb ? describe : describe.skip`
 
 ### 7.2 Unitarios — deuda previa (escribir primero, sin Sabre)
 
-| Archivo nuevo | Qué prueba |
-| --- | --- |
+| Archivo nuevo                                 | Qué prueba                                                                                                                                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/api/src/search/provider-fanout.test.ts` | `fanOut`: 2 OK; 1 OK + 1 falla → `items` del bueno y `failed[0].code` correcto; los 2 fallan → `items` vacío y 2 en `failed`; que el **paralelismo sea real** (dos promesas lentas, tiempo total ≈ el máximo, no la suma) |
-| `apps/api/src/search/dedupe.test.ts` | `dedupeCheapest`: colapsa mismo itinerario quedándose con el neto menor; **NO** colapsa mismo vuelo con familia tarifaria o equipaje distinto (§2.6); estabilidad del orden |
-| `apps/api/src/search/circuit-breaker.test.ts` | Abre a los 5 fallos; falla instantáneo estando abierto; pasa a half-open tras 30 s (reloj falso); un fallo en half-open reabre; un éxito cierra y resetea; `PROVIDERS_DISABLED=sabre` **no afecta a `latam-ndc`** |
-| `apps/api/src/search/memory-cache.test.ts` | TTL vence; `invalidatePattern` con `*`; eviction a los 5.000; `escapeRe` con una clave que lleve `.` o `+` (relevante: la clave nueva usa `+` como separador de codes, §2.3) |
+| `apps/api/src/search/dedupe.test.ts`          | `dedupeCheapest`: colapsa mismo itinerario quedándose con el neto menor; **NO** colapsa mismo vuelo con familia tarifaria o equipaje distinto (§2.6); estabilidad del orden                                               |
+| `apps/api/src/search/circuit-breaker.test.ts` | Abre a los 5 fallos; falla instantáneo estando abierto; pasa a half-open tras 30 s (reloj falso); un fallo en half-open reabre; un éxito cierra y resetea; `PROVIDERS_DISABLED=sabre` **no afecta a `latam-ndc`**         |
+| `apps/api/src/search/memory-cache.test.ts`    | TTL vence; `invalidatePattern` con `*`; eviction a los 5.000; `escapeRe` con una clave que lleve `.` o `+` (relevante: la clave nueva usa `+` como separador de codes, §2.3)                                              |
 
 ### 7.3 Unitarios — del refactor multi-proveedor
 
-| Archivo | Qué prueba |
-| --- | --- |
-| `apps/api/src/providers/flight-provider.registry.test.ts` | Con stubs de `ProviderCredentialsService` (patrón de `latam-ndc.factory.test.ts:30`): tenant con las dos cuentas → 2 proveedores en **orden estable**; sólo LATAM → 1; ninguna y `PLATFORM_DEFAULT_FLIGHT_PROVIDERS=latam-ndc` → sólo LATAM por env, **Sabre ausente**; `byCode('sabre')` con Sabre no habilitado → lanza; `credentialSource` es `'inherited'` cuando `resolved.inherited === true` |
-| `apps/api/src/providers-sabre/sabre.factory.test.ts` | Copia literal de los 5 casos de `latam-ndc.factory.test.ts:34-74`: reutiliza instancia con credenciales iguales (cache de token OAuth), reconstruye al rotar `updatedAt`, fallback env, BYOC ≠ env, propaga errores no-NotFound |
-| `apps/api/src/providers-sabre/sabre-errors.test.ts` | Espejo de `latam-ndc-errors.test.ts`: status 0 → conectar; 5xx → problema interno; 401/403 → credenciales; detalle corto desconocido se muestra |
-| `apps/api/src/search/search.service.test.ts` | **El más importante.** LATAM OK + Sabre OK → ofertas de ambos y `providers.length === 2`; **Sabre falla → siguen las ofertas de LATAM + `providers[sabre].status === 'error'`** (degradación parcial, hoy invisible por el defecto **B**); ambos fallan → lanza; **sólo Sabre en mock → `simulated: true` y el resultado NO se cachea**; la clave de caché cambia al cambiar el set de codes; `priceOffer` de una oferta con `provider.name === 'sabre'` invoca al adapter de **Sabre** (regresión del defecto #9) |
-| `apps/api/src/search/search-telemetry.test.ts` | `instrument` escribe **una fila por proveedor** con el **mismo `search_group_id`**; `outcome: 'simulated'` cuando `simulatedOf` da true; un fallo de la propia telemetría no tumba la búsqueda (`search-telemetry.service.ts:88-90`) |
+| Archivo                                                   | Qué prueba                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/api/src/providers/flight-provider.registry.test.ts` | Con stubs de `ProviderCredentialsService` (patrón de `latam-ndc.factory.test.ts:30`): tenant con las dos cuentas → 2 proveedores en **orden estable**; sólo LATAM → 1; ninguna y `PLATFORM_DEFAULT_FLIGHT_PROVIDERS=latam-ndc` → sólo LATAM por env, **Sabre ausente**; `byCode('sabre')` con Sabre no habilitado → lanza; `credentialSource` es `'inherited'` cuando `resolved.inherited === true`                                                                                                                |
+| `apps/api/src/providers-sabre/sabre.factory.test.ts`      | Copia literal de los 5 casos de `latam-ndc.factory.test.ts:34-74`: reutiliza instancia con credenciales iguales (cache de token OAuth), reconstruye al rotar `updatedAt`, fallback env, BYOC ≠ env, propaga errores no-NotFound                                                                                                                                                                                                                                                                                    |
+| `apps/api/src/providers-sabre/sabre-errors.test.ts`       | Espejo de `latam-ndc-errors.test.ts`: status 0 → conectar; 5xx → problema interno; 401/403 → credenciales; detalle corto desconocido se muestra                                                                                                                                                                                                                                                                                                                                                                    |
+| `apps/api/src/search/search.service.test.ts`              | **El más importante.** LATAM OK + Sabre OK → ofertas de ambos y `providers.length === 2`; **Sabre falla → siguen las ofertas de LATAM + `providers[sabre].status === 'error'`** (degradación parcial, hoy invisible por el defecto **B**); ambos fallan → lanza; **sólo Sabre en mock → `simulated: true` y el resultado NO se cachea**; la clave de caché cambia al cambiar el set de codes; `priceOffer` de una oferta con `provider.name === 'sabre'` invoca al adapter de **Sabre** (regresión del defecto #9) |
+| `apps/api/src/search/search-telemetry.test.ts`            | `instrument` escribe **una fila por proveedor** con el **mismo `search_group_id`**; `outcome: 'simulated'` cuando `simulatedOf` da true; un fallo de la propia telemetría no tumba la búsqueda (`search-telemetry.service.ts:88-90`)                                                                                                                                                                                                                                                                               |
 
 ### 7.4 Integración con Postgres (patrón `hasDb`)
 
-| Archivo | Qué prueba |
-| --- | --- |
-| `apps/api/src/search/search-quota.integration.test.ts` | **La regresión de §2.5.** Sembrar N búsquedas × 2 proveedores → `count_recent_searches` devuelve **N, no 2N**; filas viejas sin `search_group_id` siguen contando 1 cada una (rama `COALESCE`) |
-| `apps/api/src/providers-sabre/sabre-byoc.integration.test.ts` | Extiende `provider-credentials.integration.test.ts` con `provider_code='sabre'`: cuenta propia gana sobre heredada; se salta un ancestro con `is_inheritable=false`; un tenant con LATAM pero **sin** Sabre no resuelve Sabre |
+| Archivo                                                          | Qué prueba                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/api/src/search/search-quota.integration.test.ts`           | **La regresión de §2.5.** Sembrar N búsquedas × 2 proveedores → `count_recent_searches` devuelve **N, no 2N**; filas viejas sin `search_group_id` siguen contando 1 cada una (rama `COALESCE`)                                                                                                                                                                                                   |
+| `apps/api/src/providers-sabre/sabre-byoc.integration.test.ts`    | Extiende `provider-credentials.integration.test.ts` con `provider_code='sabre'`: cuenta propia gana sobre heredada; se salta un ancestro con `is_inheritable=false`; un tenant con LATAM pero **sin** Sabre no resuelve Sabre                                                                                                                                                                    |
 | `apps/api/src/packages/packages-provider-id.integration.test.ts` | **La regresión de §5.4.** `addItem` con un `providerItemId` de **526 caracteres** (peor caso del contrato: `offerId` de 49 + 9 `offerItemId` de 52) persiste y se relee **idéntico**. Sin el `ALTER TABLE … TYPE TEXT` de §4.2 este test falla con `22001`; con el `.max(200)` de `packages.schemas.ts:21` falla con 400 antes de llegar a la DB. Es el test que impide que el bloqueante vuelva |
-| `apps/api/src/providers-sabre/sabre-basic-secret.test.ts` | Unitario, sin DB. La derivación de §6.1 contra un vector conocido: `base64(base64("V1:"+epr+":"+pcc+":AA") + ":" + base64(pwd))`. Y la regresión que importa: **cambiar sólo el PCC produce un secreto distinto** — es lo que garantiza que no se guarde el derivado |
+| `apps/api/src/providers-sabre/sabre-basic-secret.test.ts`        | Unitario, sin DB. La derivación de §6.1 contra un vector conocido: `base64(base64("V1:"+epr+":"+pcc+":AA") + ":" + base64(pwd))`. Y la regresión que importa: **cambiar sólo el PCC produce un secreto distinto** — es lo que garantiza que no se guarde el derivado                                                                                                                             |
 
 ### 7.5 Aislamiento cross-tenant — exigido por `CLAUDE.md`
 
@@ -1133,12 +1144,12 @@ deben conectarse como **`app_user` (NOBYPASSRLS)**, no como owner — el test BY
 usuario privilegiado y lo admite en su cabecera (`provider-credentials.integration.test.ts:11-14`),
 así que ese hueco sigue abierto.
 
-| Archivo | Qué prueba |
-| --- | --- |
+| Archivo                                                                | Qué prueba                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/api/src/provider-credentials/byoc-isolation.integration.test.ts` | Como `app_user` con `app.current_tenant_id = A`: un `SELECT` directo sobre `provider_accounts` **no ve** la cuenta Sabre del tenant B **ni la del propio consolidador** (policy de `0012:47-49`, igualdad estricta de tenant). Y que `resolve_provider_account(A,'sabre')` **sí** devuelve la del consolidador — la única ruta autorizada hacia arriba |
-| `apps/api/src/search/search-cache-isolation.test.ts` | Unitario, sin DB: el tenant A no lee jamás la entrada del tenant B con criterio idéntico; **y con el mismo tenant, dos sets de proveedores distintos no colisionan** (regresión directa del cambio de clave, §2.3) |
-| `apps/api/src/search/search-logs-isolation.integration.test.ts` | Como `app_user` del tenant A: no lee filas de `search_logs` del tenant B; **sí** lee las de su subárbol (`can_read_membership`, `0032:44-46`). Sembrar filas de ambos proveedores para que el test también cubra el fan-out |
-| `apps/api/src/providers/adapter-cache-isolation.test.ts` | El caché de instancias del factory (`latam-ndc.factory.ts:18`, clave `byoc:owner:updatedAt`) **no devuelve el adapter del tenant A al tenant B**; y `evictStale` (`:46-52`) descarta la entrada vieja al rotar credenciales. Es el punto donde una fuga de credenciales entre agencias sería silenciosa y total |
+| `apps/api/src/search/search-cache-isolation.test.ts`                   | Unitario, sin DB: el tenant A no lee jamás la entrada del tenant B con criterio idéntico; **y con el mismo tenant, dos sets de proveedores distintos no colisionan** (regresión directa del cambio de clave, §2.3)                                                                                                                                     |
+| `apps/api/src/search/search-logs-isolation.integration.test.ts`        | Como `app_user` del tenant A: no lee filas de `search_logs` del tenant B; **sí** lee las de su subárbol (`can_read_membership`, `0032:44-46`). Sembrar filas de ambos proveedores para que el test también cubra el fan-out                                                                                                                            |
+| `apps/api/src/providers/adapter-cache-isolation.test.ts`               | El caché de instancias del factory (`latam-ndc.factory.ts:18`, clave `byoc:owner:updatedAt`) **no devuelve el adapter del tenant A al tenant B**; y `evictStale` (`:46-52`) descarta la entrada vieja al rotar credenciales. Es el punto donde una fuga de credenciales entre agencias sería silenciosa y total                                        |
 
 ### 7.6 Umbrales de cobertura
 
@@ -1157,21 +1168,21 @@ requests** van a `{{soap_endpoint}}` / `{{lls_endpoint}}` con `Content-Type: tex
 
 ### 8.1 Volumen y forma
 
-| Operación SOAP/LLS | Requests |
-| --- | --- |
-| `SessionCloseRQ` | 61 |
-| `SessionCreateRQ` | 50 |
-| `OTA_AirAvailRQ` | 30 |
-| `GetHotelAvailRQ` | 26 |
-| `HotelPriceCheckRQ` | 25 |
-| `OTA_AirBookRQ` | 4 |
-| `PassengerDetailsRQ` | 4 |
-| `EnhancedEndTransactionRQ` | 4 |
-| `Sabre_OTA_ProfileCreateRQ` | 4 |
-| `UpdatePassengerNameRecordRQ` | 3 |
-| `GetVehAvailRQ` | 2 |
-| `VehPriceCheckRQ` | 1 |
-| Resto (variantes menos frecuentes) | 29 |
+| Operación SOAP/LLS                 | Requests |
+| ---------------------------------- | -------- |
+| `SessionCloseRQ`                   | 61       |
+| `SessionCreateRQ`                  | 50       |
+| `OTA_AirAvailRQ`                   | 30       |
+| `GetHotelAvailRQ`                  | 26       |
+| `HotelPriceCheckRQ`                | 25       |
+| `OTA_AirBookRQ`                    | 4        |
+| `PassengerDetailsRQ`               | 4        |
+| `EnhancedEndTransactionRQ`         | 4        |
+| `Sabre_OTA_ProfileCreateRQ`        | 4        |
+| `UpdatePassengerNameRecordRQ`      | 3        |
+| `GetVehAvailRQ`                    | 2        |
+| `VehPriceCheckRQ`                  | 1        |
+| Resto (variantes menos frecuentes) | 29       |
 
 Dos cosas saltan del conteo. Primera: **hay más cierres que aperturas** (61 vs 50) — Sabre cierra
 sesión incluso en flujos donde no la abrió en el mismo folder, lo que dice cuánto le importa el
@@ -1211,7 +1222,7 @@ listo. Es, efectivamente, una desviación arquitectónica seria.
 > **Refutación explícita.** La premisa con la que se encargó esta revisión decía que el carril
 > SOAP _"exige cliente XML y pool de sesiones con cierre garantizado"_, y la calificaba de
 > desviación arquitectónica obligatoria respecto a `providers/latam-ndc`. **La primera mitad es
-> cierta y la segunda no.** Es cierto que *ese carril*, si se usa, exige XML, pool y cierre (§8.2 y
+> cierta y la segunda no.** Es cierto que _ese carril_, si se usa, exige XML, pool y cierre (§8.2 y
 > §8.4 lo detallan). Lo que no es cierto es que haya que usarlo: **ningún endpoint de nuestro
 > alcance lo requiere.** La evidencia va abajo y son ocho páginas oficiales distintas. Se deja
 > anotado en vez de corregido en silencio, porque la conclusión invierte una decisión de
@@ -1263,11 +1274,11 @@ construye, tienen que ser dos pools con tokens distintos y sin cruce.
 DI ni ciclo de vida — `providers/latam-ndc/package.json` no depende de `@nestjs/*` — y un pool
 necesita un hook de apagado para garantizar el `SessionCloseRQ`. Reparto propuesto:
 
-| Pieza | Dónde | Por qué |
-| --- | --- | --- |
-| `SabreSessionPort` (interfaz `acquire(key) → Lease`, `release(lease)`) | `providers/sabre/src/session/` | El adapter la consume; no la implementa |
-| Construcción/parseo del sobre SOAP | `providers/sabre/src/soap/` | Es traducción de protocolo: pertenece al ACL |
-| La implementación con estado + `OnApplicationShutdown` | `apps/api/src/providers-sabre/session-pool.service.ts` | Sólo la app Nest tiene ciclo de vida y hooks de apagado |
+| Pieza                                                                  | Dónde                                                  | Por qué                                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| `SabreSessionPort` (interfaz `acquire(key) → Lease`, `release(lease)`) | `providers/sabre/src/session/`                         | El adapter la consume; no la implementa                 |
+| Construcción/parseo del sobre SOAP                                     | `providers/sabre/src/soap/`                            | Es traducción de protocolo: pertenece al ACL            |
+| La implementación con estado + `OnApplicationShutdown`                 | `apps/api/src/providers-sabre/session-pool.service.ts` | Sólo la app Nest tiene ciclo de vida y hooks de apagado |
 
 **Relación con `packages/core/src/ports/`.** Hay **15** ports declarados — los 15 que
 `CLAUDE.md` promete: `blob-storage`, `cache`, `clock`, `crypto`, `event-bus`, `feature-flags`,
@@ -1277,7 +1288,7 @@ necesita un hook de apagado para garantizar el `SessionCloseRQ`. Reparto propues
 - `CachePort` (`cache.port.ts:1-6`: `get`/`set`/`delete`/`invalidatePattern`) es lo más cercano y
   **es la trampa obvia**. No sirve: un caché entrega el mismo valor a N lectores concurrentes, y
   una sesión Sabre **no se puede compartir** — dos requests simultáneos mutando el mismo AAA se
-  pisan. Falta el concepto de *lease* exclusivo y de devolución.
+  pisan. Falta el concepto de _lease_ exclusivo y de devolución.
 - `JobQueuePort` sí sirve, pero para otra cosa: el barrido periódico de sesiones huérfanas.
 - `ClockPort` sirve para que el TTL sea testeable sin `setTimeout` reales.
 
@@ -1321,7 +1332,7 @@ Reglas que se derivan:
    consolidador puede cotizar en el PCC de una agencia hija pasándolo **en el request**, con una
    sola sesión del PCC padre. Encaja con la herencia de `provider_accounts` sin multiplicar sesiones.
 4. **Cierre garantizado en tres capas**, porque una sesión sin cerrar consume un slot del PCC —
-   y ese slot es de *todas* las agencias que heredan esa cuenta:
+   y ese slot es de _todas_ las agencias que heredan esa cuenta:
    `finally` por operación → `OnApplicationShutdown` con `Promise.allSettled` de todos los leases
    → barrido por TTL (`JobQueuePort`). El error oficial cuando no hay slots es explícito:
    _"Unable to create ATH session token. Please retry the transaction."_
@@ -1357,20 +1368,20 @@ refactor de §2. **Ese refactor es el costo oculto de este roadmap.**
 
 Verificado listando `providers/`, `apps/`, `packages/` y `db/migrations/`:
 
-| El roadmap dice | El repo tiene | Lectura |
-| --- | --- | --- |
-| Mes 1: _"Adapter Amadeus self-service (search vuelos) end-to-end ⚠️"_ (`07-roadmap-olas.md:58`) | **No hay Amadeus.** `providers/` = `agent-cars`, `despegar-hotels`, `latam-ndc` | El primer proveedor de vuelos terminó siendo LATAM NDC directo; Self-Service fue descontinuado el 17-07-2026 |
-| Ola 4, **Año 2**: _"NDC directo con LATAM, Avianca, Aeroméxico"_ (`07-roadmap-olas.md:258,261`) | **Ya está hecho** — `providers/latam-ndc/`, en producción | El orden se invirtió: lo de Año 2 se hizo primero y lo del Mes 1 nunca se hizo |
-| Mes 2: _"Redis cache con TTL por categoría + stampede protection"_ | `MemoryCacheAdapter` en proceso, documentado como interino (`memory-cache.adapter.ts:19-23`) | Deuda consciente, no olvido |
-| Mes 2: _"Typesense para catálogo destinos"_ | No existe | Pendiente |
-| Mes 2: _"Temporal self-hosted + primera saga"_ | No existe `apps/temporal-worker/`; `apps/` = `api`, `web-b2b` | Pendiente. Relevante: la reserva multi-proveedor con compensación es justo lo que Sabre + LATAM van a necesitar |
-| Mes 2: _"Adapter HotelDo"_ | `providers/despegar-hotels/` | Proveedor distinto al planificado |
-| Mes 3: _"Constructor drag-and-drop … itinerario armado en pantalla"_ | Sólo la **API** (`apps/api/src/packages/`); **cero** referencias en `apps/web-b2b/src/` (verificado por grep) | El roadmap lo daba por cerrado hace ~2 meses. Es donde estalla el `VARCHAR(200)` del §1.7 |
-| Mes 3: _"Servicio de Quote persistida con expiración"_ | Hecho (`apps/api/src/quotations/`, `db/migrations/0004_quotations.sql`) | Al día |
-| Mes 3: _"Roles (superadmin, admin tenant, vendedor)"_ | Hecho, y ampliado (`0013_consolidator_roles.sql`, `0025_role_escalation_guard.sql`) | Adelantado |
-| Ola 2, Mes 7: _"Adapter CarTrawler"_ (autos) | `providers/agent-cars/` ya existe | Adelantado una ola, con otro proveedor |
-| — (no figura en ningún mes) | **CRM completo**: `0024`, `0031`, `0034` + `apps/api/src/crm/` (8 archivos) | Trabajo real que el plan no contempla en absoluto |
-| — (no figura en ningún mes) | **Modelo consolidador / BYOC**: `0011_tenant_hierarchy`, `0012_provider_accounts`, `0013_consolidator_roles`, `0016_pricing_waterfall` | El roadmap es **anterior** a esa decisión; la fuente vigente es `docs/platform/12-modelo-consolidador-y-plan.md`, que `CLAUDE.md` declara canónica |
+| El roadmap dice                                                                                 | El repo tiene                                                                                                                          | Lectura                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mes 1: _"Adapter Amadeus self-service (search vuelos) end-to-end ⚠️"_ (`07-roadmap-olas.md:58`) | **No hay Amadeus.** `providers/` = `agent-cars`, `despegar-hotels`, `latam-ndc`                                                        | El primer proveedor de vuelos terminó siendo LATAM NDC directo; Self-Service fue descontinuado el 17-07-2026                                       |
+| Ola 4, **Año 2**: _"NDC directo con LATAM, Avianca, Aeroméxico"_ (`07-roadmap-olas.md:258,261`) | **Ya está hecho** — `providers/latam-ndc/`, en producción                                                                              | El orden se invirtió: lo de Año 2 se hizo primero y lo del Mes 1 nunca se hizo                                                                     |
+| Mes 2: _"Redis cache con TTL por categoría + stampede protection"_                              | `MemoryCacheAdapter` en proceso, documentado como interino (`memory-cache.adapter.ts:19-23`)                                           | Deuda consciente, no olvido                                                                                                                        |
+| Mes 2: _"Typesense para catálogo destinos"_                                                     | No existe                                                                                                                              | Pendiente                                                                                                                                          |
+| Mes 2: _"Temporal self-hosted + primera saga"_                                                  | No existe `apps/temporal-worker/`; `apps/` = `api`, `web-b2b`                                                                          | Pendiente. Relevante: la reserva multi-proveedor con compensación es justo lo que Sabre + LATAM van a necesitar                                    |
+| Mes 2: _"Adapter HotelDo"_                                                                      | `providers/despegar-hotels/`                                                                                                           | Proveedor distinto al planificado                                                                                                                  |
+| Mes 3: _"Constructor drag-and-drop … itinerario armado en pantalla"_                            | Sólo la **API** (`apps/api/src/packages/`); **cero** referencias en `apps/web-b2b/src/` (verificado por grep)                          | El roadmap lo daba por cerrado hace ~2 meses. Es donde estalla el `VARCHAR(200)` del §1.7                                                          |
+| Mes 3: _"Servicio de Quote persistida con expiración"_                                          | Hecho (`apps/api/src/quotations/`, `db/migrations/0004_quotations.sql`)                                                                | Al día                                                                                                                                             |
+| Mes 3: _"Roles (superadmin, admin tenant, vendedor)"_                                           | Hecho, y ampliado (`0013_consolidator_roles.sql`, `0025_role_escalation_guard.sql`)                                                    | Adelantado                                                                                                                                         |
+| Ola 2, Mes 7: _"Adapter CarTrawler"_ (autos)                                                    | `providers/agent-cars/` ya existe                                                                                                      | Adelantado una ola, con otro proveedor                                                                                                             |
+| — (no figura en ningún mes)                                                                     | **CRM completo**: `0024`, `0031`, `0034` + `apps/api/src/crm/` (8 archivos)                                                            | Trabajo real que el plan no contempla en absoluto                                                                                                  |
+| — (no figura en ningún mes)                                                                     | **Modelo consolidador / BYOC**: `0011_tenant_hierarchy`, `0012_provider_accounts`, `0013_consolidator_roles`, `0016_pricing_waterfall` | El roadmap es **anterior** a esa decisión; la fuente vigente es `docs/platform/12-modelo-consolidador-y-plan.md`, que `CLAUDE.md` declara canónica |
 
 También faltan, contra la estructura target de `CLAUDE.md`: `apps/ai-sidecar`, `apps/temporal-worker`,
 `apps/web-b2c`, `apps/web-admin`, `apps/mobile`, y los packages `ui`, `i18n`, `sdk`.
@@ -1420,12 +1431,12 @@ Las de forma de respuesta de Sabre están en los otros documentos de esta serie;
 
 ### Cerradas en esta pasada por el contrato oficial (se dejan anotadas, no se repiten)
 
-| Pregunta de la 1ª pasada | Respuesta | Fuente |
-| --- | --- | --- |
-| ¿Largo real de `offerId` / `offerItemId`? | `offerId` ≤ **49**; `offerItemId` ≤ **52** por su `pattern`; hasta **9** ítems por oferta. Peor caso del `offerRef` compuesto: **526 chars** | VERIFICADO-SPEC: `booking-management-v1.yml:4962`, `:4969`; `offer-price-ndc-v1.yml:190`. Cuenta en §5.4 |
-| ¿Cuánto duran los ids de oferta? | Oferta priced: **`ttl: 1200` s (20 min)** + `offerExpirationDateTime`. Oferta de shop: `timeToLive` en segundos (ejemplo 1255) | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:2105-2107`; `bargain-finder-max-v5.yml:8242-8246`. **El caché de 90 s alcanza; la tabla `provider_offers` de §4.3 queda descartada** |
-| ¿`Conversation-ID` estable por sesión, búsqueda o request? | **No necesita ser único por request.** El script de raíz fija `conv_id = 2021.01.DevStudio` (línea 25 del `prerequest`). Pero **corregido en la 3ª pasada**: el header sólo va en **334 de 1.077** requests, y conviven tres literales distintos. Es trazabilidad, no protocolo | VERIFICADO: tally sobre `requests.jsonl` + `prerequest` de la raíz. Detalle en §6.2 |
-| ¿Hace falta un pool de sesiones SOAP? | **No para nuestro alcance.** Todos los endpoints que usamos aceptan token stateless ATK | VERIFICADO-SPEC: 8 páginas oficiales citadas en §8.3 |
+| Pregunta de la 1ª pasada                                   | Respuesta                                                                                                                                                                                                                                                                       | Fuente                                                                                                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ¿Largo real de `offerId` / `offerItemId`?                  | `offerId` ≤ **49**; `offerItemId` ≤ **52** por su `pattern`; hasta **9** ítems por oferta. Peor caso del `offerRef` compuesto: **526 chars**                                                                                                                                    | VERIFICADO-SPEC: `booking-management-v1.yml:4962`, `:4969`; `offer-price-ndc-v1.yml:190`. Cuenta en §5.4                                                                      |
+| ¿Cuánto duran los ids de oferta?                           | Oferta priced: **`ttl: 1200` s (20 min)** + `offerExpirationDateTime`. Oferta de shop: `timeToLive` en segundos (ejemplo 1255)                                                                                                                                                  | VERIFICADO-SPEC: `offer-price-ndc-v1.yml:2105-2107`; `bargain-finder-max-v5.yml:8242-8246`. **El caché de 90 s alcanza; la tabla `provider_offers` de §4.3 queda descartada** |
+| ¿`Conversation-ID` estable por sesión, búsqueda o request? | **No necesita ser único por request.** El script de raíz fija `conv_id = 2021.01.DevStudio` (línea 25 del `prerequest`). Pero **corregido en la 3ª pasada**: el header sólo va en **334 de 1.077** requests, y conviven tres literales distintos. Es trazabilidad, no protocolo | VERIFICADO: tally sobre `requests.jsonl` + `prerequest` de la raíz. Detalle en §6.2                                                                                           |
+| ¿Hace falta un pool de sesiones SOAP?                      | **No para nuestro alcance.** Todos los endpoints que usamos aceptan token stateless ATK                                                                                                                                                                                         | VERIFICADO-SPEC: 8 páginas oficiales citadas en §8.3                                                                                                                          |
 
 ### Siguen abiertas
 
@@ -1536,7 +1547,7 @@ Ordenados por daño × probabilidad.
     y cuarto humanizador para Sabre (backend + frontend) reabre el problema al doble de escala.
 
 11. **El `VARCHAR(200)` del Package Studio, descubierto tarde.** `package_items.provider_item_id`
-    (`0010:99`) no admite el `offerRef` compuesto de Sabre en el caso *típico* de 9 ítems (§5.4:
+    (`0010:99`) no admite el `offerRef` compuesto de Sabre en el caso _típico_ de 9 ítems (§5.4:
     227 caracteres). Hoy no lo detecta nadie porque el Package Studio no tiene front-end
     (verificado por grep en `apps/web-b2b/src/`). Cuando la Ola 2 construya el lienzo
     drag-and-drop (§9), el síntoma va a ser: **el vuelo de Sabre no se puede agregar al paquete y

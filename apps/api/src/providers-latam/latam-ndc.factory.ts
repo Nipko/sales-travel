@@ -1,6 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { LatamNdcFlightSearchAdapter, type LatamNdcConfig } from '@sales-travel/latam-ndc';
+import {
+  LatamApiError,
+  LatamNdcFlightSearchAdapter,
+  type LatamNdcConfig,
+} from '@sales-travel/latam-ndc';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import type {
+  CallPolicy,
+  CredentialSource,
+  FlightProviderAdapter,
+  ProviderCapabilities,
+  ProviderVertical,
+  TenantAdapter,
+  TenantProviderFactory,
+} from '../providers/provider.types.js';
+import { humanizeLatamError } from './latam-ndc-errors.js';
 
 const PROVIDER_CODE = 'latam-ndc';
 
@@ -14,23 +28,45 @@ const PROVIDER_CODE = 'latam-ndc';
  * preservar el cache de token OAuth que vive por instancia del adapter.
  */
 @Injectable()
-export class LatamNdcProviderFactory {
+export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
+  readonly code = PROVIDER_CODE;
+  readonly vertical: ProviderVertical = 'flights';
+
+  /** Es el proveedor con el que se vende hoy: se llama en cada búsqueda. */
+  readonly defaultCallPolicy: CallPolicy = 'always';
+
+  /** LATAM NDC cubre el ciclo completo: consulta, cancelación, pago diferido, ancillaries y reshop. */
+  readonly capabilities: ProviderCapabilities = {
+    retrieve: true,
+    cancel: true,
+    pay: true,
+    services: true,
+    reshop: true,
+  };
+
   private readonly cache = new Map<string, LatamNdcFlightSearchAdapter>();
 
   constructor(private readonly creds: ProviderCredentialsService) {}
 
-  async forTenant(tenantId: string): Promise<LatamNdcFlightSearchAdapter> {
+  async forTenant(tenantId: string): Promise<FlightProviderAdapter> {
+    return (await this.resolveForTenant(tenantId)).adapter;
+  }
+
+  async resolveForTenant(tenantId: string): Promise<TenantAdapter<FlightProviderAdapter>> {
     let key: string;
     let cfg: LatamNdcConfig;
+    let credentialSource: CredentialSource;
 
     try {
       const resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
       cfg = this.toConfig(resolved.credentials, resolved.config);
       key = `byoc:${resolved.ownerTenantId}:${resolved.updatedAt.getTime()}`;
+      credentialSource = resolved.inherited ? 'inherited' : 'own';
     } catch (err) {
       if (!(err instanceof NotFoundException)) throw err;
       cfg = this.envConfig();
       key = 'env';
+      credentialSource = 'env';
     }
 
     let adapter = this.cache.get(key);
@@ -39,7 +75,13 @@ export class LatamNdcProviderFactory {
       this.cache.set(key, adapter);
       this.evictStale(key);
     }
-    return adapter;
+    return { adapter, credentialSource };
+  }
+
+  /** Los errores LANZADOS por el ACL (red/auth/config) ya tienen traducción propia. */
+  humanizeError(err: unknown): string {
+    if (err instanceof LatamApiError) return humanizeLatamError(err.status, err.body);
+    return err instanceof Error ? err.message : String(err);
   }
 
   /** Conserva sólo la entrada vigente por owner (al rotar credenciales el `updatedAt` cambia la key). */

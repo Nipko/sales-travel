@@ -38,12 +38,12 @@ Fuentes: ver 00-fuentes.md
 
 ## 2. Inventario: qué endpoints de shop existen
 
-| Endpoint                     | Requests | Workflows que lo usan (**corregido**)                                             | Veredicto                                              |
-| ---------------------------- | -------: | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `POST /v3/offers/shop`       |       26 | WF 6, 20, 21, 22, 26, 27, **28-33**; `Create Booking / Flights Preparation`        | Legado. **Sin `MultipleSourcePerItinerary`** → descartar. |
-| `POST /v4/offers/shop`       |       49 | WF 3, 4, 5, 7, 8, 14, **15**, 16, 17, 18, 19, 25; casi todo `ModifyBooking`        | Válido. Superado por v5.                               |
-| `POST /v5/offers/shop`       |       13 | WF 1, 2, 11, 12, 13, **15**, 23, 24, **28-33**; `FulfillFlightTickets / Basic flow NDC` | **Adoptar este.**                                  |
-| `POST /v1/offers/flightShop` |        1 | WF 8, paso `1a Flight Shop - refundable AA`                                        | API distinta, no OTA. Sin spec disponible. Ver §3.6.   |
+| Endpoint                     | Requests | Workflows que lo usan (**corregido**)                                                   | Veredicto                                                 |
+| ---------------------------- | -------: | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `POST /v3/offers/shop`       |       26 | WF 6, 20, 21, 22, 26, 27, **28-33**; `Create Booking / Flights Preparation`             | Legado. **Sin `MultipleSourcePerItinerary`** → descartar. |
+| `POST /v4/offers/shop`       |       49 | WF 3, 4, 5, 7, 8, 14, **15**, 16, 17, 18, 19, 25; casi todo `ModifyBooking`             | Válido. Superado por v5.                                  |
+| `POST /v5/offers/shop`       |       13 | WF 1, 2, 11, 12, 13, **15**, 23, 24, **28-33**; `FulfillFlightTickets / Basic flow NDC` | **Adoptar este.**                                         |
+| `POST /v1/offers/flightShop` |        1 | WF 8, paso `1a Flight Shop - refundable AA`                                             | API distinta, no OTA. Sin spec disponible. Ver §3.6.      |
 
 > **Corrección (hallazgo 2 de la crítica — ACEPTADO).** La primera pasada asignó el Workflow 15 sólo a v4. Es falso: **WF 15 usa las dos versiones dentro del mismo workflow** — `AA airline` y `QF airline` van a `/v4`, mientras `UA`, `QR` y `SQ` van a `/v5` (**VERIFICADO** — parseo de las URL de los 5 shop de `Workflows / 15 - NDC All supported airlines`). Lo mismo pasa con **WF 28-33, que usa v3 y v5**, y que la primera pasada listó sólo en v3.
 >
@@ -65,11 +65,11 @@ grant_type=client_credentials
 
 El `secret` se construye en el pre-request script raíz como `base64( base64("V1:{username}:{pcc}:AA") + ":" + base64(password) )` (**VERIFICADO** — pre-request script raíz). **El PCC entra en el `client_id` del OAuth**, no es sólo un campo del body; forma parte de la identidad de la credencial. Eso condiciona el diseño BYOC (§6.3).
 
-| Header            | Frecuencia | Valor                                        |
-| ----------------- | ---------: | -------------------------------------------- |
-| `Content-Type`    |      89/89 | `application/json`                           |
+| Header            | Frecuencia | Valor                                                                   |
+| ----------------- | ---------: | ----------------------------------------------------------------------- |
+| `Content-Type`    |      89/89 | `application/json`                                                      |
 | `Conversation-ID` |      72/89 | `{{conv_id}}` = `"2021.01.DevStudio"` o literal `conversation-id-value` |
-| `Authorization`   |       0/89 | heredado: `Bearer {{token}}`                 |
+| `Authorization`   |       0/89 | heredado: `Bearer {{token}}`                                            |
 
 `Conversation-ID` es opcional pero **debemos mandarlo siempre**: es el correlador de soporte de Sabre. Propuesta: `SearchContext.requestId`.
 
@@ -77,13 +77,13 @@ El `secret` se construye en el pre-request script raíz como `base64( base64("V1
 
 La lista oficial de errores REST aplica a BFM. Lo que nos condiciona el diseño del adapter:
 
-| Código | Señal | Qué hace nuestro adapter |
-| --- | --- | --- |
-| `429 / ERR.2SG.GATEWAY.REQUEST_THROTTLED` | "Maximum number of concurrent requests for the API has been exceeded" | **Backoff mínimo 500 ms** (lo dice el doc), y **límite de concurrencia por PCC** en el fan-out. No es reintento libre. |
-| `429 / Throttled — Active token count is exceeded` | Demasiados tokens vivos | Refuerza que el `TokenService` **debe** cachear y reutilizar el token, no pedir uno por búsqueda. |
-| `401 / invalid_client` + "TAM Pool is exhausted" | Pool de credenciales agotado | Distinguirlo de credencial mala: es transitorio, va al circuit breaker, no a "credenciales inválidas". |
-| `404 / Response does not contain any data` | Sin resultados | **No es un error de proveedor.** Mapear a lista vacía, no a `failed`, o el fan-out marcará Sabre como caído en cada búsqueda sin vuelos. |
-| `500 / ERR.2SG.GATEWAY.TIMEOUT`, `503`, `504` | Transitorios | Circuit breaker + backoff 500 ms. |
+| Código                                             | Señal                                                                 | Qué hace nuestro adapter                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `429 / ERR.2SG.GATEWAY.REQUEST_THROTTLED`          | "Maximum number of concurrent requests for the API has been exceeded" | **Backoff mínimo 500 ms** (lo dice el doc), y **límite de concurrencia por PCC** en el fan-out. No es reintento libre.                   |
+| `429 / Throttled — Active token count is exceeded` | Demasiados tokens vivos                                               | Refuerza que el `TokenService` **debe** cachear y reutilizar el token, no pedir uno por búsqueda.                                        |
+| `401 / invalid_client` + "TAM Pool is exhausted"   | Pool de credenciales agotado                                          | Distinguirlo de credencial mala: es transitorio, va al circuit breaker, no a "credenciales inválidas".                                   |
+| `404 / Response does not contain any data`         | Sin resultados                                                        | **No es un error de proveedor.** Mapear a lista vacía, no a `failed`, o el fan-out marcará Sabre como caído en cada búsqueda sin vuelos. |
+| `500 / ERR.2SG.GATEWAY.TIMEOUT`, `503`, `504`      | Transitorios                                                          | Circuit breaker + backoff 500 ms.                                                                                                        |
 
 ---
 
@@ -98,11 +98,11 @@ La primera pasada comparó los 88 bodies y concluyó que ciertos campos "sólo e
 
 Corrección concreta a la tabla de la primera pasada:
 
-| Campo | Decía la 1ª pasada | Realidad del contrato |
-| --- | --- | --- |
-| `TravelPreferences.CabinPref[]` | "la cabina sólo se puede pedir desde v4" | **Existe en v3** (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:32`, `CabinPrefType`). |
-| `VendorPref[].PreferLevel` | "sólo aparece a partir de v4" | Existe en v3. Era ausencia en la colección, no en el schema. |
-| `…BrandedFareIndicators.SingleBrandedFare` | "sólo desde v4" | **Existe en v3** (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:3689`). |
+| Campo                                      | Decía la 1ª pasada                       | Realidad del contrato                                                                    |
+| ------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `TravelPreferences.CabinPref[]`            | "la cabina sólo se puede pedir desde v4" | **Existe en v3** (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:32`, `CabinPrefType`). |
+| `VendorPref[].PreferLevel`                 | "sólo aparece a partir de v4"            | Existe en v3. Era ausencia en la colección, no en el schema.                             |
+| `…BrandedFareIndicators.SingleBrandedFare` | "sólo desde v4"                          | **Existe en v3** (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:3689`).                |
 
 Lo que la primera pasada midió es **qué ejercita la colección**, y eso sigue siendo útil como señal de "qué está probado". Pero no puede presentarse como capacidad del API.
 
@@ -110,10 +110,10 @@ Lo que la primera pasada midió es **qué ejercita la colección**, y eso sigue 
 
 Diff de nombres de schema de respuesta entre los tres contratos (**VERIFICADO-SPEC** — 93 schemas en v3, 122 en v4, 137 en v5):
 
-| Salto | Qué aparece de nuevo en la respuesta |
-| --- | --- |
+| Salto       | Qué aparece de nuevo en la respuesta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **v3 → v4** | `AmenitiesType`, `AmenitiesSegmentType` (amenidades de cabina), `UPA*` / `RichContentType` / `Photo` / `Video` (contenido enriquecido Route Happy), **`PriceClassDescriptionType` / `PriceClassDescriptionsType`** (marcas de tarifa NDC → nuestro `Offer.fareFamily`), `Taxes` / `Tax` / `TaxReissueType`, `TicketType`, `DiversitySwapperType`, `BookingDetails`, `PricingLegType`, `SoldOutSchedule`. Además la guía documenta el rediseño de `shelfDescs` (atributos de producto: exchanges, refunds, baggage, seat selection). |
-| **v4 → v5** | **`ApplicablePenaltiesType` / `ApplicablePenaltyType` / `MinPenalty`** (penalidades NDC referenciables), `DiscountType` (descuento NDC), `MatchedNegotiatedFareCodeType` (traza de qué tarifa negociada casó), `SeatType` / `SeatCharacteristic` / `UPASeatCharacteristicDescType`, `UTABaggageType`. |
+| **v4 → v5** | **`ApplicablePenaltiesType` / `ApplicablePenaltyType` / `MinPenalty`** (penalidades NDC referenciables), `DiscountType` (descuento NDC), `MatchedNegotiatedFareCodeType` (traza de qué tarifa negociada casó), `SeatType` / `SeatCharacteristic` / `UPASeatCharacteristicDescType`, `UTABaggageType`.                                                                                                                                                                                                                               |
 
 En el **request**, v5 añade cuatro cosas que v4 no tiene (**VERIFICADO-SPEC** — diff de los 160 vs 157 schemas de request):
 
@@ -133,12 +133,12 @@ La pregunta abierta #6 de la primera pasada ("¿cuánto vive una oferta de Sabre
 Offer:
   required: [offerId, timeToLive, source]
   properties:
-    offerId:    { type: string,  example: 'do3385fr4jsvzb1i30-1' }
-    source:     { type: string,  pattern: '(ATPCO)|(LCC)|(NDC)' }
+    offerId: { type: string, example: 'do3385fr4jsvzb1i30-1' }
+    source: { type: string, pattern: '(ATPCO)|(LCC)|(NDC)' }
     timeToLive: { type: integer, description: 'Time to live in seconds.', example: 1255 }
 ```
 
-Y v3 lo describe con más detalle: *"how long the offer will be valid in the Offer Store. The time to live for NDC offers is different than for ATPCO"* (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:2175`).
+Y v3 lo describe con más detalle: _"how long the offer will be valid in the Offer Store. The time to live for NDC offers is different than for ATPCO"_ (**VERIFICADO-SPEC**: `bargain-finder-max-v3.yml:2175`).
 
 **Por lo tanto `Offer.expiresAt` = `fetchedAt + offer.timeToLive` segundos.** No hay que inventar un default.
 
@@ -152,13 +152,13 @@ Ojo, hay un segundo `timeToLive` que **no es éste**: `Cached.timeToLive` (`barg
 >
 > **Razones a favor de v5, todas VERIFICADO-SPEC:**
 >
-> | # | Razón | Cita |
-> | - | --- | --- |
-> | 1 | Único con `POS.MultiSourceControl` → multi-PCC nativo, que es el modelo consolidador | `v5.yml:5037` |
-> | 2 | Único con penalidades NDC estructuradas (`ApplicablePenaltiesType`, `MinPenalty`) → `Offer.policies` sin heurística de texto | `v5.yml:2480` |
-> | 3 | Único con **tres ejemplos de respuesta completos publicados** → fixtures del mapper hoy, sin esperar al sandbox | `v5.yml:120`, `:667`, `:1456` |
-> | 4 | Tiene `MultipleSourcePerItinerary` (v3 **no lo tiene**), que es obligatorio para nosotros (§4) | `v5.yml:5522` |
-> | 5 | Los ejemplos oficiales del propio Sabre usan `Version: "5"` con `/v5` | `v5.yml:71` |
+> | #   | Razón                                                                                                                        | Cita                          |
+> | --- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+> | 1   | Único con `POS.MultiSourceControl` → multi-PCC nativo, que es el modelo consolidador                                         | `v5.yml:5037`                 |
+> | 2   | Único con penalidades NDC estructuradas (`ApplicablePenaltiesType`, `MinPenalty`) → `Offer.policies` sin heurística de texto | `v5.yml:2480`                 |
+> | 3   | Único con **tres ejemplos de respuesta completos publicados** → fixtures del mapper hoy, sin esperar al sandbox              | `v5.yml:120`, `:667`, `:1456` |
+> | 4   | Tiene `MultipleSourcePerItinerary` (v3 **no lo tiene**), que es obligatorio para nosotros (§4)                               | `v5.yml:5522`                 |
+> | 5   | Los ejemplos oficiales del propio Sabre usan `Version: "5"` con `/v5`                                                        | `v5.yml:71`                   |
 >
 > **Coste del cambio v4→v5: cero en el request.** El body que ya diseñamos para v4 es válido en v5 salvo el valor de `Version`. Todo el delta está en leer campos nuevos de la respuesta, que es aditivo.
 >
@@ -172,10 +172,10 @@ Ojo, hay un segundo `timeToLive` que **no es éste**: `Cached.timeToLive` (`barg
 Pero la colección manda otra cosa (**VERIFICADO** — parseo de los 88 bodies):
 
 | Versión de la URL | Valor de `OTA_AirLowFareSearchRQ.Version` |
-| --- | --- |
-| `/v3` | `"1"` (26/26) |
-| `/v4` | `"4"` (49/49) |
-| `/v5` | `"4"` (11/13) y `"1"` (2/13) |
+| ----------------- | ----------------------------------------- |
+| `/v3`             | `"1"` (26/26)                             |
+| `/v4`             | `"4"` (49/49)                             |
+| `/v5`             | `"4"` (11/13) y `"1"` (2/13)              |
 
 O sea: **ninguno de los 13 requests a `/v5` manda `Version: "5"`**, y presumiblemente funcionan porque están en workflows que se ejecutan de punta a punta. Lectura: Sabre **tolera** el desajuste hoy, pero el contrato dice que no debería.
 
@@ -190,8 +190,16 @@ Un solo ejemplo, en `Workflows / 8 / 1a Flight Shop - refundable AA`:
 ```json
 {
   "journeys": [
-    { "departureLocation": { "airportCode": "JFK" }, "arrivalLocation": { "airportCode": "MIA" }, "departureDate": "2026-09-01" },
-    { "departureLocation": { "airportCode": "MIA" }, "arrivalLocation": { "airportCode": "JFK" }, "departureDate": "2026-09-08" }
+    {
+      "departureLocation": { "airportCode": "JFK" },
+      "arrivalLocation": { "airportCode": "MIA" },
+      "departureDate": "2026-09-01"
+    },
+    {
+      "departureLocation": { "airportCode": "MIA" },
+      "arrivalLocation": { "airportCode": "JFK" },
+      "departureDate": "2026-09-08"
+    }
   ],
   "travelers": [{ "passengerTypeCode": "ADT" }],
   "airlines": { "marketingAirlinesFilter": { "airlineCodes": ["AA"] } },
@@ -221,8 +229,8 @@ OTA_AirLowFareSearchRQ.TravelPreferences.TPA_Extensions.DataSources:
   type: object
   properties:
     ATPCO: { type: string, enum: [Enable, Disable] }
-    LCC:   { type: string, enum: [Enable, Disable] }
-    NDC:   { type: string, enum: [Enable, Disable] }
+    LCC: { type: string, enum: [Enable, Disable] }
+    NDC: { type: string, enum: [Enable, Disable] }
 ```
 
 **Son tres propiedades independientes.** No hay `oneOf`, `anyOf`, `maxProperties` ni ninguna restricción que impida habilitar varias. La observación de la primera pasada —"en los 88 requests nunca hay dos fuentes en `Enable` a la vez"— **es cierta sobre la colección y sigue en pie como dato**, pero era un artefacto de cómo están escritos los workflows de certificación (cada uno prueba un carril), **no un límite del API**.
@@ -241,7 +249,11 @@ MultipleSourcePerItinerary:
     you can indicate show me everything, combine ATPCO and NDC fares as additional
     fares, regardless of whether they are the same price.
   properties:
-    Value: { type: boolean, description: 'Combine solutions from different services/sources as additional fares.' }
+    Value:
+      {
+        type: boolean,
+        description: 'Combine solutions from different services/sources as additional fares.',
+      }
 ```
 
 Tres cosas que esto zanja:
@@ -277,11 +289,11 @@ Tres cosas que esto zanja:
 
 Esto **no cambia** respecto de la primera pasada y sigue verificado en la colección:
 
-| Fuente | Qué contenido es | Cómo se reserva (VERIFICADO en la colección) |
-| --- | --- | --- |
-| **ATPCO** | Tarifa publicada tradicional del GDS. | `shop` → **directo a** `createBooking` con `flightDetails.flights[]` (flightNumber, airlineCode, from/to, date, time, bookingClass). **Sin `offers/price`.** Evidencia: `Workflows / 3 … / 2. createBooking - ATPCO payload` |
-| **NDC** | Oferta del carrier. Branded fares, ancillaries, contenido exclusivo. | `shop` → `offers/price` (`{"query":[{"offerItemId":["{{shop_offer_item_id}}"]}]}`) → `createBooking` con `flightOffer.{offerId,selectedOfferItems}`. Evidencia: `Workflows / 1 … / 2. Offers Price /v1` y `/ 3. createBooking` |
-| **LCC** | Low cost agregados por Sabre. | `shop` → `createBooking` con `flightDetails.flights[]` **más `"source": "LCC"`**. Evidencia: `Workflows / 5 … / 2. createBooking - LCC` |
+| Fuente    | Qué contenido es                                                     | Cómo se reserva (VERIFICADO en la colección)                                                                                                                                                                                   |
+| --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **ATPCO** | Tarifa publicada tradicional del GDS.                                | `shop` → **directo a** `createBooking` con `flightDetails.flights[]` (flightNumber, airlineCode, from/to, date, time, bookingClass). **Sin `offers/price`.** Evidencia: `Workflows / 3 … / 2. createBooking - ATPCO payload`   |
+| **NDC**   | Oferta del carrier. Branded fares, ancillaries, contenido exclusivo. | `shop` → `offers/price` (`{"query":[{"offerItemId":["{{shop_offer_item_id}}"]}]}`) → `createBooking` con `flightOffer.{offerId,selectedOfferItems}`. Evidencia: `Workflows / 1 … / 2. Offers Price /v1` y `/ 3. createBooking` |
+| **LCC**   | Low cost agregados por Sabre.                                        | `shop` → `createBooking` con `flightDetails.flights[]` **más `"source": "LCC"`**. Evidencia: `Workflows / 5 … / 2. createBooking - LCC`                                                                                        |
 
 **Y ahora sabemos de qué fuente viene cada oferta sin adivinar**, por dos caminos redundantes (**VERIFICADO-SPEC**):
 
@@ -320,50 +332,50 @@ Y dentro de cada tramo: `required: [DestinationLocation, OriginLocation]`, con `
 
 † "Colección" = en cuántos de los 88 bodies aparece. "Spec" = qué dice el contrato.
 
-| Campo | Colección† | Spec | Notas |
-| --- | :---: | :---: | --- |
-| `Version` | 88/88 | **obligatorio** | Debe coincidir con la URL (§3.5). Mandar `"5"`. |
-| `POS.Source[].PseudoCityCode` | 88/88 | opcional dentro de POS | `{{pcc}}`, `{{pcc_tkt}}`, `{{pccEmd}}`, `7KFA`, `U9PK`, `G7HE`, `N87F`, `G7RE`, `GF1I`. **El PCC de la agencia.** BYOC (§6.3). |
-| `POS.Source[].RequestorID` | 88/88 | **`required: [ID, Type]`** (`v5.yml:5046`) | |
-| `…RequestorID.Type` | 88/88 | obligatorio | Siempre `"1"`. Spec: *"A Sabre internal configuration type, which equals 1"* (`v5.yml:59`). **Ya no es [INFERIDO]: es constante documentada.** |
-| `…RequestorID.ID` | 88/88 | obligatorio | Siempre `"1"`. Spec: *"A unique ID assigned by the creating system (e.g. 1 = Sabre)"* (`v5.yml:58`). **`"1"` es correcto, no un placeholder de certificación.** Cierra la pregunta abierta #9. |
-| `…RequestorID.CompanyName.Code` | 88/88 | opcional | `"TN"`. Spec: *"TN for Travel Agency, AS for Airline Solutions"* (`v5.yml:57`). **Ya no es [INFERIDO].** |
-| `POS.MultiSourceControl.MaximumNumberOfPCCs` | 0/88 | **sólo v5** | Multi-PCC en una llamada. Relevante para consolidador (§3.2). |
-| `OriginDestinationInformation[]` | 88/88 | **obligatorio, 1..10** | Un elemento por tramo. |
-| `…[].OriginLocation.LocationCode` | 88/88 | **obligatorio** | Acepta códigos de **ciudad** (`LON`, `NYC`, `WAS`, `PAR`), no sólo de aeropuerto. |
-| `…[].DestinationLocation.LocationCode` | 88/88 | **obligatorio** | idem |
-| `…[].DepartureDateTime` | 88/88 | opcional | `YYYY-MM-DDTHH:MM:SS`. **La colección siempre manda `T00:00:00`; los ejemplos oficiales mandan horas reales (`T20:00:00`, `T13:00:00`).** El spec dice *"The time and date of the traveler's departure"* — **la hora sí es significativa**. La primera pasada dedujo lo contrario de la colección. |
-| `…[].ArrivalDateTime` | 0/88 | opcional | Alternativa a `DepartureDateTime`. *"Should not be used together"*. |
-| `…[].DepartureWindow` / `ArrivalWindow` | 0/88 | opcional | Formato `HHMMHHMM` (p. ej. `05000730`). **Capacidad que no estábamos usando** y que encaja con "salir por la mañana". |
-| `…[].ConnectionLocations` | 0/88 | opcional | Forzar/excluir ciudades de conexión. |
-| `…[].RPH` | 87/88 | **opcional** | La colección es inconsistente (unos empiezan en `"0"`, otros en `"1"`); los ejemplos oficiales **no lo mandan**. Ver §5.3. |
-| `TravelPreferences.MaxStopsQuantity` | 59/88 | opcional | `0` (58 casos), `3` (1 caso). |
-| `TravelPreferences.CabinPref[]` | 52/88 | opcional, **`maxItems: 3`** | Ver §6.2 para el enum completo. |
-| `TravelPreferences.VendorPref[].Code` | 79/88 | opcional | Ver §5.4 — **corregido**. |
-| `TravelPreferences.Baggage.{RequestType,Description,…}` | 0/88 | opcional | **`RequestType` enum `A`\|`C`\|`N`** (`v5.yml:5885`). `A`=allowance, `C`=allowance+cargos, `N`=nada. **Sin esto no hay equipaje** (§7.4). |
-| `…TPA_Extensions.NumTrips.Number` | 87/88 | opcional, **default 9, min 1** (`v5.yml:7393`) | Cuántos itinerarios devolver. |
-| `…TPA_Extensions.DataSources.{NDC,ATPCO,LCC}` | 88/88 | opcional, enum `Enable`\|`Disable` | §4. |
-| `…TPA_Extensions.PreferNDCSourceOnTie.Value` | 29/88 | opcional, bool | Desempate a favor de NDC. §4.2. |
-| `…TPA_Extensions.FlexibleFares.FareParameters[]` | 1/88 | opcional | Grupos de tarifa alternativos. `Cabin.Type`, `ExcludeRestricted.Ind`, `ClassOfService[]`, `CorporateID[]` (hasta 25). |
-| `TravelerInfoSummary` | 88/88 | **obligatorio** | |
-| `…PassengerTypeQuantity[].Code` | 88/88 | obligatorio | §5.5 — **corregido y ampliado**. |
-| `…PassengerTypeQuantity[].Quantity` | 88/88 | obligatorio | `1`, `2`, `3`. |
-| `…PassengerTypeQuantity[].TPA_Extensions.VoluntaryChanges` | 1/88 | opcional | **Es el interruptor de `penaltiesInfo` en la respuesta** (§7.4). |
-| `TravelerInfoSummary.PriceRequestInformation.CurrencyCode` | **0/88** | **opcional — EXISTE** | **§6.2. El hallazgo que corrige la 1ª pasada.** |
-| `…PriceRequestInformation.AccountCode[]` / `NegotiatedFareCode[]` | 0/88 | opcional | **Tarifas negociadas.** Es el mecanismo de contratos propios de una agencia — BYOC de tarifa, no sólo de credencial. |
-| `…BrandedFareIndicators.SingleBrandedFare` | 34/88 | opcional, **default `true`** (`v3.yml:3712`) | Una marca por itinerario. |
-| `TPA_Extensions.IntelliSellTransaction.RequestType.Name` | 88/88 | opcional | `50ITINS`\|`100ITINS`\|`200ITINS`. §8. |
-| `TPA_Extensions.IntelliSellTransaction.MultipleSourcePerItinerary.Value` | **0/88** | opcional, **v4+** | **§4.2. Obligatorio para nosotros.** |
-| `TPA_Extensions.IntelliSellTransaction.AirStreaming` | 0/88 | opcional | Respuesta en chunks. §8.3. |
-| `TPA_Extensions.IntelliSellTransaction.CompressResponse.Value` | 0/88 | opcional, default `false` | Respuesta GZIP en base64. §8.3. |
-| `AvailableFlightsOnly` | 0/88 | opcional, **default `true`** | `false` devuelve tarifas sin mirar disponibilidad de clase. **No tocar**: mostraríamos vuelos no vendibles. |
+| Campo                                                                    | Colección† |                      Spec                      | Notas                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------ | :--------: | :--------------------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Version`                                                                |   88/88    |                **obligatorio**                 | Debe coincidir con la URL (§3.5). Mandar `"5"`.                                                                                                                                                                                                                                                    |
+| `POS.Source[].PseudoCityCode`                                            |   88/88    |             opcional dentro de POS             | `{{pcc}}`, `{{pcc_tkt}}`, `{{pccEmd}}`, `7KFA`, `U9PK`, `G7HE`, `N87F`, `G7RE`, `GF1I`. **El PCC de la agencia.** BYOC (§6.3).                                                                                                                                                                     |
+| `POS.Source[].RequestorID`                                               |   88/88    |   **`required: [ID, Type]`** (`v5.yml:5046`)   |                                                                                                                                                                                                                                                                                                    |
+| `…RequestorID.Type`                                                      |   88/88    |                  obligatorio                   | Siempre `"1"`. Spec: _"A Sabre internal configuration type, which equals 1"_ (`v5.yml:59`). **Ya no es [INFERIDO]: es constante documentada.**                                                                                                                                                     |
+| `…RequestorID.ID`                                                        |   88/88    |                  obligatorio                   | Siempre `"1"`. Spec: _"A unique ID assigned by the creating system (e.g. 1 = Sabre)"_ (`v5.yml:58`). **`"1"` es correcto, no un placeholder de certificación.** Cierra la pregunta abierta #9.                                                                                                     |
+| `…RequestorID.CompanyName.Code`                                          |   88/88    |                    opcional                    | `"TN"`. Spec: _"TN for Travel Agency, AS for Airline Solutions"_ (`v5.yml:57`). **Ya no es [INFERIDO].**                                                                                                                                                                                           |
+| `POS.MultiSourceControl.MaximumNumberOfPCCs`                             |    0/88    |                  **sólo v5**                   | Multi-PCC en una llamada. Relevante para consolidador (§3.2).                                                                                                                                                                                                                                      |
+| `OriginDestinationInformation[]`                                         |   88/88    |             **obligatorio, 1..10**             | Un elemento por tramo.                                                                                                                                                                                                                                                                             |
+| `…[].OriginLocation.LocationCode`                                        |   88/88    |                **obligatorio**                 | Acepta códigos de **ciudad** (`LON`, `NYC`, `WAS`, `PAR`), no sólo de aeropuerto.                                                                                                                                                                                                                  |
+| `…[].DestinationLocation.LocationCode`                                   |   88/88    |                **obligatorio**                 | idem                                                                                                                                                                                                                                                                                               |
+| `…[].DepartureDateTime`                                                  |   88/88    |                    opcional                    | `YYYY-MM-DDTHH:MM:SS`. **La colección siempre manda `T00:00:00`; los ejemplos oficiales mandan horas reales (`T20:00:00`, `T13:00:00`).** El spec dice _"The time and date of the traveler's departure"_ — **la hora sí es significativa**. La primera pasada dedujo lo contrario de la colección. |
+| `…[].ArrivalDateTime`                                                    |    0/88    |                    opcional                    | Alternativa a `DepartureDateTime`. _"Should not be used together"_.                                                                                                                                                                                                                                |
+| `…[].DepartureWindow` / `ArrivalWindow`                                  |    0/88    |                    opcional                    | Formato `HHMMHHMM` (p. ej. `05000730`). **Capacidad que no estábamos usando** y que encaja con "salir por la mañana".                                                                                                                                                                              |
+| `…[].ConnectionLocations`                                                |    0/88    |                    opcional                    | Forzar/excluir ciudades de conexión.                                                                                                                                                                                                                                                               |
+| `…[].RPH`                                                                |   87/88    |                  **opcional**                  | La colección es inconsistente (unos empiezan en `"0"`, otros en `"1"`); los ejemplos oficiales **no lo mandan**. Ver §5.3.                                                                                                                                                                         |
+| `TravelPreferences.MaxStopsQuantity`                                     |   59/88    |                    opcional                    | `0` (58 casos), `3` (1 caso).                                                                                                                                                                                                                                                                      |
+| `TravelPreferences.CabinPref[]`                                          |   52/88    |          opcional, **`maxItems: 3`**           | Ver §6.2 para el enum completo.                                                                                                                                                                                                                                                                    |
+| `TravelPreferences.VendorPref[].Code`                                    |   79/88    |                    opcional                    | Ver §5.4 — **corregido**.                                                                                                                                                                                                                                                                          |
+| `TravelPreferences.Baggage.{RequestType,Description,…}`                  |    0/88    |                    opcional                    | **`RequestType` enum `A`\|`C`\|`N`** (`v5.yml:5885`). `A`=allowance, `C`=allowance+cargos, `N`=nada. **Sin esto no hay equipaje** (§7.4).                                                                                                                                                          |
+| `…TPA_Extensions.NumTrips.Number`                                        |   87/88    | opcional, **default 9, min 1** (`v5.yml:7393`) | Cuántos itinerarios devolver.                                                                                                                                                                                                                                                                      |
+| `…TPA_Extensions.DataSources.{NDC,ATPCO,LCC}`                            |   88/88    |       opcional, enum `Enable`\|`Disable`       | §4.                                                                                                                                                                                                                                                                                                |
+| `…TPA_Extensions.PreferNDCSourceOnTie.Value`                             |   29/88    |                 opcional, bool                 | Desempate a favor de NDC. §4.2.                                                                                                                                                                                                                                                                    |
+| `…TPA_Extensions.FlexibleFares.FareParameters[]`                         |    1/88    |                    opcional                    | Grupos de tarifa alternativos. `Cabin.Type`, `ExcludeRestricted.Ind`, `ClassOfService[]`, `CorporateID[]` (hasta 25).                                                                                                                                                                              |
+| `TravelerInfoSummary`                                                    |   88/88    |                **obligatorio**                 |                                                                                                                                                                                                                                                                                                    |
+| `…PassengerTypeQuantity[].Code`                                          |   88/88    |                  obligatorio                   | §5.5 — **corregido y ampliado**.                                                                                                                                                                                                                                                                   |
+| `…PassengerTypeQuantity[].Quantity`                                      |   88/88    |                  obligatorio                   | `1`, `2`, `3`.                                                                                                                                                                                                                                                                                     |
+| `…PassengerTypeQuantity[].TPA_Extensions.VoluntaryChanges`               |    1/88    |                    opcional                    | **Es el interruptor de `penaltiesInfo` en la respuesta** (§7.4).                                                                                                                                                                                                                                   |
+| `TravelerInfoSummary.PriceRequestInformation.CurrencyCode`               |  **0/88**  |             **opcional — EXISTE**              | **§6.2. El hallazgo que corrige la 1ª pasada.**                                                                                                                                                                                                                                                    |
+| `…PriceRequestInformation.AccountCode[]` / `NegotiatedFareCode[]`        |    0/88    |                    opcional                    | **Tarifas negociadas.** Es el mecanismo de contratos propios de una agencia — BYOC de tarifa, no sólo de credencial.                                                                                                                                                                               |
+| `…BrandedFareIndicators.SingleBrandedFare`                               |   34/88    |  opcional, **default `true`** (`v3.yml:3712`)  | Una marca por itinerario.                                                                                                                                                                                                                                                                          |
+| `TPA_Extensions.IntelliSellTransaction.RequestType.Name`                 |   88/88    |                    opcional                    | `50ITINS`\|`100ITINS`\|`200ITINS`. §8.                                                                                                                                                                                                                                                             |
+| `TPA_Extensions.IntelliSellTransaction.MultipleSourcePerItinerary.Value` |  **0/88**  |               opcional, **v4+**                | **§4.2. Obligatorio para nosotros.**                                                                                                                                                                                                                                                               |
+| `TPA_Extensions.IntelliSellTransaction.AirStreaming`                     |    0/88    |                    opcional                    | Respuesta en chunks. §8.3.                                                                                                                                                                                                                                                                         |
+| `TPA_Extensions.IntelliSellTransaction.CompressResponse.Value`           |    0/88    |           opcional, default `false`            | Respuesta GZIP en base64. §8.3.                                                                                                                                                                                                                                                                    |
+| `AvailableFlightsOnly`                                                   |    0/88    |          opcional, **default `true`**          | `false` devuelve tarifas sin mirar disponibilidad de clase. **No tocar**: mostraríamos vuelos no vendibles.                                                                                                                                                                                        |
 
 ### 5.3 `RPH` no correlaciona la respuesta — hay un campo dedicado
 
 El riesgo #11 de la primera pasada temía que un `RPH` mal basado desordenara ida y vuelta. **El contrato lo desactiva:** la correlación tramo-pedido ↔ itinerario-devuelto se hace con un campo propio de la respuesta:
 
 ```yaml
-# bargain-finder-max-v5.yml:4199
+# bargain-finder-max-v5.yml:4197
 itineraries[].originDestinationInformationRef:
   type: integer
   description: Reference number to `OriginDestinationInformation` from request to
@@ -378,9 +390,9 @@ itineraries[].originDestinationInformationRef:
 
 Valores reales (**VERIFICADO** — parseo de los 79 bodies con `VendorPref`):
 
-| Tipo | Valores |
-| --- | --- |
-| **Códigos IATA literales (11)** | `AA`, `AF`, `AS`, `BA`, `EY`, `FR`, `LO`, `QF`, `SQ`, `U2`, `UA` |
+| Tipo                                   | Valores                                                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Códigos IATA literales (11)**        | `AA`, `AF`, `AS`, `BA`, `EY`, `FR`, `LO`, `QF`, `SQ`, `U2`, `UA`                                                                                        |
 | **Variables Postman sin resolver (7)** | `{{airline}}`, `{{airlineCode}}`, `{{airlineEmd}}`, `{{airline_code}}`, `{{atpco_airline_code}}`, `{{lcc_airline_code}}`, `{{lcc_second_airline_code}}` |
 
 El dato relevante que la primera pasada no vio: **7 de los 18 valores son variables**, o sea que la colección **no fija el carrier** en buena parte de los ejemplos NDC. La conclusión de §4.2 sobre LCC (los 8 requests LCC llevan carrier concreto o variable de carrier) se mantiene.
@@ -389,12 +401,12 @@ El dato relevante que la primera pasada no vio: **7 de los 18 valores son variab
 
 Nuestro `PaxTypeSchema` (`packages/canonical/src/pax.ts:3`) es `['ADT','CHD','INF']`.
 
-| Nuestro | Sabre | Evidencia |
-| --- | --- | --- |
-| `ADT` | `ADT` | **VERIFICADO** — 88/88 bodies, y los 3 ejemplos oficiales. |
-| `CHD` | **`CNN`** o **`C06`…`C11`** | **VERIFICADO** — `Workflows / 18` usa `CNN`. **VERIFICADO-SPEC** — el ejemplo 2 oficial usa `C06` y lo explica: *"The three-character ATPCO passenger type code. The code `C06` in our example refers to a six-year-old child"* (`v5.yml:607`). O sea: `CNN` es "niño genérico" y `C##` es "niño de ## años" — **con `C##` Sabre puede aplicar descuentos por edad que `CNN` no dispara**. Si tenemos `dateOfBirth`, conviene mandar `C##`. |
-| `INF` | **`INF`** | **VERIFICADO-SPEC** — el ejemplo 3 oficial, *"Round-Trip for a Family with an Infant"*, manda `{"Code":"INF","Quantity":1}` (`v5.yml:1439`). **Cierra la pregunta abierta #8**: la primera pasada lo marcó `[INFERIDO]` porque la colección no lo usa nunca. El contrato lo usa. |
-| — | `INS` | Infante **con asiento**. **VERIFICADO** — `Workflows / 28-33 / Seats - 1 Adult 1 Infant with seat`. No lo modelamos hoy: nuestro `PaxCountSchema` sólo tiene `infants` con la regla "1 lap infant per adult". |
+| Nuestro | Sabre                       | Evidencia                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADT`   | `ADT`                       | **VERIFICADO** — 88/88 bodies, y los 3 ejemplos oficiales.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `CHD`   | **`CNN`** o **`C06`…`C11`** | **VERIFICADO** — `Workflows / 18` usa `CNN`. **VERIFICADO-SPEC** — el ejemplo 2 oficial usa `C06` y lo explica: _"The three-character ATPCO passenger type code. The code `C06` in our example refers to a six-year-old child"_ (`v5.yml:607`). O sea: `CNN` es "niño genérico" y `C##` es "niño de ## años" — **con `C##` Sabre puede aplicar descuentos por edad que `CNN` no dispara**. Si tenemos `dateOfBirth`, conviene mandar `C##`. |
+| `INF`   | **`INF`**                   | **VERIFICADO-SPEC** — el ejemplo 3 oficial, _"Round-Trip for a Family with an Infant"_, manda `{"Code":"INF","Quantity":1}` (`v5.yml:1439`). **Cierra la pregunta abierta #8**: la primera pasada lo marcó `[INFERIDO]` porque la colección no lo usa nunca. El contrato lo usa.                                                                                                                                                            |
+| —       | `INS`                       | Infante **con asiento**. **VERIFICADO** — `Workflows / 28-33 / Seats - 1 Adult 1 Infant with seat`. No lo modelamos hoy: nuestro `PaxCountSchema` sólo tiene `infants` con la regla "1 lap infant per adult".                                                                                                                                                                                                                               |
 
 ---
 
@@ -408,17 +420,17 @@ Contrato de origen (`packages/domain/src/ports/flight-search.port.ts:9`):
 
 ### 6.1 Lo que mapea limpio
 
-| Nuestro campo | Destino en BFM | Transformación |
-| --- | --- | --- |
-| `origin` | `OriginDestinationInformation[0].OriginLocation.LocationCode` | Directo (`IataAirportCodeSchema` ya valida 3 mayúsculas). |
-| `destination` | `OriginDestinationInformation[0].DestinationLocation.LocationCode` | Directo. |
-| `departureDate` | `OriginDestinationInformation[0].DepartureDateTime` | `` `${departureDate}T00:00:00` ``. Nuestro schema es `z.string().date()`. |
+| Nuestro campo            | Destino en BFM                                                      | Transformación                                                                     |
+| ------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `origin`                 | `OriginDestinationInformation[0].OriginLocation.LocationCode`       | Directo (`IataAirportCodeSchema` ya valida 3 mayúsculas).                          |
+| `destination`            | `OriginDestinationInformation[0].DestinationLocation.LocationCode`  | Directo.                                                                           |
+| `departureDate`          | `OriginDestinationInformation[0].DepartureDateTime`                 | `` `${departureDate}T00:00:00` ``. Nuestro schema es `z.string().date()`.          |
 | `returnDate` (si existe) | `OriginDestinationInformation[1]` con origin/destination invertidos | `` `${returnDate}T00:00:00` ``. Si no hay `returnDate`, el array tiene 1 elemento. |
-| `paxCount.adults` | `{Code:"ADT", Quantity: adults}` | Directo (siempre ≥ 1 por schema). |
-| `paxCount.children` | `{Code:"CNN", Quantity: children}` — omitir si es 0 | `CHD → CNN`. Mejorable a `C##` si hay edad (§5.5). |
-| `paxCount.infants` | `{Code:"INF", Quantity: infants}` — omitir si es 0 | **VERIFICADO-SPEC** (`v5.yml:1439`). Ya no es un riesgo. |
-| `cabin` | `TravelPreferences.CabinPref[0].{Cabin, PreferLevel}` | Ver §6.2. Omitir el bloque entero si `cabin` es `undefined`. |
-| `currency` | `TravelerInfoSummary.PriceRequestInformation.CurrencyCode` | **Directo.** Ver §6.2. |
+| `paxCount.adults`        | `{Code:"ADT", Quantity: adults}`                                    | Directo (siempre ≥ 1 por schema).                                                  |
+| `paxCount.children`      | `{Code:"CNN", Quantity: children}` — omitir si es 0                 | `CHD → CNN`. Mejorable a `C##` si hay edad (§5.5).                                 |
+| `paxCount.infants`       | `{Code:"INF", Quantity: infants}` — omitir si es 0                  | **VERIFICADO-SPEC** (`v5.yml:1439`). Ya no es un riesgo.                           |
+| `cabin`                  | `TravelPreferences.CabinPref[0].{Cabin, PreferLevel}`               | Ver §6.2. Omitir el bloque entero si `cabin` es `undefined`.                       |
+| `currency`               | `TravelerInfoSummary.PriceRequestInformation.CurrencyCode`          | **Directo.** Ver §6.2.                                                             |
 
 **Los 7 campos del contrato mapean.** La primera pasada dejaba 2 sin destino; ya no.
 
@@ -426,7 +438,7 @@ Contrato de origen (`packages/domain/src/ports/flight-search.port.ts:9`):
 
 #### `currency` → **sí tiene destino** (corrección mayor)
 
-> **Lo que decía la 1ª pasada:** *"La moneda no se puede pedir. El body de BFM no tiene ningún campo de moneda — verificado por exclusión sobre los 88 bodies. Nuestro `criteria.currency` no tiene destino."*
+> **Lo que decía la 1ª pasada:** _"La moneda no se puede pedir. El body de BFM no tiene ningún campo de moneda — verificado por exclusión sobre los 88 bodies. Nuestro `criteria.currency` no tiene destino."_
 >
 > **Es falso.** La deducción por exclusión sobre la colección era metodológicamente frágil y falló: el campo existe, la colección simplemente no lo usa nunca (0/88). El contrato lo tiene en **las tres versiones**:
 
@@ -444,7 +456,7 @@ OTA_AirLowFareSearchRQ.TravelerInfoSummary.PriceRequestInformation:
 Y hay un segundo mecanismo relacionado, con jerarquía documentada:
 
 ```yaml
-# bargain-finder-max-v5.yml:8127
+# bargain-finder-max-v5.yml:8122
 PointOfSaleOverride:
   description: Will return the fares available for specified point of sale and priced in
     this point of sale currency. Currency is overridden by PriceRequestInformation@CurrencyCode.
@@ -468,33 +480,35 @@ PointOfSaleOverride:
 
 El spec da la lista cerrada (**VERIFICADO-SPEC**: `v3.yml:37`, `v4.yml:4198`, `v5.yml:6422`; enum literal en `v5.yml:5653`):
 
-> *"Cabin is either Premium First (P), First (F), Premium Business (J), Business (C), Premium Economy (S) or Economy (Y)."*
+> _"Cabin is either Premium First (P), First (F), Premium Business (J), Business (C), Premium Economy (S) or Economy (Y)."_
 >
 > `enum: [PremiumFirst, First, PremiumBusiness, Business, PremiumEconomy, Economy, Y, S, C, J, F, P]`
 
-| `CabinClass` nuestro | `CabinPref[].Cabin` | Estado |
-| --- | --- | --- |
-| `economy` | **`Y`** | **VERIFICADO-SPEC** |
-| `premium_economy` | **`S`** | **VERIFICADO-SPEC** — ~~`W`~~ **era incorrecto**. `W` no está en el enum. |
-| `business` | **`C`** | **VERIFICADO-SPEC** — `J` existe pero es **Premium Business**, una cabina distinta. |
-| `first` | **`F`** | **VERIFICADO-SPEC** — `P` es Premium First. |
+| `CabinClass` nuestro | `CabinPref[].Cabin` | Estado                                                                              |
+| -------------------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `economy`            | **`Y`**             | **VERIFICADO-SPEC**                                                                 |
+| `premium_economy`    | **`S`**             | **VERIFICADO-SPEC** — ~~`W`~~ **era incorrecto**. `W` no está en el enum.           |
+| `business`           | **`C`**             | **VERIFICADO-SPEC** — `J` existe pero es **Premium Business**, una cabina distinta. |
+| `first`              | **`F`**             | **VERIFICADO-SPEC** — `P` es Premium First.                                         |
 
 Sabre distingue **seis** cabinas donde nuestro `CabinClassSchema` tiene cuatro. `P` y `J` no tienen destino canónico: al mapear la **respuesta**, `cabinCode: "P"` debe colapsar a `first` y `"J"` a `business`, o Zod tira.
 
 Nota: `providers/latam-ndc/src/airshopping/request.builder.ts` tiene un `CABIN_MAP` con `{premium_economy:'W', business:'J', first:'J'}`. **No copiarlo para Sabre**: `W` no existe en el enum de Sabre y `J` significa otra cosa. Cada ACL su vocabulario — que es justo el motivo por el que existe el ACL.
 
-`PreferLevel` tiene default `"Preferred"` y enum `[Preferred, Unacceptable]` (`v5.yml:5668`). `"Preferred"` **prefiere pero no fuerza**: si queremos que business signifique business, hay que verificar en sandbox si devuelve economy igualmente.
+`PreferLevel` tiene default `"Preferred"` y un enum de **un solo valor**: `[Preferred]` (**VERIFICADO-SPEC**: `v5.yml:5667-5673`; el otro `Cabin.PreferLevel` del spec, `:4767-4775`, es idéntico). ~~`Unacceptable`~~ **no existe en el `PreferLevel` de cabina** — es un valor de _otros_ schemas (`AirportPref.PreferLevel`, enum `[Only, Unacceptable]`, `v5.yml:4407-4412`) que la pasada anterior arrastró hasta aquí. Mandarlo sería enviar un valor fuera de un enum cerrado.
+
+**Consecuencia para el builder:** `PreferLevel` **no sirve para excluir cabinas**, sólo para preferirlas, y `"Preferred"` **prefiere pero no fuerza**: si queremos que business signifique business, hay que verificar en sandbox si devuelve economy igualmente. El spec añade que `"Preferred"` puede aparecer como máximo 3 veces en la secuencia y que **sólo la última entrada se considera válida** (`v5.yml:4769-4771`) — o sea que un `CabinPref[]` con varias entradas no acumula preferencias, las pisa.
 
 ### 6.3 Campos obligatorios de Sabre que HOY NO TENEMOS
 
-| Campo Sabre | Estado en nuestro sistema | Qué hay que construir |
-| --- | --- | --- |
-| `POS.Source[].PseudoCityCode` | **No existe.** Ni en `FlightSearchCriteria`, ni en `SearchContext` (`{tenantId, requestId?}`). | Campo en `provider_accounts` para `sabre`, resuelto por `ProviderCredentialsService.resolve(tenantId,'sabre')` con herencia consolidador→agencia. |
-| OAuth `client_id` = `V1:{username}:{pcc}:AA` | **No existe.** `LatamNdcConfig` tiene `apiKey/apiSecret`. | `SabreConfig { username, password, pcc, requestorId?, companyCode?, currencyCode? }` + `TokenService` con cache, como `providers/latam-ndc/src/auth/token.service.ts`. **El 429 "Active token count is exceeded" (§2.2) hace que la caché sea obligatoria, no una optimización.** |
-| `RequestorID.{Type,ID}`, `CompanyName.Code` | **No existen.** | Constantes en el builder: `Type:"1"`, `ID:"1"`, `Code:"TN"`. **Ya no hay duda** (§5.2). |
-| `DataSources` + `MultipleSourcePerItinerary` | **No existen** como concepto de dominio. | Constantes del builder (§4.2), no parámetros que el vendedor toque. |
-| `AccountCode` / `NegotiatedFareCode` | **No existen.** | **Ola 2.** Es donde vive el contrato negociado propio de cada agencia — el BYOC de tarifa. Modelarlo en `provider_accounts` desde ya aunque no se use. |
-| `VendorPref`, `MaxStopsQuantity`, `DepartureWindow` | **No existen** en `FlightSearchCriteria`. | Nice-to-have. Bloqueante sólo si activamos LCC. |
+| Campo Sabre                                         | Estado en nuestro sistema                                                                      | Qué hay que construir                                                                                                                                                                                                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POS.Source[].PseudoCityCode`                       | **No existe.** Ni en `FlightSearchCriteria`, ni en `SearchContext` (`{tenantId, requestId?}`). | Campo en `provider_accounts` para `sabre`, resuelto por `ProviderCredentialsService.resolve(tenantId,'sabre')` con herencia consolidador→agencia.                                                                                                                                 |
+| OAuth `client_id` = `V1:{username}:{pcc}:AA`        | **No existe.** `LatamNdcConfig` tiene `apiKey/apiSecret`.                                      | `SabreConfig { username, password, pcc, requestorId?, companyCode?, currencyCode? }` + `TokenService` con cache, como `providers/latam-ndc/src/auth/token.service.ts`. **El 429 "Active token count is exceeded" (§2.2) hace que la caché sea obligatoria, no una optimización.** |
+| `RequestorID.{Type,ID}`, `CompanyName.Code`         | **No existen.**                                                                                | Constantes en el builder: `Type:"1"`, `ID:"1"`, `Code:"TN"`. **Ya no hay duda** (§5.2).                                                                                                                                                                                           |
+| `DataSources` + `MultipleSourcePerItinerary`        | **No existen** como concepto de dominio.                                                       | Constantes del builder (§4.2), no parámetros que el vendedor toque.                                                                                                                                                                                                               |
+| `AccountCode` / `NegotiatedFareCode`                | **No existen.**                                                                                | **Ola 2.** Es donde vive el contrato negociado propio de cada agencia — el BYOC de tarifa. Modelarlo en `provider_accounts` desde ya aunque no se use.                                                                                                                            |
+| `VendorPref`, `MaxStopsQuantity`, `DepartureWindow` | **No existen** en `FlightSearchCriteria`.                                                      | Nice-to-have. Bloqueante sólo si activamos LCC.                                                                                                                                                                                                                                   |
 
 **Lectura para el plan (sin cambios, y reforzada):** el 100% de los gaps de entrada son **de configuración BYOC, no de criterio de búsqueda**. No hay que tocar `FlightSearchPort` ni la UI. Con la corrección de `currency` (§6.2), **ya no queda ninguna excepción**: la primera pasada decía "`currency` sí es un criterio y sí se rompe" — ya no se rompe.
 
@@ -559,40 +573,47 @@ legDescs[].schedules[j] { ref, departureDateAdjustment } ─► scheduleDescs[].
 
 Sea `pi = itineraries[n].pricingInformation[p]`.
 
-| Campo canónico | Ruta en la respuesta de BFM | Estado |
-| --- | --- | --- |
-| `Offer.total` | `pi.fare.totalFare.totalPrice` + `.currency` | **VERIFICADO-SPEC** `v5.yml:9694`. `required: [totalPrice, totalTaxAmount, currency]`. Ejemplo: `131.8 USD`. |
-| `Offer.baseFare` | **`pi.fare.totalFare.equivalentAmount` + `.equivalentCurrency`** | **VERIFICADO-SPEC** — ver la trampa de moneda abajo. |
-| `Offer.taxes` | `pi.fare.totalFare.totalTaxAmount` + `.currency` | **VERIFICADO-SPEC** `v5.yml:9765`. |
-| `Offer.fees` | `pi.fare.totalFare.{bookingFeeAmount, creditCardFeeAmount, serviceFeeAmount, serviceFeeTax, airExtrasAmount}` + los `obFeeDescs[]` referenciados | **VERIFICADO-SPEC** `v5.yml:9714`, `:9727`, `:9749`. *"Returned only if non-zero value"*. |
-| `Offer.fareBreakdown[].paxType` | `pi.fare.passengerInfoList[].passengerInfo.passengerType` | **VERIFICADO-SPEC**. Mapear `CNN`/`C##`→`CHD`, `INS`→`INF`. |
-| `Offer.fareBreakdown[].paxCount` | `…passengerInfo.passengerNumber` | **VERIFICADO-SPEC** `v5.yml:8328`. |
-| `Offer.fareBreakdown[].basePerPax` | `…passengerInfo.passengerTotalFare.equivalentAmount` + `.equivalentCurrency` | **VERIFICADO-SPEC** `v5.yml:8487`. |
-| `Offer.fareBreakdown[].taxesPerPax` | `…passengerTotalFare.totalTaxAmount` + `.currency` | **VERIFICADO-SPEC**. |
-| `Offer.fareFamily.name` | `pi.brand` (Brand ID), enriquecido con `priceClassDescriptions[].descriptions[].text` | **VERIFICADO-SPEC** `v5.yml:8802` y `:8776`. |
-| `Offer.fareFamily.cabin` | `…fareComponents[].segments[].segment.cabinCode` | **VERIFICADO-SPEC**. |
-| `Offer.baggage.checked.qty` | `…passengerInfo.baggageInformation[].allowance.ref` → `baggageAllowanceDescs[].pieceCount` | **VERIFICADO-SPEC** `v5.yml:2541`. **Sólo si se pidió** (§7.4). |
-| `Offer.baggage.checked.weightKg` | `baggageAllowanceDescs[].weight` + `.unit` (`lbs`\|`kg`) | **VERIFICADO-SPEC**. **Convertir si es `lbs`.** |
-| `Offer.baggage.carryOn` | `TravelPreferences.Baggage.CarryOnInfo = true` en el request; luego `utaDescs` / `baggageChargeDescs` | **VERIFICADO-SPEC** `v5.yml:5865`. Requiere pedirlo aparte. |
-| `Offer.policies.refundable` | `pi.penaltiesInfo.penalties[]` con `type:"Refund"` → `.refundable` **o** `…passengerInfo.nonRefundable` (negado) | **VERIFICADO-SPEC** `v5.yml:2013` y `:475`. Dos fuentes; ver §7.4. |
-| `Offer.policies.changeable` | `pi.penaltiesInfo.penalties[]` con `type:"Exchange"` → `.changeable` | **VERIFICADO-SPEC** `v5.yml:1999`. |
-| `Offer.provider.offerRef` | `pi.offer.offerId` (+ `pi.fare.offerItemId` para NDC) | **VERIFICADO-SPEC** `v5.yml:8226`. |
-| `Offer.expiresAt` | **`fetchedAt + pi.offer.timeToLive` segundos** | **VERIFICADO-SPEC** `v5.yml:8243`. |
-| `Offer.products` | `['flight']` | constante |
-| — (sin destino canónico) | `pi.offer.source`, `pi.distributionModel` | **Necesarios para el ciclo de reserva** (§4.3). Hoy no caben en `OfferSchema`. |
-| — | `pi.cached.{timeToLive, hoursSinceCreation}` | Señal de que el precio no es en vivo. Sin destino. |
-| — | `pi.pseudoCityCode` | Qué PCC produjo la tarifa (multi-PCC). Sin destino. |
-| — | `pi.fare.lastTicketDate` + `.lastTicketTime` | **Deadline de emisión.** No es el TTL de la oferta: es hasta cuándo se puede emitir el billete una vez reservado. Sin destino canónico y **hace falta** para el CRM de seguimiento. |
+| Campo canónico                      | Ruta en la respuesta de BFM                                                                                                                      | Estado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Offer.total`                       | `pi.fare.totalFare.totalPrice` + `.currency`                                                                                                     | **VERIFICADO-SPEC** `v5.yml:9757` y `:9731` (schema `TotalFareType`, `:9694`; `required: [totalPrice, totalTaxAmount, currency]`). Ejemplo: `131.8 USD`. ⚠️ `currency` se describe como _"Tax currency code"_ (`:9734`), pero en los tres ejemplos gobierna también `totalPrice`. No buscar otro campo de moneda para el total: no existe.                                                                                                                                                                                                                                                   |
+| `Offer.baseFare`                    | **`pi.fare.totalFare.equivalentAmount` + `.equivalentCurrency`**                                                                                 | **VERIFICADO-SPEC** `v5.yml:9740` — _"The equivalent of the `baseFareAmount` expressed in `equivalentCurrency`"_ (`:9742`) — y `:9744`. Ver la trampa de moneda abajo.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `Offer.taxes`                       | `pi.fare.totalFare.totalTaxAmount` + `.currency`                                                                                                 | **VERIFICADO-SPEC** `v5.yml:9765`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.fees`                        | `pi.fare.totalFare.{bookingFeeAmount, creditCardFeeAmount, serviceFeeAmount, serviceFeeTax, airExtrasAmount}` + los `obFeeDescs[]` referenciados | **VERIFICADO-SPEC** `v5.yml:9714`, `:9727`, `:9749`. _"Returned only if non-zero value"_.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `Offer.fareBreakdown[].paxType`     | `pi.fare.passengerInfoList[].passengerInfo.passengerType`                                                                                        | **VERIFICADO-SPEC** `v5.yml:8400` — `type: string`, `pattern: '[A-Z][A-Z0-9]{2}'`, **sin enum**. El mapeo `CNN`/`C##`→`CHD`, `INS`→`INF` es **[INFERIDO]**: regla nuestra para encajar en `PaxTypeSchema` (`packages/canonical/src/pax.ts:3` = `['ADT','CHD','INF']`), no algo que el contrato declare. Un código ATPCO no contemplado hace saltar Zod → hace falta fallback explícito.                                                                                                                                                                                                      |
+| `Offer.fareBreakdown[].paxCount`    | `…passengerInfo.passengerNumber`                                                                                                                 | **VERIFICADO-SPEC** `v5.yml:8393` (campo; el schema contenedor es `PassengerInformationType`, `:8328`). La descripción es sólo _"Passenger number."_; **que sea una CANTIDAD y no un ordinal lo prueba la aritmética del ejemplo 3**: `ADT` con `passengerNumber: 2` (`:1898`) + `ADT` con `passengerNumber: 1` (`:2034`), a `1089.46` cada uno, dan el `totalPrice: 3268.38` del itinerario (`:2288`). ⚠️ **El mismo `passengerType` puede repetirse** dentro del mismo `passengerInfoList` (los dos `ADT` del ejemplo 3): agrupar **sumando**, nunca indexar por `paxType` y sobrescribir. |
+| `Offer.fareBreakdown[].basePerPax`  | `…passengerInfo.passengerTotalFare.equivalentAmount` + `.equivalentCurrency`                                                                     | **VERIFICADO-SPEC** `v5.yml:8563` y `:8567` (schema `PassengerTotalFareType`, `:8487`). ⚠️ **La descripción del contrato dice lo contrario que sus propios ejemplos, y equivocarse aquí cuenta los impuestos dos veces. Leer la nota específica de abajo antes de escribir esta línea del mapper.**                                                                                                                                                                                                                                                                                          |
+| `Offer.fareBreakdown[].taxesPerPax` | `…passengerTotalFare.totalTaxAmount` + `.currency`                                                                                               | **VERIFICADO-SPEC** `v5.yml:8597` y `:8549`; `required: [totalFare, totalTaxAmount, currency]` (`:8489-8492`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `Offer.fareFamily.name`             | `pi.brand` (Brand ID), enriquecido con `priceClassDescriptions[].descriptions[].text`                                                            | **VERIFICADO-SPEC** `v5.yml:8802` y `:8776`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `Offer.fareFamily.cabin`            | `…fareComponents[].segments[].segment.cabinCode`                                                                                                 | **VERIFICADO-SPEC** `v5.yml:9182` (schema `SegmentType`, `:9167`; `cabinCode` es **required**, `:9171`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `Offer.baggage.checked.qty`         | `…passengerInfo.baggageInformation[].allowance.ref` → `baggageAllowanceDescs[].pieceCount`                                                       | **VERIFICADO-SPEC** `v5.yml:2541`. **Sólo si se pidió** (§7.4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `Offer.baggage.checked.weightKg`    | `baggageAllowanceDescs[].weight` + `.unit` (`lbs`\|`kg`)                                                                                         | **VERIFICADO-SPEC** `v5.yml:2568` y `:2563` (`pattern: '(lbs)\|(kg)'`). **Convertir si es `lbs`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.baggage.carryOn`             | `TravelPreferences.Baggage.CarryOnInfo = true` en el request; luego `utaDescs` / `baggageChargeDescs`                                            | **VERIFICADO-SPEC** `v5.yml:5865`. Requiere pedirlo aparte.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `Offer.policies.refundable`         | `pi.penaltiesInfo.penalties[]` con `type:"Refund"` → `.refundable` **o** `…passengerInfo.nonRefundable` (negado)                                 | **VERIFICADO-SPEC** `v5.yml:2013` y `:475`. Dos fuentes; ver §7.4.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.policies.changeable`         | `pi.penaltiesInfo.penalties[]` con `type:"Exchange"` → `.changeable`                                                                             | **VERIFICADO-SPEC** `v5.yml:1999`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.provider.offerRef`           | `pi.offer.offerId` (+ `pi.fare.offerItemId` para NDC)                                                                                            | **VERIFICADO-SPEC** `v5.yml:8226`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.expiresAt`                   | **`fetchedAt + pi.offer.timeToLive` segundos**                                                                                                   | **VERIFICADO-SPEC** `v5.yml:8243`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `Offer.products`                    | `['flight']`                                                                                                                                     | constante                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| — (sin destino canónico)            | `pi.offer.source`, `pi.distributionModel`                                                                                                        | **Necesarios para el ciclo de reserva** (§4.3). Hoy no caben en `OfferSchema`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| —                                   | `pi.cached.{timeToLive, hoursSinceCreation}`                                                                                                     | Señal de que el precio no es en vivo. Sin destino.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| —                                   | `pi.pseudoCityCode`                                                                                                                              | Qué PCC produjo la tarifa (multi-PCC). Sin destino.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| —                                   | `pi.fare.lastTicketDate` + `.lastTicketTime`                                                                                                     | **Deadline de emisión.** No es el TTL de la oferta: es hasta cuándo se puede emitir el billete una vez reservado. Sin destino canónico y **hace falta** para el CRM de seguimiento.                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 > #### La trampa de moneda de `totalFare` — leerla antes de escribir el mapper
 >
 > `totalFare` mezcla **tres monedas distintas en el mismo objeto** (ejemplo 1 oficial, `v5.yml:570`):
 >
 > ```json
-> { "totalPrice": 131.8, "totalTaxAmount": 73.8, "currency": "USD",
->   "baseFareAmount": 235.0, "baseFareCurrency": "PLN",
->   "equivalentAmount": 58.0, "equivalentCurrency": "USD",
->   "constructionAmount": 53.72, "constructionCurrency": "NUC" }
+> {
+>   "totalPrice": 131.8,
+>   "totalTaxAmount": 73.8,
+>   "currency": "USD",
+>   "baseFareAmount": 235.0,
+>   "baseFareCurrency": "PLN",
+>   "equivalentAmount": 58.0,
+>   "equivalentCurrency": "USD",
+>   "constructionAmount": 53.72,
+>   "constructionCurrency": "NUC"
+> }
 > ```
 >
 > - `baseFareAmount` está en **la moneda de publicación de la tarifa** (`PLN`), no en la de venta.
@@ -604,12 +625,41 @@ Sea `pi = itineraries[n].pricingInformation[p]`.
 >
 > La conversión aplicada viene explícita en `passengerInfo.currencyConversion { from, to, exchangeRateUsed }` y `passengerTotalFare.exchangeRateOne`.
 
+> #### `passengerTotalFare` NO es simétrico con `totalFare` — el riesgo de contar los impuestos dos veces
+>
+> `PassengerTotalFareType` (`v5.yml:8487`) y `TotalFareType` (`:9694`) tienen casi los mismos campos, pero **el contrato describe `equivalentAmount` de forma contradictoria entre los dos**:
+>
+> | Objeto                             | Descripción de `equivalentAmount` en el spec                                           | Lectura literal |
+> | ---------------------------------- | -------------------------------------------------------------------------------------- | --------------- |
+> | `TotalFareType` (oferta entera)    | _"The equivalent of the `baseFareAmount` expressed in `equivalentCurrency`"_ (`:9742`) | **es una base** |
+> | `PassengerTotalFareType` (por pax) | _"Equivalent amount - **includes taxes and additional charges**"_ (`:8565`)            | **es un total** |
+>
+> **Si la descripción de `:8565` fuera literal, `basePerPax + taxesPerPax` sumaría los impuestos dos veces**: el vendedor vería un desglose por pasajero inflado en `Offer.fareBreakdown[]` mientras `Offer.total` seguiría correcto. Es el peor tipo de error de precio, porque no lanza nada — sale por pantalla y el cliente lo ve.
+>
+> **Los seis `passengerTotalFare` de los ejemplos oficiales desmienten esa descripción.** En los seis, `equivalentAmount + totalTaxAmount = totalFare` exacto:
+>
+> | Ejemplo                      | `equivalentAmount` | `totalTaxAmount` | `totalFare` | ¿Cuadra? |
+> | ---------------------------- | -----------------: | ---------------: | ----------: | :------: |
+> | 1 — `ADT` (`v5.yml:539`)     |               58.0 |             73.8 |       131.8 |    ✅    |
+> | 2 — `ADT` (`v5.yml:1149`)    |                 54 |            67.95 |      121.95 |    ✅    |
+> | 2 — `C06` (`v5.yml:1276`)    |                 41 |            67.95 |      108.95 |    ✅    |
+> | 3 — `ADT` ×2 (`v5.yml:1964`) |                988 |           101.46 |     1089.46 |    ✅    |
+> | 3 — `ADT` ×1 (`v5.yml:2100`) |                988 |           101.46 |     1089.46 |    ✅    |
+> | 3 — `INF` (`v5.yml:2219`)    |                  0 |                0 |           0 |    ✅    |
+>
+> **Decisión: se mantiene `basePerPax` ← `equivalentAmount`/`equivalentCurrency`** — los datos oficiales mandan sobre la prosa oficial — **pero con dos defensas obligatorias en el mapper**:
+>
+> 1. **Invariante en tiempo de ejecución, no un test:** comprobar `basePerPax + taxesPerPax === totalFare` para cada `passengerInfo`. Si no cuadra, la descripción del contrato tenía razón **para esa respuesta**: derivar `basePerPax = totalFare − totalTaxAmount` y emitir warning estructurado. Nunca dejar pasar el desajuste en silencio.
+> 2. **NO usar `baseFareAmount` (`:8494`) como base por pax.** Es el atajo que parece obvio por el nombre y es _peor_ que el problema que intenta resolver: está en `baseFareCurrency` (`:8498`), la **moneda de publicación de la tarifa** (`PLN` en los ejemplos 1-2, `USD` en el 3), **distinta** de la moneda de `totalTaxAmount`. Sumar los dos hace saltar `Money.add` por currency mismatch (`packages/canonical/src/money.ts:18`) — y si alguien "arregla" eso ignorando la moneda, produce un precio expresado en una unidad que no existe.
+>
+> Las cuatro monedas del objeto por pax, para que no quede duda de cuáles se pueden sumar entre sí: `baseFareCurrency` (publicación), `equivalentCurrency` (`:8567`, venta), `constructionCurrency` (`NUC`, **no es dinero**) y `currency` (`:8549`), que es la de `totalFare` y `totalTaxAmount` y **coincide con `equivalentCurrency` en los seis ejemplos**. **`Money.fromMajor` sólo debe consumir campos de ese último grupo: `equivalentAmount`, `totalTaxAmount` y `totalFare`.**
+
 #### Impuestos desglosados
 
-| Qué | Ruta | Nota |
-| --- | --- | --- |
-| Desglose fino | `passengerInfo.taxes[].ref` → `taxDescs[]` | Un elemento **por tasa y por estación**: `{ id, code, amount, currency, description, publishedAmount, publishedCurrency, station, country }`. Ejemplo: `YQF` cobrada dos veces, en `WAW` y en `SPU`. |
-| Resumen agrupado | `passengerInfo.taxSummaries[].ref` → `taxSummaryDescs[]` | Mismo shape, **agrupado por código**. El ejemplo agrupa los dos `YQF` en un `YQ` de `32.6 USD`. |
+| Qué              | Ruta                                                     | Nota                                                                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desglose fino    | `passengerInfo.taxes[].ref` → `taxDescs[]`               | Un elemento **por tasa y por estación**: `{ id, code, amount, currency, description, publishedAmount, publishedCurrency, station, country }`. Ejemplo: `YQF` cobrada dos veces, en `WAW` y en `SPU`. |
+| Resumen agrupado | `passengerInfo.taxSummaries[].ref` → `taxSummaryDescs[]` | Mismo shape, **agrupado por código**. El ejemplo agrupa los dos `YQF` en un `YQ` de `32.6 USD`.                                                                                                      |
 
 **Para mostrarle el desglose al vendedor usar `taxSummaryDescs`.** `taxDescs` es para auditoría. **Sumar los dos es contar doble.**
 
@@ -617,22 +667,22 @@ Sea `pi = itineraries[n].pricingInformation[p]`.
 
 Sea `sd = scheduleDescs[]` resuelto vía `legDescs[].schedules[j].ref`.
 
-| Campo canónico | Ruta | Estado |
-| --- | --- | --- |
-| `Segment.carrier` | `sd.carrier.marketing` | **VERIFICADO-SPEC** `v5.yml:2908`, `required: [marketing, marketingFlightNumber]`. |
-| `Segment.flightNumber` | `sd.carrier.marketingFlightNumber` | **VERIFICADO-SPEC**. **Es `integer`, no string** (ej. `576`). Nuestro schema exige `z.string().regex(/^\d{1,4}[A-Z]?$/)` → **convertir**. |
-| `Segment.operatingCarrier` | `sd.carrier.operating` | **VERIFICADO-SPEC**. |
-| *(sin destino)* | `sd.carrier.operatingFlightNumber` | **VERIFICADO-SPEC** — existe en la respuesta (ej. `576`). **Nuestro `SegmentSchema` no tiene dónde ponerlo.** Ver §9.4.1: sin él, dos codeshares del mismo avión no colisionan en el dedupe. |
-| `Segment.origin` | `sd.departure.airport` | **VERIFICADO-SPEC** `v5.yml:3060`, `required: [airport, time]`. |
-| `Segment.destination` | `sd.arrival.airport` | **VERIFICADO-SPEC** `v5.yml:2503`. |
-| `Segment.departureAt` | **calculado** — ver §7.3 | **VERIFICADO-SPEC** pero requiere reconstrucción. |
-| `Segment.arrivalAt` | **calculado** — ver §7.3 | idem |
-| `Segment.durationMinutes` | `sd.elapsedTime` | **VERIFICADO-SPEC**. Enteros en minutos (`115`, `120`, `214`). |
-| `Segment.cabin` | `passengerInfo.fareComponents[].segments[].segment.cabinCode` | **VERIFICADO-SPEC**. **Vive en el árbol de PRECIO, no en el de horario** — la misma cabina puede diferir entre `pricingInformation` del mismo itinerario. Mapear `Y→economy`, `S→premium_economy`, `C`/`J→business`, `F`/`P→first`. |
-| `Segment.bookingClass` | `…segments[].segment.bookingCode` | **VERIFICADO-SPEC** (ej. `"O"`, `"L"`). ⚠️ **No es `scheduleDescs[].ResBookDesigCode`**, que es lo que leen los scripts de la colección. Ver la nota de abajo. |
-| `Segment.aircraft` | `sd.carrier.equipment.code` | **VERIFICADO-SPEC** (ej. `"E75"`). |
-| *(sin destino)* | `…segment.seatsAvailable` | Asientos en esa clase (ej. `9`). Señal de urgencia útil para la UI. |
-| *(sin destino)* | `sd.stopCount`, `sd.totalMilesFlown`, `sd.frequency`, `sd.eTicketable`, `sd.dotRating`, `sd.carrier.alliances`, `sd.departure.terminal` | Todos presentes, ninguno con hueco canónico. |
+| Campo canónico             | Ruta                                                                                                                                    | Estado                                                                                                                                                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Segment.carrier`          | `sd.carrier.marketing`                                                                                                                  | **VERIFICADO-SPEC** `v5.yml:2908`, `required: [marketing, marketingFlightNumber]`.                                                                                                                                                  |
+| `Segment.flightNumber`     | `sd.carrier.marketingFlightNumber`                                                                                                      | **VERIFICADO-SPEC** `v5.yml:2943`. **Es `integer`, no string** (ej. `576`). Nuestro schema exige `z.string().regex(/^\d{1,4}[A-Z]?$/)` → **convertir**.                                                                             |
+| `Segment.operatingCarrier` | `sd.carrier.operating`                                                                                                                  | **VERIFICADO-SPEC** `v5.yml:2947`.                                                                                                                                                                                                  |
+| _(sin destino)_            | `sd.carrier.operatingFlightNumber`                                                                                                      | **VERIFICADO-SPEC** — existe en la respuesta (ej. `576`). **Nuestro `SegmentSchema` no tiene dónde ponerlo.** Ver §9.4 punto 1: sin él, dos codeshares del mismo avión no colisionan en el dedupe.                                  |
+| `Segment.origin`           | `sd.departure.airport`                                                                                                                  | **VERIFICADO-SPEC** `v5.yml:3060`, `required: [airport, time]`.                                                                                                                                                                     |
+| `Segment.destination`      | `sd.arrival.airport`                                                                                                                    | **VERIFICADO-SPEC** `v5.yml:2503`.                                                                                                                                                                                                  |
+| `Segment.departureAt`      | **calculado** — ver §7.3                                                                                                                | **VERIFICADO-SPEC** pero requiere reconstrucción.                                                                                                                                                                                   |
+| `Segment.arrivalAt`        | **calculado** — ver §7.3                                                                                                                | idem                                                                                                                                                                                                                                |
+| `Segment.durationMinutes`  | `sd.elapsedTime`                                                                                                                        | **VERIFICADO-SPEC** `v5.yml:9008`. Enteros en minutos (`115`, `120`, `214`). **No confundirlo con `legDescs[].elapsedTime` (`:4277`)**, que es el del tramo entero y alimenta `Itinerary.totalDurationMinutes`.                     |
+| `Segment.cabin`            | `passengerInfo.fareComponents[].segments[].segment.cabinCode`                                                                           | **VERIFICADO-SPEC**. **Vive en el árbol de PRECIO, no en el de horario** — la misma cabina puede diferir entre `pricingInformation` del mismo itinerario. Mapear `Y→economy`, `S→premium_economy`, `C`/`J→business`, `F`/`P→first`. |
+| `Segment.bookingClass`     | `…segments[].segment.bookingCode`                                                                                                       | **VERIFICADO-SPEC** (ej. `"O"`, `"L"`). ⚠️ **No es `scheduleDescs[].ResBookDesigCode`**, que es lo que leen los scripts de la colección. Ver la nota de abajo.                                                                      |
+| `Segment.aircraft`         | `sd.carrier.equipment.code`                                                                                                             | **VERIFICADO-SPEC** (ej. `"E75"`).                                                                                                                                                                                                  |
+| _(sin destino)_            | `…segment.seatsAvailable`                                                                                                               | Asientos en esa clase (ej. `9`). Señal de urgencia útil para la UI.                                                                                                                                                                 |
+| _(sin destino)_            | `sd.stopCount`, `sd.totalMilesFlown`, `sd.frequency`, `sd.eTicketable`, `sd.dotRating`, `sd.carrier.alliances`, `sd.departure.terminal` | Todos presentes, ninguno con hueco canónico.                                                                                                                                                                                        |
 
 > **Corrección a §7.1 de la 1ª pasada.** La primera pasada mapeó `Segment.bookingClass` ← `scheduleDescs[].ResBookDesigCode`, citando los scripts de Postman. **`ResBookDesigCode` no aparece en el schema ni en ninguno de los tres ejemplos oficiales de v5.** Es un campo del vocabulario OTA/SOAP que los scripts de la colección leen, probablemente porque esos requests son de otra época. La clase de reserva en la respuesta GIR de v5 es `fareComponents[].segments[].segment.bookingCode`. **Verificar en sandbox si `ResBookDesigCode` sigue viniendo**; mientras tanto, mapear desde `bookingCode` y no desde el script.
 >
@@ -640,11 +690,11 @@ Sea `sd = scheduleDescs[]` resuelto vía `legDescs[].schedules[j].ref`.
 
 #### `Itinerary` (`packages/canonical/src/itinerary.ts`)
 
-| Campo canónico | Ruta | Estado |
-| --- | --- | --- |
-| `Itinerary.segments[]` | `legDescs[].schedules[]` resueltos a `scheduleDescs[]`, **en orden del array** | **VERIFICADO-SPEC**. |
-| `Itinerary.totalDurationMinutes` | `legDescs[].elapsedTime` | **VERIFICADO-SPEC** `v5.yml:4277`: *"The elapsed time at the LegDesc level… allows customers to display travel time for NDC and ATPCO Offers."* |
-| `Itinerary.stops` | `(schedules.length − 1) + Σ scheduleDescs[].stopCount` | **VERIFICADO-SPEC** — conexiones **más** escalas técnicas dentro de un mismo número de vuelo. La primera pasada sólo contaba `stopCount`, que se queda corto. |
+| Campo canónico                   | Ruta                                                                           | Estado                                                                                                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Itinerary.segments[]`           | `legDescs[].schedules[]` resueltos a `scheduleDescs[]`, **en orden del array** | **VERIFICADO-SPEC** `v5.yml:4286` (`LegType.schedules`, **required**, `minItems: 1`) → `:9107` (`ScheduleType.ref`, _"Reference to ScheduleDescription ID"_) → `:8978` (`ScheduleDescType`). |
+| `Itinerary.totalDurationMinutes` | `legDescs[].elapsedTime`                                                       | **VERIFICADO-SPEC** `v5.yml:4277`: _"The elapsed time at the LegDesc level… allows customers to display travel time for NDC and ATPCO Offers."_                                              |
+| `Itinerary.stops`                | `(schedules.length − 1) + Σ scheduleDescs[].stopCount`                         | **VERIFICADO-SPEC** — conexiones **más** escalas técnicas dentro de un mismo número de vuelo. La primera pasada sólo contaba `stopCount`, que se queda corto.                                |
 
 **Un `Itinerary` nuestro = un `leg` de Sabre.** Round-trip = 2 legs = 2 itineraries. Encaja limpio con `ItinerarySchema`.
 
@@ -652,7 +702,7 @@ Sea `sd = scheduleDescs[]` resuelto vía `legDescs[].schedules[j].ref`.
 
 > **Hallazgo 3 de la crítica — ACEPTADO Y AMPLIADO.** `cabin`, `durationMinutes`, `departureAt` y `arrivalAt` son **obligatorios** en `SegmentSchema`, con `durationMinutes` además `.positive()` y las dos fechas `.datetime({ offset: true })`. Sólo `aircraft` y `operatingCarrier` son opcionales. **Un campo que falte no da un `Offer` incompleto: da un `Offer` que no existe**, porque Zod tira. Es bloqueante, no "por capturar".
 
-**La crítica acierta en el fondo y hay que matizar la evidencia que cita.** La crítica dice que "la única respuesta real de la colección devuelve `scheduledDateTime: "2019-04-20T20:36:00"` SIN offset". Eso es **cierto** (**VERIFICADO** — `slices/responses/01-Add_phone_Orders_View.json`, que junto a las otras tres pesa 16.479 bytes y **no está vacía**, en contra de lo que afirmaba la primera pasada), pero esa respuesta es de **`/v1/orders/view` (Booking Management), no de BFM**. Para BFM el problema es **distinto y peor**:
+**La crítica acierta en el fondo y hay que matizar la evidencia que cita.** La crítica dice que "la única respuesta real de la colección devuelve `scheduledDateTime: "2019-04-20T20:36:00"` SIN offset". Eso es **cierto** (**VERIFICADO** — `evidence/responses/01-Add_phone_Orders_View.json`, que junto a las otras tres pesa 16.479 bytes y **no está vacía**, en contra de lo que afirmaba la primera pasada), pero esa respuesta es de **`/v1/orders/view` (Booking Management), no de BFM**. Para BFM el problema es **distinto y peor**:
 
 ```json
 // scheduleDescs[0], ejemplo oficial 1 — v5.yml:180
@@ -667,7 +717,7 @@ Para el segmento j del tramo i del itinerario n:
 
   baseDate = itineraryGroups[g].groupDescription.legDescriptions[i].departureDate   // "2026-09-11"   v5.yml:4250
              (o itineraries[n].legs[i].departureDate si viene)                      //                v5.yml:4264
-  leg      = legDescs.find(l => l.id === itineraries[n].legs[i].ref)                //                v5.yml:4272
+  leg      = legDescs.find(l => l.id === itineraries[n].legs[i].ref)                //  ref: v5.yml:4268 → LegType: :4272
   sched    = scheduleDescs.find(s => s.id === leg.schedules[j].ref)                 //                v5.yml:8978
 
   depDate  = baseDate + leg.schedules[j].departureDateAdjustment días  (default 0)  //                v5.yml:9102
@@ -681,8 +731,8 @@ Para el segmento j del tramo i del itinerario n:
 
 Los dos campos de ajuste, textuales del spec:
 
-- `ScheduleType.departureDateAdjustment` — *"the difference in days between leg departure and departure date of this segment leg", default 0* (`v5.yml:9102`). Es lo que hace que la segunda escala de un tramo que sale a las 23:50 caiga al día siguiente.
-- `Arrival.dateAdjustment` — *"The difference, in days, between the flight arrival and departure dates"* (`v5.yml:2524`). Los vuelos nocturnos y los que cruzan la línea de cambio de fecha.
+- `ScheduleType.departureDateAdjustment` — _"the difference in days between leg departure and departure date of this segment leg", default 0_ (`v5.yml:9102`). Es lo que hace que la segunda escala de un tramo que sale a las 23:50 caiga al día siguiente.
+- `Arrival.dateAdjustment` — _"The difference, in days, between the flight arrival and departure dates"_ (`v5.yml:2524`). Los vuelos nocturnos y los que cruzan la línea de cambio de fecha.
 
 **Ignorar cualquiera de los dos produce fechas silenciosamente incorrectas** — no una excepción, sino un vuelo con el día mal. Es el peor tipo de bug: pasa los tests contra un fixture de vuelo diurno y falla en producción con el vuelo nocturno BOG→MAD.
 
@@ -692,13 +742,13 @@ Los dos campos de ajuste, textuales del spec:
 
 ### 7.4 Equipaje y penalidades: hay que pedirlos
 
-La pregunta abierta #5 de la primera pasada (*"¿BFM devuelve equipaje y penalidades sin pedirlo?"*) se responde comparando los tres ejemplos oficiales:
+La pregunta abierta #5 de la primera pasada (_"¿BFM devuelve equipaje y penalidades sin pedirlo?"_) se responde comparando los tres ejemplos oficiales:
 
-| Ejemplo | El request pide… | La respuesta trae… |
-| --- | --- | --- |
-| **1** — adulto, RT | nada de equipaje ni penalidades | `baggageAllowanceDescs: [{id:1, pieceCount:0}]` (mínimo), **sin `baggageChargeDescs`**, **sin `penaltiesInfo`**. Sólo el booleano `passengerInfo.nonRefundable: true`. |
-| **2** — niño + equipaje | `TravelPreferences.Baggage: { RequestType: "C", Description: true }` | `baggageAllowanceDescs` **+ `baggageChargeDescs`** con `equivalentAmount: 120 EUR`, `firstPiece: 1`, `"UP TO 50 POUNDS/23 KILOGRAMS"`. |
-| **3** — familia con infante | `PassengerTypeQuantity[].TPA_Extensions.VoluntaryChanges: { Match:"All", Penalty:[{Type:"Refund"}] }` | **`penaltiesInfo.penalties[]`** con `{type:"Exchange"\|"Refund", applicability:"Before"\|"After", changeable\|refundable, amount, currency}`. |
+| Ejemplo                     | El request pide…                                                                                      | La respuesta trae…                                                                                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** — adulto, RT          | nada de equipaje ni penalidades                                                                       | `baggageAllowanceDescs: [{id:1, pieceCount:0}]` (mínimo), **sin `baggageChargeDescs`**, **sin `penaltiesInfo`**. Sólo el booleano `passengerInfo.nonRefundable: true`. |
+| **2** — niño + equipaje     | `TravelPreferences.Baggage: { RequestType: "C", Description: true }`                                  | `baggageAllowanceDescs` **+ `baggageChargeDescs`** con `equivalentAmount: 120 EUR`, `firstPiece: 1`, `"UP TO 50 POUNDS/23 KILOGRAMS"`.                                 |
+| **3** — familia con infante | `PassengerTypeQuantity[].TPA_Extensions.VoluntaryChanges: { Match:"All", Penalty:[{Type:"Refund"}] }` | **`penaltiesInfo.penalties[]`** con `{type:"Exchange"\|"Refund", applicability:"Before"\|"After", changeable\|refundable, amount, currency}`.                          |
 
 **Conclusión: son dos interruptores, y hay que activar los dos en toda búsqueda.**
 
@@ -726,8 +776,8 @@ Nota sobre refundabilidad: hay **dos fuentes que pueden discrepar**. `passengerI
 
 ```yaml
 # bargain-finder-max-v5.yml:3806 — required: [version, messages]
-messages[]:    { severity, type, code, shortCode, text, value, numberOfOccurences }   # v5.yml:4303
-statistics:    { itineraryCount, branded, departed, legMissed, numberOfPccsProcessed, oneWay, soldOut }  # v5.yml:9388
+messages[]: { severity, type, code, shortCode, text, value, numberOfOccurences } # v5.yml:4303
+statistics: { itineraryCount, branded, departed, legMissed, numberOfPccsProcessed, oneWay, soldOut } # v5.yml:9388
 ```
 
 `messages` es **obligatorio** en la respuesta. En el ejemplo 1 los cuatro son `severity: "Info"` con el transaction ID y los rule IDs de Sabre. **Un `severity` distinto de `Info` es una degradación parcial que hay que propagar**, no ignorar — enlaza directamente con el problema de degradación silenciosa de §8.2.
@@ -736,21 +786,21 @@ statistics:    { itineraryCount, branded, departed, legMissed, numberOfPccsProce
 
 ### 7.6 Qué queda sin verificar
 
-| Qué | Por qué |
-| --- | --- |
-| Cobertura y contenido en rutas **LATAM** (BOG→LIM, GRU→SCL) | Los tres ejemplos oficiales son Europa (`WAW`/`SPU`) y EE. UU. (`ORD`/`TUS`). Ninguna evidencia de qué devuelve Sabre en nuestro mercado. |
-| Si `ResBookDesigCode` sigue viniendo en v5 | Los scripts de la colección lo leen; el spec de v5 no lo menciona (§7.2). |
-| Valores reales de `pi.brand` para carriers LATAM | El campo está verificado; su vocabulario no. |
-| Si `CabinPref.PreferLevel: "Preferred"` filtra de verdad o sólo ordena | El default no fuerza (§6.2). |
-| Latencia real y tamaño de payload con `Baggage` + `VoluntaryChanges` activos | §8.3. |
+| Qué                                                                          | Por qué                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Cobertura y contenido en rutas **LATAM** (BOG→LIM, GRU→SCL)                  | Los tres ejemplos oficiales son Europa (`WAW`/`SPU`) y EE. UU. (`ORD`/`TUS`). Ninguna evidencia de qué devuelve Sabre en nuestro mercado. |
+| Si `ResBookDesigCode` sigue viniendo en v5                                   | Los scripts de la colección lo leen; el spec de v5 no lo menciona (§7.2).                                                                 |
+| Valores reales de `pi.brand` para carriers LATAM                             | El campo está verificado; su vocabulario no.                                                                                              |
+| Si `CabinPref.PreferLevel: "Preferred"` filtra de verdad o sólo ordena       | El default no fuerza (§6.2).                                                                                                              |
+| Latencia real y tamaño de payload con `Baggage` + `VoluntaryChanges` activos | §8.3.                                                                                                                                     |
 
 **Plan de captura reducido.** La primera pasada pedía 6 llamadas al sandbox como bloqueante del mapper. Con los 3 ejemplos oficiales como fixtures iniciales, **bajan a 3 y dejan de ser bloqueantes**:
 
-| # | Llamada | Qué resuelve |
-| - | --- | --- |
-| 1 | `/v5`, `BOG→LIM`, RT, 2 ADT + 1 CNN, todas las fuentes, `MultipleSourcePerItinerary:true`, `Baggage.RequestType:"C"`, `VoluntaryChanges` | Contenido LATAM, `brand`, mezcla real ATPCO/NDC, `ResBookDesigCode` |
-| 2 | Igual con `CurrencyCode: "COP"` | Si la moneda pedida se respeta (§6.2) |
-| 3 | Un vuelo nocturno con cambio de día (p. ej. `BOG→MAD`) | **Ejercitar `departureDateAdjustment` y `arrival.dateAdjustment`** — el código que los fixtures oficiales no tocan (§7.3) |
+| #   | Llamada                                                                                                                                  | Qué resuelve                                                                                                              |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `/v5`, `BOG→LIM`, RT, 2 ADT + 1 CNN, todas las fuentes, `MultipleSourcePerItinerary:true`, `Baggage.RequestType:"C"`, `VoluntaryChanges` | Contenido LATAM, `brand`, mezcla real ATPCO/NDC, `ResBookDesigCode`                                                       |
+| 2   | Igual con `CurrencyCode: "COP"`                                                                                                          | Si la moneda pedida se respeta (§6.2)                                                                                     |
+| 3   | Un vuelo nocturno con cambio de día (p. ej. `BOG→MAD`)                                                                                   | **Ejercitar `departureDateAdjustment` y `arrival.dateAdjustment`** — el código que los fixtures oficiales no tocan (§7.3) |
 
 Guardar los payloads en `providers/sabre/fixtures/` con PII redactada, junto a los 3 ejemplos oficiales, como fixtures del mapper y del modo mock — igual que `providers/latam-ndc/src/fixtures.ts`.
 
@@ -760,14 +810,14 @@ Guardar los payloads en `providers/sabre/fixtures/` con PII redactada, junto a l
 
 ### 8.1 Los dos diales
 
-| Dial | Valores | Qué controla |
-| --- | --- | --- |
-| `IntelliSellTransaction.RequestType.Name` | `50ITINS`, `100ITINS`, `200ITINS` | Techo de itinerarios de la **transacción**. |
-| `TravelPreferences.TPA_Extensions.NumTrips.Number` | default **9**, mínimo 1 | Cuántos itinerarios **devolver**. |
+| Dial                                               | Valores                           | Qué controla                                |
+| -------------------------------------------------- | --------------------------------- | ------------------------------------------- |
+| `IntelliSellTransaction.RequestType.Name`          | `50ITINS`, `100ITINS`, `200ITINS` | Techo de itinerarios de la **transacción**. |
+| `TravelPreferences.TPA_Extensions.NumTrips.Number` | default **9**, mínimo 1           | Cuántos itinerarios **devolver**.           |
 
 **El spec advierte de dos formas de romperlo** (**VERIFICADO-SPEC**: `v5.yml:5537`):
 
-> *"If a Request Type other than the ones listed above is used, the response is **'No Availability'**. Using a Request Type name for **a tier to which you are not subscribed** also returns a 'No Availability' response."*
+> _"If a Request Type other than the ones listed above is used, the response is **'No Availability'**. Using a Request Type name for **a tier to which you are not subscribed** also returns a 'No Availability' response."_
 
 Dos consecuencias operativas:
 
@@ -798,9 +848,9 @@ Principio no negociable #1: tiempo a venta < 2 minutos.
 
 **Dos salidas de emergencia que el contrato nos da y la primera pasada no conocía:**
 
-| Herramienta | Qué hace | Cuándo usarla |
-| --- | --- | --- |
-| `IntelliSellTransaction.CompressResponse.Value: true` | Respuesta en **GZIP base64** (`v5.yml:5512`) | Si el payload con equipaje + penalidades pesa. Coste: un `gunzip` en el ACL. Barato. |
+| Herramienta                                                      | Qué hace                                                                           | Cuándo usarla                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IntelliSellTransaction.CompressResponse.Value: true`            | Respuesta en **GZIP base64** (`v5.yml:5512`)                                       | Si el payload con equipaje + penalidades pesa. Coste: un `gunzip` en el ACL. Barato.                                                                                                                                                                           |
 | `IntelliSellTransaction.AirStreaming.{Method, MaxItinsPerChunk}` | Respuesta **en chunks** (`v5.yml:5492`), `Method: "Services"` \| `"WholeResponse"` | **Es el camino a la búsqueda progresiva** que §8.3 de la primera pasada proponía inventar ("responder con lo de LATAM y hacer streaming de lo de Sabre"). Sabre ya lo soporta de forma nativa. Requiere trabajo del lado cliente y una guía dedicada de Sabre. |
 
 **A medir en sandbox:** latencia p50/p95 de `50ITINS` vs `200ITINS` en `BOG→LIM`, con y sin `Baggage`+`VoluntaryChanges`. Si `200ITINS` está bajo 3 s, no limitamos. Si pasa de 8 s, la conversación es `AirStreaming`, no búsqueda asíncrona propia.
@@ -825,16 +875,16 @@ Se queda con **un** elemento por clave: el de menor `priceOf`.
 
 Sabre ATPCO y LATAM NDC van a devolver el **mismo avión** (LA2400 BOG→LIM) con **productos distintos**:
 
-| Proveedor | Producto | Precio | Maleta | Cambios |
-| --- | --- | ---: | --- | --- |
-| LATAM NDC | Basic / Light | 180 $ | No | No |
-| Sabre ATPCO | Tarifa publicada Y | 260 $ | 23 kg | Con cargo |
+| Proveedor   | Producto           | Precio | Maleta | Cambios   |
+| ----------- | ------------------ | -----: | ------ | --------- |
+| LATAM NDC   | Basic / Light      |  180 $ | No     | No        |
+| Sabre ATPCO | Tarifa publicada Y |  260 $ | 23 kg  | Con cargo |
 
 `dedupeCheapest` con clave de itinerario se queda con la de 180 $ y **borra la de 260 $**. El vendedor pierde el producto que probablemente quiere vender (más margen, cliente con maleta) y ni se entera de que existió. Eso viola el principio de no ocultar información en silencio.
 
 **Lo nuevo: el mismo error ocurre dentro de Sabre, antes de que veamos nada.**
 
-> *"This allows you to specify what to do if the same journey is returned from ATPCO and NDC channels. **By default, the cheaper will stay.**"*
+> _"This allows you to specify what to do if the same journey is returned from ATPCO and NDC channels. **By default, the cheaper will stay.**"_
 > — **VERIFICADO-SPEC**: `bargain-finder-max-v5.yml:5476`
 
 Sabre poda por defecto una de las alternativas del mismo viaje entre ATPCO y NDC. Una variante de marca o
@@ -842,10 +892,10 @@ equipaje sólo queda cubierta si también se solicitan los branded fares/upsells
 
 > **Hay dos capas y hay que arreglar las dos:**
 >
-> | Capa | Arreglo |
-> | --- | --- |
+> | Capa                               | Arreglo                                                                                                        |
+> | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 > | **Dentro de Sabre** (ATPCO vs NDC) | `MultipleSourcePerItinerary.Value = true` en **todo** request. Constante del builder, no configuración (§4.2). |
-> | **Entre Sabre y LATAM** | Clave de producto de §9.3, no clave de itinerario. |
+> | **Entre Sabre y LATAM**            | Clave de producto de §9.3, no clave de itinerario.                                                             |
 >
 > Arreglar sólo la segunda deja el problema intacto: estaríamos deduplicando cuidadosamente un catálogo que Sabre ya podó.
 
@@ -918,28 +968,29 @@ fanOut → (si items.length===0 && failed) throw → withPricing → dedupe → 
 
 ## Riesgos
 
-| # | Riesgo | Impacto | Mitigación |
-| - | --- | --- | --- |
-| 1 | **Sabre puede ocultar una alternativa cross-source por defecto.** `MultipleSourcePerItinerary` ausente ⇒ "the cheaper will stay". Branded fares y upsells son una palanca separada. | **Alto** | `MultipleSourcePerItinerary=true` + indicadores de marca/upsell, con tests separados (§4.2). |
-| 2 | **Fechas mal reconstruidas.** Ignorar `departureDateAdjustment` o `arrival.dateAdjustment` da vuelos con el día equivocado, sin excepción que lo delate. **Los 3 fixtures oficiales son vuelos diurnos y no ejercitan este código.** | **Alto** | §7.3 + fixture obligatorio de vuelo nocturno con cambio de día antes de dar el mapper por hecho. |
-| 3 | **`baseFare` mapeado desde `baseFareAmount`.** Está en otra moneda que `total`. Rompe `baseFare + taxes = total` y hace tirar `Money.add`. Es el error más fácil del documento. | **Alto** | `equivalentAmount`/`equivalentCurrency` (§7.2). Test de invariante `base + taxes == total` sobre los 3 fixtures oficiales. |
-| 4 | **Degradación parcial silenciosa.** `failed` se descarta y `simulated` es global. Además BFM puede responder 200 degradado (`messages[].severity`, `statistics.legMissed/soldOut`). | **Alto** | Cambiar el contrato de `/search/flights` **en el mismo PR** que suma Sabre (§8.2). Propagar `messages` no-Info. |
-| 5 | **Dedupe agresivo que oculta el mejor producto**, agravado porque la clave de producto **depende** de que se pidan equipaje y penalidades. Si el builder los olvida, la clave colapsa a la física. | **Alto** | §9.3 + §7.4 como un solo requisito. Regla "si hay más de una moneda, no deduplicar". |
-| 6 | **`ProviderRef.offerRef` es `string` y necesitamos `(offerId, offerItemId, source)` más el detalle del vuelo para ATPCO.** Serializar JSON ahí es el anti-patrón de "tipos de proveedor filtrándose al dominio" que prohíbe `CLAUDE.md`. | **Medio** | Decidir antes de codificar: o `offerRef` pasa a `z.union([z.string(), z.record(z.unknown())])`, o se añade un campo canónico. **Discutir.** |
-| 7 | **Ids NDC perecederos.** `shop.offer.offerId` ≠ `price.offers[0].id` (VERIFICADO). Reservar con el de shop falla con "offer not found". | **Medio** ↓ (era Alto) | Modelar el ciclo shop→price→book. **`Offer.expiresAt` ya no es un default inventado: sale de `offer.timeToLive`** (§3.3). |
-| 8 | **`RequestType` no contratado devuelve cero resultados sin error.** Indistinguible de "no hay vuelos". | **Medio** | Configurable por `provider_account` + validación al alta de credencial (§8.1). |
-| 9 | **El PCC entra en el `client_id` del OAuth.** Un tenant con dos PCC necesita dos tokens y dos cachés. Y el `429 "Active token count is exceeded"` castiga no cachear. | **Medio** | `SabreProviderFactory` con clave `byoc:{owner}:{pcc}:{updatedAt}` desde el día 1 (§6.3). |
-| 10 | **`404 "Response does not contain any data"` tratado como fallo.** Abriría el circuit breaker en cada ruta sin vuelos. | **Medio** | Mapear `404` a lista vacía, no a `failed` (§2.2, §8.2). |
-| 11 | **Caché de 90 s × breaker de 30 s.** Un fallo transitorio de Sabre se congela 3 ventanas del breaker. | **Medio** | Guardar `succeeded[]` en la entrada de caché; TTL reducido para parciales. |
-| 12 | **La moneda pedida puede no ser la devuelta.** `CurrencyCode` reduce el riesgo pero no lo elimina, y el tenant vende en su moneda. | **Medio** ↓ (era Alto) | Mandar `CurrencyCode` siempre (§6.2) **y** validar `totalFare.currency` en el mapper con warning, como el mapper de LATAM. Nunca convertir nosotros el precio de venta. |
-| 13 | **`operatingFlightNumber` existe en Sabre y no en nuestro `SegmentSchema`.** Los codeshares no colisionan en el dedupe. | **Bajo** | Añadir el campo (§9.4.1). Es una línea. |
-| 14 | **`Version` desalineado con la URL.** El spec dice que debe coincidir; la colección no lo respeta en 13/13 requests a `/v5`. Si Sabre endurece la validación, quien copió la colección se rompe. | **Bajo** ↓ | Mandar `"5"` con `/v5` (§3.5). |
-| 15 | **Los nombres de request de la colección mienten sobre la versión** (38/49 mal). Cualquier análisis futuro que se apoye en ellos hereda el error. | **Bajo** | Documentado en §2. Usar sólo la URL. |
-| 16 | **LCC exige `VendorPref`** en los 8 ejemplos, así que el carril LCC no encaja en una búsqueda abierta "LIM→BOG". | **Bajo** | `LCC: "Disable"` en Ola 1 (§4.2). Reversible en una línea. |
+| #   | Riesgo                                                                                                                                                                                                                                                                                                                                                         | Impacto                | Mitigación                                                                                                                                                                                                                                              |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Sabre puede ocultar una alternativa cross-source por defecto.** `MultipleSourcePerItinerary` ausente ⇒ "the cheaper will stay". Branded fares y upsells son una palanca separada.                                                                                                                                                                            | **Alto**               | `MultipleSourcePerItinerary=true` + indicadores de marca/upsell, con tests separados (§4.2).                                                                                                                                                            |
+| 2   | **Fechas mal reconstruidas.** Ignorar `departureDateAdjustment` o `arrival.dateAdjustment` da vuelos con el día equivocado, sin excepción que lo delate. **Los 3 fixtures oficiales son vuelos diurnos y no ejercitan este código.**                                                                                                                           | **Alto**               | §7.3 + fixture obligatorio de vuelo nocturno con cambio de día antes de dar el mapper por hecho.                                                                                                                                                        |
+| 3   | **`baseFare` mapeado desde `baseFareAmount`.** Está en otra moneda que `total`. Rompe `baseFare + taxes = total` y hace tirar `Money.add`. Es el error más fácil del documento.                                                                                                                                                                                | **Alto**               | `equivalentAmount`/`equivalentCurrency` (§7.2). Test de invariante `base + taxes == total` sobre los 3 fixtures oficiales.                                                                                                                              |
+| 3b  | **El mismo error, pero por pasajero y silencioso.** `PassengerTotalFareType.equivalentAmount` se describe como _"includes taxes"_ (`v5.yml:8565`) al revés que su gemelo de `TotalFareType` (`:9742`). Tomarlo por total infla `Offer.fareBreakdown[]`; tomarlo desde `baseFareAmount` mezcla monedas. **No lanza nada: el precio inflado sale por pantalla.** | **Alto**               | La nota de §7.2. Invariante en el mapper `basePerPax + taxesPerPax == totalFare` por `passengerInfo`, con fallback a `totalFare − totalTaxAmount` y warning. Fixture obligatorio con el ejemplo 3 (dos entradas `ADT` en el mismo `passengerInfoList`). |
+| 4   | **Degradación parcial silenciosa.** `failed` se descarta y `simulated` es global. Además BFM puede responder 200 degradado (`messages[].severity`, `statistics.legMissed/soldOut`).                                                                                                                                                                            | **Alto**               | Cambiar el contrato de `/search/flights` **en el mismo PR** que suma Sabre (§8.2). Propagar `messages` no-Info.                                                                                                                                         |
+| 5   | **Dedupe agresivo que oculta el mejor producto**, agravado porque la clave de producto **depende** de que se pidan equipaje y penalidades. Si el builder los olvida, la clave colapsa a la física.                                                                                                                                                             | **Alto**               | §9.3 + §7.4 como un solo requisito. Regla "si hay más de una moneda, no deduplicar".                                                                                                                                                                    |
+| 6   | **`ProviderRef.offerRef` es `string` y necesitamos `(offerId, offerItemId, source)` más el detalle del vuelo para ATPCO.** Serializar JSON ahí es el anti-patrón de "tipos de proveedor filtrándose al dominio" que prohíbe `CLAUDE.md`.                                                                                                                       | **Medio**              | Decidir antes de codificar: o `offerRef` pasa a `z.union([z.string(), z.record(z.unknown())])`, o se añade un campo canónico. **Discutir.**                                                                                                             |
+| 7   | **Ids NDC perecederos.** `shop.offer.offerId` ≠ `price.offers[0].id` (VERIFICADO). Reservar con el de shop falla con "offer not found".                                                                                                                                                                                                                        | **Medio** ↓ (era Alto) | Modelar el ciclo shop→price→book. **`Offer.expiresAt` ya no es un default inventado: sale de `offer.timeToLive`** (§3.3).                                                                                                                               |
+| 8   | **`RequestType` no contratado devuelve cero resultados sin error.** Indistinguible de "no hay vuelos".                                                                                                                                                                                                                                                         | **Medio**              | Configurable por `provider_account` + validación al alta de credencial (§8.1).                                                                                                                                                                          |
+| 9   | **El PCC entra en el `client_id` del OAuth.** Un tenant con dos PCC necesita dos tokens y dos cachés. Y el `429 "Active token count is exceeded"` castiga no cachear.                                                                                                                                                                                          | **Medio**              | `SabreProviderFactory` con clave `byoc:{owner}:{pcc}:{updatedAt}` desde el día 1 (§6.3).                                                                                                                                                                |
+| 10  | **`404 "Response does not contain any data"` tratado como fallo.** Abriría el circuit breaker en cada ruta sin vuelos.                                                                                                                                                                                                                                         | **Medio**              | Mapear `404` a lista vacía, no a `failed` (§2.2, §8.2).                                                                                                                                                                                                 |
+| 11  | **Caché de 90 s × breaker de 30 s.** Un fallo transitorio de Sabre se congela 3 ventanas del breaker.                                                                                                                                                                                                                                                          | **Medio**              | Guardar `succeeded[]` en la entrada de caché; TTL reducido para parciales.                                                                                                                                                                              |
+| 12  | **La moneda pedida puede no ser la devuelta.** `CurrencyCode` reduce el riesgo pero no lo elimina, y el tenant vende en su moneda.                                                                                                                                                                                                                             | **Medio** ↓ (era Alto) | Mandar `CurrencyCode` siempre (§6.2) **y** validar `totalFare.currency` en el mapper con warning, como el mapper de LATAM. Nunca convertir nosotros el precio de venta.                                                                                 |
+| 13  | **`operatingFlightNumber` existe en Sabre y no en nuestro `SegmentSchema`.** Los codeshares no colisionan en el dedupe.                                                                                                                                                                                                                                        | **Bajo**               | Añadir el campo (§9.4 punto 1). Es una línea.                                                                                                                                                                                                           |
+| 14  | **`Version` desalineado con la URL.** El spec dice que debe coincidir; la colección no lo respeta en 13/13 requests a `/v5`. Si Sabre endurece la validación, quien copió la colección se rompe.                                                                                                                                                               | **Bajo** ↓             | Mandar `"5"` con `/v5` (§3.5).                                                                                                                                                                                                                          |
+| 15  | **Los nombres de request de la colección mienten sobre la versión** (38/49 mal). Cualquier análisis futuro que se apoye en ellos hereda el error.                                                                                                                                                                                                              | **Bajo**               | Documentado en §2. Usar sólo la URL.                                                                                                                                                                                                                    |
+| 16  | **LCC exige `VendorPref`** en los 8 ejemplos, así que el carril LCC no encaja en una búsqueda abierta "LIM→BOG".                                                                                                                                                                                                                                               | **Bajo**               | `LCC: "Disable"` en Ola 1 (§4.2). Reversible en una línea.                                                                                                                                                                                              |
 
-**Riesgo retirado.** El #1 de la primera pasada (*"escribir el mapper sobre inferencias; el 70% de los campos de respuesta son desconocidos"*) **queda cerrado**: los campos ya no son desconocidos y hay 3 fixtures oficiales. La regla dura de "no escribir `response.mapper.ts` hasta tener payloads del sandbox" se sustituye por: **escribirlo contra los 3 ejemplos oficiales, y no darlo por terminado sin el fixture de vuelo nocturno** (riesgo #2).
+**Riesgo retirado.** El #1 de la primera pasada (_"escribir el mapper sobre inferencias; el 70% de los campos de respuesta son desconocidos"_) **queda cerrado**: los campos ya no son desconocidos y hay 3 fixtures oficiales. La regla dura de "no escribir `response.mapper.ts` hasta tener payloads del sandbox" se sustituye por: **escribirlo contra los 3 ejemplos oficiales, y no darlo por terminado sin el fixture de vuelo nocturno** (riesgo #2).
 
-**Riesgo retirado.** El #7 de la primera pasada (*"3 llamadas por búsqueda si `DataSources` no admite multi-Enable"*) **no existe**: es 1 llamada (§4.2).
+**Riesgo retirado.** El #7 de la primera pasada (_"3 llamadas por búsqueda si `DataSources` no admite multi-Enable"_) **no existe**: es 1 llamada (§4.2).
 
 ---
 
@@ -983,6 +1034,6 @@ node -e 'const fs=require("fs");
  # => 49 con versión en el nombre; 38 mal etiquetados
 
 # las 4 respuestas guardadas SÍ tienen cuerpo (16.479 bytes c/u) — §7.3
-ls -la $S/slices/responses/
-grep -o '"[a-zA-Z]*ateTime": *"[^"]*"' $S/slices/responses/01-Add_phone_Orders_View.json | sort -u
+ls -la docs/sabre/evidence/responses/
+grep -o '"[a-zA-Z]*ateTime": *"[^"]*"' docs/sabre/evidence/responses/01-Add_phone_Orders_View.json | sort -u
 ```

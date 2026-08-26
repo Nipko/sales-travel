@@ -1,0 +1,298 @@
+{
+  "payloadAttributes": {
+    "trxID": "23904cf8-be01-45e3-bac2-b5dfa5913ffc",
+    "timeStamp": "2024-12-12T02:40:24.158818299Z",
+    "host": "offer-price-tn-blue-5ff6454ff9-pzl54",
+    "baseline": "offer-price-tn-537-20231211-150441-0.2.0-20231207.070933-49-f01452e"
+  },
+  "id": "dd07bbd7fb57c88nclq1qixyj3",
+  "version": "v1.0.0",
+  "response": {
+    "offers": [
+      {
+        "id": "dd07bbd7fb57c88nclq1qixyj3-1",
+        "ttl": 1200,
+        "source": "NDC",
+        "offerExpirationDateTime": "2024-12-12T03:00:23Z",
+        "paymentTimeLimitText": "2024-12-12T23:59:00",
+        "journeys": [
+          {
+            "segmentRefIds": ["Isgm0a0067c77c814"]
+          }
+        ],
+        "offerItems": [
+          {
+            "type": "Air",
+            "id": "dd07bbd7fb57c88nclq1qixyj3-1-1",
+            "mandatoryInd": true,
+            "passengers": [
+              {
+                "id": "Passenger1",
+                "ptc": "ADT",
+                "requestedPtc": "ADT",
+                "baggage": [
+                  {
+                    "type": "CarryOnBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": ["Isgm0a0067c77c814"],
+                    "details": [
+                      {
+                        "quantity": 2
+                      },
+                      {
+                        "quantity": 1,
+                        "applicableBagText": "CARRY ON UP TO 45 LI 115 LCM"
+                      },
+                      {
+                        "quantity": 1,
+                        "applicableBagText": "PERSONAL ITEM  UP TO 40 LI"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "CheckedBag",
+                    "applicablePartyText": "Traveler",
+                    "segments": ["Isgm0a0067c77c814"],
+                    "details": [
+                      {
+                        "quantity": 0,
+                        "constrains": [
+                          {
+                            "max": 23,
+                            "unit": "KG"
+                          },
+                          {
+                            "max": 50,
+                            "unit": "LBS"
+                          }
+                        ]
+                      },
+                      {
+                        "quantity": 0,
+                        "applicableBagText": "UPTO50LB 23KG AND62LI 158LCM"
+                      }
+                    ]
+                  }
+                ],
+                "price": {
+                  "totalAmount": {
+                    "amount": "118.90",
+                    "curCode": "USD"
+                  },
+                  "baseAmount": {
+                    "amount": "96.74",
+                    "curCode": "USD"
+                  },
+                  "taxes": {
+                    "total": {
+                      "amount": "22.16",
+                      "curCode": "USD"
+                    },
+                    "breakdown": [
+                      {
+                        "amount": {
+                          "amount": "7.26",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "US",
+                        "description": "U.S.A Transportation Tax"
+                      },
+                      {
+                        "amount": {
+                          "amount": "4.80",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "ZP",
+                        "description": "United States Flight Segment Tax Domestic"
+                      },
+                      {
+                        "amount": {
+                          "amount": "5.60",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "AY",
+                        "description": "United States Passenger Civil Aviation Security Service Fee"
+                      },
+                      {
+                        "amount": {
+                          "amount": "4.50",
+                          "curCode": "USD"
+                        },
+                        "nation": "US",
+                        "taxCode": "XF",
+                        "description": "US Passenger Facility Charge"
+                      }
+                    ]
+                  }
+                },
+                "fareComponents": [
+                  {
+                    "price": {
+                      "baseAmount": {
+                        "amount": "96.74",
+                        "curCode": "USD"
+                      },
+                      "taxes": {
+                        "total": {
+                          "amount": "22.16",
+                          "curCode": "USD"
+                        },
+                        "breakdown": [
+                          {
+                            "amount": {
+                              "amount": "7.26",
+                              "curCode": "USD"
+                            },
+                            "nation": "US",
+                            "taxCode": "US",
+                            "description": "US Transportation Tax"
+                          },
+                          {
+                            "amount": {
+                              "amount": "4.50",
+                              "curCode": "USD"
+                            },
+                            "nation": "US",
+                            "taxCode": "XF",
+                            "description": "US Passenger Facility Charge"
+                          },
+                          {
+                            "amount": {
+                              "amount": "4.80",
+                              "curCode": "USD"
+                            },
+                            "nation": "US",
+                            "taxCode": "ZP",
+                            "description": "United States Flight Segment Tax Domestic"
+                          },
+                          {
+                            "amount": {
+                              "amount": "5.60",
+                              "curCode": "USD"
+                            },
+                            "nation": "US",
+                            "taxCode": "AY",
+                            "description": "United States Passenger Civil Aviation Security Service Fee"
+                          }
+                        ]
+                      }
+                    },
+                    "fareBasis": {
+                      "fareBasisCode": "OVAHZSBX",
+                      "fareDescription": "Published fare",
+                      "fareCode": "70J",
+                      "fareBasisCityPair": "JFKSFOAA",
+                      "rbd": "B",
+                      "cabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "ECONOMY"
+                      },
+                      "sabreCabinType": {
+                        "cabinTypeCode": "Y",
+                        "cabinTypeName": "Economy"
+                      }
+                    },
+                    "fareRules": {
+                      "penalty": {
+                        "cancelFeeInd": false,
+                        "changeFeeInd": false,
+                        "refundableInd": false,
+                        "details": [
+                          {
+                            "penaltyType": "Cancel",
+                            "metadata": [
+                              {
+                                "ruleId": "Cancel",
+                                "values": [
+                                  {
+                                    "instruction": "Not Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "penaltyType": "Change",
+                            "metadata": [
+                              {
+                                "ruleId": "Change",
+                                "values": [
+                                  {
+                                    "instruction": "Not Allowed"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "ticketing": {
+                        "endorsements": ["NONREF/NOCHG/BASIC"]
+                      }
+                    },
+                    "segments": [
+                      {
+                        "id": "Isgm0a0067c77c814",
+                        "rbd": "B",
+                        "flightNumber": "76",
+                        "marketingCarrier": "AA",
+                        "marketingCarrierName": "American Airlines",
+                        "cabinType": {
+                          "cabinTypeCode": "Y",
+                          "cabinTypeName": "ECONOMY"
+                        },
+                        "departure": {
+                          "airport": "JFK",
+                          "date": "2024-02-11T06:00:00",
+                          "terminal": "8"
+                        },
+                        "arrival": {
+                          "airport": "SFO",
+                          "date": "2024-02-11T09:43:00"
+                        },
+                        "duration": "PT6H43M",
+                        "equipment": "32B",
+                        "distanceInMiles": 2581
+                      }
+                    ],
+                    "voluntaryChangeInformation": [
+                      {
+                        "type": "Cancel",
+                        "isAllowed": false,
+                        "hasFee": false
+                      },
+                      {
+                        "type": "Change",
+                        "isAllowed": false,
+                        "hasFee": false
+                      },
+                      {
+                        "type": "Refund",
+                        "isAllowed": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "price": {
+              "totalAmount": {
+                "amount": "118.90",
+                "curCode": "USD"
+              }
+            }
+          }
+        ],
+        "totalPrice": {
+          "totalAmount": {
+            "amount": "118.90",
+            "curCode": "USD"
+          }
+        }
+      }
+    ]
+  }
+}

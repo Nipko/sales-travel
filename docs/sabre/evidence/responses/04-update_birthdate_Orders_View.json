@@ -1,0 +1,379 @@
+// ModifyBooking (various workflows) / NDC modifications flows / Modify Travelers - birthdate / update birthdate / Orders View
+// name=/v1/orders/view/1 code=undefined bytes=16479
+{
+    "order": {
+        "id": "4e54071d6c2d483c808f8a09f38f6bbc",
+        "pnrLocator": "TOSGCZ",
+        "orderOwner": "1S",
+        "orderItems": [
+            {
+                "id": "1",
+                "externalId": "PoP98BD9F8A-6BD3-4A7D-953E-1-1",
+                "externalOrderRefId": "beb6cb29-77ae-4233-90a7-f307f7d099a6",
+                "creationDateTime": "2019-03-27T15:37:06",
+                "ticketingTimeLimit": "2019-04-19T20:37:00",
+                "fareDetails": [
+                    {
+                        "fareIndicatorCode": "0",
+                        "paxRefIds": [
+                            "Passenger1"
+                        ],
+                        "price": {
+                            "baseAmount": {
+                                "amount": "109.77",
+                                "code": "USD"
+                            },
+                            "totalTaxAmount": {
+                                "amount": "36.83",
+                                "code": "USD"
+                            },
+                            "taxBreakdowns": [
+                                {
+                                    "amount": {
+                                        "amount": "2.37",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "US",
+                                    "description": "US Transportation Tax"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "5.86",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "US",
+                                    "description": "US Transportation Tax"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "5.60",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "AY",
+                                    "description": "US September 11th Security Fee"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "4.50",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "XF",
+                                    "description": "US Passenger Facility Charge"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "4.20",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "ZP",
+                                    "description": "US Flight Segment Tax"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "5.60",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "AY",
+                                    "description": "US September 11th Security Fee"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "4.50",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "XF",
+                                    "description": "US Passenger Facility Charge"
+                                },
+                                {
+                                    "amount": {
+                                        "amount": "4.20",
+                                        "code": "USD"
+                                    },
+                                    "countryCode": "US",
+                                    "taxCode": "ZP",
+                                    "description": "US Flight Segment Tax"
+                                }
+                            ]
+                        },
+                        "fareComponents": [
+                            {
+                                "fareBasisCode": "GAA7TCBN",
+                                "fareBasisCityPair": "DENDFWUA",
+                                "cabinTypeCode": "Y",
+                                "type": "X",
+                                "price": {
+                                    "baseAmount": {
+                                        "amount": "31.63",
+                                        "code": "USD"
+                                    },
+                                    "totalTaxAmount": {
+                                        "amount": "16.67",
+                                        "code": "USD"
+                                    },
+                                    "taxBreakdowns": [
+                                        {
+                                            "amount": {
+                                                "amount": "2.37",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "US",
+                                            "description": "US Transportation Tax"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "5.60",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "AY",
+                                            "description": "US September 11th Security Fee"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "4.50",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "XF",
+                                            "description": "US Passenger Facility Charge"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "4.20",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "ZP",
+                                            "description": "US Flight Segment Tax"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "fareBasisCode": "KAA3TCBN",
+                                "fareBasisCityPair": "DFWDENUA",
+                                "cabinTypeCode": "Y",
+                                "type": "X",
+                                "price": {
+                                    "baseAmount": {
+                                        "amount": "78.14",
+                                        "code": "USD"
+                                    },
+                                    "totalTaxAmount": {
+                                        "amount": "20.16",
+                                        "code": "USD"
+                                    },
+                                    "taxBreakdowns": [
+                                        {
+                                            "amount": {
+                                                "amount": "5.86",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "US",
+                                            "description": "US Transportation Tax"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "5.60",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "AY",
+                                            "description": "US September 11th Security Fee"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "4.50",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "XF",
+                                            "description": "US Passenger Facility Charge"
+                                        },
+                                        {
+                                            "amount": {
+                                                "amount": "4.20",
+                                                "code": "USD"
+                                            },
+                                            "countryCode": "US",
+                                            "taxCode": "ZP",
+                                            "description": "US Flight Segment Tax"
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "price": {
+                    "totalAmount": {
+                        "amount": "146.60",
+                        "code": "USD"
+                    },
+                    "totalTaxAmount": {}
+                },
+                "services": [
+                    {
+                        "id": "1",
+                        "passengerRefId": "Passenger1",
+                        "segmentRefId": "Isgm52C70"
+                    },
+                    {
+                        "id": "2",
+                        "passengerRefId": "Passenger1",
+                        "segmentRefId": "Isgm52C50"
+                    }
+                ],
+                "offerItemId": "cg05grt8njtq6dou00-1-1",
+                "externalOfferItemId": "PoIP98BD9F8A-6BD3-4A7D-953E-1-1"
+            }
+        ],
+        "contactInfos": [
+            {
+                "id": "CI-1",
+                "phones": [
+                    {
+                        "number": "6069871234"
+                    }
+                ],
+                "emailAddresses": [
+                    {
+                        "address": "test@sabre.com"
+                    }
+                ]
+            }
+        ],
+        "products": [
+            {
+                "id": "4e413d3d",
+                "airSegment": {
+                    "marketingCarrier": {
+                        "airlineCode": "UA"
+                    },
+                    "departureDateTime": "2019-04-20T20:36:00",
+                    "arrivalDateTime": "2019-04-20T23:28:00",
+                    "departureAirport": "DEN",
+                    "arrivalAirport": "DFW",
+                    "actionCode": "HK"
+                }
+            },
+            {
+                "id": "4e513d3d",
+                "airSegment": {
+                    "marketingCarrier": {
+                        "airlineCode": "UA"
+                    },
+                    "departureDateTime": "2019-04-25T19:37:00",
+                    "arrivalDateTime": "2019-04-25T20:40:00",
+                    "departureAirport": "DFW",
+                    "arrivalAirport": "DEN",
+                    "actionCode": "HK"
+                }
+            }
+        ],
+        "passengers": [
+            {
+                "id": "Passenger1",
+                "typeCode": "ADT",
+                "contactInfoRefId": "CI-1",
+                "birthdate": "1977-03-01",
+                "givenName": "PAM",
+                "surname": "THOMPSON"
+            }
+        ],
+        "journeys": [
+            {
+                "id": "FGTIDRXRQS020NBXMETXXSI3352BEPI12CLVKV0DKR4D04ODADCNBTXZP",
+                "segmentRefIds": [
+                    "Isgm52C50"
+                ]
+            },
+            {
+                "id": "FGTIDINME45XTVC1WINPMVGNZ1NPIYKTGS4BDC0LO0JODPDOPQDGTWGN",
+                "segmentRefIds": [
+                    "Isgm52C70"
+                ]
+            }
+        ],
+        "segments": [
+            {
+                "id": "Isgm52C50",
+                "departure": {
+                    "locationCode": "DEN",
+                    "stationName": "Denver Intl Apt, US",
+                    "scheduledDateTime": "2019-04-20T20:36:00"
+                },
+                "arrival": {
+                    "locationCode": "DFW",
+                    "scheduledDateTime": "2019-04-20T23:28:00"
+                },
+                "marketingCarrier": {
+                    "carrierCode": "UA",
+                    "carrierName": "United Airlines",
+                    "flightNumber": 338
+                }
+            },
+            {
+                "id": "Isgm52C70",
+                "departure": {
+                    "locationCode": "DFW",
+                    "stationName": "Dallas Dallas/Fort Worth Intl Apt, US",
+                    "terminalName": "E",
+                    "scheduledDateTime": "2019-04-25T19:37:00"
+                },
+                "arrival": {
+                    "locationCode": "DEN",
+                    "scheduledDateTime": "2019-04-25T20:40:00"
+                },
+                "marketingCarrier": {
+                    "carrierCode": "UA",
+                    "carrierName": "United Airlines",
+                    "flightNumber": 1824
+                }
+            }
+        ],
+        "priceClasses": [
+            {
+                "id": "BasicEconomy",
+                "code": "1_basiceco",
+                "name": "Basic Economy"
+            }
+        ],
+        "customerNumber": {
+            "number": "123456"
+        },
+        "paymentTimeLimit": "2019-04-19T20:37:00",
+        "externalOrders": [
+            {
+                "id": "beb6cb29-77ae-4233-90a7-f307f7d099a6",
+                "systemId": "UAD",
+                "externalOrderId": "1337155P2",
+                "bookingReferences": [
+                    {
+                        "id": "L4D79U",
+                        "carrierCode": "F1"
+                    },
+                    {
+                        "id": "MFFPXC",
+                        "carrierCode": "UAD"
+                    }
+                ]
+            }
+        ],
+        "totalPrice": {
+            "totalAmount": {
+                "amount": "146.60",
+                "code": "USD"
+            }
+        }
+    }
+}

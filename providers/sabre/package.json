@@ -1,0 +1,38 @@
+{
+  "name": "@sales-travel/sabre",
+  "version": "0.0.0-experimental",
+  "private": true,
+  "experimental": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/__fixtures__"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
+    "lint": "eslint src bench",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo",
+    "test": "vitest run",
+    "bench": "vitest bench --run"
+  },
+  "dependencies": {
+    "@sales-travel/canonical": "workspace:*",
+    "@sales-travel/core": "workspace:*",
+    "@sales-travel/domain": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
