@@ -34,14 +34,19 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      # El build va ANTES del lint a propósito. `@sales-travel/sabre` publica sus tipos por
+      # `exports.types -> ./dist/index.d.ts` (para que un consumidor no compile contra el fuente
+      # y ejecute el compilado, que es una divergencia que este repo ya pagó), así que sin `dist`
+      # las reglas de lint con información de tipos no resuelven nada y escupen
+      # `no-unsafe-call` sobre código correcto. En local pasaba porque el `dist` ya existía.
+      - name: Build
+        run: pnpm build
+
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
-
-      - name: Build
-        run: pnpm build
 
   test:
     name: Integration tests (Postgres)

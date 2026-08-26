@@ -135,7 +135,12 @@ describe('el paquete está formateado (misma regla que `pnpm format:check` de CI
     expect(prettier.version, 'prettier sin versión: resolución sospechosa').toMatch(/^\d+\./);
   });
 
-  it('los ficheros del paquete pasan prettier --check', async () => {
+  // 60 s, no los 5 s por defecto: este guard LANZA prettier como subproceso sobre todo el
+  // paquete, así que su coste es el de arrancar un Node y parsear ~60 ficheros, no el de una
+  // aserción. En el runner de CI tardó 5.028 ms contra el límite de 5.000 y se cayó por 28 ms —
+  // rojo por lentitud del runner, sin un solo fichero mal formateado. Un guard que falla por el
+  // reloj enseña a ignorarlo, que es justo lo contrario de para lo que existe.
+  it('los ficheros del paquete pasan prettier --check', { timeout: 60_000 }, async () => {
     const files = collectFiles(PKG_DIR, []);
     // Si el recorrido no encuentra nada, el test pasaría vacío y volveríamos a verde-por-omisión.
     expect(
