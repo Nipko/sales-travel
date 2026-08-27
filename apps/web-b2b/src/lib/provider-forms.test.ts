@@ -9,6 +9,7 @@ import {
   fieldKey,
   inheritableHelp,
   normalizeAccountLabel,
+  prefillFromAccount,
   prepareAccountSubmission,
   providerFormFor,
   statusEnablesProvider,
@@ -19,6 +20,7 @@ import {
   type ProviderAccountStatus,
   type ProviderForm,
   type ResolvedAccountRef,
+  type SavedAccountView,
 } from './provider-forms';
 
 function sabre(): ProviderForm {
@@ -167,16 +169,60 @@ describe('validateProviderDraft — Sabre', () => {
 });
 
 describe('validateProviderDraft — los proveedores que ya existían', () => {
-  it('sigue dejando guardar LATAM NDC sin campos obligatorios nuevos', () => {
+  it.each([
+    ['latam-ndc', { apiKey: 'k' }],
+    ['agent-cars', { accessToken: 't' }],
+  ])('no le inventa campos obligatorios nuevos a %s', (code, credentials) => {
+    const form = providerFormFor(code);
+    if (!form) throw new Error(`${code} tiene que seguir en el catálogo`);
+    // Con UNA credencial cargada y todo lo demás vacío pasa: ningún campo suyo es obligatorio.
+    const result = validateProviderDraft(form, { credentials, config: {} });
+    expect(result.fieldErrors).toEqual({});
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('validateProviderDraft — el cuerpo vacío que el API rechaza', () => {
+  it('corta el guardado sin ninguna credencial antes de mandarlo', () => {
+    // `UpsertProviderAccountSchema` exige `credentials` NO VACÍO. Sin este corte, abrir una cuenta
+    // sólo para cambiarle el estado —el caso más común de la edición— manda `credentials: {}` y
+    // vuelve un 400 crudo del API.
     const form = providerFormFor('latam-ndc');
     if (!form) throw new Error('latam-ndc tiene que seguir en el catálogo');
-    expect(validateProviderDraft(form, { credentials: {}, config: {} }).ok).toBe(true);
+
+    const result = validateProviderDraft(form, { credentials: {}, config: {} });
+    expect(result.ok).toBe(false);
+    expect(result.summary).toContain('al menos una credencial');
+    // Y explica por qué no alcanza con las que ya están guardadas.
+    expect(result.summary).toContain('no se devuelven');
   });
 
-  it('sigue dejando guardar AgentCars sin campos obligatorios nuevos', () => {
+  it('un campo con sólo espacios sigue siendo un cuerpo vacío', () => {
+    // El borrador lo tolera; el PAYLOAD lo recorta y lo omite, así que al API llega `{}` igual.
     const form = providerFormFor('agent-cars');
     if (!form) throw new Error('agent-cars tiene que seguir en el catálogo');
-    expect(validateProviderDraft(form, { credentials: {}, config: {} }).ok).toBe(true);
+    expect(
+      validateProviderDraft(form, { credentials: { accessToken: '   ' }, config: {} }).ok,
+    ).toBe(false);
+  });
+
+  it('la config sola no salva el guardado: lo que el API exige es credentials', () => {
+    const form = providerFormFor('agent-cars');
+    if (!form) throw new Error('agent-cars tiene que seguir en el catálogo');
+    const result = validateProviderDraft(form, {
+      credentials: {},
+      config: { sourceCountry: 'CO' },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('los errores de campo mandan sobre el cuerpo vacío: son más concretos', () => {
+    // Con Sabre vacío las dos cosas son ciertas. Decir "cargá al menos una credencial" en vez de
+    // nombrar EPR, contraseña y PCC sería cambiar tres instrucciones por una vaga.
+    const result = validateProviderDraft(sabre(), { credentials: {}, config: {} });
+    expect(result.ok).toBe(false);
+    expect(result.summary).toContain('3 campos');
+    expect(result.fieldErrors[fieldKey('credentials', 'epr')]).toBeDefined();
   });
 });
 
@@ -575,6 +621,218 @@ describe('accountCertaintyNotice', () => {
     const notice = accountCertaintyNotice({ kind: 'missing-fields', fields: ['PCC', 'EPR'] });
     expect(notice?.tone).toBe('warn');
     expect(notice?.text).toContain('PCC y EPR');
+  });
+});
+
+/* ---------- editar una cuenta ya guardada ---------- */
+
+/** Una cuenta de Sabre como la devuelve el listado: activa, completa, sin secretos a la vista. */
+function savedSabreAccount(over: Partial<SavedAccountView> = {}): SavedAccountView {
+  return {
+    label: 'default',
+    status: 'active',
+    isInheritable: true,
+    config: { environment: 'prod', agencyIata: '12345678' },
+    ...over,
+  };
+}
+
+describe('prefillFromAccount — la mitad que sí se puede recuperar', () => {
+  it('recupera etiqueta, estado, herencia y la config visible', () => {
+    // Es la diferencia entre "editar" y "empezar de cero": sin esto, corregir un PCC obliga a
+    // acordarse de memoria del entorno, la etiqueta y si la cuenta era heredable.
+    const prefill = prefillFromAccount(sabre(), savedSabreAccount({ isInheritable: false }));
+
+    expect(prefill.label).toBe('default');
+    expect(prefill.status).toBe('active');
+    expect(prefill.isInheritable).toBe(false);
+    expect(prefill.config).toEqual({ environment: 'prod', agencyIata: '12345678' });
+  });
+
+  it('NO precarga ninguna credencial: el API no las devuelve', () => {
+    // El contrato entero de la edición cuelga de acá. `AccountPrefill` no tiene sección
+    // `credentials`, así que ni por accidente se puede pintar una contraseña inventada.
+    const prefill = prefillFromAccount(sabre(), savedSabreAccount());
+    expect(prefill).not.toHaveProperty('credentials');
+    // Y las claves de credenciales que hubieran llegado por config no se cuelan como config.
+    expect(Object.keys(prefill.config)).toEqual(['environment', 'agencyIata']);
+  });
+
+  it('declara como pérdida la config que el servidor no devolvió', () => {
+    // `redactedConfigKeys` = claves que existen en la fila pero cuyo valor no salió por el API.
+    // El upsert reemplaza la config ENTERA, así que reguardar sin ellas las borra.
+    const prefill = prefillFromAccount(
+      sabre(),
+      savedSabreAccount({ redactedConfigKeys: ['algoRaro'] }),
+    );
+    expect(prefill.droppedConfigKeys).toContain('algoRaro');
+  });
+
+  it('declara como pérdida la config que este formulario no sabe pintar', () => {
+    // `callPolicy` y `mock` están en la lista blanca del servidor pero no en el formulario, así
+    // que `buildProviderAccountPayload` los filtra y al guardar desaparecen de la fila.
+    const prefill = prefillFromAccount(
+      sabre(),
+      savedSabreAccount({ config: { environment: 'cert', callPolicy: 'off', mock: true } }),
+    );
+
+    expect(prefill.config).toEqual({ environment: 'cert' });
+    expect(prefill.droppedConfigKeys).toEqual(['callPolicy', 'mock']);
+  });
+
+  it('no convierte un booleano en texto: `mock: true` no puede volver como "true"', () => {
+    // Sería el peor caso de todos. El servidor compara `config.mock === true`; recargado como
+    // string, la cuenta dejaría de ser simulada y pasaría a cotizar de verdad sin que nadie lo
+    // pidiera. Se declara pérdida —visible— en vez de convertirla —silencioso—.
+    const form: ProviderForm = {
+      label: 'Proveedor de prueba',
+      credentials: [{ key: 'token', label: 'Token', secret: true }],
+      config: [{ key: 'mock', label: 'Simulada' }],
+      fallsBackToPlatformCredentials: false,
+    };
+    const prefill = prefillFromAccount(form, {
+      label: 'default',
+      status: 'active',
+      isInheritable: true,
+      config: { mock: true },
+    });
+
+    expect(prefill.config).toEqual({});
+    expect(prefill.droppedConfigKeys).toEqual(['mock']);
+  });
+
+  it('una clave vacía no se precarga ni se anuncia como pérdida: no hay nada que perder', () => {
+    const prefill = prefillFromAccount(
+      sabre(),
+      savedSabreAccount({ config: { environment: 'cert', agencyIata: '  ' } }),
+    );
+    expect(prefill.config).toEqual({ environment: 'cert' });
+    expect(prefill.droppedConfigKeys).toEqual([]);
+  });
+
+  it('un estado que este panel no conoce no se presenta como Activo', () => {
+    // Un API más nuevo con un cuarto estado. `sandbox` es el único de los tres que no habilita
+    // nada: equivocarse hacia "no habilita" es corregible; hacia "activo" es una cuenta viva.
+    expect(prefillFromAccount(sabre(), savedSabreAccount({ status: 'suspendida' })).status).toBe(
+      'sandbox',
+    );
+  });
+
+  it('lo precargado vuelve a salir por el payload sin cambiar de sitio', () => {
+    // La prueba de que el ciclo cierra: lo que se recupera se reenvía tal cual, en `config`.
+    const prefill = prefillFromAccount(sabre(), savedSabreAccount());
+    const payload = buildProviderAccountPayload(sabre(), {
+      credentials: { epr: '1234567', password: 'x', homePcc: 'AB1C' },
+      config: { ...prefill.config },
+    });
+
+    expect(payload.config['environment']).toBe('prod');
+    expect(payload.config['agencyIata']).toBe('12345678');
+  });
+});
+
+describe('prepareAccountSubmission — editar es reescribir, y hay que decirlo', () => {
+  function edit(opts: {
+    label: string;
+    status?: ProviderAccountStatus;
+    resolved?: ResolvedAccountRef | null;
+    editing: { label: string; droppedConfigKeys?: readonly string[] };
+  }): AccountSubmission {
+    return prepareAccountSubmission(
+      sabre(),
+      {
+        label: opts.label,
+        status: opts.status ?? 'active',
+        sections: validSabreDraft(),
+      },
+      {
+        resolved: opts.resolved ?? OWN_DEFAULT,
+        tenantName: 'Agencia Sur',
+        ownerName: 'Planetour',
+        editing: opts.editing,
+      },
+    );
+  }
+
+  it('un alta no lleva plan de edición', () => {
+    expect(submit({ label: 'default', status: 'active', resolved: null }).edit).toBeNull();
+  });
+
+  it('con la misma etiqueta reescribe, y avisa de que las credenciales van de nuevo', () => {
+    const plan = edit({ label: 'default', editing: { label: 'default' } }).edit;
+    expect(plan?.outcome).toBe('rewrites');
+    expect(plan?.notice.tone).toBe('warn');
+    expect(plan?.notice.title).toContain('«default»');
+    // El motivo, no sólo la orden: por qué no se pueden precargar.
+    expect(plan?.notice.body).toContain('cifradas');
+    expect(plan?.notice.body).toContain('el API no las devuelve');
+    // Y el caso más común de todos: promover de Sandbox a Activo también las exige.
+    expect(plan?.notice.body).toContain('el estado');
+  });
+
+  it('con OTRA etiqueta ya no está editando, y no finge que sí', () => {
+    // El upsert va por (tenant, proveedor, etiqueta): con otra etiqueta se crea una segunda fila
+    // y la original queda entera. Llamar a eso "editar" dejaría dos cuentas donde el operador
+    // cree que hay una.
+    const plan = edit({ label: 'produccion', editing: { label: 'default' } }).edit;
+
+    expect(plan?.outcome).toBe('forks');
+    expect(plan?.notice.tone).toBe('warn');
+    expect(plan?.notice.title).toContain('deja de editar «default»');
+    expect(plan?.notice.body).toContain('«default» queda como está');
+    expect(plan?.notice.body).toContain('segunda cuenta');
+  });
+
+  it('la etiqueta vacía se compara ya normalizada, no en crudo', () => {
+    // Vaciar el campo etiqueta editando la cuenta «default» sigue siendo editar «default»: el
+    // POST manda `default`. Comparar en crudo lo llamaría "crear una cuenta aparte".
+    expect(edit({ label: '   ', editing: { label: 'default' } }).edit?.outcome).toBe('rewrites');
+  });
+
+  it('nombra la config que se va a perder, con sus claves', () => {
+    const plan = edit({
+      label: 'default',
+      editing: { label: 'default', droppedConfigKeys: ['callPolicy', 'mock'] },
+    }).edit;
+    expect(plan?.notice.body).toContain('callPolicy y mock');
+    expect(plan?.notice.body).toContain('se pierde');
+  });
+
+  it('sin pérdidas no inventa una advertencia de pérdida', () => {
+    const plan = edit({ label: 'default', editing: { label: 'default' } }).edit;
+    expect(plan?.notice.body).not.toContain('se pierde');
+  });
+
+  it('editar y guardar sigue mandando el payload del proveedor, por la misma puerta', () => {
+    // Editar no puede tener su propio camino al API: se guarda con el MISMO upsert.
+    const s = edit({ label: 'default', editing: { label: 'default' } });
+    expect(s.label).toBe('default');
+    expect(s.payload.credentials['homePcc']).toBe('AB1C');
+    expect(s.payload.config['environment']).toBe('cert');
+  });
+
+  it('el aviso de herencia habla de la cuenta que resuelve, no de la que se edita', () => {
+    // Editar la cuenta «pruebas», en sandbox, mientras resuelve «default»: son dos hechos
+    // distintos y el operador necesita los dos. Colapsarlos en uno se lleva puesto alguno.
+    const s = edit({
+      label: 'pruebas',
+      status: 'sandbox',
+      resolved: OWN_DEFAULT,
+      editing: { label: 'pruebas' },
+    });
+
+    expect(s.effect).toBe('keeps-own');
+    expect(s.notice.title).toBe('No cambia la cuenta que está en uso');
+    expect(s.edit?.outcome).toBe('rewrites');
+    expect(s.edit?.notice.title).toContain('«pruebas»');
+  });
+
+  it('promover de Sandbox a Activo pisando la cuenta en uso avisa por los dos lados', () => {
+    // El caso real del founder: la cuenta guardada es la que resuelve y se reguarda activa.
+    const s = edit({ label: 'default', status: 'active', editing: { label: 'default' } });
+    expect(s.effect).toBe('replaces-own');
+    expect(s.notice.body).toContain('SOBRESCRIBE');
+    expect(s.edit?.outcome).toBe('rewrites');
   });
 });
 

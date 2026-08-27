@@ -6,13 +6,24 @@ import {
   getAirportByCode,
   getPopularAirports,
   getRecentAirports,
+  describeAirport,
   isDatasetLoaded,
   loadFullDataset,
+  normalizeAirport,
+  rankAirports,
   saveRecentAirport,
   searchAirports,
   type Airport,
 } from '../../lib/airports';
 import { cn } from '../../lib/cn';
+
+/**
+ * Por qué cambió el valor del campo.
+ *
+ * `type` = el usuario está escribiendo; el valor puede ser un código IATA válido y aun así
+ * no ser una decisión. `select` = eligió una opción del desplegable, a propósito.
+ */
+export type AirportChangeReason = 'type' | 'select';
 
 interface AirportComboboxProps {
   name: string;
@@ -21,11 +32,89 @@ interface AirportComboboxProps {
   required?: boolean;
   placeholder?: string;
   error?: string;
-  onChange?: (code: string) => void;
+  /**
+   * El valor cambió. `reason` distingue teclear de elegir: quien recibe esto NO debe
+   * suponer que el usuario terminó con el campo salvo que `reason` sea `select`.
+   */
+  onChange?: (code: string, reason: AirportChangeReason) => void;
   /** id estable para el input visible (permite mover el foco a este campo desde afuera). */
   inputId?: string;
   /** Enfoca este campo al montar (sin abrir el dropdown), para empezar a escribir directo. */
   autoFocus?: boolean;
+}
+
+/**
+ * ¿Este cambio autoriza a mover el foco fuera del campo?
+ *
+ * Sólo `select`. `onChange` dispara en CADA tecla, así que quien escribía el código a mano
+ * —"BOG"— perdía el campo en la tercera letra sin haber elegido nada. Escribir tres letras
+ * cambia el valor; no es elegir.
+ */
+export function advancesFocus(reason: AirportChangeReason): boolean {
+  return reason === 'select';
+}
+
+/** Lo que le toca hacer al combobox ante una tecla. */
+export type ComboboxKeyAction = 'select' | 'next' | 'prev' | 'close' | 'none';
+
+/**
+ * Traduce una tecla a la acción del combobox.
+ *
+ * `select` sale ÚNICAMENTE de Enter con una opción resaltada. Sin resaltado —el estado en
+ * el que queda alguien que acaba de teclear, porque cada búsqueda resetea el resaltado—
+ * Enter no elige nada y el formulario sigue su curso.
+ */
+export function comboboxKeyAction(
+  key: string,
+  state: { open: boolean; activeIndex: number; optionCount: number },
+): ComboboxKeyAction {
+  if (key === 'Escape' || key === 'Tab') return 'close';
+  if (state.optionCount === 0) return 'none';
+  if (key === 'ArrowDown') return 'next';
+  if (key === 'ArrowUp') return 'prev';
+  if (key === 'Enter') {
+    const highlighted = state.activeIndex >= 0 && state.activeIndex < state.optionCount;
+    return state.open && highlighted ? 'select' : 'none';
+  }
+  return 'none';
+}
+
+/**
+ * Código IATA que representa el texto tecleado, o '' si todavía no representa ninguno.
+ *
+ * Un código que el catálogo local no conoce se acepta igual —el dataset puede estar
+ * incompleto y el servidor valida después—, pero pasar por acá no convierte el texto en
+ * una elección: ver `advancesFocus`.
+ */
+export function typedAirportCode(value: string): string {
+  const upper = value.toUpperCase().trim();
+  if (!/^[A-Z]{3}$/.test(upper)) return '';
+  return getAirportByCode(upper)?.code ?? upper;
+}
+
+/** Lo que el combobox anuncia por `onChange`. */
+export interface AirportChange {
+  code: string;
+  reason: AirportChangeReason;
+}
+
+/**
+ * Lo que produce teclear en el campo.
+ *
+ * El valor se actualiza —escribir "BOG" a mano tiene que dejar el formulario enviable—
+ * pero el motivo es `type` a propósito: que el texto ya forme un código IATA válido no
+ * significa que el usuario haya terminado con el campo.
+ */
+export function airportTyping(value: string): AirportChange {
+  return { code: typedAirportCode(value), reason: 'type' };
+}
+
+/**
+ * Lo que produce elegir una opción del desplegable: valor, texto visible y el motivo
+ * `select`, el único que autoriza al formulario a mover el foco.
+ */
+export function airportSelection(a: Airport): AirportChange & { query: string } {
+  return { code: a.code, query: `${a.city} (${a.code})`, reason: 'select' };
 }
 
 const DEBOUNCE_MS = 80;
@@ -114,10 +203,19 @@ export function AirportCombobox({
 
       let cancelled = false;
       void fetch(`/api/airports?q=${encodeURIComponent(trimmed)}&limit=8`)
-        .then((r) => (r.ok ? (r.json() as Promise<{ items?: Airport[] }>) : null))
+        .then((r) => (r.ok ? (r.json() as Promise<{ items?: unknown[] }>) : null))
         .then((data) => {
           if (cancelled) return;
-          const items = data?.items ?? [];
+          // El endpoint habla otro dialecto (`countryName`, sin `size` ni `scheduled`) y
+          // ordena por código alfabético: se normaliza fila a fila y se reordena con el
+          // mismo criterio de negocio que el dataset local, para que las dos fuentes se
+          // vean y se ordenen igual.
+          const items = rankAirports(
+            (data?.items ?? [])
+              .map((row) => normalizeAirport(row))
+              .filter((a): a is Airport => a !== null),
+            trimmed,
+          );
           // Sin resultados del servidor se cae al dataset local: puede ser un aeropuerto
           // que la tabla todavía no tiene, no necesariamente uno inexistente.
           setSections(
@@ -171,31 +269,36 @@ export function AirportCombobox({
     }
   }, [activeIndex, open]);
 
+  /**
+   * Único punto que emite `select`. Lo comparten las dos formas de elegir —clic sobre la
+   * opción y Enter sobre la resaltada—, así que no hay una tercera vía por la que un
+   * cambio de valor pueda hacerse pasar por una decisión del usuario.
+   */
   function selectAirport(a: Airport) {
-    setCode(a.code);
-    setQuery(`${a.city} (${a.code})`);
+    const selection = airportSelection(a);
+    setCode(selection.code);
+    setQuery(selection.query);
     setOpen(false);
-    saveRecentAirport(a.code);
-    onChange?.(a.code);
+    saveRecentAirport(selection.code);
+    onChange?.(selection.code, selection.reason);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const total = flatItems.length;
-    if (!total) return;
+    const action = comboboxKeyAction(e.key, { open, activeIndex, optionCount: total });
 
-    if (e.key === 'ArrowDown') {
+    if (action === 'next') {
       e.preventDefault();
       setOpen(true);
       setActiveIndex((i) => (i + 1) % total);
-    } else if (e.key === 'ArrowUp') {
+    } else if (action === 'prev') {
       e.preventDefault();
       setActiveIndex((i) => (i <= 0 ? total - 1 : i - 1));
-    } else if (e.key === 'Enter' && open && activeItem) {
+    } else if (action === 'select') {
+      if (!activeItem) return;
       e.preventDefault();
       selectAirport(activeItem);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-    } else if (e.key === 'Tab') {
+    } else if (action === 'close') {
       setOpen(false);
     }
   }
@@ -203,16 +306,9 @@ export function AirportCombobox({
   function handleInputChange(value: string) {
     setQuery(value);
     setOpen(true);
-    const upper = value.toUpperCase().trim();
-    if (upper.length === 3 && /^[A-Z]{3}$/.test(upper)) {
-      const found = getAirportByCode(upper);
-      const newCode = found ? found.code : upper;
-      setCode(newCode);
-      onChange?.(newCode);
-    } else {
-      setCode('');
-      onChange?.('');
-    }
+    const typed = airportTyping(value);
+    setCode(typed.code);
+    onChange?.(typed.code, typed.reason);
   }
 
   let globalIdx = -1;
@@ -281,7 +377,7 @@ export function AirportCombobox({
           id={listboxId}
           role="listbox"
           className={cn(
-            'absolute z-50 mt-1 max-h-80 w-full overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg',
+            'absolute z-50 mt-1 max-h-80 w-full overflow-auto overscroll-contain rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg',
             'animate-in fade-in-0 zoom-in-95 duration-100',
           )}
         >
@@ -309,33 +405,45 @@ export function AirportCombobox({
                         selectAirport(a);
                       }}
                       onMouseEnter={() => setActiveIndex(idx)}
+                      aria-label={describeAirport(a)}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors duration-75',
+                        'flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer transition-colors duration-75',
                         isActive
                           ? 'bg-[var(--color-primary)]/8 text-[var(--color-fg)]'
                           : 'text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]',
                       )}
                     >
-                      <span className="text-base leading-none" aria-hidden="true">
-                        {a.flag}
+                      {/*
+                        Aquí iba un emoji de bandera. Windows no trae fuente para los pares
+                        de indicadores regionales, así que en la mayoría de las máquinas de
+                        las agencias salían dos cuadros vacíos. El código ISO es texto
+                        normal: se ve igual en todas partes y ocupa ancho fijo, que deja el
+                        país en columna para poder escanearlo de un vistazo.
+                      */}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'w-7 shrink-0 text-center font-mono text-[10px] font-semibold uppercase tracking-wide',
+                          isActive
+                            ? 'text-[var(--color-fg-muted)]'
+                            : 'text-[var(--color-fg-subtle)]',
+                        )}
+                      >
+                        {a.countryCode}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">
-                          {a.city}
-                          <span className="ml-1.5 text-[var(--color-fg-muted)]">·</span>
-                          <span className="ml-1.5 text-xs text-[var(--color-fg-muted)]">
-                            {a.country}
-                          </span>
-                        </p>
-                        <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
-                          {a.name}
+                        <p className="truncate font-medium">{a.city}</p>
+                        <p className="truncate text-xs text-[var(--color-fg-muted)]">
+                          {[a.name, a.country].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                       <span
                         className={cn(
                           'shrink-0 rounded-md px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider',
                           isActive
-                            ? 'bg-[var(--color-primary)] text-white'
+                            ? // primary-fg, no white: en modo oscuro --color-primary es claro
+                              // y el blanco encima no llega al contraste AA.
+                              'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
                             : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
                         )}
                       >

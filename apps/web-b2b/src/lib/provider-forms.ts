@@ -340,7 +340,22 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
 
   const messages = Object.values(fieldErrors);
   const first = messages[0];
-  if (first === undefined) return { ok: true, fieldErrors: {}, summary: null };
+  if (first === undefined) {
+    // `UpsertProviderAccountSchema` rechaza `credentials: {}` con «credentials must not be empty».
+    // Sin este corte, el caso más común de la edición —abrir una cuenta sólo para cambiarle el
+    // estado y no tocar nada más— sale de viaje y vuelve como un 400 crudo del API. Se mira el
+    // PAYLOAD y no el borrador porque es literalmente lo que se manda: un campo con sólo espacios
+    // pasa el borrador y llega al API como cuerpo vacío igual.
+    if (Object.keys(buildProviderAccountPayload(form, draft).credentials).length === 0) {
+      return {
+        ok: false,
+        fieldErrors: {},
+        summary:
+          'Cargá al menos una credencial: el API no acepta guardar una cuenta con las credenciales vacías, y las que ya están guardadas no se pueden reutilizar porque no se devuelven.',
+      };
+    }
+    return { ok: true, fieldErrors: {}, summary: null };
+  }
 
   return {
     ok: false,
@@ -588,6 +603,141 @@ function inheritanceMessage(effect: InheritanceEffect, names: InheritanceNames):
   }
 }
 
+/* ---------- editar una cuenta ya guardada ---------- */
+
+/**
+ * Una cuenta tal y como la devuelve `GET /provider-accounts`.
+ *
+ * `config` llega YA saneada por el servidor (`safeConfigView`): sólo trae las claves que el
+ * proveedor declaró seguras. De las demás llegan los NOMBRES en `redactedConfigKeys` y nada más,
+ * y ese detalle es la mitad de por qué {@link prefillFromAccount} tiene que declarar pérdidas.
+ */
+export interface SavedAccountView {
+  readonly label: string;
+  readonly status: string;
+  readonly isInheritable: boolean;
+  readonly config: Record<string, unknown>;
+  readonly redactedConfigKeys?: readonly string[];
+}
+
+export interface AccountPrefill {
+  readonly label: string;
+  readonly status: ProviderAccountStatus;
+  readonly isInheritable: boolean;
+  /** Sección `config` del borrador. NO hay sección `credentials`: ver {@link prefillFromAccount}. */
+  readonly config: Readonly<Record<string, string>>;
+  /**
+   * Claves de `config` que la cuenta guardada tiene y que este formulario NO va a reenviar. Como
+   * el upsert reemplaza la `config` entera, al guardar desaparecen. NOMBRES, nunca valores.
+   */
+  readonly droppedConfigKeys: readonly string[];
+}
+
+/**
+ * La mitad NO SECRETA de una cuenta guardada, lista para recargar el formulario.
+ *
+ * No devuelve `credentials` y no es una omisión que se pueda arreglar: el blob va cifrado y ni el
+ * listado ni `/resolve` lo devuelven. Editar, por tanto, es volver a cargar la cuenta entera. Lo
+ * que sí se recupera —etiqueta, estado, herencia y la `config` visible— es la diferencia entre
+ * eso y empezar de cero.
+ *
+ * Todo lo que no se pueda recargar sale por `droppedConfigKeys` en vez de desaparecer callado: el
+ * upsert pisa la `config` completa, así que una clave que no se reenvía es una clave borrada.
+ * Cae ahí lo que el servidor no devolvió (`redactedConfigKeys`), lo que este formulario no declara
+ * —`callPolicy` o `mock` de una cuenta cargada por API, que `buildProviderAccountPayload` filtra— y
+ * lo que no es texto: recargar `mock: true` como `"true"` lo convertiría en un string y la cuenta
+ * pasaría de simulada a real sin que nadie lo pidiera.
+ */
+export function prefillFromAccount(form: ProviderForm, account: SavedAccountView): AccountPrefill {
+  const loadable = new Map(
+    form.config.filter((field) => field.secret !== true).map((field) => [field.key, field]),
+  );
+  const config: Record<string, string> = {};
+  const dropped = new Set<string>(account.redactedConfigKeys ?? []);
+
+  for (const [key, raw] of Object.entries(account.config)) {
+    if (!loadable.has(key) || typeof raw !== 'string') {
+      dropped.add(key);
+      continue;
+    }
+    // Una cadena vacía no se precarga y tampoco se anuncia como pérdida: no hay nada que perder.
+    if (raw.trim().length > 0) config[key] = raw;
+  }
+
+  return {
+    label: account.label,
+    // El CHECK de la migración 0012 sólo admite estos tres. Otra cosa sería un API más nuevo que
+    // este panel; `sandbox` es el único de los tres que no habilita nada, y el select lo muestra.
+    status: isProviderAccountStatus(account.status) ? account.status : 'sandbox',
+    isInheritable: account.isInheritable,
+    config,
+    droppedConfigKeys: [...dropped].sort(),
+  };
+}
+
+export type EditOutcome =
+  /** Misma etiqueta: el upsert reescribe esa fila. Es editar de verdad. */
+  | 'rewrites'
+  /** Otra etiqueta: se crea una segunda cuenta y la original queda intacta. No es editar. */
+  | 'forks';
+
+export interface EditPlan {
+  readonly outcome: EditOutcome;
+  readonly notice: Notice;
+}
+
+/** La cuenta que se abrió para editar. */
+export interface EditingAccountRef {
+  readonly label: string;
+  /** De {@link prefillFromAccount}: claves de `config` que este guardado no reenvía. */
+  readonly droppedConfigKeys?: readonly string[];
+}
+
+function editMessage(
+  outcome: EditOutcome,
+  names: {
+    readonly originalLabel: string;
+    readonly nextLabel: string;
+    readonly providerLabel: string;
+    readonly dropped: readonly string[];
+  },
+): Notice {
+  if (outcome === 'forks') {
+    return {
+      tone: 'warn',
+      title: `Con la etiqueta «${names.nextLabel}» esto deja de editar «${names.originalLabel}»`,
+      body: `El guardado va por agencia + proveedor + etiqueta, así que se crea una segunda cuenta de ${names.providerLabel} y «${names.originalLabel}» queda como está, con las credenciales que ya tenía. Para modificar «${names.originalLabel}», dejale su etiqueta.`,
+    };
+  }
+  return {
+    tone: 'warn',
+    title: `Reescribe la cuenta «${names.originalLabel}» entera`,
+    body:
+      'Guardar reemplaza esa cuenta por lo que haya en este formulario. Las credenciales guardadas no se pueden precargar —van cifradas y el API no las devuelve—, así que hay que volver a cargarlas completas aunque sólo quieras cambiar el estado, la herencia o la configuración.' +
+      (names.dropped.length > 0
+        ? ` Y la cuenta guardada tiene configuración que este formulario no reenvía (${listar(names.dropped)}): al guardar se pierde.`
+        : ''),
+  };
+}
+
+function editPlan(
+  form: ProviderForm,
+  editing: EditingAccountRef | null,
+  nextLabel: string,
+): EditPlan | null {
+  if (editing === null) return null;
+  const outcome: EditOutcome = editing.label === nextLabel ? 'rewrites' : 'forks';
+  return {
+    outcome,
+    notice: editMessage(outcome, {
+      originalLabel: editing.label,
+      nextLabel,
+      providerLabel: form.label,
+      dropped: editing.droppedConfigKeys ?? [],
+    }),
+  };
+}
+
 /* ---------- la única puerta de guardado ---------- */
 
 export interface AccountDraft {
@@ -602,6 +752,8 @@ export interface SubmissionContext {
   readonly tenantName: string;
   /** Nombre del dueño de la cuenta heredada; sólo se usa cuando `resolved.inherited`. */
   readonly ownerName: string;
+  /** La cuenta abierta para editar. Ausente o `null` en un alta. */
+  readonly editing?: EditingAccountRef | null;
 }
 
 export interface AccountSubmission {
@@ -609,6 +761,14 @@ export interface AccountSubmission {
   readonly label: string;
   readonly effect: InheritanceEffect;
   readonly notice: Notice;
+  /**
+   * Qué le pasa a la cuenta que se abrió a editar. `null` en un alta.
+   *
+   * No duplica a `notice`: `notice` habla de la cuenta que RESUELVE hoy, que puede no ser la que
+   * se está editando —editar una cuenta en sandbox mientras resuelve otra activa deja `notice` en
+   * "no cambia la cuenta que está en uso", que es verdad y no dice nada sobre la que se reescribe—.
+   */
+  readonly edit: EditPlan | null;
   readonly payload: ProviderAccountPayload;
 }
 
@@ -619,6 +779,10 @@ export interface AccountSubmission {
  * función fue tener dos caminos —el aviso miraba la etiqueta en crudo, el `POST` la normalizada— y
  * el aviso terminaba describiendo un guardado que no era el que iba a ocurrir. Con una sola puerta
  * eso no se puede volver a escribir; con dos funciones exportadas, sí.
+ *
+ * Editar entra por acá y no por un camino paralelo, por lo mismo: la edición se guarda con el
+ * MISMO upsert, así que tiene que anunciarse con la misma etiqueta normalizada y el mismo cálculo
+ * de herencia. Lo único que añade es `edit`, que responde la pregunta que el alta no tiene.
  */
 export function prepareAccountSubmission(
   form: ProviderForm,
@@ -635,6 +799,7 @@ export function prepareAccountSubmission(
   return {
     label,
     effect,
+    edit: editPlan(form, ctx.editing ?? null, label),
     notice: inheritanceMessage(effect, {
       tenantName: ctx.tenantName,
       ownerName: ctx.ownerName,

@@ -10,6 +10,7 @@ import {
   KeyRound,
   Mail,
   Network,
+  Pencil,
   Percent,
   Plus,
   ScrollText,
@@ -19,11 +20,12 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Label } from '../../../components/ui/label';
 import { cn } from '../../../lib/cn';
 import {
+  DEFAULT_ACCOUNT_LABEL,
   PROVIDERS,
   PROVIDER_ACCOUNT_STATUSES,
   STATUS_LABELS,
@@ -33,6 +35,7 @@ import {
   fieldKey,
   inheritableHelp,
   isProviderAccountStatus,
+  prefillFromAccount,
   prepareAccountSubmission,
   providerFields,
   providerFormFor,
@@ -61,7 +64,14 @@ interface ProviderAccount {
   id: string;
   providerCode: string;
   label: string;
+  /** Ya saneada por el servidor: sólo las claves que el proveedor declaró seguras de mostrar. */
   config: Record<string, unknown>;
+  /**
+   * Nombres —nunca valores— de las claves de `config` que el servidor NO devuelve. Hacen falta
+   * para editar: el upsert reemplaza la `config` entera, así que una clave que el formulario no
+   * puede recargar es una clave que se borra al guardar, y eso hay que decirlo antes.
+   */
+  redactedConfigKeys?: string[];
   isInheritable: boolean;
   status: string;
   createdAt: string;
@@ -125,6 +135,17 @@ type OriginLookup = ResolvedOrigin | 'none' | 'unknown';
 function isResolvedOrigin(lookup: OriginLookup | undefined): lookup is ResolvedOrigin {
   return typeof lookup === 'object' && lookup !== null;
 }
+
+/**
+ * Qué está haciendo el formulario BYOC. `null` = cerrado.
+ *
+ * `edit` arrastra la cuenta original y las claves de `config` que no se pudieron recargar porque
+ * las dos cosas se necesitan DESPUÉS, al redactar el aviso: qué fila se va a reescribir (la
+ * etiqueta se puede editar, así que no se puede deducir del input) y qué se va a perder.
+ */
+type EditorState =
+  | { kind: 'create' }
+  | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] };
 
 interface SalesRow {
   tenantId: string;
@@ -643,7 +664,7 @@ function CredentialsModal({
   const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [origins, setOrigins] = useState<Map<string, OriginLookup> | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -685,11 +706,29 @@ function CredentialsModal({
               },
               tenantName: tenant.name,
               ownerName: draftOrigin ? ownerNameOf(draftOrigin.ownerTenantId) : 'el consolidador',
+              editing:
+                editor?.kind === 'edit'
+                  ? {
+                      label: editor.account.label,
+                      droppedConfigKeys: editor.droppedConfigKeys,
+                    }
+                  : null,
             },
           )
         : null,
-    [provider, label, status, credentials, config, draftOrigin, tenant.name, ownerNameOf],
+    [provider, label, status, credentials, config, draftOrigin, tenant.name, ownerNameOf, editor],
   );
+
+  /**
+   * Foco al abrir el formulario. Se pinta DEBAJO de la lista de cuentas: sin mover el foco, quien
+   * navega con teclado o lector de pantalla pulsa "Editar" y no se entera de que apareció nada.
+   */
+  const editorHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const editorKey =
+    editor === null ? '' : editor.kind === 'edit' ? `edit:${editor.account.id}` : 'create';
+  useEffect(() => {
+    if (editorKey !== '') editorHeadingRef.current?.focus();
+  }, [editorKey]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -747,6 +786,45 @@ function CredentialsModal({
     setError('');
   }
 
+  /** Alta: arranca siempre limpio, incluso viniendo de cerrar una edición. */
+  function startCreate() {
+    setProviderCode('latam-ndc');
+    setLabel(DEFAULT_ACCOUNT_LABEL);
+    setStatus('sandbox');
+    setIsInheritable(true);
+    setCredentials({});
+    setConfig({});
+    setFieldErrors({});
+    setError('');
+    setEditor({ kind: 'create' });
+  }
+
+  /**
+   * Abre una cuenta guardada para modificarla.
+   *
+   * Precarga sólo la mitad que el API devuelve —etiqueta, estado, herencia y la `config` visible—.
+   * Las credenciales arrancan VACÍAS y no es un fallo del formulario: van cifradas y no vuelven,
+   * así que guardar exige cargarlas de nuevo enteras. El aviso de `submission.edit` lo dice antes
+   * de que el operador teclee nada.
+   */
+  function startEdit(account: ProviderAccount) {
+    const form = providerFormFor(account.providerCode);
+    // Sin formulario declarado no sabemos qué campos pide: recargarla sería pisarla con la forma
+    // de credencial de otro proveedor. El botón ya viene deshabilitado; esto cierra la puerta.
+    if (!form) return;
+
+    const prefill = prefillFromAccount(form, account);
+    setProviderCode(account.providerCode);
+    setLabel(prefill.label);
+    setStatus(prefill.status);
+    setIsInheritable(prefill.isInheritable);
+    setConfig({ ...prefill.config });
+    setCredentials({});
+    setFieldErrors({});
+    setError('');
+    setEditor({ kind: 'edit', account, droppedConfigKeys: prefill.droppedConfigKeys });
+  }
+
   async function save() {
     setError('');
     setFieldErrors({});
@@ -785,7 +863,7 @@ function CredentialsModal({
         setError(apiError(data, 'Error al guardar credenciales'));
         return;
       }
-      setAdding(false);
+      setEditor(null);
       setCredentials({});
       setConfig({});
       void load();
@@ -892,23 +970,40 @@ function CredentialsModal({
                           arriesgarse a pisarla con la forma de credencial de otro proveedor. */}
                       {!form && (
                         <div className="text-[10px] font-medium text-[var(--color-danger)]">
-                          Proveedor desconocido para esta versión del panel
+                          Proveedor desconocido para esta versión del panel: no sabemos qué campos
+                          pide, así que no se puede editar desde acá sin riesgo de dejarla
+                          inservible.
                         </div>
                       )}
                     </div>
                   </div>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium',
-                      statusEnablesProvider(a.status)
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : a.status === 'sandbox'
-                          ? 'border-amber-200 bg-amber-50 text-amber-700'
-                          : 'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
-                    )}
-                  >
-                    {isProviderAccountStatus(a.status) ? STATUS_LABELS[a.status] : a.status}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={cn(
+                        'rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                        statusEnablesProvider(a.status)
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : a.status === 'sandbox'
+                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                            : 'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
+                      )}
+                    >
+                      {isProviderAccountStatus(a.status) ? STATUS_LABELS[a.status] : a.status}
+                    </span>
+                    {/* Con varias cuentas en la lista hay varios botones "Editar": el nombre
+                        accesible tiene que decir CUÁL, o en la lista de botones son todos iguales. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={!form}
+                      onClick={() => startEdit(a)}
+                      aria-label={`Editar la cuenta «${a.label}» de ${form?.label ?? a.providerCode}`}
+                    >
+                      <Pencil className="size-3.5" />
+                      Editar
+                    </Button>
+                  </div>
                 </div>
                 {/* El operador ve una cuenta cargada y asume que funciona. No funciona. */}
                 {!statusEnablesProvider(a.status) && (
@@ -916,8 +1011,9 @@ function CredentialsModal({
                     <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
                     <span>
                       Guardada pero <strong>sin efecto</strong>: sólo las cuentas en estado Activo
-                      habilitan el proveedor. Cargá los mismos datos otra vez con estado{' '}
-                      <strong>Activo</strong> para promoverla.
+                      habilitan el proveedor. Para promoverla, abrí <strong>Editar</strong> y
+                      guardala con estado <strong>Activo</strong> — vas a tener que cargar las
+                      credenciales otra vez, porque el API no las devuelve.
                     </span>
                   </p>
                 )}
@@ -927,34 +1023,61 @@ function CredentialsModal({
         </div>
       )}
 
-      {!adding ? (
+      {editor === null ? (
         <div className="mt-4">
-          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setAdding(true)}>
+          <Button variant="secondary" size="sm" className="gap-1.5" onClick={startCreate}>
             <Plus className="size-3.5" />
             Conectar credenciales
           </Button>
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <h4
+            ref={editorHeadingRef}
+            tabIndex={-1}
+            className="mb-3 text-sm font-medium text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+          >
+            {editor.kind === 'edit'
+              ? `Editar «${editor.account.label}» · ${provider?.label ?? editor.account.providerCode}`
+              : 'Conectar credenciales'}
+          </h4>
+
+          {/* Antes de teclear nada: qué le pasa a la cuenta que se abrió, y por qué las
+              credenciales están vacías. Sale de la misma puerta que arma el POST. */}
+          {submission?.edit && <NoticeBox notice={submission.edit.notice} />}
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Field label="Proveedor">
-              <select
-                value={providerCode}
-                onChange={(e) => selectProvider(e.target.value)}
-                className={selectClass}
-              >
-                {Object.entries(PROVIDERS).map(([code, p]) => (
-                  <option key={code} value={code}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  value={providerCode}
+                  disabled={editor.kind === 'edit'}
+                  onChange={(e) => selectProvider(e.target.value)}
+                  className={cn(selectClass, editor.kind === 'edit' && 'opacity-70')}
+                  aria-describedby={editor.kind === 'edit' ? 'creds-provider-locked' : undefined}
+                >
+                  {Object.entries(PROVIDERS).map(([code, p]) => (
+                    <option key={code} value={code}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                {editor.kind === 'edit' && (
+                  <p
+                    id="creds-provider-locked"
+                    className="text-[11px] leading-snug text-[var(--color-fg-subtle)]"
+                  >
+                    El proveedor no se cambia al editar: la cuenta se guarda por agencia + proveedor
+                    + etiqueta, así que cambiarlo no modificaría ésta — daría de alta otra distinta.
+                  </p>
+                )}
+              </>
             </Field>
             <Field label="Etiqueta">
               <input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="default"
+                placeholder={DEFAULT_ACCOUNT_LABEL}
                 className={inputClass}
               />
             </Field>
@@ -977,7 +1100,9 @@ function CredentialsModal({
                 <fieldset key={section} className="mt-4">
                   <legend className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
                     {section === 'credentials'
-                      ? 'Credenciales (se guardan cifradas)'
+                      ? editor.kind === 'edit'
+                        ? 'Credenciales (cargalas de nuevo: no se pueden recuperar)'
+                        : 'Credenciales (se guardan cifradas)'
                       : 'Configuración (se guarda en claro)'}
                   </legend>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1072,11 +1197,15 @@ function CredentialsModal({
           )}
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="mt-3 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
+            <Button variant="ghost" size="sm" onClick={() => setEditor(null)}>
               Cancelar
             </Button>
             <Button size="sm" disabled={saving || !provider} onClick={() => void save()}>
-              {saving ? 'Guardando…' : 'Guardar credenciales'}
+              {saving
+                ? 'Guardando…'
+                : editor.kind === 'edit'
+                  ? 'Guardar cambios'
+                  : 'Guardar credenciales'}
             </Button>
           </div>
         </div>

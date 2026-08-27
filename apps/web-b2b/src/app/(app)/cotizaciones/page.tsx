@@ -16,7 +16,11 @@ import { Fragment, useActionState, useCallback, useEffect, useMemo, useRef, useS
 import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { cn } from '../../../lib/cn';
-import { AirportCombobox } from '../../../components/ui/airport-combobox';
+import {
+  AirportCombobox,
+  advancesFocus,
+  type AirportChangeReason,
+} from '../../../components/ui/airport-combobox';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Label } from '../../../components/ui/label';
@@ -115,8 +119,14 @@ function formatDuration(minutes: number): string {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
-/** Abre el calendario nativo al enfocar la fecha (donde el navegador lo permita). */
-function openDatePicker(e: React.FocusEvent<HTMLInputElement>) {
+/**
+ * Abre el calendario nativo cuando el usuario hace clic en el campo.
+ *
+ * Antes colgaba de `onFocus`, y ahí abría por cosas que nadie pidió: el foco que el
+ * formulario mueve solo al elegir un aeropuerto desplegaba el calendario encima de la
+ * pantalla, y llegar con Tab lo tapaba todo justo a quien pensaba escribir la fecha.
+ */
+function openDatePickerOnClick(e: React.MouseEvent<HTMLInputElement>) {
   try {
     e.currentTarget.showPicker?.();
   } catch {
@@ -230,18 +240,29 @@ export default function CotizacionesPage() {
     setClientError('');
   }
 
-  // UX: al completar un campo, llevamos el foco al siguiente (menos clicks, flujo más ágil).
+  /**
+   * Lleva el foco al campo indicado, en el acto.
+   *
+   * Antes era `setTimeout(…, 10)` "para que el desplegable cierre": una carrera contra el
+   * reloj que, si el desplegable tardaba más, movía el foco con el usuario todavía dentro
+   * del campo anterior. Ahora sólo se llama al ELEGIR, y en ese mismo gesto el combobox ya
+   * dio por cerrado su desplegable; el nodo que React desmonta después no tiene el foco,
+   * así que no puede arrastrarlo al desaparecer.
+   */
   function focusField(id: string) {
-    // Pequeño delay para que el combobox cierre su dropdown antes de mover el foco.
-    setTimeout(() => document.getElementById(id)?.focus(), 10);
+    document.getElementById(id)?.focus();
   }
-  function handleOriginChange(code: string) {
+
+  // UX: elegir un aeropuerto lleva al siguiente campo (menos clics, flujo más ágil).
+  // Teclearlo NO: `onChange` llega en cada letra y el salto caía en la tercera, con el
+  // usuario a medio escribir. Lo decide `advancesFocus`, no el formato del valor.
+  function handleOriginChange(code: string, reason: AirportChangeReason) {
     setOriginCode(code);
-    if (/^[A-Z]{3}$/.test(code)) focusField('search-destination');
+    if (advancesFocus(reason)) focusField('search-destination');
   }
-  function handleDestinationChange(code: string) {
+  function handleDestinationChange(code: string, reason: AirportChangeReason) {
     setDestinationCode(code);
-    if (/^[A-Z]{3}$/.test(code)) focusField('departureDate');
+    if (advancesFocus(reason)) focusField('departureDate');
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -387,7 +408,11 @@ export default function CotizacionesPage() {
                     label="Aeropuerto de Origen"
                     defaultValue={originCode}
                     onChange={handleOriginChange}
-                    autoFocus
+                    // El swap remonta ambos combobox (cambia `comboKey`) para reflejar los
+                    // códigos intercambiados. Con `autoFocus` fijo, ese remonte le robaba el
+                    // foco al usuario y lo devolvía al origen aunque estuviera en las fechas.
+                    // Sólo el primer montaje —formulario vacío— se lleva el foco.
+                    autoFocus={comboKey === 0}
                     required
                   />
                 </div>
@@ -433,16 +458,15 @@ export default function CotizacionesPage() {
                     required
                     min={today}
                     value={departureDate}
-                    onFocus={openDatePicker}
+                    onClick={openDatePickerOnClick}
                     onKeyDown={(e) =>
                       advanceOnEnter(e, tripType === 'roundtrip' ? 'returnDate' : 'cabin')
                     }
-                    onChange={(e) => {
-                      setDepartureDate(e.target.value);
-                      // Ida elegida → foco a la vuelta (si es ida y vuelta y aún está vacía).
-                      if (e.target.value && tripType === 'roundtrip' && !returnDate)
-                        focusField('returnDate');
-                    }}
+                    // Sin salto automático al cambiar la fecha: un `<input type="date">`
+                    // emite `change` en cuanto la fecha queda completa, o sea a mitad de
+                    // tecleo, y el foco se iba antes de poder corregir el mes. Para avanzar
+                    // rápido están Enter (advanceOnEnter) y Tab, que sí los pide el usuario.
+                    onChange={(e) => setDepartureDate(e.target.value)}
                     className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)]"
                   />
                 </div>
@@ -467,7 +491,7 @@ export default function CotizacionesPage() {
                     disabled={tripType === 'oneway'}
                     required={tripType === 'roundtrip'}
                     value={returnDate}
-                    onFocus={openDatePicker}
+                    onClick={openDatePickerOnClick}
                     onKeyDown={(e) => advanceOnEnter(e, 'cabin')}
                     onChange={(e) => setReturnDate(e.target.value)}
                     className="flex h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-all focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/10 cursor-pointer hover:border-[var(--color-border-strong)] disabled:cursor-not-allowed disabled:opacity-30 disabled:bg-[var(--color-surface-muted)]/50"

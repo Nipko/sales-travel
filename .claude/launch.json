@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-b2b",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@sales-travel/web-b2b", "start"],
+      "port": 3001,
+      "env": { "INTERNAL_API_URL": "http://localhost:4002" }
+    }
+  ]
+}
