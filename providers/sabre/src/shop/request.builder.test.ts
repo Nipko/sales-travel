@@ -372,11 +372,16 @@ describe('volumen: tier e itinerarios', () => {
     expect(() => build({}, {}, { upsellLimit: -1 })).toThrow(SabreConfigError);
   });
 
-  it('el bloque de marcas NO se cuela en TravelPreferences: ahí es donde rompía', () => {
+  it('el bloque de MARCAS no se cuela en TravelPreferences: ahí es donde rompía', () => {
+    // La avería original: `BrandedFareIndicators` bajo `TravelPreferences…FlexibleFares`. Esa
+    // rama acepta el mismo objeto y es OTRA función —MFPI—, y el motor respondió con un fallo
+    // de negocio en todas las búsquedas.
+    //
+    // Ojo: `FlexibleFares` SÍ vive ahí legítimamente, porque es donde se pide MFPI. Lo que no
+    // puede aparecer nunca es `BrandedFareIndicators`, ni suelto ni dentro de un grupo.
     const ext = JSON.stringify(build().TravelPreferences.TPA_Extensions);
-    expect(ext).not.toContain('FlexibleFares');
-    expect(ext).not.toContain('NDCIndicators');
     expect(ext).not.toContain('BrandedFareIndicators');
+    expect(ext).not.toContain('NDCIndicators');
   });
 
   it('un tier fuera del enum del contrato no se manda: falla en el borde', () => {

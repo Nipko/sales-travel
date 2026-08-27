@@ -177,11 +177,18 @@ export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
  *   pieza facturada (`FareParameters.Baggage.FreePieceRequired`). Es la comparación que decide
  *   la venta: «sin maleta $X, con maleta $Y».
  *
- * **APAGADO por defecto, y por la misma razón que ya costó un 502: cero evidencia.** Los 88
- * requests de shop de la colección no usan `FlexibleFares` ni una vez. La función está
- * documentada y es plausible; no está demostrada contra un PCC real. Se enciende POR CUENTA
- * (`config.shopOptions.multipleFares`) para poder probarla sin arriesgar a toda la red, y si el
- * motor la rechaza el adapter degrada y la recuerda.
+ * **ENCENDIDO por defecto desde que la red de seguridad se probó en producción.** Nació apagado
+ * —cero apariciones en los 88 requests de la colección— y eso era lo correcto mientras la
+ * degradación fuera teoría. Ya no lo es: el 2026-08-27 el motor rechazó el upsell de marcas con
+ * `MIP/PROCESS` y el adapter cayó solo a `single`, conservó las 50 ofertas con sus marcas y lo
+ * dejó escrito en el log. El mecanismo funciona con datos reales, así que puede sostener el
+ * intento de la otra función.
+ *
+ * Y MFPI es la ÚLTIMA vía de código hacia varias tarifas por vuelo: el upsell de marcas quedó
+ * descartado —se probó con la combinación oficial de las dos banderas y el motor lo rechazó
+ * igual, o sea que ese PCC no tiene el producto—. Peor caso acá: una llamada de más por proceso
+ * y se aterriza en el comportamiento de hoy. Se apaga por cuenta con
+ * `config.shopOptions.multipleFares: 'off'`.
  *
  * Incompatibilidades declaradas por Sabre (página «Error Messages» de MFPI): Alternate Cities,
  * Award Shopping, Area Shopping y Low Cost Carriers. Ninguna la pedimos hoy.
@@ -189,7 +196,7 @@ export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
 export const SABRE_MULTIPLE_FARES_MODES = ['off', 'with-baggage'] as const;
 export type SabreMultipleFaresMode = (typeof SABRE_MULTIPLE_FARES_MODES)[number];
 
-export const SABRE_MULTIPLE_FARES_DEFAULT: SabreMultipleFaresMode = 'off';
+export const SABRE_MULTIPLE_FARES_DEFAULT: SabreMultipleFaresMode = 'with-baggage';
 
 /**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades

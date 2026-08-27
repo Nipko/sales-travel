@@ -102,7 +102,13 @@ function AttrRow({
         {icon}
       </span>
       <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
-        <span className="text-xs font-semibold text-[var(--color-fg-muted)] truncate">{label}</span>
+        {/* Sin `truncate`: la tarjeta es angosta y «Artículo personal» y «Equipaje de mano» salían
+            como «Artículo p…» y «Equipaje d…». Un atributo que no se puede leer no informa de
+            nada, y son justo los dos que el vendedor compara. Se deja que envuelva en dos
+            líneas, que es lo que la columna admite. */}
+        <span className="text-xs font-semibold leading-tight text-[var(--color-fg-muted)]">
+          {label}
+        </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {detail && (
             <span className="text-[9px] font-bold text-[var(--color-fg-subtle)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-1.5 py-0.5 rounded">

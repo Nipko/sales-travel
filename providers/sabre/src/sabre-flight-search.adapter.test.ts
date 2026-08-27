@@ -403,7 +403,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedFares: 'upsell' },
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -422,7 +422,10 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
 
   it('no se vuelve a preguntar: la segunda búsqueda ya sale sin marcas', async () => {
     const spy = spyFetch((n) => (n === 1 ? rechazoDeNegocio() : json(adultFixture)));
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
+    });
 
     await sut.search(CRITERIA, CTX);
     await sut.search(CRITERIA, CTX);
@@ -443,10 +446,10 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     // el test verificaba el default roto en vez de la regla que dice cubrir.
     const spy = spyFetch(() => rechazoDeNegocio());
     await expect(
-      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'off' } }).search(
-        CRITERIA,
-        CTX,
-      ),
+      adapter(config(), {
+        fetch: spy.fetch,
+        shopOptions: { brandedFares: 'off', multipleFares: 'off' },
+      }).search(CRITERIA, CTX),
     ).rejects.toThrow(SabreApiError);
     expect(spy.calls).toHaveLength(1);
   });
@@ -471,7 +474,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const spy = spyFetch(() => json(adultFixture));
     const offers = await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedFares: 'upsell' },
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -506,7 +509,7 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedFares: 'upsell' },
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -516,7 +519,10 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
 
   it('una ruta VACÍA DE VERDAD se reintenta una vez y se acepta como vacía', async () => {
     const spy = spyFetch(() => vacio());
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
+    });
 
     expect(await sut.search(CRITERIA, CTX)).toEqual([]);
     expect(spy.calls).toHaveLength(2);
@@ -531,7 +537,10 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     // Primera búsqueda con resultados: queda probado que soporta marcas. Segunda vacía: es una
     // ruta sin vuelos, no una sospecha, y no se gasta una segunda llamada.
     const spy = spyFetch((n) => (n === 1 ? json(adultFixture) : vacio()));
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
+    });
 
     await sut.search(CRITERIA, CTX);
     expect(await sut.search(CRITERIA, CTX)).toEqual([]);
@@ -650,9 +659,21 @@ describe('MFPI: varias tarifas por itinerario, apagado por defecto', () => {
     });
   }
 
-  it('por defecto NO se pide: cero evidencia en la colección, y eso ya costó un 502', async () => {
+  it('por defecto SÍ se pide: la degradación ya se probó en producción', async () => {
+    // Nació apagado, y era lo correcto mientras la degradación fuera teoría. Dejó de serlo el
+    // día que el motor rechazó el upsell de marcas y el adapter cayó solo a `single`
+    // conservando las 50 ofertas. Peor caso acá: una llamada de más y el comportamiento de hoy.
     const spy = spyFetch(() => json(adultFixture));
     await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(cuerpo(spy.calls[0]!.init)).toContain('FlexibleFares');
+  });
+
+  it('se puede apagar por cuenta', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { multipleFares: 'off' },
+    }).search(CRITERIA, CTX);
     expect(cuerpo(spy.calls[0]!.init)).not.toContain('FlexibleFares');
   });
 
