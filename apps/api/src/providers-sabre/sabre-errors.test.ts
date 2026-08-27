@@ -128,7 +128,13 @@ describe('SabreExceptionFilter', () => {
     expect(logueado).toContain('sabre');
   });
 
-  it('de un error que no es del proveedor sólo se loguea el NOMBRE de la clase', () => {
+  it('de un error propio se loguea el nombre Y el mensaje, que es lo que lo arregla', () => {
+    // Contrato NUEVO. Antes se tiraba el mensaje y quedaba sólo el nombre de la clase, para no
+    // arriesgar texto del proveedor en el log. La cautela era buena y la conclusión no: un
+    // `SabreCreateBookingError` es un fallo NUESTRO —el body no pasó nuestra propia validación
+    // y no llegó a salir al cable—, así que su mensaje nombra el campo que falló y es lo único
+    // con lo que se arregla. En producción quedaba «SabreCreateBookingError en el ACL de Sabre»
+    // y nadie podía reservar ni saber por qué.
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const { host } = hostFalso();
 
@@ -136,6 +142,23 @@ describe('SabreExceptionFilter', () => {
 
     const logueado = warn.mock.calls.map((c) => JSON.stringify(c)).join(' ');
     expect(logueado).toContain('SabreShopMappingError');
-    expect(logueado).not.toContain('flights.0.pax');
+    expect(logueado).toContain('flights.0.pax');
+  });
+
+  it('y ese mensaje pasa por `redactText`: diagnosticar no es aflojar la redacción', () => {
+    // La razón por la que se puede loguear el mensaje no es que confiemos en él, es que cruza
+    // la MISMA puerta por la que ya pasa todo lo que el ACL escribe. Si un secreto se cuela en
+    // el texto de un error propio, sale redactado igual.
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { host } = hostFalso();
+
+    new SabreExceptionFilter().catch(
+      new SabreShopMappingError(['password=Sup3rSecreto!', 'clientId=V1:EPR123:A1B2:AA']),
+      host,
+    );
+
+    const logueado = warn.mock.calls.map((c) => JSON.stringify(c)).join(' ');
+    expect(logueado).not.toContain('Sup3rSecreto');
+    expect(logueado).not.toContain('EPR123');
   });
 });

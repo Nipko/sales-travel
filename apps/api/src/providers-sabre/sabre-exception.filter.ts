@@ -5,7 +5,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { SabreApiError } from '@sales-travel/sabre';
+import { SabreApiError, redactText } from '@sales-travel/sabre';
 import type { Response } from 'express';
 import { SABRE_THROWN_CLASSES, humanizeSabreError, sabreErrorStatus } from './sabre-errors.js';
 
@@ -41,13 +41,24 @@ export class SabreExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('Sabre');
 
   catch(err: Error, host: ArgumentsHost): void {
-    // `toLogMeta()` ya viene redactado por el propio ACL (nunca body ni texto libre). Para las
-    // otras dos clases se loguea el NOMBRE, no el mensaje: aunque hoy sus mensajes son rutas y
-    // códigos de Zod, el log no es el sitio donde apostar a que eso no cambie.
+    // `toLogMeta()` ya viene redactado por el propio ACL (nunca body ni texto libre).
+    //
+    // Para las otras clases se loguea el nombre MÁS el mensaje pasado por `redactText`. Antes se
+    // tiraba el mensaje entero y sólo quedaba el nombre, con este razonamiento: sus mensajes son
+    // rutas y códigos de Zod, pero el log no es el sitio donde apostar a que eso no cambie.
+    //
+    // La apuesta era correcta; la conclusión no. Un `SabreCreateBookingError` es un fallo NUESTRO
+    // —el body no pasó nuestra propia validación y la reserva ni salió al cable—, así que su
+    // mensaje nombra el campo que falló y es literalmente lo único con lo que se arregla. Sin él,
+    // en producción sólo quedaba «SabreCreateBookingError en el ACL de Sabre», que no dice nada y
+    // deja al vendedor sin poder reservar y a nosotros sin saber por qué.
+    //
+    // No hace falta elegir entre diagnosticar y no filtrar: `redactText` es la misma puerta por la
+    // que ya pasa todo lo que el ACL escribe. Se redacta y se loguea, en vez de confiar y tirar.
     if (err instanceof SabreApiError) {
       this.logger.warn(JSON.stringify(err.toLogMeta()));
     } else {
-      this.logger.warn(`${err.name} en el ACL de Sabre`);
+      this.logger.warn(`${err.name} en el ACL de Sabre: ${redactText(err.message)}`);
     }
 
     const status = sabreErrorStatus(err);

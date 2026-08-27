@@ -8,6 +8,7 @@ import type {
   SearchContext,
 } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
+import adultFixture from './__fixtures__/v5-roundtrip-adult-200.json';
 import multipaxFixture from './__fixtures__/price-multipax-2adt-200.json';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import {
@@ -33,6 +34,7 @@ import {
 } from './sabre-offer-price.adapter';
 import { SABRE_BOOKING_USE_CASES, SabreOrderCreateAdapter } from './sabre-order-create.adapter';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
+import { mapSabreShopResponse } from './shop/response.mapper';
 
 /**
  * LA FASE DE RESERVA, EXTREMO A EXTREMO, POR LA PUERTA PÚBLICA.
@@ -1284,3 +1286,74 @@ function rejectionEchoing(): Reply {
     },
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// La costura que nadie cruzaba: una oferta SALIDA DEL MAPPER, no escrita a mano
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Todo lo de arriba reserva `shopOffer()`, que es un `Offer` escrito a mano en este fichero.
+ * Está bien para probar los desenlaces, y es ciego a la única pregunta que importa en producción:
+ * **¿lo que produce la búsqueda se puede reservar?**
+ *
+ * Entre las dos mitades hay una traducción real —`mapSabreShopResponse` decide `bookingClass`,
+ * `flightNumber` como texto, las horas locales con offset, y qué va en `provider.raw`— y
+ * `productOf` vuelve a leer todo eso. Dos mitades que nadie cruzó es exactamente la forma que
+ * tenía la avería que trajo aquí: reservar fallaba con `SabreCreateBookingError`, o sea el body
+ * ni salía al cable, y los 2.374 tests del paquete seguían verdes.
+ */
+describe('reservar LO QUE DEVUELVE LA BÚSQUEDA, no una oferta de laboratorio', () => {
+  /** La primera oferta del fixture real de BFM, pasada por el mapper de verdad. */
+  function ofertaDeBusqueda(): Offer {
+    const mapped = mapSabreShopResponse(structuredClone(adultFixture), {
+      tenantId: TENANT_ID,
+      currency: 'USD',
+      fetchedAt: '2026-08-26T12:00:00.000Z',
+    });
+    const first = mapped.offers[0];
+    if (first === undefined) throw new Error('el fixture de shop no produjo ninguna oferta');
+    return first;
+  }
+
+  it('la oferta del mapper llega entera al body de createBooking', async () => {
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+    const offer = ofertaDeBusqueda();
+
+    const outcome = await harness.create.createBooking(orderRequest(offer), CTX);
+    expect(outcome.result.outcome).toBe('CONFIRMED');
+
+    // Sin ids de `offers/price`, el carril correcto es ATPCO: se reserva por `flightDetails`,
+    // no por `flightOffer`. Reservar por el carril equivocado reservaría otra cosa.
+    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
+    expect(at(body, 'flightOffer')).toBeUndefined();
+    expect(at(body, 'flightDetails.flights.0.airlineCode')).toBe(
+      (offer.itineraries ?? [])[0]?.segments[0]?.carrier,
+    );
+    // Y cotiza: `flightPricing` ausente es «reserva sin price quote», que deja al PNR con un
+    // precio distinto del que se le dio al cliente.
+    expect(at(body, 'flightDetails.flightPricing')).toHaveLength(1);
+  });
+
+  it('cada segmento que produjo el mapper es reservable: nada se pierde en la traducción', async () => {
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+    const offer = ofertaDeBusqueda();
+    const segmentos = (offer.itineraries ?? []).flatMap((it) => it.segments);
+
+    await harness.create.createBooking(orderRequest(offer), CTX);
+
+    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
+    const flights = at(body, 'flightDetails.flights') as unknown[];
+    // Un segmento que se cae por el camino es un tramo que el pasajero no tiene reservado.
+    expect(flights).toHaveLength(segmentos.length);
+    expect(segmentos.length).toBeGreaterThan(1);
+
+    // Y cada uno lleva su número como ENTERO: el mapper lo produce como texto y el builder lo
+    // exige numérico. Es una de las traducciones que ningún test cruzaba.
+    for (const [i, flight] of flights.entries()) {
+      const f = flight as Record<string, unknown>;
+      expect(typeof f.flightNumber).toBe('number');
+      expect(String(f.flightNumber)).toBe(segmentos[i]!.flightNumber);
+      expect(f.bookingClass).toBe(segmentos[i]!.bookingClass);
+    }
+  });
+});
