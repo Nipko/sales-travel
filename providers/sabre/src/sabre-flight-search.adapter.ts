@@ -7,6 +7,7 @@ import { SabreApiError, SabreConfigError } from './errors';
 import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
+  SABRE_BRANDED_UPSELLS_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -131,7 +132,12 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     const opciones = this.deps.shopOptions ?? {};
     // Las marcas tarifarias son una capacidad del PCC, no una opción universal. Si esta cuenta ya
     // demostró no tenerla, no se vuelve a pedir: ver `brandedFaresUnsupported`.
-    const pedirMarcas = opciones.brandedUpsells === true && !this.brandedFaresUnsupported;
+    // `?? DEFAULT`, NO `=== true`: `deps.shopOptions` es la entrada SIN parsear, y el default del
+    // Zod se aplica al parsear, no antes. Con `=== true` sobre un campo ausente salía `false`, y
+    // encima se le pasaba explícito al builder pisando su propio default: las marcas estaban
+    // apagadas para toda la red mientras el código decía lo contrario.
+    const pedirMarcas =
+      (opciones.brandedUpsells ?? SABRE_BRANDED_UPSELLS_DEFAULT) && !this.brandedFaresUnsupported;
     const body = buildSabreShopRequest(criteria, this.cfg, {
       ...opciones,
       brandedUpsells: pedirMarcas,

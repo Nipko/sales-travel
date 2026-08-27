@@ -132,6 +132,19 @@ export function defaultNumTripsFor(tier: SabreItineraryTier): number {
 export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
 
 /**
+ * Si se piden marcas cuando la cuenta no dice nada.
+ *
+ * Es una CONSTANTE EXPORTADA y no un `.default()` escondido en el Zod porque el adapter también
+ * necesita saberlo: decide antes de llamar al builder si esta búsqueda lleva marcas, para poder
+ * degradar si el PCC las rechaza. Mientras el default vivió sólo dentro del esquema, el adapter
+ * leía `opciones.brandedUpsells === true` sobre un objeto donde el campo no existe —el `.default()`
+ * se aplica al PARSEAR, no antes— así que le salía `false` y además se lo pasaba explícito al
+ * builder, pisando el default. Resultado: las marcas quedaron apagadas para toda la red mientras
+ * el código decía que estaban encendidas, y en producción se leía `pidioMarcas: false`.
+ */
+export const SABRE_BRANDED_UPSELLS_DEFAULT = true;
+
+/**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
  * independientes del mismo objeto, sin `oneOf` ni `maxProperties` que lo impidan (`v5.yml:6237`),
  * y BFM consulta ambas fuentes en UNA sola llamada — sumar Sabre al fan-out cuesta 1 request, no 3.
@@ -291,7 +304,7 @@ export const SabreShopOptionsSchema = z.object({
    *
    * Se puede apagar por cuenta con `config.shopOptions.brandedUpsells: false`.
    */
-  brandedUpsells: z.boolean().default(true),
+  brandedUpsells: z.boolean().default(SABRE_BRANDED_UPSELLS_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 

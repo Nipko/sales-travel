@@ -432,10 +432,17 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
 
   it('sin marcas pedidas NO hay reintento: un fallo de negocio sigue siendo un fallo', async () => {
     // El reintento es una degradación acotada, no un «si algo falla, prueba otra cosa».
+    //
+    // `brandedUpsells: false` va EXPLÍCITO. Antes este test omitía las opciones y pasaba por la
+    // avería que arregla el bloque de abajo: sin opciones las marcas quedaban apagadas, así que
+    // el test verificaba el default roto en vez de la regla que dice cubrir.
     const spy = spyFetch(() => rechazoDeNegocio());
-    await expect(adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX)).rejects.toThrow(
-      SabreApiError,
-    );
+    await expect(
+      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: false } }).search(
+        CRITERIA,
+        CTX,
+      ),
+    ).rejects.toThrow(SabreApiError);
     expect(spy.calls).toHaveLength(1);
   });
 
@@ -581,5 +588,30 @@ describe('censoDeContenido: qué trae la respuesta, no cuánto', () => {
     );
     expect(censoDeContenido(muchas).marcas).toHaveLength(12);
     expect(censoDeContenido(muchas).conMarca).toBe(40);
+  });
+});
+
+describe('el default de las marcas llega hasta el cable, no se queda en el Zod', () => {
+  it('SIN opciones se piden marcas: el default del esquema no puede quedarse a medio camino', async () => {
+    // La avería exacta: el adapter leía `opciones.brandedUpsells === true` sobre la entrada SIN
+    // parsear —donde el campo no existe— así que salía `false`, y encima se lo pasaba explícito
+    // al builder pisando su propio default. Las marcas estaban apagadas para toda la red mientras
+    // el código decía que estaban encendidas; en producción se leía `pidioMarcas: false`.
+    const spy = spyFetch(() => json(adultFixture));
+
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+
+    expect(cuerpo(spy.calls[0]!.init)).toContain('BrandedFareIndicators');
+  });
+
+  it('y apagarlo por cuenta sigue funcionando', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedUpsells: false },
+    }).search(CRITERIA, CTX);
+
+    expect(cuerpo(spy.calls[0]!.init)).not.toContain('BrandedFareIndicators');
   });
 });
