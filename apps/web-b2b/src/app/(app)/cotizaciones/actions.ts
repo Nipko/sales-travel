@@ -44,10 +44,16 @@ export interface Offer {
   pricing?: OfferPricing;
   itineraries?: Itinerary[];
   fareFamily?: { name: string; cabin: string };
+  /**
+   * Las tres piezas, cada una OPCIONAL. Espejo del modelo canónico.
+   *
+   * Ausente = «el proveedor no lo informó». `0` = «no incluye». No son lo mismo y no se pueden
+   * pintar igual: ver `lib/baggage.ts`.
+   */
   baggage?: {
-    personalItem: number;
-    carryOn: { qty: number; weightKg?: number };
-    checked: { qty: number; weightKg?: number };
+    personalItem?: number;
+    carryOn?: { qty: number; weightKg?: number };
+    checked?: { qty: number; weightKg?: number };
   };
   policies?: { changeable: boolean; refundable: boolean };
   fetchedAt: string;

@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 import { NextResponse } from 'next/server';
 import { api } from '../../../../../lib/api';
+import { describeBaggage, hasAnyBaggageInfo } from '../../../../../lib/baggage';
 import { isValidHex } from '../../../../../lib/brand-tokens';
 import { getActiveTenant } from '../../../../../lib/session';
 
@@ -325,26 +326,25 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
         </View>
 
         {/* Includes */}
-        {(selectedOffer.baggage || selectedOffer.policies) && (
+        {(hasAnyBaggageInfo(selectedOffer.baggage) || selectedOffer.policies) && (
           <View style={s.section}>
             <Text style={s.sectionTitle}>Incluye</Text>
-            {selectedOffer.baggage && (
+            {/*
+              Este PDF lo recibe el CLIENTE FINAL, así que acá está la diferencia entre informar
+              y prometer. Antes se pintaba «No incluido» siempre que la cantidad no fuera mayor
+              que cero — incluidos los casos en que el proveedor sencillamente no lo informó—: es
+              decirle por escrito a un pasajero que su tarifa no lleva equipaje de mano sin
+              saberlo. `describeBaggage` distingue «No informado» de «No incluye».
+            */}
+            {hasAnyBaggageInfo(selectedOffer.baggage) && (
               <>
                 <View style={s.row}>
                   <Text style={s.label}>Carry-on</Text>
-                  <Text style={s.value}>
-                    {selectedOffer.baggage.carryOn.qty > 0
-                      ? `${selectedOffer.baggage.carryOn.qty} pieza${selectedOffer.baggage.carryOn.qty > 1 ? 's' : ''}${selectedOffer.baggage.carryOn.weightKg ? ` (${selectedOffer.baggage.carryOn.weightKg}kg)` : ''}`
-                      : 'No incluido'}
-                  </Text>
+                  <Text style={s.value}>{describeBaggage(selectedOffer.baggage?.carryOn)}</Text>
                 </View>
                 <View style={s.row}>
                   <Text style={s.label}>Maleta facturada</Text>
-                  <Text style={s.value}>
-                    {selectedOffer.baggage.checked.qty > 0
-                      ? `${selectedOffer.baggage.checked.qty} pieza${selectedOffer.baggage.checked.qty > 1 ? 's' : ''}${selectedOffer.baggage.checked.weightKg ? ` (${selectedOffer.baggage.checked.weightKg}kg)` : ''}`
-                      : 'No incluido'}
-                  </Text>
+                  <Text style={s.value}>{describeBaggage(selectedOffer.baggage?.checked)}</Text>
                 </View>
               </>
             )}

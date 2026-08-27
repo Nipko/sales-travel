@@ -639,12 +639,18 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
   const policies = resolvePolicies(pricing, passengers);
   const fareFamily = resolveFareFamily(pricing, itineraries);
 
-  if (hasCheckedBaggageInfo(passengers)) {
-    // `Offer.baggage` exige `personalItem` y `carryOn` y el carril ATPCO no los trae: para
-    // rellenarlos habría que decodificar `utaDescs`/`baggageChargeDescs` (docs/sabre/02 §7.4).
-    // Publicar `carryOn: 0` porque el objeto lo obliga sería afirmar que el billete no lleva
-    // equipaje de mano — falso en casi cualquier tarifa. La franquicia facturada se conserva en
-    // `provider.raw.baggageAllowance` para no perderla.
+  // La franquicia FACTURADA, que es la única que el carril ATPCO informa.
+  //
+  // Antes esto sólo emitía un warning y se descartaba: `Offer.baggage` exigía `personalItem` y
+  // `carryOn`, y rellenarlos con cero para cumplir la forma habría afirmado que el billete no
+  // lleva equipaje de mano —falso en casi cualquier tarifa—. Ahora los tres son opcionales, así
+  // que se publica lo que se sabe y se calla lo que no: `carryOn` y `personalItem` quedan
+  // AUSENTES, que significa «el proveedor no lo informó», no «no incluye».
+  //
+  // El warning se mantiene, con el código honesto: la franquicia de mano sigue sin mapearse y
+  // completarla exige decodificar `utaDescs`/`baggageChargeDescs` (docs/sabre/02 §7.4).
+  const checked = resolveCheckedBaggage(passengers, dicts);
+  if (checked !== null) {
     warnings.push({ code: 'baggage-not-mapped', path, detail: 'sólo franquicia facturada' });
   }
 
@@ -665,6 +671,7 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
     ...(fareBreakdown.length === 0 ? {} : { fareBreakdown }),
     itineraries,
     ...(fareFamily === null ? {} : { fareFamily }),
+    ...(checked === null ? {} : { baggage: { checked } }),
     ...(policies === null ? {} : { policies }),
     fetchedAt: args.fetchedAt,
     expiresAt: expiry.expiresAt,
@@ -1299,10 +1306,39 @@ function buildProviderRaw(
   return raw;
 }
 
-function hasCheckedBaggageInfo(passengers: readonly SabrePassengerInfo[]): boolean {
-  return passengers.some((info) =>
-    (info.baggageInformation ?? []).some((bag) => bag.provisionType === 'A'),
-  );
+/**
+ * La franquicia facturada del ADULTO, o `null` si el proveedor no la informó.
+ *
+ * `provisionType: 'A'` es la franquicia incluida en la tarifa; el resto de tipos son cargos y
+ * servicios, que no son «lo que llevás incluido».
+ *
+ * El peso sólo se publica cuando la unidad es kilos. `unit` también puede venir en libras, y
+ * copiar el número a un campo llamado `weightKg` convertiría 50 lb en «50 kg» — el doble de lo
+ * que la aerolínea permite, en un dato que el vendedor le lee al cliente.
+ */
+function resolveCheckedBaggage(
+  passengers: readonly SabrePassengerInfo[],
+  dicts: Dictionaries,
+): { qty: number; weightKg?: number } | null {
+  for (const info of passengers) {
+    for (const bag of info.baggageInformation ?? []) {
+      if (bag.provisionType !== 'A' || bag.allowance === undefined) continue;
+      const desc = dicts.baggage.get(bag.allowance.ref);
+      if (desc === undefined) continue;
+
+      const kilos = (desc.unit ?? '').trim().toUpperCase().startsWith('K');
+      // Una franquicia por PESO no declara piezas: `pieceCount` ausente con peso presente es
+      // «una pieza de N kg», que es como la venden las aerolíneas de la región.
+      const qty = desc.pieceCount ?? (desc.weight === undefined ? undefined : 1);
+      if (qty === undefined) continue;
+
+      return {
+        qty,
+        ...(kilos && desc.weight !== undefined ? { weightKg: desc.weight } : {}),
+      };
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

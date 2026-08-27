@@ -647,16 +647,52 @@ describe('políticas y datos del proveedor', () => {
     }
   });
 
-  it('el equipaje facturado se conserva en `raw` y `Offer.baggage` no se inventa', () => {
+  it('la franquicia facturada SE PUBLICA, y lo que no se sabe queda ausente', () => {
     const result = run(clone(adultFixture));
     const offer = onlyOffer(result);
-    // `Offer.baggage` obliga a declarar `carryOn` y `personalItem`, que el carril ATPCO no trae.
-    expect(offer.baggage).toBeUndefined();
+
+    // `qty: 0` no es un hueco: es «esta tarifa NO incluye equipaje facturado», que es un dato
+    // real y de los que deciden la venta. Antes se descartaba entero porque la forma canónica
+    // obligaba a declarar además `carryOn` y `personalItem`, que ATPCO no trae.
+    expect(offer.baggage?.checked).toEqual({ qty: 0 });
+
+    // Y lo que el proveedor no informó queda AUSENTE, no en cero: un `carryOn: 0` afirmaría que
+    // el billete no lleva equipaje de mano, que es falso en casi cualquier tarifa.
+    expect(offer.baggage?.carryOn).toBeUndefined();
+    expect(offer.baggage?.personalItem).toBeUndefined();
+
+    // El warning sigue: la franquicia de mano sigue sin mapearse.
     expect(codes(result.warnings)).toContain('baggage-not-mapped');
     expect(offer.provider.raw?.['baggageAllowance']).toEqual([
       { paxType: 'ADT', pieceCount: 0, weight: null, unit: null },
       { paxType: 'ADT', pieceCount: 0, weight: null, unit: null },
     ]);
+  });
+
+  it('una franquicia POR PESO en kilos sale como una pieza de N kg', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const descs = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']![
+      'baggageAllowanceDescs'
+    ] as Array<Record<string, unknown>>;
+    descs[0]!['pieceCount'] = undefined;
+    descs[0]!['weight'] = 23;
+    descs[0]!['unit'] = 'K';
+
+    expect(onlyOffer(run(payload)).baggage?.checked).toEqual({ qty: 1, weightKg: 23 });
+  });
+
+  it('en LIBRAS el peso no se copia: 50 lb no son 50 kg', () => {
+    // Copiar el número a un campo llamado `weightKg` duplicaría la franquicia en un dato que el
+    // vendedor le lee al cliente.
+    const payload = clone(adultFixture) as unknown as Json;
+    const descs = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']![
+      'baggageAllowanceDescs'
+    ] as Array<Record<string, unknown>>;
+    descs[0]!['pieceCount'] = undefined;
+    descs[0]!['weight'] = 50;
+    descs[0]!['unit'] = 'L';
+
+    expect(onlyOffer(run(payload)).baggage?.checked).toEqual({ qty: 1 });
   });
 
   it('`fareFamily` sólo aparece si Sabre declara marca', () => {

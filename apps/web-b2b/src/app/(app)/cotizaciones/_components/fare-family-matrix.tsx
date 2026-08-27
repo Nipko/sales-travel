@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Offer } from '../actions';
+import { baggageState } from '../../../../lib/baggage';
 import { cn } from '../../../../lib/cn';
 import { Button } from '../../../../components/ui/button';
 
@@ -36,7 +37,16 @@ const FARE_BADGES: Record<string, string | undefined> = {
   'PREMIUM ECONOMY FULL': 'Clase Preferente',
 };
 
-function AttrIcon({ value }: { value: 'yes' | 'no' | 'partial' }) {
+function AttrIcon({ value }: { value: AttrValue }) {
+  // `unknown` NO puede parecerse a `no`. Una cruz gris junto a «Maleta facturada» es una
+  // afirmación —«esta tarifa no la lleva»— y aquí lo cierto es que el proveedor no lo informó.
+  if (value === 'unknown') {
+    return (
+      <div className="flex size-4.5 shrink-0 items-center justify-center rounded-full border border-dashed border-[var(--color-border-strong)] text-[var(--color-fg-subtle)]">
+        <CircleMinus className="size-3" strokeWidth={2} />
+      </div>
+    );
+  }
   if (value === 'yes') {
     return (
       <div className="flex size-4.5 shrink-0 items-center justify-center rounded-full bg-[var(--color-success)]/12 text-[var(--color-success)] shadow-[var(--shadow-xs)]">
@@ -58,6 +68,23 @@ function AttrIcon({ value }: { value: 'yes' | 'no' | 'partial' }) {
   );
 }
 
+/** Los tres estados de una fila, más el `partial` que ya existía. */
+type AttrValue = 'yes' | 'no' | 'partial' | 'unknown';
+
+/** Traduce una franquicia a lo que pinta la fila, sin perder el «no se sabe». */
+function attrDeEquipaje(allowance: { qty: number; weightKg?: number } | undefined): {
+  value: AttrValue;
+  detail?: string;
+} {
+  const state = baggageState(allowance);
+  if (state.kind === 'unknown') return { value: 'unknown', detail: 'No informado' };
+  if (state.kind === 'none') return { value: 'no' };
+  return {
+    value: 'yes',
+    ...(state.weightKg === undefined ? {} : { detail: `${state.weightKg} kg` }),
+  };
+}
+
 function AttrRow({
   icon,
   label,
@@ -66,7 +93,7 @@ function AttrRow({
 }: {
   icon: React.ReactNode;
   label: string;
-  value: 'yes' | 'no' | 'partial';
+  value: AttrValue;
   detail?: string;
 }) {
   return (
@@ -215,27 +242,19 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
               <AttrRow
                 icon={<Package className="size-3.5" />}
                 label="Artículo personal"
-                value={baggage && baggage.personalItem > 0 ? 'yes' : 'no'}
+                {...attrDeEquipaje(
+                  baggage?.personalItem === undefined ? undefined : { qty: baggage.personalItem },
+                )}
               />
               <AttrRow
                 icon={<Briefcase className="size-3.5" />}
                 label="Equipaje de Mano"
-                value={baggage && baggage.carryOn.qty > 0 ? 'yes' : 'no'}
-                detail={
-                  baggage && baggage.carryOn.qty > 0 && baggage.carryOn.weightKg
-                    ? `${baggage.carryOn.weightKg} kg`
-                    : undefined
-                }
+                {...attrDeEquipaje(baggage?.carryOn)}
               />
               <AttrRow
                 icon={<Luggage className="size-3.5" />}
                 label="Maleta Facturada"
-                value={baggage && baggage.checked.qty > 0 ? 'yes' : 'no'}
-                detail={
-                  baggage && baggage.checked.qty > 0 && baggage.checked.weightKg
-                    ? `${baggage.checked.weightKg} kg`
-                    : undefined
-                }
+                {...attrDeEquipaje(baggage?.checked)}
               />
               <AttrRow
                 icon={<RefreshCw className="size-3.5" />}

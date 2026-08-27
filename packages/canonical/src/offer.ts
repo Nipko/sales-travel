@@ -145,11 +145,32 @@ export const OfferSchema = z.object({
     })
     .optional(),
 
+  /**
+   * Equipaje, con las tres piezas OPCIONALES por separado.
+   *
+   * La distinción que sostiene esta forma —y la razón de que fueran obligatorias y ya no lo
+   * sean— es **«no lo sabemos» contra «no lo incluye»**. Son cosas distintas y sólo una es una
+   * promesa comercial.
+   *
+   * Con las tres obligatorias, un proveedor que informa la franquicia FACTURADA y no la de mano
+   * —el carril ATPCO de Sabre, que es el 100% de sus ofertas— sólo podía elegir entre mentir
+   * (`carryOn: 0`, o sea «este billete no lleva equipaje de mano», falso en casi cualquier
+   * tarifa) o callarse. Se callaba: 50 de 50 ofertas llegaban con el equipaje descartado y el
+   * vendedor sin el dato que decide la venta.
+   *
+   * Ahora `undefined` significa «el proveedor no lo informó» y `0` significa «no incluye». Quien
+   * pinte esto TIENE que distinguirlos: el PDF de la cotización va al cliente final, y ahí un
+   * «No incluye» sobre algo que no sabemos es una promesa por escrito que no se puede sostener.
+   */
   baggage: z
     .object({
-      personalItem: z.number().int().nonnegative(),
-      carryOn: z.object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() }),
-      checked: z.object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() }),
+      personalItem: z.number().int().nonnegative().optional(),
+      carryOn: z
+        .object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() })
+        .optional(),
+      checked: z
+        .object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() })
+        .optional(),
     })
     .optional(),
 

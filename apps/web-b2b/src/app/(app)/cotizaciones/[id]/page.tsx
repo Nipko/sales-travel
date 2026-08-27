@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
+import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
@@ -633,18 +634,18 @@ export default function QuotationDetailPage() {
               </div>
 
               {/* Baggage & policies */}
-              {(selectedOffer.baggage || selectedOffer.policies) && (
+              {(hasAnyBaggageInfo(selectedOffer.baggage) || selectedOffer.policies) && (
                 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
-                  {selectedOffer.baggage && (
+                  {hasAnyBaggageInfo(selectedOffer.baggage) && (
                     <>
                       <div className="text-center">
                         <p className="text-[10px] uppercase text-[var(--color-fg-subtle)]">
                           Carry-on
                         </p>
+                        {/* Un `—` se lee como «nada»: el vendedor tiene que poder distinguir que
+                            el proveedor no informó de que la tarifa no lo incluye. */}
                         <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {selectedOffer.baggage.carryOn.qty > 0
-                            ? `${selectedOffer.baggage.carryOn.qty}x${selectedOffer.baggage.carryOn.weightKg ?? ''}kg`
-                            : '—'}
+                          {describeBaggage(selectedOffer.baggage?.carryOn)}
                         </p>
                       </div>
                       <div className="text-center">
@@ -652,9 +653,7 @@ export default function QuotationDetailPage() {
                           Maleta
                         </p>
                         <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {selectedOffer.baggage.checked.qty > 0
-                            ? `${selectedOffer.baggage.checked.qty}x${selectedOffer.baggage.checked.weightKg ?? ''}kg`
-                            : '—'}
+                          {describeBaggage(selectedOffer.baggage?.checked)}
                         </p>
                       </div>
                     </>
