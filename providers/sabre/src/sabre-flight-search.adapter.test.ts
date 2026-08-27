@@ -1,4 +1,4 @@
-import { OfferSchema } from '@sales-travel/canonical';
+import { OfferSchema, type Offer } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
 import type { FlightSearchCriteria, SearchContext } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import { SABRE_HOSTS, parseSabreConfig, type SabreConfig } from './config';
 import { SabreApiError, SabreConfigError } from './errors';
 import {
   SabreFlightSearchAdapter,
+  censoDeContenido,
   countWarningsByCode,
   type SabreFlightSearchDeps,
 } from './sabre-flight-search.adapter';
@@ -523,5 +524,62 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     await sut.search(CRITERIA, CTX);
     expect(await sut.search(CRITERIA, CTX)).toEqual([]);
     expect(spy.calls).toHaveLength(2);
+  });
+});
+
+describe('censoDeContenido: qué trae la respuesta, no cuánto', () => {
+  function oferta(over: Partial<Offer> = {}): Offer {
+    return {
+      id: 'x',
+      tenantId: TENANT_ID,
+      products: ['flight'],
+      provider: { name: 'sabre', offerRef: 'r' },
+      total: { amountMinor: 100, currency: 'USD' },
+      baseFare: { amountMinor: 80, currency: 'USD' },
+      taxes: { amountMinor: 20, currency: 'USD' },
+      fetchedAt: '2026-08-26T12:00:00.000Z',
+      expiresAt: '2026-08-26T12:30:00.000Z',
+      ...over,
+    };
+  }
+
+  it('cuenta las marcas y las nombra', () => {
+    // `offers: 50` no distingue «50 vuelos con una tarifa» de «50 tarifas de 12 vuelos», que es
+    // justo la pregunta al encender el upsell.
+    const censo = censoDeContenido([
+      oferta({ fareFamily: { name: 'LIGHT', cabin: 'economy' } }),
+      oferta({ fareFamily: { name: 'PLUS', cabin: 'economy' } }),
+      oferta({ fareFamily: { name: 'LIGHT', cabin: 'economy' } }),
+      oferta(),
+    ]);
+
+    expect(censo.conMarca).toBe(3);
+    expect(censo.marcas).toEqual(['LIGHT', 'PLUS']);
+  });
+
+  it('sin marcas el censo lo dice con un cero, no con un hueco', () => {
+    const censo = censoDeContenido([oferta(), oferta()]);
+    expect(censo).toEqual({ conMarca: 0, marcas: [], conEquipaje: 0 });
+  });
+
+  it('el equipaje se cuenta aparte de la marca: son dos ausencias distintas', () => {
+    const censo = censoDeContenido([
+      oferta({
+        baggage: { personalItem: 1, carryOn: { qty: 1 }, checked: { qty: 1 } },
+      }),
+      oferta({ fareFamily: { name: 'TOP', cabin: 'economy' } }),
+    ]);
+
+    expect(censo.conEquipaje).toBe(1);
+    expect(censo.conMarca).toBe(1);
+  });
+
+  it('la lista de marcas no crece con la respuesta', () => {
+    // Una respuesta de BFM trae cientos de itinerarios; el log no puede crecer con ellos.
+    const muchas = Array.from({ length: 40 }, (_, i) =>
+      oferta({ fareFamily: { name: `MARCA${String(i).padStart(2, '0')}`, cabin: 'economy' } }),
+    );
+    expect(censoDeContenido(muchas).marcas).toHaveLength(12);
+    expect(censoDeContenido(muchas).conMarca).toBe(40);
   });
 });

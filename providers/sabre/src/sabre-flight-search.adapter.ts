@@ -208,7 +208,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       this.brandedFaresProven = true;
     }
 
-    this.logMapping(mapped, result, ctx);
+    this.logMapping(mapped, result, ctx, pedirMarcas);
     return mapped.offers;
   }
 
@@ -237,12 +237,17 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     mapped: SabreShopMapResult,
     result: SabreResult<unknown>,
     ctx: SearchContext,
+    pidioMarcas: boolean,
   ): void {
     const meta = {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,
       offers: mapped.offers.length,
+      // `pidioMarcas` va al lado del censo a propósito: `conMarca: 0` sin saber si se pidieron
+      // no dice nada. Juntos sí: pedidas y cero = el PCC no publica marcas en esta ruta.
+      pidioMarcas,
+      ...censoDeContenido(mapped.offers),
       ...(mapped.statistics === undefined ? {} : { statistics: mapped.statistics }),
     };
 
@@ -275,6 +280,38 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
   private log(level: SabreLogLevel, message: string, meta: Record<string, unknown>): void {
     logRedacted(this.deps.logger, level, message, meta);
   }
+}
+
+/**
+ * Qué CONTENIDO trae la respuesta, no cuánto.
+ *
+ * `offers: 50` no distingue «50 vuelos con una tarifa cada uno» de «50 tarifas de 12 vuelos», y
+ * ésa es justo la pregunta cuando se acaba de encender el upsell de marcas: si el PCC no publica
+ * marcas, pedirlas no da error —da exactamente lo mismo de antes— y sin este conteo la única
+ * forma de saberlo es mirar la pantalla y opinar.
+ *
+ * `marcas` lleva los NOMBRES porque son códigos de producto de la aerolínea (`LIGHT`, `PLUS`),
+ * no datos de nadie; se ordenan y se acotan para que el log no crezca con la respuesta.
+ */
+export function censoDeContenido(offers: readonly Offer[]): {
+  conMarca: number;
+  marcas: string[];
+  conEquipaje: number;
+} {
+  const marcas = new Set<string>();
+  let conMarca = 0;
+  let conEquipaje = 0;
+
+  for (const offer of offers) {
+    const nombre = offer.fareFamily?.name;
+    if (nombre !== undefined && nombre.length > 0) {
+      conMarca += 1;
+      marcas.add(nombre);
+    }
+    if (offer.baggage !== undefined) conEquipaje += 1;
+  }
+
+  return { conMarca, marcas: [...marcas].sort().slice(0, 12), conEquipaje };
 }
 
 /**
