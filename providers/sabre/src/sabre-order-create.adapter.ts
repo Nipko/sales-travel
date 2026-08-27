@@ -512,6 +512,19 @@ function travelerOf(passenger: Passenger): SabreTravelerInput {
         documentNumber: doc.number,
         issuingCountryCode: doc.issuingCountryCode,
         citizenshipCountryCode: passenger.citizenshipCountryCode,
+        // El TITULAR, repetido dentro del documento. Parece redundante —el traveler ya los
+        // lleva— y no lo es: Sabre rechazaba la reserva con `MANDATORY_DATA_MISSING` sobre
+        // `travelers[0].identityDocuments[0]` sin decir qué campo faltaba, porque no es el
+        // esquema quien lo exige (su único `required` es `documentType`) sino el carrier.
+        //
+        // Lo dice la evidencia: de los 115 documentos de los `createBooking` reales de la
+        // colección, los 45 pasaportes llevan estos cuatro campos SIN EXCEPCIÓN, y `birthDate`
+        // y `gender` aparecen en 79 y 80 del total. No es un extra de algunos carriers: es la
+        // forma normal de un documento en este contrato.
+        givenName: passenger.givenName,
+        surname: passenger.surname,
+        birthDate: passenger.birthdate,
+        gender: genderOf(passenger),
         // Los opcionales se OMITEN cuando vienen en blanco, no se mandan vacíos. Un `''` que
         // sale de un formulario significa «no lo rellené», nunca «el valor es la cadena vacía»,
         // y el contrato de Sabre no distingue: `expiryDate: ''` es `invalid_string` y tumba la

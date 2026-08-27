@@ -1,12 +1,19 @@
 'use client';
 
 import { AlertCircle, Check, ClipboardCopy, Plane, UserPlus, Wallet } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
 import { PaymentForm, type PaymentData } from './payment-form';
 import { cn } from '../../../../lib/cn';
+import { splitFullName } from '../../../../lib/full-name';
+import {
+  birthdateIssue,
+  formatBirthdateInput,
+  formatBirthdateValue,
+  parseBirthdate,
+} from '../../../../lib/birthdate';
 
 interface PaxCount {
   adults: number;
@@ -104,26 +111,19 @@ const inputClass =
 const selectClass =
   'h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
 
-const MONTH_OPTIONS = [
-  { v: '01', l: 'Ene' },
-  { v: '02', l: 'Feb' },
-  { v: '03', l: 'Mar' },
-  { v: '04', l: 'Abr' },
-  { v: '05', l: 'May' },
-  { v: '06', l: 'Jun' },
-  { v: '07', l: 'Jul' },
-  { v: '08', l: 'Ago' },
-  { v: '09', l: 'Sep' },
-  { v: '10', l: 'Oct' },
-  { v: '11', l: 'Nov' },
-  { v: '12', l: 'Dic' },
-];
-
 /**
- * Selector de fecha de nacimiento con día/mes/año en selects: elegir el año es instantáneo
- * (no hay que recorrer décadas como en el date-picker nativo). Emite 'YYYY-MM-DD'.
+ * Fecha de nacimiento en UN campo que se teclea.
+ *
+ * Antes eran tres `<select>`. El motivo original era bueno —el date-picker nativo obliga a
+ * recorrer décadas para llegar a 1978— y la solución arrastraba el mismo coste por otro lado:
+ * cargar un pasajero eran tres aperturas de desplegable y tres búsquedas visuales en listas de
+ * 31, 12 y 101 elementos. Con cuatro pasajeros, doce interacciones donde bastan ocho teclas.
+ *
+ * Acá se teclea `09071978` de corrido, sin soltar el teclado, y las barras las pone el campo.
+ * La lógica vive en `lib/birthdate.ts` —parsear fechas escritas por humanos falla por los bordes
+ * (`31/02`, `29/02/1900`, futuras) y eso se fija con tests, no mirando la pantalla—.
  */
-function DobPicker({
+function DobField({
   value,
   onChange,
   invalid,
@@ -132,72 +132,33 @@ function DobPicker({
   onChange: (v: string) => void;
   invalid?: boolean;
 }) {
-  const init = value ? value.split('-') : [];
-  const [y, setY] = useState(init[0] ?? '');
-  const [m, setM] = useState(init[1] ?? '');
-  const [d, setD] = useState(init[2] ?? '');
-  const currentYear = new Date().getFullYear();
-  const years: string[] = [];
-  for (let yr = currentYear; yr >= currentYear - 100; yr--) years.push(String(yr));
-  const days: string[] = [];
-  for (let dd = 1; dd <= 31; dd++) days.push(String(dd).padStart(2, '0'));
+  // El texto visible es estado propio: mientras se escribe hay estados que todavía no son una
+  // fecha, y el valor de fuera sólo acepta fechas completas.
+  const [texto, setTexto] = useState(() => formatBirthdateValue(value));
+  const hoy = new Date().toISOString().slice(0, 10);
+  const problema = birthdateIssue(texto, hoy);
 
-  // Mantiene las selecciones parciales en estado y sólo emite la fecha cuando están los 3 campos.
-  function commit(nd: string, nm: string, ny: string) {
-    onChange(nd && nm && ny ? `${ny}-${nm}-${nd}` : '');
+  function handle(raw: string) {
+    const formateado = formatBirthdateInput(raw);
+    setTexto(formateado);
+    // Emite '' mientras no sea usable: el formulario ya sabe tratar el vacío como «falta».
+    onChange(parseBirthdate(formateado, hoy) ?? '');
   }
-  const cls = cn(selectClass, invalid && errClass);
 
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <select
-        aria-label="Día"
-        value={d}
-        onChange={(e) => {
-          setD(e.target.value);
-          commit(e.target.value, m, y);
-        }}
-        className={cls}
-      >
-        <option value="">Día</option>
-        {days.map((dd) => (
-          <option key={dd} value={dd}>
-            {Number(dd)}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Mes"
-        value={m}
-        onChange={(e) => {
-          setM(e.target.value);
-          commit(d, e.target.value, y);
-        }}
-        className={cls}
-      >
-        <option value="">Mes</option>
-        {MONTH_OPTIONS.map((mo) => (
-          <option key={mo.v} value={mo.v}>
-            {mo.l}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Año"
-        value={y}
-        onChange={(e) => {
-          setY(e.target.value);
-          commit(d, m, e.target.value);
-        }}
-        className={cls}
-      >
-        <option value="">Año</option>
-        {years.map((yr) => (
-          <option key={yr} value={yr}>
-            {yr}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="bday"
+        placeholder="DD/MM/AAAA"
+        aria-label="Fecha de nacimiento"
+        aria-invalid={invalid === true || problema !== null ? true : undefined}
+        value={texto}
+        onChange={(e) => handle(e.target.value)}
+        className={cn(inputClass, (invalid === true || problema !== null) && errClass)}
+      />
+      {problema !== null && <p className="text-[11px] text-red-600">{problema}</p>}
     </div>
   );
 }
@@ -250,14 +211,41 @@ export function PassengerForm({
     );
   }
 
-  /** Copia el nombre del cliente al pasajero 1 (separa nombre/apellido por el último espacio). */
+  /**
+   * El pasajero 1 arranca con los datos del cliente, sin tener que pedirlo.
+   *
+   * Había un botón «Usar datos del cliente», y existir no era suficiente: es una pastilla de
+   * 10 px que hay que descubrir, así que en la práctica el vendedor escribía el mismo nombre dos
+   * veces —una en «Cliente y contacto» y otra en «Pasajero 1»— en la reserva de un solo pax, que
+   * es la mayoría.
+   *
+   * Se copia UNA vez y sólo sobre un pasajero 1 en blanco: si ya hay algo escrito, es del
+   * vendedor y no se pisa. Los campos siguen siendo editables —el reparto nombre/apellido es una
+   * heurística, no un dogma— y el botón se queda para volver a copiar tras cambiar el cliente.
+   */
+  const autorellenado = useRef(false);
+  useEffect(() => {
+    if (autorellenado.current) return;
+    const full = (customerName ?? '').trim();
+    if (!full) return;
+    const primero = passengers[0];
+    if (primero === undefined || primero.givenName.trim() || primero.surname.trim()) return;
+
+    autorellenado.current = true;
+    setPassengers((prev) => prev.map((p, i) => (i === 0 ? { ...p, ...splitFullName(full) } : p)));
+  }, [customerName, passengers]);
+
+  /**
+   * Copia el nombre del cliente al pasajero 1.
+   *
+   * El reparto nombre/apellido vive en `lib/full-name` y NO es «la última palabra»: en LATAM dos
+   * apellidos es la norma, y esa regla partía «Juan Carlos Pérez Gómez» dejando «Pérez» dentro
+   * del nombre de pila. Un nombre que no coincide con el documento puede costar el embarque.
+   */
   function copyCustomerToPax(idx: number) {
     const full = (customerName ?? '').trim();
     if (!full) return;
-    const parts = full.split(/\s+/);
-    const surname = parts.length > 1 ? parts[parts.length - 1]! : '';
-    const givenName = parts.length > 1 ? parts.slice(0, -1).join(' ') : full;
-    updatePax(idx, { givenName, surname });
+    updatePax(idx, splitFullName(full));
     setCopiedHint(true);
     setTimeout(() => setCopiedHint(false), 1800);
   }
@@ -431,7 +419,7 @@ export function PassengerForm({
                         Fecha de nacimiento
                         <Req />
                       </Label>
-                      <DobPicker
+                      <DobField
                         value={pax.birthdate}
                         onChange={(v) => updatePax(idx, { birthdate: v })}
                         invalid={bad('fecha de nacimiento')}

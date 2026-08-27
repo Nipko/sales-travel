@@ -1430,3 +1430,60 @@ describe('documentos sin vencimiento: la cédula no vence, y eso no es un error'
     ).toBe('2033-07-09');
   });
 });
+
+/**
+ * El documento tiene que decir DE QUIÉN es.
+ *
+ * Sabre rechazaba la reserva con `MANDATORY_DATA_MISSING` sobre
+ * `CreateBookingRequest.travelers[0].identityDocuments[0]`, sin nombrar el campo. No lo exige el
+ * esquema —su único `required` es `documentType`— sino el carrier, así que no hay contrato que
+ * leer: hay que mirar qué mandan los requests que funcionan.
+ *
+ * De los 115 documentos de los `createBooking` reales de la colección, los 45 pasaportes llevan
+ * `givenName`, `surname`, `birthDate` y `gender` SIN EXCEPCIÓN. Nosotros mandábamos sólo el
+ * número y el país.
+ */
+describe('el documento identifica a su titular, no sólo al documento', () => {
+  it('lleva nombre, apellido, nacimiento y género, como los 45 pasaportes de la colección', async () => {
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+    const [pax] = passengers();
+
+    await harness.create.createBooking(orderRequest(shopOffer()), CTX);
+
+    const doc = at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0');
+    expect(doc).toMatchObject({
+      givenName: pax!.givenName,
+      surname: pax!.surname,
+      birthDate: pax!.birthdate,
+      gender: 'FEMALE',
+    });
+  });
+
+  it('el género del documento es el MISMO que el del traveler, no uno inventado', async () => {
+    // Dos fuentes del mismo dato en el mismo body es la forma de que se desincronicen. Salen del
+    // mismo `genderOf`, y esto lo fija.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+
+    await harness.create.createBooking(orderRequest(shopOffer()), CTX);
+
+    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
+    expect(at(body, 'travelers.0.identityDocuments.0.gender')).toBe(at(body, 'travelers.0.gender'));
+    expect(at(body, 'travelers.0.identityDocuments.0.birthDate')).toBe(
+      at(body, 'travelers.0.birthDate'),
+    );
+  });
+
+  it('un INFANTE lleva su género de infante también en el documento', async () => {
+    // `INFANT_FEMALE`/`INFANT_MALE` son los que exige Secure Flight para lap children. Si el
+    // documento dijera `FEMALE` a secas, las dos mitades del body se contradirían.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+    const [pax, ...resto] = passengers();
+    const infante: Passenger[] = [{ ...pax!, paxType: 'INF', gender: 'M' }, ...resto];
+
+    await harness.create.createBooking(orderRequest(shopOffer(), { passengers: infante }), CTX);
+
+    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
+    expect(at(body, 'travelers.0.identityDocuments.0.gender')).toBe('INFANT_MALE');
+    expect(at(body, 'travelers.0.gender')).toBe('INFANT_MALE');
+  });
+});
