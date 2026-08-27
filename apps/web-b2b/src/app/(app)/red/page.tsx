@@ -1,9 +1,12 @@
 'use client';
 
 import {
+  AlertTriangle,
   Building2,
   Calculator,
+  CheckCircle2,
   ChevronRight,
+  Info,
   KeyRound,
   Mail,
   Network,
@@ -16,10 +19,33 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Label } from '../../../components/ui/label';
 import { cn } from '../../../lib/cn';
+import {
+  PROVIDERS,
+  PROVIDER_ACCOUNT_STATUSES,
+  STATUS_LABELS,
+  accountCertainty,
+  accountCertaintyNotice,
+  accountConfigSummary,
+  fieldKey,
+  inheritableHelp,
+  isProviderAccountStatus,
+  prepareAccountSubmission,
+  providerFields,
+  providerFormFor,
+  statusEnablesProvider,
+  statusNotice,
+  validateProviderDraft,
+  type Notice,
+  type NoticeTone,
+  type ProviderAccountStatus,
+  type ProviderField,
+  type ProviderForm,
+  type ProviderSection,
+} from '../../../lib/provider-forms';
 
 interface NetworkTenant {
   id: string;
@@ -76,53 +102,28 @@ const STATUS_DOT: Record<string, string> = {
   archived: 'bg-zinc-400',
 };
 
-// Campos de credenciales por proveedor. `secret` ⇒ input password (nunca se muestra de vuelta).
-interface ProviderForm {
+/** De dónde sale hoy la credencial de un proveedor para este tenant (`GET /provider-accounts/resolve`). */
+interface ResolvedOrigin {
+  ownerTenantId: string;
   label: string;
-  credentials: { key: string; label: string; secret?: boolean }[];
-  config: { key: string; label: string }[];
+  inherited: boolean;
+  /**
+   * Veredicto del servidor sobre si la cuenta está COMPLETA. Opcionales y sin tipar porque no
+   * todos los despliegues del API los mandan: `accountCertainty` los valida y, si no vienen, la
+   * pantalla dice que no lo sabe en vez de suponer que la cuenta sirve.
+   */
+  readiness?: unknown;
+  missingRequiredFields?: unknown;
 }
-const LATAM_NDC: ProviderForm = {
-  label: 'LATAM NDC',
-  credentials: [
-    { key: 'apiKey', label: 'API Key', secret: true },
-    { key: 'apiSecret', label: 'API Secret', secret: true },
-    { key: 'agencyId', label: 'Agency ID' },
-    { key: 'agencyIata', label: 'IATA' },
-    { key: 'agencyName', label: 'Nombre de agencia' },
-    { key: 'travelAgentId', label: 'Travel Agent ID' },
-    { key: 'country', label: 'País (POS)' },
-    { key: 'accountCode', label: 'Account Code' },
-  ],
-  config: [{ key: 'apiUrl', label: 'API URL' }],
-};
-// AgentCars (renta de autos). El token es secreto; sourceCountry = POS del agente.
-// baseUrl/suggestUrl/language son opcionales (el adapter usa defaults de desarrollo).
-const AGENT_CARS: ProviderForm = {
-  label: 'AgentCars',
-  credentials: [{ key: 'accessToken', label: 'Access Token', secret: true }],
-  config: [
-    { key: 'sourceCountry', label: 'País origen / POS (ej: CO)' },
-    { key: 'baseUrl', label: 'Base URL (opcional)' },
-    { key: 'suggestUrl', label: 'Suggest URL (opcional)' },
-    { key: 'language', label: 'Idioma (opcional)' },
-  ],
-};
-const PROVIDERS: Record<string, ProviderForm> = {
-  'latam-ndc': LATAM_NDC,
-  'agent-cars': AGENT_CARS,
-};
 
 /**
- * Sin fallback, a propósito. La versión anterior caía a LATAM NDC ante un código
- * desconocido y pintaba SUS campos: el operador cargaba API Key y API Secret creyendo que
- * configuraba otro proveedor, la cuenta se guardaba con la forma de credencial equivocada
- * y el fallo recién aparecía en la primera búsqueda, ya disfrazado de "el proveedor no
- * responde". Con un proveedor de vuelos era invisible; con dos es una fuga de credenciales
- * al formulario del proveedor que no es.
+ * Resultado de consultar el origen. `'none'` (no resuelve nada) y `'unknown'` (la consulta falló)
+ * se mantienen separados a propósito: son consejos opuestos para el operador.
  */
-function providerFormFor(code: string): ProviderForm | undefined {
-  return PROVIDERS[code];
+type OriginLookup = ResolvedOrigin | 'none' | 'unknown';
+
+function isResolvedOrigin(lookup: OriginLookup | undefined): lookup is ResolvedOrigin {
+  return typeof lookup === 'object' && lookup !== null;
 }
 
 interface SalesRow {
@@ -204,6 +205,12 @@ export default function RedPage() {
     for (const arr of childrenOf.values()) arr.sort(byName);
     return { roots, childrenOf };
   }, [tenants]);
+
+  // Para nombrar al dueño de una credencial heredada: `resolve` devuelve el id, no el nombre.
+  const tenantNames = useMemo(
+    () => new Map(tenants.map((t) => [t.id, t.name] as const)),
+    [tenants],
+  );
 
   function renderRows(nodes: NetworkTenant[], level: number): React.ReactNode[] {
     return nodes.flatMap((t) => {
@@ -404,7 +411,14 @@ export default function RedPage() {
         />
       )}
 
-      {credsFor && <CredentialsModal tenant={credsFor} onClose={() => setCredsFor(null)} />}
+      {credsFor && (
+        <CredentialsModal
+          tenant={credsFor}
+          childCount={(childrenOf.get(credsFor.id) ?? []).length}
+          tenantNames={tenantNames}
+          onClose={() => setCredsFor(null)}
+        />
+      )}
 
       {pricingFor && <PricingModal tenant={pricingFor} onClose={() => setPricingFor(null)} />}
 
@@ -602,9 +616,33 @@ function CreateAgencyModal({
   );
 }
 
-function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () => void }) {
+/**
+ * Gestión BYOC de un nodo: de dónde salen HOY sus credenciales por proveedor, qué cuentas
+ * propias tiene, y el alta de una nueva.
+ *
+ * El panel tiene que explicar dos cosas que el modelo de datos hace en silencio y que, sin
+ * cartelería, dejan al operador mirando una búsqueda sin resultados:
+ *
+ *  1. `resolve_provider_account` sólo mira cuentas con `status = 'active'`. Una cuenta guardada
+ *     en Sandbox —el default del API— no habilita nada y no produce ningún error.
+ *  2. La resolución sube por el árbol: sin cuenta propia activa, se usa la del ancestro
+ *     heredable más cercano. Esa es la herencia del modelo consolidador, y hasta ahora el panel
+ *     no la mostraba en ningún sitio.
+ */
+function CredentialsModal({
+  tenant,
+  childCount,
+  tenantNames,
+  onClose,
+}: {
+  tenant: NetworkTenant;
+  childCount: number;
+  tenantNames: ReadonlyMap<string, string>;
+  onClose: () => void;
+}) {
   const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [origins, setOrigins] = useState<Map<string, OriginLookup> | null>(null);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -612,17 +650,48 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
   const [providerCode, setProviderCode] = useState('latam-ndc');
   const [label, setLabel] = useState('default');
   const [isInheritable, setIsInheritable] = useState(true);
-  const [status, setStatus] = useState<'sandbox' | 'active' | 'disabled'>('sandbox');
+  const [status, setStatus] = useState<ProviderAccountStatus>('sandbox');
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
 
   const provider = providerFormFor(providerCode);
+  const ownerNameOf = useCallback(
+    (ownerTenantId: string) => tenantNames.get(ownerTenantId) ?? 'un ancestro de tu red',
+    [tenantNames],
+  );
 
-  useEffect(() => {
-    void load();
-  }, []);
+  const draftLookup = origins?.get(providerCode);
+  const draftOrigin = isResolvedOrigin(draftLookup) ? draftLookup : null;
 
-  async function load() {
+  /**
+   * Lo que se va a anunciar Y lo que se va a mandar, calculado en el MISMO sitio.
+   *
+   * Que la etiqueta se normalizara dos veces —en crudo para el aviso, con `trim() || 'default'`
+   * para el `POST`— es lo que hacía que con el campo vacío la pantalla dijera "no cambia la cuenta
+   * que está en uso" mientras el guardado pisaba la cuenta `default` activa. Aquí sale una sola
+   * etiqueta y de ella cuelgan las dos cosas.
+   */
+  const submission = useMemo(
+    () =>
+      provider
+        ? prepareAccountSubmission(
+            provider,
+            { label, status, sections: { credentials, config } },
+            {
+              resolved: draftOrigin && {
+                inherited: draftOrigin.inherited,
+                label: draftOrigin.label,
+              },
+              tenantName: tenant.name,
+              ownerName: draftOrigin ? ownerNameOf(draftOrigin.ownerTenantId) : 'el consolidador',
+            },
+          )
+        : null,
+    [provider, label, status, credentials, config, draftOrigin, tenant.name, ownerNameOf],
+  );
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/provider-accounts?tenantId=${encodeURIComponent(tenant.id)}`);
@@ -634,16 +703,67 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
     } finally {
       setLoading(false);
     }
+  }, [tenant.id]);
+
+  /**
+   * Pregunta al API, proveedor por proveedor, qué cuenta resolvería este tenant. Es la única
+   * fuente fiable del origen: replicar aquí la regla de resolución sería una segunda copia que se
+   * desincroniza con la función de Postgres.
+   *
+   * Un proveedor que falle queda en `'unknown'`, NO en `'none'`. Pintar un 403 o un 500 como
+   * "sin credenciales" empujaría al operador a cargar credenciales que a lo mejor ya tiene, y a
+   * pisar la cuenta activa del consolidador con una suya en sandbox.
+   */
+  const loadOrigins = useCallback(async () => {
+    const entries = await Promise.all(
+      Object.keys(PROVIDERS).map(async (code): Promise<[string, OriginLookup]> => {
+        try {
+          const res = await fetch(
+            `/api/provider-accounts/resolve?tenantId=${encodeURIComponent(tenant.id)}&providerCode=${encodeURIComponent(code)}`,
+          );
+          if (!res.ok) return [code, 'unknown'];
+          const data = (await res.json()) as { resolved?: ResolvedOrigin | null };
+          // `{ resolved: null }` es la respuesta del 404 del API: no resuelve ninguna cuenta.
+          return [code, data.resolved ?? 'none'];
+        } catch {
+          return [code, 'unknown'];
+        }
+      }),
+    );
+    setOrigins(new Map(entries));
+  }, [tenant.id]);
+
+  useEffect(() => {
+    void load();
+    void loadOrigins();
+  }, [load, loadOrigins]);
+
+  /** Cambiar de proveedor limpia lo tecleado: los campos de uno no significan nada en el otro. */
+  function selectProvider(code: string) {
+    setProviderCode(code);
+    setCredentials({});
+    setConfig({});
+    setFieldErrors({});
+    setError('');
   }
 
   async function save() {
     setError('');
-    if (!provider) {
+    setFieldErrors({});
+    if (!provider || !submission) {
       setError(
         `El proveedor "${providerCode}" no está soportado por este panel. Actualizá la plataforma antes de cargarle credenciales.`,
       );
       return;
     }
+
+    const validation = validateProviderDraft(provider, { credentials, config });
+    if (!validation.ok) {
+      setFieldErrors(validation.fieldErrors);
+      setError(validation.summary ?? 'Revisá los campos marcados.');
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await fetch('/api/provider-accounts', {
@@ -652,22 +772,24 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
         body: JSON.stringify({
           tenantId: tenant.id,
           providerCode,
-          label: label.trim() || 'default',
-          credentials,
-          config,
+          // La etiqueta del aviso, no otra: es la misma que decidió qué decía la cartelería.
+          label: submission.label,
+          credentials: submission.payload.credentials,
+          config: submission.payload.config,
           isInheritable,
           status,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { message?: string | string[]; error?: string };
       if (!res.ok) {
-        setError(data.error ?? 'Error al guardar credenciales');
+        setError(apiError(data, 'Error al guardar credenciales'));
         return;
       }
       setAdding(false);
       setCredentials({});
       setConfig({});
       void load();
+      void loadOrigins();
     } catch {
       setError('Error de conexión');
     } finally {
@@ -675,16 +797,66 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
     }
   }
 
+  /**
+   * `config` de la cuenta PROPIA que resuelve, para poder decir algo sobre si está completa.
+   * `undefined` cuando no la tenemos: cuenta heredada (su fila es de un ancestro y la RLS no la
+   * deja leer) o listado todavía cargando. En los dos casos la pantalla se calla en vez de
+   * afirmar que funciona.
+   */
+  const resolvedOwnConfig = useCallback(
+    (code: string, origin: ResolvedOrigin): Record<string, unknown> | undefined => {
+      if (origin.inherited || loading) return undefined;
+      return accounts.find((a) => a.providerCode === code && a.label === origin.label)?.config;
+    },
+    [accounts, loading],
+  );
+
   return (
     <Modal title={`Credenciales · ${tenant.name}`} onClose={onClose} wide>
       <div className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--color-primary)]" />
         <span>
-          Las credenciales se cifran y nunca se muestran de vuelta. Si esta agencia no carga las
-          suyas, hereda las del consolidador (cuentas marcadas como heredables).
+          Las credenciales se cifran y nunca se muestran de vuelta. Sólo cuentan las cuentas en
+          estado <strong className="text-[var(--color-fg)]">Activo</strong>: si esta agencia no
+          tiene una propia activa, usa la del ancestro heredable más cercano que la tenga. Qué pasa
+          cuando no hay ninguna depende del proveedor — Sabre queda fuera de las búsquedas, y otros
+          caen a las credenciales de la plataforma.
         </span>
       </div>
 
+      {/* Origen efectivo por proveedor: el corazón del modelo consolidador, visible. */}
+      <section aria-labelledby="origen-credenciales" className="mb-5">
+        <h3
+          id="origen-credenciales"
+          className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]"
+        >
+          De dónde salen hoy las credenciales de {tenant.name}
+        </h3>
+        {origins === null ? (
+          <div className="h-20 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+        ) : (
+          <ul className="space-y-1.5">
+            {Object.entries(PROVIDERS).map(([code, form]) => (
+              <li
+                key={code}
+                className="flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+              >
+                <span className="text-sm font-medium text-[var(--color-fg)]">{form.label}</span>
+                <ProviderOrigin
+                  form={form}
+                  origin={origins.get(code) ?? 'unknown'}
+                  ownerNameOf={ownerNameOf}
+                  visibleConfig={(origin) => resolvedOwnConfig(code, origin)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
+        Cuentas propias de {tenant.name}
+      </h3>
       {loading ? (
         <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
       ) : accounts.length === 0 ? (
@@ -694,44 +866,64 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
         </div>
       ) : (
         <div className="space-y-2">
-          {accounts.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
-            >
-              <div className="flex items-center gap-2.5">
-                <KeyRound className="size-4 text-[var(--color-fg-subtle)]" />
-                <div>
-                  <div className="text-sm font-medium text-[var(--color-fg)]">
-                    {providerFormFor(a.providerCode)?.label ?? a.providerCode}{' '}
-                    <span className="font-normal text-[var(--color-fg-subtle)]">· {a.label}</span>
-                  </div>
-                  <div className="text-[10px] text-[var(--color-fg-subtle)]">
-                    {a.isInheritable ? 'Heredable por sub-agencias' : 'No heredable'}
-                  </div>
-                  {/* Una cuenta con un código que este panel no conoce no se puede editar sin
-                      arriesgarse a pisarla con la forma de credencial de otro proveedor. */}
-                  {!providerFormFor(a.providerCode) && (
-                    <div className="text-[10px] font-medium text-[var(--color-danger)]">
-                      Proveedor desconocido para esta versión del panel
-                    </div>
-                  )}
-                </div>
-              </div>
-              <span
-                className={cn(
-                  'rounded-full border px-2 py-0.5 text-[10px] font-medium',
-                  a.status === 'active'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : a.status === 'sandbox'
-                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : 'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
-                )}
+          {accounts.map((a) => {
+            const form = providerFormFor(a.providerCode);
+            const summary = form ? accountConfigSummary(form, a.config) : [];
+            return (
+              <div
+                key={a.id}
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
               >
-                {a.status}
-              </span>
-            </div>
-          ))}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <KeyRound className="mt-0.5 size-4 shrink-0 text-[var(--color-fg-subtle)]" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-[var(--color-fg)]">
+                        {form?.label ?? a.providerCode}{' '}
+                        <span className="font-normal text-[var(--color-fg-subtle)]">
+                          · {a.label}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--color-fg-subtle)]">
+                        {a.isInheritable ? 'Heredable por sub-agencias' : 'No heredable'}
+                        {summary.length > 0 ? ` · ${summary.join(' · ')}` : ''}
+                      </div>
+                      {/* Una cuenta con un código que este panel no conoce no se puede editar sin
+                          arriesgarse a pisarla con la forma de credencial de otro proveedor. */}
+                      {!form && (
+                        <div className="text-[10px] font-medium text-[var(--color-danger)]">
+                          Proveedor desconocido para esta versión del panel
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                      statusEnablesProvider(a.status)
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : a.status === 'sandbox'
+                          ? 'border-amber-200 bg-amber-50 text-amber-700'
+                          : 'border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-fg-subtle)]',
+                    )}
+                  >
+                    {isProviderAccountStatus(a.status) ? STATUS_LABELS[a.status] : a.status}
+                  </span>
+                </div>
+                {/* El operador ve una cuenta cargada y asume que funciona. No funciona. */}
+                {!statusEnablesProvider(a.status) && (
+                  <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                    <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
+                    <span>
+                      Guardada pero <strong>sin efecto</strong>: sólo las cuentas en estado Activo
+                      habilitan el proveedor. Cargá los mismos datos otra vez con estado{' '}
+                      <strong>Activo</strong> para promoverla.
+                    </span>
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -748,7 +940,7 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
             <Field label="Proveedor">
               <select
                 value={providerCode}
-                onChange={(e) => setProviderCode(e.target.value)}
+                onChange={(e) => selectProvider(e.target.value)}
                 className={selectClass}
               >
                 {Object.entries(PROVIDERS).map(([code, p]) => (
@@ -766,47 +958,111 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
                 className={inputClass}
               />
             </Field>
-            {provider?.credentials.map((f) => (
-              <Field key={f.key} label={f.label}>
-                <input
-                  type={f.secret ? 'password' : 'text'}
-                  value={credentials[f.key] ?? ''}
-                  onChange={(e) => setCredentials((c) => ({ ...c, [f.key]: e.target.value }))}
-                  className={inputClass}
-                  autoComplete="off"
-                />
-              </Field>
-            ))}
-            {provider?.config.map((f) => (
-              <Field key={f.key} label={f.label}>
-                <input
-                  value={config[f.key] ?? ''}
-                  onChange={(e) => setConfig((c) => ({ ...c, [f.key]: e.target.value }))}
-                  className={inputClass}
-                />
-              </Field>
-            ))}
+          </div>
+
+          {provider?.note && (
+            <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
+              <Info className="mt-px size-3 shrink-0 text-[var(--color-primary)]" aria-hidden />
+              <span>{provider.note}</span>
+            </p>
+          )}
+
+          {/* Las dos mitades, separadas y rotuladas: cuál se cifra y cuál se guarda en claro no
+              es un detalle interno —decide dónde puede acabar una contraseña. */}
+          {provider &&
+            (['credentials', 'config'] as const).map((section) => {
+              const fields = providerFields(provider, section);
+              if (fields.length === 0) return null;
+              return (
+                <fieldset key={section} className="mt-4">
+                  <legend className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
+                    {section === 'credentials'
+                      ? 'Credenciales (se guardan cifradas)'
+                      : 'Configuración (se guarda en claro)'}
+                  </legend>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {fields.map((field) => (
+                      <ProviderFieldControl
+                        key={fieldKey(section, field.key)}
+                        section={section}
+                        field={field}
+                        value={(section === 'credentials' ? credentials : config)[field.key] ?? ''}
+                        error={fieldErrors[fieldKey(section, field.key)]}
+                        onChange={(value) => {
+                          const setter = section === 'credentials' ? setCredentials : setConfig;
+                          setter((prev) => ({ ...prev, [field.key]: value }));
+                        }}
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+              );
+            })}
+
+          {provider &&
+            [...provider.credentials, ...provider.config].some((f) => f.required === true) && (
+              <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
+                Los campos marcados con{' '}
+                <span className="text-[var(--color-danger)]" aria-hidden>
+                  *
+                </span>{' '}
+                son obligatorios.
+              </p>
+            )}
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Field label="Estado">
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as typeof status)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (isProviderAccountStatus(next)) setStatus(next);
+                }}
                 className={selectClass}
               >
-                <option value="sandbox">Sandbox</option>
-                <option value="active">Activo</option>
-                <option value="disabled">Deshabilitado</option>
+                {PROVIDER_ACCOUNT_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))}
               </select>
             </Field>
-            <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-[var(--color-fg-muted)]">
-              <input
-                type="checkbox"
-                checked={isInheritable}
-                onChange={(e) => setIsInheritable(e.target.checked)}
-                className="size-4 rounded border-[var(--color-border)]"
-              />
-              Heredable por sub-agencias
-            </label>
+            <div className="space-y-1">
+              {/* Rótulo del grupo, no una segunda `label` del checkbox: dos labels apuntando al
+                  mismo control le dan un nombre accesible pegado ("Herencia Heredable por…"). */}
+              <span className="block text-xs font-medium text-[var(--color-fg)]">Herencia</span>
+              <label
+                htmlFor="creds-inheritable"
+                className="flex items-center gap-2 text-xs text-[var(--color-fg-muted)]"
+              >
+                <input
+                  id="creds-inheritable"
+                  type="checkbox"
+                  checked={isInheritable}
+                  onChange={(e) => setIsInheritable(e.target.checked)}
+                  aria-describedby="creds-inheritable-help"
+                  className="size-4 rounded border-[var(--color-border)]"
+                />
+                Heredable por sub-agencias
+              </label>
+            </div>
           </div>
+          <p
+            id="creds-inheritable-help"
+            className="mt-1.5 text-[11px] text-[var(--color-fg-subtle)]"
+          >
+            {inheritableHelp(childCount)}
+          </p>
+
+          {/* Qué significa el estado elegido, junto al select donde se elige. */}
+          <NoticeBox notice={statusNotice(status)} />
+          {/* Y qué le pasa a la herencia al guardar con ese estado. Sólo cuando SABEMOS de dónde
+              salen hoy las credenciales: con la consulta a medias o fallida diríamos "no resuelve
+              ninguna cuenta" sobre un tenant que quizá hereda, que es lo contrario de la verdad. */}
+          {submission && draftLookup !== undefined && draftLookup !== 'unknown' && (
+            <NoticeBox notice={submission.notice} />
+          )}
+
           {!provider && (
             <ErrorBox>
               El proveedor &quot;{providerCode}&quot; no está soportado por este panel: no sabemos
@@ -832,6 +1088,181 @@ function CredentialsModal({ tenant, onClose }: { tenant: NetworkTenant; onClose:
         </Button>
       </ModalFooter>
     </Modal>
+  );
+}
+
+const CERTAINTY_TEXT: Record<NoticeTone, string> = {
+  warn: 'text-amber-800',
+  ok: 'text-emerald-800',
+  muted: 'text-[var(--color-fg-subtle)]',
+};
+
+/**
+ * De dónde sale la credencial de un proveedor, y QUÉ TANTO se puede afirmar de eso.
+ *
+ * Hasta esta tanda esta línea decía "Credenciales propias · cuenta «default»" en verde para una
+ * cuenta que la búsqueda rechaza: el diagnóstico sólo miraba la puerta SQL (`status = 'active'`) y
+ * no si la credencial sirve. Es el caso real de las cuentas de Sabre cargadas por API sin
+ * `homePcc`. Ahora la línea dice de dónde sale —que es lo que sí sabe— y debajo dice lo que no
+ * sabe, en vez de pintar de verde una suposición.
+ */
+function ProviderOrigin({
+  form,
+  origin,
+  ownerNameOf,
+  visibleConfig,
+}: {
+  form: ProviderForm;
+  origin: OriginLookup;
+  ownerNameOf: (ownerTenantId: string) => string;
+  visibleConfig: (origin: ResolvedOrigin) => Record<string, unknown> | undefined;
+}) {
+  if (origin === 'unknown') {
+    return (
+      <span className="text-xs text-[var(--color-fg-muted)] sm:text-right">
+        No pudimos consultar el origen · reintentá abriendo de nuevo esta pantalla
+      </span>
+    );
+  }
+
+  if (origin === 'none') {
+    return (
+      <span className="text-xs text-[var(--color-fg-muted)] sm:text-right">
+        <span className="font-medium text-[var(--color-fg)]">
+          Sin credenciales propias ni heredadas
+        </span>
+      </span>
+    );
+  }
+
+  const certainty = accountCertaintyNotice(
+    accountCertainty(form, visibleConfig(origin), {
+      readiness: origin.readiness,
+      missingRequiredFields: origin.missingRequiredFields,
+    }),
+  );
+
+  return (
+    <div className="text-xs text-[var(--color-fg-muted)] sm:max-w-[70%] sm:text-right">
+      {origin.inherited ? (
+        <p>
+          <span className="font-medium text-sky-700">Heredadas</span> de{' '}
+          <span className="font-medium text-[var(--color-fg)]">
+            {ownerNameOf(origin.ownerTenantId)}
+          </span>{' '}
+          · cuenta «{origin.label}»
+        </p>
+      ) : (
+        <p>
+          <span className="font-medium text-[var(--color-fg)]">Credenciales propias</span> · cuenta
+          «{origin.label}»
+        </p>
+      )}
+      {certainty && (
+        <p className={cn('mt-0.5 leading-snug', CERTAINTY_TEXT[certainty.tone])}>
+          {certainty.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Un campo del formulario BYOC con su ayuda y su error asociados por `aria-describedby`: sin eso,
+ * un lector de pantalla anuncia "PCC de la oficina, editable" y nada más — ni que es obligatorio
+ * ni por qué se rechazó.
+ */
+function ProviderFieldControl({
+  section,
+  field,
+  value,
+  error,
+  onChange,
+}: {
+  section: ProviderSection;
+  field: ProviderField;
+  value: string;
+  error: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const id = `byoc-${section}-${field.key}`;
+  const helpId = field.help ? `${id}-help` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined;
+
+  const shared = {
+    id,
+    value,
+    'aria-describedby': describedBy,
+    'aria-invalid': error ? (true as const) : undefined,
+    'aria-required': field.required === true ? (true as const) : undefined,
+    className: cn(
+      field.options ? selectClass : inputClass,
+      error && 'border-[var(--color-danger)] focus-visible:border-[var(--color-danger)]',
+    ),
+  };
+
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id}>
+        {field.label}
+        {field.required === true && (
+          <span className="ml-0.5 text-[var(--color-danger)]" aria-hidden>
+            *
+          </span>
+        )}
+      </Label>
+      {field.options ? (
+        <select {...shared} onChange={(e) => onChange(e.target.value)}>
+          {field.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          {...shared}
+          type={field.secret === true ? 'password' : 'text'}
+          placeholder={field.placeholder}
+          autoComplete="off"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {field.help && (
+        <p id={helpId} className="text-[11px] leading-snug text-[var(--color-fg-subtle)]">
+          {field.help}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} className="text-[11px] leading-snug font-medium text-[var(--color-danger)]">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const NOTICE_STYLES: Record<Notice['tone'], { box: string; icon: typeof Info }> = {
+  warn: { box: 'border-amber-200 bg-amber-50 text-amber-900', icon: AlertTriangle },
+  ok: { box: 'border-emerald-200 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
+  muted: {
+    box: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)]',
+    icon: Info,
+  },
+};
+
+function NoticeBox({ notice }: { notice: Notice }) {
+  const style = NOTICE_STYLES[notice.tone];
+  const Icon = style.icon;
+  return (
+    <div className={cn('mt-3 flex items-start gap-2 rounded-lg border px-3 py-2', style.box)}>
+      <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <div className="text-[11px] leading-snug">
+        <p className="font-medium">{notice.title}</p>
+        <p className="mt-0.5 opacity-90">{notice.body}</p>
+      </div>
+    </div>
   );
 }
 
@@ -1799,9 +2230,13 @@ function Field({
   );
 }
 
+/** `role="alert"` para que el error se anuncie al aparecer: sin eso sólo lo ve quien mira. */
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+    <div
+      role="alert"
+      className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
+    >
       {children}
     </div>
   );

@@ -131,6 +131,44 @@ describe('SabreProviderFactory — Sabre NO tiene fallback a credenciales de pla
   });
 });
 
+/**
+ * La contraseña se lee SÓLO del blob cifrado.
+ *
+ * `toConfig` lo promete en un comentario y hasta ahora nada lo sujetaba: añadirle
+ * `?? str(g['password'])` —igual que ya tienen `epr` y `homePcc`— dejaba la suite entera en
+ * verde. Con eso, una cuenta cargada por API podía guardar la contraseña de la oficina en un
+ * JSONB en claro y encima funcionar, que es lo que convierte el atajo en permanente.
+ *
+ * Estos dos tests son el mutante: con la lectura desde `config` añadida, el primero deja de
+ * lanzar y el segundo deja de nombrar `password`.
+ */
+describe('SabreProviderFactory — la contraseña no se lee de `config`', () => {
+  const soloEnConfig = () =>
+    factoryWith(() =>
+      Promise.resolve(
+        resolved({ credentials: { epr: EPR, homePcc: HOME_PCC }, config: { password: PASSWORD } }),
+      ),
+    );
+
+  it('una contraseña puesta en `config` NO completa la cuenta: el proveedor sigue ausente', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    await expect(soloEnConfig().forTenant('t1')).rejects.toThrow(NotFoundException);
+    warn.mockRestore();
+  });
+
+  it('y el motivo sigue siendo que falta `password`, sin hacer eco de su valor', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const err = await soloEnConfig()
+      .forTenant('t1')
+      .catch((e: unknown) => e);
+    warn.mockRestore();
+
+    const texto = err instanceof Error ? err.message : String(err);
+    expect(texto).toContain('password');
+    expect(texto).not.toContain(PASSWORD);
+  });
+});
+
 describe('SabreProviderFactory — entorno', () => {
   const llamadas: string[] = [];
 

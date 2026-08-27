@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { ProviderAccountStatus } from '../database/database.types.js';
 import { decryptCredentials, encryptCredentials } from './credentials-cipher.js';
+import {
+  accountReadiness,
+  safeConfigView,
+  type ProviderAccountReadiness,
+} from './provider-specs.js';
 
 /** Resultado interno de resolución BYOC. Incluye el secreto descifrado: NUNCA exponer por API. */
 export interface ResolvedProviderAccount {
@@ -30,8 +35,31 @@ interface ResolveRow {
   updated_at: Date | null;
 }
 
+/** Fila del listado. NUNCA lleva el secreto: sólo metadata y NOMBRES de campo. */
+export interface SafeProviderAccount {
+  id: string;
+  providerCode: string;
+  label: string;
+  /** Sólo las claves de `config` declaradas seguras para este proveedor. */
+  config: Record<string, unknown>;
+  /** Nombres —nunca valores— de las claves de `config` que no se devuelven. */
+  redactedConfigKeys: readonly string[];
+  /** `false` ⇒ el proveedor no declara lista blanca: no se sabe qué es seguro mostrar. */
+  configVerified: boolean;
+  /** Qué se sabe sobre si la cuenta puede autenticar. `unknown` = no se sabe, no "está bien". */
+  readiness: ProviderAccountReadiness;
+  /** Campos obligatorios que faltan, por NOMBRE. Vacío salvo en `incomplete`. */
+  missingRequiredFields: readonly string[];
+  isInheritable: boolean;
+  status: ProviderAccountStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class ProviderCredentialsService {
+  private readonly logger = new Logger(ProviderCredentialsService.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   /**
@@ -117,8 +145,19 @@ export class ProviderCredentialsService {
     });
   }
 
-  /** Lista las cuentas del tenant SIN exponer el secreto. */
-  async listSafe(tenantId: string) {
+  /**
+   * Lista las cuentas del tenant SIN exponer el secreto.
+   *
+   * `config` NO sale verbatim. Es un JSONB en claro y por API se le puede meter cualquier cosa
+   * —un `epr`, una contraseña—, así que se filtra por la lista blanca declarada del proveedor y
+   * lo que no está declarado sale sólo como NOMBRE de clave (ver `safeConfigView`).
+   *
+   * El blob cifrado se descifra acá para saber QUÉ CLAVES trae y poder decir si la cuenta está
+   * completa. Sólo se leen los nombres: el texto plano no sale de este método ni entra en ningún
+   * log. Es la única forma de contestar la pregunta, porque una cuenta incompleta nunca llega a
+   * `resolve` (que además filtra por `status = 'active'`).
+   */
+  async listSafe(tenantId: string): Promise<SafeProviderAccount[]> {
     const rows = await this.db.withTenant(tenantId, async (trx) =>
       trx
         .selectFrom('provider_accounts')
@@ -127,6 +166,7 @@ export class ProviderCredentialsService {
           'provider_code',
           'label',
           'config',
+          'credentials_enc',
           'is_inheritable',
           'status',
           'created_at',
@@ -137,15 +177,57 @@ export class ProviderCredentialsService {
         .execute(),
     );
 
-    return rows.map((r) => ({
-      id: r.id,
-      providerCode: r.provider_code,
-      label: r.label,
-      config: (r.config ?? {}) as Record<string, unknown>,
-      isInheritable: r.is_inheritable,
-      status: r.status,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+    return rows.map((r) => {
+      const config = (r.config ?? {}) as Record<string, unknown>;
+      const view = safeConfigView(r.provider_code, config);
+      const completeness = accountReadiness(
+        r.provider_code,
+        this.credentialKeyNames(r.credentials_enc, r.id, r.provider_code),
+        config,
+      );
+
+      return {
+        id: r.id,
+        providerCode: r.provider_code,
+        label: r.label,
+        config: view.config,
+        redactedConfigKeys: view.redactedConfigKeys,
+        configVerified: view.configVerified,
+        readiness: completeness.readiness,
+        missingRequiredFields: completeness.missingRequiredFields,
+        isInheritable: r.is_inheritable,
+        status: r.status,
+        createdAt: r.created_at as unknown as Date,
+        updatedAt: r.updated_at as unknown as Date,
+      };
+    });
+  }
+
+  /**
+   * NOMBRES de las credenciales que traen valor útil, o `null` si el blob no se pudo leer
+   * (clave rotada, cifrado corrupto). `null` es "no sé", y quien lo consume no puede convertirlo
+   * en "está completa".
+   *
+   * El `catch` no propaga a propósito: una cuenta ilegible no puede tumbar el listado entero de
+   * la agencia, que es justo la pantalla desde la que se arregla.
+   */
+  private credentialKeyNames(
+    blob: Buffer,
+    accountId: string,
+    providerCode: string,
+  ): readonly string[] | null {
+    try {
+      const parsed: unknown = JSON.parse(decryptCredentials(blob));
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      return Object.entries(parsed as Record<string, unknown>)
+        .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+        .map(([key]) => key);
+    } catch {
+      // Ni el error ni el blob entran en el log: sólo qué cuenta y de qué proveedor.
+      this.logger.warn(
+        `credenciales ilegibles en la cuenta ${accountId} (${providerCode}): completitud desconocida`,
+      );
+      return null;
+    }
   }
 }

@@ -13,7 +13,11 @@ import type { ProviderAccountStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { UpsertProviderAccountSchema } from './dto.js';
-import { ProviderCredentialsService } from './provider-credentials.service.js';
+import { accountReadiness, type ProviderAccountReadiness } from './provider-specs.js';
+import {
+  ProviderCredentialsService,
+  type SafeProviderAccount,
+} from './provider-credentials.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 
@@ -76,7 +80,7 @@ export class ProviderCredentialsController {
   async list(
     @CurrentUser() userId: string | undefined,
     @Query('tenantId') tenantId: string,
-  ): Promise<{ accounts: unknown[] }> {
+  ): Promise<{ accounts: SafeProviderAccount[] }> {
     await this.assertCanManage(userId, tenantId);
     const accounts = await this.service.listSafe(tenantId);
     return { accounts };
@@ -85,6 +89,10 @@ export class ProviderCredentialsController {
   /**
    * Diagnóstico: qué cuenta resolvería un tenant para un proveedor (propia o
    * heredada del consolidador). NO devuelve el secreto, sólo de dónde sale.
+   *
+   * Y si la cuenta resuelta está INCOMPLETA lo dice, porque resolver no es funcionar: una cuenta
+   * activa a la que le falta un campo obligatorio resuelve igual y después desaparece de las
+   * búsquedas sin error. `missingRequiredFields` lleva NOMBRES de campo, nunca valores.
    */
   @Get('resolve')
   async resolve(
@@ -97,9 +105,18 @@ export class ProviderCredentialsController {
     providerCode: string;
     label: string;
     inherited: boolean;
+    readiness: ProviderAccountReadiness;
+    missingRequiredFields: readonly string[];
   }> {
     await this.assertCanManage(userId, tenantId);
     const resolved = await this.service.resolve(tenantId, providerCode);
+    const completeness = accountReadiness(
+      resolved.providerCode,
+      Object.entries(resolved.credentials)
+        .filter(([, v]) => typeof v === 'string' && v.trim().length > 0)
+        .map(([k]) => k),
+      resolved.config,
+    );
     // Se omite `credentials` deliberadamente.
     return {
       id: resolved.id,
@@ -107,6 +124,8 @@ export class ProviderCredentialsController {
       providerCode: resolved.providerCode,
       label: resolved.label,
       inherited: resolved.inherited,
+      readiness: completeness.readiness,
+      missingRequiredFields: completeness.missingRequiredFields,
     };
   }
 
