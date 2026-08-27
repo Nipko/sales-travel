@@ -189,9 +189,15 @@ function flightIdentity(segment: Segment): string {
  * Equipaje facturado. `?` cuando la oferta no lo declara, y `?` **no es 0**: "no sé si lleva
  * maleta" y "no lleva maleta" son estados distintos, y tratarlos igual colapsaría una tarifa
  * con maleta contra una sin ella en cuanto un proveedor deje el campo vacío.
+ *
+ * La distinción no cambió; bajó de nivel. Antes vivía en `offer.baggage` entero —o venían las
+ * tres piezas o no venía ninguna—; ahora cada pieza es opcional por separado, para que un
+ * proveedor que sólo informa la facturada pueda publicarla sin inventarse las otras dos. Este
+ * token mira la facturada, que es la que decide si dos tarifas son el mismo producto.
  */
 function baggageToken(offer: Offer): string {
-  return offer.baggage === undefined ? 'bag:?' : `bag:${offer.baggage.checked.qty}`;
+  const checked = offer.baggage?.checked;
+  return checked === undefined ? 'bag:?' : `bag:${checked.qty}`;
 }
 
 /** Mismo criterio que el equipaje: sin políticas declaradas no se afirma nada. */
