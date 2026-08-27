@@ -695,6 +695,37 @@ describe('políticas y datos del proveedor', () => {
     expect(onlyOffer(run(payload)).baggage?.checked).toEqual({ qty: 1 });
   });
 
+  it('la marca se lee de `fareComponentDescs`, que es donde llega en ATPCO', () => {
+    // El fallo real: `conMarca: 0` en las 44 ofertas mientras el propio Sabre declaraba
+    // `brandsOnAnyMarket: true` en las 44. La marca llegaba; mirábamos sólo
+    // `pricingInformation.brand`, que en estas respuestas viene vacío.
+    const payload = clone(adultFixture) as unknown as Json;
+    const g = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']!;
+    const descs = g['fareComponentDescs'] as Array<Record<string, unknown>>;
+    descs[0]!['brand'] = { brandName: 'Economy Flex', code: 'EF' };
+
+    expect(onlyOffer(run(payload)).fareFamily?.name).toBe('Economy Flex');
+  });
+
+  it('sin nombre legible cae al código, antes que quedarse sin marca', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const g = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']!;
+    const descs = g['fareComponentDescs'] as Array<Record<string, unknown>>;
+    descs[0]!['brand'] = { code: 'EF' };
+
+    expect(onlyOffer(run(payload)).fareFamily?.name).toBe('EF');
+  });
+
+  it('el campo directo GANA sobre el del componente: es el más específico', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const g = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']!;
+    const descs = g['fareComponentDescs'] as Array<Record<string, unknown>>;
+    descs[0]!['brand'] = { brandName: 'Del componente' };
+    firstPricing(payload)['brand'] = 'Directo';
+
+    expect(onlyOffer(run(payload)).fareFamily?.name).toBe('Directo');
+  });
+
   it('`fareFamily` sólo aparece si Sabre declara marca', () => {
     expect(onlyOffer(run(clone(adultFixture))).fareFamily).toBeUndefined();
 

@@ -148,6 +148,22 @@ const SabreFareComponentDescSchema = z.object({
   id: z.number().optional(),
   cabinCode: z.string().optional(),
   fareBasisCode: z.string().optional(),
+  /**
+   * La marca tarifaria, donde de verdad viaja en el contenido ATPCO (`FareComponentType.brand` →
+   * `BrandType`, `v5.yml:2857`).
+   *
+   * `pricingInformation.brand` es un string plano que existe en el contrato y llega VACÍO en
+   * estas respuestas. Mientras sólo leíamos ése, `conMarca` daba 0 en las 44 ofertas aunque el
+   * propio Sabre declaraba `brandsOnAnyMarket: true` en las 44: las marcas estaban llegando y las
+   * ignorábamos por mirar el sitio equivocado.
+   */
+  brand: z
+    .object({
+      brandName: z.string().optional(),
+      code: z.string().optional(),
+      programCode: z.string().optional(),
+    })
+    .optional(),
 });
 
 const SabreTotalFareSchema = z.object({
@@ -652,7 +668,7 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
   const expiry = resolveOfferExpiry(pricing, args.fetchedAt, args.ttlSeconds);
   const fees = resolveFees(totalFare, currency);
   const policies = resolvePolicies(pricing, passengers);
-  const fareFamily = resolveFareFamily(pricing, itineraries);
+  const fareFamily = resolveFareFamily(pricing, itineraries, passengers, dicts);
 
   // La franquicia FACTURADA, que es la única que el carril ATPCO informa.
   //
@@ -1240,12 +1256,44 @@ function penaltyVerdict(
   return typeof value === 'boolean' ? value : null;
 }
 
+/**
+ * El nombre de la marca, de las DOS fuentes que el contrato define, en orden de preferencia.
+ *
+ * `pricingInformation.brand` primero porque es el campo directo; los `fareComponentDescs` después
+ * porque es donde de verdad aparece en el contenido ATPCO. Mirar sólo el primero dejaba
+ * `conMarca: 0` con `brandsOnAnyMarket: true` en las 44 ofertas — la marca llegaba y no la
+ * leíamos.
+ *
+ * Del `BrandType` se prefiere `brandName` («Economy Flex») sobre `code` («XX»): lo que se le
+ * enseña al vendedor tiene que poder leerse en voz alta a un cliente.
+ */
+function resolveBrandName(
+  pricing: SabrePricingInformation,
+  passengers: readonly SabrePassengerInfo[],
+  dicts: Dictionaries,
+): string | null {
+  const directo = pricing.brand?.trim();
+  if (directo !== undefined && directo.length > 0) return directo;
+
+  for (const passenger of passengers) {
+    for (const component of passenger.fareComponents ?? []) {
+      if (component.ref === undefined) continue;
+      const desc = dicts.fareComponents.get(component.ref);
+      const nombre = desc?.brand?.brandName?.trim() ?? desc?.brand?.code?.trim();
+      if (nombre !== undefined && nombre.length > 0) return nombre;
+    }
+  }
+  return null;
+}
+
 function resolveFareFamily(
   pricing: SabrePricingInformation,
   itineraries: readonly Itinerary[],
+  passengers: readonly SabrePassengerInfo[],
+  dicts: Dictionaries,
 ): { name: string; cabin: CabinClass } | null {
-  const name = pricing.brand?.trim();
-  if (name === undefined || name.length === 0) return null;
+  const name = resolveBrandName(pricing, passengers, dicts);
+  if (name === null) return null;
   const cabin = itineraries[0]?.segments[0]?.cabin;
   if (cabin === undefined) return null;
   return { name, cabin };
