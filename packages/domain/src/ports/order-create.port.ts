@@ -25,7 +25,19 @@ export interface Passenger {
     number: string;
     issuingCountryCode: string;
     issueDate?: string;
-    expiryDate: string;
+    /**
+     * OPCIONAL, y ésta es la corrección: una cédula colombiana no vence.
+     *
+     * Estaba como obligatorio, así que el formulario —que sólo pide vencimiento para pasaporte,
+     * porque es el único que lo tiene— rellenaba `''` para satisfacer el tipo. Esa cadena vacía
+     * viajaba entera hasta el cable y Sabre rechazaba la reserva con
+     * `travelers.0.identityDocuments.0.expiryDate:invalid_string`. Nadie podía reservar con
+     * cédula, que en Colombia es el documento del 95% de los pasajeros.
+     *
+     * `packages/canonical` ya lo tenía opcional (`pax.ts`): eran dos contratos del mismo dato
+     * en desacuerdo, y ganaba el equivocado.
+     */
+    expiryDate?: string;
   };
   loyaltyProgramAccount?: {
     accountNumber: string;

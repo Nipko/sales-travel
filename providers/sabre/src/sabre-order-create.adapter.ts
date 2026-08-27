@@ -480,6 +480,19 @@ function genderOf(passenger: Passenger): SabreGender {
   return passenger.gender === 'F' ? 'FEMALE' : 'MALE';
 }
 
+/**
+ * Un campo opcional, o nada.
+ *
+ * Existe porque `undefined` y `''` llegan aquí queriendo decir lo mismo —«no lo rellené»— y sólo
+ * uno de los dos es inofensivo. El ACL es el borde: lo que salga de aquí va al cable.
+ */
+function opcional<K extends string>(key: K, value: string | undefined): Record<K, string> | object {
+  const limpio = value?.trim();
+  return limpio === undefined || limpio.length === 0
+    ? {}
+    : ({ [key]: limpio } as Record<K, string>);
+}
+
 function travelerOf(passenger: Passenger): SabreTravelerInput {
   const doc = passenger.identityDoc;
   return {
@@ -499,10 +512,14 @@ function travelerOf(passenger: Passenger): SabreTravelerInput {
       {
         documentType: DOCUMENT_TYPE_BY_DOMAIN_TYPE[doc.type],
         documentNumber: doc.number,
-        expiryDate: doc.expiryDate,
         issuingCountryCode: doc.issuingCountryCode,
         citizenshipCountryCode: passenger.citizenshipCountryCode,
-        ...(doc.issueDate === undefined ? {} : { issueDate: doc.issueDate }),
+        // Los opcionales se OMITEN cuando vienen en blanco, no se mandan vacíos. Un `''` que
+        // sale de un formulario significa «no lo rellené», nunca «el valor es la cadena vacía»,
+        // y el contrato de Sabre no distingue: `expiryDate: ''` es `invalid_string` y tumba la
+        // reserva entera. Pasó: nadie podía reservar con cédula, que no vence.
+        ...opcional('expiryDate', doc.expiryDate),
+        ...opcional('issueDate', doc.issueDate),
       },
     ],
     ...(passenger.loyaltyProgramAccount === undefined

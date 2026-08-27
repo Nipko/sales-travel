@@ -330,7 +330,8 @@ export default function QuotationDetailPage() {
         number: string;
         issuingCountryCode: string;
         issueDate?: string;
-        expiryDate: string;
+        /** Opcional: una cédula no vence, y mandar `''` tumbaba la reserva entera. */
+        expiryDate?: string;
       };
     }[],
     contactInfo: {

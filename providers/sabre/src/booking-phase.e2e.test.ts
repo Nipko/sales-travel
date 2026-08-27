@@ -1357,3 +1357,76 @@ describe('reservar LO QUE DEVUELVE LA BÚSQUEDA, no una oferta de laboratorio', 
     }
   });
 });
+
+/**
+ * Todos los pasajeros de este fichero viajan con PASAPORTE y con vencimiento. Por eso nadie vio
+ * lo que sigue: en Colombia el documento del 95% de los pasajeros es la CÉDULA, y una cédula
+ * **no vence**.
+ *
+ * El puerto de dominio declaraba `expiryDate` obligatorio, así que el formulario —que sólo pide
+ * vencimiento para pasaporte, porque es el único que lo tiene— rellenaba `''` para satisfacer el
+ * tipo. Esa cadena vacía cruzaba entera hasta el builder y Sabre rechazaba la reserva con
+ * `travelers.0.identityDocuments.0.expiryDate:invalid_string`. Nadie podía reservar.
+ */
+describe('documentos sin vencimiento: la cédula no vence, y eso no es un error', () => {
+  function conCedula(expiryDate?: string): Passenger[] {
+    const [first, ...rest] = passengers();
+    return [
+      {
+        ...first!,
+        citizenshipCountryCode: 'CO',
+        identityDoc: {
+          type: 'CC',
+          number: '1020304050',
+          issuingCountryCode: 'CO',
+          ...(expiryDate === undefined ? {} : { expiryDate }),
+        },
+      },
+      ...rest,
+    ];
+  }
+
+  it('sin vencimiento la reserva SALE, y el campo simplemente no viaja', async () => {
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+
+    const outcome = await harness.create.createBooking(
+      orderRequest(shopOffer(), { passengers: conCedula() }),
+      CTX,
+    );
+
+    expect(outcome.result.outcome).toBe('CONFIRMED');
+    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
+    expect(at(body, 'travelers.0.identityDocuments.0.expiryDate')).toBeUndefined();
+    expect(at(body, 'travelers.0.identityDocuments.0.documentType')).toBe('NATIONAL_ID_CARD');
+  });
+
+  it('el `""` del formulario tampoco llega al cable: es «no lo rellené», no un valor', async () => {
+    // Ésta es la carga EXACTA que tumbaba la reserva en producción. El ACL es el borde: aunque
+    // el formulario y el dominio ya no lo produzcan, un `''` de cualquier llamador futuro se
+    // queda aquí y no vuelve a costar una reserva.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+
+    const outcome = await harness.create.createBooking(
+      orderRequest(shopOffer(), { passengers: conCedula('') }),
+      CTX,
+    );
+
+    expect(outcome.result.outcome).toBe('CONFIRMED');
+    expect(
+      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0'),
+    ).not.toHaveProperty('expiryDate');
+  });
+
+  it('un vencimiento de verdad sigue viajando intacto: no se está tirando el dato', async () => {
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+
+    await harness.create.createBooking(
+      orderRequest(shopOffer(), { passengers: conCedula('2033-07-09') }),
+      CTX,
+    );
+
+    expect(
+      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0.expiryDate'),
+    ).toBe('2033-07-09');
+  });
+});

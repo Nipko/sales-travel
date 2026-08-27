@@ -28,7 +28,8 @@ interface Passenger {
     number: string;
     issuingCountryCode: string;
     issueDate?: string;
-    expiryDate: string;
+    /** Opcional: una cédula no vence, y mandar `''` tumbaba la reserva entera. */
+    expiryDate?: string;
   };
 }
 
@@ -261,6 +262,27 @@ export function PassengerForm({
     setTimeout(() => setCopiedHint(false), 1800);
   }
 
+  /**
+   * Quita del pasajero los opcionales que quedaron en blanco.
+   *
+   * El estado del formulario los arranca en `''` porque un `<input>` controlado no admite
+   * `undefined`, y eso está bien DENTRO del formulario. Lo que no puede es salir: un `''` no
+   * significa «vacío», significa «no lo rellené», y para el proveedor son cosas distintas. La
+   * reserva con cédula fallaba entera con `expiryDate:invalid_string` — y la cédula no vence, así
+   * que el campo no se rellenaba nunca.
+   */
+  function sinCamposEnBlanco(p: Passenger): Passenger {
+    const { expiryDate, issueDate, ...doc } = p.identityDoc;
+    return {
+      ...p,
+      identityDoc: {
+        ...doc,
+        ...(expiryDate?.trim() ? { expiryDate } : {}),
+        ...(issueDate?.trim() ? { issueDate } : {}),
+      },
+    };
+  }
+
   // ---- Validación: campos realmente obligatorios para emitir la reserva ----
   function paxIssues(p: Passenger): string[] {
     const out: string[] = [];
@@ -303,7 +325,7 @@ export function PassengerForm({
         areaCode: '1',
       };
       await onSubmit(
-        passengers,
+        passengers.map(sinCamposEnBlanco),
         contactInfo,
         paymentMode === 'pay_now' ? (paymentData ?? undefined) : undefined,
       );
@@ -455,7 +477,7 @@ export function PassengerForm({
                         </Label>
                         <input
                           type="date"
-                          value={pax.identityDoc.expiryDate}
+                          value={pax.identityDoc.expiryDate ?? ''}
                           onChange={(e) => updateDoc(idx, { expiryDate: e.target.value })}
                           className={cn(inputClass, bad('vencimiento del pasaporte') && errClass)}
                         />
