@@ -1,9 +1,46 @@
 # Consulta abierta: varias tarifas por itinerario en BFM v5
 
-**Estado:** bloqueado por entitlement del PCC, a falta de confirmación de Sabre.
+**Estado:** las marcas EXISTEN y el terminal de agente las ve; falta el permiso de API. Ver §0.
 **Fecha:** 2026-08-27.
 **Para qué sirve este documento:** es autocontenido. Se puede pasar tal cual a soporte de Sabre
 (§A, en inglés) o a un agente de investigación (§B) sin explicar nada más.
+
+---
+
+## §0 — La prueba que lo cierra: el host SÍ ve las cinco marcas
+
+Ejecutado el 2026-08-27 en **Sabre Agency Workspace CERT, PCC `7VYK`**, sobre el MISMO mercado y
+la misma aerolínea que la API devuelve con una sola tarifa:
+
+```
+FQBOGCLO09SEP-JA
+```
+
+El despliegue devuelve **230 tarifas agrupadas en CINCO familias**:
+
+```
+JA-JAV/TS - BASIC
+JA-JAV/I0 - TRAVELER
+JA-JAV/I1 - LIGHT
+JA-JAV/I2 - SMART
+JA-JAV/I3 - FULL FLEX
+```
+
+**Esto separa las dos hipótesis que quedaban, y gana una sola:**
+
+| Hipótesis                                     | Veredicto                                                              |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| El contenido de la ruta no tiene marcas       | **FALSA.** Hay cinco, publicadas por el carrier en este mismo mercado. |
+| El PCC no las puede ver                       | **FALSA.** El terminal de agente las lista.                            |
+| Falta el permiso de **API** para pedir varias | **La que queda.** Es lo único que explica el `MIP/PROCESS`.            |
+
+> **Salvedad, para no concluir de más:** la prueba se hizo en el PCC `7VYK`, que es el SEGUNDO
+> PCC de la cuenta. Si la plataforma busca con otro, lo demostrado es que el producto existe en
+> la cuenta y que ese PCC lo ve — no que el PCC de la búsqueda esté igual de configurado. Los
+> entitlements son POR PCC.
+
+Y encaja con lo que ya devolvía la API: `brandsOnAnyMarket: true` en el 100% de los itinerarios
+—Sabre nos estaba diciendo «este viaje TIENE marcas»— junto a una sola tarifa por vuelo.
 
 ---
 
@@ -67,9 +104,16 @@ Todas con **HTTP 200** y `severity: "error"` dentro del sobre.
 > `NumTrips.Number: 50`, `DataSources: { NDC: Enable, ATPCO: Enable, LCC: Disable }`,
 > `MultipleSourcePerItinerary.Value: true`, `Baggage.RequestType: "C"`.
 >
+> **The brands exist and the host can see them.** On the same market and carrier, in Sabre
+> Agency Workspace CERT (PCC `7VYK`), `FQBOGCLO09SEP-JA` returns 230 fares grouped in **five
+> branded families**: `JA-JAV/TS - BASIC`, `JA-JAV/I0 - TRAVELER`, `JA-JAV/I1 - LIGHT`,
+> `JA-JAV/I2 - SMART`, `JA-JAV/I3 - FULL FLEX`. The API returns exactly one of them per
+> itinerary, and rejects any request for more.
+>
 > **Questions:**
 >
-> 1. Is **Multiple Branded Fares (branded fare upsell)** enabled for this PCC? If not, what is the
+> 1. The content clearly carries five brands and the host displays them. Is **Multiple Branded
+>    Fares (branded fare upsell)** enabled for API access on this PCC? If not, what is the
 >    activation path?
 > 2. Is **Multiple Fares Per Itinerary (MFPI)** enabled for this PCC? Your docs list MFPI as
 >    incompatible with Alternate Cities, Award Shopping, Area Shopping and Low Cost Carriers — we
@@ -93,7 +137,9 @@ Todas con **HTTP 200** y `severity: "error"` dentro del sobre.
    el mismo fallo de negocio. Verificado contra los 34 requests de la colección oficial que piden
    marcas: los 34 usan esa ubicación.
 2. **No es que falte pedirlo.** Se pide, y con `SingleBrandedFare` responde bien.
-3. **No es falta de contenido.** `brandsOnAnyMarket: true` en el 100% de los itinerarios.
+3. **No es falta de contenido.** `brandsOnAnyMarket: true` en el 100% de los itinerarios, y el
+   terminal de agente lista CINCO familias en ese mercado (§0). El contenido está.
+   **Esto es lo más importante del documento: no hay nada que buscar del lado del contenido.**
 4. **No es que el mapper no lo lea.** La marca llega y se muestra; sale de
    `fareComponentDescs[].brand` (`BrandType`), no del `pricingInformation.brand` plano, que en
    estas respuestas viene vacío.
@@ -105,8 +151,9 @@ Todas con **HTTP 200** y `severity: "error"` dentro del sobre.
 
 **Lo que falta averiguar, en orden de valor:**
 
-1. Si el PCC tiene contratados **Multiple Branded Fares** y/o **MFPI**. **No se puede consultar
-   desde el Developer Hub**: ni el perfil ni «Applications» listan entitlements —«Applications»
+1. Si el PCC tiene habilitado **por API** el producto Multiple Branded Fares. Ya sabemos que el
+   contenido existe y que el host lo ve (§0), así que la pregunta es sólo de permiso de API.
+   **No se puede consultar desde el Developer Hub**: ni el perfil ni «Applications» listan entitlements —«Applications»
    son credenciales de prueba del _Try it Out_, sin relación con la cuenta de producción—. El
    propio catálogo de errores remite al account manager para `USG_AUTHORIZATION_FAILED`.
 2. Si MFPI es incompatible con `DataSources.NDC = Enable` o con `MultipleSourcePerItinerary`. La
