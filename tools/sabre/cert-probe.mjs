@@ -20,7 +20,7 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..', '..');
 const captureDir = resolve(root, 'docs', 'sabre', 'evidence', 'captures');
@@ -223,8 +223,12 @@ function redact(value) {
 }
 
 async function capture(name, payload) {
-  await mkdir(captureDir, { recursive: true });
   const file = resolve(captureDir, `${name}.json`);
+  // Se crea el directorio del FICHERO, no `captureDir` a secas: todos los `name` llevan carpeta
+  // (`auth/token-200`, `shop/…`, `value/incremental`), así que crear sólo la raíz dejaba el
+  // `writeFile` en ENOENT y el paso entero abortado — por eso `evidence/captures/` sigue vacío
+  // aunque el arnés "corriera". Verificado ejecutando `cert-probe.mjs shop` contra un Sabre local.
+  await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(redact(payload), null, 2));
   return file;
 }
@@ -264,9 +268,20 @@ function shopBody(cfg, opts = {}) {
 
   const travelPreferences = { TPA_Extensions: { NumTrips: { Number: 10 }, DataSources: sources } };
   if (cabin) travelPreferences.CabinPref = [{ Cabin: cabin, PreferLevel: 'Preferred' }];
+
   // Sin este flag Sabre poda la alternativa cross-source más cara antes de que la veamos
   // ("By default, the cheaper will stay" — bargain-finder-max-v5.yml:5473-5478).
-  if (multiSource) travelPreferences.TPA_Extensions.MultipleSourcePerItinerary = { Value: true };
+  //
+  // VA EN `TPA_Extensions.IntelliSellTransaction`, NO en `TravelPreferences.TPA_Extensions`.
+  // El contrato sólo lo declara en el primero (`v5.yml:5473` dentro de
+  // `OTA_AirLowFareSearchRQ.TPA_Extensions.IntelliSellTransaction`, definición en `:5522`); en
+  // `TravelPreferences.TPA_Extensions` (`:5924`) no existe esa propiedad. Puesto ahí, Sabre lo
+  // ignora sin devolver error — y entonces el A/B de `stepValue` corre las DOS ramas
+  // (`multiSource` true y false) con el mismo request, la diferencia sale ~0 y P-04 se decide
+  // con un experimento que nunca midió nada. Es también dónde lo pone el builder de producción
+  // (`providers/sabre/src/shop/request.builder.ts`), así que la captura vale para prod.
+  const intelliSell = { RequestType: { Name: requestType } };
+  if (multiSource) intelliSell.MultipleSourcePerItinerary = { Value: true };
 
   return {
     OTA_AirLowFareSearchRQ: {
@@ -282,7 +297,7 @@ function shopBody(cfg, opts = {}) {
       OriginDestinationInformation: od,
       TravelPreferences: travelPreferences,
       TravelerInfoSummary: { AirTravelerAvail: [{ PassengerTypeQuantity: pax }] },
-      TPA_Extensions: { IntelliSellTransaction: { RequestType: { Name: requestType } } },
+      TPA_Extensions: { IntelliSellTransaction: intelliSell },
     },
   };
 }

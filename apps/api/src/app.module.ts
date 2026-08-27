@@ -19,6 +19,7 @@ import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
+import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
 import { NetworkModule } from './network/network.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { BrandingModule } from './branding/branding.module.js';
@@ -54,6 +55,7 @@ import { PackagesModule } from './packages/packages.module.js';
     PortfoliosModule,
     ReportsModule,
     ProviderCredentialsModule,
+    ProviderDisclosureModule,
     NetworkModule,
     PricingModule,
     MailerModule,

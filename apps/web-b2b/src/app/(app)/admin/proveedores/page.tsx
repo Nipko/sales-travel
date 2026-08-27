@@ -4,13 +4,9 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
-  Compass,
-  Cpu,
-  Globe,
+  Eye,
   Info,
-  KeyRound,
   Pencil,
-  Plane,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -21,6 +17,16 @@ import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
+import { providerMetaFor } from '../../../../lib/provider-display';
+import {
+  choiceFromOwn,
+  disclosureStatusLabel,
+  DISCLOSURE_HIDDEN,
+  ownFromChoice,
+  parseDisclosureView,
+  type DisclosureChoice,
+  type ProviderDisclosureView,
+} from '../../../../lib/provider-disclosure';
 import {
   DEFAULT_ACCOUNT_LABEL,
   PROVIDERS,
@@ -78,51 +84,6 @@ type EditorState =
   | { kind: 'create'; initialProviderCode?: string }
   | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] };
 
-const PROVIDER_METADATA: Record<
-  string,
-  {
-    name: string;
-    vertical: string;
-    description: string;
-    icon: typeof Plane;
-    badgeClass: string;
-    docsUrl?: string;
-  }
-> = {
-  sabre: {
-    name: 'Sabre GDS',
-    vertical: 'Vuelos (ATPCO / NDC BFM v5)',
-    description:
-      'Conexión directa vía Bargain Finder Max REST/SOAP API. Permite búsqueda multifuente, retarificación y gestión de PNR en tiempo real.',
-    icon: Compass,
-    badgeClass: 'bg-red-50 text-red-700 border-red-200',
-  },
-  'latam-ndc': {
-    name: 'LATAM NDC',
-    vertical: 'Vuelos (Direct Connect NDC v19.2)',
-    description:
-      'Canal oficial NDC de LATAM Airlines. Acceso a tarifas exclusivas, familias tarifarias y ancillaries sin recargos GDS.',
-    icon: Plane,
-    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  },
-  'agent-cars': {
-    name: 'AgentCars',
-    vertical: 'Renta de Autos',
-    description:
-      'Conector global de rentadoras de vehículos (Hertz, Avis, Budget, Europcar, etc.) con confirmación instantánea de vouchers.',
-    icon: Cpu,
-    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  },
-  'despegar-hotels': {
-    name: 'Despegar Hotels',
-    vertical: 'Hotelería y Alojamiento',
-    description:
-      'Inventario mayorista de hoteles en Latinoamérica y el mundo con tarifas B2B netas y disponibilidad en tiempo real.',
-    icon: Globe,
-    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
-  },
-};
-
 const inputClass =
   'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
 const selectClass =
@@ -137,6 +98,12 @@ export default function ProveedoresPage() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Divulgación del proveedor en los resultados de búsqueda. Arranca en OCULTO: hasta que
+  // el API conteste no se puede afirmar que esta red muestre su cadena de proveedores.
+  const [disclosure, setDisclosure] = useState<ProviderDisclosureView>(DISCLOSURE_HIDDEN);
+  const [disclosureError, setDisclosureError] = useState('');
+  const [savingDisclosure, setSavingDisclosure] = useState(false);
 
   // Form states
   const [providerCode, setProviderCode] = useState('sabre');
@@ -236,12 +203,32 @@ export default function ProveedoresPage() {
     setOrigins(new Map(entries));
   }, [activeTenantId]);
 
+  const loadDisclosure = useCallback(async () => {
+    if (!activeTenantId) return;
+    setDisclosureError('');
+    try {
+      const res = await fetch(
+        `/api/tenant/provider-disclosure?tenantId=${encodeURIComponent(activeTenantId)}`,
+      );
+      const data = (await res.json()) as { error?: string };
+      // El proxy contesta 200 con el ajuste oculto y `error` al lado cuando el API falla:
+      // la pantalla se pinta igual, pero no puede decir que está oculto por decisión de
+      // nadie si en realidad no se pudo leer.
+      if (typeof data.error === 'string') setDisclosureError(data.error);
+      setDisclosure(parseDisclosureView(data));
+    } catch {
+      setDisclosure(DISCLOSURE_HIDDEN);
+      setDisclosureError('No se pudo leer el ajuste.');
+    }
+  }, [activeTenantId]);
+
   useEffect(() => {
     if (activeTenantId) {
       void loadAccounts();
       void loadOrigins();
+      void loadDisclosure();
     }
-  }, [activeTenantId, loadAccounts, loadOrigins]);
+  }, [activeTenantId, loadAccounts, loadOrigins, loadDisclosure]);
 
   const provider = providerFormFor(providerCode);
   const draftLookup = origins?.get(providerCode);
@@ -282,6 +269,34 @@ export default function ProveedoresPage() {
       editor,
     ],
   );
+
+  async function saveDisclosure(choice: DisclosureChoice) {
+    if (!selectedTenant) return;
+    setDisclosureError('');
+    setSavingDisclosure(true);
+    try {
+      const res = await fetch('/api/tenant/provider-disclosure', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: selectedTenant.id,
+          showProviderInResults: ownFromChoice(choice),
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setDisclosureError(data.error ?? 'No se pudo guardar el ajuste.');
+        return;
+      }
+      // Se pinta lo que devuelve el API, no lo que se pidió: bajo un consolidador que lo
+      // oculta, "Mostrar" queda guardado pero sin efecto, y la pantalla tiene que decirlo.
+      setDisclosure(parseDisclosureView(data));
+    } catch {
+      setDisclosureError('Error de conexión con el servidor.');
+    } finally {
+      setSavingDisclosure(false);
+    }
+  }
 
   function startCreate(initialCode = 'sabre') {
     setProviderCode(initialCode);
@@ -415,16 +430,18 @@ export default function ProveedoresPage() {
         </div>
       </div>
 
+      <ProviderDisclosureCard
+        view={disclosure}
+        tenantName={selectedTenant?.name ?? 'esta agencia'}
+        saving={savingDisclosure}
+        error={disclosureError}
+        onChange={(choice) => void saveDisclosure(choice)}
+      />
+
       {/* Grid de Proveedores */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {Object.entries(PROVIDERS).map(([code, form]) => {
-          const meta = PROVIDER_METADATA[code] ?? {
-            name: form.label,
-            vertical: 'Servicios',
-            description: 'Conector de inventario para la plataforma.',
-            icon: Globe,
-            badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
-          };
+          const meta = providerMetaFor(code, form.label);
           const Icon = meta.icon;
           const origin = origins?.get(code);
           const ownAccounts = accounts.filter((a) => a.providerCode === code);
@@ -696,6 +713,145 @@ export default function ProveedoresPage() {
         </div>
       )}
     </div>
+  );
+}
+
+const DISCLOSURE_OPTIONS: readonly { value: DisclosureChoice; label: string }[] = [
+  { value: 'inherit', label: 'Heredar' },
+  { value: 'show', label: 'Mostrar' },
+  { value: 'hide', label: 'Ocultar' },
+];
+
+/**
+ * Control de "¿se ve de qué proveedor viene cada tarifa?".
+ *
+ * Tres posiciones y no un interruptor porque el ajuste se HEREDA: sin la posición
+ * "Heredar" no hay forma de deshacer una decisión propia y volver a seguir a la casa, y
+ * "apagado" y "sin configurar" quedarían indistinguibles en pantalla.
+ */
+function ProviderDisclosureCard({
+  view,
+  tenantName,
+  saving,
+  error,
+  onChange,
+}: {
+  view: ProviderDisclosureView;
+  tenantName: string;
+  saving: boolean;
+  error: string;
+  onChange: (choice: DisclosureChoice) => void;
+}) {
+  const current = choiceFromOwn(view.own);
+  const locked = view.lockedByAncestor;
+
+  return (
+    <Card className="border border-[var(--color-border)]/60 shadow-[var(--shadow-sm)] rounded-xl">
+      <CardContent className="p-6 space-y-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/20 shadow-xs">
+              <Eye className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[var(--color-fg)]">
+                Origen de las tarifas en los resultados
+              </h2>
+              <p className="mt-0.5 max-w-prose text-xs text-[var(--color-fg-muted)] leading-relaxed">
+                Decide si el vendedor ve de qué proveedor viene cada oferta cuando busca vuelos.
+              </p>
+            </div>
+          </div>
+
+          <fieldset disabled={locked || saving} className="w-full sm:w-auto">
+            <legend className="sr-only">Mostrar el proveedor de cada tarifa</legend>
+            <div className="flex w-full gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/60 p-1 sm:w-auto">
+              {DISCLOSURE_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className={cn(
+                    'flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-xs font-semibold text-[var(--color-fg-muted)] transition-colors sm:flex-none sm:min-w-[84px]',
+                    'has-[:checked]:bg-[var(--color-surface)] has-[:checked]:text-[var(--color-fg)] has-[:checked]:shadow-xs',
+                    'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--color-primary)]/40',
+                    (locked || saving) && 'cursor-not-allowed opacity-60',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="provider-disclosure"
+                    value={option.value}
+                    checked={current === option.value}
+                    onChange={() => onChange(option.value)}
+                    className="sr-only"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+
+        <p
+          className={cn(
+            'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold',
+            view.effective
+              ? 'border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 text-[var(--color-fg)]'
+              : 'border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 text-[var(--color-fg-muted)]',
+          )}
+        >
+          {saving ? (
+            <RefreshCw className="size-3.5 shrink-0 animate-spin" />
+          ) : (
+            <Eye className="size-3.5 shrink-0" />
+          )}
+          {disclosureStatusLabel(view)}
+        </p>
+
+        <div className="space-y-2 text-xs text-[var(--color-fg-muted)] leading-relaxed">
+          <p>
+            <strong className="font-semibold text-[var(--color-fg)]">Mostrar:</strong> cada
+            resultado lleva la pastilla del proveedor (Sabre GDS, LATAM NDC…) junto a la tarifa.
+          </p>
+          <p>
+            <strong className="font-semibold text-[var(--color-fg)]">Ocultar:</strong> el vendedor
+            sigue viendo vuelo, aerolínea, escalas y precio, pero no de dónde salió la tarifa. Es
+            información comercial de la casa: dice con quién tiene contrato y por dónde compra.
+          </p>
+          <p>
+            <strong className="font-semibold text-[var(--color-fg)]">A quién afecta:</strong> a los
+            vendedores de <strong className="text-[var(--color-fg)]">{tenantName}</strong> y a toda
+            la red que cuelga de ella. Una agencia hija puede ocultarlo para los suyos; mostrarlo,
+            no, si acá está oculto.
+          </p>
+        </div>
+
+        <div className="flex items-start gap-2.5 rounded-lg border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/8 p-3 text-xs text-[var(--color-fg)] leading-relaxed">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]" />
+          <span>
+            El aviso de <strong className="font-semibold">tarifa simulada</strong> no depende de
+            este ajuste: una tarifa de prueba se sigue marcando como no cotizable, se muestre o no
+            el proveedor.
+          </span>
+        </div>
+
+        {locked && (
+          <p className="text-[11px] text-[var(--color-fg-subtle)] leading-relaxed">
+            Un nivel superior de la red lo mantiene oculto, así que desde acá no se puede mostrar.
+          </p>
+        )}
+
+        <p className="text-[11px] text-[var(--color-fg-subtle)] leading-relaxed">
+          Es un ajuste de presentación: el código del proveedor sigue viajando en la respuesta del
+          API y es visible con las herramientas de desarrollo del navegador.
+        </p>
+
+        {error && (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+            {error}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

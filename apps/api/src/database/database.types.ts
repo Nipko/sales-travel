@@ -41,6 +41,8 @@ export interface TenantsTable {
   website_url: string | null;
   /** 0032: búsquedas/hora permitidas. NULL = usa el tope de la plataforma. */
   search_quota_per_hour: number | null;
+  /** 0036: ¿los resultados nombran al proveedor de cada oferta? NULL = hereda del ancestro. */
+  show_provider_in_results: boolean | null;
   /** 0033: host propio de la agencia. Sólo resuelve si está verificado. */
   custom_domain: string | null;
   custom_domain_verified_at: Timestamp | null;

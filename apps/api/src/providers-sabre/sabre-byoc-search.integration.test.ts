@@ -8,6 +8,7 @@ import { SABRE_AUTH_PATH, SABRE_SHOP_PATH } from '@sales-travel/sabre';
 import { DatabaseService } from '../database/database.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -280,7 +281,15 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
       // Caché propia de esta API: cada `montar` arranca sin resultados de un test anterior.
       new MemoryCacheAdapter(),
     );
-    const controller = new SearchController(service, database, new ActiveTenantService(database));
+    // El controlador resuelve además si los resultados nombran al proveedor (0036). Acá va
+    // el servicio real contra la misma base: lo que se prueba es la búsqueda, y el ajuste
+    // sólo añade un booleano al sobre.
+    const controller = new SearchController(
+      service,
+      database,
+      new ActiveTenantService(database),
+      new ProviderDisclosureService(database),
+    );
     return { controller, registry };
   }
 
