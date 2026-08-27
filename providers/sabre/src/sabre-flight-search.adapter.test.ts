@@ -403,7 +403,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedUpsells: true },
+      shopOptions: { brandedFares: 'upsell' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -419,7 +419,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
 
   it('no se vuelve a preguntar: la segunda búsqueda ya sale sin marcas', async () => {
     const spy = spyFetch((n) => (n === 1 ? rechazoDeNegocio() : json(adultFixture)));
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
 
     await sut.search(CRITERIA, CTX);
     await sut.search(CRITERIA, CTX);
@@ -438,7 +438,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     // el test verificaba el default roto en vez de la regla que dice cubrir.
     const spy = spyFetch(() => rechazoDeNegocio());
     await expect(
-      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: false } }).search(
+      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'off' } }).search(
         CRITERIA,
         CTX,
       ),
@@ -451,7 +451,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     // una caída detrás de una lista más pobre.
     const spy = spyFetch(() => json({ error: 'unavailable' }, 503));
     await expect(
-      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } }).search(
+      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } }).search(
         CRITERIA,
         CTX,
       ),
@@ -466,7 +466,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const spy = spyFetch(() => json(adultFixture));
     const offers = await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedUpsells: true },
+      shopOptions: { brandedFares: 'upsell' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -501,7 +501,7 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedUpsells: true },
+      shopOptions: { brandedFares: 'upsell' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -511,7 +511,7 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
 
   it('una ruta VACÍA DE VERDAD se reintenta una vez y se acepta como vacía', async () => {
     const spy = spyFetch(() => vacio());
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
 
     expect(await sut.search(CRITERIA, CTX)).toEqual([]);
     expect(spy.calls).toHaveLength(2);
@@ -526,7 +526,7 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     // Primera búsqueda con resultados: queda probado que soporta marcas. Segunda vacía: es una
     // ruta sin vuelos, no una sospecha, y no se gasta una segunda llamada.
     const spy = spyFetch((n) => (n === 1 ? json(adultFixture) : vacio()));
-    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedFares: 'upsell' } });
 
     await sut.search(CRITERIA, CTX);
     expect(await sut.search(CRITERIA, CTX)).toEqual([]);
@@ -628,7 +628,7 @@ describe('el default de las marcas llega hasta el cable, no se queda en el Zod',
 
     await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedUpsells: false },
+      shopOptions: { brandedFares: 'off' },
     }).search(CRITERIA, CTX);
 
     expect(cuerpo(spy.calls[0]!.init)).not.toContain('BrandedFareIndicators');

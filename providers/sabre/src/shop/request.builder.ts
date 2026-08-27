@@ -113,36 +113,44 @@ export function defaultNumTripsFor(tier: SabreItineraryTier): number {
 }
 
 /**
- * Cuántas marcas tarifarias adicionales pedir por itinerario, además de la más barata.
+ * Qué se le pide a Sabre en materia de marcas tarifarias.
  *
- * BFM hace una búsqueda de tarifa MÍNIMA por defecto y devuelve una sola tarifa por vuelo:
+ * BFM hace búsqueda de tarifa MÍNIMA por defecto y devuelve UNA tarifa sin marca por vuelo:
  *
  * > "By default, the system does a low fare search, so only the lowest fare is presented."
- * > — `bargain-finder-max-v5.yml:7282` (`NDCIndicators.MaxNumberOfUpsells`)
+ * > — `bargain-finder-max-v5.yml:7282`
  *
- * Por eso la pantalla mostraba «Ver tarifa» en singular en todos los resultados: no es que la
- * aerolínea no tenga Light/Plus/Top, es que no se estaban pidiendo. El vendedor B2B vive de esa
- * diferencia —la marca con equipaje deja más margen y es la que quiere el cliente con maleta—,
- * así que una lista de sólo-la-más-barata le esconde justo el producto que vende.
+ * Hay dos peticiones distintas, y confundirlas costó un incidente:
  *
- * 3 y no más: cada upsell multiplica el tamaño de la respuesta por itinerario y las aerolíneas
- * de la región publican típicamente tres o cuatro marcas por cabina. El tope real lo pone
- * igualmente el carrier, que sólo devuelve las que tenga.
+ * - `single` — `SingleBrandedFare: true`. Una marca por itinerario. Es lo que hacen **los 34
+ *   requests reales** de la colección que piden marcas, y **el único valor que aparece en ellos**.
+ *   No da la matriz comparativa, pero sí la IDENTIDAD de la tarifa: el vendedor ve «LIGHT» o
+ *   «PLUS» en vez de un precio sin nombre.
+ * - `upsell` — `MultipleBrandedFares` + `UpsellLimit`. Varias marcas por itinerario, que es la
+ *   matriz comparativa. **Cero apariciones en 88 requests de shop reales.** Es un producto
+ *   comercial aparte, y pedirlo a una cuenta que no lo tiene devuelve `MIP/PROCESS` — el motor
+ *   de compra de Sabre (`MIP` es el nombre del motor, no un código de error) diciendo que no
+ *   pudo procesar la petición.
+ * - `off` — no se pide nada.
+ *
+ * El default es `single` porque es lo único respaldado por evidencia. `upsell` se enciende por
+ * cuenta cuando esa agencia tenga el producto. La primera versión hizo lo contrario —`upsell`
+ * para toda la red, sin un solo request real que lo respaldara— y dejó el buscador en 502.
  */
-export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
+export const SABRE_BRANDED_FARES_MODES = ['off', 'single', 'upsell'] as const;
+export type SabreBrandedFaresMode = (typeof SABRE_BRANDED_FARES_MODES)[number];
+
+/** Ver {@link SABRE_BRANDED_FARES_MODES}. Lo comparten el esquema y el adapter. */
+export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'single';
 
 /**
- * Si se piden marcas cuando la cuenta no dice nada.
+ * Cuántas marcas adicionales pedir en modo `upsell`.
  *
- * Es una CONSTANTE EXPORTADA y no un `.default()` escondido en el Zod porque el adapter también
- * necesita saberlo: decide antes de llamar al builder si esta búsqueda lleva marcas, para poder
- * degradar si el PCC las rechaza. Mientras el default vivió sólo dentro del esquema, el adapter
- * leía `opciones.brandedUpsells === true` sobre un objeto donde el campo no existe —el `.default()`
- * se aplica al PARSEAR, no antes— así que le salía `false` y además se lo pasaba explícito al
- * builder, pisando el default. Resultado: las marcas quedaron apagadas para toda la red mientras
- * el código decía que estaban encendidas, y en producción se leía `pidioMarcas: false`.
+ * 3 y no más: cada upsell multiplica el tamaño de la respuesta por itinerario y las aerolíneas de
+ * la región publican típicamente tres o cuatro marcas por cabina. El tope real lo pone igualmente
+ * el carrier, que sólo devuelve las que tenga.
  */
-export const SABRE_BRANDED_UPSELLS_DEFAULT = true;
+export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
 
 /**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
@@ -224,10 +232,9 @@ export interface SabreCabinPref {
  * solo no lo dice. Lo dicen los 1.077 requests reales de la colección: los 35 que piden marcas las
  * piden **todos** aquí, y ninguno usa `FlexibleFares` para esto (`docs/sabre/02` §7.4).
  */
-export interface SabreBrandedFareIndicators {
-  MultipleBrandedFares: boolean;
-  UpsellLimit: number;
-}
+export type SabreBrandedFareIndicators =
+  | { SingleBrandedFare: true }
+  | { MultipleBrandedFares: true; UpsellLimit: number };
 
 export interface SabreTravelPreferences {
   CabinPref?: SabreCabinPref[];
@@ -288,23 +295,13 @@ export const SabreShopOptionsSchema = z.object({
   /** Desempate documentado cuando ATPCO y NDC devuelven el mismo viaje al mismo precio (`v5.yml:7423`). */
   preferNdcSourceOnTie: z.boolean().default(true),
   /**
-   * Pedir las marcas tarifarias por encima de la más barata. Ver {@link SABRE_DEFAULT_UPSELL_LIMIT}.
+   * Qué marcas pedir. Ver {@link SABRE_BRANDED_FARES_MODES}.
    *
-   * Vuelve a `true` tras el incidente del 2026-08-27, y las tres cosas que cambiaron son la razón:
-   *
-   * 1. **La ruta era la equivocada** y ésa fue la avería. Iba bajo `TravelPreferences…
-   *    FlexibleFares`, que acepta el mismo objeto y es otra función. Ahora va donde la ponen los
-   *    35 requests reales de la colección: ver {@link SabreBrandedFareIndicators}.
-   * 2. El adapter **degrada**: si Sabre rechaza por capacidad, reintenta sin marcas y lo recuerda.
-   * 3. Y degrada también ante el fallo silencioso —respuesta vacía en vez de rechazo—, que es el
-   *    que convertía esto en «no hay vuelos» sin que nadie se enterara.
-   *
-   * O sea: encendido ya no puede costar la búsqueda, que es lo que lo hacía inaceptable. El coste
-   * de una cuenta sin la capacidad es UNA llamada de más por proceso, no una por búsqueda.
-   *
-   * Se puede apagar por cuenta con `config.shopOptions.brandedUpsells: false`.
+   * `single` por defecto: es lo único que aparece en los 34 requests reales que piden marcas.
+   * `upsell` se enciende POR CUENTA (`config.shopOptions.brandedFares: 'upsell'`) cuando esa
+   * agencia tenga el producto contratado con Sabre.
    */
-  brandedUpsells: z.boolean().default(SABRE_BRANDED_UPSELLS_DEFAULT),
+  brandedFares: z.enum(SABRE_BRANDED_FARES_MODES).default(SABRE_BRANDED_FARES_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 
@@ -444,6 +441,21 @@ function buildTravelPreferences(
   return prefs;
 }
 
+/**
+ * El bloque de marcas, o `null` si no se pide ninguna.
+ *
+ * `upsell` con límite 0 equivale a no pedir: un bloque presente pidiendo cero marcas es una
+ * instrucción al proveedor, y no mandarlo deja su default en paz. No es lo mismo.
+ */
+function brandedFareIndicators(
+  opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
+): SabreBrandedFareIndicators | null {
+  if (opts.brandedFares === 'off') return null;
+  if (opts.brandedFares === 'single') return { SingleBrandedFare: true };
+  if (opts.upsellLimit <= 0) return null;
+  return { MultipleBrandedFares: true, UpsellLimit: opts.upsellLimit };
+}
+
 function buildTravelerInfoSummary(
   criteria: FlightSearchCriteria,
   opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
@@ -463,16 +475,9 @@ function buildTravelerInfoSummary(
       CurrencyCode: criteria.currency,
       // Un `UpsellLimit: 0` sería pedir "cero marcas adicionales", que no es lo mismo que no
       // pedir marcas: lo primero es una instrucción, lo segundo deja el default del proveedor.
-      ...(opts.brandedUpsells && opts.upsellLimit > 0
-        ? {
-            TPA_Extensions: {
-              BrandedFareIndicators: {
-                MultipleBrandedFares: true,
-                UpsellLimit: opts.upsellLimit,
-              },
-            },
-          }
-        : {}),
+      ...(brandedFareIndicators(opts) === null
+        ? {}
+        : { TPA_Extensions: { BrandedFareIndicators: brandedFareIndicators(opts)! } }),
     },
   };
 }

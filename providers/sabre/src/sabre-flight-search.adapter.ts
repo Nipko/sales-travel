@@ -7,7 +7,7 @@ import { SabreApiError, SabreConfigError } from './errors';
 import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
-  SABRE_BRANDED_UPSELLS_DEFAULT,
+  SABRE_BRANDED_FARES_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -136,11 +136,11 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // Zod se aplica al parsear, no antes. Con `=== true` sobre un campo ausente salía `false`, y
     // encima se le pasaba explícito al builder pisando su propio default: las marcas estaban
     // apagadas para toda la red mientras el código decía lo contrario.
-    const pedirMarcas =
-      (opciones.brandedUpsells ?? SABRE_BRANDED_UPSELLS_DEFAULT) && !this.brandedFaresUnsupported;
+    const modo = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
+    const pedirMarcas = modo !== 'off' && !this.brandedFaresUnsupported;
     const body = buildSabreShopRequest(criteria, this.cfg, {
       ...opciones,
-      brandedUpsells: pedirMarcas,
+      brandedFares: pedirMarcas ? modo : 'off',
     });
 
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
@@ -178,7 +178,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
 
       result = await this.http.postJson<unknown>(
         SABRE_SHOP_PATH,
-        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedUpsells: false }),
+        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedFares: 'off' }),
         opciones_http,
       );
     }
@@ -196,7 +196,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     if (mapped.offers.length === 0 && pedirMarcas && !this.brandedFaresProven) {
       const sinMarcas = await this.http.postJson<unknown>(
         SABRE_SHOP_PATH,
-        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedUpsells: false }),
+        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedFares: 'off' }),
         opciones_http,
       );
       const reintento = this.mapear(sinMarcas, criteria, ctx);

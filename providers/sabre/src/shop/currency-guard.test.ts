@@ -83,7 +83,7 @@ function cable(): Cable {
     // respuesta que el mapper deja en cero —que es justo lo que pasa acá, porque el fixture está
     // en USD y se pide COP— dispara el reintento sin marcas del adapter y salen dos cuerpos. El
     // reintento es correcto; mezclarlo aquí convertiría este test en uno de otra cosa.
-    shopOptions: { brandedUpsells: false },
+    shopOptions: { brandedFares: 'off' },
   });
   return { cuerpos, buscar: (currency) => adapter.search(criteria(currency), CTX) };
 }

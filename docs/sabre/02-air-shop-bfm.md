@@ -885,9 +885,24 @@ aparece en **cero** requests reales; no se manda.
 > **Regla que sale de acá:** cuando dos ramas del contrato aceptan la misma forma, la colección
 > decide, no el spec. El spec dice qué es válido; la colección dice qué usa Sabre de verdad.
 
-**Cautela que queda en pie.** La colección sólo ejercita `SingleBrandedFare`, nunca
-`MultipleBrandedFares`. Es decir: la ubicación está verificada, el flag no. Por eso el adapter
-**degrada** ante los dos modos de fallo, y no se confía en que esté bien:
+**Y la cautela se convirtió en el segundo fallo.** Estaba escrito arriba —la colección sólo
+ejercita `SingleBrandedFare`— y se mandó `MultipleBrandedFares` igual. El motor de compra
+respondió `MIP/PROCESS`. **`MIP` no es un código de error: es el nombre del motor**
+(`pricingSource`/`pricingSubsource`, ejemplo `'MIP'`, `v5.yml:8848`), o sea «el motor no pudo
+procesar esto».
+
+Conteo sobre los **88 requests de shop** de la colección: `BrandedFareIndicators` aparece **34
+veces y siempre con una única clave, `SingleBrandedFare: true`**. `MultipleBrandedFares` y
+`UpsellLimit`: **cero**.
+
+| Modo     | Qué manda                              | Evidencia | Qué da                                              |
+| -------- | -------------------------------------- | --------- | --------------------------------------------------- |
+| `single` | `SingleBrandedFare: true`              | **34/34** | Una marca por itinerario: la IDENTIDAD de la tarifa |
+| `upsell` | `MultipleBrandedFares` + `UpsellLimit` | **0/88**  | Varias marcas: la matriz comparativa                |
+
+**El default es `single`.** `upsell` es un producto comercial aparte y se enciende por cuenta.
+
+El adapter **degrada** igual ante los dos modos de fallo, y no se confía en que esté bien:
 
 | Modo de fallo del PCC                | Qué hace el adapter                                     |
 | ------------------------------------ | ------------------------------------------------------- |

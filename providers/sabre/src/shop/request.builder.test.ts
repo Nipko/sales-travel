@@ -305,56 +305,66 @@ describe('volumen: tier e itinerarios', () => {
     expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
-  it('POR DEFECTO pide marcas, porque ya no puede costar la búsqueda', () => {
-    // Estuvo apagado entre el incidente y su arreglo. Se puede volver a encender porque la ruta
-    // es la buena y porque el adapter degrada ante los dos modos de fallo (ver sus tests).
+  it('POR DEFECTO pide UNA marca por itinerario, que es lo único con evidencia', () => {
+    // En los 88 requests de shop reales, `BrandedFareIndicators` aparece 34 veces y SIEMPRE con
+    // una sola clave: `SingleBrandedFare: true`. `MultipleBrandedFares` y `UpsellLimit`: cero.
+    // La primera versión mandó el upsell a toda la red sin un solo request que lo respaldara y
+    // el motor de compra respondió `MIP/PROCESS`, dejando el buscador en 502.
     expect(build().TravelerInfoSummary.PriceRequestInformation.TPA_Extensions).toEqual({
-      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 },
+      BrandedFareIndicators: { SingleBrandedFare: true },
     });
   });
 
-  it('se puede apagar por cuenta', () => {
-    const pri = build({}, {}, { brandedUpsells: false }).TravelerInfoSummary
+  it('el upsell se pide EXPLÍCITO, y entonces sí manda `MultipleBrandedFares`', () => {
+    const pri = build({}, {}, { brandedFares: 'upsell' }).TravelerInfoSummary
       .PriceRequestInformation;
-    expect(pri.TPA_Extensions).toBeUndefined();
-  });
-
-  it('encendido, las marcas van donde las ponen los requests REALES de Sabre', () => {
-    // La ubicación es el corazón del incidente. `TravelPreferences…FlexibleFares` acepta el
-    // MISMO objeto y no es el sitio: es la función de grupos de tarifa flexible. Los 35
-    // requests de la colección que piden marcas las piden todos acá.
-    const pri = build({}, {}, { brandedUpsells: true }).TravelerInfoSummary.PriceRequestInformation;
-
     expect(pri.TPA_Extensions).toEqual({
       BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 },
     });
-    expect(pri.CurrencyCode).toBe('COP');
   });
 
-  it('el bloque de marcas NO se cuela en TravelPreferences: ahí es donde rompía', () => {
-    const body = build({}, {}, { brandedUpsells: true });
-    const ext = JSON.stringify(body.TravelPreferences.TPA_Extensions);
-    expect(ext).not.toContain('FlexibleFares');
-    expect(ext).not.toContain('NDCIndicators');
-    expect(ext).not.toContain('BrandedFareIndicators');
+  it('las dos formas son EXCLUYENTES: nunca se mandan juntas', () => {
+    // Son dos productos comerciales distintos; mezclarlos es pedir algo que el contrato no
+    // describe y que ningún ejemplo real hace.
+    const single = JSON.stringify(build().TravelerInfoSummary.PriceRequestInformation);
+    expect(single).not.toContain('MultipleBrandedFares');
+
+    const upsell = JSON.stringify(
+      build({}, {}, { brandedFares: 'upsell' }).TravelerInfoSummary.PriceRequestInformation,
+    );
+    expect(upsell).not.toContain('SingleBrandedFare');
   });
 
-  it('el límite se respeta tal cual', () => {
-    const pri = build({}, {}, { brandedUpsells: true, upsellLimit: 5 }).TravelerInfoSummary
+  it('apagado, no viaja ningún bloque de marcas', () => {
+    const pri = build({}, {}, { brandedFares: 'off' }).TravelerInfoSummary.PriceRequestInformation;
+    expect(pri.TPA_Extensions).toBeUndefined();
+  });
+
+  it('el límite del upsell se respeta tal cual', () => {
+    const pri = build({}, {}, { brandedFares: 'upsell', upsellLimit: 5 }).TravelerInfoSummary
       .PriceRequestInformation;
-    expect(pri.TPA_Extensions?.BrandedFareIndicators.UpsellLimit).toBe(5);
+    expect(pri.TPA_Extensions).toEqual({
+      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 5 },
+    });
   });
 
-  it('un límite de 0 equivale a apagarlo: no se manda un pedido de cero marcas', () => {
-    // Un bloque presente pidiendo cero es una instrucción al proveedor; no mandarlo deja su
-    // default en paz. No es lo mismo.
-    const pri = build({}, {}, { brandedUpsells: true, upsellLimit: 0 }).TravelerInfoSummary
+  it('upsell con límite 0 equivale a apagarlo', () => {
+    // Un bloque pidiendo cero marcas es una instrucción; no mandarlo deja el default del
+    // proveedor en paz. No es lo mismo.
+    const pri = build({}, {}, { brandedFares: 'upsell', upsellLimit: 0 }).TravelerInfoSummary
       .PriceRequestInformation;
     expect(pri.TPA_Extensions).toBeUndefined();
   });
 
   it('un límite negativo falla en el borde, no se acota en silencio', () => {
     expect(() => build({}, {}, { upsellLimit: -1 })).toThrow(SabreConfigError);
+  });
+
+  it('el bloque de marcas NO se cuela en TravelPreferences: ahí es donde rompía', () => {
+    const ext = JSON.stringify(build().TravelPreferences.TPA_Extensions);
+    expect(ext).not.toContain('FlexibleFares');
+    expect(ext).not.toContain('NDCIndicators');
+    expect(ext).not.toContain('BrandedFareIndicators');
   });
 
   it('un tier fuera del enum del contrato no se manda: falla en el borde', () => {
