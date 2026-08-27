@@ -912,6 +912,40 @@ El adapter **degrada** igual ante los dos modos de fallo, y no se confía en que
 El segundo es el importante: sin él, encender marcas en una cuenta que no las tiene no da un 502
 sino un buscador que dice «no hay vuelos» en una ruta que sí los tiene, y nadie se entera.
 
+### 7.6 Varias tarifas por itinerario (MFPI) — verificado con sesión en el devhub
+
+**«Ver varios tipos de tarifa» son DOS funciones distintas de Sabre, y confundirlas costó un 502
+y tres diagnósticos equivocados.**
+
+| Función                             | Qué da                                   | Cómo se pide                                                      | Evidencia en la colección |
+| ----------------------------------- | ---------------------------------------- | ----------------------------------------------------------------- | ------------------------- |
+| Branded Fares — `SingleBrandedFare` | UNA marca por itinerario (su **nombre**) | `TravelerInfoSummary.PriceRequestInformation.TPA_Extensions`      | **34/34**                 |
+| Branded Fares — upsell              | VARIAS marcas del mismo vuelo            | ídem, con `MultipleBrandedFares` + `UpsellLimit`                  | **0/88**                  |
+| **MFPI**                            | VARIAS tarifas del mismo vuelo por grupo | `TravelPreferences.TPA_Extensions.FlexibleFares.FareParameters[]` | **0/88**                  |
+
+**Verificado con sesión iniciada en `developer.sabre.com` (2026-08-27):**
+
+1. **La ubicación de MFPI es correcta.** El artículo oficial _«Bargain Finder Max News Update:
+   Multiple Fares Per Itinerary»_ trae un request de muestra con `FlexibleFares > FareParameters`
+   colgando de `TravelPreferences.TPA_Extensions`. Es donde lo construimos.
+2. **Un grupo VACÍO es válido.** Los items de `FareParameters` no declaran ningún `required`
+   (`v5.yml:6384`), así que `[{}, {Baggage:{FreePieceRequired:true}}]` —«la más barata» contra «la
+   más barata con maleta»— es una petición legítima.
+3. **`VoluntaryChanges` dentro de `FareParameters` es de SOAP, no de REST v5.** El artículo lo
+   ofrece como filtro de reembolsable/cambiable por grupo; el contrato v5 no lo tiene en
+   `FareParameters`. **No hay eje «reembolsable» disponible para nosotros por esta vía.**
+4. **Los entitlements del PCC NO se ven en el Developer Hub.** Ni el perfil ni «Applications» los
+   listan; «Applications» son credenciales de prueba para el _Try it Out_, sin relación con la
+   cuenta de producción. El propio catálogo de errores lo dice para `USG_AUTHORIZATION_FAILED`:
+   «Contact your Sabre account manager to verify access». **Saber si una PCC tiene MFPI o el
+   upsell de marcas es una pregunta para el account manager, no para la documentación.**
+
+> **Lo que esto significa para el diagnóstico.** «No veo tipos de tarifa» tiene tres causas que se
+> ven idénticas en pantalla: no se pidió, el PCC no lo tiene, o el mapper no lo lee. Las tres se
+> dieron, en ese orden, y ninguna se resolvió razonando: se resolvieron **instrumentando**
+> (`pidioMarcas`, `conMarca`, `conMarcaDisponible`). Antes de volver a tocar el request, mirar el
+> censo del log.
+
 ## 9. Deduplicación entre Sabre y LATAM
 
 > **Esta sección se mantiene y se refuerza.** El contrato no la desmiente: **la confirma desde el lado de Sabre**, que aplica exactamente el dedupe que aquí se describe como bug.
