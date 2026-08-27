@@ -107,6 +107,10 @@ Todas con **HTTP 200** y `severity: "error"` dentro del sobre.
 > **Subject:** BFM v5 — `MIP/PROCESS` when requesting Multiple Branded Fares / Multiple Fares Per
 > Itinerary. Single Branded Fare works on the same PCC.
 >
+> **Account:** PCC `7VYK` (CERT). Line address `8D71A2`.
+> **Context:** BFM was activated on this PCC per our meeting with Sabre, and it works — the
+> question below is about a _different_ capability, not about BFM itself.
+>
 > **Endpoint:** `POST /v5/offers/shop` (REST). Environment: CERT.
 > **Conversation IDs** (rejections): `sales-travel-5e9e3c76-9b3a-48ba-85dd-6b94e093c9ab`,
 > `sales-travel-a57a776c-83ab-44ab-8cca-86283c5bc3a2`.
@@ -141,14 +145,18 @@ Todas con **HTTP 200** y `severity: "error"` dentro del sobre.
 >
 > **Questions:**
 >
-> 1. The content clearly carries five brands and the host displays them. Is **Multiple Branded
->    Fares (branded fare upsell)** enabled for API access on this PCC? If not, what is the
->    activation path?
-> 2. Is **Multiple Fares Per Itinerary (MFPI)** enabled for this PCC? Your docs list MFPI as
+> 1. **BFM is active on this PCC and basic branded fares work.** Is **Multiple Branded Fares**
+>    (returning several brands per itinerary in one response) part of that same entitlement, or a
+>    separate line item? If separate: what is the cost and the activation path? We are currently
+>    emulating it with N sequential calls using `BrandFilters` exclusion, which multiplies our
+>    per-query cost.
+> 2. The content clearly carries five brands and the host displays them (see above), so this is
+>    not a content gap.
+> 3. Is **Multiple Fares Per Itinerary (MFPI)** enabled for this PCC? Your docs list MFPI as
 >    incompatible with Alternate Cities, Award Shopping, Area Shopping and Low Cost Carriers — we
 >    request none of those. Is it also incompatible with `DataSources.NDC = Enable` or with
 >    `MultipleSourcePerItinerary`?
-> 3. Does `MIP/PROCESS` specifically indicate a missing entitlement, or can it also indicate an
+> 4. Does `MIP/PROCESS` specifically indicate a missing entitlement, or can it also indicate an
 >    invalid parameter combination? We could not find this code in the published error catalog.
 
 ---
