@@ -634,3 +634,72 @@ describe('el default de las marcas llega hasta el cable, no se queda en el Zod',
     expect(cuerpo(spy.calls[0]!.init)).not.toContain('BrandedFareIndicators');
   });
 });
+
+describe('MFPI: varias tarifas por itinerario, apagado por defecto', () => {
+  function rechazo(): Response {
+    return json({
+      groupedItineraryResponse: {
+        version: '5',
+        messages: [{ severity: 'Error', type: 'MIP', code: 'PROCESS' }],
+      },
+    });
+  }
+
+  it('por defecto NO se pide: cero evidencia en la colección, y eso ya costó un 502', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(cuerpo(spy.calls[0]!.init)).not.toContain('FlexibleFares');
+  });
+
+  it('encendido pide DOS grupos: la más barata y la más barata con maleta', async () => {
+    // Es la comparación que decide la venta: «sin maleta $X, con maleta $Y».
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { multipleFares: 'with-baggage' },
+    }).search(CRITERIA, CTX);
+
+    const body = JSON.parse(cuerpo(spy.calls[0]!.init)) as {
+      OTA_AirLowFareSearchRQ: {
+        TravelPreferences: { TPA_Extensions: { FlexibleFares?: { FareParameters: unknown[] } } };
+      };
+    };
+    expect(
+      body.OTA_AirLowFareSearchRQ.TravelPreferences.TPA_Extensions.FlexibleFares?.FareParameters,
+    ).toEqual([{}, { Baggage: { FreePieceRequired: true } }]);
+  });
+
+  it('si el motor lo rechaza, se apaga MFPI y las MARCAS se conservan', async () => {
+    // La parte que importa: MFPI es experimental y las marcas en esta cuenta funcionan. Apagar
+    // las dos de golpe cambiaría una función que anda por una que nadie encendió por defecto.
+    const spy = spyFetch((n) => (n === 1 ? rechazo() : json(adultFixture)));
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { multipleFares: 'with-baggage' },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.multiple_fares_no_soportadas');
+
+    const reintento = cuerpo(spy.calls[1]!.init);
+    expect(reintento).not.toContain('FlexibleFares');
+    expect(reintento).toContain('BrandedFareIndicators');
+  });
+
+  it('y no se vuelve a pedir en la siguiente búsqueda', async () => {
+    const spy = spyFetch((n) => (n === 1 ? rechazo() : json(adultFixture)));
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { multipleFares: 'with-baggage' },
+    });
+
+    await sut.search(CRITERIA, CTX);
+    await sut.search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(3);
+    expect(cuerpo(spy.calls[2]!.init)).not.toContain('FlexibleFares');
+  });
+});

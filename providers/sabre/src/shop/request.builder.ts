@@ -153,6 +153,32 @@ export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'single';
 export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
 
 /**
+ * Varias tarifas POR ITINERARIO — «Multiple Fares Per Itinerary» (MFPI) en la doc de Sabre.
+ *
+ * Es una función DISTINTA del upsell de marcas y se pide por otro sitio: `FlexibleFares`
+ * (`v5.yml:6384`), donde cada entrada de `FareParameters` define un grupo y la respuesta trae la
+ * mejor tarifa de cada grupo para el mismo vuelo. Eso es literalmente la matriz comparativa.
+ *
+ * - `off` — una tarifa por itinerario. Es el default.
+ * - `with-baggage` — dos grupos: la más barata sin condiciones, y la más barata que incluya
+ *   pieza facturada (`FareParameters.Baggage.FreePieceRequired`). Es la comparación que decide
+ *   la venta: «sin maleta $X, con maleta $Y».
+ *
+ * **APAGADO por defecto, y por la misma razón que ya costó un 502: cero evidencia.** Los 88
+ * requests de shop de la colección no usan `FlexibleFares` ni una vez. La función está
+ * documentada y es plausible; no está demostrada contra un PCC real. Se enciende POR CUENTA
+ * (`config.shopOptions.multipleFares`) para poder probarla sin arriesgar a toda la red, y si el
+ * motor la rechaza el adapter degrada y la recuerda.
+ *
+ * Incompatibilidades declaradas por Sabre (página «Error Messages» de MFPI): Alternate Cities,
+ * Award Shopping, Area Shopping y Low Cost Carriers. Ninguna la pedimos hoy.
+ */
+export const SABRE_MULTIPLE_FARES_MODES = ['off', 'with-baggage'] as const;
+export type SabreMultipleFaresMode = (typeof SABRE_MULTIPLE_FARES_MODES)[number];
+
+export const SABRE_MULTIPLE_FARES_DEFAULT: SabreMultipleFaresMode = 'off';
+
+/**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
  * independientes del mismo objeto, sin `oneOf` ni `maxProperties` que lo impidan (`v5.yml:6237`),
  * y BFM consulta ambas fuentes en UNA sola llamada — sumar Sabre al fan-out cuesta 1 request, no 3.
@@ -236,6 +262,14 @@ export type SabreBrandedFareIndicators =
   | { SingleBrandedFare: true }
   | { MultipleBrandedFares: true; UpsellLimit: number };
 
+/**
+ * Un grupo de tarifa de Multiple Fares Per Itinerary (`v5.yml:6384`). Vacío = «la más barata, sin
+ * condiciones»; con `Baggage` = «la más barata que incluya pieza facturada».
+ */
+export interface SabreFareParameterGroup {
+  Baggage?: { FreePieceRequired: true };
+}
+
 export interface SabreTravelPreferences {
   CabinPref?: SabreCabinPref[];
   Baggage: typeof SABRE_BAGGAGE_REQUEST;
@@ -243,6 +277,8 @@ export interface SabreTravelPreferences {
     DataSources: typeof SABRE_DATA_SOURCES;
     PreferNDCSourceOnTie: { Value: boolean };
     NumTrips: { Number: number };
+    /** Ausente salvo que se pida MFPI. Ver {@link SABRE_MULTIPLE_FARES_MODES}. */
+    FlexibleFares?: { FareParameters: SabreFareParameterGroup[] };
   };
 }
 
@@ -302,6 +338,8 @@ export const SabreShopOptionsSchema = z.object({
    * agencia tenga el producto contratado con Sabre.
    */
   brandedFares: z.enum(SABRE_BRANDED_FARES_MODES).default(SABRE_BRANDED_FARES_DEFAULT),
+  /** Ver {@link SABRE_MULTIPLE_FARES_MODES}. Apagado por defecto: sin evidencia en la colección. */
+  multipleFares: z.enum(SABRE_MULTIPLE_FARES_MODES).default(SABRE_MULTIPLE_FARES_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 
@@ -430,6 +468,15 @@ function buildTravelPreferences(
       NumTrips: { Number: opts.numTrips },
     },
   };
+
+  if (opts.multipleFares === 'with-baggage') {
+    // Dos grupos y no tres: el primero vacío es «la más barata, sin condiciones», que es la que
+    // el vendedor ya ve hoy, y el segundo la más barata CON pieza facturada. Añadir grupos
+    // multiplica el tamaño de la respuesta y esta comparación es la que decide la venta.
+    prefs.TPA_Extensions.FlexibleFares = {
+      FareParameters: [{}, { Baggage: { FreePieceRequired: true } }],
+    };
+  }
 
   // El bloque entero se omite si no hay cabina pedida: `CabinPref` sólo prefiere, y una entrada
   // vacía o inventada empeoraría el resultado en vez de dejarlo abierto.

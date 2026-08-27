@@ -8,6 +8,7 @@ import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
   SABRE_BRANDED_FARES_DEFAULT,
+  SABRE_MULTIPLE_FARES_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -92,6 +93,15 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
    */
   private brandedFaresProven = false;
 
+  /**
+   * Igual que {@link brandedFaresUnsupported}, para MFPI (`multipleFares`).
+   *
+   * Se recuerdan POR SEPARADO a propósito: son dos funciones distintas de Sabre y que falte una
+   * no dice nada de la otra. Un solo flag apagaría las marcas —que en esta cuenta funcionan— por
+   * culpa de una función experimental.
+   */
+  private multipleFaresUnsupported = false;
+
   constructor(
     private readonly cfg: SabreConfig,
     private readonly deps: SabreFlightSearchDeps = {},
@@ -138,9 +148,12 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // apagadas para toda la red mientras el código decía lo contrario.
     const modo = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
     const pedirMarcas = modo !== 'off' && !this.brandedFaresUnsupported;
+    const modoMulti = opciones.multipleFares ?? SABRE_MULTIPLE_FARES_DEFAULT;
+    const pedirMulti = modoMulti !== 'off' && !this.multipleFaresUnsupported;
     const body = buildSabreShopRequest(criteria, this.cfg, {
       ...opciones,
       brandedFares: pedirMarcas ? modo : 'off',
+      multipleFares: pedirMulti ? modoMulti : 'off',
     });
 
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
@@ -162,23 +175,40 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       // Existe por un incidente: pedir marcas a un PCC que no las tiene no devuelve una lista
       // sin marcas, devuelve un fallo de negocio, y eso dejó el buscador entero en 502. Que una
       // mejora opcional pueda tumbar la búsqueda es el fallo de diseño; el reintento lo cierra.
-      if (!pedirMarcas || !esRechazoDeCapacidad(err)) throw err;
+      if ((!pedirMarcas && !pedirMulti) || !esRechazoDeCapacidad(err)) throw err;
 
-      // Se recuerda POR INSTANCIA, y el factory cachea una instancia por credenciales: la
-      // siguiente búsqueda de esta agencia ya no paga la llamada de más.
-      this.brandedFaresUnsupported = true;
-      // Por `this.log`, NUNCA por `this.deps.logger` directo: ahí es donde se etiqueta el
-      // proveedor y la meta pasa por `redactMeta`. Un guard del paquete lo vigila, y lo cazó
-      // escribiendo esto — el `code` de Sabre es exactamente la clase de dato que tiene que
-      // cruzar esa puerta.
-      this.log('warn', 'sabre.shop.branded_fares_no_soportadas', {
-        path: SABRE_SHOP_PATH,
-        ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
-      });
+      // Se apaga UNA función por reintento, y MFPI primero: es la más nueva y la que menos
+      // evidencia tiene. Apagar las dos de golpe perdería las marcas —que en esta cuenta SÍ
+      // funcionan— por culpa de una función experimental que nadie encendió por defecto.
+      //
+      // El log va por `this.log`, NUNCA por `this.deps.logger` directo: ahí es donde se etiqueta
+      // el proveedor y la meta pasa por `redactMeta`. Un guard del paquete lo vigila y ya cazó
+      // una versión de esto — el `code` de Sabre es la clase de dato que tiene que cruzar esa
+      // puerta.
+      const detalle =
+        err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {};
+      let reintento: SabreShopOptions;
+      if (pedirMulti) {
+        this.multipleFaresUnsupported = true;
+        this.log('warn', 'sabre.shop.multiple_fares_no_soportadas', {
+          path: SABRE_SHOP_PATH,
+          ...detalle,
+        });
+        reintento = { ...opciones, multipleFares: 'off' };
+      } else {
+        // Se recuerda POR INSTANCIA, y el factory cachea una instancia por credenciales: la
+        // siguiente búsqueda de esta agencia ya no paga la llamada de más.
+        this.brandedFaresUnsupported = true;
+        this.log('warn', 'sabre.shop.branded_fares_no_soportadas', {
+          path: SABRE_SHOP_PATH,
+          ...detalle,
+        });
+        reintento = { ...opciones, brandedFares: 'off' };
+      }
 
       result = await this.http.postJson<unknown>(
         SABRE_SHOP_PATH,
-        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedFares: 'off' }),
+        buildSabreShopRequest(criteria, this.cfg, reintento),
         opciones_http,
       );
     }
@@ -196,7 +226,11 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     if (mapped.offers.length === 0 && pedirMarcas && !this.brandedFaresProven) {
       const sinMarcas = await this.http.postJson<unknown>(
         SABRE_SHOP_PATH,
-        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedFares: 'off' }),
+        buildSabreShopRequest(criteria, this.cfg, {
+          ...opciones,
+          brandedFares: 'off',
+          multipleFares: 'off',
+        }),
         opciones_http,
       );
       const reintento = this.mapear(sinMarcas, criteria, ctx);
