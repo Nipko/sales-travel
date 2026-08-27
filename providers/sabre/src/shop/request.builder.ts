@@ -113,6 +113,25 @@ export function defaultNumTripsFor(tier: SabreItineraryTier): number {
 }
 
 /**
+ * Cuántas marcas tarifarias adicionales pedir por itinerario, además de la más barata.
+ *
+ * BFM hace una búsqueda de tarifa MÍNIMA por defecto y devuelve una sola tarifa por vuelo:
+ *
+ * > "By default, the system does a low fare search, so only the lowest fare is presented."
+ * > — `bargain-finder-max-v5.yml:7282` (`NDCIndicators.MaxNumberOfUpsells`)
+ *
+ * Por eso la pantalla mostraba «Ver tarifa» en singular en todos los resultados: no es que la
+ * aerolínea no tenga Light/Plus/Top, es que no se estaban pidiendo. El vendedor B2B vive de esa
+ * diferencia —la marca con equipaje deja más margen y es la que quiere el cliente con maleta—,
+ * así que una lista de sólo-la-más-barata le esconde justo el producto que vende.
+ *
+ * 3 y no más: cada upsell multiplica el tamaño de la respuesta por itinerario y las aerolíneas
+ * de la región publican típicamente tres o cuatro marcas por cabina. El tope real lo pone
+ * igualmente el carrier, que sólo devuelve las que tenga.
+ */
+export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
+
+/**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
  * independientes del mismo objeto, sin `oneOf` ni `maxProperties` que lo impidan (`v5.yml:6237`),
  * y BFM consulta ambas fuentes en UNA sola llamada — sumar Sabre al fan-out cuesta 1 request, no 3.
@@ -177,6 +196,24 @@ export interface SabreCabinPref {
   PreferLevel: typeof SABRE_CABIN_PREFER_LEVEL;
 }
 
+/**
+ * Marcas tarifarias del lado ATPCO (`v5.yml:6702`).
+ *
+ * Ojo con la forma: acá los valores van DESNUDOS (`MultipleBrandedFares: true`), mientras que
+ * el equivalente NDC los envuelve en `{ Value: … }`. No es simetría rota nuestra, es el
+ * contrato; mezclarlas produce un 400 que no dice cuál de las dos estaba mal.
+ */
+export interface SabreBrandedFareIndicators {
+  MultipleBrandedFares: boolean;
+  UpsellLimit: number;
+}
+
+/** `NDCIndicators` (`v5.yml:7342` y `:7353`): aquí SÍ van envueltos en `Value`. */
+export interface SabreNdcIndicators {
+  MultipleBrandedFares: { Value: boolean };
+  MaxNumberOfUpsells: { Value: number };
+}
+
 export interface SabreTravelPreferences {
   CabinPref?: SabreCabinPref[];
   Baggage: typeof SABRE_BAGGAGE_REQUEST;
@@ -184,6 +221,9 @@ export interface SabreTravelPreferences {
     DataSources: typeof SABRE_DATA_SOURCES;
     PreferNDCSourceOnTie: { Value: boolean };
     NumTrips: { Number: number };
+    /** Ausente cuando no se piden upsells: un bloque vacío no es lo mismo que no pedirlo. */
+    FlexibleFares?: { FareParameters: [{ BrandedFareIndicators: SabreBrandedFareIndicators }] };
+    NDCIndicators?: SabreNdcIndicators;
   };
 }
 
@@ -231,6 +271,15 @@ export const SabreShopOptionsSchema = z.object({
   maxPccs: z.number().int().min(1).optional(),
   /** Desempate documentado cuando ATPCO y NDC devuelven el mismo viaje al mismo precio (`v5.yml:7423`). */
   preferNdcSourceOnTie: z.boolean().default(true),
+  /**
+   * Pedir las marcas tarifarias por encima de la más barata. Ver {@link SABRE_DEFAULT_UPSELL_LIMIT}.
+   *
+   * Es configurable y no una constante porque el upsell depende del contrato del carrier con la
+   * agencia: una cuenta a la que el carrier no le publica marcas paga respuestas más grandes sin
+   * recibir ni una tarifa más.
+   */
+  brandedUpsells: z.boolean().default(true),
+  upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 
 export type SabreShopOptions = z.input<typeof SabreShopOptionsSchema>;
@@ -358,6 +407,21 @@ function buildTravelPreferences(
       NumTrips: { Number: opts.numTrips },
     },
   };
+
+  // Las DOS fuentes van habilitadas a la vez (`SABRE_DATA_SOURCES`), así que pedir el upsell en
+  // una sola dejaría media respuesta con marcas y la otra media sin ellas — y el vendedor no
+  // tiene forma de saber cuál mitad es cuál.
+  if (opts.brandedUpsells && opts.upsellLimit > 0) {
+    prefs.TPA_Extensions.FlexibleFares = {
+      FareParameters: [
+        { BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: opts.upsellLimit } },
+      ],
+    };
+    prefs.TPA_Extensions.NDCIndicators = {
+      MultipleBrandedFares: { Value: true },
+      MaxNumberOfUpsells: { Value: opts.upsellLimit },
+    };
+  }
   // El bloque entero se omite si no hay cabina pedida: `CabinPref` sólo prefiere, y una entrada
   // vacía o inventada empeoraría el resultado en vez de dejarlo abierto.
   if (criteria.cabin !== undefined) {

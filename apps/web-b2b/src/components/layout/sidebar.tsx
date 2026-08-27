@@ -105,7 +105,7 @@ export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: Sideba
       </Link>
 
       {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto px-3.5 py-6 space-y-6">
+      <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3.5 py-6">
         {/* OPERACIONES DIARIAS */}
         <div className="space-y-1.5">
           <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">

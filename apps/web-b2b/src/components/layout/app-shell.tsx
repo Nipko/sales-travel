@@ -32,7 +32,16 @@ export function AppShell({
   const brandCss = brandStyleSheet(branding?.primaryColor, branding?.accentColor);
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-bg)]">
+    // `h-dvh` + `overflow-hidden`, NO `min-h-screen`: con `min-h-screen` el contenedor crece
+    // con el contenido, así que quien scrollea es el documento entero y el sidebar se va con
+    // él. El `overflow-y-auto` del `<main>` no salvaba nada porque `main` no tenía altura
+    // acotada de la que desbordar. Acotando la raíz a la altura de la ventana, el único que
+    // scrollea es `main` y el menú se queda quieto, que es lo que hace un shell de aplicación.
+    //
+    // `dvh` y no `vh`: en móvil la barra de direcciones del navegador se recoge al scrollear y
+    // `100vh` cuenta la ventana SIN recoger, así que el shell quedaba más alto que la pantalla
+    // y volvía a aparecer un scroll del documento — el fallo original, disfrazado.
+    <div className="flex h-dvh overflow-hidden bg-[var(--color-bg)]">
       {brandCss ? <style dangerouslySetInnerHTML={{ __html: brandCss }} /> : null}
       <Sidebar
         role={role}
@@ -40,7 +49,7 @@ export function AppShell({
         tenantSlug={tenantSlug}
         logoUrl={branding?.logoUrl ?? undefined}
       />
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           userEmail={userEmail}
           tenantName={tenantName}
@@ -48,7 +57,10 @@ export function AppShell({
           logoUrl={branding?.logoUrl ?? undefined}
           role={role}
         />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        {/* `min-h-0` es obligatorio, no cosmético: un item de flex column arranca con
+            `min-height: auto` y se niega a encoger por debajo de su contenido, con lo que
+            `overflow-y-auto` nunca llega a desbordar y el scroll se escapa otra vez al padre. */}
+        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

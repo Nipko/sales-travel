@@ -302,6 +302,47 @@ describe('volumen: tier e itinerarios', () => {
     expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
+  it('por defecto pide marcas por encima de la más barata, en LAS DOS fuentes', () => {
+    // El fallo que arregla: BFM hace low-fare search por defecto y devuelve UNA tarifa por
+    // vuelo, asi que la pantalla mostraba «Ver tarifa» en singular siempre. No era que la
+    // aerolinea no tuviera Light/Plus/Top: no se estaban pidiendo.
+    const ext = build().TravelPreferences.TPA_Extensions;
+
+    // ATPCO: valores desnudos.
+    expect(ext.FlexibleFares).toEqual({
+      FareParameters: [{ BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 } }],
+    });
+    // NDC: los MISMOS conceptos, envueltos en `Value`. La asimetria es del contrato.
+    expect(ext.NDCIndicators).toEqual({
+      MultipleBrandedFares: { Value: true },
+      MaxNumberOfUpsells: { Value: 3 },
+    });
+  });
+
+  it('las dos fuentes piden el MISMO limite: media respuesta con marcas no sirve', () => {
+    const ext = build({}, {}, { upsellLimit: 5 }).TravelPreferences.TPA_Extensions;
+    expect(ext.FlexibleFares?.FareParameters[0].BrandedFareIndicators.UpsellLimit).toBe(5);
+    expect(ext.NDCIndicators?.MaxNumberOfUpsells.Value).toBe(5);
+  });
+
+  it('apagar los upsells OMITE los bloques, no los manda vacíos', () => {
+    // Un bloque presente pidiendo cero no es lo mismo que no pedir: el primero es una
+    // instruccion al proveedor y el segundo deja su default en paz.
+    const ext = build({}, {}, { brandedUpsells: false }).TravelPreferences.TPA_Extensions;
+    expect(ext.FlexibleFares).toBeUndefined();
+    expect(ext.NDCIndicators).toBeUndefined();
+  });
+
+  it('un límite de 0 equivale a apagarlo: no se manda un pedido de cero marcas', () => {
+    const ext = build({}, {}, { upsellLimit: 0 }).TravelPreferences.TPA_Extensions;
+    expect(ext.FlexibleFares).toBeUndefined();
+    expect(ext.NDCIndicators).toBeUndefined();
+  });
+
+  it('un límite negativo falla en el borde, no se acota en silencio', () => {
+    expect(() => build({}, {}, { upsellLimit: -1 })).toThrow(SabreConfigError);
+  });
+
   it('un tier fuera del enum del contrato no se manda: falla en el borde', () => {
     expect(() =>
       build({}, {}, { itineraryTier: '500ITINS' } as unknown as SabreShopOptions),
