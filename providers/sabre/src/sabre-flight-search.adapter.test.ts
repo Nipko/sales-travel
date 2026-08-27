@@ -659,22 +659,23 @@ describe('MFPI: varias tarifas por itinerario, apagado por defecto', () => {
     });
   }
 
-  it('por defecto SÍ se pide: la degradación ya se probó en producción', async () => {
-    // Nació apagado, y era lo correcto mientras la degradación fuera teoría. Dejó de serlo el
-    // día que el motor rechazó el upsell de marcas y el adapter cayó solo a `single`
-    // conservando las 50 ofertas. Peor caso acá: una llamada de más y el comportamiento de hoy.
+  it('por defecto NO se pide', async () => {
+    // Estuvo encendido treinta minutos y tumbó el buscador: con MFPI y el upsell a la vez hacían
+    // falta DOS escalones de degradación y el reintento era único. El bucle de `search()` ya lo
+    // soportaría, pero se queda apagado — es la segunda vez que una mejora opcional se lleva por
+    // delante lo único que la plataforma no puede perder.
     const spy = spyFetch(() => json(adultFixture));
     await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
-    expect(cuerpo(spy.calls[0]!.init)).toContain('FlexibleFares');
+    expect(cuerpo(spy.calls[0]!.init)).not.toContain('FlexibleFares');
   });
 
-  it('se puede apagar por cuenta', async () => {
+  it('se enciende por cuenta', async () => {
     const spy = spyFetch(() => json(adultFixture));
     await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { multipleFares: 'off' },
+      shopOptions: { multipleFares: 'with-baggage' },
     }).search(CRITERIA, CTX);
-    expect(cuerpo(spy.calls[0]!.init)).not.toContain('FlexibleFares');
+    expect(cuerpo(spy.calls[0]!.init)).toContain('FlexibleFares');
   });
 
   it('encendido pide DOS grupos: la más barata y la más barata con maleta', async () => {
@@ -727,5 +728,62 @@ describe('MFPI: varias tarifas por itinerario, apagado por defecto', () => {
 
     expect(spy.calls).toHaveLength(3);
     expect(cuerpo(spy.calls[2]!.init)).not.toContain('FlexibleFares');
+  });
+});
+
+describe('la degradación BAJA hasta donde haga falta, no un escalón y ya', () => {
+  /** Rechaza siempre: obliga a recorrer la escalera entera. */
+  function rechazoSiempre(): Response {
+    return json({
+      groupedItineraryResponse: {
+        version: '5',
+        messages: [{ severity: 'Error', type: 'MIP', code: 'PROCESS' }],
+      },
+    });
+  }
+
+  it('con MFPI y upsell encendidos, dos rechazos NO tumban al proveedor', async () => {
+    // El incidente exacto: el reintento único apagaba MFPI y volvía a pedir el upsell que ya se
+    // sabía rechazado. Sabre caía entero y, con `latam-ndc` fuera por moneda, la búsqueda daba
+    // 502. Que una mejora opcional pueda costar la búsqueda es EL fallo de diseño.
+    const spy = spyFetch((n) => (n <= 2 ? rechazoSiempre() : json(adultFixture)));
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandedFares: 'upsell', multipleFares: 'with-baggage' },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(spy.calls).toHaveLength(3);
+
+    const mensajes = calls.map((c) => c.message);
+    expect(mensajes).toContain('sabre.shop.multiple_fares_no_soportadas');
+    expect(mensajes).toContain('sabre.shop.branded_fares_degradado');
+
+    // Escalera: [MFPI+upsell] → [upsell] → [single]. La última conserva las marcas.
+    const cuerpos = spy.calls.map((c) => cuerpo(c.init));
+    expect(cuerpos[0]).toContain('FlexibleFares');
+    expect(cuerpos[1]).not.toContain('FlexibleFares');
+    expect(cuerpos[1]).toContain('MultipleBrandedFares');
+    expect(cuerpos[2]).not.toContain('MultipleBrandedFares');
+    expect(cuerpos[2]).toContain('SingleBrandedFare');
+  });
+
+  it('si TODO se rechaza, el error sube: no se reintenta para siempre', async () => {
+    // El bucle termina. Cada vuelta apaga algo y cuando no queda nada el fallo es del proveedor.
+    const spy = spyFetch(() => rechazoSiempre());
+
+    await expect(
+      adapter(config(), {
+        fetch: spy.fetch,
+        shopOptions: { brandedFares: 'upsell', multipleFares: 'with-baggage' },
+      }).search(CRITERIA, CTX),
+    ).rejects.toThrow(SabreApiError);
+
+    // MFPI+upsell → upsell → single → off, y ahí se acabó.
+    expect(spy.calls).toHaveLength(4);
+    expect(cuerpo(spy.calls[3]!.init)).not.toContain('BrandedFareIndicators');
   });
 });

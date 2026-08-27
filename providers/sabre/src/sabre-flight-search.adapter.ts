@@ -10,6 +10,7 @@ import {
   SABRE_BRANDED_FARES_DEFAULT,
   degradarBrandedFares,
   type SabreBrandedFaresMode,
+  type SabreMultipleFaresMode,
   SABRE_MULTIPLE_FARES_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
@@ -167,12 +168,6 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     const pedirMarcas = modo !== 'off';
     const modoMulti = opciones.multipleFares ?? SABRE_MULTIPLE_FARES_DEFAULT;
     const pedirMulti = modoMulti !== 'off' && !this.multipleFaresUnsupported;
-    const body = buildSabreShopRequest(criteria, this.cfg, {
-      ...opciones,
-      brandedFares: modo,
-      multipleFares: pedirMulti ? modoMulti : 'off',
-    });
-
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
     // puede reintentar. El cliente HTTP ignora esta marca en los paths de `SABRE_NON_IDEMPOTENT_PATHS`.
     const opciones_http = {
@@ -182,55 +177,66 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
         : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
     };
 
-    let result: SabreResult<unknown>;
-    try {
-      result = await this.http.postJson<unknown>(SABRE_SHOP_PATH, body, opciones_http);
-    } catch (err) {
-      // Degradación, no rescate genérico: SÓLO cuando el único extra que llevaba la consulta
-      // eran las marcas, y sólo ante los fallos que significan «tu PCC no hace esto».
-      //
-      // Existe por un incidente: pedir marcas a un PCC que no las tiene no devuelve una lista
-      // sin marcas, devuelve un fallo de negocio, y eso dejó el buscador entero en 502. Que una
-      // mejora opcional pueda tumbar la búsqueda es el fallo de diseño; el reintento lo cierra.
-      if ((!pedirMarcas && !pedirMulti) || !esRechazoDeCapacidad(err)) throw err;
+    // Bucle de degradación, NO un reintento único.
+    //
+    // El reintento único fue un fallo de diseño y tumbó el buscador dos veces. Con DOS funciones
+    // opcionales encendidas —MFPI y el upsell de marcas— hacen falta dos escalones, y sólo había
+    // uno: la primera respuesta apagaba MFPI, la segunda seguía pidiendo el upsell que ya se
+    // sabía rechazado, y el proveedor caía entero. Con `latam-ndc` descartado por moneda, eso es
+    // un 502 y el buscador muerto.
+    //
+    // El bucle baja UN escalón por vuelta hasta que la petición pasa o no queda nada que apagar,
+    // y termina siempre: cada vuelta apaga algo y `siguienteDegradacion` devuelve `null` cuando
+    // ya no hay. El orden es MFPI primero —la más nueva y la que menos evidencia tiene— y luego
+    // las marcas escalón a escalón (`upsell` → `single` → `off`), porque `single` funciona en
+    // producción y perderlo por un rechazo del upsell sería cambiar algo que anda por nada.
+    let modoActual = modo;
+    let multiActual: SabreMultipleFaresMode = pedirMulti ? modoMulti : 'off';
+    let result: SabreResult<unknown> | undefined;
 
-      // Se apaga UNA función por reintento, y MFPI primero: es la más nueva y la que menos
-      // evidencia tiene. Apagar las dos de golpe perdería las marcas —que en esta cuenta SÍ
-      // funcionan— por culpa de una función experimental que nadie encendió por defecto.
-      //
-      // El log va por `this.log`, NUNCA por `this.deps.logger` directo: ahí es donde se etiqueta
-      // el proveedor y la meta pasa por `redactMeta`. Un guard del paquete lo vigila y ya cazó
-      // una versión de esto — el `code` de Sabre es la clase de dato que tiene que cruzar esa
-      // puerta.
-      const detalle =
-        err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {};
-      let reintento: SabreShopOptions;
-      if (pedirMulti) {
-        this.multipleFaresUnsupported = true;
-        this.log('warn', 'sabre.shop.multiple_fares_no_soportadas', {
-          path: SABRE_SHOP_PATH,
-          ...detalle,
-        });
-        reintento = { ...opciones, multipleFares: 'off' };
-      } else {
-        // Se recuerda POR INSTANCIA, y el factory cachea una instancia por credenciales: la
-        // siguiente búsqueda de esta agencia ya no paga la llamada de más.
-        const bajado = degradarBrandedFares(modo);
-        this.brandedFaresTecho = bajado;
-        this.log('warn', 'sabre.shop.branded_fares_degradado', {
-          path: SABRE_SHOP_PATH,
-          de: modo,
-          a: bajado,
-          ...detalle,
-        });
-        reintento = { ...opciones, brandedFares: bajado };
+    for (;;) {
+      const cuerpo = buildSabreShopRequest(criteria, this.cfg, {
+        ...opciones,
+        brandedFares: modoActual,
+        multipleFares: multiActual,
+      });
+      try {
+        result = await this.http.postJson<unknown>(SABRE_SHOP_PATH, cuerpo, opciones_http);
+        break;
+      } catch (err) {
+        if (!esRechazoDeCapacidad(err)) throw err;
+
+        // El log va por `this.log`, NUNCA por `this.deps.logger` directo: ahí es donde se
+        // etiqueta el proveedor y la meta pasa por `redactMeta`. Un guard del paquete lo vigila.
+        const detalle =
+          err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {};
+
+        if (multiActual !== 'off') {
+          multiActual = 'off';
+          this.multipleFaresUnsupported = true;
+          this.log('warn', 'sabre.shop.multiple_fares_no_soportadas', {
+            path: SABRE_SHOP_PATH,
+            ...detalle,
+          });
+          continue;
+        }
+
+        if (modoActual !== 'off') {
+          const bajado = degradarBrandedFares(modoActual);
+          this.log('warn', 'sabre.shop.branded_fares_degradado', {
+            path: SABRE_SHOP_PATH,
+            de: modoActual,
+            a: bajado,
+            ...detalle,
+          });
+          modoActual = bajado;
+          this.brandedFaresTecho = bajado;
+          continue;
+        }
+
+        // Sin enriquecimientos que apagar, el fallo es del proveedor y sube tal cual.
+        throw err;
       }
-
-      result = await this.http.postJson<unknown>(
-        SABRE_SHOP_PATH,
-        buildSabreShopRequest(criteria, this.cfg, reintento),
-        opciones_http,
-      );
     }
 
     let mapped = this.mapear(result, criteria, ctx);
