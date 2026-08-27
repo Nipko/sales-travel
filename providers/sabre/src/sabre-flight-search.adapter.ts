@@ -8,6 +8,8 @@ import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
   SABRE_BRANDED_FARES_DEFAULT,
+  degradarBrandedFares,
+  type SabreBrandedFaresMode,
   SABRE_MULTIPLE_FARES_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
@@ -33,6 +35,12 @@ function esRechazoDeCapacidad(err: unknown): boolean {
     err instanceof SabreApiError &&
     (err.failure.kind === 'ENTITLEMENT' || err.failure.kind === 'BUSINESS')
   );
+}
+
+/** El más conservador de dos modos. `off` < `single` < `upsell`. */
+function menorModo(a: SabreBrandedFaresMode, b: SabreBrandedFaresMode): SabreBrandedFaresMode {
+  const rango: Record<SabreBrandedFaresMode, number> = { off: 0, single: 1, upsell: 2 };
+  return rango[a] <= rango[b] ? a : b;
 }
 
 export interface SabreFlightSearchDeps {
@@ -84,7 +92,14 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
    * No se persiste a propósito: un alta comercial con Sabre no emite ningún evento hacia nosotros,
    * y un flag en base de datos lo dejaría apagado para siempre sin que nadie sepa por qué.
    */
-  private brandedFaresUnsupported = false;
+  /**
+   * Techo al que esta cuenta puede aspirar en marcas, aprendido de los rechazos del motor.
+   *
+   * `null` = todavía no se sabe, se pide lo que diga la config. Cada rechazo baja UN escalón
+   * (`upsell` → `single` → `off`) en vez de apagarlo todo: `single` funciona en producción y
+   * perderlo por un rechazo del upsell sería cambiar una función que anda por ninguna.
+   */
+  private brandedFaresTecho: SabreBrandedFaresMode | null = null;
 
   /**
    * Esta cuenta YA devolvió ofertas pidiendo marcas, así que una ruta vacía es una ruta vacía y
@@ -146,13 +161,15 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // Zod se aplica al parsear, no antes. Con `=== true` sobre un campo ausente salía `false`, y
     // encima se le pasaba explícito al builder pisando su propio default: las marcas estaban
     // apagadas para toda la red mientras el código decía lo contrario.
-    const modo = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
-    const pedirMarcas = modo !== 'off' && !this.brandedFaresUnsupported;
+    const pedido = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
+    const modo =
+      this.brandedFaresTecho === null ? pedido : menorModo(pedido, this.brandedFaresTecho);
+    const pedirMarcas = modo !== 'off';
     const modoMulti = opciones.multipleFares ?? SABRE_MULTIPLE_FARES_DEFAULT;
     const pedirMulti = modoMulti !== 'off' && !this.multipleFaresUnsupported;
     const body = buildSabreShopRequest(criteria, this.cfg, {
       ...opciones,
-      brandedFares: pedirMarcas ? modo : 'off',
+      brandedFares: modo,
       multipleFares: pedirMulti ? modoMulti : 'off',
     });
 
@@ -198,12 +215,15 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       } else {
         // Se recuerda POR INSTANCIA, y el factory cachea una instancia por credenciales: la
         // siguiente búsqueda de esta agencia ya no paga la llamada de más.
-        this.brandedFaresUnsupported = true;
-        this.log('warn', 'sabre.shop.branded_fares_no_soportadas', {
+        const bajado = degradarBrandedFares(modo);
+        this.brandedFaresTecho = bajado;
+        this.log('warn', 'sabre.shop.branded_fares_degradado', {
           path: SABRE_SHOP_PATH,
+          de: modo,
+          a: bajado,
           ...detalle,
         });
-        reintento = { ...opciones, brandedFares: 'off' };
+        reintento = { ...opciones, brandedFares: bajado };
       }
 
       result = await this.http.postJson<unknown>(
@@ -235,7 +255,8 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       );
       const reintento = this.mapear(sinMarcas, criteria, ctx);
       if (reintento.offers.length > 0) {
-        this.brandedFaresUnsupported = true;
+        // La respuesta VACÍA también degrada un escalón, por la misma razón que el rechazo.
+        this.brandedFaresTecho = degradarBrandedFares(modo);
         this.log('warn', 'sabre.shop.branded_fares_vacian_la_respuesta', {
           path: SABRE_SHOP_PATH,
           offersSinMarcas: reintento.offers.length,
@@ -252,7 +273,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // saltó, el sobre que se mapeó vino sin marcas, y decir `pidioMarcas: true` al lado de
     // `conMarca: 0` invita a concluir «el PCC no publica marcas» cuando lo que pasó es que las
     // rechazó y se reintentó sin ellas. Son dos diagnósticos distintos.
-    this.logMapping(mapped, result, ctx, pedirMarcas && !this.brandedFaresUnsupported);
+    this.logMapping(mapped, result, ctx, this.brandedFaresTecho === 'off' ? false : pedirMarcas);
     return mapped.offers;
   }
 

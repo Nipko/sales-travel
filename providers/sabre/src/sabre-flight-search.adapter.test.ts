@@ -409,12 +409,15 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     expect(offers.length).toBeGreaterThan(0);
     expect(spy.calls).toHaveLength(2);
 
-    // La primera llevaba marcas; la segunda no. Esa es toda la diferencia entre las dos.
+    // La degradación baja UN escalón: `upsell` → `single`. La segunda llamada SIGUE pidiendo
+    // marcas, sólo que la variante que el motor sí acepta. Apagarlas del todo cambiaría una
+    // función que en producción funciona por ninguna.
     const cuerpos = spy.calls.map((c) => cuerpo(c.init));
-    expect(cuerpos[0]).toContain('BrandedFareIndicators');
-    expect(cuerpos[1]).not.toContain('BrandedFareIndicators');
+    expect(cuerpos[0]).toContain('MultipleBrandedFares');
+    expect(cuerpos[1]).toContain('SingleBrandedFare');
+    expect(cuerpos[1]).not.toContain('MultipleBrandedFares');
 
-    expect(calls.map((c) => c.message)).toContain('sabre.shop.branded_fares_no_soportadas');
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.branded_fares_degradado');
   });
 
   it('no se vuelve a preguntar: la segunda búsqueda ya sale sin marcas', async () => {
@@ -427,7 +430,9 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     // 2 de la primera búsqueda (rechazo + reintento) + 1 de la segunda. Si fueran 4, estaríamos
     // pagando una llamada de más por búsqueda y por siempre.
     expect(spy.calls).toHaveLength(3);
-    expect(cuerpo(spy.calls[2]!.init)).not.toContain('BrandedFareIndicators');
+    // Y la segunda búsqueda arranca YA en el escalón aprendido, sin volver a probar el de arriba.
+    expect(cuerpo(spy.calls[2]!.init)).not.toContain('MultipleBrandedFares');
+    expect(cuerpo(spy.calls[2]!.init)).toContain('SingleBrandedFare');
   });
 
   it('sin marcas pedidas NO hay reintento: un fallo de negocio sigue siendo un fallo', async () => {

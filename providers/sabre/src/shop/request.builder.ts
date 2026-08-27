@@ -141,7 +141,20 @@ export const SABRE_BRANDED_FARES_MODES = ['off', 'single', 'upsell'] as const;
 export type SabreBrandedFaresMode = (typeof SABRE_BRANDED_FARES_MODES)[number];
 
 /** Ver {@link SABRE_BRANDED_FARES_MODES}. Lo comparten el esquema y el adapter. */
-export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'single';
+export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'upsell';
+
+/**
+ * El escalón de abajo cuando el motor rechaza lo que se pidió.
+ *
+ * `upsell` → `single` → `off`, y NO `upsell` → `off`. La diferencia importa: `single` funciona
+ * en la cuenta de producción —trae LIGHT, FLEX, ECONOMY BASIC— y apagar las marcas enteras por
+ * un rechazo del upsell cambiaría una función que anda por ninguna. La degradación tiene que
+ * bajar un escalón, no tirar la escalera.
+ */
+export function degradarBrandedFares(modo: SabreBrandedFaresMode): SabreBrandedFaresMode {
+  if (modo === 'upsell') return 'single';
+  return 'off';
+}
 
 /**
  * Cuántas marcas adicionales pedir en modo `upsell`.
@@ -258,9 +271,11 @@ export interface SabreCabinPref {
  * solo no lo dice. Lo dicen los 1.077 requests reales de la colección: los 35 que piden marcas las
  * piden **todos** aquí, y ninguno usa `FlexibleFares` para esto (`docs/sabre/02` §7.4).
  */
-export type SabreBrandedFareIndicators =
-  | { SingleBrandedFare: true }
-  | { MultipleBrandedFares: true; UpsellLimit: number };
+export interface SabreBrandedFareIndicators {
+  SingleBrandedFare?: true;
+  MultipleBrandedFares?: true;
+  UpsellLimit?: number;
+}
 
 /**
  * Un grupo de tarifa de Multiple Fares Per Itinerary (`v5.yml:6384`). Vacío = «la más barata, sin
@@ -500,7 +515,21 @@ function brandedFareIndicators(
   if (opts.brandedFares === 'off') return null;
   if (opts.brandedFares === 'single') return { SingleBrandedFare: true };
   if (opts.upsellLimit <= 0) return null;
-  return { MultipleBrandedFares: true, UpsellLimit: opts.upsellLimit };
+
+  // Las DOS banderas juntas, no `MultipleBrandedFares` sola. Es lo que hace el ejemplo oficial
+  // «Request Example for Single and Multiple Branded Fares» del devhub:
+  //
+  //   <BrandedFareIndicators SingleBrandedFare="true" MultipleBrandedFares="true"/>
+  //
+  // La primera versión las trató como EXCLUYENTES —«son dos productos distintos, mezclarlas es
+  // pedir algo que el contrato no describe»— y hasta tenía un test afirmándolo. Era una
+  // suposición mía, no un hallazgo, y contradice el único ejemplo oficial que las combina.
+  // Mandar el upsell solo puede ser exactamente lo que el motor rechazaba con `MIP/PROCESS`.
+  return {
+    SingleBrandedFare: true,
+    MultipleBrandedFares: true,
+    UpsellLimit: opts.upsellLimit,
+  };
 }
 
 function buildTravelerInfoSummary(

@@ -305,47 +305,59 @@ describe('volumen: tier e itinerarios', () => {
     expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
-  it('POR DEFECTO pide UNA marca por itinerario, que es lo único con evidencia', () => {
-    // En los 88 requests de shop reales, `BrandedFareIndicators` aparece 34 veces y SIEMPRE con
-    // una sola clave: `SingleBrandedFare: true`. `MultipleBrandedFares` y `UpsellLimit`: cero.
-    // La primera versión mandó el upsell a toda la red sin un solo request que lo respaldara y
-    // el motor de compra respondió `MIP/PROCESS`, dejando el buscador en 502.
+  it('POR DEFECTO pide el upsell, con las dos banderas del ejemplo oficial', () => {
+    // Se puede pedir lo más rico porque la degradación baja UN escalón: si el motor lo rechaza
+    // cae a `single`, que en producción funciona, y no a `off`. Antes el default era `single`
+    // justamente porque la degradación apagaba las marcas enteras.
     expect(build().TravelerInfoSummary.PriceRequestInformation.TPA_Extensions).toEqual({
-      BrandedFareIndicators: { SingleBrandedFare: true },
+      BrandedFareIndicators: {
+        SingleBrandedFare: true,
+        MultipleBrandedFares: true,
+        UpsellLimit: 3,
+      },
     });
   });
 
-  it('el upsell se pide EXPLÍCITO, y entonces sí manda `MultipleBrandedFares`', () => {
+  it('`single` pide UNA marca por itinerario y no arrastra el upsell', () => {
+    expect(
+      build({}, {}, { brandedFares: 'single' }).TravelerInfoSummary.PriceRequestInformation
+        .TPA_Extensions,
+    ).toEqual({ BrandedFareIndicators: { SingleBrandedFare: true } });
+  });
+
+  it('el upsell manda las DOS banderas juntas, como el ejemplo oficial', () => {
+    // «Request Example for Single and Multiple Branded Fares» del devhub:
+    //   <BrandedFareIndicators SingleBrandedFare="true" MultipleBrandedFares="true"/>
+    //
+    // Este test existe porque antes afirmaba lo CONTRARIO —que eran excluyentes— sobre una
+    // suposición mía que el ejemplo oficial desmiente. Mandar el upsell solo puede haber sido
+    // lo que el motor rechazaba con `MIP/PROCESS`.
     const pri = build({}, {}, { brandedFares: 'upsell' }).TravelerInfoSummary
       .PriceRequestInformation;
     expect(pri.TPA_Extensions).toEqual({
-      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 },
+      BrandedFareIndicators: {
+        SingleBrandedFare: true,
+        MultipleBrandedFares: true,
+        UpsellLimit: 3,
+      },
     });
-  });
-
-  it('las dos formas son EXCLUYENTES: nunca se mandan juntas', () => {
-    // Son dos productos comerciales distintos; mezclarlos es pedir algo que el contrato no
-    // describe y que ningún ejemplo real hace.
-    const single = JSON.stringify(build().TravelerInfoSummary.PriceRequestInformation);
-    expect(single).not.toContain('MultipleBrandedFares');
-
-    const upsell = JSON.stringify(
-      build({}, {}, { brandedFares: 'upsell' }).TravelerInfoSummary.PriceRequestInformation,
-    );
-    expect(upsell).not.toContain('SingleBrandedFare');
-  });
-
-  it('apagado, no viaja ningún bloque de marcas', () => {
-    const pri = build({}, {}, { brandedFares: 'off' }).TravelerInfoSummary.PriceRequestInformation;
-    expect(pri.TPA_Extensions).toBeUndefined();
   });
 
   it('el límite del upsell se respeta tal cual', () => {
     const pri = build({}, {}, { brandedFares: 'upsell', upsellLimit: 5 }).TravelerInfoSummary
       .PriceRequestInformation;
     expect(pri.TPA_Extensions).toEqual({
-      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 5 },
+      BrandedFareIndicators: {
+        SingleBrandedFare: true,
+        MultipleBrandedFares: true,
+        UpsellLimit: 5,
+      },
     });
+  });
+
+  it('apagado, no viaja ningún bloque de marcas', () => {
+    const pri = build({}, {}, { brandedFares: 'off' }).TravelerInfoSummary.PriceRequestInformation;
+    expect(pri.TPA_Extensions).toBeUndefined();
   });
 
   it('upsell con límite 0 equivale a apagarlo', () => {
