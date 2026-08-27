@@ -154,7 +154,30 @@ export default function ProveedoresPage() {
       try {
         const res = await fetch('/api/tenants/network');
         const data = (await res.json()) as { tenants?: NetworkTenant[] };
-        const list = data.tenants ?? [];
+        let list = data.tenants ?? [];
+        if (list.length === 0) {
+          const cfgRes = await fetch('/api/tenant/config');
+          if (cfgRes.ok) {
+            const cfg = (await cfgRes.json()) as {
+              tenantId?: string;
+              name?: string;
+              slug?: string;
+            };
+            if (cfg.tenantId) {
+              list = [
+                {
+                  id: cfg.tenantId,
+                  name: cfg.name ?? 'Mi Agencia',
+                  slug: cfg.slug ?? 'mi-agencia',
+                  tenantType: 'agency',
+                  parentTenantId: null,
+                  status: 'active',
+                  depth: 0,
+                },
+              ];
+            }
+          }
+        }
         setTenants(list);
         if (list.length > 0 && list[0]) {
           setSelectedTenant(list[0]);

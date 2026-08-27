@@ -20,8 +20,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/');
   }
 
-  // Admin section requires at least 'admin' role
-  if (!['superadmin', 'tenant_admin', 'admin'].includes(activeMembership.role)) {
+  // Admin section requires at least admin-level role
+  const allowedAdminRoles = [
+    'superadmin',
+    'platform_admin',
+    'consolidator_admin',
+    'tenant_admin',
+    'agency_admin',
+    'admin',
+  ];
+  if (!allowedAdminRoles.includes(activeMembership.role)) {
     redirect('/');
   }
 

@@ -35,13 +35,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? exception.message
           : 'Internal server error';
 
-    // Log the detailed exception trace with HTTP method and path
-    this.logger.error(
-      `[${request.method}] ${request.url} - Status: ${status} - Error details: ${
-        typeof message === 'object' ? JSON.stringify(message) : message
-      }`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    // Log exception: 5xx as error with stack trace, 4xx as warn without cluttering stack trace
+    const logDetails = `[${request.method}] ${request.url} - Status: ${status} - Details: ${
+      typeof message === 'object' ? JSON.stringify(message) : message
+    }`;
+    if (status >= 500) {
+      this.logger.error(logDetails, exception instanceof Error ? exception.stack : undefined);
+    } else {
+      this.logger.warn(logDetails);
+    }
 
     // Respuesta al cliente, normalizada a { statusCode, error, message[, fields] }.
     // Para HttpException: se traduce el mensaje (auth/genéricos a español; los que ya vienen
