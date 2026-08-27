@@ -225,6 +225,21 @@ const SabrePassengerInfoSchema = z.object({
 
 const SabrePricingInformationSchema = z.object({
   brand: z.string().optional(),
+  /**
+   * «Al menos una de las piernas de este itinerario TIENE marca» (`v5.yml:8805`).
+   *
+   * Es la única señal que separa dos diagnósticos que se ven idénticos desde fuera y exigen
+   * acciones opuestas:
+   *
+   * - `false` en todo → el contenido no tiene marcas. Las aerolíneas de esa ruta no publican
+   *   tarifas de marca a esa PCC, y no hay nada que habilitar.
+   * - `true` con `brand` ausente → las marcas EXISTEN y no nos llegan. Eso sí es un alta
+   *   comercial pendiente (el `MIP/PROCESS` que rechaza el upsell).
+   *
+   * Sin este campo, «no veo tipos de tarifa» sólo se podía atribuir por eliminación, y una
+   * conversación con Sabre para habilitar algo que igual no existe cuesta semanas.
+   */
+  brandsOnAnyMarket: z.boolean().optional(),
   distributionModel: z.string().optional(),
   pricingSubsource: z.string().optional(),
   pseudoCityCode: z.string().optional(),
@@ -1300,6 +1315,9 @@ function buildProviderRaw(
     lastTicketTime: pricing.fare?.lastTicketTime ?? null,
     // Señal de que el precio no es en vivo (`v5.yml:2891`).
     cachedHoursSinceCreation: pricing.cached?.hoursSinceCreation ?? null,
+    // Diagnóstico, no producto: dice si ESTE itinerario tiene marcas disponibles aunque no nos
+    // hayan llegado. Ver `SabrePricingInformationSchema.brandsOnAnyMarket`.
+    brandsOnAnyMarket: pricing.brandsOnAnyMarket ?? null,
     flights,
   };
   if (allowances.length > 0) raw['baggageAllowance'] = allowances;

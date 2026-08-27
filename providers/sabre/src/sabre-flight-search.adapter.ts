@@ -307,10 +307,12 @@ export function censoDeContenido(offers: readonly Offer[]): {
   conMarca: number;
   marcas: string[];
   conEquipaje: number;
+  conMarcaDisponible: number;
 } {
   const marcas = new Set<string>();
   let conMarca = 0;
   let conEquipaje = 0;
+  let conMarcaDisponible = 0;
 
   for (const offer of offers) {
     const nombre = offer.fareFamily?.name;
@@ -319,9 +321,18 @@ export function censoDeContenido(offers: readonly Offer[]): {
       marcas.add(nombre);
     }
     if (offer.baggage !== undefined) conEquipaje += 1;
+    if (offer.provider.raw?.['brandsOnAnyMarket'] === true) conMarcaDisponible += 1;
   }
 
-  return { conMarca, marcas: [...marcas].sort().slice(0, 12), conEquipaje };
+  return {
+    conMarca,
+    marcas: [...marcas].sort().slice(0, 12),
+    conEquipaje,
+    // La diferencia entre `conMarcaDisponible` y `conMarca` es el diagnóstico entero:
+    //   0 y 0  → el contenido NO tiene marcas. No hay nada que habilitar con Sabre.
+    //   N y 0  → las marcas existen y no nos llegan. Eso sí es el alta de MIP pendiente.
+    conMarcaDisponible,
+  };
 }
 
 /**

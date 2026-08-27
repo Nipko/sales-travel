@@ -566,7 +566,26 @@ describe('censoDeContenido: qué trae la respuesta, no cuánto', () => {
 
   it('sin marcas el censo lo dice con un cero, no con un hueco', () => {
     const censo = censoDeContenido([oferta(), oferta()]);
-    expect(censo).toEqual({ conMarca: 0, marcas: [], conEquipaje: 0 });
+    expect(censo).toEqual({ conMarca: 0, marcas: [], conEquipaje: 0, conMarcaDisponible: 0 });
+  });
+
+  it('distingue «no hay marcas» de «las hay y no nos llegan»', () => {
+    // Los dos casos se ven idénticos en pantalla —el vendedor no ve tipos de tarifa— y piden
+    // acciones opuestas: uno no tiene arreglo posible y el otro es un alta comercial con Sabre.
+    // `brandsOnAnyMarket` es lo único que los separa, y lo dice el propio proveedor.
+    const sinContenido = censoDeContenido([
+      oferta({ provider: { name: 'sabre', offerRef: 'r', raw: { brandsOnAnyMarket: false } } }),
+      oferta({ provider: { name: 'sabre', offerRef: 'r', raw: { brandsOnAnyMarket: null } } }),
+    ]);
+    expect(sinContenido.conMarcaDisponible).toBe(0);
+    expect(sinContenido.conMarca).toBe(0);
+
+    const hayYNoLlegan = censoDeContenido([
+      oferta({ provider: { name: 'sabre', offerRef: 'r', raw: { brandsOnAnyMarket: true } } }),
+      oferta({ provider: { name: 'sabre', offerRef: 'r', raw: { brandsOnAnyMarket: true } } }),
+    ]);
+    expect(hayYNoLlegan.conMarcaDisponible).toBe(2);
+    expect(hayYNoLlegan.conMarca).toBe(0);
   });
 
   it('el equipaje se cuenta aparte de la marca: son dos ausencias distintas', () => {
