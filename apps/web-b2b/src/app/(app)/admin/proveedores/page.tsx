@@ -156,7 +156,7 @@ export default function ProveedoresPage() {
         const data = (await res.json()) as { tenants?: NetworkTenant[] };
         const list = data.tenants ?? [];
         setTenants(list);
-        if (list.length > 0) {
+        if (list.length > 0 && list[0]) {
           setSelectedTenant(list[0]);
         }
       } catch {

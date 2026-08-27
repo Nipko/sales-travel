@@ -6,6 +6,7 @@ import {
   FileText,
   Home,
   Hotel,
+  KeyRound,
   Lock,
   MapPin,
   Network,
