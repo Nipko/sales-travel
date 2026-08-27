@@ -202,6 +202,20 @@ export type SabreMultipleFaresMode = (typeof SABRE_MULTIPLE_FARES_MODES)[number]
 export const SABRE_MULTIPLE_FARES_DEFAULT: SabreMultipleFaresMode = 'off';
 
 /**
+ * Cuántas rondas EXTRA de exclusión hace la escalera de marcas por búsqueda.
+ *
+ * Cada ronda es una llamada de shop completa, y Sabre cobra por consulta: es el único parámetro
+ * de este paquete cuyo coste es lineal y en dinero. Por eso arranca en 0 —una búsqueda, una
+ * llamada, como hoy— y se sube por cuenta cuando la agencia decida que la comparación vale lo
+ * que cuesta.
+ *
+ * Con 2 rondas el vendedor ve hasta 3 marcas por vuelo, que es donde está casi todo el valor:
+ * la barata, la del medio y la flexible.
+ */
+export const SABRE_BRAND_LADDER_DEFAULT = 0;
+export const SABRE_BRAND_LADDER_MAX = 4;
+
+/**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
  * independientes del mismo objeto, sin `oneOf` ni `maxProperties` que lo impidan (`v5.yml:6237`),
  * y BFM consulta ambas fuentes en UNA sola llamada — sumar Sabre al fan-out cuesta 1 request, no 3.
@@ -285,6 +299,8 @@ export interface SabreBrandedFareIndicators {
   SingleBrandedFare?: true;
   MultipleBrandedFares?: true;
   UpsellLimit?: number;
+  /** Marcas a excluir. Ver {@link SabreShopOptionsSchema.excludeBrands}. */
+  BrandFilters?: { Brand: { Code: string; PreferLevel: 'Unacceptable' }[] };
 }
 
 /**
@@ -365,6 +381,35 @@ export const SabreShopOptionsSchema = z.object({
   brandedFares: z.enum(SABRE_BRANDED_FARES_MODES).default(SABRE_BRANDED_FARES_DEFAULT),
   /** Ver {@link SABRE_MULTIPLE_FARES_MODES}. Apagado por defecto: sin evidencia en la colección. */
   multipleFares: z.enum(SABRE_MULTIPLE_FARES_MODES).default(SABRE_MULTIPLE_FARES_DEFAULT),
+  /**
+   * Códigos de marca a EXCLUIR de esta búsqueda (`BrandFilters.Brand[].PreferLevel:
+   * 'Unacceptable'`, `v5.yml:7985`).
+   *
+   * Es la pieza que permite armar la comparación de tarifas SIN el producto de upsell, que este
+   * PCC no tiene. Con `SingleBrandedFare` Sabre devuelve la marca más barata de cada vuelo;
+   * excluyendo esa, devuelve la siguiente. Repitiendo se recorre la escalera del carrier.
+   *
+   * **Verificado contra CERT (2026-08-27):** con `MAIN` excluida, American pasó de «MAIN CABIN»
+   * (388,84 USD, no reembolsable) a «MAIN CABIN FLEXIBLE» (447,44 USD, reembolsable). Delta, que
+   * no estaba excluida, siguió devolviendo la suya — el filtro es por código y no toca al resto.
+   *
+   * A diferencia de `MultipleBrandedFares`, este filtro **sí está permitido**: la misma petición
+   * que devuelve `MIP/PROCESS` con el upsell pasa limpia con `BrandFilters`.
+   */
+  excludeBrands: z.array(z.string().min(1)).default([]),
+  /**
+   * Rondas extra de exclusión. Ver {@link SABRE_BRAND_LADDER_DEFAULT}.
+   *
+   * Lo consume el ADAPTER, no este builder: cada ronda es una petición distinta con su propia
+   * lista de `excludeBrands`. Vive en las opciones para que la cuenta lo configure en un solo
+   * sitio junto al resto de palancas de shop.
+   */
+  brandLadderRounds: z
+    .number()
+    .int()
+    .min(0)
+    .max(SABRE_BRAND_LADDER_MAX)
+    .default(SABRE_BRAND_LADDER_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 
@@ -522,8 +567,21 @@ function buildTravelPreferences(
 function brandedFareIndicators(
   opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
 ): SabreBrandedFareIndicators | null {
+  const filtros: Pick<SabreBrandedFareIndicators, 'BrandFilters'> =
+    opts.excludeBrands.length === 0
+      ? {}
+      : {
+          BrandFilters: {
+            Brand: opts.excludeBrands.map((Code) => ({
+              Code,
+              PreferLevel: 'Unacceptable' as const,
+            })),
+          },
+        };
+
+  // Excluir marcas exige pedir marcas: sin `SingleBrandedFare` el filtro no tiene sobre qué obrar.
   if (opts.brandedFares === 'off') return null;
-  if (opts.brandedFares === 'single') return { SingleBrandedFare: true };
+  if (opts.brandedFares === 'single') return { SingleBrandedFare: true, ...filtros };
   if (opts.upsellLimit <= 0) return null;
 
   // Las DOS banderas juntas, no `MultipleBrandedFares` sola. Es lo que hace el ejemplo oficial
@@ -539,6 +597,7 @@ function brandedFareIndicators(
     SingleBrandedFare: true,
     MultipleBrandedFares: true,
     UpsellLimit: opts.upsellLimit,
+    ...filtros,
   };
 }
 

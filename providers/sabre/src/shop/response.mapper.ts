@@ -1286,6 +1286,31 @@ function resolveBrandName(
   return null;
 }
 
+/**
+ * El CÓDIGO de la marca (`MAIN`, `MAINFL`, `I3`…), que es distinto de su nombre.
+ *
+ * Se publica en `provider.raw` porque no es producto —al vendedor se le enseña «MAIN CABIN
+ * FLEXIBLE», no `MAINFL`— sino la llave para pedirle a Sabre **otra** marca del mismo vuelo:
+ * `BrandFilters.Brand[{ Code, PreferLevel: 'Unacceptable' }]` excluye la que ya tenemos y
+ * devuelve la siguiente. Verificado contra CERT: excluyendo `MAIN`, American pasó de
+ * «MAIN CABIN» (no reembolsable) a «MAIN CABIN FLEXIBLE» (reembolsable, +14%).
+ *
+ * Sin el código no hay escalera: los nombres no sirven para filtrar.
+ */
+function resolveBrandCode(
+  passengers: readonly SabrePassengerInfo[],
+  dicts: Dictionaries,
+): string | null {
+  for (const passenger of passengers) {
+    for (const component of passenger.fareComponents ?? []) {
+      if (component.ref === undefined) continue;
+      const code = dicts.fareComponents.get(component.ref)?.brand?.code?.trim();
+      if (code !== undefined && code.length > 0) return code;
+    }
+  }
+  return null;
+}
+
 function resolveFareFamily(
   pricing: SabrePricingInformation,
   itineraries: readonly Itinerary[],
@@ -1366,6 +1391,8 @@ function buildProviderRaw(
     // Diagnóstico, no producto: dice si ESTE itinerario tiene marcas disponibles aunque no nos
     // hayan llegado. Ver `SabrePricingInformationSchema.brandsOnAnyMarket`.
     brandsOnAnyMarket: pricing.brandsOnAnyMarket ?? null,
+    // La llave de la escalera de marcas. Ver `resolveBrandCode`.
+    brandCode: resolveBrandCode(passengers, dicts),
     flights,
   };
   if (allowances.length > 0) raw['baggageAllowance'] = allowances;

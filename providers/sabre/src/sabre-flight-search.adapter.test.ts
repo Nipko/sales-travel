@@ -787,3 +787,100 @@ describe('la degradación BAJA hasta donde haga falta, no un escalón y ya', () 
     expect(cuerpo(spy.calls[3]!.init)).not.toContain('BrandedFareIndicators');
   });
 });
+
+/**
+ * La comparación de tarifas SIN el producto de upsell, que este PCC no tiene.
+ *
+ * Verificado contra CERT el 2026-08-27: `SingleBrandedFare` devuelve la marca más barata de cada
+ * vuelo; volviendo a preguntar con `BrandFilters.Brand[{Code:'MAIN',PreferLevel:'Unacceptable'}]`
+ * American pasó de «MAIN CABIN» (388,84 USD, no reembolsable) a «MAIN CABIN FLEXIBLE» (447,44
+ * USD, reembolsable). La misma petición que da `MIP/PROCESS` con `MultipleBrandedFares` pasa
+ * limpia con `BrandFilters`.
+ */
+describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', () => {
+  /** Respuesta con la marca indicada en el descriptor de componente tarifario. */
+  function conMarca(code: string, name: string): Response {
+    const payload = structuredClone(adultFixture) as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const descs = payload['groupedItineraryResponse']!['fareComponentDescs'] as Array<
+      Record<string, unknown>
+    >;
+    descs[0]!['brand'] = { code, brandName: name };
+    return json(payload);
+  }
+
+  it('por defecto NO escala: cada ronda es una llamada y Sabre cobra por consulta', async () => {
+    const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(spy.calls).toHaveLength(1);
+  });
+
+  it('con rondas, EXCLUYE la marca ya vista y suma la siguiente', async () => {
+    const spy = spyFetch((n) =>
+      n === 1 ? conMarca('MAIN', 'MAIN CABIN') : conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'),
+    );
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 1 },
+    }).search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(2);
+    // La segunda petición excluye lo que trajo la primera.
+    expect(cuerpo(spy.calls[1]!.init)).toContain('"Code":"MAIN"');
+    expect(cuerpo(spy.calls[1]!.init)).toContain('Unacceptable');
+
+    // Y el vendedor acaba con las DOS marcas del mismo vuelo, que es la comparación.
+    const marcas = new Set(offers.map((o) => o.fareFamily?.name));
+    expect(marcas).toContain('MAIN CABIN');
+    expect(marcas).toContain('MAIN CABIN FLEXIBLE');
+  });
+
+  it('para en cuanto una ronda no aporta nada nuevo', async () => {
+    // No hay que agotar el presupuesto para descubrir que el carrier publica una sola marca.
+    const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
+
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 3 },
+    }).search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it('una ronda que falla NO se lleva la búsqueda por delante', async () => {
+    // Lo que ya se tiene es válido y vendible. Es la misma regla que la degradación, aplicada a
+    // un enriquecimiento todavía más opcional.
+    const spy = spyFetch((n) =>
+      n === 1
+        ? conMarca('MAIN', 'MAIN CABIN')
+        : json({
+            groupedItineraryResponse: {
+              version: '5',
+              messages: [{ severity: 'Error', type: 'MIP', code: 'PROCESS' }],
+            },
+          }),
+    );
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandLadderRounds: 2 },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.escalera_de_marcas_cortada');
+  });
+
+  it('sin marcas en la respuesta no hay escalera que subir', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 3 },
+    }).search(CRITERIA, CTX);
+    expect(spy.calls).toHaveLength(1);
+  });
+});

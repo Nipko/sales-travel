@@ -11,6 +11,7 @@ import {
   degradarBrandedFares,
   type SabreBrandedFaresMode,
   type SabreMultipleFaresMode,
+  SABRE_BRAND_LADDER_DEFAULT,
   SABRE_MULTIPLE_FARES_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
@@ -36,6 +37,16 @@ function esRechazoDeCapacidad(err: unknown): boolean {
     err instanceof SabreApiError &&
     (err.failure.kind === 'ENTITLEMENT' || err.failure.kind === 'BUSINESS')
   );
+}
+
+/** El código de marca que el mapper dejó en `provider.raw`, o `null`. */
+function codigoDeMarca(offer: Offer): string | null {
+  const code = offer.provider.raw?.['brandCode'];
+  return typeof code === 'string' && code.length > 0 ? code : null;
+}
+
+function codigosDeMarca(offers: readonly Offer[]): string[] {
+  return offers.map(codigoDeMarca).filter((code): code is string => code !== null);
 }
 
 /** El más conservador de dos modos. `off` < `single` < `upsell`. */
@@ -279,8 +290,91 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // saltó, el sobre que se mapeó vino sin marcas, y decir `pidioMarcas: true` al lado de
     // `conMarca: 0` invita a concluir «el PCC no publica marcas» cuando lo que pasó es que las
     // rechazó y se reintentó sin ellas. Son dos diagnósticos distintos.
+    const ofertas = await this.escaleraDeMarcas({
+      base: mapped.offers,
+      criteria,
+      ctx,
+      opciones,
+      modo: modoActual,
+      multi: multiActual,
+      httpOptions: opciones_http,
+    });
+
     this.logMapping(mapped, result, ctx, this.brandedFaresTecho === 'off' ? false : pedirMarcas);
-    return mapped.offers;
+    return ofertas;
+  }
+
+  /**
+   * Recorre las marcas del mismo vuelo excluyendo las ya vistas.
+   *
+   * Es la comparación de tarifas SIN el producto de upsell, que este PCC no tiene. `SingleBranded
+   * Fare` devuelve la marca más barata de cada vuelo; volver a preguntar excluyendo esa devuelve
+   * la siguiente. Verificado contra CERT: excluida `MAIN`, American pasó de «MAIN CABIN»
+   * (no reembolsable) a «MAIN CABIN FLEXIBLE» (reembolsable, +14%). Delta, no excluida, siguió
+   * igual — el filtro es por código y no toca a los demás carriers.
+   *
+   * **Cada ronda es una llamada de shop y Sabre cobra por consulta.** Por eso arranca en 0 y se
+   * sube por cuenta: es el único parámetro del paquete cuyo coste es lineal y en dinero.
+   *
+   * Para en cuanto una ronda no aporta marcas nuevas. No hace falta agotar el presupuesto para
+   * descubrir que el carrier sólo publica dos.
+   */
+  private async escaleraDeMarcas(args: {
+    base: readonly Offer[];
+    criteria: FlightSearchCriteria;
+    ctx: SearchContext;
+    opciones: SabreShopOptions;
+    modo: SabreBrandedFaresMode;
+    multi: SabreMultipleFaresMode;
+    httpOptions: { idempotent: true; conversationId?: string };
+  }): Promise<Offer[]> {
+    const rondas = args.opciones.brandLadderRounds ?? SABRE_BRAND_LADDER_DEFAULT;
+    if (rondas <= 0 || args.modo === 'off') return [...args.base];
+
+    const ofertas = [...args.base];
+    const vistas = new Set(codigosDeMarca(args.base));
+    if (vistas.size === 0) return ofertas;
+
+    for (let ronda = 0; ronda < rondas; ronda += 1) {
+      let extra;
+      try {
+        const respuesta = await this.http.postJson<unknown>(
+          SABRE_SHOP_PATH,
+          buildSabreShopRequest(args.criteria, this.cfg, {
+            ...args.opciones,
+            brandedFares: args.modo,
+            multipleFares: args.multi,
+            excludeBrands: [...vistas],
+          }),
+          args.httpOptions,
+        );
+        extra = this.mapear(respuesta, args.criteria, args.ctx);
+      } catch (err) {
+        // Una ronda extra NO puede costar la búsqueda: lo que ya se tiene es válido y vendible.
+        // Es la misma regla que la degradación, aplicada a un enriquecimiento aún más opcional.
+        if (!esRechazoDeCapacidad(err)) throw err;
+        this.log('warn', 'sabre.shop.escalera_de_marcas_cortada', {
+          path: SABRE_SHOP_PATH,
+          ronda,
+          ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
+        });
+        break;
+      }
+
+      const nuevas = extra.offers.filter((offer) => {
+        const code = codigoDeMarca(offer);
+        return code !== null && !vistas.has(code);
+      });
+      if (nuevas.length === 0) break;
+
+      for (const offer of nuevas) {
+        const code = codigoDeMarca(offer);
+        if (code !== null) vistas.add(code);
+        ofertas.push(offer);
+      }
+    }
+
+    return ofertas;
   }
 
   /** El mapeo, en un solo sitio: lo llaman el camino normal y el reintento sin marcas. */

@@ -7,6 +7,35 @@
 
 ---
 
+## §-1 — RESUELTO por otra vía: la escalera de exclusión
+
+**No hizo falta que Sabre habilitara nada.** El producto de upsell sigue sin estar, pero el
+filtro `BrandFilters` **sí lo tenemos**, y con él se recorre la escalera de marcas a mano.
+
+Verificado contra CERT el 2026-08-27, mismo request que ya funcionaba:
+
+| Petición                             | Marca de American              | Precio     | Reembolsable |
+| ------------------------------------ | ------------------------------ | ---------- | ------------ |
+| `SingleBrandedFare`                  | `MAIN` — MAIN CABIN            | 388,84 USD | No           |
+| `SingleBrandedFare` + excluir `MAIN` | `MAINFL` — MAIN CABIN FLEXIBLE | 447,44 USD | **Sí**       |
+
+Delta, que no se excluyó, siguió devolviendo la suya: **el filtro es por código y no toca a los
+demás carriers.**
+
+Y la respuesta trae el `brand.code`, así que **no hay que conocer los códigos de antemano**: cada
+ronda aprende de la anterior. Funciona igual para JetSMART, Avianca o quien sea.
+
+**Implementado** como `shopOptions.brandLadderRounds` (por defecto **0**). Cada ronda es una
+llamada de shop y Sabre cobra por consulta: es el único parámetro del paquete cuyo coste es
+lineal y en dinero, así que lo sube la agencia que decida que la comparación vale lo que cuesta.
+Con 2 rondas el vendedor ve hasta 3 marcas por vuelo. La escalera para sola en cuanto una ronda
+no aporta marcas nuevas, y si una ronda falla se queda con lo que ya tenía.
+
+> Lo que sigue (§0 en adelante) es el diagnóstico que llevó hasta acá y el ticket para Sabre, que
+> **sigue teniendo sentido**: con el upsell habilitado esto se haría en UNA llamada en vez de N.
+
+---
+
 ## §0 — La prueba que lo cierra: el host SÍ ve las cinco marcas
 
 Ejecutado el 2026-08-27 en **Sabre Agency Workspace CERT, PCC `7VYK`**, sobre el MISMO mercado y
