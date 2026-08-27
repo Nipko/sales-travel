@@ -234,9 +234,9 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
     expect(factory.capabilities.retrieve).toBe(true);
   });
 
-  it('arranca en `opt-in`: la compuerta comercial (P-01) no decidió el fee todavía', () => {
+  it('arranca en `always`: cotiza por defecto cuando la cuenta está activa', () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
-    expect(factory.defaultCallPolicy).toBe('opt-in');
+    expect(factory.defaultCallPolicy).toBe('always');
   });
 
   it.each([
@@ -449,7 +449,8 @@ describe('FlightProviderRegistry + Sabre', () => {
     expect(active[0]?.simulated).toBe(true);
   });
 
-  it('sin el flag del tenant, Sabre queda salteado por `opt-in-disabled`', async () => {
+  it('con callPolicy opt-in y sin el flag del tenant, Sabre queda salteado por `opt-in-disabled`', async () => {
+    process.env['FLIGHT_PROVIDER_CALL_POLICIES'] = `${SABRE_PROVIDER_CODE}:opt-in`;
     const registry = registryWith(() => Promise.resolve(resolved()), false);
     const { active, skipped } = await registry.forTenant('t1');
     expect(active).toHaveLength(0);
@@ -471,7 +472,7 @@ describe('FlightProviderRegistry + Sabre', () => {
     );
     const { active } = await registry.forTenant('t1');
     warn.mockRestore();
-    expect(active[0]?.callPolicy).toBe('opt-in');
+    expect(active[0]?.callPolicy).toBe('always');
   });
 
   it('el override de entorno gana sobre lo que declare la cuenta (kill-switch de ops)', async () => {

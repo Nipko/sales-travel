@@ -311,11 +311,10 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * Arrancar en `always` sería tomar por defecto la decisión que el founder todavía no tomó, y
    * el coste de esa decisión llega en una factura, no en un test rojo.
    *
-   * Consecuencia operativa: Sabre sólo se llama para los tenants activados en
-   * `FLIGHT_PROVIDERS_OPT_IN` (`sabre` para todos, `sabre@<tenantId>` para uno). Ése es el
-   * interruptor por tenant; `provider_accounts.config.callPolicy` (abajo) es el *cuándo*.
+   * Consecuencia operativa: Sabre se cotiza por defecto cuando la cuenta está activa
+   * en provider_accounts, salvo que se configure explícitamente callPolicy: opt-in o fallback.
    */
-  readonly defaultCallPolicy: CallPolicy = 'opt-in';
+  readonly defaultCallPolicy: CallPolicy = 'always';
 
   /**
    * Lo que Sabre sabe hacer HOY, ni más ni menos.
