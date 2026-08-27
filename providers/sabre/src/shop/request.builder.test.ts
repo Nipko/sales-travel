@@ -279,10 +279,27 @@ describe('cabina: el enum de Sabre, no el de LATAM', () => {
 });
 
 describe('volumen: tier e itinerarios', () => {
-  it('por defecto 50ITINS con NumTrips 20', () => {
+  it('por defecto pide la capacidad ENTERA del tier, no un número suelto', () => {
     const body = build();
     expect(body.TPA_Extensions.IntelliSellTransaction.RequestType).toEqual({ Name: '50ITINS' });
-    expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 20 });
+    expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 50 });
+  });
+
+  it('subir el tier sube los itinerarios pedidos sin tocar nada más', () => {
+    const body = build({}, {}, { itineraryTier: '200ITINS' });
+    expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 200 });
+  });
+
+  it('pedir más de lo que da el tier se acota al tier, no se manda de más', () => {
+    // Sabre no rechaza el exceso: devuelve los del tier —o cero— y el request queda mintiendo
+    // sobre lo que se pidió. Acotar acá deja el log y el cable diciendo lo mismo.
+    const body = build({}, {}, { itineraryTier: '50ITINS', numTrips: 200 });
+    expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 50 });
+  });
+
+  it('un número explícito por debajo del tier se respeta tal cual', () => {
+    const body = build({}, {}, { numTrips: 12 });
+    expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
   it('un tier fuera del enum del contrato no se manda: falla en el borde', () => {

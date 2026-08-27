@@ -259,12 +259,22 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
   }
 
   /**
-   * `optIn` es el valor de `FLIGHT_PROVIDERS_OPT_IN`, que es hoy el interruptor por tenant de
-   * un proveedor `opt-in` como Sabre. Se lee al construir `EnvProviderFlags`, así que tiene que
-   * estar puesto ANTES de montar: por eso es un parámetro y no un `beforeAll`.
+   * `optIn` es el valor de `FLIGHT_PROVIDERS_OPT_IN`, el interruptor por tenant de un proveedor
+   * `opt-in`. Se lee al construir `EnvProviderFlags`, así que tiene que estar puesto ANTES de
+   * montar: por eso es un parámetro y no un `beforeAll`.
+   *
+   * `callPolicies` es `FLIGHT_PROVIDER_CALL_POLICIES` (`code:politica`, separado por comas).
+   * Sabre ya NO es `opt-in` por defecto —su `defaultCallPolicy` es `always` desde que una cuenta
+   * activa en el panel debe cotizar sola, sin un flag de entorno que nadie recuerda poner—, así
+   * que probar el camino `opt-in` exige pedirlo explícitamente. Probar contra el default y
+   * probar el mecanismo son dos cosas distintas y acá se hacen las dos.
    */
-  function montar(optIn: string): Api {
+  function montar(optIn: string, callPolicies = ''): Api {
     process.env['FLIGHT_PROVIDERS_OPT_IN'] = optIn;
+    // Se escribe SIEMPRE, tambien vacio: si solo se pusiera cuando hay override, el valor de
+    // un test anterior seguiria vivo en `process.env` y el siguiente probaria otra cosa que
+    // la que dice su nombre.
+    process.env['FLIGHT_PROVIDER_CALL_POLICIES'] = callPolicies;
 
     const registry = new FlightProviderRegistry(
       [
@@ -532,7 +542,14 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
 
       // El dueño sí busca con ella; el descendiente no la ve.
       expect(parteDe(propio, SABRE_PROVIDER_CODE)?.status).toBe('ok');
-      expect(parteDe(heredero, SABRE_PROVIDER_CODE)).toBeUndefined();
+      // Y al descendiente se le NOMBRA la ausencia. No es lo mismo que desaparecer: una lista
+      // corta sin explicación se lee como "no hay vuelos por esa ruta", que es justo lo que el
+      // vendedor le termina diciendo a su cliente.
+      const ausente = parteDe(heredero, SABRE_PROVIDER_CODE);
+      expect(ausente?.status).toBe('unavailable');
+      expect(ausente?.unavailableReason).toBe('no-credentials');
+      expect(ausente?.count).toBe(0);
+      expect(heredero.offers.some((o) => o.provider.name === SABRE_PROVIDER_CODE)).toBe(false);
       expect(sabreLocal.clientIds).toEqual(['V1:EPR-CONSOLIDADOR:CN01:AA']);
     });
   });
@@ -559,8 +576,14 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
       expect(cuentas.map((c) => [c.providerCode, c.status])).toEqual([
         [SABRE_PROVIDER_CODE, 'sandbox'],
       ]);
-      // …y la búsqueda no la menciona de ninguna forma. Ni activa, ni saltada, ni con error.
-      expect(parteDe(res, SABRE_PROVIDER_CODE)).toBeUndefined();
+      // …y la búsqueda dice que NO se usó, con el motivo. Lo que no puede pasar de ninguna
+      // forma es que una cuenta en sandbox produzca ofertas: eso sería cotizar contra un
+      // entorno de pruebas creyendo que es producción.
+      const sabre = parteDe(res, SABRE_PROVIDER_CODE);
+      expect(sabre?.status).toBe('unavailable');
+      expect(sabre?.unavailableReason).toBe('no-credentials');
+      expect(res.offers.some((o) => o.provider.name === SABRE_PROVIDER_CODE)).toBe(false);
+      // La prueba dura: la credencial no llegó ni a salir por el cable.
       expect(sabreLocal.clientIds).toEqual([]);
     });
 
@@ -573,7 +596,7 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         isInheritable: false,
       });
       const api = montar(SABRE_PROVIDER_CODE);
-      expect(parteDe(await buscar(api, agencia), SABRE_PROVIDER_CODE)).toBeUndefined();
+      expect(parteDe(await buscar(api, agencia), SABRE_PROVIDER_CODE)?.status).toBe('unavailable');
 
       await cargarCuentaSabre({
         tenantId: agencia,
@@ -597,8 +620,9 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         status: 'active',
         isInheritable: false,
       });
-      // Sin `FLIGHT_PROVIDERS_OPT_IN`: credenciales correctas y activas, proveedor apagado.
-      const api = montar('');
+      // Credenciales correctas y activas, y aun así el proveedor apagado: la política `opt-in`
+      // pedida a mano (ya no es el default de Sabre) más el flag sin este tenant.
+      const api = montar('', `${SABRE_PROVIDER_CODE}:opt-in`);
 
       const res = await buscar(api, agencia);
 
@@ -607,6 +631,24 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
       expect(sabre?.skipReason).toBe('opt-in-disabled');
       // El flag se consulta ANTES de la bóveda: la credencial no llega ni a descifrarse.
       expect(sabreLocal.clientIds).toEqual([]);
+    });
+
+    it('por DEFECTO no hace falta ningún flag: cuenta activa = Sabre cotiza', async () => {
+      await cargarCuentaSabre({
+        tenantId: agencia,
+        epr: 'EPR-PROPIO',
+        homePcc: 'AG01',
+        status: 'active',
+        isInheritable: false,
+      });
+      // Sin flag y sin override: sólo el `defaultCallPolicy: 'always'` de la factory. Es lo que
+      // se le promete al operador en el panel —"activo = se incluye en cada búsqueda"— y lo que
+      // se rompía cuando la política era `opt-in`: cargaba credenciales buenas, las veía en
+      // Activo, y no salía ni una oferta.
+      const res = await buscar(montar(''), agencia);
+
+      expect(parteDe(res, SABRE_PROVIDER_CODE)?.status).toBe('ok');
+      expect(sabreLocal.clientIds).toEqual(['V1:EPR-PROPIO:AG01:AA']);
     });
 
     it('el flag por tenant activa a uno y deja al otro fuera', async () => {
@@ -624,7 +666,7 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         status: 'active',
         isInheritable: false,
       });
-      const api = montar(`${SABRE_PROVIDER_CODE}@${agencia}`);
+      const api = montar(`${SABRE_PROVIDER_CODE}@${agencia}`, `${SABRE_PROVIDER_CODE}:opt-in`);
 
       const conFlag = await buscar(api, agencia);
       const sinFlag = await buscar(api, ajena);

@@ -88,8 +88,29 @@ export type SabreItineraryTier = (typeof SABRE_ITINERARY_TIERS)[number];
  */
 export const SABRE_DEFAULT_ITINERARY_TIER: SabreItineraryTier = '50ITINS';
 
-/** `NumTrips.Number`: cuántos itinerarios devolver. Default del contrato 9, mínimo 1 (`v5.yml:7393`). */
-export const SABRE_DEFAULT_NUM_TRIPS = 20;
+/**
+ * Cuántos itinerarios cabe pedir en cada tier. El nombre del tier ES el tope contratado.
+ */
+export const SABRE_TIER_CAPACITY: Record<SabreItineraryTier, number> = {
+  '50ITINS': 50,
+  '100ITINS': 100,
+  '200ITINS': 200,
+};
+
+/**
+ * `NumTrips.Number`: cuántos itinerarios devolver. Default del contrato 9, mínimo 1
+ * (`v5.yml:7393`), sin máximo declarado — el techo real lo pone el tier.
+ *
+ * Ya NO es una constante: se deriva del tier salvo que la cuenta pida otra cosa. Estaba fijo en
+ * 20 con el tier en `50ITINS`, o sea pidiendo menos de la mitad de lo contratado. En una ruta
+ * doméstica corta eso no se nota como "faltan opciones" sino como "faltan AEROLÍNEAS": BFM
+ * devuelve los 20 mejores itinerarios y en BOG-MDE los baratos son permutaciones de ida y
+ * vuelta del mismo vuelo de la misma low cost, así que los 20 huecos se agotan antes de llegar
+ * al primer vuelo de la segunda aerolínea. El vendedor lo lee como "acá sólo vuela JetSMART".
+ */
+export function defaultNumTripsFor(tier: SabreItineraryTier): number {
+  return SABRE_TIER_CAPACITY[tier];
+}
 
 /**
  * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
@@ -204,7 +225,8 @@ export interface SabreShopRequest {
  */
 export const SabreShopOptionsSchema = z.object({
   itineraryTier: z.enum(SABRE_ITINERARY_TIERS).default(SABRE_DEFAULT_ITINERARY_TIER),
-  numTrips: z.number().int().min(1).default(SABRE_DEFAULT_NUM_TRIPS),
+  /** Omitido = la capacidad del tier. Ver {@link defaultNumTripsFor}. */
+  numTrips: z.number().int().min(1).optional(),
   /** `POS.MultiSourceControl.MaximumNumberOfPCCs` (`v5.yml:5037`), sólo si Global Shopping está activo. */
   maxPccs: z.number().int().min(1).optional(),
   /** Desempate documentado cuando ATPCO y NDC devuelven el mismo viaje al mismo precio (`v5.yml:7423`). */
@@ -249,9 +271,20 @@ export function buildSabreShopRequest(
   };
 }
 
-function parseShopOptions(options: SabreShopOptions): z.infer<typeof SabreShopOptionsSchema> {
+function parseShopOptions(
+  options: SabreShopOptions,
+): z.infer<typeof SabreShopOptionsSchema> & { numTrips: number } {
   const parsed = SabreShopOptionsSchema.safeParse(options);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    const tier = parsed.data.itineraryTier;
+    // Se ACOTA al tier, no se confía: pedir 200 con `50ITINS` no da error, da los 50 de siempre
+    // —o cero—, y el número de más sólo sirve para que el log mienta sobre lo que se pidió.
+    const numTrips = Math.min(
+      parsed.data.numTrips ?? defaultNumTripsFor(tier),
+      SABRE_TIER_CAPACITY[tier],
+    );
+    return { ...parsed.data, numTrips };
+  }
   const detail = parsed.error.issues
     .map((issue) => `${issue.path.join('.') || '<root>'}:${issue.code}`)
     .join(', ');
@@ -315,7 +348,7 @@ function buildOriginDestinations(
 
 function buildTravelPreferences(
   criteria: FlightSearchCriteria,
-  opts: z.infer<typeof SabreShopOptionsSchema>,
+  opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
 ): SabreTravelPreferences {
   const prefs: SabreTravelPreferences = {
     Baggage: SABRE_BAGGAGE_REQUEST,

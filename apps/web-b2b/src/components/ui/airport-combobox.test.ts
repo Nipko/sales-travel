@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   advancesFocus,
   airportSelection,
+  airportSearchTerm,
   airportTyping,
   comboboxKeyAction,
   typedAirportCode,
@@ -127,5 +128,42 @@ describe('typedAirportCode', () => {
     expect(typedAirportCode('bo')).toBe('');
     expect(typedAirportCode('Bogotá')).toBe('');
     expect(typedAirportCode('Bogotá (BOG)')).toBe('');
+  });
+});
+
+describe('airportSearchTerm: buscar por lo que se ve en el campo', () => {
+  it('un aeropuerto ya elegido se busca por su ciudad, no por el texto completo', () => {
+    // El fallo real: el campo mostraba «Bogota (BOG)» y la búsqueda devolvía "Sin resultados"
+    // sobre un aeropuerto que existe, porque ningún aeropuerto se llama así.
+    expect(airportSearchTerm('Bogota (BOG)')).toBe('Bogota');
+    expect(airportSearchTerm('Ciudad de México (MEX)')).toBe('Ciudad de México');
+  });
+
+  it('también a medio borrar, que es cuando el usuario lo ve', () => {
+    expect(airportSearchTerm('Bogota (BOG')).toBe('Bogota');
+    expect(airportSearchTerm('Bogota (')).toBe('Bogota');
+    expect(airportSearchTerm('Bogota ')).toBe('Bogota');
+  });
+
+  it('lo que el usuario escribe a mano no se toca', () => {
+    expect(airportSearchTerm('BOG')).toBe('BOG');
+    expect(airportSearchTerm('bogo')).toBe('bogo');
+    expect(airportSearchTerm('São Paulo')).toBe('São Paulo');
+  });
+
+  it('vacío sigue siendo vacío: es lo que muestra recientes y populares', () => {
+    expect(airportSearchTerm('')).toBe('');
+    expect(airportSearchTerm('   ')).toBe('');
+    expect(airportSearchTerm('(BOG)')).toBe('');
+  });
+
+  it('el texto que produce elegir es exactamente el que sabe deshacer', () => {
+    const seleccion = airportSelection({
+      code: 'BOG',
+      city: 'Bogotá',
+      name: 'El Dorado',
+      country: 'CO',
+    } as Parameters<typeof airportSelection>[0]);
+    expect(airportSearchTerm(seleccion.query)).toBe('Bogotá');
   });
 });

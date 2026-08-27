@@ -45,7 +45,12 @@ import { CabinSelect, TripModeSwitch } from './_components/search-options';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import type { SortKey } from './_components/sort-toggle';
 
-const initialState: SearchResult = { ok: true, offers: [], providers: [] };
+const initialState: SearchResult = {
+  ok: true,
+  offers: [],
+  providers: [],
+  showProviderInResults: false,
+};
 
 /** Ids estables: son la forma de llevar el foco al campo que falta cuando la búsqueda no sale. */
 const FIELD_ID: Readonly<Record<SearchField, string>> = {
@@ -592,6 +597,7 @@ function SearchResults({
                 )}
                 <FlightRow
                   group={group}
+                  showProvider={result.showProviderInResults}
                   formatMoney={formatMoney}
                   formatTime={formatTime}
                   formatDate={formatDate}

@@ -86,6 +86,15 @@ export interface SearchResult {
    * la UI cae a `simulated` global; nunca significa "ningún proveedor participó".
    */
   providers: ProviderOutcome[];
+  /**
+   * El ajuste del panel de administracion, ya resuelto por el API con la herencia aplicada.
+   * Lo decide el API y no la pantalla: quien manda es el tenant PADRE cuando la agencia
+   * hereda, y eso solo se sabe recorriendo el arbol.
+   *
+   * Por omision `false`. Un API viejo que no mande el campo deja las pastillas apagadas, que
+   * es el lado seguro: no nombrar al proveedor es un ajuste comercial de la casa.
+   */
+  showProviderInResults: boolean;
 }
 
 /**
@@ -96,6 +105,15 @@ interface FlightSearchEnvelope {
   offers: Offer[];
   simulated?: boolean;
   providers?: ProviderOutcome[];
+  showProviderInResults?: boolean;
+}
+
+/**
+ * Salida de error del formulario. Existe para que ampliar `SearchResult` no obligue a tocar
+ * una docena de returns idénticos —y a olvidarse de alguno—.
+ */
+function fallo(error: string): SearchResult {
+  return { ok: false, offers: [], providers: [], showProviderInResults: false, error };
 }
 
 function asString(value: FormDataEntryValue | null): string {
@@ -132,69 +150,39 @@ export async function searchFlightsAction(
 
   // --- Validaciones ---
   if (!IATA_RE.test(origin)) {
-    return {
-      ok: false,
-      offers: [],
-      providers: [],
-      error: 'Selecciona un origen válido (ej. BOG, GRU, MIA).',
-    };
+    return fallo('Selecciona un origen válido (ej. BOG, GRU, MIA).');
   }
   if (!IATA_RE.test(destination)) {
-    return { ok: false, offers: [], providers: [], error: 'Selecciona un destino válido.' };
+    return fallo('Selecciona un destino válido.');
   }
   if (origin === destination) {
-    return { ok: false, offers: [], providers: [], error: 'Origen y destino deben ser distintos.' };
+    return fallo('Origen y destino deben ser distintos.');
   }
   if (!DATE_RE.test(departureDate)) {
-    return { ok: false, offers: [], providers: [], error: 'Ingresá una fecha de ida válida.' };
+    return fallo('Ingresá una fecha de ida válida.');
   }
   const today = todayISO();
   if (departureDate < today) {
-    return {
-      ok: false,
-      offers: [],
-      providers: [],
-      error: 'La fecha de ida no puede ser anterior a hoy.',
-    };
+    return fallo('La fecha de ida no puede ser anterior a hoy.');
   }
   const isRoundtrip = tripType === 'roundtrip';
   if (isRoundtrip) {
     if (!DATE_RE.test(returnDate)) {
-      return {
-        ok: false,
-        offers: [],
-        providers: [],
-        error: 'Ingresá la fecha de vuelta o cambiá a "Solo ida".',
-      };
+      return fallo('Ingresá la fecha de vuelta o cambiá a "Solo ida".');
     }
     if (returnDate < departureDate) {
-      return {
-        ok: false,
-        offers: [],
-        providers: [],
-        error: 'La fecha de vuelta no puede ser anterior a la de ida.',
-      };
+      return fallo('La fecha de vuelta no puede ser anterior a la de ida.');
     }
   }
   if (adults < 1) {
-    return { ok: false, offers: [], providers: [], error: 'Mínimo un adulto por reserva.' };
+    return fallo('Mínimo un adulto por reserva.');
   }
   if (infants > adults) {
-    return {
-      ok: false,
-      offers: [],
-      providers: [],
-      error: 'No puede haber más infantes que adultos (uno por adulto).',
-    };
+    return fallo('No puede haber más infantes que adultos (uno por adulto).');
   }
   const totalPax = adults + children + infants;
   if (totalPax > 9) {
-    return {
-      ok: false,
-      offers: [],
-      providers: [],
-      error: 'Máximo 9 pasajeros por reserva (límite GDS).',
-    };
+    return fallo('Máximo 9 pasajeros por reserva (límite GDS).');
   }
 
   const body: Record<string, unknown> = {
@@ -213,21 +201,25 @@ export async function searchFlightsAction(
       body: JSON.stringify(body),
     });
   } catch {
+    return fallo(
+      'No se pudo conectar al servicio de búsqueda. Verificá que el API esté corriendo.',
+    );
+  }
+
+  if (!res.ok) {
     return {
       ok: false,
       offers: [],
       providers: [],
-      error: 'No se pudo conectar al servicio de búsqueda. Verificá que el API esté corriendo.',
+      showProviderInResults: false,
+      error: res.error.message,
     };
-  }
-
-  if (!res.ok) {
-    return { ok: false, offers: [], providers: [], error: res.error.message };
   }
   return {
     ok: true,
     offers: res.data.offers,
     simulated: res.data.simulated === true,
     providers: res.data.providers ?? [],
+    showProviderInResults: res.data.showProviderInResults === true,
   };
 }

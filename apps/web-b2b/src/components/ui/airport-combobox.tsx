@@ -117,6 +117,18 @@ export function airportSelection(a: Airport): AirportChange & { query: string } 
   return { code: a.code, query: `${a.city} (${a.code})`, reason: 'select' };
 }
 
+/**
+ * El texto de busqueda a partir de lo que se ve en el campo.
+ *
+ * Al elegir una opcion el input queda con «Bogota (BOG)», que es lo correcto para leer y lo
+ * peor posible para buscar: ningun aeropuerto se llama asi, de modo que volver al campo y
+ * borrar una letra devolvia «Sin resultados para "Bogota (BOG"» sobre un valor que si
+ * existe. Se quita el parentesis final —tambien a medio borrar— y se busca por la ciudad.
+ */
+export function airportSearchTerm(value: string): string {
+  return value.replace(/\s*\([^()]*\)?\s*$/, '').trim();
+}
+
 const DEBOUNCE_MS = 80;
 
 interface Section {
@@ -162,7 +174,7 @@ export function AirportCombobox({
   const activeItem = activeIndex >= 0 ? flatItems[activeIndex] : undefined;
 
   const buildSections = useCallback((q: string): Section[] => {
-    const trimmed = q.trim();
+    const trimmed = airportSearchTerm(q);
     if (!trimmed) {
       const result: Section[] = [];
       const recent = getRecentAirports();
@@ -192,7 +204,7 @@ export function AirportCombobox({
    */
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    const trimmed = query.trim();
+    const trimmed = airportSearchTerm(query);
 
     timerRef.current = setTimeout(() => {
       if (!trimmed) {
@@ -311,6 +323,8 @@ export function AirportCombobox({
     onChange?.(typed.code, typed.reason);
   }
 
+  const term = airportSearchTerm(query);
+
   let globalIdx = -1;
 
   return (
@@ -337,13 +351,22 @@ export function AirportCombobox({
           aria-autocomplete="list"
           aria-invalid={error ? true : undefined}
           onChange={(e) => handleInputChange(e.target.value)}
-          onFocus={() => {
+          onFocus={(e) => {
             // El auto-foco inicial enfoca pero no abre el dropdown.
             if (suppressOpenRef.current) {
               suppressOpenRef.current = false;
               return;
             }
             setOpen(true);
+            // Con un aeropuerto ya elegido el campo dice «Bogotá (BOG)». Volver a entrar es
+            // querer cambiarlo, así que se selecciona entero y la primera tecla —o Borrar—
+            // lo reemplaza de una. Sin esto había que borrar doce caracteres a mano, y por
+            // el camino el texto pasa por estados que no son ningún aeropuerto.
+            // En rAF a propósito: el `mouseup` del clic colapsa la selección hecha en foco.
+            if (code) {
+              const el = e.currentTarget;
+              requestAnimationFrame(() => el.select());
+            }
             if (!query.trim()) setSections(buildSections(''));
             if (!isDatasetLoaded()) {
               void loadFullDataset().then(() => {
@@ -377,7 +400,7 @@ export function AirportCombobox({
           id={listboxId}
           role="listbox"
           className={cn(
-            'absolute z-50 mt-1 max-h-80 w-full overflow-auto overscroll-contain rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg',
+            'absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] sm:min-w-full max-h-80 overflow-auto overscroll-contain rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg',
             'animate-in fade-in-0 zoom-in-95 duration-100',
           )}
         >
@@ -458,8 +481,8 @@ export function AirportCombobox({
         </ul>
       ) : null}
 
-      {open && !query.trim() && flatItems.length === 0 ? (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-center shadow-lg">
+      {open && !term && flatItems.length === 0 ? (
+        <div className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] sm:min-w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-center shadow-lg">
           <Plane className="mx-auto mb-2 size-5 text-[var(--color-fg-subtle)]" />
           <p className="text-xs text-[var(--color-fg-muted)]">
             Escribí una ciudad o código IATA para buscar.
@@ -467,11 +490,9 @@ export function AirportCombobox({
         </div>
       ) : null}
 
-      {open && query.trim().length > 0 && flatItems.length === 0 ? (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-center shadow-lg">
-          <p className="text-xs font-medium text-[var(--color-fg)]">
-            Sin resultados para «{query.trim()}»
-          </p>
+      {open && term.length > 0 && flatItems.length === 0 ? (
+        <div className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] sm:min-w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-center shadow-lg">
+          <p className="text-xs font-medium text-[var(--color-fg)]">Sin resultados para «{term}»</p>
           <p className="mt-1 text-[11px] text-[var(--color-fg-muted)]">
             Probá con un código IATA (BOG, MIA) o nombre de ciudad.
           </p>
