@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
+import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
 import type { PaymentData } from './payment-form';
@@ -358,10 +359,20 @@ export default function QuotationDetailPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = (await res.json()) as {
+    // `readJson` y no `res.json()`: cuando el fallo ocurre ANTES de llegar a la aplicación —el
+    // 502 de un balanceador, el 504 de Cloudflare si la llamada al proveedor tarda de más— la
+    // respuesta es una página HTML, `res.json()` lanza, y lo que el vendedor leía en mitad de una
+    // reserva era «Unexpected token '<', "<!DOCTYPE "... is not valid JSON»: un error del parser
+    // de JavaScript que no dice qué pasó ni si la reserva se creó.
+    const leido = await readJson<{
       providerResult?: CreateOrderProviderResult;
       error?: string;
-    };
+    }>(res);
+    if (!leido.ok) {
+      setBookingResult({ outcome: 'FAILED', error: leido.message });
+      return;
+    }
+    const data = leido.data;
     const outcome = data.providerResult?.outcome;
     if (!outcome) {
       setBookingResult({

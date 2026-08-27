@@ -214,7 +214,11 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       this.brandedFaresProven = true;
     }
 
-    this.logMapping(mapped, result, ctx, pedirMarcas);
+    // Lo que se logue es lo que ESTA respuesta llevaba, no lo que se pretendía: si la degradación
+    // saltó, el sobre que se mapeó vino sin marcas, y decir `pidioMarcas: true` al lado de
+    // `conMarca: 0` invita a concluir «el PCC no publica marcas» cuando lo que pasó es que las
+    // rechazó y se reintentó sin ellas. Son dos diagnósticos distintos.
+    this.logMapping(mapped, result, ctx, pedirMarcas && !this.brandedFaresUnsupported);
     return mapped.offers;
   }
 
