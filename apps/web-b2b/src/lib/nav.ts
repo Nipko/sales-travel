@@ -42,6 +42,7 @@ export const managementNav: NavItem[] = [
 
 export const adminNav: NavItem[] = [
   { label: 'Mi Red', href: '/red', icon: Network },
+  { label: 'Proveedores (GDS)', href: '/admin/proveedores', icon: KeyRound },
   { label: 'Mi Agencia', href: '/configuracion', icon: Settings },
   { label: 'Equipo (Usuarios)', href: '/admin/usuarios', icon: Shield },
 ];

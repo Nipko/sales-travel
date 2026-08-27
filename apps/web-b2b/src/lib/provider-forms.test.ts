@@ -669,15 +669,17 @@ describe('prefillFromAccount — la mitad que sí se puede recuperar', () => {
   });
 
   it('declara como pérdida la config que este formulario no sabe pintar', () => {
-    // `callPolicy` y `mock` están en la lista blanca del servidor pero no en el formulario, así
+    // Claves no declaradas en el formulario y `mock` están en la lista blanca del servidor pero no en el formulario, así
     // que `buildProviderAccountPayload` los filtra y al guardar desaparecen de la fila.
     const prefill = prefillFromAccount(
       sabre(),
-      savedSabreAccount({ config: { environment: 'cert', callPolicy: 'off', mock: true } }),
+      savedSabreAccount({
+        config: { environment: 'cert', otraClaveDesconocida: 'off', mock: true },
+      }),
     );
 
     expect(prefill.config).toEqual({ environment: 'cert' });
-    expect(prefill.droppedConfigKeys).toEqual(['callPolicy', 'mock']);
+    expect(prefill.droppedConfigKeys).toEqual(['mock', 'otraClaveDesconocida']);
   });
 
   it('no convierte un booleano en texto: `mock: true` no puede volver como "true"', () => {

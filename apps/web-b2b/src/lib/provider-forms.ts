@@ -191,6 +191,17 @@ const SABRE: ProviderForm = {
       help: 'CERT no emite ni factura y usa credenciales distintas a las de producción. Pasá a Producción sólo con las credenciales productivas en la mano.',
     },
     {
+      key: 'callPolicy',
+      label: 'Política de llamada',
+      defaultValue: 'always',
+      options: [
+        { value: 'always', label: 'Siempre activo (en cada cotización)' },
+        { value: 'opt-in', label: 'Bajo demanda (Opt-in)' },
+        { value: 'fallback', label: 'Fallback (sólo si faltan ofertas)' },
+      ],
+      help: 'Define cuándo se consulta a Sabre. "Siempre activo" consulta a Sabre en todas las búsquedas de vuelos.',
+    },
+    {
       key: 'agencyIata',
       label: 'IATA de la agencia (opcional)',
       placeholder: '12345678',
