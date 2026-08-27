@@ -488,9 +488,7 @@ function genderOf(passenger: Passenger): SabreGender {
  */
 function opcional<K extends string>(key: K, value: string | undefined): Record<K, string> | object {
   const limpio = value?.trim();
-  return limpio === undefined || limpio.length === 0
-    ? {}
-    : ({ [key]: limpio } as Record<K, string>);
+  return limpio === undefined || limpio.length === 0 ? {} : { [key]: limpio };
 }
 
 function travelerOf(passenger: Passenger): SabreTravelerInput {

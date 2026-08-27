@@ -87,6 +87,20 @@ function spyFetch(responder: (n: number) => Response): FetchSpy {
   };
 }
 
+/**
+ * El cuerpo que salió por el cable, como texto.
+ *
+ * No es `String(init.body)`: `BodyInit` admite `Blob`, `FormData` y streams, y sobre esos
+ * `String()` devuelve `'[object Object]'` — un `expect(...).toContain('BrandedFareIndicators')`
+ * pasaría a ser una aserción que no puede fallar nunca. Acá la suposición se declara y se rompe
+ * ruidosamente si deja de valer.
+ */
+function cuerpo(init: RequestInit): string {
+  const { body } = init;
+  if (typeof body !== 'string') throw new Error('el cuerpo de la petición a Sabre no es texto');
+  return body;
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
@@ -395,7 +409,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     expect(spy.calls).toHaveLength(2);
 
     // La primera llevaba marcas; la segunda no. Esa es toda la diferencia entre las dos.
-    const cuerpos = spy.calls.map((c) => String(c.init.body));
+    const cuerpos = spy.calls.map((c) => cuerpo(c.init));
     expect(cuerpos[0]).toContain('BrandedFareIndicators');
     expect(cuerpos[1]).not.toContain('BrandedFareIndicators');
 
@@ -412,7 +426,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     // 2 de la primera búsqueda (rechazo + reintento) + 1 de la segunda. Si fueran 4, estaríamos
     // pagando una llamada de más por búsqueda y por siempre.
     expect(spy.calls).toHaveLength(3);
-    expect(String(spy.calls[2]!.init.body)).not.toContain('BrandedFareIndicators');
+    expect(cuerpo(spy.calls[2]!.init)).not.toContain('BrandedFareIndicators');
   });
 
   it('sin marcas pedidas NO hay reintento: un fallo de negocio sigue siendo un fallo', async () => {
@@ -436,7 +450,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     ).rejects.toThrow(SabreApiError);
     // El cliente HTTP reintenta un 503 por su cuenta; lo que no puede es acabar sin marcas.
     for (const call of spy.calls) {
-      expect(String(call.init.body)).toContain('BrandedFareIndicators');
+      expect(cuerpo(call.init)).toContain('BrandedFareIndicators');
     }
   });
 
@@ -449,7 +463,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
 
     expect(offers.length).toBeGreaterThan(0);
     expect(spy.calls).toHaveLength(1);
-    expect(String(spy.calls[0]!.init.body)).toContain('BrandedFareIndicators');
+    expect(cuerpo(spy.calls[0]!.init)).toContain('BrandedFareIndicators');
   });
 });
 
@@ -497,7 +511,7 @@ describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
     // Y la cuenta NO queda marcada como incapaz por una ruta sin vuelos: la siguiente búsqueda
     // vuelve a pedir marcas.
     await sut.search(CRITERIA, CTX);
-    expect(String(spy.calls[2]!.init.body)).toContain('BrandedFareIndicators');
+    expect(cuerpo(spy.calls[2]!.init)).toContain('BrandedFareIndicators');
   });
 
   it('una cuenta que YA dio ofertas con marcas no paga la llamada de comprobación', async () => {
