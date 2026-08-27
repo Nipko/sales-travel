@@ -1,8 +1,10 @@
 'use client';
 
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, LogOut, Search, User, Globe } from 'lucide-react';
+import { ChevronDown, Home, LogOut, Search, User, Globe } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { BrandMark } from './brand-mark';
 import { MobileNav } from './mobile-nav';
 import { ThemeToggle } from './theme-toggle';
 
@@ -26,25 +28,14 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-6 backdrop-blur-md transition-all">
       {/* Left side: Active Agency Indicator */}
       <div className="flex items-center gap-3">
-        <MobileNav role={role} tenantName={tenantName} logoUrl={logoUrl} />
+        <MobileNav role={role} tenantName={tenantName} tenantSlug={tenantSlug} logoUrl={logoUrl} />
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button
               type="button"
               className="group flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-fg-muted)] shadow-[var(--shadow-xs)] transition-all duration-200 hover:bg-[var(--color-surface-muted)] hover:border-[var(--color-border-strong)] active:scale-[0.98] cursor-pointer"
             >
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt=""
-                  className="size-7 rounded-md object-contain bg-white/5 border border-[var(--color-border)]"
-                />
-              ) : (
-                <span className="relative flex size-2 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-primary)] opacity-75" />
-                  <span className="relative inline-flex size-2 rounded-full bg-[var(--color-primary)]" />
-                </span>
-              )}
+              <BrandMark tenantName={tenantName} logoUrl={logoUrl} size="sm" tone="onLight" />
               <span className="font-semibold text-[var(--color-fg)] group-hover:text-[var(--color-primary)] transition-colors">
                 {tenantName ?? 'Sin tenant'}
               </span>
@@ -63,6 +54,18 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
               sideOffset={6}
               className="z-50 min-w-[220px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-lg)] animate-fade-in-up"
             >
+              <DropdownMenu.Item asChild>
+                <Link
+                  href="/"
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[var(--color-fg)] outline-none transition-colors hover:bg-[var(--color-surface-muted)]"
+                >
+                  <Home className="size-4 text-[var(--color-fg-muted)]" />
+                  <span>Ir al inicio</span>
+                </Link>
+              </DropdownMenu.Item>
+
+              <div className="my-1 h-px bg-[var(--color-border)]/60" />
+
               <div className="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-[var(--color-fg-subtle)]">
                 Agencia Activa
               </div>

@@ -34,7 +34,12 @@ export function AppShell({
   return (
     <div className="flex min-h-screen bg-[var(--color-bg)]">
       {brandCss ? <style dangerouslySetInnerHTML={{ __html: brandCss }} /> : null}
-      <Sidebar role={role} tenantName={tenantName} logoUrl={branding?.logoUrl ?? undefined} />
+      <Sidebar
+        role={role}
+        tenantName={tenantName}
+        tenantSlug={tenantSlug}
+        logoUrl={branding?.logoUrl ?? undefined}
+      />
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar
           userEmail={userEmail}

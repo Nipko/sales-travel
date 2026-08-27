@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Compass } from 'lucide-react';
 import {
   accountNav,
   adminNav,
@@ -12,10 +11,13 @@ import {
   type NavItem,
 } from '../../lib/nav';
 import { cn } from '../../lib/cn';
+import { BrandMark } from './brand-mark';
 
 interface SidebarProps {
   role?: string;
   tenantName?: string;
+  /** Identificador del tenant. Se muestra bajo el nombre: es dato real, no una etiqueta fija. */
+  tenantSlug?: string;
   logoUrl?: string;
 }
 
@@ -57,7 +59,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
  * no se duplique y no se desincronice. Bajo 1024px el aside está oculto y, hasta ahora,
  * no había ninguna alternativa: la app se quedaba sin navegación.
  */
-export function SidebarContent({ role, tenantName, logoUrl }: SidebarProps) {
+export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -73,28 +75,34 @@ export function SidebarContent({ role, tenantName, logoUrl }: SidebarProps) {
 
   return (
     <>
-      {/* Header / Branding */}
-      <div className="flex h-16 items-center gap-3 border-b border-slate-800/60 px-4">
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt=""
-            className="size-11 shrink-0 rounded-lg object-contain bg-white/10 p-1 border border-white/10"
-          />
-        ) : (
-          <div className="size-11 shrink-0 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-md">
-            <Compass className="size-6 text-white animate-spin-slow" />
-          </div>
+      {/* Marca de la agencia. Es el enlace al inicio: el gesto que todo el mundo intenta. */}
+      <Link
+        href="/"
+        aria-label={`${tenantName ?? 'Sales-Travel'} — ir al inicio`}
+        aria-current={isActive('/') ? 'page' : undefined}
+        className={cn(
+          'group flex h-[4.5rem] items-center gap-3 border-b border-slate-800/60 px-4',
+          'transition-colors duration-200 hover:bg-white/[0.04]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]',
         )}
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm font-bold tracking-tight text-white truncate leading-tight">
+      >
+        <BrandMark
+          tenantName={tenantName}
+          logoUrl={logoUrl}
+          size="lg"
+          tone="onDark"
+          className="transition-transform duration-200 group-hover:scale-[1.03]"
+        />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-[15px] font-bold leading-tight tracking-tight text-white">
             {tenantName ?? 'Sales-Travel'}
           </span>
-          <span className="text-[10px] text-slate-500 leading-none mt-0.5 font-medium uppercase tracking-wider">
-            Agencia B2B
+          {/* El identificador REAL del tenant, no una etiqueta fija igual para toda la red. */}
+          <span className="mt-1 truncate text-[10px] font-semibold uppercase leading-none tracking-wider text-slate-500">
+            {tenantSlug ?? 'Agencia B2B'}
           </span>
-        </div>
-      </div>
+        </span>
+      </Link>
 
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto px-3.5 py-6 space-y-6">

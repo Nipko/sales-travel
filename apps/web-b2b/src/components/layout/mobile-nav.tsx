@@ -8,6 +8,7 @@ import { SidebarContent } from './sidebar';
 interface MobileNavProps {
   role?: string;
   tenantName?: string;
+  tenantSlug?: string;
   logoUrl?: string;
 }
 
@@ -26,7 +27,7 @@ const FOCUSABLE =
  * tiene: role="dialog" + aria-modal, cierre con Escape, foco atrapado dentro del panel,
  * scroll del fondo bloqueado y foco devuelto al disparador al cerrar.
  */
-export function MobileNav({ role, tenantName, logoUrl }: MobileNavProps) {
+export function MobileNav({ role, tenantName, tenantSlug, logoUrl }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -118,7 +119,12 @@ export function MobileNav({ role, tenantName, logoUrl }: MobileNavProps) {
               <X className="size-4" />
             </button>
 
-            <SidebarContent role={role} tenantName={tenantName} logoUrl={logoUrl} />
+            <SidebarContent
+              role={role}
+              tenantName={tenantName}
+              tenantSlug={tenantSlug}
+              logoUrl={logoUrl}
+            />
           </div>
         </div>
       ) : null}
