@@ -1386,7 +1386,13 @@ describe('documentos sin vencimiento: la cédula no vence, y eso no es un error'
     ];
   }
 
-  it('sin vencimiento la reserva SALE, y el campo simplemente no viaja', async () => {
+  it('sin vencimiento NO se manda documento: a medias es lo que Sabre rechaza', async () => {
+    // En los 26 documentos ATPCO reales de la colección, los que llevan número llevan
+    // vencimiento —21 de 21, sin una excepción— porque el documento se convierte en un SSR DOCS,
+    // que es de formato fijo. Un número sin vencimiento no compone un DOCS.
+    //
+    // Y omitirlo no es una rareza: 9 de las 23 reservas ATPCO no llevan NINGÚN documento. En un
+    // vuelo doméstico no hay APIS que declarar.
     const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
 
     const outcome = await harness.create.createBooking(
@@ -1395,15 +1401,27 @@ describe('documentos sin vencimiento: la cédula no vence, y eso no es un error'
     );
 
     expect(outcome.result.outcome).toBe('CONFIRMED');
-    const body = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
-    expect(at(body, 'travelers.0.identityDocuments.0.expiryDate')).toBeUndefined();
-    expect(at(body, 'travelers.0.identityDocuments.0.documentType')).toBe('NATIONAL_ID_CARD');
+    expect(
+      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments'),
+    ).toBeUndefined();
   });
 
-  it('el `""` del formulario tampoco llega al cable: es «no lo rellené», no un valor', async () => {
-    // Ésta es la carga EXACTA que tumbaba la reserva en producción. El ACL es el borde: aunque
-    // el formulario y el dominio ya no lo produzcan, un `''` de cualquier llamador futuro se
-    // queda aquí y no vuelve a costar una reserva.
+  it('pero el pasajero SIGUE identificado: el traveler lleva nombre, nacimiento y género', async () => {
+    // Omitir el documento no puede degradar la reserva a un pasajero anónimo.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
+    const [pax] = conCedula();
+
+    await harness.create.createBooking(orderRequest(shopOffer(), { passengers: conCedula() }), CTX);
+
+    const traveler = at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0');
+    expect(traveler).toMatchObject({
+      givenName: pax!.givenName,
+      surname: pax!.surname,
+      birthDate: pax!.birthdate,
+    });
+  });
+
+  it('el `""` del formulario se trata igual que la ausencia, no como un vencimiento', async () => {
     const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
 
     const outcome = await harness.create.createBooking(
@@ -1413,11 +1431,16 @@ describe('documentos sin vencimiento: la cédula no vence, y eso no es un error'
 
     expect(outcome.result.outcome).toBe('CONFIRMED');
     expect(
-      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0'),
-    ).not.toHaveProperty('expiryDate');
+      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments'),
+    ).toBeUndefined();
   });
 
-  it('un vencimiento de verdad sigue viajando intacto: no se está tirando el dato', async () => {
+  it('CON vencimiento el documento viaja ENTERO, con la residencia incluida', async () => {
+    // La otra mitad, y la que impide «arreglarlo» omitiendo siempre el documento: completo hay
+    // que mandarlo, o un vuelo internacional se queda sin APIS.
+    //
+    // `residenceCountryCode` es el último campo que nos faltaba frente a los ejemplos reales:
+    // 22/26 lo llevan y en todos los pasaportes vale lo mismo que el país emisor.
     const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())] });
 
     await harness.create.createBooking(
@@ -1426,8 +1449,14 @@ describe('documentos sin vencimiento: la cédula no vence, y eso no es un error'
     );
 
     expect(
-      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0.expiryDate'),
-    ).toBe('2033-07-09');
+      at(harness.bodyAt(SABRE_CREATE_BOOKING_PATH), 'travelers.0.identityDocuments.0'),
+    ).toMatchObject({
+      expiryDate: '2033-07-09',
+      documentType: 'NATIONAL_ID_CARD',
+      documentNumber: '1020304050',
+      issuingCountryCode: 'CO',
+      residenceCountryCode: 'CO',
+    });
   });
 });
 

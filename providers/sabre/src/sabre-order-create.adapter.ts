@@ -22,6 +22,7 @@ import {
   type SabrePartialFailureDomain,
   type SabrePricingInput,
   type SabreTitle,
+  type SabreIdentityDocumentInput,
   type SabreTravelerInput,
 } from './booking/create.request.builder';
 import type { MissingAirlineRequirement } from './booking/airline-requirements';
@@ -491,8 +492,76 @@ function opcional<K extends string>(key: K, value: string | undefined): Record<K
   return limpio === undefined || limpio.length === 0 ? {} : { [key]: limpio };
 }
 
-function travelerOf(passenger: Passenger): SabreTravelerInput {
+/**
+ * El bloque `identityDocuments`, o NADA.
+ *
+ * Sabre rechazaba la reserva con `MANDATORY_DATA_MISSING` sobre `identityDocuments[0]` sin decir
+ * qué campo faltaba: no lo exige el esquema —su único `required` es `documentType`— sino el
+ * carrier, así que no hay contrato que leer. Lo dice la colección, mirando SÓLO el carril que
+ * usamos (ATPCO, `flightDetails`), sobre sus 26 documentos reales:
+ *
+ * - `documentType`, `givenName`, `surname`, `birthDate`, `gender`: **26/26**.
+ * - `documentNumber`, `expiryDate`, `issuingCountryCode`: **21/21**, y siempre los tres juntos.
+ * - Documentos con número y SIN vencimiento: **0**. Ni uno.
+ * - Reservas ATPCO sin ningún documento: **9 de 23**.
+ *
+ * Las dos últimas líneas son la regla. En ATPCO el documento se convierte en un SSR DOCS, que es
+ * de formato fijo y lleva vencimiento; un número sin vencimiento no compone un DOCS y por eso
+ * falta «dato obligatorio». Y no mandar documento no es un caso raro: es lo que hacen 9 de 23
+ * reservas, porque en un vuelo doméstico no hay APIS que declarar.
+ *
+ * Así que si el documento no compone un DOCS, **se omite el bloque entero** en vez de mandarlo a
+ * medias. Es lo único que se puede hacer sin inventar un dato: una cédula colombiana NO VENCE, y
+ * rellenar ese hueco con una fecha cualquiera sería mandarle a la aerolínea, en una reserva, un
+ * dato que nadie verificó. El pasajero sigue identificado —nombre, nacimiento y género viajan en
+ * el `traveler`, que es lo que necesita un vuelo doméstico—.
+ *
+ * CONTRAPARTIDA, escrita a propósito: en un vuelo internacional esto deja la reserva sin APIS y
+ * la aerolínea los pedirá en el mostrador. Es un mal menor frente a no poder reservar, y el
+ * documento que lo provoca —una cédula— tampoco sirve para volar fuera del país.
+ */
+function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityDocumentInput[] } {
   const doc = passenger.identityDoc;
+  const numero = doc.number?.trim();
+  const vencimiento = doc.expiryDate?.trim();
+
+  // Con número hay que poder componer el DOCS entero. Sin vencimiento, no se manda nada.
+  if (
+    numero !== undefined &&
+    numero.length > 0 &&
+    (vencimiento === undefined || vencimiento === '')
+  )
+    return {};
+
+  return {
+    identityDocuments: [
+      {
+        documentType: DOCUMENT_TYPE_BY_DOMAIN_TYPE[doc.type],
+        documentNumber: doc.number,
+        issuingCountryCode: doc.issuingCountryCode,
+        // 22 de los 26 documentos ATPCO reales lo llevan, y en TODOS los pasaportes vale lo
+        // mismo que `issuingCountryCode` (12/12 comprobados: NG/NG, US/US…). No es una
+        // suposición nuestra: es la convención de cada ejemplo que funciona.
+        //
+        // DEUDA, escrita para que no se olvide: la residencia NO es el país emisor del
+        // documento, y hoy no se le pregunta al vendedor. Para un pasajero que reside fuera de
+        // su país esto va mal, y lo correcto es un campo propio con este valor por defecto.
+        residenceCountryCode: doc.issuingCountryCode,
+        citizenshipCountryCode: passenger.citizenshipCountryCode,
+        // El TITULAR, dentro del documento. Parece redundante —el traveler ya los lleva— y no lo
+        // es: 26/26 de los documentos ATPCO reales los llevan.
+        givenName: passenger.givenName,
+        surname: passenger.surname,
+        birthDate: passenger.birthdate,
+        gender: genderOf(passenger),
+        ...opcional('expiryDate', doc.expiryDate),
+        ...opcional('issueDate', doc.issueDate),
+      },
+    ],
+  };
+}
+
+function travelerOf(passenger: Passenger): SabreTravelerInput {
   return {
     givenName: passenger.givenName,
     surname: passenger.surname,
@@ -506,33 +575,7 @@ function travelerOf(passenger: Passenger): SabreTravelerInput {
     ...(passenger.providerPaxId === undefined
       ? {}
       : { providerTravelerId: passenger.providerPaxId }),
-    identityDocuments: [
-      {
-        documentType: DOCUMENT_TYPE_BY_DOMAIN_TYPE[doc.type],
-        documentNumber: doc.number,
-        issuingCountryCode: doc.issuingCountryCode,
-        citizenshipCountryCode: passenger.citizenshipCountryCode,
-        // El TITULAR, repetido dentro del documento. Parece redundante —el traveler ya los
-        // lleva— y no lo es: Sabre rechazaba la reserva con `MANDATORY_DATA_MISSING` sobre
-        // `travelers[0].identityDocuments[0]` sin decir qué campo faltaba, porque no es el
-        // esquema quien lo exige (su único `required` es `documentType`) sino el carrier.
-        //
-        // Lo dice la evidencia: de los 115 documentos de los `createBooking` reales de la
-        // colección, los 45 pasaportes llevan estos cuatro campos SIN EXCEPCIÓN, y `birthDate`
-        // y `gender` aparecen en 79 y 80 del total. No es un extra de algunos carriers: es la
-        // forma normal de un documento en este contrato.
-        givenName: passenger.givenName,
-        surname: passenger.surname,
-        birthDate: passenger.birthdate,
-        gender: genderOf(passenger),
-        // Los opcionales se OMITEN cuando vienen en blanco, no se mandan vacíos. Un `''` que
-        // sale de un formulario significa «no lo rellené», nunca «el valor es la cadena vacía»,
-        // y el contrato de Sabre no distingue: `expiryDate: ''` es `invalid_string` y tumba la
-        // reserva entera. Pasó: nadie podía reservar con cédula, que no vence.
-        ...opcional('expiryDate', doc.expiryDate),
-        ...opcional('issueDate', doc.issueDate),
-      },
-    ],
+    ...documentoDe(passenger),
     ...(passenger.loyaltyProgramAccount === undefined
       ? {}
       : {
