@@ -1318,10 +1318,11 @@ function ProviderFieldControl({
   const helpId = field.help ? `${id}-help` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined;
+  const effectiveValue = value || field.defaultValue || '';
 
   const shared = {
     id,
-    value,
+    value: effectiveValue,
     'aria-describedby': describedBy,
     'aria-invalid': error ? (true as const) : undefined,
     'aria-required': field.required === true ? (true as const) : undefined,

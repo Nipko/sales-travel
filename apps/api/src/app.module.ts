@@ -8,6 +8,7 @@ import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { MeModule } from './me/me.module.js';
+import { AirportsModule } from './airports/airports.module.js';
 import { RequestContextMiddleware } from './request-context/request-context.middleware.js';
 import { RequestContextModule } from './request-context/request-context.module.js';
 import { OrdersModule } from './orders/orders.module.js';
@@ -42,6 +43,7 @@ import { PackagesModule } from './packages/packages.module.js';
     StorageModule,
     AuthModule,
     MeModule,
+    AirportsModule,
     SearchModule,
     QuotationsModule,
     OrdersModule,
