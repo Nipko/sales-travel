@@ -83,8 +83,6 @@ export interface SabreConfig {
   tokenTtlSeconds?: number;
   maxConcurrentRequests?: number;
   requestTimeoutMs?: number;
-  /** Forzar modo mock incluso con credenciales presentes. */
-  mock?: boolean;
 }
 
 /**
@@ -109,7 +107,6 @@ export const SabreConfigSchema = z.object({
   tokenTtlSeconds: z.number().int().positive().default(SABRE_DEFAULT_TOKEN_TTL_SECONDS),
   maxConcurrentRequests: z.number().int().positive().default(SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS),
   requestTimeoutMs: z.number().int().positive().default(SABRE_DEFAULT_REQUEST_TIMEOUT_MS),
-  mock: z.boolean().optional(),
 });
 
 type _AssertSchemaMatchesInterface =
@@ -148,13 +145,18 @@ export function missingSabreCredentials(cfg: SabreConfig): readonly string[] {
 }
 
 /**
- * Modo mock: sin `epr`, `password` u `homePcc` no se puede derivar el `secret`, así que el
- * adapter devuelve fixtures en vez de fallar. Es lo que permite que CI y dev corran sin
- * credenciales de Sabre (docs/sabre/11 §6.4).
+ * ¿Esta config puede autenticar contra Sabre?
+ *
+ * Sustituye a `isMockMode`, que respondía la pregunta inversa y desviaba a fixtures. Aquí no
+ * hay rama alternativa: sin `epr`, `password` u `homePcc` no se puede derivar el `secret`, y
+ * lo único correcto es que el proveedor quede AUSENTE de la búsqueda. Nada de este paquete
+ * puede fabricar una oferta.
+ *
+ * El JSONB de la cuenta ya no puede forzar ningún modo: `SabreConfigSchema` no tiene campo
+ * `mock` y Zod descarta las claves que no declara.
  */
-export function isMockMode(cfg: SabreConfig): boolean {
-  if (cfg.mock === true) return true;
-  return missingSabreCredentials(cfg).length > 0;
+export function hasUsableSabreCredentials(cfg: SabreConfig): boolean {
+  return missingSabreCredentials(cfg).length === 0;
 }
 
 export function sabreDomain(cfg: SabreConfig): string {

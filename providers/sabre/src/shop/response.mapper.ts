@@ -350,6 +350,7 @@ export type SabreMapWarningCode =
   | 'offer-invalid'
   | 'priced-segment-missing'
   | 'baggage-not-mapped'
+  | 'currency-mismatch'
   | 'provider-message'
   | 'provider-degraded';
 
@@ -382,6 +383,22 @@ export interface SabreShopMapContext {
   readonly fetchedAt?: string;
   /** TTL de política propia para el contenido ATPCO. Default {@link SABRE_ATPCO_OFFER_TTL_SECONDS}. */
   readonly offerTtlSeconds?: number;
+  /**
+   * Moneda PEDIDA en la búsqueda (la del tenant, la misma que viajó en
+   * `PriceRequestInformation.CurrencyCode`). Las ofertas que vuelvan en otra se descartan con
+   * warning `currency-mismatch`.
+   *
+   * Por qué descartar y no convertir: convertir exige una tasa, y no tenemos ninguna que sea
+   * del proveedor ni contratada — una tasa inventada convierte un precio real en uno que nadie
+   * puede cobrar. Es la línea de docs/sabre/02 §11 riesgo 12: *"nunca convertir nosotros el
+   * precio de venta"*.
+   *
+   * OPCIONAL, y sin ella NO se filtra nada: no hay moneda de referencia contra la que comparar.
+   * Si viene un valor que no es ISO-4217 de tres letras tampoco se filtra, por lo mismo. Quien
+   * quiera la defensa tiene que pasar la moneda ya validada (en la plataforma la valida
+   * `FlightSearchCriteriaSchema` en el borde HTTP).
+   */
+  readonly currency?: string;
 }
 
 /**
@@ -412,6 +429,7 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
   const body = parsed.data.groupedItineraryResponse;
   const fetchedAt = ctx.fetchedAt ?? new Date().toISOString();
   const ttlSeconds = ctx.offerTtlSeconds ?? SABRE_ATPCO_OFFER_TTL_SECONDS;
+  const expectedCurrency = normalizeCurrency(ctx.currency);
 
   const degraded = collectDegradation(body, warnings);
   const dicts: Dictionaries = {
@@ -434,6 +452,7 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
       for (let p = 0; p < pricings.length; p += 1) {
         const pricing = pricings[p];
         if (!pricing) continue;
+        const path = `itineraryGroups[${g}].itineraries[${n}].pricingInformation[${p}]`;
         const offer = mapPricingInformation({
           pricing,
           itinerary,
@@ -442,10 +461,12 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
           ctx: { tenantId: ctx.tenantId },
           fetchedAt,
           ttlSeconds,
-          path: `itineraryGroups[${g}].itineraries[${n}].pricingInformation[${p}]`,
+          path,
           warnings,
         });
-        if (offer) offers.push(offer);
+        if (!offer) continue;
+        if (!hasExpectedCurrency(offer, expectedCurrency, warnings, path)) continue;
+        offers.push(offer);
       }
     }
   }
@@ -454,6 +475,36 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
   return statistics === undefined
     ? { offers, warnings, degraded }
     : { offers, warnings, degraded, statistics };
+}
+
+/**
+ * ¿La oferta está en la moneda que se pidió?
+ *
+ * Sabre cotiza en la moneda que dicte el punto de venta salvo que se le pida otra, y
+ * `PriceRequestInformation.CurrencyCode` —que sí se manda (ver `request.builder.ts`)— gana sobre
+ * el PCC **como preferencia declarada en el contrato**, no como garantía observada: los tres
+ * ejemplos oficiales de respuesta vuelven en USD. Un PCC de certificación puede devolver
+ * cualquier moneda, así que la petición no puede ser la única defensa.
+ *
+ * Descartar y no marcar: una oferta que el vendedor no puede cotizar en la moneda de su agencia
+ * no es producto, y dejarla en la lista rompe además el orden por precio —`BRL 1.286` se lee como
+ * más barato que `COP 859.100`— para todas las demás. Se descarta con warning, que es lo que
+ * hace visible el descuadre en vez de esconderlo.
+ *
+ * `expected === null` (nadie declaró moneda) ⇒ pasa todo: sin referencia no hay nada que afirmar.
+ */
+function hasExpectedCurrency(
+  offer: Offer,
+  expected: string | null,
+  warnings: SabreMapWarning[],
+  path: string,
+): boolean {
+  if (expected === null) return true;
+  const devuelta = offer.total.currency;
+  if (devuelta === expected) return true;
+  // Sólo códigos de moneda: no es PII y es lo único que hace accionable el warning (RNF-07).
+  warnings.push({ code: 'currency-mismatch', path, detail: `${expected}!=${devuelta}` });
+  return false;
 }
 
 // ---------------------------------------------------------------------------

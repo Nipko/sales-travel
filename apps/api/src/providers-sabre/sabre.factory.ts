@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import type {
   FlightSearchCriteria,
@@ -24,6 +24,7 @@ import {
   SabreOrderManageAdapter,
   SabreTokenService,
   cancellableItemsOf,
+  missingSabreCredentials,
   parseSabreConfig,
   type SabreCancelOptions,
   type SabreCardBinPricingPolicy,
@@ -34,6 +35,7 @@ import { z } from '@sales-travel/validation';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
 import {
   CallPolicySchema,
+  ProviderAccountIncompleteError,
   type CallPolicy,
   type CredentialSource,
   type FlightProviderAdapter,
@@ -44,11 +46,7 @@ import {
   type TenantAdapter,
   type TenantProviderFactory,
 } from '../providers/provider.types.js';
-import {
-  SabreMockBookingError,
-  SabreOperationNotSupportedError,
-  humanizeSabreError,
-} from './sabre-errors.js';
+import { SabreOperationNotSupportedError, humanizeSabreError } from './sabre-errors.js';
 
 export const SABRE_PROVIDER_CODE = 'sabre';
 
@@ -61,9 +59,6 @@ export const SABRE_PROVIDER_CODE = 'sabre';
  * de una oficina con una configuración que nadie revisó.
  */
 const SABRE_DEFAULT_ENVIRONMENT: SabreEnvironment = 'cert';
-
-/** Marcador del PCC en la clave de caché cuando la cuenta no lo trae (sólo cuentas en mock declarado). */
-const SIN_PCC = 'sin-pcc';
 
 /**
  * `config.allowCardBinPricing` sólo puede ser un booleano. `optional()` y no `default(false)`:
@@ -108,17 +103,13 @@ interface SabreAdapterSet {
  *
  *  - `payOrder`, `listServices`, `reshopWithTickets`, `cancelBnplOrder`: no son operaciones de
  *    este contrato. Fingirlas con un resultado plausible es lo que vende un asiento que no existe.
- *  - Todo el bloque de reserva cuando la cuenta corre en **mock declarado**: las ofertas
- *    sintéticas tienen la misma forma canónica que las reales, y reservar contra un precio
- *    inventado es peor que no poder reservar.
+ *
+ * Lo que ya no hace falta gatear: el bloque de reserva contra una cuenta en modo simulado. Ese
+ * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
+ * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
 export class SabreFlightProviderAdapter implements FlightProviderAdapter {
   constructor(private readonly inner: SabreAdapterSet) {}
-
-  /** Verdad declarada por el ACL, no recalculada aquí: una segunda copia de la regla deriva. */
-  get isMock(): boolean {
-    return this.inner.search.isMock;
-  }
 
   get missingCredentials(): readonly string[] {
     return this.inner.search.missingCredentials;
@@ -133,13 +124,11 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     criteria: FlightSearchCriteria,
     ctx: SearchContext,
   ): Promise<OfferPriceResult> {
-    return this.notInMock('revalidar el precio', () =>
-      this.inner.price.priceOffer(offer, criteria, ctx),
-    );
+    return this.inner.price.priceOffer(offer, criteria, ctx);
   }
 
   createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
-    return this.notInMock('crear la reserva', () => this.inner.create.createOrder(request, ctx));
+    return this.inner.create.createOrder(request, ctx);
   }
 
   /**
@@ -149,37 +138,36 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
    * `bookingSignature`; el saga lo lee como lo que es: la señal de que la lectura de cierre no
    * es opcional.
    */
-  createOrderAudited(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateAudit> {
-    return this.notInMock('crear la reserva', async () => {
-      const outcome = await this.inner.create.createBooking(request, ctx);
-      return {
-        result: outcome.result,
-        audit: {
-          audited: true,
-          provider: SABRE_PROVIDER_CODE,
-          // La política con la que se pidió. Es un parámetro de ENTRADA de `createBooking`
-          // (8 valores, default `HALT_ON_ERROR`): un `PARTIAL` sin ella no se puede explicar.
-          errorHandlingPolicy: [...outcome.errorHandlingPolicy],
-          asynchronousUpdateWaitTimeMs: outcome.asynchronousUpdateWaitTimeMs,
-          advisories: [...outcome.advisories],
-          carriers: [...outcome.carriers],
-          conversationId: outcome.conversationId,
-          hasBookingSignature: outcome.hasBookingSignature,
-        },
-        providerRaw: outcome.providerRaw,
-        hasVersionStamp: outcome.hasBookingSignature,
-      };
-    });
+  async createOrderAudited(
+    request: OrderCreateRequest,
+    ctx: SearchContext,
+  ): Promise<OrderCreateAudit> {
+    const outcome = await this.inner.create.createBooking(request, ctx);
+    return {
+      result: outcome.result,
+      audit: {
+        audited: true,
+        provider: SABRE_PROVIDER_CODE,
+        // La política con la que se pidió. Es un parámetro de ENTRADA de `createBooking`
+        // (8 valores, default `HALT_ON_ERROR`): un `PARTIAL` sin ella no se puede explicar.
+        errorHandlingPolicy: [...outcome.errorHandlingPolicy],
+        asynchronousUpdateWaitTimeMs: outcome.asynchronousUpdateWaitTimeMs,
+        advisories: [...outcome.advisories],
+        carriers: [...outcome.carriers],
+        conversationId: outcome.conversationId,
+        hasBookingSignature: outcome.hasBookingSignature,
+      },
+      providerRaw: outcome.providerRaw,
+      hasVersionStamp: outcome.hasBookingSignature,
+    };
   }
 
   retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
-    return this.notInMock('consultar la reserva', () =>
-      this.inner.manage.retrieveForDisplay(orderId, ctx),
-    );
+    return this.inner.manage.retrieveForDisplay(orderId, ctx);
   }
 
   cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
-    return this.notInMock('cancelar la reserva', () => this.inner.manage.cancelOrder(orderId, ctx));
+    return this.inner.manage.cancelOrder(orderId, ctx);
   }
 
   /**
@@ -201,60 +189,58 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     ctx: SearchContext,
     scope?: { readonly itemIds?: readonly string[] },
   ): Promise<OrderCancelAudit> {
-    return this.notInMock('cancelar la reserva', async () => {
-      const itemIds = scope?.itemIds;
-      let items: SabreCancelOptions['items'];
+    const itemIds = scope?.itemIds;
+    let items: SabreCancelOptions['items'];
 
-      if (itemIds !== undefined && itemIds.length > 0) {
-        const snapshot = await this.inner.manage.snapshotForDisplay(orderId, ctx);
-        const wanted = new Set(itemIds);
-        items = cancellableItemsOf(snapshot).filter((item) => wanted.has(item.itemId));
-        if (items.length === 0) {
-          return {
-            result: {
-              success: false,
-              warnings: ['compensation-targets-gone'],
-              error:
-                'ninguno de los ítems a compensar sigue presente en la reserva: no se canceló nada',
-            },
-            audit: {
-              audited: true,
-              provider: SABRE_PROVIDER_CODE,
-              scope: 'ITEMS',
-              requestedItems: itemIds.length,
-              matchedItems: 0,
-              called: false,
-            },
-            verified: true,
-          };
-        }
+    if (itemIds !== undefined && itemIds.length > 0) {
+      const snapshot = await this.inner.manage.snapshotForDisplay(orderId, ctx);
+      const wanted = new Set(itemIds);
+      items = cancellableItemsOf(snapshot).filter((item) => wanted.has(item.itemId));
+      if (items.length === 0) {
+        return {
+          result: {
+            success: false,
+            warnings: ['compensation-targets-gone'],
+            error:
+              'ninguno de los ítems a compensar sigue presente en la reserva: no se canceló nada',
+          },
+          audit: {
+            audited: true,
+            provider: SABRE_PROVIDER_CODE,
+            scope: 'ITEMS',
+            requestedItems: itemIds.length,
+            matchedItems: 0,
+            called: false,
+          },
+          verified: true,
+        };
       }
+    }
 
-      const outcome = await this.inner.manage.cancelBooking(
-        orderId,
-        ctx,
-        items === undefined ? {} : { scope: 'ITEMS', items },
-      );
+    const outcome = await this.inner.manage.cancelBooking(
+      orderId,
+      ctx,
+      items === undefined ? {} : { scope: 'ITEMS', items },
+    );
 
-      return {
-        result: outcome.result,
-        audit: {
-          audited: true,
-          provider: SABRE_PROVIDER_CODE,
-          scope: items === undefined ? 'ALL' : 'ITEMS',
-          ...(items === undefined ? {} : { matchedItems: items.length }),
-          called: true,
-          outcome: outcome.outcome,
-          errorHandlingPolicy: outcome.errorHandlingPolicy,
-          ticketCheckPerformed: outcome.ticketCheckPerformed,
-          conversationId: outcome.conversationId,
-          ...outcome.shape,
-        },
-        idempotencyKey: outcome.idempotencyKey,
-        // `UNVERIFIED` es "el proveedor no dijo qué pasó": el saga NO puede reintentar a ciegas.
-        verified: outcome.outcome !== 'UNVERIFIED',
-      };
-    });
+    return {
+      result: outcome.result,
+      audit: {
+        audited: true,
+        provider: SABRE_PROVIDER_CODE,
+        scope: items === undefined ? 'ALL' : 'ITEMS',
+        ...(items === undefined ? {} : { matchedItems: items.length }),
+        called: true,
+        outcome: outcome.outcome,
+        errorHandlingPolicy: outcome.errorHandlingPolicy,
+        ticketCheckPerformed: outcome.ticketCheckPerformed,
+        conversationId: outcome.conversationId,
+        ...outcome.shape,
+      },
+      idempotencyKey: outcome.idempotencyKey,
+      // `UNVERIFIED` es "el proveedor no dijo qué pasó": el saga NO puede reintentar a ciegas.
+      verified: outcome.outcome !== 'UNVERIFIED',
+    };
   }
 
   cancelBnplOrder(_orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
@@ -272,17 +258,6 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
   reshopWithTickets(_request: OrderReshopRequest, _ctx: SearchContext): Promise<OrderReshopResult> {
     return Promise.reject(new SabreOperationNotSupportedError('recotizar con billetes'));
   }
-
-  /**
-   * Puerta única del bloque de reserva: una cuenta en mock DECLARADO busca, pero no reserva.
-   *
-   * Está aquí y no en cada método para que añadir una operación nueva no pueda olvidarse de la
-   * comprobación: quien no la pase por `notInMock` se ve a simple vista.
-   */
-  private notInMock<T>(operation: string, run: () => Promise<T>): Promise<T> {
-    if (this.isMock) return Promise.reject(new SabreMockBookingError(operation));
-    return run();
-  }
 }
 
 /**
@@ -293,9 +268,13 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
  * antes de que existiera la bóveda BYOC. Sabre no tiene ese pasado y no puede heredar ese
  * comportamiento: prestarle la cuenta de la plataforma a un tenant que no la pidió significa
  * consultas facturadas a quien no las encargó y, peor, tarifas de un PCC que no es el suyo
- * saliendo en una cotización con su marca. Sin cuenta resoluble, `resolveForTenant` lanza
- * `NotFoundException` y el registry deja a Sabre **ausente** de la búsqueda
+ * saliendo en una cotización con su marca. Sin cuenta resoluble —o con una cuenta a la que le
+ * falten credenciales— `resolveForTenant` lanza y el registry deja a Sabre **ausente** de la
+ * búsqueda, nombrado en `providers[]` con el motivo
  * (`docs/sabre/11-plan-implementacion.md` §7, D5).
+ *
+ * Desde esta tanda LATAM hace lo mismo en su último escalón: la única diferencia que queda es
+ * el escalón intermedio de credenciales de plataforma, que LATAM conserva y Sabre no tiene.
  */
 @Injectable()
 export class SabreProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
@@ -353,10 +332,24 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const resolved = await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE);
     const cfg = this.toConfig(resolved.credentials, resolved.config);
 
+    // Puerta de credenciales, ANTES de construir nada. Hasta esta tanda esta comprobación
+    // vivía después de instanciar el ACL y dejaba pasar un caso: la cuenta que declaraba
+    // `config.mock: true` se servía igual, marcada como simulada, y cotizaba fixtures. Ese
+    // permiso ya no existe —ni el campo—: sin `epr`, `password` u `homePcc` no hay adapter.
+    const missing = missingSabreCredentials(cfg);
+    if (missing.length > 0) {
+      // Sólo NOMBRES de campo: el valor de una credencial nunca entra en un log.
+      this.logger.warn(
+        `cuenta de Sabre incompleta para ${resolved.ownerTenantId}: faltan [${missing.join(', ')}] — proveedor NO habilitado`,
+      );
+      throw new ProviderAccountIncompleteError(SABRE_PROVIDER_CODE, missing);
+    }
+
     // El `homePcc` entra en la clave porque entra en el `clientId` del que se deriva el ATK:
     // dos cuentas del mismo dueño con PCC distinto NO pueden compartir instancia ni token.
     // No es secreto —se imprime en el billete—, así que puede vivir en una clave de caché.
-    const key = `byoc:${resolved.ownerTenantId}:${cfg.homePcc ?? SIN_PCC}:${resolved.updatedAt.getTime()}`;
+    // Ya no hace falta marcador de "sin PCC": la puerta de arriba garantiza que está.
+    const key = `byoc:${resolved.ownerTenantId}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
     const callPolicy = this.declaredCallPolicy(resolved.config, resolved.ownerTenantId);
 
@@ -366,22 +359,6 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const adapter = new SabreFlightProviderAdapter(
       this.buildAdapters(cfg, resolved.ownerTenantId, resolved.config),
     );
-
-    // Se LEE el veredicto del propio adapter en vez de recalcularlo: `isMock` es suyo y una
-    // segunda copia de la regla aquí es la avería que este paquete ya pagó cinco veces.
-    //
-    // Y una cuenta que cae en mock SIN haberlo pedido no se sirve: `SabreFlightSearchAdapter`
-    // devuelve fixtures con la misma forma canónica que las tarifas reales, así que el tenant
-    // cotizaría precios inventados con aspecto de reales. Un mock DECLARADO (`config.mock`) sí
-    // pasa: es una decisión, va marcado como `simulated` en la respuesta y no se cachea.
-    if (adapter.isMock && cfg.mock !== true) {
-      this.logger.warn(
-        `cuenta de Sabre incompleta para ${resolved.ownerTenantId}: faltan [${adapter.missingCredentials.join(', ')}] — proveedor NO habilitado`,
-      );
-      throw new NotFoundException(
-        `la cuenta de Sabre resoluble desde ${tenantId} está incompleta (faltan: ${adapter.missingCredentials.join(', ')})`,
-      );
-    }
 
     this.cache.set(key, adapter);
     this.evictStale(key);
@@ -520,7 +497,6 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       applicationId: str(g['applicationId']),
       sabreGroup: str(g['sabreGroup']),
       sabreCurrentCity: str(g['sabreCurrentCity']),
-      mock: g['mock'] === true ? true : undefined,
     });
   }
 }

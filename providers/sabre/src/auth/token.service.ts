@@ -227,9 +227,6 @@ export class SabreTokenService implements SabreTokenProvider {
   }
 
   private async fetchToken(): Promise<{ token: string; ttlSeconds: number }> {
-    if (this.cfg.mock === true) {
-      throw new SabreConfigError('adapter en modo mock: no se autentica contra Sabre');
-    }
     const { epr, password, homePcc } = this.cfg;
     if (!epr || !password || !homePcc) {
       throw new SabreConfigError(

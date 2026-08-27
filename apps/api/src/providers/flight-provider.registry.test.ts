@@ -2,6 +2,7 @@ import { Logger, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlightProviderRegistry } from './flight-provider.registry.js';
 import {
+  ProviderAccountIncompleteError,
   ProviderNotAvailableError,
   type FlightProviderAdapter,
   type ProviderFlagsPort,
@@ -219,14 +220,51 @@ describe('FlightProviderRegistry', () => {
   });
 
   describe('metadatos', () => {
-    it('`simulated` refleja el modo mock del adapter resuelto', async () => {
+    it('un proveedor sin cuenta sale como AUSENTE, no desaparece del parte', async () => {
+      // La avería que cierra este caso: hasta esta tanda el proveedor no resoluble se caía de
+      // `forTenant` sin dejar rastro, y la pantalla mostraba una lista más corta sin poder
+      // decir por qué. El vendedor lo leía como "no hay vuelos".
       const r = registry([
-        new StubProviderFactory({ code: 'alfa-air', isMock: true }),
-        new StubProviderFactory({ code: 'beta-air', isMock: false }),
+        new StubProviderFactory({ code: 'alfa-air', failResolve: true }),
+        new StubProviderFactory({ code: 'beta-air' }),
       ]);
 
-      const { active } = await r.forTenant(TENANT);
-      expect(active.map((p) => p.simulated)).toEqual([true, false]);
+      const { active, unavailable } = await r.forTenant(TENANT);
+
+      expect(active.map((p) => p.code)).toEqual(['beta-air']);
+      expect(unavailable.map((u) => [u.code, u.reason])).toEqual([['alfa-air', 'no-credentials']]);
+      // El motivo es lo que la pantalla enseña: tiene que venir, y con algo que decir.
+      expect(unavailable[0]?.detail).toContain('Credenciales');
+    });
+
+    it('una cuenta INCOMPLETA se distingue de una cuenta ausente', async () => {
+      // Son dos acciones distintas para el vendedor: cargar credenciales, o completar las que
+      // ya cargó. Colapsarlas en un solo motivo le manda a la pantalla equivocada.
+      const r = registry([
+        new StubProviderFactory({
+          code: 'alfa-air',
+          failResolveWith: new ProviderAccountIncompleteError('alfa-air', ['apiKey']),
+        }),
+      ]);
+
+      const { active, unavailable } = await r.forTenant(TENANT);
+
+      expect(active).toEqual([]);
+      expect(unavailable[0]?.reason).toBe('incomplete-account');
+      expect(unavailable[0]?.detail).toContain('apiKey');
+    });
+
+    it('el motivo de una ausencia nombra el campo pero nunca un valor de credencial', async () => {
+      const r = registry([
+        new StubProviderFactory({
+          code: 'alfa-air',
+          failResolveWith: new ProviderAccountIncompleteError('alfa-air', ['apiSecret']),
+        }),
+      ]);
+
+      const { unavailable } = await r.forTenant(TENANT);
+      expect(JSON.stringify(unavailable)).not.toContain('super-secreto');
+      expect(unavailable[0]?.detail).toContain('apiSecret');
     });
 
     it('`capabilitiesOf` no toca credenciales y distingue al desconocido', () => {
@@ -256,6 +294,12 @@ describe('FlightProviderRegistry', () => {
     });
     const r = registry([stub]);
 
-    await expect(r.forTenant(TENANT)).resolves.toEqual({ active: [], skipped: [] });
+    const { active, skipped, unavailable } = await r.forTenant(TENANT);
+
+    expect(active).toEqual([]);
+    expect(skipped).toEqual([]);
+    // No habilitado, pero tampoco invisible: la ausencia sale nombrada para que la pantalla
+    // la pueda explicar.
+    expect(unavailable.map((u) => [u.code, u.reason])).toEqual([['alfa-air', 'no-credentials']]);
   });
 });

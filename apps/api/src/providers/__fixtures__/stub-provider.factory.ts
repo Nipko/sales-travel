@@ -43,7 +43,6 @@ const CAPACIDADES_PLENAS: ProviderCapabilities = {
 };
 
 export interface StubAdapterOptions {
-  isMock?: boolean;
   /** Ofertas que devuelve `search`. Por defecto, una con `provider.name` = el code del stub. */
   offers?: Offer[];
   /** Reemplaza por completo el cuerpo de `search` (para fallos, demoras o coordinación). */
@@ -52,8 +51,6 @@ export interface StubAdapterOptions {
 
 /** Adapter de vuelos completo (los cuatro ports) con todos los métodos espiables. */
 export class StubFlightAdapter implements FlightProviderAdapter {
-  readonly isMock: boolean;
-
   readonly search: (criteria: FlightSearchCriteria, ctx: SearchContext) => Promise<Offer[]>;
   readonly priceOffer = vi.fn(
     (offer: Offer, _criteria: FlightSearchCriteria, _ctx: SearchContext) =>
@@ -95,7 +92,6 @@ export class StubFlightAdapter implements FlightProviderAdapter {
     readonly code: string,
     opts: StubAdapterOptions = {},
   ) {
-    this.isMock = opts.isMock ?? false;
     const impl = opts.searchImpl;
     this.search = vi.fn((criteria: FlightSearchCriteria, ctx: SearchContext) =>
       impl ? impl(criteria, ctx) : Promise.resolve(opts.offers ?? [stubOffer(code, ctx.tenantId)]),

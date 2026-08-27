@@ -4,6 +4,7 @@ import {
   CallPolicySchema,
   FLIGHT_PROVIDER_FACTORIES,
   FLIGHT_PROVIDER_FLAGS,
+  ProviderAccountIncompleteError,
   ProviderNotAvailableError,
   type CallPolicy,
   type FlightProviderAdapter,
@@ -13,6 +14,7 @@ import {
   type ResolvedProvider,
   type SkippedProvider,
   type TenantProviderFactory,
+  type UnavailableProvider,
 } from './provider.types.js';
 
 /**
@@ -50,6 +52,13 @@ function parsePolicyOverrides(raw: string): Record<string, CallPolicy> {
     });
   return PolicyOverridesSchema.parse(Object.fromEntries(entries));
 }
+
+/**
+ * Resolución de UN proveedor: o sale llamable, o sale la ausencia con su motivo.
+ */
+type ProviderResolutionOutcome =
+  | { readonly ok: true; readonly provider: ResolvedProvider<FlightProviderAdapter> }
+  | { readonly ok: false; readonly absence: UnavailableProvider };
 
 /**
  * Registry de proveedores de vuelos por tenant.
@@ -90,10 +99,17 @@ export class FlightProviderRegistry {
     this.policyOverrides = parsePolicyOverrides(process.env['FLIGHT_PROVIDER_CALL_POLICIES'] ?? '');
   }
 
-  /** Proveedores llamables para el tenant, más los habilitados que esta búsqueda no llama. */
+  /**
+   * Proveedores llamables para el tenant, más los habilitados que esta búsqueda no llama, más
+   * los que la plataforma conoce pero este tenant no puede usar.
+   *
+   * `unavailable` es lo que hace explicable una lista corta: un proveedor sin credenciales
+   * usables ya no cae a fixtures ni desaparece en silencio — sale nombrado, con el motivo.
+   */
   async forTenant(tenantId: string): Promise<FlightProviderResolution> {
     const active: ResolvedProvider<FlightProviderAdapter>[] = [];
     const skipped: SkippedProvider[] = [];
+    const unavailable: UnavailableProvider[] = [];
 
     for (const factory of this.factories) {
       const callPolicy = this.policyOf(factory);
@@ -109,10 +125,11 @@ export class FlightProviderRegistry {
       }
 
       const resolved = await this.resolve(tenantId, factory, callPolicy);
-      if (resolved) active.push(resolved);
+      if (resolved.ok) active.push(resolved.provider);
+      else unavailable.push(resolved.absence);
     }
 
-    return { active, skipped };
+    return { active, skipped, unavailable };
   }
 
   /**
@@ -126,8 +143,8 @@ export class FlightProviderRegistry {
     if (!factory) throw new ProviderNotAvailableError(code);
 
     const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
-    if (!resolved) throw new ProviderNotAvailableError(code);
-    return resolved;
+    if (!resolved.ok) throw new ProviderNotAvailableError(code);
+    return resolved.provider;
   }
 
   /**
@@ -162,18 +179,35 @@ export class FlightProviderRegistry {
     return this.policyOverrides[factory.code] ?? factory.defaultCallPolicy;
   }
 
+  /**
+   * Resuelve UN proveedor para el tenant, o dice por qué no.
+   *
+   * Devuelve un resultado etiquetado y no `null`: la ausencia viaja a la respuesta del endpoint
+   * con su motivo, y un `null` obligaría al llamador a reconstruirlo a posteriori —adivinando—.
+   */
   private async resolve(
     tenantId: string,
     factory: TenantProviderFactory<FlightProviderAdapter>,
     callPolicy: CallPolicy,
-  ): Promise<ResolvedProvider<FlightProviderAdapter> | null> {
+  ): Promise<ProviderResolutionOutcome> {
     let resolved;
     try {
       resolved = await factory.resolveForTenant(tenantId);
     } catch (err) {
+      // Cuenta cargada pero a medias: la acción del vendedor es COMPLETARLA, no cargarla.
+      if (err instanceof ProviderAccountIncompleteError) {
+        return {
+          ok: false,
+          absence: {
+            code: factory.code,
+            reason: 'incomplete-account',
+            detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Completala en Mi Red → Credenciales.`,
+          },
+        };
+      }
       // Sin cuenta resoluble y sin fallback: el proveedor no está habilitado para el tenant.
       // Cualquier otro error (bóveda caída, credencial corrupta) sí se propaga.
-      if (err instanceof NotFoundException) return null;
+      if (err instanceof NotFoundException) return { ok: false, absence: this.sinCuenta(factory) };
       throw err;
     }
 
@@ -184,19 +218,30 @@ export class FlightProviderRegistry {
       this.logger.debug(
         `${factory.code} sin credenciales propias y sin fallback de plataforma: no habilitado`,
       );
-      return null;
+      return { ok: false, absence: this.sinCuenta(factory) };
     }
 
     // Precedencia: override de entorno > lo que declare la CUENTA del tenant > default del
     // factory. El override va primero porque es el kill-switch de operaciones (contener el
     // coste de un proveedor que cobra por consulta), y una cuenta no puede desarmarlo.
     return {
+      ok: true,
+      provider: {
+        code: factory.code,
+        adapter: resolved.adapter,
+        credentialSource: resolved.credentialSource,
+        capabilities: factory.capabilities,
+        callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+      },
+    };
+  }
+
+  private sinCuenta(factory: TenantProviderFactory<FlightProviderAdapter>): UnavailableProvider {
+    return {
       code: factory.code,
-      adapter: resolved.adapter,
-      simulated: resolved.adapter.isMock,
-      credentialSource: resolved.credentialSource,
-      capabilities: factory.capabilities,
-      callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+      reason: 'no-credentials',
+      detail:
+        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
     };
   }
 }

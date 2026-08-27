@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
@@ -6,10 +6,12 @@ import { FlightProviderRegistry } from '../providers/flight-provider.registry.js
 import {
   AllFlightProvidersFailedError,
   ProviderCallError,
+  SIMULATED_RESIDUE,
   type FlightProviderAdapter,
   type ProviderOutcome,
   type ResolvedProvider,
   type SkippedProvider,
+  type UnavailableProvider,
 } from '../providers/provider.types.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
@@ -37,7 +39,18 @@ const FALLBACK_MIN_OFFERS = 5;
  */
 export interface FlightSearchResponse {
   offers: Offer[];
-  /** Semántica VIEJA, intacta: todas las tarifas de esta lista son inventadas. */
+  /**
+   * RESIDUO DE TRANSICIÓN: siempre `false`.
+   *
+   * Significaba "todas las tarifas de esta lista son inventadas", y era verdad porque un
+   * proveedor sin credenciales devolvía fixtures. Esa rama ya no existe en ningún adapter, así
+   * que el campo no tiene nada que señalar. Se CONSERVA —en vez de retirarse del contrato—
+   * porque `apps/web-b2b/src/app/(app)/cotizaciones/` lo lee hoy y ese fichero está siendo
+   * reescrito por otra tanda: quitarlo ahora rompería la pantalla en el peor sitio posible.
+   *
+   * Retirar junto con `providers[].simulated` y `status: 'simulated'` cuando la UI deje de
+   * leerlos — plazo: al cerrar esa reescritura, y como muy tarde 2026-10-31.
+   */
   simulated: boolean;
   providers: ProviderOutcome[];
 }
@@ -55,17 +68,73 @@ function flightsCacheKey(tenantId: string, c: FlightSearchCriteria, codes: strin
 }
 
 /**
+ * Separa las ofertas que la agencia puede cotizar de las que volvieron en otra moneda.
+ *
+ * ## Por qué existe esta puerta y por qué está acá
+ *
+ * En producción convivían en la MISMA lista `BRL 1.286` y `$ 859.100`. No es cosmético:
+ *
+ * 1. `1.286` se lee como más barato que `859.100` y son ~1,1 millones de pesos. El vendedor
+ *    cotiza la equivocada.
+ * 2. El orden por precio compara números de monedas distintas, así que no ordena nada.
+ * 3. `dedupeFlightOffers` se rinde explícitamente con más de una moneda en el conjunto: el
+ *    mismo vuelo aparece dos veces porque nadie resolvió la moneda aguas arriba.
+ *
+ * Cada ACL pide la moneda del tenant a su proveedor (Sabre por
+ * `PriceRequestInformation.CurrencyCode`, LATAM por el `CountryCode` del POS) y el de Sabre ya
+ * descarta lo que no encaje. Esta puerta es la SEGUNDA mitad, y es imprescindible por dos
+ * motivos: un proveedor puede ignorar lo que se le pide, y este es el único punto que ve las
+ * ofertas de TODOS los proveedores juntas —que es exactamente donde se produce la mezcla—.
+ *
+ * ## Descartar, no convertir ni marcar
+ *
+ * Convertir exigiría una tasa que no tenemos ni del proveedor ni contratada, y una tasa
+ * inventada convierte un precio real en uno que nadie puede cobrar. Marcar tampoco alcanza: la
+ * fila marcada sigue en la lista, sigue rompiendo el orden por precio de todas las demás y sigue
+ * bloqueando el dedupe. Lo que se descarta NO se calla: ver {@link SearchService.aplicarDescartesDeMoneda}
+ * —un proveedor que se queda sin nada cotizable sale en `providers[]` con su motivo, y un
+ * descarte parcial queda en el log.
+ */
+function splitByCurrency(
+  offers: readonly Offer[],
+  currency: string,
+): { kept: Offer[]; rejected: Offer[] } {
+  const kept: Offer[] = [];
+  const rejected: Offer[] = [];
+  for (const offer of offers) {
+    if (offer.total.currency === currency) kept.push(offer);
+    else rejected.push(offer);
+  }
+  return { kept, rejected };
+}
+
+/**
+ * Motivo para el vendedor, con el vocabulario del panel ("Mi Red → Credenciales") y sin texto
+ * libre del proveedor: sólo códigos de moneda, que no son PII y son el dato accionable.
+ */
+function currencyMismatchReason(rejected: readonly Offer[], expected: string): string {
+  const devueltas = [...new Set(rejected.map((o) => o.total.currency))].sort().join(', ');
+  return `devolvió tarifas en ${devueltas} y esta agencia vende en ${expected}: no son cotizables. Revisá el punto de venta del proveedor en Mi Red → Credenciales.`;
+}
+
+/**
  * Parte por proveedor → filas de telemetría.
  *
- * Los `skipped` NO generan fila: a ese proveedor no se le preguntó nada, y anotarlo como
- * `empty` diría que respondió sin vuelos, que es lo contrario de lo que pasó.
+ * Los `skipped` y los `unavailable` NO generan fila: a esos proveedores no se les preguntó
+ * nada, y anotarlos como `empty` diría que respondieron sin vuelos, que es lo contrario de lo
+ * que pasó. Además `search_logs.outcome` no conoce esos valores.
  */
 function telemetrySlices(
   outcomes: readonly ProviderOutcome[],
   durations: ReadonlyMap<string, number>,
 ): ProviderSearchSlice[] {
   return outcomes.flatMap((o): ProviderSearchSlice[] => {
-    if (o.status === 'skipped') return [];
+    // `'simulated'` está en la lista por una razón distinta a las otras dos: no se emite nunca
+    // —el API ya no puede fabricar tarifas— y se nombra aquí para que el mapeo al vocabulario
+    // de `search_logs.outcome` no necesite un cast que se comería un valor nuevo sin avisar.
+    if (o.status === 'skipped' || o.status === 'unavailable' || o.status === 'simulated') {
+      return [];
+    }
     return [
       {
         providerCode: o.code,
@@ -83,6 +152,8 @@ function telemetrySlices(
 
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+
   constructor(
     private readonly registry: FlightProviderRegistry,
     private readonly pricing: PricingService,
@@ -92,10 +163,13 @@ export class SearchService {
   ) {}
 
   /**
-   * `simulated` avisa que algún adaptador devolvió fixtures en vez de consultar al proveedor.
-   * Un tenant al que le falte una credencial cae en modo mock EN SILENCIO y cotiza precios
-   * inventados con aspecto de reales; sin esta señal, un vendedor podría pasárselos a un
-   * cliente sin enterarse.
+   * Búsqueda de vuelos con fan-out por proveedor.
+   *
+   * Ningún proveedor puede fabricar ofertas: sin credenciales usables no se construye su adapter
+   * y queda AUSENTE. Lo que antes se avisaba con `simulated` ahora se dice de la única forma
+   * accionable: el proveedor aparece en `providers[]` con `status: 'unavailable'` y el motivo,
+   * para que la pantalla explique por qué la lista es más corta en vez de dejar al vendedor
+   * leyéndola como "no hay vuelos".
    */
   async searchFlights(
     criteria: FlightSearchCriteria,
@@ -105,7 +179,7 @@ export class SearchService {
     // consulta, así que no tiene sentido gastar la llamada para después rechazarla.
     await this.telemetry.assertWithinQuota(tenantId);
 
-    const { active, skipped } = await this.registry.forTenant(tenantId);
+    const { active, skipped, unavailable } = await this.registry.forTenant(tenantId);
 
     // Caché por criterio: reordenar o volver atrás en el navegador no debe volver a
     // golpear al proveedor, que cobra por consulta y tarda segundos. TTL corto porque
@@ -139,18 +213,23 @@ export class SearchService {
           cabin: criteria.cabin,
         },
       },
-      () => this.runFanOut(criteria, tenantId, active, skipped, durations),
+      () => this.runFanOut(criteria, tenantId, active, skipped, unavailable, durations),
       (r) => r.offers.length,
-      (r) => r.simulated,
+      // Sin `simulatedOf`: ninguna búsqueda puede ser simulada, así que no hay nada que
+      // decirle a la telemetría. Pasar `() => false` sería escribir la misma nada dos veces.
+      undefined,
       (r) => telemetrySlices(r.providers, durations),
     );
 
-    // Un resultado simulado no se cachea: el tenant puede estar cargando sus credenciales en
-    // este mismo momento y quedaría viendo precios falsos hasta el TTL. Un resultado
-    // DEGRADADO tampoco: congelaría 90 s la ausencia de un proveedor que quizá ya volvió.
-    const simulado = result.providers.some((p) => p.simulated);
-    const degradado = result.providers.some((p) => p.status === 'error');
-    if (!simulado && !degradado) {
+    // Un resultado DEGRADADO no se cachea: congelaría 90 s la ausencia de un proveedor que
+    // quizá ya volvió. Y un proveedor AUSENTE cuenta como degradación aunque no haya fallado
+    // ninguna llamada: el tenant puede estar cargando sus credenciales en este mismo momento, y
+    // cachear la ausencia le dejaría la pantalla sin ese proveedor minuto y medio después de
+    // haberlas guardado.
+    const degradado = result.providers.some(
+      (p) => p.status === 'error' || p.status === 'unavailable',
+    );
+    if (!degradado) {
       await this.cache.set(cacheKey, result, SEARCH_CACHE_TTL_SECONDS);
     }
     return result;
@@ -169,6 +248,7 @@ export class SearchService {
     tenantId: string,
     active: ResolvedProvider<FlightProviderAdapter>[],
     skipped: SkippedProvider[],
+    unavailable: UnavailableProvider[],
     durations: Map<string, number>,
   ): Promise<FlightSearchResponse> {
     const counts = new Map<string, number>();
@@ -197,27 +277,79 @@ export class SearchService {
       }
     }
 
+    // Puerta de moneda. Va ANTES del corte de "todos fallaron" para que ese corte cuente los
+    // descartes: si lo único que volvió está en una moneda que la agencia no vende, lo que sale
+    // es el 502 con el motivo y no una lista vacía, que el vendedor leería como "no hay vuelos".
+    // Ver {@link splitByCurrency}.
+    const { kept, rejected } = splitByCurrency(items, criteria.currency);
+    if (rejected.length > 0) {
+      this.aplicarDescartesDeMoneda(active, kept, rejected, criteria.currency, counts, failures);
+    }
+
     // Con TODOS los proveedores llamados caídos no hay degradación posible: se propaga el
     // error en vez de devolver una lista vacía, que el vendedor leería como "no hay vuelos"
     // y le diría eso a su cliente. Es 502 porque el fallo es del sistema de al lado.
-    if (items.length === 0 && failures.size > 0) {
+    if (kept.length === 0 && failures.size > 0) {
       throw new AllFlightProvidersFailedError(
         [...failures].map(([code, reason]) => ({ code, reason })),
       );
     }
 
-    const llamados = active.filter((p) => !noLlamados.some((s) => s.code === p.code));
-
     return {
       // El dedupe va ANTES de `withPricing` (RF-06 CA-4): la cascada de markup se calcula sobre
       // las ofertas que sobreviven, no sobre las que se van a tirar. `dedupeFlightOffers` lo
       // exige de forma explícita y falla si se invierte el orden.
-      offers: await this.withPricing(dedupeFlightOffers(items), tenantId, 'flights'),
-      // Semántica VIEJA de `simulated`: todo lo que hay acá dentro es falso. La nueva —hay
-      // AL MENOS UNA tarifa falsa— viaja por proveedor en `providers[].simulated`.
-      simulated: llamados.length > 0 && llamados.every((p) => p.simulated),
-      providers: this.outcomes(active, counts, failures, noLlamados),
+      //
+      // Y va DESPUÉS de la puerta de moneda, que es lo que lo hace servir para algo:
+      // `dedupeFlightOffers` no deduplica nada mientras haya más de una moneda en el conjunto.
+      offers: await this.withPricing(dedupeFlightOffers(kept), tenantId, 'flights'),
+      // Residuo: ninguna oferta de esta lista puede ser inventada, así que no hay nada que
+      // señalar. Ver `FlightSearchResponse.simulated` para el plazo de retirada.
+      simulated: SIMULATED_RESIDUE,
+      providers: this.outcomes(active, counts, failures, noLlamados, unavailable),
     };
+  }
+
+  /**
+   * Anota, proveedor por proveedor, qué se descartó por moneda.
+   *
+   * Un descarte silencioso sería el mismo fallo que la mezcla, sólo que más difícil de ver: el
+   * vendedor no puede distinguir "este proveedor no tiene vuelos" de "este proveedor los tiene y
+   * te los estamos escondiendo". Por eso:
+   *
+   * - `counts` pasa a contar lo COTIZABLE, no lo que llegó del cable: es lo que se muestra y lo
+   *   que se mide en telemetría.
+   * - Si al proveedor no le queda NADA, entra en `failures`. No es `empty` —`empty` afirma que no
+   *   había vuelos, y sí los había— y no es un estado nuevo porque `ProviderOutcome.status` es un
+   *   contrato que la pantalla ya lee. El motivo dice qué moneda mandó y dónde se arregla.
+   * - Si le queda algo, el proveedor sigue sirviendo y el descarte va al log: no se puede tumbar
+   *   producto vendible por culpa de una tarifa hermana descuadrada.
+   */
+  private aplicarDescartesDeMoneda(
+    active: readonly ResolvedProvider<FlightProviderAdapter>[],
+    kept: readonly Offer[],
+    rejected: readonly Offer[],
+    expected: string,
+    counts: Map<string, number>,
+    failures: Map<string, string>,
+  ): void {
+    for (const provider of active) {
+      const descartadas = rejected.filter((o) => o.provider.name === provider.code);
+      if (descartadas.length === 0) continue;
+
+      const cotizables = kept.filter((o) => o.provider.name === provider.code).length;
+      counts.set(provider.code, cotizables);
+
+      if (cotizables === 0) {
+        failures.set(provider.code, currencyMismatchReason(descartadas, expected));
+        continue;
+      }
+
+      // Sólo códigos y conteos: ni payload del proveedor ni datos del pasajero (RNF-07).
+      this.logger.warn(
+        `search.currency_mismatch provider=${provider.code} expected=${expected} dropped=${descartadas.length} kept=${cotizables}`,
+      );
+    }
   }
 
   private toRun(
@@ -258,17 +390,23 @@ export class SearchService {
     };
   }
 
-  /** Parte por proveedor, en el mismo orden estable que devuelve el registry. */
+  /**
+   * Parte por proveedor, en el mismo orden estable que devuelve el registry.
+   *
+   * Incluye a los AUSENTES. Es la mitad que faltaba: sin fila, un proveedor sin credenciales
+   * desaparecía del sobre y la pantalla no tenía con qué explicar por qué había menos ofertas.
+   */
   private outcomes(
     active: ResolvedProvider<FlightProviderAdapter>[],
     counts: Map<string, number>,
     failures: Map<string, string>,
     noLlamados: SkippedProvider[],
+    ausentes: UnavailableProvider[],
   ): ProviderOutcome[] {
     const deActivos = active.map((p): ProviderOutcome => {
       const reason = failures.get(p.code);
       if (reason !== undefined) {
-        return { code: p.code, status: 'error', count: 0, simulated: p.simulated, reason };
+        return { code: p.code, status: 'error', count: 0, simulated: SIMULATED_RESIDUE, reason };
       }
 
       const salteado = noLlamados.find((s) => s.code === p.code);
@@ -277,7 +415,7 @@ export class SearchService {
           code: p.code,
           status: 'skipped',
           count: 0,
-          simulated: p.simulated,
+          simulated: SIMULATED_RESIDUE,
           skipReason: salteado.reason,
         };
       }
@@ -285,9 +423,9 @@ export class SearchService {
       const count = counts.get(p.code) ?? 0;
       return {
         code: p.code,
-        status: p.simulated ? 'simulated' : count > 0 ? 'ok' : 'empty',
+        status: count > 0 ? 'ok' : 'empty',
         count,
-        simulated: p.simulated,
+        simulated: SIMULATED_RESIDUE,
       };
     });
 
@@ -298,12 +436,23 @@ export class SearchService {
           code: s.code,
           status: 'skipped',
           count: 0,
-          simulated: false,
+          simulated: SIMULATED_RESIDUE,
           skipReason: s.reason,
         }),
       );
 
-    return [...deActivos, ...soloSalteados].sort((a, b) =>
+    const deAusentes = ausentes.map(
+      (a): ProviderOutcome => ({
+        code: a.code,
+        status: 'unavailable',
+        count: 0,
+        simulated: SIMULATED_RESIDUE,
+        unavailableReason: a.reason,
+        ...(a.detail === undefined ? {} : { reason: a.detail }),
+      }),
+    );
+
+    return [...deActivos, ...soloSalteados, ...deAusentes].sort((a, b) =>
       a.code < b.code ? -1 : a.code > b.code ? 1 : 0,
     );
   }

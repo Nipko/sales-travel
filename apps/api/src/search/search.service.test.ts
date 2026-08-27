@@ -243,11 +243,15 @@ describe('SearchService.searchFlights', () => {
       expect(b.llamadas()).toBe(2);
     });
 
-    it('un resultado SIMULADO no se cachea nunca', async () => {
-      const b = banco({ providers: [{ code: PRINCIPAL, isMock: true }] });
+    it('un resultado con un proveedor AUSENTE no se cachea nunca', async () => {
+      // El tenant puede estar cargando sus credenciales en este mismo momento: cachear la
+      // ausencia le dejaría la pantalla sin ese proveedor minuto y medio después de guardarlas.
+      const b = banco({
+        providers: [{ code: PRINCIPAL }, { code: 'alfa-air', failResolve: true }],
+      });
 
       const res = await b.service.searchFlights(criteria(), TENANT);
-      expect(res.simulated).toBe(true);
+      expect(res.providers.find((p) => p.code === 'alfa-air')?.status).toBe('unavailable');
 
       await b.service.searchFlights(criteria(), TENANT);
       expect(b.llamadas()).toBe(2);
@@ -383,14 +387,24 @@ describe('SearchService.searchFlights', () => {
       ]);
     });
 
-    it('sin ningún proveedor habilitado no hay apagón ni error: la lista viene vacía', async () => {
+    it('sin ningún proveedor habilitado no hay apagón ni error, pero sí explicación', async () => {
+      // Una lista vacía y un parte vacío es lo que el vendedor lee como "no hay vuelos". El
+      // parte lleva al proveedor ausente con su motivo, que es lo único accionable.
       const b = banco({ providers: [{ code: PRINCIPAL, failResolve: true }] });
 
-      await expect(b.service.searchFlights(criteria(), TENANT)).resolves.toEqual({
-        offers: [],
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(res.offers).toEqual([]);
+      expect(res.simulated).toBe(false);
+      expect(res.providers).toHaveLength(1);
+      expect(res.providers[0]).toMatchObject({
+        code: PRINCIPAL,
+        status: 'unavailable',
+        count: 0,
         simulated: false,
-        providers: [],
+        unavailableReason: 'no-credentials',
       });
+      expect(res.providers[0]?.reason).toContain('Credenciales');
     });
 
     it('tras 5 fallos el circuito abre y la 6ª búsqueda no llega al proveedor', async () => {
@@ -469,32 +483,45 @@ describe('SearchService.searchFlights', () => {
       expect(res.offers).toHaveLength(2);
     });
 
-    it('`simulated` conserva la semántica vieja: true sólo si TODO el resultado es falso', async () => {
+    it('un proveedor AUSENTE sale nombrado en el parte, con el motivo', async () => {
+      // El encargo del founder en una línea: antes el proveedor sin credenciales devolvía
+      // tarifas inventadas; ahora no devuelve nada, y la pantalla tiene que poder decir por qué
+      // hay menos ofertas en vez de dejar al vendedor leyéndolo como "no hay vuelos".
       const b = banco({
-        providers: [{ code: 'alfa-air', isMock: true }, { code: PRINCIPAL }],
+        providers: [{ code: 'alfa-air', failResolve: true }, { code: PRINCIPAL }],
       });
 
       const res = await b.service.searchFlights(criteria(), TENANT);
 
-      // `apps/web-b2b` lee este booleano hoy. La semántica nueva —hay al menos una tarifa
-      // falsa— viaja por proveedor, sin cambiarle el significado al campo viejo.
-      expect(res.simulated).toBe(false);
-      expect(res.providers).toEqual([
-        { code: 'alfa-air', status: 'simulated', count: 1, simulated: true },
-        { code: PRINCIPAL, status: 'ok', count: 1, simulated: false },
-      ]);
+      const ausente = res.providers.find((p) => p.code === 'alfa-air');
+      expect(ausente?.status).toBe('unavailable');
+      expect(ausente?.count).toBe(0);
+      expect(ausente?.unavailableReason).toBe('no-credentials');
+      expect(ausente?.reason).toContain('Credenciales');
+      // Y no se cuela ni una oferta suya.
+      expect(res.offers.some((o) => o.provider.name === 'alfa-air')).toBe(false);
     });
 
-    it('con todos los proveedores en mock, `simulated` global sigue siendo true', async () => {
+    it('ningún proveedor puede salir marcado como simulado, pase lo que pase', async () => {
+      // `simulated` es residuo de transición: se conserva en el sobre porque `apps/web-b2b` lo
+      // lee, y no puede volver a encenderse. Se barren los cinco estados que produce el parte.
       const b = banco({
         providers: [
-          { code: 'alfa-air', isMock: true },
-          { code: PRINCIPAL, isMock: true },
+          { code: PRINCIPAL },
+          { code: 'alfa-air', searchImpl: () => Promise.resolve([]) },
+          { code: 'beta-air', searchImpl: () => Promise.reject(new Error('HTTP 503')) },
+          { code: 'delta-air', callPolicy: 'opt-in' },
+          { code: 'gama-air', failResolve: true },
         ],
       });
 
       const res = await b.service.searchFlights(criteria(), TENANT);
-      expect(res.simulated).toBe(true);
+
+      expect(new Set(res.providers.map((p) => p.status))).toEqual(
+        new Set(['ok', 'empty', 'error', 'skipped', 'unavailable']),
+      );
+      expect(res.providers.map((p) => p.simulated)).toEqual(res.providers.map(() => false));
+      expect(res.simulated).toBe(false);
     });
   });
 

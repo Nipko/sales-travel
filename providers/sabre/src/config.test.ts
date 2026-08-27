@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SABRE_DEFAULT_DOMAIN,
   SABRE_HOSTS,
-  isMockMode,
+  hasUsableSabreCredentials,
   missingSabreCredentials,
   parseSabreConfig,
   sabreUrl,
@@ -20,26 +20,30 @@ function fullConfig(overrides: Partial<SabreConfig> = {}): SabreConfig {
   };
 }
 
-describe('isMockMode', () => {
-  it('con las tres credenciales presentes NO es mock', () => {
-    expect(isMockMode(fullConfig())).toBe(false);
+describe('hasUsableSabreCredentials', () => {
+  it('con las tres credenciales presentes la config sirve', () => {
+    expect(hasUsableSabreCredentials(fullConfig())).toBe(true);
   });
 
   // Las tres que construyen el clientId: sin una sola no hay secret y por tanto no hay token.
-  it.each([['epr'], ['password'], ['homePcc']] as const)('sin %s cae a modo mock', (field) => {
+  it.each([['epr'], ['password'], ['homePcc']] as const)('sin %s no sirve', (field) => {
     const cfg = fullConfig();
     delete cfg[field];
-    expect(isMockMode(cfg)).toBe(true);
+    expect(hasUsableSabreCredentials(cfg)).toBe(false);
     expect(missingSabreCredentials(cfg)).toEqual([field]);
   });
 
   it('una credencial vacía cuenta como ausente', () => {
-    expect(isMockMode(fullConfig({ homePcc: '' }))).toBe(true);
+    expect(hasUsableSabreCredentials(fullConfig({ homePcc: '' }))).toBe(false);
   });
 
-  it('mock:true fuerza el modo mock aunque haya credenciales', () => {
-    expect(isMockMode(fullConfig({ mock: true }))).toBe(true);
-    expect(missingSabreCredentials(fullConfig({ mock: true }))).toEqual([]);
+  it('la config parseada no conserva ningún interruptor de simulación', () => {
+    // `mock: true` era el único campo que podía convertir una cuenta completa en una fuente de
+    // tarifas inventadas. Zod descarta lo que el esquema no declara: llega y se cae por el
+    // desagüe, no queda latente en el objeto que ve el adapter.
+    const cfg = parseSabreConfig({ ...fullConfig(), mock: true });
+    expect(cfg).not.toHaveProperty('mock');
+    expect(hasUsableSabreCredentials(cfg)).toBe(true);
   });
 });
 

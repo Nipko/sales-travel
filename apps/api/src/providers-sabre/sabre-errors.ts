@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus, NotImplementedException } from '@nestjs/common';
+import { HttpStatus, NotImplementedException } from '@nestjs/common';
 import {
   SabreApiError,
   SabreCancelBookingBuildError,
@@ -185,23 +185,7 @@ export class SabreOperationNotSupportedError extends NotImplementedException {
   }
 }
 
-/**
- * La cuenta de Sabre de la agencia corre en **mock declarado** (`config.mock: true`) y se pidió
- * una operación de reserva.
- *
- * Las ofertas sintéticas tienen la misma forma canónica que las reales —ése es el punto de las
- * fixtures— así que nada en la pantalla del vendedor distingue un precio inventado de una tarifa.
- * Reservar contra uno de esos precios es peor que no poder reservar: produce un PNR que no
- * existe, o un intento contra Sabre con credenciales incompletas.
- *
- * 400 y no 501: no falta una función, sobra una configuración. El vendedor no puede arreglar un
- * `NotImplemented`, pero sí puede pedir que le carguen credenciales reales.
- */
-export class SabreMockBookingError extends BadRequestException {
-  constructor(readonly operation: string) {
-    super(
-      `La cuenta de Sabre de esta agencia está en modo simulación: '${operation}' trabajaría sobre precios inventados. Cargá credenciales reales en Mi Red → Credenciales → Sabre.`,
-    );
-    this.name = 'SabreMockBookingError';
-  }
-}
+// `SabreMockBookingError` vivía aquí: era el 400 que se le devolvía al vendedor cuando su
+// cuenta corría en modo simulado y pedía reservar. Se retira con el modo: una cuenta sin
+// credenciales usables ya no se sirve, así que nadie puede llegar a pedir una reserva contra
+// precios inventados. El error que sí queda para ese caso es la AUSENCIA del proveedor.

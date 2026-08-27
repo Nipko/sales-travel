@@ -2,13 +2,8 @@ import type { CachePort, LoggerPort } from '@sales-travel/core';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, FlightSearchPort, SearchContext } from '@sales-travel/domain';
 import { SabreTokenService, type SabreFetch, type SabreTokenProvider } from './auth/token.service';
-import {
-  isMockMode,
-  missingSabreCredentials,
-  sabreConversationIdPrefix,
-  type SabreConfig,
-} from './config';
-import { buildMockOffers, type SabreMockDeps } from './fixtures';
+import { missingSabreCredentials, sabreConversationIdPrefix, type SabreConfig } from './config';
+import { SabreConfigError } from './errors';
 import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
@@ -42,11 +37,11 @@ export interface SabreFlightSearchDeps {
 /**
  * Anti-Corruption Layer de Sabre para búsqueda de vuelos (RF-03, RF-04).
  *
- * Dos modos, igual que `LatamNdcFlightSearchAdapter`:
+ * Un único modo: `POST /v5/offers/shop` y `groupedItineraryResponse` → `Offer[]` canónico.
  *
- * - **real** — `POST /v5/offers/shop` y `groupedItineraryResponse` → `Offer[]` canónico.
- * - **mock** — fixtures sintéticas de `fixtures.ts`, sin red. Es lo que permite que CI y dev
- *   corran sin credenciales de Sabre.
+ * El modo mock —fixtures sintéticas con la misma forma canónica que una tarifa real— ya no
+ * existe: sin `epr`, `password` u `homePcc` esta clase NO se construye, así que ninguna
+ * instancia puede devolver una oferta que Sabre no haya cotizado.
  *
  * Ver `docs/sabre/11-plan-implementacion.md` §6.
  */
@@ -55,19 +50,11 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
   private readonly http: SabreHttpClient;
 
   /**
-   * El adapter está devolviendo fixtures en vez de consultar a Sabre.
+   * Nombres —nunca valores— de las credenciales que faltan. Para el panel BYOC y los logs.
    *
-   * Se expone porque el fallback a mock es **silencioso por diseño** —basta con que falte `epr`,
-   * `password` u `homePcc` (`isMockMode`)— y las ofertas sintéticas tienen la misma forma
-   * canónica que las reales. Sin este getter, un tenant mal configurado cotiza PRECIOS
-   * INVENTADOS con aspecto de reales, que un vendedor le pasa a un cliente sin enterarse. Quien
-   * componga el fan-out tiene que leerlo y marcar la fuente como degradada.
+   * En una instancia viva sale siempre vacío —el constructor rechaza lo contrario—; se conserva
+   * porque el factory de `apps/api` lo lee al construir para decir QUÉ falta.
    */
-  get isMock(): boolean {
-    return isMockMode(this.cfg);
-  }
-
-  /** Nombres —nunca valores— de las credenciales que faltan. Para el panel BYOC y los logs. */
   get missingCredentials(): readonly string[] {
     return missingSabreCredentials(this.cfg);
   }
@@ -76,6 +63,17 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     private readonly cfg: SabreConfig,
     private readonly deps: SabreFlightSearchDeps = {},
   ) {
+    // Rechaza la construcción sin credenciales usables. Está aquí —y no sólo en el factory de
+    // `apps/api`— porque es la barrera que un llamador nuevo no puede saltarse por olvido:
+    // mientras la comprobación viva únicamente en quien construye, cada sitio de construcción
+    // nuevo la vuelve a arriesgar. El mensaje nombra los campos, nunca sus valores (RNF-07).
+    const missing = missingSabreCredentials(cfg);
+    if (missing.length > 0) {
+      throw new SabreConfigError(
+        `no se puede construir el adapter de Sabre sin credenciales usables (faltan: ${missing.join(', ')})`,
+      );
+    }
+
     this.tokens =
       deps.tokens ??
       new SabreTokenService(cfg, {
@@ -95,22 +93,9 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
       ...(deps.uuid === undefined ? {} : { uuid: deps.uuid }),
     });
-
-    if (this.isMock) {
-      // Nivel `warn` y no `info`: correr en mock sin saberlo es la avería, no una nota de arranque.
-      this.log('warn', 'sabre.adapter.modo_mock', { missing: this.missingCredentials });
-    }
   }
 
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
-    if (this.isMock) {
-      this.log('warn', 'sabre.adapter.busqueda_mock', {
-        tenantId: ctx.tenantId,
-        missing: this.missingCredentials,
-      });
-      return buildMockOffers(criteria, ctx.tenantId, this.mockDeps());
-    }
-
     const body = buildSabreShopRequest(criteria, this.cfg, this.deps.shopOptions ?? {});
 
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
@@ -124,22 +109,15 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
 
     const mapped = mapSabreShopResponse(result.data, {
       tenantId: ctx.tenantId,
+      // La MISMA moneda que se pidió en `PriceRequestInformation.CurrencyCode`. Pedirla no
+      // obliga a Sabre a respetarla, así que el mapper vuelve a compararla y descarta lo que
+      // no encaje: el ACL no deja salir una tarifa que la agencia no puede cotizar.
+      currency: criteria.currency,
       fetchedAt: new Date((this.deps.now ?? Date.now)()).toISOString(),
     });
 
     this.logMapping(mapped, result, ctx);
     return mapped.offers;
-  }
-
-  /**
-   * `deps.uuid` NO se reenvía a propósito: es el generador del `Conversation-ID` del cliente HTTP
-   * —un valor fijo en tests— y `Offer.id` exige un UUID distinto por oferta. Compartirlos daría
-   * tres ofertas con el mismo id, o directamente un id que no pasa `OfferSchema`.
-   */
-  private mockDeps(): SabreMockDeps {
-    return {
-      ...(this.deps.now === undefined ? {} : { now: this.deps.now }),
-    };
   }
 
   /**

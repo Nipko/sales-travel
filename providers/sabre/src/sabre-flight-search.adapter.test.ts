@@ -6,9 +6,8 @@ import adultFixture from './__fixtures__/v5-roundtrip-adult-200.json';
 import childFixture from './__fixtures__/v5-roundtrip-child-baggage-200.json';
 import familyFixture from './__fixtures__/v5-roundtrip-family-200.json';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
-import { SABRE_HOSTS, type SabreConfig } from './config';
-import { SabreApiError } from './errors';
-import { isSabreMockOffer } from './fixtures';
+import { SABRE_HOSTS, parseSabreConfig, type SabreConfig } from './config';
+import { SabreApiError, SabreConfigError } from './errors';
 import {
   SabreFlightSearchAdapter,
   countWarningsByCode,
@@ -106,95 +105,84 @@ function adapter(
   });
 }
 
-describe('isMock — el fallback silencioso tiene que ser visible', () => {
-  // Sin este getter un tenant mal configurado cotiza precios inventados con aspecto de reales.
+describe('sin credenciales usables el adapter NO se construye', () => {
+  // La avería que este bloque sustituye: al faltar una credencial el adapter caía a fixtures y
+  // devolvía tres ofertas con la MISMA forma canónica que una tarifa real. Ya no hay rama a la
+  // que caer — construirlo falla, y el proveedor queda ausente de la búsqueda.
   it.each([
     ['epr', config({ epr: undefined })],
     ['password', config({ password: undefined })],
     ['homePcc', config({ homePcc: undefined })],
-  ])('falta %s → isMock', (field, cfg) => {
-    const sut = adapter(cfg);
-    expect(sut.isMock).toBe(true);
-    expect(sut.missingCredentials).toContain(field);
+  ])('falta %s → la construcción lanza', (field, cfg) => {
+    expect(() => adapter(cfg)).toThrowError(SabreConfigError);
+    expect(() => adapter(cfg)).toThrowError(new RegExp(field));
   });
 
-  it('con las tres credenciales no es mock', () => {
+  it('el error nombra el campo pero nunca su valor', () => {
+    let mensaje = '';
+    try {
+      adapter(config({ epr: undefined }));
+    } catch (err) {
+      mensaje = err instanceof Error ? err.message : String(err);
+    }
+    expect(mensaje).toContain('epr');
+    expect(mensaje).not.toContain(PASSWORD);
+  });
+
+  it('con las tres credenciales se construye y no le falta ninguna', () => {
     const sut = adapter(config());
-    expect(sut.isMock).toBe(false);
     expect(sut.missingCredentials).toEqual([]);
   });
 
-  it('mock: true fuerza el modo aunque las credenciales estén', () => {
-    expect(adapter(config({ mock: true })).isMock).toBe(true);
-  });
-
-  it('avisa al construirse en modo mock, con NOMBRES de credencial y nunca valores', () => {
-    const { logger, calls } = spyLogger();
-    adapter(config({ password: undefined }), { logger });
-
-    const aviso = calls.find((call) => call.message === 'sabre.adapter.modo_mock');
-    expect(aviso?.level).toBe('warn');
-    expect(aviso?.meta?.['missing']).toEqual(['password']);
-    expect(JSON.stringify(calls)).not.toContain(PASSWORD);
-  });
-
-  it('no avisa cuando hay credenciales', () => {
-    const { logger, calls } = spyLogger();
-    adapter(config(), { logger });
-    expect(calls.filter((call) => call.message === 'sabre.adapter.modo_mock')).toHaveLength(0);
+  it('el JSONB de la cuenta no puede reintroducir un modo simulado', () => {
+    // `config.mock` era el último interruptor que quedaba encendible desde datos del tenant.
+    // `SabreConfigSchema` ya no declara el campo y Zod descarta lo que no declara, así que una
+    // cuenta con `mock: true` y sin credenciales sigue siendo una cuenta sin credenciales.
+    const conMockDeclarado = parseSabreConfig({
+      host: SABRE_HOSTS.cert.rest,
+      mock: true,
+    });
+    expect(conMockDeclarado).not.toHaveProperty('mock');
+    expect(() => adapter(conMockDeclarado)).toThrowError(SabreConfigError);
   });
 });
 
-describe('search en modo mock', () => {
-  it('devuelve Offer[] válido sin tocar la red', async () => {
-    const spy = spyFetch(() => json({}));
-    const offers = await adapter(config({ homePcc: undefined }), { fetch: spy.fetch }).search(
-      CRITERIA,
-      CTX,
-    );
-
-    expect(spy.calls).toHaveLength(0);
-    expect(offers).toHaveLength(3);
-    for (const offer of offers) {
-      expect(() => OfferSchema.parse(offer)).not.toThrow();
-      expect(offer.tenantId).toBe(TENANT_ID);
-      expect(isSabreMockOffer(offer)).toBe(true);
-    }
-  });
-
-  it('avisa en cada búsqueda, no sólo al arrancar', async () => {
-    const { logger, calls } = spyLogger();
-    const sut = adapter(config({ epr: undefined }), { logger });
-    await sut.search(CRITERIA, CTX);
-    await sut.search(CRITERIA, CTX);
-
-    const avisos = calls.filter((call) => call.message === 'sabre.adapter.busqueda_mock');
-    expect(avisos).toHaveLength(2);
-    expect(avisos[0]?.level).toBe('warn');
-    expect(avisos[0]?.meta?.['missing']).toEqual(['epr']);
+describe('la búsqueda no tiene ninguna rama que no llame a Sabre', () => {
+  it('una búsqueda siempre sale por el cable', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(spy.calls).toHaveLength(1);
   });
 });
 
 describe('search en modo real', () => {
+  // La moneda va POR FIXTURE porque es la que cada ejemplo oficial cotiza de verdad: el de
+  // adulto en USD y los otros dos en EUR. Buscar los tres con una sola moneda no probaría el
+  // mapeo, probaría la puerta de moneda del ACL —que descarta lo que vuelve en otra— y dejaría
+  // dos de los tres ejemplos oficiales sin comprobar. Esa puerta tiene sus propios tests en
+  // `shop/currency-guard.test.ts`.
   const officialFixtures = [
-    ['adulto', adultFixture],
-    ['menor con equipaje', childFixture],
-    ['familia', familyFixture],
+    ['adulto', adultFixture, 'USD'],
+    ['menor con equipaje', childFixture, 'EUR'],
+    ['familia', familyFixture, 'EUR'],
   ] as const;
 
   it.each(officialFixtures)(
     'el ejemplo oficial "%s" produce Offer[] válido',
-    async (_name, fixture) => {
+    async (_name, fixture, currency) => {
       const spy = spyFetch(() => json(fixture));
-      const offers = await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+      const offers = await adapter(config(), { fetch: spy.fetch }).search(
+        { ...CRITERIA, currency },
+        CTX,
+      );
 
       expect(offers.length).toBeGreaterThan(0);
       for (const offer of offers) {
         expect(() => OfferSchema.parse(offer)).not.toThrow();
         expect(offer.tenantId).toBe(TENANT_ID);
         expect(offer.provider.name).toBe('sabre');
-        expect(isSabreMockOffer(offer)).toBe(false);
         expect(offer.fetchedAt).toBe('2026-08-26T12:00:00.000Z');
+        expect(offer.total.currency).toBe(currency);
       }
     },
   );

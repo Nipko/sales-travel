@@ -18,7 +18,7 @@ import {
   supportsAuditedCreate,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
-import { SabreMockBookingError, SabreOperationNotSupportedError } from './sabre-errors.js';
+import { SabreOperationNotSupportedError } from './sabre-errors.js';
 import { SABRE_PROVIDER_CODE, SabreProviderFactory } from './sabre.factory.js';
 
 /** Valores que NUNCA pueden aparecer en un mensaje de error ni en un log. */
@@ -115,19 +115,19 @@ describe('SabreProviderFactory — Sabre NO tiene fallback a credenciales de pla
     }
   });
 
-  it('un mock DECLARADO por la cuenta sí se sirve, y se sirve marcado como mock', async () => {
-    // Un mock elegido no es un mock silencioso: viaja como `simulated` en la respuesta y el
-    // resultado no se cachea.
+  it('`config.mock` ya no habilita nada: sin credenciales la cuenta no resuelve', async () => {
+    // El modo simulado se retiro entero (decision del founder, 2026-08-27): fabricar precios con
+    // forma de tarifa real y ponerlos delante de un vendedor que los va a cotizar es el peor fallo
+    // que puede tener este producto. Una cuenta sin credenciales queda AUSENTE, no simulada.
     const factory = factoryWith(() =>
       Promise.resolve(resolved({ credentials: {}, config: { mock: true } })),
     );
-    const adapter = await factory.forTenant('t1');
-    expect(adapter.isMock).toBe(true);
+    await expect(factory.forTenant('t1')).rejects.toThrow();
   });
 
-  it('con las tres credenciales completas el adapter NO está en modo mock', async () => {
+  it('con las tres credenciales completas el adapter se construye', async () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
-    expect((await factory.forTenant('t1')).isMock).toBe(false);
+    await expect(factory.forTenant('t1')).resolves.toBeDefined();
   });
 });
 
@@ -368,19 +368,14 @@ describe('SabreProviderFactory — mock declarado no reserva', () => {
       'cancelOrder',
       (a: Awaited<ReturnType<SabreProviderFactory['forTenant']>>) => a.cancelOrder('ABC123', ctx),
     ],
-  ])('%s se rechaza con un error propio, no se ejecuta contra fixtures', async (_n, invocar) => {
-    const factory = factoryWith(() => Promise.resolve(mockResolved()));
-    const adapter = await factory.forTenant('t1');
-    expect(adapter.isMock).toBe(true);
-
-    await expect(invocar(adapter)).rejects.toBeInstanceOf(SabreMockBookingError);
-  });
-
-  it('la búsqueda sí funciona en mock: es para lo que existe el modo', async () => {
-    const factory = factoryWith(() => Promise.resolve(mockResolved()));
-    const adapter = await factory.forTenant('t1');
-    expect(adapter.isMock).toBe(true);
-  });
+  ])(
+    '%s ya no puede ejecutarse contra fixtures: la cuenta sin credenciales no resuelve',
+    async (_n, invocar) => {
+      void invocar;
+      const factory = factoryWith(() => Promise.resolve(mockResolved()));
+      await expect(factory.forTenant('t1')).rejects.toThrow();
+    },
+  );
 });
 
 describe('SabreProviderFactory — humanizeError no hace eco del proveedor', () => {
@@ -438,15 +433,14 @@ describe('FlightProviderRegistry + Sabre', () => {
     const registry = registryWith(() => Promise.resolve(resolved()));
     const { active } = await registry.forTenant('t1');
     expect(active.map((p) => p.code)).toEqual([SABRE_PROVIDER_CODE]);
-    expect(active[0]?.simulated).toBe(false);
   });
 
-  it('una cuenta en mock declarado llega al fan-out MARCADA como simulada', async () => {
+  it('una cuenta sin credenciales NO llega al fan-out — antes llegaba simulada', async () => {
     const registry = registryWith(() =>
       Promise.resolve(resolved({ credentials: {}, config: { mock: true } })),
     );
     const { active } = await registry.forTenant('t1');
-    expect(active[0]?.simulated).toBe(true);
+    expect(active.map((p) => p.code)).not.toContain(SABRE_PROVIDER_CODE);
   });
 
   it('con callPolicy opt-in y sin el flag del tenant, Sabre queda salteado por `opt-in-disabled`', async () => {

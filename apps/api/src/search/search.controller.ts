@@ -1,9 +1,10 @@
-import { Body, Controller, ForbiddenException, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Logger, Post, UseFilters } from '@nestjs/common';
 import {
   FlightSearchCriteriaSchema,
   type FlightSearchCriteria,
   type OfferPriceResult,
 } from '@sales-travel/domain';
+import { CurrencyCodeSchema } from '@sales-travel/validation';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
@@ -31,10 +32,33 @@ export interface FlightSearchEnvelope extends FlightSearchResponse {
   showProviderInResults: boolean;
 }
 
+/**
+ * `tenants.default_currency` → moneda del criterio, o `undefined` si no es utilizable.
+ *
+ * La columna es `CHAR(3)` (`db/migrations/0001_init.sql:13`), así que Postgres la devuelve
+ * rellena con espacios, y no hay `CHECK` que obligue a mayúsculas. Ese valor se INYECTA en el
+ * criterio **después** de que `ZodValidationPipe` validó el body, o sea que entra sin pasar por
+ * ningún borde: un `'cop '` se iría tal cual a `PriceRequestInformation.CurrencyCode` y a la
+ * comparación contra `offer.total.currency`, que sí llega en mayúsculas. Resultado: TODAS las
+ * ofertas parecerían de otra moneda y la búsqueda se vaciaría. Se normaliza y se vuelve a
+ * validar contra el mismo esquema del borde.
+ *
+ * Si el valor no es un ISO-4217 de tres letras se devuelve `undefined` y el criterio conserva su
+ * default: preferimos buscar en la moneda por defecto que mandarle al proveedor un código que no
+ * entiende.
+ */
+function tenantCurrency(raw: string | null | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const parsed = CurrencyCodeSchema.safeParse(raw.trim().toUpperCase());
+  return parsed.success ? parsed.data : undefined;
+}
+
 @Roles(...SELLING_ROLES)
 @Controller('search')
 @UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter)
 export class SearchController {
+  private readonly logger = new Logger(SearchController.name);
+
   constructor(
     private readonly search: SearchService,
     private readonly db: DatabaseService,
@@ -54,15 +78,8 @@ export class SearchController {
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
 
     // Moneda base del tenant, inyectada en el criterio. (Sin logs de PII/criterios.)
-    const tenant = await this.db.db
-      .selectFrom('tenants')
-      .select(['default_currency', 'country_code', 'name'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (tenant?.default_currency) {
-      criteria.currency = tenant.default_currency.trim();
-    }
+    const moneda = await this.monedaDelTenant(tenantId);
+    if (moneda !== undefined) criteria.currency = moneda;
 
     // El ajuste se resuelve FUERA de SearchService a propósito: el servicio cachea la
     // respuesta 90 s por tenant, y meterlo dentro dejaría al vendedor viendo la etiqueta
@@ -84,16 +101,28 @@ export class SearchController {
 
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
 
+    // La revalidación tiene que pedir la MISMA moneda que la búsqueda que produjo la oferta:
+    // pedir otra devolvería un precio en otra unidad justo antes de reservar.
+    const moneda = await this.monedaDelTenant(tenantId);
+    if (moneda !== undefined) body.searchCriteria.currency = moneda;
+
+    return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
+  }
+
+  /** Moneda de venta de la agencia, ya normalizada y validada. Ver {@link tenantCurrency}. */
+  private async monedaDelTenant(tenantId: string): Promise<string | undefined> {
     const tenant = await this.db.db
       .selectFrom('tenants')
       .select(['default_currency', 'country_code', 'name'])
       .where('id', '=', tenantId)
       .executeTakeFirst();
 
-    if (tenant?.default_currency) {
-      body.searchCriteria.currency = tenant.default_currency.trim();
+    const moneda = tenantCurrency(tenant?.default_currency);
+    if (moneda === undefined && tenant?.default_currency) {
+      // Sin el valor: un `default_currency` corrupto es dato de configuración, no un secreto,
+      // pero tampoco hace falta para arreglarlo — basta con saber QUÉ tenant hay que revisar.
+      this.logger.warn(`search.tenant_currency_invalida tenant=${tenantId}`);
     }
-
-    return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
+    return moneda;
   }
 }

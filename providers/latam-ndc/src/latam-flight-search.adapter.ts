@@ -21,8 +21,8 @@ import type {
 import { buildAirShoppingRequest, currencyToCountry } from './airshopping/request.builder';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
-import { isMockMode, type LatamNdcConfig } from './config';
-import { buildMockOffers } from './fixtures';
+import { missingLatamCredentials, type LatamNdcConfig } from './config';
+import { LatamCredentialsMissingError } from './errors';
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { mapOfferPriceResponse } from './offerprice/response.mapper';
@@ -40,8 +40,11 @@ import { mapServiceListResponse } from './servicelist/response.mapper';
 /**
  * Anti-Corruption Layer LATAM NDC.
  *
- * Modo: si las credenciales están configuradas → llama al sandbox real.
- * Si faltan o `mock=true` → devuelve fixtures canónicas (útil para CI).
+ * Un único modo: llama a LATAM. Ya no existe la rama de fixtures que devolvía tres ofertas
+ * inventadas cuando faltaba una credencial — tenían la misma forma canónica que una tarifa
+ * real y llegaban a la pantalla del vendedor sin distinguirse. Sin credenciales usables esta
+ * clase NO se construye (ver el constructor), así que ninguna instancia puede fabricar una
+ * oferta.
  */
 export class LatamNdcFlightSearchAdapter
   implements FlightSearchPort, OfferPricePort, OrderCreatePort, OrderManagePort
@@ -50,30 +53,23 @@ export class LatamNdcFlightSearchAdapter
   private readonly http: LatamHttpClient;
 
   /**
-   * El adaptador está devolviendo fixtures en vez de consultar a LATAM.
+   * Rechaza la construcción sin credenciales usables.
    *
-   * Se expone para que la capa de aplicación pueda avisarlo: un tenant al que le falte
-   * una credencial cae en modo mock en silencio y cotiza PRECIOS INVENTADOS con aspecto
-   * de reales, que un vendedor podría llegar a pasarle a un cliente.
+   * Está aquí —y no sólo en el factory de `apps/api`— porque es la barrera que un sitio de
+   * construcción NUEVO hereda sin tener que acordarse de nada. La del factory sigue siendo la
+   * que produce una ausencia explicada; ésta sólo garantiza que el objeto no llegue a existir.
    */
-  get isMock(): boolean {
-    return isMockMode(this.cfg);
-  }
-
   constructor(private readonly cfg: LatamNdcConfig) {
+    const missing = missingLatamCredentials(cfg);
+    if (missing.length > 0) throw new LatamCredentialsMissingError(missing);
+
     this.tokens = new LatamTokenService(cfg);
     this.http = new LatamHttpClient(cfg, this.tokens);
-    const mode = isMockMode(cfg) ? 'mock' : 'real';
-    const missing = isMockMode(cfg) ? listMissingFields(cfg) : [];
-    console.warn(
-      `[latam-ndc] adapter initialized in ${mode} mode${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`,
-    );
+    // Sólo hay un modo, pero la línea se conserva: es la marca de arranque con la que se
+    // verifica en producción que el adapter quedó en pie para el tenant.
+    console.warn('[latam-ndc] adapter initialized');
   }
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
-    if (isMockMode(this.cfg)) {
-      return buildMockOffers(criteria, ctx.tenantId);
-    }
-
     const derivedCountry = currencyToCountry(criteria.currency);
     if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
       console.warn(
@@ -102,18 +98,6 @@ export class LatamNdcFlightSearchAdapter
     criteria: FlightSearchCriteria,
     ctx: SearchContext,
   ): Promise<OfferPriceResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        offer: {
-          ...offer,
-          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-          fetchedAt: new Date().toISOString(),
-        },
-        priceChanged: false,
-        warnings: ['mock mode: price confirmed (no real API call)'],
-      };
-    }
-
     const derivedCountry = currencyToCountry(criteria.currency);
     if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
       console.warn(
@@ -138,23 +122,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        outcome: 'CONFIRMED',
-        orderId: `MOCK-${Date.now()}`,
-        pnr: 'MOCKPNR',
-        items: [{ kind: 'flight', status: 'CONFIRMED' }],
-        issues: [
-          {
-            severity: 'WARNING',
-            category: 'LATAM_NDC_ADAPTER',
-            type: 'MOCK_MODE',
-            message: 'mock mode: order created (no real API call)',
-          },
-        ],
-      };
-    }
-
     const xml = buildOrderCreateRequest(
       request.offer,
       request.passengers,
@@ -172,17 +139,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
-    if (isMockMode(this.cfg)) {
-      return {
-        found: true,
-        orderId,
-        pnr: orderId,
-        status: 'confirmed',
-        airlineLocators: [],
-        warnings: ['mock mode: order retrieved (no real API call)'],
-      };
-    }
-
     const xml = buildOrderRetrieveRequest(orderId, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/retrieve', xml, {
       trackId: ctx.requestId,
@@ -192,13 +148,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        success: true,
-        warnings: ['mock mode: order cancelled (no real API call)'],
-      };
-    }
-
     const xml = buildOrderCancelRequest(orderId, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel', xml, {
       trackId: ctx.requestId,
@@ -208,13 +157,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async cancelBnplOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        success: true,
-        warnings: ['mock mode: BNPL order cancelled (no real API call)'],
-      };
-    }
-
     const xml = buildOrderCancelRequest(orderId, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel/bnpl', xml, {
       trackId: ctx.requestId,
@@ -224,15 +166,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async payOrder(request: OrderPayRequest, ctx: SearchContext): Promise<OrderPayResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        success: true,
-        orderId: request.orderId,
-        status: 'confirmed',
-        warnings: ['mock mode: order paid (no real API call)'],
-      };
-    }
-
     const xml = buildOrderChangePaymentRequest(
       request.orderId,
       request.payment,
@@ -248,13 +181,6 @@ export class LatamNdcFlightSearchAdapter
   }
 
   async listServices(request: ServiceListRequest, ctx: SearchContext): Promise<ServiceListResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        services: [],
-        warnings: ['mock mode: no services available (no real API call)'],
-      };
-    }
-
     const xml = buildServiceListRequest(request, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/services/list', xml, {
       trackId: ctx.requestId,
@@ -267,15 +193,6 @@ export class LatamNdcFlightSearchAdapter
     request: OrderReshopRequest,
     ctx: SearchContext,
   ): Promise<OrderReshopResult> {
-    if (isMockMode(this.cfg)) {
-      return {
-        success: true,
-        amountDue: { amount: 0, currency: 'COP' },
-        isResidualValue: false,
-        warnings: ['mock mode: reshop simulated (no real API call)'],
-      };
-    }
-
     const xml = buildOrderReshopRequest(request, this.cfg);
     const raw = await this.http.postNdc<unknown>('/ndc/v192/order/requote', xml, {
       trackId: ctx.requestId,
@@ -283,14 +200,4 @@ export class LatamNdcFlightSearchAdapter
 
     return mapOrderReshopResponse(raw);
   }
-}
-
-function listMissingFields(cfg: LatamNdcConfig): string[] {
-  const missing: string[] = [];
-  if (!cfg.apiKey) missing.push('apiKey');
-  if (!cfg.apiSecret) missing.push('apiSecret');
-  if (!cfg.agencyId) missing.push('agencyId');
-  if (!cfg.agencyIata) missing.push('agencyIata');
-  if (!cfg.country) missing.push('country');
-  return missing;
 }

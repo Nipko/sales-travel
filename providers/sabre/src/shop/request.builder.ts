@@ -259,9 +259,9 @@ function parseShopOptions(options: SabreShopOptions): z.infer<typeof SabreShopOp
 }
 
 /**
- * Sin `homePcc` no hay request que mandar. En la práctica `isMockMode` ya habría desviado al
- * adapter a fixtures; esto es la red de seguridad para que un `undefined` nunca llegue al cable
- * convertido en la cadena `"undefined"`. El mensaje nombra el campo, nunca su valor (RNF-07).
+ * Sin `homePcc` no hay request que mandar. En la práctica el adapter ni se construye sin él;
+ * esto es la red de seguridad para que un `undefined` nunca llegue al cable convertido en la
+ * cadena `"undefined"`. El mensaje nombra el campo, nunca su valor (RNF-07).
  */
 function requireHomePcc(cfg: SabreConfig): string {
   const pcc = cfg.homePcc;

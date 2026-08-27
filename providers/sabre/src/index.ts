@@ -77,15 +77,12 @@ export type {
   SabreShopMapContext,
   SabreShopMapResult,
 } from './shop/response.mapper';
-export {
-  SABRE_MOCK_CARRIER,
-  SABRE_MOCK_CONNECTION,
-  SABRE_MOCK_OFFER_REF_PREFIX,
-  SABRE_MOCK_RAW_FLAG,
-  buildMockOffers,
-  isSabreMockOffer,
-} from './fixtures';
-export type { SabreMockDeps } from './fixtures';
+// `./fixtures` ya no existe. Publicaba `buildMockOffers` —un constructor de `Offer[]`
+// sintéticas con la misma forma canónica que una tarifa real— y era lo que el modo mock
+// devolvía cuando faltaba una credencial. No se movió a un directorio de tests: sus únicos
+// consumidores eran ese modo y los tests DEL modo. Los fixtures que sí quedan son los JSON de
+// `src/__fixtures__` (respuestas de Sabre para los mappers), que no fabrican ofertas: las
+// mapean.
 export { SabreFlightSearchAdapter, countWarningsByCode } from './sabre-flight-search.adapter';
 export type { SabreFlightSearchDeps } from './sabre-flight-search.adapter';
 

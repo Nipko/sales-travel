@@ -21,17 +21,34 @@ const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
 const CONSOLIDADOR = '33333333-3333-4333-8333-333333333333';
 
+/**
+ * Las CINCO credenciales que LATAM necesita para poder llamar. Desde que el modo simulado
+ * desapareció, una cuenta a la que le falte una no se sirve: el factory lanza y el proveedor
+ * queda ausente. Un fixture incompleto aquí no probaría el aislamiento del caché — probaría
+ * que la cuenta se rechaza.
+ */
+const CREDENCIALES = {
+  apiKey: 'k',
+  apiSecret: 's',
+  agencyId: 'A',
+  agencyIata: '12345678',
+  country: 'CO',
+} as const;
+
 function cuenta(overrides: Partial<ResolvedProviderAccount> = {}): ResolvedProviderAccount {
+  const { credentials, ...resto } = overrides;
   return {
     id: 'acc-1',
     ownerTenantId: TENANT_A,
     providerCode: 'latam-ndc',
     label: 'default',
     config: { apiUrl: 'https://example.test' },
-    credentials: { apiKey: 'k', apiSecret: 's', agencyId: 'A', agencyName: 'A', country: 'CO' },
+    // Los overrides de credencial se MEZCLAN, no sustituyen: un test que sólo quiere cambiar
+    // la `apiKey` para distinguir dos tenants no está diciendo que el resto no exista.
+    credentials: { ...CREDENCIALES, ...(credentials ?? {}) },
     inherited: false,
     updatedAt: new Date('2026-01-01T00:00:00Z'),
-    ...overrides,
+    ...resto,
   };
 }
 
@@ -48,12 +65,21 @@ const flagsApagados: ProviderFlagsPort = { isEnabledForTenant: () => Promise.res
 
 describe('aislamiento del caché de adapters entre tenants', () => {
   beforeEach(() => {
-    // El ACL avisa por consola en qué modo arranca; acá sólo ensucia la salida del test.
+    // El ACL avisa por consola al arrancar; acá sólo ensucia la salida del test.
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // La rama de credenciales de plataforma sólo existe si la plataforma TIENE credenciales.
+    // Sin ellas el proveedor queda ausente, que es el comportamiento nuevo y correcto — pero
+    // no es lo que mide este fichero.
+    vi.stubEnv('LATAM_API_KEY', 'plataforma-key');
+    vi.stubEnv('LATAM_API_SECRET', 'plataforma-secret');
+    vi.stubEnv('LATAM_AGENCY_ID', 'PLAT');
+    vi.stubEnv('LATAM_AGENCY_IATA', '87654321');
+    vi.stubEnv('LATAM_COUNTRY', 'CO');
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('dos tenants con credenciales propias distintas NO comparten adapter', async () => {

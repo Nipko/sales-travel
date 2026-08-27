@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import type {
   FlightSearchPort,
   OfferPricePort,
@@ -11,14 +11,19 @@ import type {
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 
-/** Un adapter de vuelos = los cuatro ports del dominio + la señal de modo mock. */
+/**
+ * Un adapter de vuelos = los cuatro ports del dominio.
+ *
+ * Ya no lleva `isMock`. El campo existía porque un adapter podía devolver fixtures cuando le
+ * faltaba una credencial, y el fan-out tenía que poder avisarlo. Esa rama no existe: un
+ * proveedor sin credenciales usables no llega a construirse y queda AUSENTE de la búsqueda
+ * (ver {@link UnavailableProvider}). Un adapter que está aquí, cotiza de verdad.
+ */
 export interface FlightProviderAdapter
   extends FlightSearchPort,
     OfferPricePort,
     OrderCreatePort,
-    OrderManagePort {
-  readonly isMock: boolean;
-}
+    OrderManagePort {}
 
 /**
  * Lo que una creación de reserva entrega ADEMÁS del `OrderCreateResult` del dominio.
@@ -189,8 +194,6 @@ export interface TenantProviderFactory<TAdapter> {
 export interface ResolvedProvider<TAdapter> {
   readonly code: string;
   readonly adapter: TAdapter;
-  /** `adapter.isMock`: el proveedor va a devolver fixtures, no tarifas reales. */
-  readonly simulated: boolean;
   readonly credentialSource: CredentialSource;
   readonly capabilities: ProviderCapabilities;
   readonly callPolicy: CallPolicy;
@@ -204,11 +207,43 @@ export interface SkippedProvider {
   readonly reason: SkipReason;
 }
 
+/**
+ * Por qué un proveedor de la plataforma no está disponible para este tenant.
+ *
+ * - `no-credentials`     — el tenant no tiene ni hereda una cuenta resoluble.
+ * - `incomplete-account` — tiene cuenta, pero le faltan campos para poder llamar al proveedor.
+ *
+ * Los dos acaban igual —el proveedor no se llama— y se distinguen porque la acción del
+ * vendedor es distinta: cargar credenciales, o completar las que ya cargó.
+ */
+export type UnavailableReason = 'no-credentials' | 'incomplete-account';
+
+/**
+ * Un proveedor de la plataforma que NO participó porque no se pudo resolver.
+ *
+ * Existe por lo que ve el vendedor. Hasta esta tanda, un proveedor sin credenciales
+ * desaparecía de `providers[]` sin dejar rastro y la pantalla mostraba una lista más corta sin
+ * poder explicar por qué —antes, peor: mostraba tarifas inventadas—. Una ausencia que no se
+ * nombra es indistinguible de "no hay vuelos por esa ruta", y eso es lo que el vendedor le
+ * dice a su cliente.
+ */
+export interface UnavailableProvider {
+  readonly code: string;
+  readonly reason: UnavailableReason;
+  /**
+   * Mensaje ya humanizado para la pantalla. NOMBRES de campo y vocabulario del panel; nunca
+   * valores de credencial ni texto crudo del proveedor.
+   */
+  readonly detail?: string;
+}
+
 export interface FlightProviderResolution {
   /** Proveedores llamables, en orden ESTABLE (alfabético por code). */
   readonly active: ResolvedProvider<FlightProviderAdapter>[];
   /** Habilitados pero no llamados en esta búsqueda, con el motivo. */
   readonly skipped: SkippedProvider[];
+  /** Conocidos por la plataforma pero no resolubles para este tenant, con el motivo. */
+  readonly unavailable: UnavailableProvider[];
 }
 
 /**
@@ -218,19 +253,48 @@ export interface FlightProviderResolution {
  */
 export interface ProviderOutcome {
   readonly code: string;
-  readonly status: 'ok' | 'empty' | 'error' | 'simulated' | 'skipped';
+  /**
+   * `'unavailable'` es NUEVO: el proveedor existe en la plataforma pero este tenant no lo puede
+   * usar. Antes esa situación no producía ninguna fila.
+   *
+   * `'simulated'` es RESIDUO y ya no se emite nunca —ver {@link ProviderOutcome.simulated}—. Se
+   * conserva en la unión sólo mientras `apps/web-b2b` siga declarando el valor en su espejo del
+   * contrato; sale con él.
+   */
+  readonly status: 'ok' | 'empty' | 'error' | 'simulated' | 'skipped' | 'unavailable';
   readonly count: number;
   /**
-   * Semántica NUEVA, por proveedor: estas tarifas son inventadas. El `simulated` de la
-   * raíz de la respuesta conserva la semántica vieja (todo el resultado es falso) porque
-   * `apps/web-b2b` la lee hoy.
+   * RESIDUO DE TRANSICIÓN: siempre `false`. Retirar del contrato junto con `status:
+   * 'simulated'` y con el `simulated` de la raíz del sobre cuando `apps/web-b2b` deje de
+   * leerlos — plazo: al cerrar la reescritura del buscador de `cotizaciones/`, y como muy tarde
+   * 2026-10-31.
+   *
+   * El tipo sigue siendo `boolean` y no el literal `false` a propósito: la pantalla y los
+   * tests de `provider-disclosure` todavía construyen sobres con `true` para sus propios
+   * casos, y estrechar el tipo antes de que ese código se retire rompería ficheros que esta
+   * tanda no puede tocar. Que el API no lo pueda encender lo garantiza el código, no el tipo:
+   * `SearchService` lo escribe con {@link SIMULATED_RESIDUE} y hay un test que lo fija.
    */
   readonly simulated: boolean;
-  /** Ya humanizado por el factory del proveedor. Sólo si `status === 'error'`. */
+  /**
+   * Ya humanizado por el factory del proveedor. Presente en `status === 'error'` y en
+   * `status === 'unavailable'`.
+   */
   readonly reason?: string;
   /** Sólo si `status === 'skipped'`. */
   readonly skipReason?: SkipReason;
+  /** Sólo si `status === 'unavailable'`. Es lo que decide qué acción se le ofrece al vendedor. */
+  readonly unavailableReason?: UnavailableReason;
 }
+
+/**
+ * El único valor que `simulated` puede tomar al salir del API.
+ *
+ * Es una constante y no un literal repetido en cada sitio para que la promesa "el API no puede
+ * marcar una tarifa como simulada porque no puede fabricarla" tenga UN punto donde se comprueba.
+ * Ver {@link ProviderOutcome.simulated} para el plazo de retirada.
+ */
+export const SIMULATED_RESIDUE = false;
 
 /** Token DI del listado de factories de vuelos. Sumar un proveedor = una línea en el módulo. */
 export const FLIGHT_PROVIDER_FACTORIES = 'FLIGHT_PROVIDER_FACTORIES';
@@ -268,6 +332,29 @@ export class AllFlightProvidersFailedError extends BadGatewayException {
   constructor(readonly failures: { code: string; reason: string }[]) {
     super(failures.map((f) => `${f.code}: ${f.reason}`).join('; '));
     this.name = 'AllFlightProvidersFailedError';
+  }
+}
+
+/**
+ * El tenant SÍ tiene cuenta con este proveedor, pero le faltan campos para poder llamarlo.
+ *
+ * Extiende `NotFoundException` porque el efecto es el mismo que no tener cuenta —el registry lo
+ * traduce a "proveedor no habilitado" y la búsqueda sigue sin él—; existe como tipo propio para
+ * que la ausencia llegue a la pantalla con el motivo CORRECTO. "Cargá tus credenciales" y
+ * "completá las que cargaste" son dos acciones distintas para el vendedor, y adivinarlas a
+ * partir del texto de un mensaje es el `if` sobre strings que este paquete lleva rondas quitando.
+ *
+ * `missingFields` son NOMBRES de campo, nunca valores.
+ */
+export class ProviderAccountIncompleteError extends NotFoundException {
+  constructor(
+    readonly providerCode: string,
+    readonly missingFields: readonly string[],
+  ) {
+    super(
+      `la cuenta de '${providerCode}' resoluble para este tenant está incompleta (faltan: ${missingFields.join(', ')})`,
+    );
+    this.name = 'ProviderAccountIncompleteError';
   }
 }
 

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { LoggerPort } from '@sales-travel/core';
 import type { SabreFetch, SabreTokenProvider } from '../auth/token.service';
 import {
-  isMockMode,
+  hasUsableSabreCredentials,
+  missingSabreCredentials,
   sabreConversationIdPrefix,
   sabreRequestTimeoutMs,
   sabreUrl,
@@ -166,9 +167,11 @@ export class SabreHttpClient {
     body: unknown,
     options: SabreRequestOptions = {},
   ): Promise<SabreResult<T>> {
-    if (isMockMode(this.cfg)) {
+    // Última puerta antes del cable. Ya no hay modo al que desviarse: sin credenciales
+    // usables esta llamada FALLA, que es lo único que no puede convertirse en una oferta.
+    if (!hasUsableSabreCredentials(this.cfg)) {
       throw new SabreConfigError(
-        `sin credenciales de Sabre no se puede llamar a ${path}: el adapter debe correr en modo mock`,
+        `sin credenciales de Sabre no se puede llamar a ${path} (faltan: ${missingSabreCredentials(this.cfg).join(', ')})`,
       );
     }
 

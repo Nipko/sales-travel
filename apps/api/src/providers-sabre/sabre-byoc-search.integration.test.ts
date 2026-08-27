@@ -645,19 +645,27 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
 
       const res = await buscar(api, ajena);
 
-      expect(res.providers.map((p) => p.code)).toEqual([OTRO_PROVEEDOR]);
       expect(res.offers).not.toHaveLength(0); // el otro proveedor sí respondió
       expect(res.offers.some((o) => o.provider.name === SABRE_PROVIDER_CODE)).toBe(false);
-      // `simulated` es la señal vieja de "todo esto es inventado". No puede encenderse por
-      // un proveedor que ni siquiera se llamó.
+      // Ausente NO es invisible: Sabre sale en el parte con el motivo, para que la pantalla
+      // pueda explicar por qué hay menos ofertas en vez de dejar al vendedor leyéndolo como
+      // "no hay vuelos por esa ruta".
+      const parte = parteDe(res, SABRE_PROVIDER_CODE);
+      expect(parte?.status).toBe('unavailable');
+      expect(parte?.count).toBe(0);
+      expect(parte?.unavailableReason).toBe('no-credentials');
+      // `simulated` es la señal vieja de "todo esto es inventado". Es residuo y ya no se
+      // enciende nunca: ningún adapter puede fabricar una tarifa.
       expect(res.simulated).toBe(false);
+      expect(res.providers.every((p) => p.simulated === false)).toBe(true);
       expect(sabreLocal.clientIds).toEqual([]);
       expect(sabreLocal.shops).toBe(0);
     });
 
     it('una cuenta activa pero INCOMPLETA tampoco cae en mock silencioso', async () => {
-      // Sin `password` el ACL arrancaría en modo fixtures: mismas ofertas canónicas, precios
-      // inventados. El factory lo rechaza y el proveedor queda fuera.
+      // Sin `password` el ACL arrancaba en modo fixtures: mismas ofertas canónicas, precios
+      // inventados. Ese modo ya no existe; el factory rechaza la cuenta y el proveedor queda
+      // fuera, nombrado.
       await cargarCuentaSabre({
         tenantId: agencia,
         epr: 'EPR-INCOMPLETO',
@@ -670,7 +678,11 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
 
       const res = await buscar(api, agencia);
 
-      expect(parteDe(res, SABRE_PROVIDER_CODE)).toBeUndefined();
+      const parte = parteDe(res, SABRE_PROVIDER_CODE);
+      expect(parte?.status).toBe('unavailable');
+      // Cuenta cargada a medias: el motivo dice COMPLETAR, no cargar. Son dos pantallas.
+      expect(parte?.unavailableReason).toBe('incomplete-account');
+      expect(parte?.reason).toContain('password');
       expect(res.offers.some((o) => o.provider.name === SABRE_PROVIDER_CODE)).toBe(false);
       expect(res.simulated).toBe(false);
     });
