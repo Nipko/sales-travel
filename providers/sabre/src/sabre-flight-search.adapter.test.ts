@@ -348,3 +348,166 @@ describe('countWarningsByCode', () => {
     expect(countWarningsByCode([])).toEqual({});
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Marcas tarifarias: degradar, nunca tumbar la búsqueda
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Estos cinco tests existen por un incidente concreto y no por completar una matriz.
+ *
+ * Se soltó `brandedUpsells: true` para toda la red sin poder probarlo contra un PCC real. El de
+ * producción no ignoró la petición: devolvió un fallo de NEGOCIO dentro de un 200, y como
+ * `latam-ndc` ya venía descartado por moneda, `POST /search/flights` quedó en 502. Una mejora
+ * opcional tumbó lo único que la plataforma no puede permitirse perder.
+ *
+ * Lo que se prueba acá no es que las marcas funcionen —eso depende del alta comercial de cada
+ * agencia con Sabre y no hay test que lo sustituya—, sino que **no funcionar no cueste la
+ * búsqueda**.
+ */
+describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', () => {
+  /** Sobre 200 con un fallo de negocio dentro: es la forma EXACTA del rechazo de producción. */
+  function rechazoDeNegocio(): Response {
+    return json({
+      groupedItineraryResponse: {
+        messages: [
+          {
+            severity: 'Error',
+            type: 'BusinessError',
+            code: 'ERR.2SG.CLIENT.INVALID_INPUT',
+            description: 'Branded fares not enabled for this PCC',
+          },
+        ],
+      },
+    });
+  }
+
+  it('rechazada la consulta con marcas, se reintenta SIN ellas y el vendedor ve ofertas', async () => {
+    const spy = spyFetch((n) => (n === 1 ? rechazoDeNegocio() : json(adultFixture)));
+    const { logger, calls } = spyLogger();
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandedUpsells: true },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(spy.calls).toHaveLength(2);
+
+    // La primera llevaba marcas; la segunda no. Esa es toda la diferencia entre las dos.
+    const cuerpos = spy.calls.map((c) => String(c.init.body));
+    expect(cuerpos[0]).toContain('BrandedFareIndicators');
+    expect(cuerpos[1]).not.toContain('BrandedFareIndicators');
+
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.branded_fares_no_soportadas');
+  });
+
+  it('no se vuelve a preguntar: la segunda búsqueda ya sale sin marcas', async () => {
+    const spy = spyFetch((n) => (n === 1 ? rechazoDeNegocio() : json(adultFixture)));
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+
+    await sut.search(CRITERIA, CTX);
+    await sut.search(CRITERIA, CTX);
+
+    // 2 de la primera búsqueda (rechazo + reintento) + 1 de la segunda. Si fueran 4, estaríamos
+    // pagando una llamada de más por búsqueda y por siempre.
+    expect(spy.calls).toHaveLength(3);
+    expect(String(spy.calls[2]!.init.body)).not.toContain('BrandedFareIndicators');
+  });
+
+  it('sin marcas pedidas NO hay reintento: un fallo de negocio sigue siendo un fallo', async () => {
+    // El reintento es una degradación acotada, no un «si algo falla, prueba otra cosa».
+    const spy = spyFetch(() => rechazoDeNegocio());
+    await expect(adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX)).rejects.toThrow(
+      SabreApiError,
+    );
+    expect(spy.calls).toHaveLength(1);
+  });
+
+  it('un fallo de TRANSPORTE con marcas pedidas no se disfraza de degradación', async () => {
+    // 503 es «Sabre está caído», no «tu PCC no tiene marcas». Reintentar sin marcas ocultaría
+    // una caída detrás de una lista más pobre.
+    const spy = spyFetch(() => json({ error: 'unavailable' }, 503));
+    await expect(
+      adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } }).search(
+        CRITERIA,
+        CTX,
+      ),
+    ).rejects.toThrow(SabreApiError);
+    // El cliente HTTP reintenta un 503 por su cuenta; lo que no puede es acabar sin marcas.
+    for (const call of spy.calls) {
+      expect(String(call.init.body)).toContain('BrandedFareIndicators');
+    }
+  });
+
+  it('si el PCC SÍ las acepta, no hay llamada de más', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedUpsells: true },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(spy.calls).toHaveLength(1);
+    expect(String(spy.calls[0]!.init.body)).toContain('BrandedFareIndicators');
+  });
+});
+
+describe('marcas tarifarias: el fallo silencioso, que es el peor', () => {
+  /**
+   * Sobre 200 EN CONTRATO, sin errores y sin itinerarios. Sabre «acepta» y no devuelve nada.
+   *
+   * `version` y `messages` van porque el mapper los exige: un sobre a medias no probaría el
+   * camino de la respuesta vacía, sino el del sobre inválido, que es otro test.
+   */
+  function vacio(): Response {
+    return json({
+      groupedItineraryResponse: {
+        version: '5',
+        messages: [{ severity: 'Info', type: 'SERVER', code: 'GCA14-ISELL', text: '0' }],
+        itineraryGroups: [],
+      },
+    });
+  }
+
+  it('si pedir marcas VACÍA la respuesta, se reintenta sin ellas antes de decir «no hay vuelos»', async () => {
+    // Es el modo de fallo que la doc del proyecto documenta para el tier: no un rechazo, un
+    // cero indistinguible de una ruta sin oferta. Un buscador que dice «no hay vuelos» en una
+    // ruta que sí los tiene es peor que uno que da error: nadie se entera.
+    const spy = spyFetch((n) => (n === 1 ? vacio() : json(adultFixture)));
+    const { logger, calls } = spyLogger();
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandedUpsells: true },
+    }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(spy.calls).toHaveLength(2);
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.branded_fares_vacian_la_respuesta');
+  });
+
+  it('una ruta VACÍA DE VERDAD se reintenta una vez y se acepta como vacía', async () => {
+    const spy = spyFetch(() => vacio());
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+
+    expect(await sut.search(CRITERIA, CTX)).toEqual([]);
+    expect(spy.calls).toHaveLength(2);
+
+    // Y la cuenta NO queda marcada como incapaz por una ruta sin vuelos: la siguiente búsqueda
+    // vuelve a pedir marcas.
+    await sut.search(CRITERIA, CTX);
+    expect(String(spy.calls[2]!.init.body)).toContain('BrandedFareIndicators');
+  });
+
+  it('una cuenta que YA dio ofertas con marcas no paga la llamada de comprobación', async () => {
+    // Primera búsqueda con resultados: queda probado que soporta marcas. Segunda vacía: es una
+    // ruta sin vuelos, no una sospecha, y no se gasta una segunda llamada.
+    const spy = spyFetch((n) => (n === 1 ? json(adultFixture) : vacio()));
+    const sut = adapter(config(), { fetch: spy.fetch, shopOptions: { brandedUpsells: true } });
+
+    await sut.search(CRITERIA, CTX);
+    expect(await sut.search(CRITERIA, CTX)).toEqual([]);
+    expect(spy.calls).toHaveLength(2);
+  });
+});

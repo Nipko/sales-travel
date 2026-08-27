@@ -29,6 +29,7 @@ Fuentes: ver 00-fuentes.md
    (**VERIFICADO-SPEC**: `bargain-finder-max-v5.yml:5476`). Hay que mandar
    `MultipleSourcePerItinerary.Value = true` cuando comparamos ATPCO y NDC. Esto no sustituye los controles de
    marca/upsell: `MultipleBrandedFares`, `MaxNumberOfUpsells` y `UpsellLimit` se configuran y prueban aparte.
+   **RESUELTO (2026-08-27), y con cicatriz — ver §7.5.**
 4. **La moneda sí se pide.** `PriceRequestInformation.CurrencyCode` (**VERIFICADO-SPEC**: `bargain-finder-max-v5.yml:7849`). Nuestro `criteria.currency` **sí tiene destino**. El riesgo #2 de la primera pasada baja de Alto a Medio (§6.2).
 5. **La oferta trae TTL propio: `offer.timeToLive`, en segundos, campo obligatorio** en las tres versiones (**VERIFICADO-SPEC**: `bargain-finder-max-v5.yml:8226`). `Offer.expiresAt` ya no hay que inventarlo.
 6. **El equipaje y las penalidades NO vienen por defecto: hay que pedirlos.** `TravelPreferences.Baggage.RequestType = "C"` y `PassengerTypeQuantity[].TPA_Extensions.VoluntaryChanges` (§7.4). Si no se piden, `Offer.baggage` y `Offer.policies` quedan vacíos.
@@ -856,6 +857,45 @@ Principio no negociable #1: tiempo a venta < 2 minutos.
 **A medir en sandbox:** latencia p50/p95 de `50ITINS` vs `200ITINS` en `BOG→LIM`, con y sin `Baggage`+`VoluntaryChanges`. Si `200ITINS` está bajo 3 s, no limitamos. Si pasa de 8 s, la conversación es `AirStreaming`, no búsqueda asíncrona propia.
 
 ---
+
+### 7.5 Marcas tarifarias: la ubicación es la trampa
+
+**BFM devuelve UNA tarifa por itinerario salvo que se le pidan las marcas.** No es que la
+aerolínea no publique Light/Plus/Top:
+
+> _"By default, the system does a low fare search, so only the lowest fare is presented."_
+> — **VERIFICADO-SPEC**: `bargain-finder-max-v5.yml:7282`
+
+El contrato acepta `BrandedFareIndicators` —el MISMO objeto, con las mismas propiedades— en **dos
+ramas distintas**:
+
+| Rama                                                              | Qué es                                   | Línea     |
+| ----------------------------------------------------------------- | ---------------------------------------- | --------- |
+| `TravelerInfoSummary.PriceRequestInformation.TPA_Extensions`      | **La buena.** Pedir marcas.              | `v5:7978` |
+| `TravelPreferences.TPA_Extensions.FlexibleFares.FareParameters[]` | Otra función: GRUPOS de tarifa flexible. | `v5:6702` |
+
+**No son intercambiables, y el spec por sí solo no lo dice.** Se mandó por la segunda y el PCC de
+producción respondió un fallo de NEGOCIO dentro de un 200 en todas las búsquedas: con `latam-ndc`
+ya descartado por moneda, `POST /search/flights` quedó en 502 y el buscador entero murió.
+
+Lo que sí lo dice es la **evidencia**: de los 1.077 requests de la colección, los 35 que piden
+marcas las piden **todos** por la primera rama. `NDCIndicators` —que también parecía aplicable—
+aparece en **cero** requests reales; no se manda.
+
+> **Regla que sale de acá:** cuando dos ramas del contrato aceptan la misma forma, la colección
+> decide, no el spec. El spec dice qué es válido; la colección dice qué usa Sabre de verdad.
+
+**Cautela que queda en pie.** La colección sólo ejercita `SingleBrandedFare`, nunca
+`MultipleBrandedFares`. Es decir: la ubicación está verificada, el flag no. Por eso el adapter
+**degrada** ante los dos modos de fallo, y no se confía en que esté bien:
+
+| Modo de fallo del PCC                | Qué hace el adapter                                     |
+| ------------------------------------ | ------------------------------------------------------- |
+| Rechaza (`ENTITLEMENT` o `BUSINESS`) | Reintenta sin marcas y lo recuerda por instancia.       |
+| Acepta y devuelve **cero** (§8.1)    | Reintenta sin marcas; si eso trae ofertas, lo recuerda. |
+
+El segundo es el importante: sin él, encender marcas en una cuenta que no las tiene no da un 502
+sino un buscador que dice «no hay vuelos» en una ruta que sí los tiene, y nadie se entera.
 
 ## 9. Deduplicación entre Sabre y LATAM
 

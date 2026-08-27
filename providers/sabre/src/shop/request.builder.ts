@@ -197,21 +197,23 @@ export interface SabreCabinPref {
 }
 
 /**
- * Marcas tarifarias del lado ATPCO (`v5.yml:6702`).
+ * Marcas tarifarias (`v5.yml:7978-7983`).
  *
- * Ojo con la forma: acá los valores van DESNUDOS (`MultipleBrandedFares: true`), mientras que
- * el equivalente NDC los envuelve en `{ Value: … }`. No es simetría rota nuestra, es el
- * contrato; mezclarlas produce un 400 que no dice cuál de las dos estaba mal.
+ * **Va colgado de `TravelerInfoSummary.PriceRequestInformation.TPA_Extensions`, y esa ubicación
+ * es media historia.** La primera versión lo mandó bajo
+ * `TravelPreferences.TPA_Extensions.FlexibleFares.FareParameters[].BrandedFareIndicators` —que
+ * también existe en el contrato, con las mismas propiedades— y el PCC de producción respondió un
+ * fallo de negocio dentro de un 200 en TODAS las búsquedas. `FlexibleFares` no es "dónde se piden
+ * las marcas": es otra función, la de GRUPOS de tarifa flexible, que además hay que tener
+ * habilitada aparte.
+ *
+ * Que dos ramas del contrato acepten el mismo objeto no las hace intercambiables, y el spec por sí
+ * solo no lo dice. Lo dicen los 1.077 requests reales de la colección: los 35 que piden marcas las
+ * piden **todos** aquí, y ninguno usa `FlexibleFares` para esto (`docs/sabre/02` §7.4).
  */
 export interface SabreBrandedFareIndicators {
   MultipleBrandedFares: boolean;
   UpsellLimit: number;
-}
-
-/** `NDCIndicators` (`v5.yml:7342` y `:7353`): aquí SÍ van envueltos en `Value`. */
-export interface SabreNdcIndicators {
-  MultipleBrandedFares: { Value: boolean };
-  MaxNumberOfUpsells: { Value: number };
 }
 
 export interface SabreTravelPreferences {
@@ -221,9 +223,6 @@ export interface SabreTravelPreferences {
     DataSources: typeof SABRE_DATA_SOURCES;
     PreferNDCSourceOnTie: { Value: boolean };
     NumTrips: { Number: number };
-    /** Ausente cuando no se piden upsells: un bloque vacío no es lo mismo que no pedirlo. */
-    FlexibleFares?: { FareParameters: [{ BrandedFareIndicators: SabreBrandedFareIndicators }] };
-    NDCIndicators?: SabreNdcIndicators;
   };
 }
 
@@ -235,7 +234,11 @@ export interface SabrePassengerTypeQuantity {
 
 export interface SabreTravelerInfoSummary {
   AirTravelerAvail: [{ PassengerTypeQuantity: SabrePassengerTypeQuantity[] }];
-  PriceRequestInformation: { CurrencyCode: string };
+  PriceRequestInformation: {
+    CurrencyCode: string;
+    /** Ausente cuando no se piden marcas: un bloque vacío no es lo mismo que no pedirlo. */
+    TPA_Extensions?: { BrandedFareIndicators: SabreBrandedFareIndicators };
+  };
 }
 
 export interface SabreShopTpaExtensions {
@@ -274,21 +277,21 @@ export const SabreShopOptionsSchema = z.object({
   /**
    * Pedir las marcas tarifarias por encima de la más barata. Ver {@link SABRE_DEFAULT_UPSELL_LIMIT}.
    *
-   * **APAGADO por defecto, y no por preferencia: por un incidente.** Se soltó en `true` sin poder
-   * probarlo contra un PCC real y la cuenta de producción empezó a devolver un fallo de NEGOCIO
-   * dentro de un 200 (`kind: BUSINESS`) en TODAS las búsquedas — con `latam-ndc` ya descartado por
-   * la moneda, eso dejó `POST /search/flights` en 502 y el buscador entero muerto (2026-08-27).
+   * Vuelve a `true` tras el incidente del 2026-08-27, y las tres cosas que cambiaron son la razón:
    *
-   * `FlexibleFares` y `NDCIndicators` son funciones que el PCC tiene que tener habilitadas; un PCC
-   * sin ellas no las ignora, rechaza la operación. Encenderlo por defecto para toda la red apuesta
-   * la búsqueda —lo único que la plataforma no puede permitirse perder— a una capacidad comercial
-   * que varía por cuenta.
+   * 1. **La ruta era la equivocada** y ésa fue la avería. Iba bajo `TravelPreferences…
+   *    FlexibleFares`, que acepta el mismo objeto y es otra función. Ahora va donde la ponen los
+   *    35 requests reales de la colección: ver {@link SabreBrandedFareIndicators}.
+   * 2. El adapter **degrada**: si Sabre rechaza por capacidad, reintenta sin marcas y lo recuerda.
+   * 3. Y degrada también ante el fallo silencioso —respuesta vacía en vez de rechazo—, que es el
+   *    que convertía esto en «no hay vuelos» sin que nadie se enterara.
    *
-   * Se enciende POR CUENTA (`config.shopOptions.brandedUpsells`) cuando esa agencia lo tenga
-   * verificado contra su PCC. El día que se sepa que la red entera lo soporta, este default se
-   * cambia con un motivo escrito, no con un «debería andar».
+   * O sea: encendido ya no puede costar la búsqueda, que es lo que lo hacía inaceptable. El coste
+   * de una cuenta sin la capacidad es UNA llamada de más por proceso, no una por búsqueda.
+   *
+   * Se puede apagar por cuenta con `config.shopOptions.brandedUpsells: false`.
    */
-  brandedUpsells: z.boolean().default(false),
+  brandedUpsells: z.boolean().default(true),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 
@@ -315,7 +318,7 @@ export function buildSabreShopRequest(
       POS: buildPos(pseudoCityCode, opts.maxPccs),
       OriginDestinationInformation: buildOriginDestinations(criteria),
       TravelPreferences: buildTravelPreferences(criteria, opts),
-      TravelerInfoSummary: buildTravelerInfoSummary(criteria),
+      TravelerInfoSummary: buildTravelerInfoSummary(criteria, opts),
       TPA_Extensions: {
         IntelliSellTransaction: {
           RequestType: { Name: opts.itineraryTier },
@@ -418,20 +421,6 @@ function buildTravelPreferences(
     },
   };
 
-  // Las DOS fuentes van habilitadas a la vez (`SABRE_DATA_SOURCES`), así que pedir el upsell en
-  // una sola dejaría media respuesta con marcas y la otra media sin ellas — y el vendedor no
-  // tiene forma de saber cuál mitad es cuál.
-  if (opts.brandedUpsells && opts.upsellLimit > 0) {
-    prefs.TPA_Extensions.FlexibleFares = {
-      FareParameters: [
-        { BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: opts.upsellLimit } },
-      ],
-    };
-    prefs.TPA_Extensions.NDCIndicators = {
-      MultipleBrandedFares: { Value: true },
-      MaxNumberOfUpsells: { Value: opts.upsellLimit },
-    };
-  }
   // El bloque entero se omite si no hay cabina pedida: `CabinPref` sólo prefiere, y una entrada
   // vacía o inventada empeoraría el resultado en vez de dejarlo abierto.
   if (criteria.cabin !== undefined) {
@@ -442,7 +431,10 @@ function buildTravelPreferences(
   return prefs;
 }
 
-function buildTravelerInfoSummary(criteria: FlightSearchCriteria): SabreTravelerInfoSummary {
+function buildTravelerInfoSummary(
+  criteria: FlightSearchCriteria,
+  opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
+): SabreTravelerInfoSummary {
   const { adults, children, infants } = criteria.paxCount;
   const quantities: SabrePassengerTypeQuantity[] = [passengerType(SABRE_PTC.adults, adults)];
   if (children > 0) quantities.push(passengerType(SABRE_PTC.children, children));
@@ -454,7 +446,21 @@ function buildTravelerInfoSummary(criteria: FlightSearchCriteria): SabreTraveler
     // buscador promete una moneda que el proveedor ignoró. Pedirla no garantiza tarifa local:
     // el catálogo lo sigue fijando el punto de venta, por eso el mapper vuelve a comparar la
     // moneda devuelta contra la pedida (docs/sabre/02 §6.2).
-    PriceRequestInformation: { CurrencyCode: criteria.currency },
+    PriceRequestInformation: {
+      CurrencyCode: criteria.currency,
+      // Un `UpsellLimit: 0` sería pedir "cero marcas adicionales", que no es lo mismo que no
+      // pedir marcas: lo primero es una instrucción, lo segundo deja el default del proveedor.
+      ...(opts.brandedUpsells && opts.upsellLimit > 0
+        ? {
+            TPA_Extensions: {
+              BrandedFareIndicators: {
+                MultipleBrandedFares: true,
+                UpsellLimit: opts.upsellLimit,
+              },
+            },
+          }
+        : {}),
+    },
   };
 }
 

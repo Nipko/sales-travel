@@ -145,9 +145,12 @@ describe('PTC: el niño es CNN, no CHD', () => {
 
 describe('moneda: PriceRequestInformation.CurrencyCode siempre presente', () => {
   it.each([['COP'], ['USD'], ['BRL'], ['PEN']])('%s llega a CurrencyCode', (currency) => {
-    expect(build({ currency }).TravelerInfoSummary.PriceRequestInformation).toEqual({
-      CurrencyCode: currency,
-    });
+    // Sobre el CAMPO, no sobre el objeto entero: `PriceRequestInformation` es también donde
+    // cuelgan las marcas tarifarias, y un `toEqual` del objeto convierte este test de moneda
+    // en un test de "qué más hay ahí dentro", que no es lo suyo.
+    expect(build({ currency }).TravelerInfoSummary.PriceRequestInformation.CurrencyCode).toBe(
+      currency,
+    );
   });
 
   it('está presente en toda variante del request', () => {
@@ -302,43 +305,52 @@ describe('volumen: tier e itinerarios', () => {
     expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
-  it('POR DEFECTO no pide marcas: el default no puede apostar la búsqueda entera', () => {
-    // Estuvo en `true` un deploy y tumbó el buscador: el PCC de producción respondió un fallo
-    // de negocio dentro de un 200 en TODAS las busquedas. `FlexibleFares`/`NDCIndicators` son
-    // capacidades que el PCC tiene que tener habilitadas, y un PCC sin ellas no las ignora.
-    const ext = build().TravelPreferences.TPA_Extensions;
-    expect(ext.FlexibleFares).toBeUndefined();
-    expect(ext.NDCIndicators).toBeUndefined();
-  });
-
-  it('encendido POR CUENTA pide marcas en LAS DOS fuentes', () => {
-    const ext = build({}, {}, { brandedUpsells: true }).TravelPreferences.TPA_Extensions;
-
-    // ATPCO: valores desnudos.
-    expect(ext.FlexibleFares).toEqual({
-      FareParameters: [{ BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 } }],
-    });
-    // NDC: los MISMOS conceptos, envueltos en `Value`. La asimetria es del contrato.
-    expect(ext.NDCIndicators).toEqual({
-      MultipleBrandedFares: { Value: true },
-      MaxNumberOfUpsells: { Value: 3 },
+  it('POR DEFECTO pide marcas, porque ya no puede costar la búsqueda', () => {
+    // Estuvo apagado entre el incidente y su arreglo. Se puede volver a encender porque la ruta
+    // es la buena y porque el adapter degrada ante los dos modos de fallo (ver sus tests).
+    expect(build().TravelerInfoSummary.PriceRequestInformation.TPA_Extensions).toEqual({
+      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 },
     });
   });
 
-  it('las dos fuentes piden el MISMO limite: media respuesta con marcas no sirve', () => {
-    const ext = build({}, {}, { brandedUpsells: true, upsellLimit: 5 }).TravelPreferences
-      .TPA_Extensions;
-    expect(ext.FlexibleFares?.FareParameters[0].BrandedFareIndicators.UpsellLimit).toBe(5);
-    expect(ext.NDCIndicators?.MaxNumberOfUpsells.Value).toBe(5);
+  it('se puede apagar por cuenta', () => {
+    const pri = build({}, {}, { brandedUpsells: false }).TravelerInfoSummary
+      .PriceRequestInformation;
+    expect(pri.TPA_Extensions).toBeUndefined();
+  });
+
+  it('encendido, las marcas van donde las ponen los requests REALES de Sabre', () => {
+    // La ubicación es el corazón del incidente. `TravelPreferences…FlexibleFares` acepta el
+    // MISMO objeto y no es el sitio: es la función de grupos de tarifa flexible. Los 35
+    // requests de la colección que piden marcas las piden todos acá.
+    const pri = build({}, {}, { brandedUpsells: true }).TravelerInfoSummary.PriceRequestInformation;
+
+    expect(pri.TPA_Extensions).toEqual({
+      BrandedFareIndicators: { MultipleBrandedFares: true, UpsellLimit: 3 },
+    });
+    expect(pri.CurrencyCode).toBe('COP');
+  });
+
+  it('el bloque de marcas NO se cuela en TravelPreferences: ahí es donde rompía', () => {
+    const body = build({}, {}, { brandedUpsells: true });
+    const ext = JSON.stringify(body.TravelPreferences.TPA_Extensions);
+    expect(ext).not.toContain('FlexibleFares');
+    expect(ext).not.toContain('NDCIndicators');
+    expect(ext).not.toContain('BrandedFareIndicators');
+  });
+
+  it('el límite se respeta tal cual', () => {
+    const pri = build({}, {}, { brandedUpsells: true, upsellLimit: 5 }).TravelerInfoSummary
+      .PriceRequestInformation;
+    expect(pri.TPA_Extensions?.BrandedFareIndicators.UpsellLimit).toBe(5);
   });
 
   it('un límite de 0 equivale a apagarlo: no se manda un pedido de cero marcas', () => {
-    // Un bloque presente pidiendo cero no es lo mismo que no pedir: el primero es una
-    // instruccion al proveedor y el segundo deja su default en paz.
-    const ext = build({}, {}, { brandedUpsells: true, upsellLimit: 0 }).TravelPreferences
-      .TPA_Extensions;
-    expect(ext.FlexibleFares).toBeUndefined();
-    expect(ext.NDCIndicators).toBeUndefined();
+    // Un bloque presente pidiendo cero es una instrucción al proveedor; no mandarlo deja su
+    // default en paz. No es lo mismo.
+    const pri = build({}, {}, { brandedUpsells: true, upsellLimit: 0 }).TravelerInfoSummary
+      .PriceRequestInformation;
+    expect(pri.TPA_Extensions).toBeUndefined();
   });
 
   it('un límite negativo falla en el borde, no se acota en silencio', () => {

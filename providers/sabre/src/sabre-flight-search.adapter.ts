@@ -3,7 +3,7 @@ import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, FlightSearchPort, SearchContext } from '@sales-travel/domain';
 import { SabreTokenService, type SabreFetch, type SabreTokenProvider } from './auth/token.service';
 import { missingSabreCredentials, sabreConversationIdPrefix, type SabreConfig } from './config';
-import { SabreConfigError } from './errors';
+import { SabreApiError, SabreConfigError } from './errors';
 import { SabreHttpClient, type SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
@@ -17,6 +17,21 @@ import {
   type SabreMapWarningCode,
   type SabreShopMapResult,
 } from './shop/response.mapper';
+
+/**
+ * ¿Este fallo significa «tu PCC no tiene esta función» y no «la búsqueda falló»?
+ *
+ * Cerrado a dos clases a propósito. `ENTITLEMENT` es el caso nombrado; `BUSINESS` es donde cae
+ * hoy el rechazo real observado en producción, porque Sabre lo devuelve dentro de un 200 con un
+ * código que el clasificador no tiene mapeado. Ampliar esto a más clases convertiría el
+ * reintento en un «si algo falla, prueba otra cosa», que esconde averías en vez de degradar.
+ */
+function esRechazoDeCapacidad(err: unknown): boolean {
+  return (
+    err instanceof SabreApiError &&
+    (err.failure.kind === 'ENTITLEMENT' || err.failure.kind === 'BUSINESS')
+  );
+}
 
 export interface SabreFlightSearchDeps {
   fetch?: SabreFetch;
@@ -59,6 +74,23 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     return missingSabreCredentials(this.cfg);
   }
 
+  /**
+   * Esta cuenta pidió marcas tarifarias y Sabre las rechazó por capacidad.
+   *
+   * Vive en la INSTANCIA, y el factory cachea una instancia por credenciales, así que el coste de
+   * descubrirlo es UNA llamada de más por agencia y por vida del proceso — no una por búsqueda.
+   * No se persiste a propósito: un alta comercial con Sabre no emite ningún evento hacia nosotros,
+   * y un flag en base de datos lo dejaría apagado para siempre sin que nadie sepa por qué.
+   */
+  private brandedFaresUnsupported = false;
+
+  /**
+   * Esta cuenta YA devolvió ofertas pidiendo marcas, así que una ruta vacía es una ruta vacía y
+   * no una sospecha. Sin este flag, cada búsqueda sin resultados de una agencia que sí las
+   * soporta pagaría una segunda llamada para comprobar algo que ya se sabe.
+   */
+  private brandedFaresProven = false;
+
   constructor(
     private readonly cfg: SabreConfig,
     private readonly deps: SabreFlightSearchDeps = {},
@@ -96,18 +128,97 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
   }
 
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
-    const body = buildSabreShopRequest(criteria, this.cfg, this.deps.shopOptions ?? {});
+    const opciones = this.deps.shopOptions ?? {};
+    // Las marcas tarifarias son una capacidad del PCC, no una opción universal. Si esta cuenta ya
+    // demostró no tenerla, no se vuelve a pedir: ver `brandedFaresUnsupported`.
+    const pedirMarcas = opciones.brandedUpsells === true && !this.brandedFaresUnsupported;
+    const body = buildSabreShopRequest(criteria, this.cfg, {
+      ...opciones,
+      brandedUpsells: pedirMarcas,
+    });
 
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
     // puede reintentar. El cliente HTTP ignora esta marca en los paths de `SABRE_NON_IDEMPOTENT_PATHS`.
-    const result: SabreResult<unknown> = await this.http.postJson<unknown>(SABRE_SHOP_PATH, body, {
-      idempotent: true,
+    const opciones_http = {
+      idempotent: true as const,
       ...(ctx.requestId === undefined
         ? {}
         : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
-    });
+    };
 
-    const mapped = mapSabreShopResponse(result.data, {
+    let result: SabreResult<unknown>;
+    try {
+      result = await this.http.postJson<unknown>(SABRE_SHOP_PATH, body, opciones_http);
+    } catch (err) {
+      // Degradación, no rescate genérico: SÓLO cuando el único extra que llevaba la consulta
+      // eran las marcas, y sólo ante los fallos que significan «tu PCC no hace esto».
+      //
+      // Existe por un incidente: pedir marcas a un PCC que no las tiene no devuelve una lista
+      // sin marcas, devuelve un fallo de negocio, y eso dejó el buscador entero en 502. Que una
+      // mejora opcional pueda tumbar la búsqueda es el fallo de diseño; el reintento lo cierra.
+      if (!pedirMarcas || !esRechazoDeCapacidad(err)) throw err;
+
+      // Se recuerda POR INSTANCIA, y el factory cachea una instancia por credenciales: la
+      // siguiente búsqueda de esta agencia ya no paga la llamada de más.
+      this.brandedFaresUnsupported = true;
+      // Por `this.log`, NUNCA por `this.deps.logger` directo: ahí es donde se etiqueta el
+      // proveedor y la meta pasa por `redactMeta`. Un guard del paquete lo vigila, y lo cazó
+      // escribiendo esto — el `code` de Sabre es exactamente la clase de dato que tiene que
+      // cruzar esa puerta.
+      this.log('warn', 'sabre.shop.branded_fares_no_soportadas', {
+        path: SABRE_SHOP_PATH,
+        ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
+      });
+
+      result = await this.http.postJson<unknown>(
+        SABRE_SHOP_PATH,
+        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedUpsells: false }),
+        opciones_http,
+      );
+    }
+
+    let mapped = this.mapear(result, criteria, ctx);
+
+    // El OTRO modo de fallar de Sabre, y el peor: no rechazar, devolver CERO. La propia doc del
+    // proyecto lo documenta para el tier (`docs/sabre/02` §8.1) — «pedir uno al que la agencia no
+    // está suscrita no devuelve error, sino cero resultados, indistinguible de "no hay vuelos"».
+    // Sin esto, encender las marcas en una cuenta que no las tiene no da un 502 sino algo peor:
+    // un buscador que dice «no hay vuelos» en una ruta que sí los tiene, y nadie se entera.
+    //
+    // Se paga UNA vez por instancia: si el reintento tampoco trae nada, la ruta está vacía de
+    // verdad y no se marca nada.
+    if (mapped.offers.length === 0 && pedirMarcas && !this.brandedFaresProven) {
+      const sinMarcas = await this.http.postJson<unknown>(
+        SABRE_SHOP_PATH,
+        buildSabreShopRequest(criteria, this.cfg, { ...opciones, brandedUpsells: false }),
+        opciones_http,
+      );
+      const reintento = this.mapear(sinMarcas, criteria, ctx);
+      if (reintento.offers.length > 0) {
+        this.brandedFaresUnsupported = true;
+        this.log('warn', 'sabre.shop.branded_fares_vacian_la_respuesta', {
+          path: SABRE_SHOP_PATH,
+          offersSinMarcas: reintento.offers.length,
+        });
+        result = sinMarcas;
+        mapped = reintento;
+      }
+    } else if (mapped.offers.length > 0 && pedirMarcas) {
+      // Esta cuenta SÍ las soporta: no se vuelve a sospechar de ella en una ruta vacía.
+      this.brandedFaresProven = true;
+    }
+
+    this.logMapping(mapped, result, ctx);
+    return mapped.offers;
+  }
+
+  /** El mapeo, en un solo sitio: lo llaman el camino normal y el reintento sin marcas. */
+  private mapear(
+    result: SabreResult<unknown>,
+    criteria: FlightSearchCriteria,
+    ctx: SearchContext,
+  ): ReturnType<typeof mapSabreShopResponse> {
+    return mapSabreShopResponse(result.data, {
       tenantId: ctx.tenantId,
       // La MISMA moneda que se pidió en `PriceRequestInformation.CurrencyCode`. Pedirla no
       // obliga a Sabre a respetarla, así que el mapper vuelve a compararla y descarta lo que
@@ -115,9 +226,6 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       currency: criteria.currency,
       fetchedAt: new Date((this.deps.now ?? Date.now)()).toISOString(),
     });
-
-    this.logMapping(mapped, result, ctx);
-    return mapped.offers;
   }
 
   /**
