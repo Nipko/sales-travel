@@ -372,9 +372,20 @@ describe('el análisis de la clave no puede volver a depender del tamaño de la 
     // de `redaction.stream-gaps.test.ts` pasó de milisegundos a **13 minutos** y aun así en VERDE.
     // Es la misma avería que el umbral de 20.000 caracteres que este archivo existe para no tener.
     //
-    // El umbral es deliberadamente flojo (dos segundos para un trabajo de milisegundos): no mide
-    // rendimiento, sólo separa «lineal» de «cuadrático», que es una diferencia de cinco órdenes de
-    // magnitud y no se la come ninguna máquina lenta.
+    // El umbral es deliberadamente flojo: no mide rendimiento, sólo separa «lineal» de
+    // «cuadrático», que es una diferencia de cinco órdenes de magnitud.
+    //
+    // **Estaba en 2 s y se puso rojo en CI con 2.043 ms** (2026-08-27, job «Integration tests
+    // (Postgres)»). No había regresión: la línea base de este `it` son ~234 ms, así que 2 s daban
+    // sólo 8× de margen, y el runner de CI corre Postgres y el resto de las suites en paralelo
+    // sobre una máquina compartida. Un test de reloj cuyo margen es 8× no separa lineal de
+    // cuadrático: separa «runner tranquilo» de «runner ocupado», que es justo lo que el propio
+    // comentario de abajo advertía de los relojes apretados de este paquete.
+    //
+    // 20 s da 85× de margen sobre la línea base y sigue estando 39× POR DEBAJO de los 13 minutos
+    // de la regresión real, que es lo único que este reloj tiene que cazar. Y como el timeout por
+    // defecto de vitest son 5 s, el `it` lleva el suyo explícito: sin eso el presupuesto de 20 s
+    // sería inalcanzable y el rojo llegaría igual, sólo que como un timeout que no explica nada.
     //
     // **Lo que este reloj NO detecta, y por eso no está solo.** Quitar `MAX_KEY_ANALYSIS_CHARS`
     // deja este test en VERDE. Medido en esta ronda con el tope quitado y sobre esta misma
@@ -388,8 +399,14 @@ describe('el análisis de la clave no puede volver a depender del tamaño de la 
 
     JSON.stringify(redactMeta({ [hostil]: WITNESS, tambien: `{"${hostil}":1}` }));
 
-    expect(Date.now() - started).toBeLessThan(2_000);
-  });
+    const transcurrido = Date.now() - started;
+    expect(
+      transcurrido,
+      `${transcurrido} ms para una clave de 1 MB. La línea base son ~234 ms; esto es lineal o ` +
+        'no lo es. Si supera 20 s, el troceado en palabras volvió a retroceder — no subas el ' +
+        'número, mira el regex.',
+    ).toBeLessThan(20_000);
+  }, 60_000);
 });
 
 /* ────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { LoggerPort } from '@sales-travel/core';
 import type { Offer } from '@sales-travel/canonical';
 import type {
   FlightSearchCriteria,
@@ -383,15 +384,51 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     ownerTenantId: string,
     config: Record<string, unknown>,
   ): SabreAdapterSet {
+    // El logger se INYECTA. Sin él, `SabreHttpClient` y el adapter de búsqueda tienen
+    // `deps.logger` en `undefined` y `sabre.http.error` no se emite nunca: en producción sólo
+    // quedaba el aviso del fan-out con el mensaje amable («Sabre rechazó la operación»), que
+    // es exactamente el que se escribió para NO decir nada del proveedor. El código del error,
+    // el `kind` y los `issues[].fieldPath` —lo único con lo que se diagnostica un fallo de
+    // negocio dentro de un 200— se estaban tirando a la basura al construirse el cliente.
+    //
+    // No hay riesgo de fuga: TODO lo que se emite pasa por `logRedacted`/`redactMeta` dentro
+    // del ACL, y `toLogMeta()` publica códigos y rutas de campo, nunca cuerpos ni valores.
+    const logger = this.loggerPort();
     const tokens = new SabreTokenService(cfg, { cacheNamespace: ownerTenantId });
-    const http = new SabreHttpClient(cfg, tokens);
+    const http = new SabreHttpClient(cfg, tokens, { logger });
     const cardBinPricing = this.cardBinPolicy(config, ownerTenantId);
 
     return {
-      search: new SabreFlightSearchAdapter(cfg, { cacheNamespace: ownerTenantId, tokens }),
+      search: new SabreFlightSearchAdapter(cfg, {
+        cacheNamespace: ownerTenantId,
+        tokens,
+        logger,
+      }),
       price: new SabreOfferPriceAdapter(cfg, http, { cardBinPricing }),
       create: new SabreOrderCreateAdapter(cfg, http),
       manage: new SabreOrderManageAdapter(cfg, http),
+    };
+  }
+
+  /**
+   * `LoggerPort` sobre el `Logger` de Nest.
+   *
+   * `child()` acumula los bindings en el prefijo del mensaje: Nest no tiene loggers hijos con
+   * contexto estructurado, y devolver `this` perdería silenciosamente las claves que el ACL
+   * adjunta al crear el hijo.
+   */
+  private loggerPort(bindings: Record<string, unknown> = {}): LoggerPort {
+    const nest = this.logger;
+    const prefijo = Object.keys(bindings).length === 0 ? '' : `${JSON.stringify(bindings)} `;
+    const linea = (message: string, meta?: Record<string, unknown>): string =>
+      `${prefijo}${message}${meta === undefined ? '' : ` ${JSON.stringify(meta)}`}`;
+
+    return {
+      debug: (message, meta) => nest.debug(linea(message, meta)),
+      info: (message, meta) => nest.log(linea(message, meta)),
+      warn: (message, meta) => nest.warn(linea(message, meta)),
+      error: (message, meta) => nest.error(linea(message, meta)),
+      child: (extra) => this.loggerPort({ ...bindings, ...extra }),
     };
   }
 

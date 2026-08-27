@@ -274,11 +274,21 @@ export const SabreShopOptionsSchema = z.object({
   /**
    * Pedir las marcas tarifarias por encima de la más barata. Ver {@link SABRE_DEFAULT_UPSELL_LIMIT}.
    *
-   * Es configurable y no una constante porque el upsell depende del contrato del carrier con la
-   * agencia: una cuenta a la que el carrier no le publica marcas paga respuestas más grandes sin
-   * recibir ni una tarifa más.
+   * **APAGADO por defecto, y no por preferencia: por un incidente.** Se soltó en `true` sin poder
+   * probarlo contra un PCC real y la cuenta de producción empezó a devolver un fallo de NEGOCIO
+   * dentro de un 200 (`kind: BUSINESS`) en TODAS las búsquedas — con `latam-ndc` ya descartado por
+   * la moneda, eso dejó `POST /search/flights` en 502 y el buscador entero muerto (2026-08-27).
+   *
+   * `FlexibleFares` y `NDCIndicators` son funciones que el PCC tiene que tener habilitadas; un PCC
+   * sin ellas no las ignora, rechaza la operación. Encenderlo por defecto para toda la red apuesta
+   * la búsqueda —lo único que la plataforma no puede permitirse perder— a una capacidad comercial
+   * que varía por cuenta.
+   *
+   * Se enciende POR CUENTA (`config.shopOptions.brandedUpsells`) cuando esa agencia lo tenga
+   * verificado contra su PCC. El día que se sepa que la red entera lo soporta, este default se
+   * cambia con un motivo escrito, no con un «debería andar».
    */
-  brandedUpsells: z.boolean().default(true),
+  brandedUpsells: z.boolean().default(false),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
 });
 

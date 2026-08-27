@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
 
@@ -688,7 +688,12 @@ export function DateRangePicker({
             aria-label={mode === 'oneway' ? 'Elegir fecha de ida' : 'Elegir fechas del viaje'}
             className={cn(
               'fixed inset-x-2 bottom-2 z-50 flex max-h-[82vh] flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)]',
-              'sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[41rem]',
+              // `max-h` TAMBIÉN en escritorio. Antes era `sm:max-h-none`: el panel crecía sin
+              // tope y, colgando del campo a media página, en un portátil de 14\" la última
+              // semana y el pie con «Aplicar» quedaban por debajo del borde de la ventana. Sin
+              // el botón a la vista no hay forma de saber cómo se cierra esto.
+              'sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-2 sm:w-[41rem]',
+              'sm:max-h-[calc(100dvh-11rem)]',
               'origin-bottom animate-[scale-up_0.15s_cubic-bezier(0.16,1,0.3,1)_forwards] sm:origin-top',
             )}
           >
@@ -702,19 +707,35 @@ export function DateRangePicker({
               <p className="text-xs font-medium text-[var(--color-fg-muted)]">
                 {pickerHint(draft, rules)}
               </p>
-              <NavButton
-                label="Mes siguiente"
-                onClick={() => moveCursor(1)}
-                icon={<ChevronRight className="size-4" />}
-              />
+              <div className="flex items-center gap-1">
+                <NavButton
+                  label="Mes siguiente"
+                  onClick={() => moveCursor(1)}
+                  icon={<ChevronRight className="size-4" />}
+                />
+                {/* Salida visible. En escritorio no hay velo que tocar —el velo es `sm:hidden`—
+                    así que las dos formas de cerrar eran Escape y un clic al vacío: las dos
+                    invisibles. Descarta el borrador, igual que Escape. */}
+                <button
+                  type="button"
+                  onClick={() => closePicker(false)}
+                  aria-label="Cerrar el calendario"
+                  className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)]"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
             </div>
 
             {/*
             Móvil: una columna que se recorre en vertical. Escritorio: los dos meses lado a lado,
             que es lo que evita el «¿y si vuelvo a principios del mes que viene?» con un clic.
           */}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-1 pt-4 sm:flex-none sm:overflow-visible">
-              <div className="grid gap-6 sm:grid-cols-2">
+            {/* `overflow-y-auto` sin excepción por breakpoint: es la red de seguridad del tope
+                de arriba. Con `sm:overflow-visible` el contenido que no cabía no se recortaba
+                ni se podía recorrer — simplemente se salía de la pantalla. */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-1 pt-4 [@media(max-height:900px)]:pt-2">
+              <div className="grid gap-6 [@media(max-height:900px)]:gap-4 sm:grid-cols-2">
                 {months.map((month) => (
                   <MonthTable
                     key={month}
@@ -919,7 +940,7 @@ function MonthTable({
                   <td
                     key={`${weekIndex}-${dayIndex}`}
                     role="presentation"
-                    className="h-12 p-0 sm:h-11"
+                    className="h-12 p-0 sm:h-11 [@media(max-height:900px)]:sm:h-8"
                   />
                 ) : (
                   <DayCell
@@ -1011,7 +1032,7 @@ function DayCell({
       className={cn(
         // 48 px en móvil: la celda ES el objetivo táctil, y el pulgar de un vendedor en ruta
         // no acierta un día de 42 px sin mirar dos veces.
-        'relative h-12 p-0 text-center align-middle sm:h-11',
+        'relative h-12 p-0 text-center align-middle sm:h-11 [@media(max-height:900px)]:sm:h-8',
         disabled ? 'cursor-not-allowed' : 'cursor-pointer',
       )}
     >
