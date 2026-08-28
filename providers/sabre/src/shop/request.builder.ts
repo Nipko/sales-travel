@@ -141,7 +141,7 @@ export const SABRE_BRANDED_FARES_MODES = ['off', 'single', 'upsell'] as const;
 export type SabreBrandedFaresMode = (typeof SABRE_BRANDED_FARES_MODES)[number];
 
 /** Ver {@link SABRE_BRANDED_FARES_MODES}. Lo comparten el esquema y el adapter. */
-export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'upsell';
+export const SABRE_BRANDED_FARES_DEFAULT: SabreBrandedFaresMode = 'single';
 
 /**
  * El escalón de abajo cuando el motor rechaza lo que se pidió.
@@ -187,7 +187,7 @@ export const SABRE_DEFAULT_UPSELL_LIMIT = 3;
  * El bucle de `search()` arregla eso y hoy soportaría las dos encendidas. Aun así se queda
  * apagado: es la segunda vez que una mejora opcional tumba lo único que la plataforma no puede
  * permitirse perder, y el precio de equivocarse otra vez no lo paga quien lo enciende. Se
- * enciende POR CUENTA (`config.shopOptions.multipleFares: 'with-baggage'`), que es donde el
+ * enciende POR CUENTA (`config.multipleFares: 'with-baggage'`), que es donde el
  * riesgo está acotado a quien decidió correrlo.
  *
  * Sigue siendo la última vía de código hacia varias tarifas por vuelo: el upsell de marcas quedó
@@ -313,6 +313,13 @@ export interface SabreFareParameterGroup {
 
 export interface SabreTravelPreferences {
   CabinPref?: SabreCabinPref[];
+  /**
+   * Acota una consulta auxiliar a un único carrier comercializador.
+   *
+   * `BrandFilters` no lleva carrier: la escalera sólo puede usarlo de forma segura si la misma
+   * petición restringe primero el universo de aerolíneas (`v5.yml:5732-5748`).
+   */
+  VendorPref?: [{ Code: string; PreferLevel: 'Only'; Type: 'Marketing' }];
   Baggage: typeof SABRE_BAGGAGE_REQUEST;
   TPA_Extensions: {
     DataSources: typeof SABRE_DATA_SOURCES;
@@ -360,6 +367,17 @@ export interface SabreShopRequest {
 }
 
 /**
+ * Restricciones internas de una llamada de shop.
+ *
+ * No forman parte de {@link SabreShopOptions}: una cuenta no puede convertir la búsqueda normal
+ * en mono-carrier desde su JSONB. El adapter sólo las usa para aislar una ronda auxiliar de la
+ * escalera de marcas, porque el contrato de `BrandFilters.Brand` no admite carrier.
+ */
+export interface SabreShopRequestScope {
+  onlyMarketingCarrier?: string;
+}
+
+/**
  * Palancas que NO son criterio de búsqueda del vendedor sino configuración comercial de la cuenta
  * de proveedor. Llegan como opciones porque hoy no viven en `SabreConfig` (docs/sabre/02 §8.1).
  */
@@ -375,7 +393,7 @@ export const SabreShopOptionsSchema = z.object({
    * Qué marcas pedir. Ver {@link SABRE_BRANDED_FARES_MODES}.
    *
    * `single` por defecto: es lo único que aparece en los 34 requests reales que piden marcas.
-   * `upsell` se enciende POR CUENTA (`config.shopOptions.brandedFares: 'upsell'`) cuando esa
+   * `upsell` se enciende POR CUENTA (`config.brandedFares: 'upsell'`) cuando esa
    * agencia tenga el producto contratado con Sabre.
    */
   brandedFares: z.enum(SABRE_BRANDED_FARES_MODES).default(SABRE_BRANDED_FARES_DEFAULT),
@@ -390,8 +408,11 @@ export const SabreShopOptionsSchema = z.object({
    * excluyendo esa, devuelve la siguiente. Repitiendo se recorre la escalera del carrier.
    *
    * **Verificado contra CERT (2026-08-27):** con `MAIN` excluida, American pasó de «MAIN CABIN»
-   * (388,84 USD, no reembolsable) a «MAIN CABIN FLEXIBLE» (447,44 USD, reembolsable). Delta, que
-   * no estaba excluida, siguió devolviendo la suya — el filtro es por código y no toca al resto.
+   * (388,84 USD, no reembolsable) a «MAIN CABIN FLEXIBLE» (447,44 USD, reembolsable).
+   *
+   * El filtro es GLOBAL al request: su schema sólo tiene `Code` y `PreferLevel`
+   * (`v5.yml:7978-7998`), no carrier. Por eso el adapter nunca lo manda en la consulta
+   * multi-carrier original; cada ronda va aislada con `TravelPreferences.VendorPref=Only`.
    *
    * A diferencia de `MultipleBrandedFares`, este filtro **sí está permitido**: la misma petición
    * que devuelve `MIP/PROCESS` con el upsell pasa limpia con `BrandFilters`.
@@ -426,8 +447,15 @@ export function buildSabreShopRequest(
   criteria: FlightSearchCriteria,
   cfg: SabreConfig,
   options: SabreShopOptions = {},
+  scope: SabreShopRequestScope = {},
 ): SabreShopRequest {
   const opts = parseShopOptions(options);
+  const parsedScope = parseShopRequestScope(scope);
+  if (opts.excludeBrands.length > 0 && parsedScope.onlyMarketingCarrier === undefined) {
+    // La forma de cable de BrandFilters no tiene carrier. Permitirla sin este scope volvería a
+    // abrir exactamente la colisión entre aerolíneas que la escalera aísla.
+    throw new SabreConfigError('excludeBrands requiere onlyMarketingCarrier');
+  }
   const pseudoCityCode = requireHomePcc(cfg);
 
   return {
@@ -435,7 +463,7 @@ export function buildSabreShopRequest(
       Version: SABRE_BFM_VERSION,
       POS: buildPos(pseudoCityCode, opts.maxPccs),
       OriginDestinationInformation: buildOriginDestinations(criteria),
-      TravelPreferences: buildTravelPreferences(criteria, opts),
+      TravelPreferences: buildTravelPreferences(criteria, opts, parsedScope),
       TravelerInfoSummary: buildTravelerInfoSummary(criteria, opts),
       TPA_Extensions: {
         IntelliSellTransaction: {
@@ -449,6 +477,15 @@ export function buildSabreShopRequest(
       },
     },
   };
+}
+
+function parseShopRequestScope(scope: SabreShopRequestScope): SabreShopRequestScope {
+  const carrier = scope.onlyMarketingCarrier;
+  if (carrier === undefined) return {};
+  if (!/^[A-Z0-9]{2,3}$/.test(carrier)) {
+    throw new SabreConfigError('scope de búsqueda de Sabre inválido (onlyMarketingCarrier)');
+  }
+  return { onlyMarketingCarrier: carrier };
 }
 
 function parseShopOptions(
@@ -529,6 +566,7 @@ function buildOriginDestinations(
 function buildTravelPreferences(
   criteria: FlightSearchCriteria,
   opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
+  scope: SabreShopRequestScope,
 ): SabreTravelPreferences {
   const prefs: SabreTravelPreferences = {
     Baggage: SABRE_BAGGAGE_REQUEST,
@@ -546,6 +584,15 @@ function buildTravelPreferences(
     prefs.TPA_Extensions.FlexibleFares = {
       FareParameters: [{}, { Baggage: { FreePieceRequired: true } }],
     };
+  }
+
+  if (scope.onlyMarketingCarrier !== undefined) {
+    // `PreferLevel="Only"` significa «sólo se solicita el carrier indicado» y `Type` ausente
+    // también defaulta a Marketing. Se manda explícito para que la garantía de aislamiento no
+    // dependa de un default del proveedor (`v5.yml:5732-5748`).
+    prefs.VendorPref = [
+      { Code: scope.onlyMarketingCarrier, PreferLevel: 'Only', Type: 'Marketing' },
+    ];
   }
 
   // El bloque entero se omite si no hay cabina pedida: `CabinPref` sólo prefiere, y una entrada

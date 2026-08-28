@@ -1,8 +1,18 @@
-import { type ArgumentsHost, Logger } from '@nestjs/common';
-import { SabreApiError, SabreConfigError, SabreShopMappingError } from '@sales-travel/sabre';
+import { type ArgumentsHost, HttpStatus, Logger } from '@nestjs/common';
+import {
+  SabreApiError,
+  SabreConfigError,
+  SabreFlightCheckNoMatchedOfferError,
+  SabreFlightCheckTenantMismatchError,
+  SabreShopMappingError,
+} from '@sales-travel/sabre';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SabreExceptionFilter } from './sabre-exception.filter.js';
-import { SabreOperationNotSupportedError, humanizeSabreError } from './sabre-errors.js';
+import {
+  SabreOperationNotSupportedError,
+  humanizeSabreError,
+  sabreErrorStatus,
+} from './sabre-errors.js';
 
 describe('humanizeSabreError', () => {
   it('red caída / timeout → "no pudimos conectar"', () => {
@@ -23,9 +33,9 @@ describe('humanizeSabreError', () => {
     expect(mensaje).toContain('alta comercial');
   });
 
-  it('config inválida → sí muestra el detalle, que son rutas y códigos de Zod', () => {
+  it('config inválida → no interpola texto libre del error y remite al panel', () => {
     const mensaje = humanizeSabreError(new SabreConfigError('config de Sabre inválida (host:url)'));
-    expect(mensaje).toContain('host:url');
+    expect(mensaje).not.toContain('host:url');
     expect(mensaje).toContain('Mi Red');
   });
 
@@ -43,6 +53,21 @@ describe('humanizeSabreError', () => {
 
   it('un valor que ni siquiera es Error tampoco revienta', () => {
     expect(humanizeSabreError('cualquier cosa')).toContain('Sabre');
+  });
+
+  it('Flight Check sin Matched pide buscar o elegir alternativa, sin sustituirla', () => {
+    const err = new SabreFlightCheckNoMatchedOfferError([], 1, []);
+    const mensaje = humanizeSabreError(err);
+
+    expect(mensaje).toContain('misma tarifa');
+    expect(mensaje).toContain('alternativa');
+    expect(sabreErrorStatus(err)).toBe(HttpStatus.CONFLICT);
+  });
+
+  it('un cruce de tenants en Flight Check es 400 y no expone el mensaje interno', () => {
+    const err = new SabreFlightCheckTenantMismatchError();
+    expect(sabreErrorStatus(err)).toBe(HttpStatus.BAD_REQUEST);
+    expect(humanizeSabreError(err)).not.toContain('tenants distintos');
   });
 
   it('nunca hace eco del cuerpo de Sabre, ni con PII dentro', () => {

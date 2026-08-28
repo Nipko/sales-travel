@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Logger, NotFoundException } from '@nestjs/common';
 import {
   SabreApiError,
+  SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
   SabreOrderCreateInputError,
   SabrePriceRequestError,
@@ -19,7 +20,12 @@ import {
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
 import { SabreOperationNotSupportedError } from './sabre-errors.js';
-import { SABRE_PROVIDER_CODE, SabreProviderFactory } from './sabre.factory.js';
+import {
+  SABRE_PROVIDER_CODE,
+  SabreOfferRevalidationRouter,
+  SabreProviderFactory,
+  sabreShopOptionsFromAccountConfig,
+} from './sabre.factory.js';
 
 /** Valores que NUNCA pueden aparecer en un mensaje de error ni en un log. */
 const EPR = 'EPR-DE-LA-OFICINA';
@@ -213,6 +219,114 @@ describe('SabreProviderFactory — entorno', () => {
   });
 });
 
+describe('SabreProviderFactory — shopOptions por cuenta', () => {
+  it('sin configuración aplica single, cero rondas pagadas y MFPI apagado', () => {
+    const parsed = sabreShopOptionsFromAccountConfig({});
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.options).toMatchObject({
+      brandedFares: 'single',
+      brandLadderRounds: 0,
+      upsellLimit: 3,
+      multipleFares: 'off',
+    });
+  });
+
+  it('convierte los valores numéricos del formulario y conserva las cuatro palancas', () => {
+    const parsed = sabreShopOptionsFromAccountConfig({
+      brandedFares: 'upsell',
+      brandLadderRounds: '2',
+      upsellLimit: '5',
+      multipleFares: 'with-baggage',
+    });
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.options).toMatchObject({
+      brandedFares: 'upsell',
+      brandLadderRounds: 2,
+      upsellLimit: 5,
+      multipleFares: 'with-baggage',
+    });
+  });
+
+  it('una entrada manipulada cae al conjunto conservador y sólo revela nombres de campo', () => {
+    const parsed = sabreShopOptionsFromAccountConfig({
+      brandedFares: 'todas-siempre',
+      brandLadderRounds: '2.5',
+      upsellLimit: '-1',
+      multipleFares: 'todo',
+    });
+    expect(parsed.invalidFields).toEqual([
+      'brandLadderRounds',
+      'brandedFares',
+      'multipleFares',
+      'upsellLimit',
+    ]);
+    expect(parsed.options).toMatchObject({
+      brandedFares: 'single',
+      brandLadderRounds: 0,
+      upsellLimit: 3,
+      multipleFares: 'off',
+    });
+    expect(JSON.stringify(parsed)).not.toContain('todas-siempre');
+  });
+
+  it('pasa las opciones parseadas al adapter que construye el request BFM', async () => {
+    const shopBodies: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      if (String(input).includes('/v2/auth/token')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ access_token: 'ATK-DE-PRUEBA', expires_in: 3600 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (typeof init?.body === 'string') shopBodies.push(init.body);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            groupedItineraryResponse: { version: '5', messages: [], itineraryGroups: [] },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    });
+
+    try {
+      const factory = factoryWith(() =>
+        Promise.resolve(
+          resolved({
+            config: {
+              brandedFares: 'upsell',
+              brandLadderRounds: '2',
+              upsellLimit: '5',
+              multipleFares: 'with-baggage',
+            },
+          }),
+        ),
+      );
+      const adapter = await factory.forTenant('t1');
+      await adapter.search(
+        {
+          origin: 'BOG',
+          destination: 'LIM',
+          departureDate: '2026-12-01',
+          paxCount: { adults: 1, children: 0, infants: 0 },
+          currency: 'USD',
+        },
+        { tenantId: 't1' },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const firstRequest = shopBodies[0] ?? '';
+    expect(firstRequest).toContain('"SingleBrandedFare":true');
+    expect(firstRequest).toContain('"MultipleBrandedFares":true');
+    expect(firstRequest).toContain('"UpsellLimit":5');
+    expect(firstRequest).toContain('"FlexibleFares"');
+  });
+});
+
 describe('SabreProviderFactory — alcance real de Sabre', () => {
   it('declara `retrieve` y `cancel`, que son las que sabe hacer', () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
@@ -292,10 +406,22 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
 
   it('priceOffer llega al builder de price: una oferta sin ids de offerItem lo dice', async () => {
     const adapter = await adapterReal();
-    const offer = { provider: { name: 'sabre', raw: {} } } as never;
+    const offer = { provider: { name: 'sabre', source: 'NDC', raw: {} } } as never;
 
     await expect(adapter.priceOffer(offer, {} as never, ctx)).rejects.toBeInstanceOf(
       SabrePriceRequestError,
+    );
+  });
+
+  it('ATPCO llega a Flight Check: una oferta sin itinerario falla en su builder local', async () => {
+    const adapter = await adapterReal();
+    const offer = {
+      tenantId: 't1',
+      provider: { name: 'sabre', source: 'ATPCO', raw: {} },
+    } as never;
+
+    await expect(adapter.priceOffer(offer, {} as never, ctx)).rejects.toBeInstanceOf(
+      SabreFlightCheckRequestError,
     );
   });
 
@@ -330,6 +456,50 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
     const adapter = await adapterReal();
     expect(supportsAuditedCreate(adapter)).toBe(true);
     expect(supportsAuditedCancel(adapter)).toBe(true);
+  });
+});
+
+describe('SabreOfferRevalidationRouter — carril por fuente', () => {
+  const result = { offer: {} as never, priceChanged: false, warnings: [] };
+  const criteria = {} as never;
+  const ctx = { tenantId: 't1' };
+
+  it('NDC conserva Offer Price', async () => {
+    const ndc = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const atpco = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const router = new SabreOfferRevalidationRouter(ndc, atpco);
+    const offer = { provider: { source: 'NDC' } } as never;
+
+    await router.priceOffer(offer, criteria, ctx);
+
+    expect(ndc.priceOffer).toHaveBeenCalledOnce();
+    expect(atpco.priceOffer).not.toHaveBeenCalled();
+  });
+
+  it.each(['ATPCO', undefined])('%s usa Flight Check payload-based', async (source) => {
+    const ndc = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const atpco = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const router = new SabreOfferRevalidationRouter(ndc, atpco);
+    const offer = { provider: { source } } as never;
+
+    await router.priceOffer(offer, criteria, ctx);
+
+    expect(atpco.priceOffer).toHaveBeenCalledOnce();
+    expect(ndc.priceOffer).not.toHaveBeenCalled();
+  });
+
+  it('LCC falla de forma soportada y nunca se envía al contrato ATPCO de Flight Check', async () => {
+    const ndc = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const atpco = { priceOffer: vi.fn(() => Promise.resolve(result)) };
+    const router = new SabreOfferRevalidationRouter(ndc, atpco);
+    const offer = { provider: { source: 'LCC' } } as never;
+
+    await expect(router.priceOffer(offer, criteria, ctx)).rejects.toMatchObject({
+      name: 'SabreOperationNotSupportedError',
+      operation: 'revalidar una oferta LCC con Flight Check',
+    });
+    expect(ndc.priceOffer).not.toHaveBeenCalled();
+    expect(atpco.priceOffer).not.toHaveBeenCalled();
   });
 });
 

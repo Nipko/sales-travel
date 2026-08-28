@@ -1,9 +1,11 @@
 import {
   OfferSchema,
   type FareBreakdownEntry,
+  type FareComponent,
   type Money,
   type Offer,
   type ProviderRawValue,
+  type Segment,
 } from '@sales-travel/canonical';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -125,11 +127,46 @@ const PriceSchema = z.object({
   taxes: TaxesSchema.optional(),
 });
 
+const CabinTypeSchema = z.object({
+  cabinTypeCode: z.string(),
+  cabinTypeName: z.string(),
+});
+
+const FareSegmentSchema = z.object({
+  id: z.string(),
+  rbd: z.string().optional(),
+  flightNumber: z.string().optional(),
+  marketingCarrier: z.string().optional(),
+  cabinType: CabinTypeSchema.optional(),
+  departure: z.object({ airport: z.string(), date: z.string() }),
+  arrival: z.object({ airport: z.string(), date: z.string() }),
+});
+
+const FareComponentSchema = z.object({
+  fareBasis: z.object({
+    fareBasisCode: z.string(),
+    fareDescription: z.string(),
+    rbd: z.string(),
+    cabinType: CabinTypeSchema.optional(),
+    sabreCabinType: CabinTypeSchema.optional(),
+  }),
+  segments: z.array(FareSegmentSchema),
+  brand: z
+    .object({
+      code: z.string().optional(),
+      brandName: z.string(),
+      programCode: z.string().optional(),
+      programID: z.number().int().optional(),
+    })
+    .optional(),
+});
+
 const PassengerOfferSchema = z.object({
   id: z.string(),
   ptc: z.string(),
   requestedPtc: z.string(),
   price: PriceSchema.optional(),
+  fareComponents: z.array(FareComponentSchema).optional(),
 });
 
 const AirOfferItemSchema = z.object({
@@ -169,6 +206,7 @@ const UnknownOfferItemSchema = z.object({
     message: 'un offerItem Air/Service malformado no puede degradarse a item desconocido',
   }),
   id: z.string().optional(),
+  mandatoryInd: z.boolean().optional(),
 });
 
 const OfferItemSchema = z.union([
@@ -231,6 +269,8 @@ type SabreAirOfferItemNode = z.infer<typeof AirOfferItemSchema>;
 type SabreServiceOfferItemNode = z.infer<typeof ServiceOfferItemSchema>;
 type SabrePriceNode = z.infer<typeof PriceSchema>;
 type SabreCurrencyAmount = z.infer<typeof CurrencyAmountSchema>;
+type SabreFareComponentNode = z.infer<typeof FareComponentSchema>;
+type SabreFareSegmentNode = z.infer<typeof FareSegmentSchema>;
 
 /**
  * Guardas de la unión. La rama desconocida declara `type: string`, así que TypeScript no puede
@@ -271,6 +311,14 @@ export type SabrePriceWarningCode =
   | 'ptc-repriced'
   | 'pax-type-unmapped'
   | 'pax-price-missing'
+  /** La identidad comercial confirmada por price difiere de la que se mostró en shop. */
+  | 'fare-identity-changed'
+  /** No se pudo asociar de forma unívoca un componente de price con el itinerario original. */
+  | 'fare-component-unmapped'
+  /** La respuesta no permite demostrar la identidad tarifaria completa del producto. */
+  | 'fare-components-unavailable'
+  /** Los ids de pasajero no cubren exactamente el request que originó Offer Price. */
+  | 'passenger-binding-invalid'
   /** La oferta trae ancillaries (`type: "Service"`) que el modelo canónico todavía no coloca. */
   | 'service-offer-item-not-mapped'
   | 'offer-item-type-unknown'
@@ -301,6 +349,29 @@ export interface SabrePriceProviderMessage {
 }
 
 /**
+ * Viajero declarado en el request de Offer Price.
+ *
+ * `requestPassengerId` es una clave técnica sin PII que nosotros enviamos; Sabre la devuelve en
+ * `passengers[].id`. Esa igualdad —no la posición del array— es lo que permite recuperar el
+ * índice solicitado.
+ */
+export interface SabrePriceRequestedTraveler {
+  readonly requestPassengerId: string;
+  readonly requestedTravelerIndex: number;
+  readonly paxType: 'ADT' | 'CHD' | 'INF';
+  readonly requestedPtc: string;
+}
+
+/** Enlace validado que Create Booking debe consumir; nunca se reconstruye por orden. */
+export interface SabrePricePassengerBinding {
+  readonly pricePassengerId: string;
+  readonly requestedTravelerIndex: number;
+  readonly paxType: 'ADT' | 'CHD' | 'INF';
+  readonly requestedPtc: string;
+  readonly pricedPtc: string;
+}
+
+/**
  * Los identificadores y relojes que la oferta revalidada entrega al paso de reserva (RF-07 CA-1).
  * Se publican como estructura tipada además de copiarse a `provider.raw`, para que `createBooking`
  * no tenga que hurgar en un `Record<string, unknown>`.
@@ -309,6 +380,7 @@ export interface SabrePriceHandles {
   readonly offerId: string;
   readonly offerItemIds: readonly string[];
   readonly passengerIds: readonly string[];
+  readonly passengerBindings: readonly SabrePricePassengerBinding[];
   readonly source: SabrePriceSource;
   readonly ttlSeconds: number;
   readonly offerExpirationDateTime: string;
@@ -348,13 +420,15 @@ export interface SabrePricedOffer {
   readonly offer: Offer;
   readonly handles: SabrePriceHandles;
   readonly priceChange: SabrePriceChange;
+  /** Cambio de marca/fare basis/RBD/cabina/asignación de segmentos, independiente del importe. */
+  readonly fareIdentityChanged: boolean;
 }
 
 export interface SabrePriceMapResult {
   readonly priced: readonly SabrePricedOffer[];
   readonly warnings: readonly SabrePriceWarning[];
   readonly providerMessages: readonly SabrePriceProviderMessage[];
-  /** `true` si alguna oferta cambió de precio respecto de la búsqueda. */
+  /** `true` si cambió el importe o la identidad tarifaria respecto de la búsqueda. */
   readonly priceChanged: boolean;
   /**
    * `true` cuando la llamada fue **sin** forma de pago: el total puede subir al cobrar, y el
@@ -379,6 +453,8 @@ export interface SabrePriceMapContext {
    * reconstruyen desde la respuesta de price.
    */
   readonly basis?: Offer;
+  /** El request exacto de pasajeros enviado a Offer Price. Obligatorio para enlazar su respuesta. */
+  readonly requestedTravelers: readonly SabrePriceRequestedTraveler[];
   /** `true` si el request llevó `params.formOfPayment`. Default `false`. */
   readonly formOfPaymentDeclared?: boolean;
 }
@@ -477,7 +553,9 @@ export function mapSabrePriceResponse(
     priced,
     warnings,
     providerMessages,
-    priceChanged: priced.some((entry) => isChanged(entry.priceChange.kind)),
+    priceChanged: priced.some(
+      (entry) => isChanged(entry.priceChange.kind) || entry.fareIdentityChanged,
+    ),
     priceSubjectToFormOfPayment: !formOfPaymentDeclared,
     droppedOffers: dropped,
   };
@@ -531,8 +609,11 @@ function mapOffer(
   if (baseFare === null) return null;
 
   const fareBreakdown = buildFareBreakdown(node, currency, path, warnings);
-  const handles = buildHandles(node, path, warnings);
+  const handles = buildHandles(node, path, ctx.requestedTravelers, warnings);
   if (handles === null) return null;
+
+  const fareComponents = mapFareComponents(node, path, ctx.basis, warnings);
+  if (fareComponents === null) return null;
 
   checkBookingLimits(handles, path, warnings);
   const expiry = resolveExpiry(node, fetchedAt, path, warnings);
@@ -552,6 +633,7 @@ function mapOffer(
   }
 
   const basis = ctx.basis;
+  const fareFamily = deriveGlobalFareFamily(fareComponents);
   const candidate = {
     id: randomUUID(),
     tenantId: ctx.tenantId,
@@ -568,7 +650,8 @@ function mapOffer(
     ...(fareBreakdown.length === 0 ? {} : { fareBreakdown }),
     // Arrastre desde la oferta de búsqueda: ver la cabecera de `mapSabrePriceResponse`.
     ...(basis?.itineraries === undefined ? {} : { itineraries: basis.itineraries }),
-    ...(basis?.fareFamily === undefined ? {} : { fareFamily: basis.fareFamily }),
+    ...(fareFamily === null ? {} : { fareFamily }),
+    ...(fareComponents.length === 0 ? {} : { fareComponents }),
     ...(basis?.baggage === undefined ? {} : { baggage: basis.baggage }),
     ...(basis?.policies === undefined ? {} : { policies: basis.policies }),
     fetchedAt,
@@ -600,7 +683,291 @@ function mapOffer(
     });
   }
 
-  return { offer: validated.data, handles, priceChange };
+  const fareIdentityChanged = hasFareIdentityChanged(basis?.fareComponents, fareComponents);
+  if (fareIdentityChanged) {
+    warnings.push({
+      code: 'fare-identity-changed',
+      path: `${path}.offerItems[].passengers[].fareComponents`,
+    });
+  }
+
+  return { offer: validated.data, handles, priceChange, fareIdentityChanged };
+}
+
+// ---------------------------------------------------------------------------
+// Identidad tarifaria confirmada por Offer Price
+// ---------------------------------------------------------------------------
+
+/**
+ * Offer Price devuelve la identidad dentro de CADA passengerOffer. Se deduplica por producto
+ * (segmentos + marca + fare basis + RBD + cabina), nunca por pasajero ni por precio: dos adultos
+ * con el mismo producto producen un solo componente; un niño con otro fare basis conserva el suyo.
+ */
+function mapFareComponents(
+  node: SabrePricedOfferNode,
+  path: string,
+  basis: Offer | undefined,
+  warnings: SabrePriceWarning[],
+): FareComponent[] | null {
+  const flattened = (basis?.itineraries ?? []).flatMap((itinerary) => itinerary.segments);
+  const virtualRefs = new Map<string, number>();
+  const mapped: FareComponent[] = [];
+  const seen = new Set<string>();
+  let mandatoryPassengers = 0;
+
+  for (let itemIndex = 0; itemIndex < node.offerItems.length; itemIndex += 1) {
+    const item = node.offerItems[itemIndex];
+    if (item === undefined || !isAirOfferItem(item) || item.mandatoryInd !== true) continue;
+    for (let passengerIndex = 0; passengerIndex < item.passengers.length; passengerIndex += 1) {
+      const passenger = item.passengers[passengerIndex];
+      if (passenger === undefined) continue;
+      mandatoryPassengers += 1;
+      const components = passenger.fareComponents;
+      const passengerPath = `${path}.offerItems[${String(itemIndex)}].passengers[${String(passengerIndex)}]`;
+      if (components === undefined || components.length === 0) {
+        warnings.push({
+          code: 'fare-components-unavailable',
+          path: `${passengerPath}.fareComponents`,
+        });
+        return null;
+      }
+      for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
+        const component = components[componentIndex];
+        if (component === undefined) continue;
+        const canonical = mapFareComponent(
+          component,
+          `${passengerPath}.fareComponents[${String(componentIndex)}]`,
+          flattened,
+          basis !== undefined,
+          virtualRefs,
+          warnings,
+        );
+        if (canonical === null) return null;
+        const key = fareComponentIdentityKey(canonical);
+        if (!seen.has(key)) {
+          seen.add(key);
+          mapped.push(canonical);
+        }
+      }
+    }
+  }
+
+  if (mandatoryPassengers === 0 || mapped.length === 0) {
+    warnings.push({ code: 'fare-components-unavailable', path: `${path}.offerItems` });
+    return null;
+  }
+
+  // Con oferta base, cada segmento que se va a reservar debe tener identidad confirmada. Conservar
+  // sólo los componentes que Sabre pudo asociar y rellenar el resto desde shop sería precisamente
+  // ocultar un cambio de tarifa.
+  if (basis !== undefined) {
+    const covered = new Set(mapped.flatMap((component) => component.segmentRefs));
+    for (let index = 0; index < flattened.length; index += 1) {
+      if (covered.has(index)) continue;
+      warnings.push({
+        code: 'fare-components-unavailable',
+        path: `${path}.offerItems[].passengers[].fareComponents`,
+        detail: `segmentRef=${String(index)}`,
+      });
+      return null;
+    }
+  }
+
+  return mapped.sort((left, right) => {
+    const bySegment = (left.segmentRefs[0] ?? 0) - (right.segmentRefs[0] ?? 0);
+    return bySegment === 0
+      ? fareComponentIdentityKey(left).localeCompare(fareComponentIdentityKey(right))
+      : bySegment;
+  });
+}
+
+function mapFareComponent(
+  node: SabreFareComponentNode,
+  path: string,
+  flattened: readonly Segment[],
+  hasBasis: boolean,
+  virtualRefs: Map<string, number>,
+  warnings: SabrePriceWarning[],
+): FareComponent | null {
+  if (node.segments.length === 0) {
+    warnings.push({ code: 'fare-component-unmapped', path: `${path}.segments` });
+    return null;
+  }
+
+  const segmentRefs: number[] = [];
+  for (let index = 0; index < node.segments.length; index += 1) {
+    const segment = node.segments[index];
+    if (segment === undefined) continue;
+    const ref = resolveFareSegmentRef(segment, flattened, hasBasis, virtualRefs);
+    if (ref === null) {
+      warnings.push({
+        code: 'fare-component-unmapped',
+        path: `${path}.segments[${String(index)}]`,
+      });
+      return null;
+    }
+    if (!segmentRefs.includes(ref)) segmentRefs.push(ref);
+  }
+  segmentRefs.sort((left, right) => left - right);
+  if (segmentRefs.length === 0) {
+    warnings.push({ code: 'fare-component-unmapped', path: `${path}.segments` });
+    return null;
+  }
+
+  const fareBasisCode = boundedText(node.fareBasis.fareBasisCode, 120);
+  if (fareBasisCode === undefined) {
+    warnings.push({ code: 'fare-component-unmapped', path: `${path}.fareBasis.fareBasisCode` });
+    return null;
+  }
+  const bookingClasses = [node.fareBasis.rbd, ...node.segments.map((segment) => segment.rbd)]
+    .filter((value): value is string => value !== undefined && /^[A-Z]$/.test(value))
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .sort();
+  if (bookingClasses.length === 0) {
+    warnings.push({ code: 'fare-component-unmapped', path: `${path}.fareBasis.rbd` });
+    return null;
+  }
+
+  const cabin = mapCabin(
+    node.fareBasis.cabinType?.cabinTypeName ??
+      node.fareBasis.sabreCabinType?.cabinTypeName ??
+      node.segments.find((segment) => segment.cabinType !== undefined)?.cabinType?.cabinTypeName,
+  );
+  if (cabin === null) {
+    warnings.push({ code: 'fare-component-unmapped', path: `${path}.fareBasis.cabinType` });
+    return null;
+  }
+
+  const firstResponse = node.segments[0];
+  const lastResponse = node.segments[node.segments.length - 1];
+  const firstBasis = flattened[segmentRefs[0] ?? -1];
+  const lastBasis = flattened[segmentRefs[segmentRefs.length - 1] ?? -1];
+  const brand = mapFareBrand(node.brand);
+  const origin = firstBasis?.origin ?? firstResponse?.departure.airport;
+  const destination = lastBasis?.destination ?? lastResponse?.arrival.airport;
+  return {
+    ...(brand === undefined ? {} : { brand }),
+    fareBasisCode,
+    bookingClasses,
+    segmentRefs,
+    ...(origin === undefined ? {} : { origin }),
+    ...(destination === undefined ? {} : { destination }),
+    cabin,
+  };
+}
+
+function resolveFareSegmentRef(
+  node: SabreFareSegmentNode,
+  flattened: readonly Segment[],
+  hasBasis: boolean,
+  virtualRefs: Map<string, number>,
+): number | null {
+  if (!hasBasis) {
+    const existing = virtualRefs.get(node.id);
+    if (existing !== undefined) return existing;
+    const next = virtualRefs.size;
+    virtualRefs.set(node.id, next);
+    return next;
+  }
+
+  const matches: number[] = [];
+  for (let index = 0; index < flattened.length; index += 1) {
+    const segment = flattened[index];
+    if (segment !== undefined && fareSegmentMatches(node, segment)) matches.push(index);
+  }
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+function fareSegmentMatches(node: SabreFareSegmentNode, segment: Segment): boolean {
+  return (
+    node.departure.airport === segment.origin &&
+    localDateTime(node.departure.date) === localDateTime(segment.departureAt) &&
+    node.arrival.airport === segment.destination &&
+    localDateTime(node.arrival.date) === localDateTime(segment.arrivalAt) &&
+    (node.marketingCarrier === undefined || node.marketingCarrier === segment.carrier) &&
+    (node.flightNumber === undefined ||
+      normalizeFlightNumber(node.flightNumber) === normalizeFlightNumber(segment.flightNumber))
+  );
+}
+
+function localDateTime(value: string): string | null {
+  return /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)/.exec(value)?.[1] ?? null;
+}
+
+function normalizeFlightNumber(value: string): string {
+  const numeric = Number.parseInt(value, 10);
+  return Number.isInteger(numeric) ? String(numeric) : value;
+}
+
+function mapCabin(value: string | undefined): FareComponent['cabin'] | null {
+  const normalized = value
+    ?.trim()
+    .toUpperCase()
+    .replace(/[ _-]+/g, ' ');
+  if (normalized === 'ECONOMY') return 'economy';
+  if (normalized === 'PREMIUM ECONOMY') return 'premium_economy';
+  if (normalized === 'BUSINESS' || normalized === 'PREMIUM BUSINESS') return 'business';
+  if (normalized === 'FIRST' || normalized === 'PREMIUM FIRST') return 'first';
+  return null;
+}
+
+function mapFareBrand(node: SabreFareComponentNode['brand']): FareComponent['brand'] | undefined {
+  if (node === undefined) return undefined;
+  const code = boundedText(node.code, 80);
+  const name = boundedText(node.brandName, 160);
+  const programCode = boundedText(node.programCode, 80);
+  if (
+    code === undefined &&
+    name === undefined &&
+    programCode === undefined &&
+    node.programID === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(code === undefined ? {} : { code }),
+    ...(name === undefined ? {} : { name }),
+    ...(programCode === undefined ? {} : { programCode }),
+    ...(node.programID === undefined ? {} : { programId: node.programID }),
+  };
+}
+
+function boundedText(value: string | undefined, max: number): string | undefined {
+  return value !== undefined && value.length >= 1 && value.length <= max ? value : undefined;
+}
+
+function fareComponentIdentityKey(component: FareComponent): string {
+  return JSON.stringify({
+    segmentRefs: [...component.segmentRefs].sort((left, right) => left - right),
+    brandCode: component.brand?.code ?? null,
+    brandName: component.brand?.name ?? null,
+    brandProgramCode: component.brand?.programCode ?? null,
+    brandProgramId: component.brand?.programId ?? null,
+    fareBasisCode: component.fareBasisCode ?? null,
+    bookingClasses: [...(component.bookingClasses ?? [])].sort(),
+    cabin: component.cabin ?? null,
+  });
+}
+
+function hasFareIdentityChanged(
+  previous: readonly FareComponent[] | undefined,
+  checked: readonly FareComponent[],
+): boolean {
+  if (previous === undefined || previous.length === 0) return false;
+  const before = previous.map(fareComponentIdentityKey).sort();
+  const after = checked.map(fareComponentIdentityKey).sort();
+  return before.length !== after.length || before.some((key, index) => key !== after[index]);
+}
+
+function deriveGlobalFareFamily(components: readonly FareComponent[]): Offer['fareFamily'] | null {
+  const first = components[0];
+  const name = first?.brand?.name;
+  const cabin = first?.cabin;
+  if (name === undefined || cabin === undefined) return null;
+  if (components.some((component) => component.brand?.name !== name || component.cabin !== cabin)) {
+    return null;
+  }
+  return { name, cabin };
 }
 
 // ---------------------------------------------------------------------------
@@ -883,6 +1250,7 @@ function compareWithBasis(
 function buildHandles(
   node: SabrePricedOfferNode,
   path: string,
+  requestedTravelers: readonly SabrePriceRequestedTraveler[],
   warnings: SabrePriceWarning[],
 ): SabrePriceHandles | null {
   const source = normalizeSource(node.source);
@@ -892,29 +1260,44 @@ function buildHandles(
   }
 
   const offerItemIds: string[] = [];
-  const passengerIds: string[] = [];
-  for (const item of node.offerItems) {
-    if (isAirOfferItem(item)) {
-      offerItemIds.push(item.id);
-      for (const passenger of item.passengers) {
-        if (!passengerIds.includes(passenger.id)) passengerIds.push(passenger.id);
+  for (let index = 0; index < node.offerItems.length; index += 1) {
+    const item = node.offerItems[index];
+    if (item === undefined) continue;
+
+    if (!isAirOfferItem(item)) {
+      if (item.mandatoryInd === true) {
+        // El contrato permite Service y futuros subtipos. Omitir uno obligatorio cambia el
+        // producto; seleccionarlo podría reservar un ancillary que la UI nunca eligió. Sin un
+        // mapeo de producto explícito, la única salida segura es descartar esta oferta.
+        warnings.push({
+          code: 'offer-invalid',
+          path: `${path}.offerItems[${String(index)}]`,
+          detail: 'mandatory-item-not-air',
+        });
+        return null;
       }
       continue;
     }
-    // El ancillary tarificado también es un `offerItem` reservable: `selectedOfferItems[]` los
-    // acepta igual, y dejarlo fuera vendería el vuelo sin el servicio que el cliente ya vio.
-    if (isServiceOfferItem(item)) offerItemIds.push(item.id);
+
+    // `mandatoryInd` tiene default false en el contrato. Un Air opcional no entra en
+    // `selectedOfferItems` ni aporta ids de pasajero a la cadena que se va a reservar.
+    if (item.mandatoryInd !== true) continue;
+    offerItemIds.push(item.id);
   }
 
   if (offerItemIds.length === 0) {
-    warnings.push({ code: 'offer-invalid', path, detail: 'sin offerItems reservables' });
+    warnings.push({ code: 'offer-invalid', path, detail: 'sin offerItems Air obligatorios' });
     return null;
   }
+
+  const passengerBindings = bindPassengers(node, path, requestedTravelers, warnings);
+  if (passengerBindings === null) return null;
 
   return {
     offerId: node.id,
     offerItemIds,
-    passengerIds,
+    passengerIds: passengerBindings.map((binding) => binding.pricePassengerId),
+    passengerBindings,
     source,
     ttlSeconds: node.ttl,
     offerExpirationDateTime: node.offerExpirationDateTime,
@@ -935,6 +1318,92 @@ function buildHandles(
       warnings,
     ),
   };
+}
+
+/**
+ * Recupera el índice únicamente por el id técnico que salió en el request. No existe un fallback
+ * por posición: un reorder de Sabre no puede intercambiar documentos entre dos adultos.
+ */
+function bindPassengers(
+  node: SabrePricedOfferNode,
+  path: string,
+  requestedTravelers: readonly SabrePriceRequestedTraveler[],
+  warnings: SabrePriceWarning[],
+): SabrePricePassengerBinding[] | null {
+  const byRequestId = new Map<string, SabrePriceRequestedTraveler>();
+  const requestedIndexes = new Set<number>();
+  for (const requested of requestedTravelers) {
+    if (
+      requested.requestPassengerId.length === 0 ||
+      !Number.isSafeInteger(requested.requestedTravelerIndex) ||
+      requested.requestedTravelerIndex < 0 ||
+      byRequestId.has(requested.requestPassengerId) ||
+      requestedIndexes.has(requested.requestedTravelerIndex) ||
+      canonicalPaxType(requested.requestedPtc) !== requested.paxType
+    ) {
+      warnings.push({ code: 'passenger-binding-invalid', path: 'request.passengers' });
+      return null;
+    }
+    byRequestId.set(requested.requestPassengerId, requested);
+    requestedIndexes.add(requested.requestedTravelerIndex);
+  }
+  if (byRequestId.size === 0) {
+    warnings.push({ code: 'passenger-binding-invalid', path: 'request.passengers' });
+    return null;
+  }
+
+  const byIndex = new Map<number, SabrePricePassengerBinding>();
+  for (let itemIndex = 0; itemIndex < node.offerItems.length; itemIndex += 1) {
+    const item = node.offerItems[itemIndex];
+    if (item === undefined || !isAirOfferItem(item) || item.mandatoryInd !== true) continue;
+    for (let passengerIndex = 0; passengerIndex < item.passengers.length; passengerIndex += 1) {
+      const passenger = item.passengers[passengerIndex];
+      if (passenger === undefined) continue;
+      const passengerPath = `${path}.offerItems[${String(itemIndex)}].passengers[${String(passengerIndex)}]`;
+      const requested = byRequestId.get(passenger.id);
+      const responseRequestedPax = canonicalPaxType(passenger.requestedPtc);
+      if (requested === undefined || responseRequestedPax !== requested.paxType) {
+        warnings.push({ code: 'passenger-binding-invalid', path: passengerPath });
+        return null;
+      }
+      const binding: SabrePricePassengerBinding = {
+        pricePassengerId: passenger.id,
+        requestedTravelerIndex: requested.requestedTravelerIndex,
+        paxType: requested.paxType,
+        requestedPtc: passenger.requestedPtc,
+        pricedPtc: passenger.ptc,
+      };
+      const existing = byIndex.get(binding.requestedTravelerIndex);
+      if (
+        existing !== undefined &&
+        (existing.pricePassengerId !== binding.pricePassengerId ||
+          existing.paxType !== binding.paxType ||
+          existing.requestedPtc !== binding.requestedPtc ||
+          existing.pricedPtc !== binding.pricedPtc)
+      ) {
+        warnings.push({ code: 'passenger-binding-invalid', path: passengerPath });
+        return null;
+      }
+      byIndex.set(binding.requestedTravelerIndex, binding);
+    }
+  }
+
+  if (byIndex.size !== requestedTravelers.length) {
+    warnings.push({
+      code: 'passenger-binding-invalid',
+      path: `${path}.offerItems[].passengers`,
+      detail: `expected=${String(requestedTravelers.length)},actual=${String(byIndex.size)}`,
+    });
+    return null;
+  }
+  for (const requested of requestedTravelers) {
+    if (byIndex.has(requested.requestedTravelerIndex)) continue;
+    warnings.push({ code: 'passenger-binding-invalid', path: `${path}.offerItems[].passengers` });
+    return null;
+  }
+  return [...byIndex.values()].sort(
+    (left, right) => left.requestedTravelerIndex - right.requestedTravelerIndex,
+  );
 }
 
 /**
@@ -1052,6 +1521,13 @@ function buildProviderRaw(
     [SABRE_RAW_KEYS.priceOfferId]: handles.offerId,
     [SABRE_RAW_KEYS.priceOfferItemIds]: [...handles.offerItemIds],
     [SABRE_RAW_KEYS.pricePassengerIds]: [...handles.passengerIds],
+    [SABRE_RAW_KEYS.pricePassengerBindings]: handles.passengerBindings.map((binding) => ({
+      pricePassengerId: binding.pricePassengerId,
+      requestedTravelerIndex: binding.requestedTravelerIndex,
+      paxType: binding.paxType,
+      requestedPtc: binding.requestedPtc,
+      pricedPtc: binding.pricedPtc,
+    })),
     source: handles.source,
     ttlSeconds: handles.ttlSeconds,
     offerExpirationDateTime: handles.offerExpirationDateTime,

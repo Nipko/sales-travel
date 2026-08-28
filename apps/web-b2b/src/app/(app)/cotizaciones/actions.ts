@@ -25,6 +25,22 @@ interface Itinerary {
   stops: number;
 }
 
+export interface FareComponent {
+  brand?: {
+    code?: string;
+    name?: string;
+    programCode?: string;
+    programId?: number;
+  };
+  fareBasisCode?: string;
+  bookingClasses?: string[];
+  /** Índices sobre todos los segmentos de `itineraries`, aplanados en orden. */
+  segmentRefs: number[];
+  origin?: string;
+  destination?: string;
+  cabin?: string;
+}
+
 export interface OfferPricing {
   costMinor: number;
   finalMinor: number;
@@ -36,7 +52,12 @@ export interface Offer {
   id: string;
   tenantId: string;
   products: string[];
-  provider: { name: string; offerRef: string };
+  provider: {
+    name: string;
+    offerRef: string;
+    source?: string;
+    raw?: Record<string, unknown>;
+  };
   total: Money;
   baseFare: Money;
   taxes: Money;
@@ -44,6 +65,8 @@ export interface Offer {
   pricing?: OfferPricing;
   itineraries?: Itinerary[];
   fareFamily?: { name: string; cabin: string };
+  /** Fuente de verdad cuando ida y vuelta llevan familias distintas. */
+  fareComponents?: FareComponent[];
   /**
    * Las tres piezas, cada una OPCIONAL. Espejo del modelo canónico.
    *

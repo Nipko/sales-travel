@@ -701,19 +701,11 @@ describe('(7) sello — los mutantes que el sello no mataba', () => {
  * ────────────────────────────────────────────────────────────────────────────
  *
  * La matriz mide SEIS superficies de `SabreApiError`. `postJson` puede lanzar una clase mas
- * —`SabreConfigError`, la guarda de modo mock— y su mensaje NO pasa por `redactPath`: lleva la
- * ruta tal y como llego. Todos los demas carriles del paquete la redactan (el constructor de
- * `SabreApiError` con `redactPath`, el log con `redactMeta`); este es el unico que no.
- *
- * Importa mas desde esta ronda porque el carril ya no muere en el paquete: `apps/api` declara
- * `@sales-travel/sabre` como dependencia y `humanizeSabreError` interpola `err.message` de un
- * `SabreConfigError` DENTRO de la respuesta HTTP 502 que ve el navegador del vendedor.
- *
- * Hoy no filtra nada: el ACL construye las rutas con sus propias constantes. Se fija el
- * comportamiento REAL para que el dia que se redacte la suite se ponga roja aqui.
+ * —`SabreConfigError`, la guarda de modo mock—. También debe pasar por `redactPath`: aunque hoy
+ * los adapters usan rutas constantes, este borde público no puede confiar en todos sus callers.
  */
-describe('(8) sello — la ruta cruda de SabreConfigError', () => {
-  it('FRONTERA: la guarda de modo mock publica la ruta SIN redactar', async () => {
+describe('(8) sello — SabreConfigError también redacta rutas', () => {
+  it('la guarda sin credenciales no publica secretos incluidos en una ruta', async () => {
     const mockCfg: SabreConfig = { host: SABRE_HOSTS.cert.rest, conversationIdPrefix: 'sello' };
     const http = new SabreHttpClient(mockCfg, tokens, { uuid: () => 'conv-sello' });
     const thrown = await http.postJson('/v5/offers/shop;access_token=ATKSECRETO123456789', {}).then(
@@ -721,7 +713,7 @@ describe('(8) sello — la ruta cruda de SabreConfigError', () => {
       (err: unknown) => err,
     );
     expect(thrown).toBeInstanceOf(SabreConfigError);
-    expect((thrown as Error).message).toContain('ATKSECRETO123456789');
+    expect((thrown as Error).message).not.toContain('ATKSECRETO123456789');
   });
 
   it('en cambio SabreApiError redacta la ruta en las seis superficies', async () => {

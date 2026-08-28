@@ -16,6 +16,7 @@ import type { Offer } from '../actions';
 import { baggageState } from '../../../../lib/baggage';
 import { cn } from '../../../../lib/cn';
 import { Button } from '../../../../components/ui/button';
+import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
 
 interface FareFamilyMatrixProps {
   fares: Offer[];
@@ -177,7 +178,8 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {fares.map((fare) => {
-        const name = fare.fareFamily?.name ?? 'STANDARD';
+        const components = fareComponentsForDisplay(fare);
+        const name = fareFamilySummary(fare) ?? 'STANDARD';
         const bgClass =
           FARE_COLORS[name] ?? 'bg-[var(--color-surface)] border-[var(--color-border)]/70';
         const badge = FARE_BADGES[name];
@@ -209,6 +211,27 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
                 </span>
               )}
             </div>
+
+            {components.length > 0 && (
+              <div
+                aria-label="Familias por trayecto"
+                className="mb-4 space-y-2 rounded-lg border border-[var(--color-border)]/50 bg-[var(--color-surface)]/70 p-2.5"
+              >
+                {components.map((component) => (
+                  <div key={component.key} className="text-xs">
+                    <p className="font-medium text-[var(--color-fg-muted)]">
+                      {component.legLabel} · {component.route}
+                    </p>
+                    <p className="font-semibold text-[var(--color-fg)]">{component.name}</p>
+                    {component.details.length > 0 && (
+                      <p className="mt-0.5 text-[10px] text-[var(--color-fg-subtle)]">
+                        {component.details.join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Price */}
             <div className="mb-4 border-b border-[var(--color-border)]/50 pb-3.5">
@@ -265,12 +288,24 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
               <AttrRow
                 icon={<RefreshCw className="size-3.5" />}
                 label="Cambios de fecha"
-                value={policies?.changeable ? 'yes' : 'no'}
+                value={
+                  policies?.changeable === undefined
+                    ? 'unknown'
+                    : policies.changeable
+                      ? 'yes'
+                      : 'no'
+                }
               />
               <AttrRow
                 icon={<RotateCcw className="size-3.5" />}
                 label="Reembolso de tarifa"
-                value={policies?.refundable ? 'yes' : 'no'}
+                value={
+                  policies?.refundable === undefined
+                    ? 'unknown'
+                    : policies.refundable
+                      ? 'yes'
+                      : 'no'
+                }
               />
             </div>
 

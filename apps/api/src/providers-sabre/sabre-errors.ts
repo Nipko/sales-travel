@@ -7,6 +7,11 @@ import {
   SabreConfigError,
   SabreCreateBookingError,
   SabreCreateBookingMapError,
+  SabreFlightCheckMappingError,
+  SabreFlightCheckNoMatchedOfferError,
+  SabreFlightCheckRejectedError,
+  SabreFlightCheckRequestError,
+  SabreFlightCheckTenantMismatchError,
   SabreGetBookingBuildError,
   SabreGetBookingMappingError,
   SabreIndexError,
@@ -62,10 +67,10 @@ export function humanizeSabreError(err: unknown): string {
   // Un fallback aquí convertiría ese error de compilación en un mensaje genérico en producción.
   if (err instanceof SabreApiError) return MENSAJE_POR_KIND[err.failure.kind];
 
-  // Config ausente o inválida: el mensaje lo construye `parseSabreConfig` con la RUTA y el
-  // CÓDIGO del issue de Zod, nunca con el valor recibido. Por eso sí se puede mostrar.
+  // La configuración puede fallar en capas distintas y `Error.message` sigue siendo texto libre.
+  // El panel ya expone por separado los nombres de campos faltantes; acá no se interpola nada.
   if (err instanceof SabreConfigError) {
-    return `La configuración de Sabre de esta agencia es inválida (${err.message}). Revisala en Mi Red → Credenciales → Sabre.`;
+    return 'La configuración de Sabre de esta agencia es inválida. Revisala en Mi Red → Credenciales → Sabre.';
   }
 
   // Respuesta fuera de contrato: el mensaje son rutas de campo + códigos de Zod, sin valores.
@@ -86,11 +91,19 @@ export function humanizeSabreError(err: unknown): string {
   if (err instanceof SabreOfferPriceEmptyError) {
     return 'Sabre no devolvió ninguna tarifa vigente para esta oferta. Volvé a buscar.';
   }
+  if (
+    err instanceof SabreFlightCheckNoMatchedOfferError ||
+    err instanceof SabreFlightCheckRejectedError
+  ) {
+    return 'Sabre no pudo confirmar la misma tarifa y clase de reserva. Volvé a buscar o elegí explícitamente una alternativa.';
+  }
   if (err instanceof SabreCardBinPricingDeniedError) {
     return 'Tarificar con datos de tarjeta no está habilitado para esta agencia. La reserva se hace sin tarjeta y el cobro va por el checkout del medio de pago.';
   }
   if (
     err instanceof SabrePriceRequestError ||
+    err instanceof SabreFlightCheckRequestError ||
+    err instanceof SabreFlightCheckTenantMismatchError ||
     err instanceof SabreOrderCreateInputError ||
     err instanceof SabreCreateBookingError ||
     err instanceof SabreGetBookingBuildError ||
@@ -105,6 +118,7 @@ export function humanizeSabreError(err: unknown): string {
   }
   if (
     err instanceof SabrePriceMappingError ||
+    err instanceof SabreFlightCheckMappingError ||
     err instanceof SabreCreateBookingMapError ||
     err instanceof SabreGetBookingMappingError ||
     err instanceof SabreCancelMappingError
@@ -128,6 +142,11 @@ export const SABRE_THROWN_CLASSES = [
   SabreConfigError,
   SabreShopMappingError,
   SabrePriceRequestError,
+  SabreFlightCheckRequestError,
+  SabreFlightCheckMappingError,
+  SabreFlightCheckRejectedError,
+  SabreFlightCheckNoMatchedOfferError,
+  SabreFlightCheckTenantMismatchError,
   SabrePriceMappingError,
   SabrePriceRejectedError,
   SabreOfferPriceEmptyError,
@@ -159,7 +178,14 @@ export const SABRE_THROWN_CLASSES = [
  */
 export function sabreErrorStatus(err: unknown): number {
   if (err instanceof SabreCardBinPricingDeniedError) return HttpStatus.FORBIDDEN;
-  if (err instanceof SabreOfferPriceEmptyError) return HttpStatus.CONFLICT;
+  if (
+    err instanceof SabreOfferPriceEmptyError ||
+    err instanceof SabreFlightCheckNoMatchedOfferError ||
+    err instanceof SabreFlightCheckRejectedError
+  ) {
+    return HttpStatus.CONFLICT;
+  }
+  if (err instanceof SabreFlightCheckTenantMismatchError) return HttpStatus.BAD_REQUEST;
   return HttpStatus.BAD_GATEWAY;
 }
 

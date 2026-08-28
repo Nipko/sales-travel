@@ -130,6 +130,20 @@ describe('cancelBooking — CRITERIO DE SALIDA: NDC no se cancela sin checkFligh
     ).not.toThrow();
   });
 
+  it('contenido ATPCO emitido sí exige comprobar VOID/REFUND', () => {
+    expect(requiresTicketCheck({ items: [atpcoFlight], isTicketed: true })).toBe(true);
+    expect(
+      ruleOf(() =>
+        buildSabreCancelBookingRequest({
+          confirmationId: PNR,
+          scope: 'ALL',
+          content: { items: [atpcoFlight], isTicketed: true },
+          ticketOperation: 'VOID',
+        }),
+      ),
+    ).toBe('NDC_CANCEL_WITHOUT_TICKET_CHECK');
+  });
+
   it('una reserva sólo de hotel, sin emitir, tampoco', () => {
     expect(requiresTicketCheck({ items: [hotel] })).toBe(false);
   });
@@ -163,6 +177,25 @@ describe('cancelBooking — la evidencia se ata a SU reserva', () => {
     expect(ruleOf(() => readSabreTicketCheck('OK', { confirmationId: PNR }))).toBe(
       'TICKET_CHECK_MALFORMED',
     );
+  });
+
+  it('un HTTP 200 con errors[] nunca produce evidencia autorizante', () => {
+    const secret = 'PNR-OR-DOCUMENT-MUST-NOT-LEAK';
+    let thrown: unknown;
+    try {
+      readSabreTicketCheck(
+        checkTicketsResponse({
+          errors: [{ category: 'APPLICATION_ERROR', description: secret }],
+        }),
+        { confirmationId: PNR },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(SabreCancelBookingBuildError);
+    expect((thrown as SabreCancelBookingBuildError).rule).toBe('TICKET_CHECK_REPORTED_ERRORS');
+    expect(String(thrown)).not.toContain(secret);
   });
 
   it('sin eco de confirmationId la evidencia vale: el eco es opcional en el contrato', () => {

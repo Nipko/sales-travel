@@ -14,6 +14,9 @@ import * as getResponse from './booking/get.response.mapper';
 import * as indices from './indices';
 import * as priceRequest from './price/request.builder';
 import * as priceResponse from './price/response.mapper';
+import * as flightCheckRequest from './flight-check/request.builder';
+import * as flightCheckResponse from './flight-check/response.mapper';
+import * as flightCheckAdapter from './sabre-flight-check.adapter';
 import * as offerPriceAdapter from './sabre-offer-price.adapter';
 import * as orderCreateAdapter from './sabre-order-create.adapter';
 import * as orderManageAdapter from './sabre-order-manage.adapter';
@@ -82,6 +85,9 @@ const PROBED: readonly ProbedModule[] = [
   { name: 'booking/cancel.response.mapper', module: cancelResponse },
   { name: 'price/request.builder', module: priceRequest },
   { name: 'price/response.mapper', module: priceResponse },
+  { name: 'flight-check/request.builder', module: flightCheckRequest },
+  { name: 'flight-check/response.mapper', module: flightCheckResponse },
+  { name: 'sabre-flight-check.adapter', module: flightCheckAdapter },
   { name: 'sabre-offer-price.adapter', module: offerPriceAdapter },
   { name: 'sabre-order-create.adapter', module: orderCreateAdapter },
   { name: 'sabre-order-manage.adapter', module: orderManageAdapter },
@@ -140,11 +146,12 @@ describe('la omisión deliberada de SABRE_STATUS_NAMES es segura', () => {
   });
 });
 
-describe('los tres adapters de esta fase son alcanzables desde el entry', () => {
+describe('los adapters de pricing y orden son alcanzables desde el entry', () => {
   // Escrito nombre a nombre y no derivado del módulo: es la lista que `apps/api` importa, y su
   // ausencia es exactamente el cableado perdido que dejó un eje entero inalcanzable en producción.
   it.each([
     ['SabreOfferPriceAdapter', offerPriceAdapter.SabreOfferPriceAdapter],
+    ['SabreFlightCheckAdapter', flightCheckAdapter.SabreFlightCheckAdapter],
     ['DENY_CARD_BIN_PRICING', offerPriceAdapter.DENY_CARD_BIN_PRICING],
     ['SabreOrderCreateAdapter', orderCreateAdapter.SabreOrderCreateAdapter],
     ['SabreOrderManageAdapter', orderManageAdapter.SabreOrderManageAdapter],

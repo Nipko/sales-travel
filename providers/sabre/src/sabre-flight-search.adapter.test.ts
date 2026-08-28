@@ -811,6 +811,118 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     return json(payload);
   }
 
+  function objeto(value: unknown, label: string): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`fixture inválida: ${label}`);
+    }
+    return value as Record<string, unknown>;
+  }
+
+  function objetos(value: unknown, label: string): Array<Record<string, unknown>> {
+    if (!Array.isArray(value)) throw new Error(`fixture inválida: ${label}`);
+    return value.map((item, index) => objeto(item, `${label}.${index}`));
+  }
+
+  function sumar(value: unknown, offset: number, label: string): number {
+    if (typeof value !== 'number') throw new Error(`fixture inválida: ${label}`);
+    return value + offset;
+  }
+
+  /**
+   * Convierte el ejemplo oficial en una respuesta mono-carrier y reindexa sus diccionarios para
+   * poder combinar varias copias en la misma respuesta BFM.
+   */
+  function fixtureDeMarca(
+    carrier: string,
+    code: string,
+    name: string,
+    offset: number,
+  ): Record<string, unknown> {
+    const payload = structuredClone(adultFixture) as unknown;
+    const root = objeto(payload, 'root');
+    const grouped = objeto(root['groupedItineraryResponse'], 'groupedItineraryResponse');
+
+    for (const schedule of objetos(grouped['scheduleDescs'], 'scheduleDescs')) {
+      schedule['id'] = sumar(schedule['id'], offset, 'schedule.id');
+      const carrierNode = objeto(schedule['carrier'], 'schedule.carrier');
+      carrierNode['marketing'] = carrier;
+      carrierNode['operating'] = carrier;
+    }
+    for (const leg of objetos(grouped['legDescs'], 'legDescs')) {
+      leg['id'] = sumar(leg['id'], offset, 'leg.id');
+      for (const scheduleRef of objetos(leg['schedules'], 'leg.schedules')) {
+        scheduleRef['ref'] = sumar(scheduleRef['ref'], offset, 'leg.schedule.ref');
+      }
+    }
+    for (const fareComponent of objetos(grouped['fareComponentDescs'], 'fareComponentDescs')) {
+      fareComponent['id'] = sumar(fareComponent['id'], offset, 'fareComponent.id');
+      fareComponent['governingCarrier'] = carrier;
+      fareComponent['brand'] = { code, brandName: name };
+    }
+
+    for (const group of objetos(grouped['itineraryGroups'], 'itineraryGroups')) {
+      for (const itinerary of objetos(group['itineraries'], 'itineraries')) {
+        itinerary['id'] = sumar(itinerary['id'], offset, 'itinerary.id');
+        for (const legRef of objetos(itinerary['legs'], 'itinerary.legs')) {
+          legRef['ref'] = sumar(legRef['ref'], offset, 'itinerary.leg.ref');
+        }
+        for (const pricing of objetos(itinerary['pricingInformation'], 'pricingInformation')) {
+          const fare = objeto(pricing['fare'], 'pricing.fare');
+          fare['validatingCarrierCode'] = carrier;
+          fare['governingCarriers'] = `${carrier} ${carrier}`;
+          for (const passengerEntry of objetos(fare['passengerInfoList'], 'passengerInfoList')) {
+            const passenger = objeto(passengerEntry['passengerInfo'], 'passengerInfo');
+            for (const component of objetos(passenger['fareComponents'], 'fareComponents')) {
+              component['ref'] = sumar(component['ref'], offset, 'fareComponent.ref');
+            }
+            for (const baggage of objetos(passenger['baggageInformation'], 'baggageInformation')) {
+              baggage['airlineCode'] = carrier;
+            }
+          }
+        }
+      }
+    }
+    return root;
+  }
+
+  function conMarcasDeCarriers(
+    entries: ReadonlyArray<{ carrier: string; code: string; name: string }>,
+  ): Response {
+    const payloads = entries.map((entry, index) =>
+      fixtureDeMarca(entry.carrier, entry.code, entry.name, index * 100),
+    );
+    const first = payloads[0];
+    if (first === undefined) throw new Error('se requiere al menos un carrier');
+    const grouped = objeto(first['groupedItineraryResponse'], 'first.grouped');
+    const firstGroup = objetos(grouped['itineraryGroups'], 'first.groups')[0];
+    if (firstGroup === undefined) throw new Error('fixture inválida: first group');
+
+    for (const extra of payloads.slice(1)) {
+      const extraGrouped = objeto(extra['groupedItineraryResponse'], 'extra.grouped');
+      for (const key of ['scheduleDescs', 'legDescs', 'fareComponentDescs'] as const) {
+        const target = objetos(grouped[key], `first.${key}`);
+        target.push(...objetos(extraGrouped[key], `extra.${key}`));
+        grouped[key] = target;
+      }
+      const extraGroup = objetos(extraGrouped['itineraryGroups'], 'extra.groups')[0];
+      if (extraGroup === undefined) throw new Error('fixture inválida: extra group');
+      const itineraries = objetos(firstGroup['itineraries'], 'first.itineraries');
+      itineraries.push(...objetos(extraGroup['itineraries'], 'extra.itineraries'));
+      firstGroup['itineraries'] = itineraries;
+    }
+    return json(first);
+  }
+
+  function conMarcaInterline(code: string, name: string): Response {
+    const payload = fixtureDeMarca('AA', code, name, 0);
+    const grouped = objeto(payload['groupedItineraryResponse'], 'interline.grouped');
+    const schedules = objetos(grouped['scheduleDescs'], 'interline.schedules');
+    const secondCarrier = objeto(schedules[1]?.['carrier'], 'interline.second.carrier');
+    secondCarrier['marketing'] = 'DL';
+    secondCarrier['operating'] = 'DL';
+    return json(payload);
+  }
+
   it('por defecto NO escala: cada ronda es una llamada y Sabre cobra por consulta', async () => {
     const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
     await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
@@ -831,11 +943,63 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     // La segunda petición excluye lo que trajo la primera.
     expect(cuerpo(spy.calls[1]!.init)).toContain('"Code":"MAIN"');
     expect(cuerpo(spy.calls[1]!.init)).toContain('Unacceptable');
+    expect(cuerpo(spy.calls[1]!.init)).toContain(
+      '"VendorPref":[{"Code":"LO","PreferLevel":"Only","Type":"Marketing"}]',
+    );
 
     // Y el vendedor acaba con las DOS marcas del mismo vuelo, que es la comparación.
     const marcas = new Set(offers.map((o) => o.fareFamily?.name));
     expect(marcas).toContain('MAIN CABIN');
     expect(marcas).toContain('MAIN CABIN FLEXIBLE');
+  });
+
+  it('aísla por carrier: un código de DL no oculta la siguiente familia homónima de AA', async () => {
+    const spy = spyFetch((n) => {
+      if (n === 1) {
+        return conMarcasDeCarriers([
+          { carrier: 'AA', code: 'BASIC', name: 'AA BASIC' },
+          { carrier: 'DL', code: 'FLEX', name: 'DL FLEX' },
+        ]);
+      }
+      if (n === 2) return conMarcasDeCarriers([{ carrier: 'AA', code: 'FLEX', name: 'AA FLEX' }]);
+      return conMarcasDeCarriers([{ carrier: 'DL', code: 'PLUS', name: 'DL PLUS' }]);
+    });
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 1 },
+    }).search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(3);
+    const aaRound = cuerpo(spy.calls[1]!.init);
+    const dlRound = cuerpo(spy.calls[2]!.init);
+    expect(aaRound).toContain(
+      '"VendorPref":[{"Code":"AA","PreferLevel":"Only","Type":"Marketing"}]',
+    );
+    expect(aaRound).toContain('"Code":"BASIC"');
+    expect(aaRound).not.toContain('"Code":"FLEX","PreferLevel":"Unacceptable"');
+    expect(dlRound).toContain(
+      '"VendorPref":[{"Code":"DL","PreferLevel":"Only","Type":"Marketing"}]',
+    );
+    expect(dlRound).toContain('"Code":"FLEX","PreferLevel":"Unacceptable"');
+    expect(dlRound).not.toContain('"Code":"BASIC","PreferLevel":"Unacceptable"');
+
+    expect(new Set(offers.map((offer) => offer.fareFamily?.name))).toEqual(
+      new Set(['AA BASIC', 'DL FLEX', 'AA FLEX', 'DL PLUS']),
+    );
+  });
+
+  it('un itinerario interline conserva la oferta base y no usa una exclusión global insegura', async () => {
+    const spy = spyFetch(() => conMarcaInterline('BASIC', 'INTERLINE BASIC'));
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 3 },
+    }).search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(1);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]?.fareFamily?.name).toBe('INTERLINE BASIC');
   });
 
   it('para en cuanto una ronda no aporta nada nuevo', async () => {
@@ -873,6 +1037,33 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
     expect(offers.length).toBeGreaterThan(0);
     expect(calls.map((c) => c.message)).toContain('sabre.shop.escalera_de_marcas_cortada');
+  });
+
+  it('un timeout en la ronda extra 2 conserva base y la primera marca adicional', async () => {
+    const timeout = new Error('texto sensible que no debe llegar al log');
+    timeout.name = 'AbortError';
+    const spy = spyFetch((n) => {
+      if (n === 1) return conMarca('MAIN', 'MAIN CABIN');
+      if (n === 2) return conMarca('MAINFL', 'MAIN CABIN FLEXIBLE');
+      throw timeout;
+    });
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandLadderRounds: 3 },
+    }).search(CRITERIA, CTX);
+
+    const marcas = new Set(offers.map((offer) => offer.fareFamily?.name));
+    expect(marcas).toEqual(new Set(['MAIN CABIN', 'MAIN CABIN FLEXIBLE']));
+    const cut = calls.find((call) => call.message === 'sabre.shop.escalera_de_marcas_cortada');
+    expect(cut?.meta).toMatchObject({
+      ronda: 1,
+      errorClass: 'SabreApiError',
+      kind: 'TRANSPORT',
+    });
+    expect(JSON.stringify(calls)).not.toContain(timeout.message);
   });
 
   it('sin marcas en la respuesta no hay escalera que subir', async () => {

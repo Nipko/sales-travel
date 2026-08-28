@@ -265,17 +265,18 @@ describe('capa 1 — sólo un sitio del paquete llama al LoggerPort', () => {
     expect(declaredIn.replace(/\\/g, '/')).toContain('/src/redaction.ts');
   });
 
-  it('los ficheros que MANEJAN un LoggerPort son exactamente estos cuatro', () => {
+  it('los ficheros que MANEJAN un LoggerPort son exactamente los declarados', () => {
     // Anti-ceguera, no la defensa. La defensa es el test de arriba; esto es lo que impide que se
     // quede vacuo sin avisar: si alguien afloja `logger?: LoggerPort` a `any`, ese fichero
     // DESAPARECE de esta lista y el test se pone rojo, en vez de que sus llamadas dejen de verse.
     //
-    // Escrito como igualdad y no como `toContain` a propósito: una quinta clase con logger es un
+    // Escrito como igualdad y no como `toContain` a propósito: una clase nueva con logger es un
     // camino nuevo al transporte de logs, y quien lo abra tiene que mirar esta guarda a la cara.
     expect([...LOGGER_FILES].sort()).toEqual([
       'src/auth/token.service.ts',
       'src/http/sabre-http.client.ts',
       'src/redaction.ts',
+      'src/sabre-flight-check.adapter.ts',
       'src/sabre-flight-search.adapter.ts',
       'src/sabre-offer-price.adapter.ts',
       'src/sabre-order-create.adapter.ts',

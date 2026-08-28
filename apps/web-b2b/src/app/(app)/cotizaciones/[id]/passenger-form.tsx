@@ -23,6 +23,8 @@ interface PaxCount {
 
 interface Passenger {
   paxId: string;
+  /** Índice global 0-based de la búsqueda: ADT, luego CHD y luego INF. */
+  requestedTravelerIndex: number;
   paxType: 'ADT' | 'CHD' | 'INF';
   title: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
   givenName: string;
@@ -57,6 +59,11 @@ interface PassengerFormProps {
   customerName?: string;
   contactEmail?: string;
   contactPhone?: string;
+  /** La reserva se habilita únicamente tras revalidar (y aceptar, si cambió el precio). */
+  disabled?: boolean;
+  disabledReason?: string;
+  /** Sólo debe activarse cuando el backend realmente cobra y confirma la emisión. */
+  paymentSupported?: boolean;
   onSubmit: (
     passengers: Passenger[],
     contactInfo: ContactInfo,
@@ -64,9 +71,14 @@ interface PassengerFormProps {
   ) => Promise<void>;
 }
 
-function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
-  const make = (type: 'ADT' | 'CHD' | 'INF', i: number): Passenger => ({
+export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
+  const make = (
+    type: 'ADT' | 'CHD' | 'INF',
+    i: number,
+    requestedTravelerIndex: number,
+  ): Passenger => ({
     paxId: `${type}_${i}`,
+    requestedTravelerIndex,
     paxType: type,
     title: 'Mr',
     givenName: '',
@@ -77,9 +89,9 @@ function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
     identityDoc: { type: 'CC', number: '', issuingCountryCode: 'CO', expiryDate: '' },
   });
   const pax: Passenger[] = [];
-  for (let i = 1; i <= paxCount.adults; i++) pax.push(make('ADT', i));
-  for (let i = 1; i <= paxCount.children; i++) pax.push(make('CHD', i));
-  for (let i = 1; i <= paxCount.infants; i++) pax.push(make('INF', i));
+  for (let i = 1; i <= paxCount.adults; i++) pax.push(make('ADT', i, pax.length));
+  for (let i = 1; i <= paxCount.children; i++) pax.push(make('CHD', i, pax.length));
+  for (let i = 1; i <= paxCount.infants; i++) pax.push(make('INF', i, pax.length));
   return pax;
 }
 
@@ -187,6 +199,9 @@ export function PassengerForm({
   customerName,
   contactEmail,
   contactPhone,
+  disabled = false,
+  disabledReason,
+  paymentSupported = false,
   onSubmit,
 }: PassengerFormProps) {
   const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
@@ -328,9 +343,17 @@ export function PassengerForm({
     <Card>
       <CardContent className="relative p-5">
         {submitting && <BookingOverlay payNow={paymentMode === 'pay_now'} />}
+        {disabled && disabledReason && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"
+          >
+            {disabledReason}
+          </div>
+        )}
         <fieldset
-          disabled={submitting}
-          className={cn('m-0 min-w-0 border-0 p-0', submitting && 'opacity-60')}
+          disabled={submitting || disabled}
+          className={cn('m-0 min-w-0 border-0 p-0', (submitting || disabled) && 'opacity-60')}
         >
           <div className="mb-1 flex items-center gap-2">
             <UserPlus className="size-4 text-[var(--color-primary)]" />
@@ -556,7 +579,7 @@ export function PassengerForm({
               <h3 className="text-sm font-semibold text-[var(--color-fg)]">Método de pago</h3>
             </div>
 
-            <div className="mb-4 grid grid-cols-2 gap-2">
+            <div className={cn('mb-4 grid gap-2', paymentSupported && 'grid-cols-2')}>
               <button
                 type="button"
                 onClick={() => {
@@ -575,24 +598,33 @@ export function PassengerForm({
                   Genera PNR, pagar después
                 </p>
               </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMode('pay_now')}
-                className={cn(
-                  'rounded-lg border px-4 py-3 text-left transition-all',
-                  paymentMode === 'pay_now'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-                )}
-              >
-                <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
-                <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
-                  Tarjeta de crédito
-                </p>
-              </button>
+              {paymentSupported && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode('pay_now')}
+                  className={cn(
+                    'rounded-lg border px-4 py-3 text-left transition-all',
+                    paymentMode === 'pay_now'
+                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
+                      : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                  )}
+                >
+                  <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
+                    Tarjeta de crédito
+                  </p>
+                </button>
+              )}
             </div>
 
-            {paymentMode === 'pay_now' && (
+            {!paymentSupported && (
+              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Esta integración crea la reserva sin cobrar. Pago y emisión sólo se habilitarán
+                cuando el proveedor confirme esas operaciones en línea.
+              </p>
+            )}
+
+            {paymentSupported && paymentMode === 'pay_now' && (
               <PaymentForm
                 totalAmountMinor={totalAmountMinor}
                 currency={currency}
@@ -626,7 +658,7 @@ export function PassengerForm({
             <Button
               variant="primary"
               size="sm"
-              disabled={submitting}
+              disabled={submitting || disabled}
               onClick={() => void handleSubmit()}
               className="gap-2"
             >

@@ -213,6 +213,10 @@ export const SabreGetBookingResponseSchema = z.object({
   trains: z.array(ProductSchema).optional(),
   cruises: z.array(ProductSchema).optional(),
   flightTickets: z.array(FlightTicketSchema).optional(),
+  // Ambos son documentos/contabilidad ya cumplida. No se proyecta su contenido (puede llevar
+  // PII/PAN); sólo su presencia participa en la postura fail-safe de cancelación.
+  nonElectronicTickets: z.array(z.unknown()).optional(),
+  accountingItems: z.array(z.unknown()).optional(),
   travelers: z.array(z.unknown()).optional(),
   bookingSignature: z.string().optional(),
   timestamp: z.string().optional(),
@@ -394,11 +398,19 @@ function buildSnapshot(
   const items = collectItems(response, warnings);
   const ticketNumbers = collectTicketNumbers(response, warnings);
   const status = resolveStatus(items);
+  const hasTicketingDocuments =
+    (response.flightTickets?.length ?? 0) > 0 ||
+    (response.nonElectronicTickets?.length ?? 0) > 0 ||
+    (response.accountingItems?.length ?? 0) > 0;
+  // `isTicketed` es opcional en Booking. La existencia de un documento emitido es evidencia más
+  // fuerte que un flag ausente (o contradictorio): para cancelar, equivocarse hacia `true` sólo
+  // exige preflight/decisión; equivocarse hacia `false` puede perder un billete.
+  const isTicketed = response.isTicketed === true || hasTicketingDocuments || response.isTicketed;
 
   // RF-23 CA-4: una reserva emitida sin ningún localizador es un DATO AUSENTE Y VISIBLE, no "la
   // aerolínea no da código". Sin este aviso, el mensaje de WhatsApp que cierra la venta le da al
   // cliente un código con el que NO puede hacer check-in y nadie se entera.
-  if (response.isTicketed === true && airlineLocators.length === 0) {
+  if (isTicketed === true && airlineLocators.length === 0) {
     addWarning(warnings, 'airline-locator-absent');
   }
 
@@ -424,7 +436,7 @@ function buildSnapshot(
     contentLanes: [...new Set(flights.flatMap((f) => (f.sourceType ? [f.sourceType] : [])))],
     warnings: [...warnings],
     ...(response.isCancelable === undefined ? {} : { isCancelable: response.isCancelable }),
-    ...(response.isTicketed === undefined ? {} : { isTicketed: response.isTicketed }),
+    ...(isTicketed === undefined ? {} : { isTicketed }),
     ...(response.retentionEndDate === undefined
       ? {}
       : { retentionEndDate: response.retentionEndDate }),

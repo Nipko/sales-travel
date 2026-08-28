@@ -24,6 +24,27 @@ import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
 import type { PaymentData } from './payment-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
+import type { Offer } from '../actions';
+import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
+import {
+  canReserveAfterPriceCheck,
+  displayedPriceChanged,
+  displayedTotal,
+  readOfferPriceResponse,
+  reservationGateMessage,
+  withRevalidatedOffer,
+  type PriceVerificationState,
+} from './offer-price-flow';
+import {
+  createOrderReconciliationView,
+  createOrderTransportFailureView,
+  isAmbiguousCreateHttpStatus,
+  shouldShowBookingForm,
+  type BookingOutcome,
+  type BookingOutcomeView,
+  type CreateOrderProviderResult,
+  type CreateOrderResponseBody,
+} from './create-order-reconciliation';
 
 interface Quotation {
   id: string;
@@ -39,33 +60,7 @@ interface Quotation {
     cabin: string;
     currency: string;
   };
-  selectedOffer: {
-    id: string;
-    total: { amountMinor: number; currency: string };
-    pricing?: { costMinor: number; finalMinor: number; ownMarkupMinor: number; currency: string };
-    baseFare: { amountMinor: number; currency: string };
-    taxes: { amountMinor: number; currency: string };
-    itineraries?: {
-      segments: {
-        carrier: string;
-        flightNumber: string;
-        origin: string;
-        destination: string;
-        departureAt: string;
-        arrivalAt: string;
-        durationMinutes: number;
-      }[];
-      totalDurationMinutes: number;
-      stops: number;
-    }[];
-    fareFamily?: { name: string; cabin: string };
-    baggage?: {
-      personalItem: number;
-      carryOn: { qty: number; weightKg?: number };
-      checked: { qty: number; weightKg?: number };
-    };
-    policies?: { changeable: boolean; refundable: boolean };
-  };
+  selectedOffer: Offer;
   customerName: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
@@ -116,34 +111,19 @@ const ERROR_DESCONOCIDO = 'Error desconocido';
 /**
  * Desenlace de la reserva tal como lo devuelve `POST /api/orders`.
  *
- * Es una COPIA de `OrderCreateOutcome` de `packages/domain`, no un import: `apps/web-b2b` no
- * depende de ningún paquete del workspace (ver su `package.json`), así que el compilador no
- * puede atar las dos listas. Si un día se añade un quinto desenlace, hay que tocarlo aquí a
- * mano; `BOOKING_OUTCOME_STYLE` es un `Record` completo y avisará de la mitad que falte.
+ * Los cuatro desenlaces del proveedor son una COPIA de `OrderCreateOutcome` de `packages/domain`,
+ * no un import: `apps/web-b2b` no depende de paquetes del workspace. `UNCERTAIN` es deliberadamente
+ * sólo nuestro: significa que el backend prohíbe repetir el create hasta conciliar el intento.
  *
  * Antes esto era un `success: boolean`, y con un booleano una reserva con el vuelo dentro y el
  * asiento fuera se pintaba en verde con su PNR: la mentira que el pasajero descubre en el
  * mostrador. Cada desenlace se pinta distinto.
  */
-type BookingOutcome = 'CONFIRMED' | 'PARTIAL' | 'PENDING' | 'FAILED';
-
-interface CreateOrderProviderResult {
-  outcome?: BookingOutcome;
-  pnr?: string;
-  issues?: { severity: 'ERROR' | 'WARNING'; category: string; type: string; message?: string }[];
-}
-
-interface BookingOutcomeView {
-  outcome: BookingOutcome;
-  pnr?: string;
-  error?: string;
-}
-
 /** Resume las incidencias del proveedor en una línea. `undefined` si no hay ninguna de error. */
 function describeIssues(issues: CreateOrderProviderResult['issues']): string | undefined {
   const errores = (issues ?? []).filter((i) => i.severity === 'ERROR');
   if (errores.length === 0) return undefined;
-  return errores.map((i) => i.message ?? `${i.category}: ${i.type}`).join(' | ');
+  return errores.map((i) => `${i.category}: ${i.type}`).join(' | ');
 }
 
 /** Sólo `CONFIRMED` es verde. `PARTIAL` y `PENDING` son ámbar: hay reserva, pero no está cerrada. */
@@ -162,6 +142,11 @@ const BOOKING_OUTCOME_STYLE: Record<BookingOutcome, { box: string; title: string
     PENDING: {
       box: 'border-amber-200 bg-amber-50',
       title: 'Reserva enviada — el proveedor todavía no la confirmó',
+      text: 'text-amber-900',
+    },
+    UNCERTAIN: {
+      box: 'border-amber-200 bg-amber-50',
+      title: 'Creación incierta — requiere conciliación',
       text: 'text-amber-900',
     },
     FAILED: {
@@ -210,11 +195,7 @@ export default function QuotationDetailPage() {
   const [emailResult, setEmailResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [priceStatus, setPriceStatus] = useState<{
-    verified: true;
-    changed: boolean;
-    newTotal?: string;
-  } | null>(null);
+  const [priceStatus, setPriceStatus] = useState<PriceVerificationState | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingOutcomeView | null>(null);
 
   useEffect(() => {
@@ -320,6 +301,7 @@ export default function QuotationDetailPage() {
   async function handleCreateOrder(
     passengers: {
       paxId: string;
+      requestedTravelerIndex: number;
       paxType: 'ADT' | 'CHD' | 'INF';
       title: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
       givenName: string;
@@ -345,6 +327,15 @@ export default function QuotationDetailPage() {
     payment?: PaymentData,
   ) {
     if (!quotation) return;
+    if (!canReserveAfterPriceCheck(priceStatus, verifying)) {
+      setBookingResult({
+        outcome: 'FAILED',
+        error:
+          reservationGateMessage(priceStatus, verifying) ??
+          'La oferta todavía no está habilitada para reservar.',
+      });
+      return;
+    }
     const body: Record<string, unknown> = {
       offer: quotation.selectedOffer,
       searchCriteria: quotation.searchCriteria,
@@ -355,30 +346,52 @@ export default function QuotationDetailPage() {
     if (payment) {
       body.payment = payment;
     }
-    const res = await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // El navegador no sabe si el servidor alcanzó a enviar el write antes de perder la red.
+      setBookingResult(createOrderTransportFailureView());
+      return;
+    }
     // `readJson` y no `res.json()`: cuando el fallo ocurre ANTES de llegar a la aplicación —el
     // 502 de un balanceador, el 504 de Cloudflare si la llamada al proveedor tarda de más— la
     // respuesta es una página HTML, `res.json()` lanza, y lo que el vendedor leía en mitad de una
     // reserva era «Unexpected token '<', "<!DOCTYPE "... is not valid JSON»: un error del parser
     // de JavaScript que no dice qué pasó ni si la reserva se creó.
-    const leido = await readJson<{
-      providerResult?: CreateOrderProviderResult;
-      error?: string;
-    }>(res);
+    const leido = await readJson<CreateOrderResponseBody>(res);
     if (!leido.ok) {
-      setBookingResult({ outcome: 'FAILED', error: leido.message });
+      // Un 502/504 HTML puede llegar después de que Sabre creó el PNR. El texto del parser no
+      // demuestra un rechazo y nunca debe reabrir el formulario.
+      setBookingResult(createOrderTransportFailureView());
       return;
     }
     const data = leido.data;
+    const reconciliation = createOrderReconciliationView(data);
+    if (reconciliation !== null) {
+      setBookingResult(reconciliation);
+      return;
+    }
+    if (isAmbiguousCreateHttpStatus(res.status)) {
+      setBookingResult(createOrderTransportFailureView());
+      return;
+    }
+    if (!res.ok) {
+      setBookingResult({
+        outcome: 'FAILED',
+        error: humanizeBookingError(data.error ?? data.message ?? ERROR_DESCONOCIDO),
+      });
+      return;
+    }
     const outcome = data.providerResult?.outcome;
     if (!outcome) {
       setBookingResult({
         outcome: 'FAILED',
-        error: humanizeBookingError(data.error ?? ERROR_DESCONOCIDO),
+        error: humanizeBookingError(data.error ?? data.message ?? ERROR_DESCONOCIDO),
       });
       return;
     }
@@ -396,6 +409,7 @@ export default function QuotationDetailPage() {
 
   async function handleVerifyPrice() {
     if (!quotation) return;
+    const selectedBeforeRequest = quotation.selectedOffer;
     setVerifying(true);
     setPriceStatus(null);
     try {
@@ -407,21 +421,38 @@ export default function QuotationDetailPage() {
           searchCriteria: quotation.searchCriteria,
         }),
       });
-      const data = (await res.json()) as {
-        offer?: { total: { amountMinor: number; currency: string } };
-        priceChanged?: boolean;
-      };
-      if (data.priceChanged && data.offer) {
-        setPriceStatus({
-          verified: true,
-          changed: true,
-          newTotal: formatMoney(data.offer.total.amountMinor, data.offer.total.currency),
-        });
-      } else {
-        setPriceStatus({ verified: true, changed: false });
+      const read = await readOfferPriceResponse(res, selectedBeforeRequest);
+      if (!read.ok) {
+        setPriceStatus({ kind: 'error', message: read.message });
+        return;
       }
+
+      const changed = displayedPriceChanged(
+        selectedBeforeRequest,
+        read.data.offer,
+        read.data.priceChanged,
+      );
+      const newTotal = displayedTotal(read.data.offer);
+
+      // La Offer de precio trae nuevos handles, TTL, desglose y familias. Parchear sólo `total`
+      // deja la reserva usando identificadores vencidos; se reemplaza el objeto entero.
+      setQuotation((current) =>
+        current === null ? current : withRevalidatedOffer(current, read.data.offer),
+      );
+      setBookingResult(null);
+      setPriceStatus(
+        changed
+          ? {
+              kind: 'acceptance-required',
+              newTotal: formatMoney(newTotal.amountMinor, newTotal.currency),
+            }
+          : { kind: 'confirmed', changed: false },
+      );
     } catch {
-      setPriceStatus(null);
+      setPriceStatus({
+        kind: 'error',
+        message: 'No se pudo conectar para revalidar la tarifa. Intentá de nuevo.',
+      });
     } finally {
       setVerifying(false);
     }
@@ -460,6 +491,10 @@ export default function QuotationDetailPage() {
     searchCriteria.paxCount.adults +
     searchCriteria.paxCount.children +
     searchCriteria.paxCount.infants;
+  const fareComponents = fareComponentsForDisplay(selectedOffer);
+  const fareSummary = fareFamilySummary(selectedOffer);
+  const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
+  const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8">
@@ -502,7 +537,7 @@ export default function QuotationDetailPage() {
               <div className="mb-4 flex items-center gap-2">
                 <Plane className="size-4 text-[var(--color-primary)]" />
                 <h2 className="text-sm font-semibold text-[var(--color-fg)]">Vuelo</h2>
-                {selectedOffer.fareFamily && (
+                {fareComponents.length === 0 && selectedOffer.fareFamily && (
                   <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
                     {selectedOffer.fareFamily.name}
                   </span>
@@ -514,6 +549,9 @@ export default function QuotationDetailPage() {
                   const first = it.segments[0]!;
                   const last = it.segments[it.segments.length - 1]!;
                   const stopAirports = it.segments.slice(0, -1).map((s) => s.destination);
+                  const faresForLeg = fareComponents.filter((component) =>
+                    component.itineraryIndexes.includes(idx),
+                  );
                   return (
                     <div key={idx} className="rounded-lg border border-[var(--color-border)] p-4">
                       <div className="mb-2 flex items-center justify-between gap-2">
@@ -578,6 +616,29 @@ export default function QuotationDetailPage() {
                           </p>
                         </div>
                       </div>
+
+                      {faresForLeg.length > 0 && (
+                        <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
+                          {faresForLeg.map((fare) => (
+                            <div
+                              key={fare.key}
+                              className="rounded-md bg-[var(--color-surface-muted)] px-2.5 py-2 text-xs"
+                            >
+                              <p className="font-semibold text-[var(--color-fg)]">
+                                {fare.name}{' '}
+                                <span className="font-normal text-[var(--color-fg-muted)]">
+                                  · {fare.route}
+                                </span>
+                              </p>
+                              {fare.details.length > 0 && (
+                                <p className="mt-0.5 text-[10px] text-[var(--color-fg-subtle)]">
+                                  {fare.details.join(' · ')}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Detalle de tramos y escalas */}
                       {it.stops > 0 && (
@@ -867,14 +928,45 @@ export default function QuotationDetailPage() {
               {priceStatus && (
                 <div
                   className={`rounded-lg border px-3 py-2 text-xs ${
-                    priceStatus.changed
-                      ? 'border-amber-200 bg-amber-50 text-amber-800'
-                      : 'border-green-200 bg-green-50 text-green-800'
+                    priceStatus.kind === 'error'
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : priceStatus.kind === 'acceptance-required'
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-green-200 bg-green-50 text-green-800'
                   }`}
                 >
-                  {priceStatus.changed
-                    ? `Precio actualizado: ${priceStatus.newTotal}`
-                    : 'Precio confirmado — sin cambios'}
+                  {priceStatus.kind === 'error' && priceStatus.message}
+                  {priceStatus.kind === 'acceptance-required' && (
+                    <div className="space-y-2">
+                      <p>La tarifa o el precio cambió. Total revalidado: {priceStatus.newTotal}</p>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="w-full"
+                        onClick={() =>
+                          setPriceStatus({
+                            kind: 'confirmed',
+                            changed: true,
+                            newTotal: priceStatus.newTotal,
+                          })
+                        }
+                      >
+                        Aceptar tarifa revalidada
+                      </Button>
+                    </div>
+                  )}
+                  {priceStatus.kind === 'confirmed' && (
+                    <div className="space-y-1">
+                      <p>
+                        {priceStatus.changed
+                          ? `Tarifa revalidada aceptada: ${priceStatus.newTotal ?? ''}`
+                          : 'Precio confirmado — sin cambios'}
+                      </p>
+                      <p className="text-[10px]">
+                        El servidor volverá a validar precio y disponibilidad al crear la reserva.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="my-1 border-t border-[var(--color-border)]" />
@@ -906,7 +998,7 @@ export default function QuotationDetailPage() {
                 onClick={() => {
                   if (customerPhone) {
                     const phone = customerPhone.replace(/\D/g, '');
-                    const text = `Hola ${customerName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${selectedOffer.fareFamily?.name ?? 'Standard'}\n\n¿Te interesa?`;
+                    const text = `Hola ${customerName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
                     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
                   }
                 }}
@@ -958,6 +1050,11 @@ export default function QuotationDetailPage() {
                 PNR: {bookingResult.pnr}
               </p>
             )}
+            {bookingResult.orderId && (
+              <p className="font-mono text-xs text-[var(--color-fg-muted)]">
+                Reserva local: {bookingResult.orderId}
+              </p>
+            )}
             {bookingResult.error && (
               <p className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}>
                 {bookingResult.error}
@@ -972,7 +1069,7 @@ export default function QuotationDetailPage() {
         en el proveedor: reofrecer "reservar" ahí es invitar a crear una segunda reserva encima
         de una que ya existe.
       */}
-      {(!bookingResult || bookingResult.outcome === 'FAILED') && (
+      {shouldShowBookingForm(bookingResult) && (
         <div className="mt-5">
           <PassengerForm
             paxCount={searchCriteria.paxCount}
@@ -981,6 +1078,8 @@ export default function QuotationDetailPage() {
             customerName={customerName || undefined}
             contactEmail={customerEmail || undefined}
             contactPhone={customerPhone || undefined}
+            disabled={!reservationEnabled}
+            disabledReason={reservationDisabledReason}
             onSubmit={handleCreateOrder}
           />
         </div>

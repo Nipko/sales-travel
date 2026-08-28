@@ -53,15 +53,40 @@ describe('CreateCustomerSchema', () => {
 
 describe('CreateOrderSchema', () => {
   const base = {
-    offer: { id: 'off_1', price: { totalMinor: 1000 } },
-    searchCriteria: { origin: 'BOG', destination: 'MDE' },
+    offer: {
+      id: '0f42f9fe-aa36-4c11-82ee-89df5b6f23ef',
+      tenantId: '5f80c9bb-728a-43ad-b09f-2618d6f73a93',
+      products: ['flight'],
+      provider: {
+        name: 'sabre',
+        offerRef: 'offer-1',
+        source: 'ATPCO',
+        raw: { flightCheckRef: 'opaque-provider-value' },
+      },
+      total: { amountMinor: 1000, currency: 'COP' },
+      baseFare: { amountMinor: 800, currency: 'COP' },
+      taxes: { amountMinor: 200, currency: 'COP' },
+      fetchedAt: '2030-01-01T10:00:00.000Z',
+      expiresAt: '2030-01-01T10:15:00.000Z',
+    },
+    searchCriteria: {
+      origin: 'BOG',
+      destination: 'MDE',
+      departureDate: '2030-01-15',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+      cabin: 'economy',
+      currency: 'COP',
+    },
     passengers: [{ firstName: 'Ana', lastName: 'García', documentNumber: 'AB1' }],
     contactInfo: { email: 'ana@example.com', phone: '+57300' },
   };
 
   it('accepts a valid order and preserves nested provider keys', () => {
     const parsed = CreateOrderSchema.parse(base);
-    expect((parsed.offer as { id: string }).id).toBe('off_1');
+    expect(parsed.offer.id).toBe('0f42f9fe-aa36-4c11-82ee-89df5b6f23ef');
+    expect(parsed.offer.provider.raw).toMatchObject({
+      flightCheckRef: 'opaque-provider-value',
+    });
     expect(parsed.passengers[0]).toMatchObject({ documentNumber: 'AB1' });
   });
 
@@ -70,10 +95,28 @@ describe('CreateOrderSchema', () => {
     expect(CreateOrderSchema.safeParse({ ...base, offer: 'oops' }).success).toBe(false);
   });
 
+  it('rejects a fabricated offer missing canonical tenant/provider/money invariants', () => {
+    expect(
+      CreateOrderSchema.safeParse({
+        ...base,
+        offer: { id: 'off_1', price: { totalMinor: 1000 } },
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects an invalid contact email', () => {
     expect(CreateOrderSchema.safeParse({ ...base, contactInfo: { email: 'bad' } }).success).toBe(
       false,
     );
+  });
+
+  it('rejects payment data because createOrder does not charge or issue tickets', () => {
+    expect(
+      CreateOrderSchema.safeParse({
+        ...base,
+        payment: { type: 'Credit Card', card: { number: 'not-processed-here' } },
+      }).success,
+    ).toBe(false);
   });
 });
 

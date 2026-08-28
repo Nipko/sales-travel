@@ -6,6 +6,7 @@ import { FlightProviderRegistry } from '../providers/flight-provider.registry.js
 import { ProviderNotAvailableError } from '../providers/provider.types.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
+import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
@@ -23,6 +24,26 @@ import { OrdersService, type CreateOrderDto } from './orders.service.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const USER = '22222222-2222-4222-8222-222222222222';
+const QUOTATION_ID = '33333333-3333-4333-8333-333333333333';
+const PRICING_SIN_REGLAS = {
+  getApplicableRules: () => Promise.resolve([]),
+} as unknown as PricingService;
+
+const PASAJERO_ADULTO: Passenger = {
+  paxId: 'P1',
+  paxType: 'ADT',
+  title: 'Mr',
+  givenName: 'Juan',
+  surname: 'Pérez',
+  birthdate: '1990-01-01',
+  gender: 'M',
+  citizenshipCountryCode: 'CO',
+  identityDoc: {
+    type: 'CC',
+    number: '123456789',
+    issuingCountryCode: 'CO',
+  },
+};
 
 function ofertaDe(code: string): Offer {
   return {
@@ -33,17 +54,44 @@ function ofertaDe(code: string): Offer {
     total: { amountMinor: 100_000, currency: 'USD' },
     baseFare: { amountMinor: 80_000, currency: 'USD' },
     taxes: { amountMinor: 20_000, currency: 'USD' },
+    itineraries: [
+      {
+        segments: [
+          {
+            carrier: 'AV',
+            flightNumber: '123',
+            origin: 'BOG',
+            destination: 'LIM',
+            departureAt: '2026-09-10T09:00:00-05:00',
+            arrivalAt: '2026-09-10T12:00:00-05:00',
+            durationMinutes: 180,
+            cabin: 'economy',
+            bookingClass: 'Y',
+          },
+        ],
+        totalDurationMinutes: 180,
+        stops: 0,
+      },
+    ],
     fetchedAt: '2026-08-26T12:00:00.000Z',
-    expiresAt: '2026-08-26T12:30:00.000Z',
+    expiresAt: '2099-08-26T12:30:00.000Z',
   };
 }
 
 function dto(code: string): CreateOrderDto {
   return {
     offer: ofertaDe(code),
-    searchCriteria: { origin: 'BOG', destination: 'LIM' },
-    passengers: [] as Passenger[],
+    searchCriteria: {
+      origin: 'BOG',
+      destination: 'LIM',
+      departureDate: '2026-09-10',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+      cabin: 'economy',
+      currency: 'USD',
+    },
+    passengers: [PASAJERO_ADULTO],
     contactInfo: { email: 'a@b.test', phone: '+573000000000' },
+    quotationId: QUOTATION_ID,
   };
 }
 
@@ -74,15 +122,27 @@ function dbFalsa(): { db: DatabaseService; insertado: () => Record<string, unkno
     select: () => select,
     selectAll: () => select,
     where: () => select,
-    executeTakeFirst: () => Promise.resolve(undefined),
-    executeTakeFirstOrThrow: () => Promise.resolve({ next: 1 }),
+    forUpdate: () => select,
+    executeTakeFirst: () => Promise.resolve({ id: QUOTATION_ID, tenant_id: TENANT }),
+    executeTakeFirstOrThrow: () =>
+      Promise.resolve({ id: QUOTATION_ID, tenant_id: TENANT, next: 1 }),
   };
+  let updateValues: Record<string, unknown> = {};
   const update = {
-    set: () => update,
+    set: (values: Record<string, unknown>) => {
+      updateValues = values;
+      return update;
+    },
     where: () => update,
     returningAll: () => update,
-    execute: () => Promise.resolve([]),
-    executeTakeFirst: () => Promise.resolve(undefined),
+    execute: () => {
+      porTabla.set('orders', { ...porTabla.get('orders'), ...updateValues });
+      return Promise.resolve([{}]);
+    },
+    executeTakeFirst: () => {
+      porTabla.set('orders', { ...porTabla.get('orders'), ...updateValues });
+      return Promise.resolve({ id: 'order-1', ...porTabla.get('orders') });
+    },
   };
   const trx = {
     selectFrom: () => select,
@@ -114,12 +174,292 @@ function banco(codes: string[]): {
     new RecordingQueueService().asService(),
     {} as unknown as AgentCarsProviderFactory,
     new RecordingAuditService().asService(),
+    PRICING_SIN_REGLAS,
   );
 
   return { orders, factories, insertado };
 }
 
 describe('OrdersService.createOrder — enrutado por proveedor', () => {
+  it('rechaza paxCount inconsistente antes de resolver o tocar el proveedor', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.passengers = [];
+    const factory = b.factories.get('beta-air')!;
+    const adapter = factory.adapterFor(TENANT);
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(
+      /pasajeros no coinciden/i,
+    );
+
+    expect(factory.resolveCalls).toEqual([]);
+    expect(adapter.priceOffer).not.toHaveBeenCalled();
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('rechaza moneda inconsistente antes de resolver o tocar el proveedor', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.searchCriteria = { ...input.searchCriteria, currency: 'COP' };
+    const factory = b.factories.get('beta-air')!;
+    const adapter = factory.adapterFor(TENANT);
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(/moneda.+no coincide/i);
+
+    expect(factory.resolveCalls).toEqual([]);
+    expect(adapter.priceOffer).not.toHaveBeenCalled();
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      caseName: 'ruta',
+      mutate: (input: CreateOrderDto) => {
+        const outbound = input.offer.itineraries![0]!;
+        input.offer = {
+          ...input.offer,
+          itineraries: [
+            {
+              ...outbound,
+              segments: outbound.segments.map((segment, index) =>
+                index === outbound.segments.length - 1
+                  ? { ...segment, destination: 'MDE' }
+                  : segment,
+              ),
+            },
+          ],
+        };
+      },
+    },
+    {
+      caseName: 'fecha',
+      mutate: (input: CreateOrderDto) => {
+        const outbound = input.offer.itineraries![0]!;
+        input.offer = {
+          ...input.offer,
+          itineraries: [
+            {
+              ...outbound,
+              segments: outbound.segments.map((segment, index) =>
+                index === 0 ? { ...segment, departureAt: '2026-09-11T09:00:00-05:00' } : segment,
+              ),
+            },
+          ],
+        };
+      },
+    },
+    {
+      caseName: 'ida-vuelta',
+      mutate: (input: CreateOrderDto) => {
+        input.searchCriteria = { ...input.searchCriteria, returnDate: '2026-09-20' };
+      },
+    },
+  ])('rechaza $caseName inconsistente antes de resolver el proveedor', async ({ mutate }) => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    mutate(input);
+    const factory = b.factories.get('beta-air')!;
+    const adapter = factory.adapterFor(TENANT);
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(
+      /ruta.+fechas.+tipo de viaje/i,
+    );
+
+    expect(factory.resolveCalls).toEqual([]);
+    expect(adapter.priceOffer).not.toHaveBeenCalled();
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una oferta de vuelo sin itinerario antes de resolver el proveedor', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    const { itineraries: _missing, ...offerWithoutItinerary } = input.offer;
+    input.offer = offerWithoutItinerary;
+    const factory = b.factories.get('beta-air')!;
+    const adapter = factory.adapterFor(TENANT);
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(
+      /sin itinerario|no contiene/i,
+    );
+
+    expect(factory.resolveCalls).toEqual([]);
+    expect(adapter.priceOffer).not.toHaveBeenCalled();
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('revalida antes del write y pasa los criterios reales —no la oferta— a createOrder', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+
+    await b.orders.createOrder(TENANT, USER, input);
+
+    expect(adapter.priceOffer).toHaveBeenCalledWith(input.offer, input.searchCriteria, {
+      tenantId: TENANT,
+    });
+    expect(adapter.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ criteria: input.searchCriteria }),
+      { tenantId: TENANT, requestId: 'order-1' },
+    );
+  });
+
+  it('si el precio cambió no crea ni persiste una reserva silenciosamente', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+    adapter.priceOffer.mockResolvedValue({
+      offer: {
+        ...input.offer,
+        total: { ...input.offer.total, amountMinor: input.offer.total.amountMinor + 10_000 },
+      },
+      priceChanged: true,
+      warnings: [],
+    });
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(/precio cambió/i);
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+    expect(b.insertado()).toMatchObject({
+      status: 'failed',
+      create_request_key: null,
+      error_message: 'La creación no se envió al proveedor.',
+    });
+  });
+
+  it.each(['fecha-invalida', '2000-01-01T00:00:00.000Z'])(
+    'una oferta revalidada expirada/inválida (%s) no llega a createOrder',
+    async (expiresAt) => {
+      const b = banco(['beta-air']);
+      const input = dto('beta-air');
+      const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+      adapter.priceOffer.mockResolvedValue({
+        offer: { ...input.offer, expiresAt },
+        priceChanged: false,
+        warnings: [],
+      });
+
+      await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(
+        /venció|vigencia válida/i,
+      );
+      expect(adapter.createOrder).not.toHaveBeenCalled();
+      expect(b.insertado()).toMatchObject({ status: 'failed', create_request_key: null });
+    },
+  );
+
+  it('descarta el markup enviado por el navegador y persiste el total recalculado', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.offer = {
+      ...input.offer,
+      pricing: {
+        costMinor: 1,
+        finalMinor: 1,
+        ownMarkupMinor: 0,
+        currency: 'USD',
+      },
+    };
+
+    await b.orders.createOrder(TENANT, USER, input);
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+    const request = adapter.createOrder.mock.calls[0]?.[0];
+
+    expect(b.insertado()?.['total_amount']).toBe(input.offer.total.amountMinor);
+    expect(request?.offer).not.toHaveProperty('pricing');
+    expect(adapter.createOrder).toHaveBeenCalledWith(request, {
+      tenantId: TENANT,
+      requestId: 'order-1',
+    });
+  });
+
+  it('si Flight Check cambia la familia o fare basis exige una nueva aceptación', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.offer = {
+      ...input.offer,
+      fareComponents: [
+        {
+          segmentRefs: [0],
+          fareBasisCode: 'BASIC1',
+          bookingClasses: ['U'],
+          brand: { code: 'BASIC', name: 'Basic' },
+        },
+      ],
+    };
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+    adapter.priceOffer.mockResolvedValue({
+      offer: {
+        ...input.offer,
+        fareComponents: [
+          {
+            segmentRefs: [0],
+            fareBasisCode: 'FLEX1',
+            bookingClasses: ['M'],
+            brand: { code: 'FLEX', name: 'Flex' },
+          },
+        ],
+      },
+      priceChanged: false,
+      warnings: [],
+    });
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(/familia/i);
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('si Flight Check cambia sólo la cabina de la familia también exige nueva aceptación', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.offer = {
+      ...input.offer,
+      fareComponents: [
+        {
+          segmentRefs: [0],
+          fareBasisCode: 'FLEX1',
+          bookingClasses: ['M'],
+          cabin: 'economy',
+          brand: { code: 'FLEX', name: 'Flex' },
+        },
+      ],
+    };
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+    adapter.priceOffer.mockResolvedValue({
+      offer: {
+        ...input.offer,
+        fareComponents: [
+          {
+            ...input.offer.fareComponents![0]!,
+            cabin: 'premium_economy',
+          },
+        ],
+      },
+      priceChanged: false,
+      warnings: [],
+    });
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(/familia/i);
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('una oferta legacy también exige aceptación si cambia fareFamily', async () => {
+    const b = banco(['beta-air']);
+    const input = dto('beta-air');
+    input.offer = {
+      ...input.offer,
+      fareFamily: { name: '  Basic ', cabin: 'economy' },
+    };
+    const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+    adapter.priceOffer.mockResolvedValue({
+      offer: {
+        ...input.offer,
+        fareFamily: { name: 'Flex', cabin: 'economy' },
+      },
+      priceChanged: false,
+      warnings: [],
+    });
+
+    await expect(b.orders.createOrder(TENANT, USER, input)).rejects.toThrow(/familia/i);
+    expect(adapter.createOrder).not.toHaveBeenCalled();
+  });
+
   it('reserva contra el adapter que EMITIÓ la oferta, no contra el primero de la lista', async () => {
     const b = banco(['alfa-air', 'beta-air']);
 

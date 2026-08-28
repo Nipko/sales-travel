@@ -31,6 +31,7 @@ import { SABRE_PRICE_PATH, SABRE_RAW_KEYS } from './price/request.builder';
 import {
   SabreCardBinPricingDeniedError,
   SabreOfferPriceAdapter,
+  buildSabrePriceRequestedTravelers,
 } from './sabre-offer-price.adapter';
 import { SABRE_BOOKING_USE_CASES, SabreOrderCreateAdapter } from './sabre-order-create.adapter';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
@@ -315,6 +316,7 @@ function passengers(): Passenger[] {
   return [
     {
       paxId: 'PAX-1',
+      requestedTravelerIndex: 0,
       paxType: 'ADT',
       title: 'Mrs',
       givenName: PII.givenName,
@@ -331,6 +333,7 @@ function passengers(): Passenger[] {
     },
     {
       paxId: 'PAX-2',
+      requestedTravelerIndex: 1,
       paxType: 'ADT',
       title: 'Mr',
       givenName: PII.secondGivenName,
@@ -466,7 +469,11 @@ function bookingView(options: BookingViewOptions = {}): unknown {
         flightStatusName: 'Confirmed',
       },
     ],
-    flightTickets: [{ number: '0012345678901', travelerIndex: 1 }],
+    // Un `isTicketed: false` con documentos emitidos es contradictorio y el mapper lo trata como
+    // emitido por seguridad. Los escenarios realmente no emitidos no fabrican ese documento.
+    ...(options.isTicketed === false
+      ? {}
+      : { flightTickets: [{ number: '0012345678901', travelerIndex: 1 }] }),
     travelers: [{}, {}],
   };
 }
@@ -504,6 +511,56 @@ function alreadyCancelled(): unknown {
 // 1. El camino feliz completo, con la cadena de identificadores efímeros
 // ---------------------------------------------------------------------------------------------
 
+describe('binding explícito del request de Offer Price', () => {
+  it('asigna índices globales y PTC de Sabre sin depender de un array de respuesta', () => {
+    expect(
+      buildSabrePriceRequestedTravelers({
+        ...CRITERIA,
+        paxCount: { adults: 1, children: 1, infants: 1 },
+      }),
+    ).toEqual([
+      {
+        requestPassengerId: 'Passenger1',
+        requestedTravelerIndex: 0,
+        paxType: 'ADT',
+        requestedPtc: 'ADT',
+      },
+      {
+        requestPassengerId: 'Passenger2',
+        requestedTravelerIndex: 1,
+        paxType: 'CHD',
+        requestedPtc: 'CNN',
+      },
+      {
+        requestPassengerId: 'Passenger3',
+        requestedTravelerIndex: 2,
+        paxType: 'INF',
+        requestedPtc: 'INF',
+      },
+    ]);
+  });
+
+  it('el adapter propaga un cambio de identidad aunque el importe no cambie', async () => {
+    const harness = wire({ [SABRE_PRICE_PATH]: [ok(priceResponse())] });
+    const offer = shopOffer({
+      fareComponents: [
+        {
+          fareBasisCode: 'OLDFARE',
+          bookingClasses: ['B'],
+          segmentRefs: [0],
+          cabin: 'economy',
+          brand: { code: 'OLD', name: 'Old brand' },
+        },
+      ],
+    });
+    const quote = await harness.price.priceQuote(offer, CRITERIA, CTX);
+    expect(quote.priceChange.kind).toBe('unchanged');
+    expect(quote.fareIdentityChanged).toBe(true);
+    expect(quote.priceChanged).toBe(true);
+    expect(quote.warnings.map((warning) => warning.code)).toContain('fare-identity-changed');
+  });
+});
+
 describe('la cadena completa: price → createBooking → getBooking → cancelBooking', () => {
   it('los identificadores del paso anterior son LOS QUE VIAJAN en el siguiente', async () => {
     const harness = wire({
@@ -515,23 +572,20 @@ describe('la cadena completa: price → createBooking → getBooking → cancelB
     });
 
     // 1. Revalidar. Los ids que salen del shop son los que se mandan.
-    const quote = await harness.price.priceQuote(shopOffer(), CTX);
+    const quote = await harness.price.priceQuote(shopOffer(), CRITERIA, CTX);
     expect(at(harness.bodyAt(SABRE_PRICE_PATH), 'query.0.offerItemId')).toEqual([
       SHOP_OFFER_ITEM_ID,
+    ]);
+    expect(at(harness.bodyAt(SABRE_PRICE_PATH), 'passengers')).toEqual([
+      { id: 'Passenger1', type: 'ADT' },
+      { id: 'Passenger2', type: 'ADT' },
     ]);
 
     // 2. Reservar CON LA OFERTA REVALIDADA. El carril NDC se elige porque la oferta trae los ids de
     //    price; si el mapper no los hubiera escrito, el adapter caería a ATPCO y estas aserciones
     //    se pondrían rojas.
     const providerPaxIds = quote.handles.passengerIds;
-    const withProviderIds = passengers().map((passenger, position) => {
-      const providerPaxId = providerPaxIds[position];
-      return providerPaxId === undefined ? passenger : { ...passenger, providerPaxId };
-    });
-    const outcome = await harness.create.createBooking(
-      orderRequest(quote.offer, { passengers: withProviderIds }),
-      CTX,
-    );
+    const outcome = await harness.create.createBooking(orderRequest(quote.offer), CTX);
 
     const createBody = harness.bodyAt(SABRE_CREATE_BOOKING_PATH);
     expect(at(createBody, 'flightOffer.offerId')).toBe(quote.handles.offerId);
@@ -548,7 +602,9 @@ describe('la cadena completa: price → createBooking → getBooking → cancelB
     expect(view.airlineLocators).toEqual([{ carrierCode: 'AA', locator: 'AB123' }]);
 
     // 4. Cancelar. El adapter relee, comprueba billetes y sólo entonces cancela.
-    const cancel = await harness.manage.cancelBooking(outcome.result.pnr ?? '', CTX);
+    const cancel = await harness.manage.cancelBooking(outcome.result.pnr ?? '', CTX, {
+      offerItemId: 'OI-1',
+    });
     expect(cancel.result.success).toBe(true);
 
     expect(harness.paths()).toEqual([
@@ -1003,7 +1059,7 @@ describe('anti-PAN sobre el cuerpo real de price, createBooking y cancelBooking'
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
     });
 
-    const quote = await harness.price.priceQuote(shopOffer(), CTX);
+    const quote = await harness.price.priceQuote(shopOffer(), CRITERIA, CTX);
     await harness.create.createBooking(orderRequest(quote.offer), CTX);
     await harness.manage.cancelBooking(PNR, CTX);
 
@@ -1053,7 +1109,7 @@ describe('anti-PAN sobre el cuerpo real de price, createBooking y cancelBooking'
     const harness = wire({ [SABRE_PRICE_PATH]: [ok(priceResponse())] });
 
     await expect(
-      harness.price.priceQuote(shopOffer(), CTX, {
+      harness.price.priceQuote(shopOffer(), CRITERIA, CTX, {
         formOfPayment: { subCode: 'VI', binNumber: '411111' },
       }),
     ).rejects.toThrow(SabreCardBinPricingDeniedError);
@@ -1073,7 +1129,7 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
     });
 
-    const cancel = await harness.manage.cancelBooking(PNR, CTX);
+    const cancel = await harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' });
 
     expect(harness.paths()).toEqual([
       SABRE_GET_BOOKING_PATH,
@@ -1099,6 +1155,35 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
     expect(cancel.ticketCheckPerformed).toBe(false);
   });
 
+  it('contenido ATPCO emitido exige elegir VOID o REFUND y nunca cancela el PNR a ciegas', async () => {
+    const harness = wire({
+      [SABRE_GET_BOOKING_PATH]: [ok(bookingView({ lane: 'ATPCO', isTicketed: true }))],
+      [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
+    });
+
+    await expect(harness.manage.cancelBooking(PNR, CTX)).rejects.toThrow(
+      /TICKET_OPERATION_REQUIRED/,
+    );
+
+    // La lectura previa sí ocurre para saber que hay billete; ninguna operación destructiva sale
+    // al proveedor mientras el usuario no elija explícitamente anular o reembolsar.
+    expect(harness.paths()).toEqual([SABRE_GET_BOOKING_PATH]);
+  });
+
+  it('documentos emitidos activan la misma guarda aunque Sabre omita isTicketed', async () => {
+    const view = bookingView({ lane: 'ATPCO' }) as Record<string, unknown>;
+    delete view['isTicketed'];
+    const harness = wire({
+      [SABRE_GET_BOOKING_PATH]: [ok(view)],
+      [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
+    });
+
+    await expect(harness.manage.cancelBooking(PNR, CTX)).rejects.toThrow(
+      /TICKET_OPERATION_REQUIRED/,
+    );
+    expect(harness.paths()).toEqual([SABRE_GET_BOOKING_PATH]);
+  });
+
   it('una evidencia DE OTRA RESERVA no cancela nada: peor que ninguna es la que pasa el control', async () => {
     const harness = wire({
       [SABRE_GET_BOOKING_PATH]: [ok(bookingView({ lane: 'NDC' }))],
@@ -1106,7 +1191,7 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
     });
 
-    await expect(harness.manage.cancelBooking(PNR, CTX)).rejects.toThrow(
+    await expect(harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' })).rejects.toThrow(
       /TICKET_CHECK_FOR_ANOTHER_BOOKING/,
     );
     // Lo que importa no es el error: es que `cancelBooking` NO aparece en el cable.
@@ -1120,8 +1205,28 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
     });
 
-    await expect(harness.manage.cancelBooking(PNR, CTX)).rejects.toThrow(/TICKET_CHECK_MALFORMED/);
+    await expect(harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' })).rejects.toThrow(
+      /TICKET_CHECK_MALFORMED/,
+    );
     expect(harness.paths()).not.toContain(SABRE_CANCEL_BOOKING_PATH);
+  });
+
+  it('un 200 de checkFlightTickets con errors[] tampoco autoriza el paso destructivo', async () => {
+    const harness = wire({
+      [SABRE_GET_BOOKING_PATH]: [ok(bookingView({ lane: 'NDC' }))],
+      [SABRE_CHECK_FLIGHT_TICKETS_PATH]: [
+        ok({
+          ...(ticketCheck() as Record<string, unknown>),
+          errors: [{ category: 'APPLICATION_ERROR', type: 'UNABLE_TO_PROCESS' }],
+        }),
+      ],
+      [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
+    });
+
+    await expect(harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' })).rejects.toThrow(
+      SabreApiError,
+    );
+    expect(harness.paths()).toEqual([SABRE_GET_BOOKING_PATH, SABRE_CHECK_FLIGHT_TICKETS_PATH]);
   });
 
   it('cancelar dos veces es idempotente: misma clave, mismo estado final, cero reembolso extra', async () => {
@@ -1134,8 +1239,8 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled()), ok(alreadyCancelled())],
     });
 
-    const first = await harness.manage.cancelBooking(PNR, CTX);
-    const second = await harness.manage.cancelBooking(PNR, CTX);
+    const first = await harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' });
+    const second = await harness.manage.cancelBooking(PNR, CTX, { offerItemId: 'OI-1' });
 
     // La clave es el hash del cuerpo canónico: el saga reconoce que es EL MISMO paso.
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
@@ -1184,11 +1289,14 @@ describe('PII: el cuerpo de reserva no sale por el log', () => {
       [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
     });
 
-    const quote = await harness.price.priceQuote(shopOffer(), CTX);
+    const quote = await harness.price.priceQuote(shopOffer(), CRITERIA, CTX);
     await harness.create.createBooking(orderRequest(quote.offer), CTX, {
       useCase: 'FLIGHT_WITH_EXTRAS',
     });
-    await harness.manage.cancelBooking(PNR, CTX, { surname: PII.surname });
+    await harness.manage.cancelBooking(PNR, CTX, {
+      surname: PII.surname,
+      offerItemId: 'OI-1',
+    });
 
     // Sanidad: si el log estuviera vacío, esta comprobación sería vacua.
     expect(harness.logs.length).toBeGreaterThan(3);

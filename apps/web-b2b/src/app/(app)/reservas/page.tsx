@@ -22,6 +22,17 @@ import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
 import { humanizeProviderError } from '../../../lib/provider-errors';
+import {
+  canRetryCancelOperation,
+  directCancellationBlock,
+  type OrderOperationView,
+} from './cancel-retry-policy';
+import {
+  supportsOrderCancellation,
+  supportsOrderCapability,
+  type OrderCapabilities,
+} from './order-capabilities';
+import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
 
 interface Segment {
   carrier: string;
@@ -47,6 +58,7 @@ interface Order {
   status: string;
   orderNumber: number;
   provider?: string;
+  capabilities?: Partial<OrderCapabilities>;
   // searchCriteria es polimórfico por vertical: vuelos traen origin/destination/departureDate,
   // autos traen vertical:'cars' + campos de pickup/dropoff. Todo opcional para no romper render.
   searchCriteria: {
@@ -96,15 +108,6 @@ interface ServiceItem {
   paxRefIds: string[];
   price: { amount: number; currency: string };
   cancellable: boolean;
-}
-
-interface OrderOperation {
-  id: string;
-  type: string;
-  status: string;
-  attempts: number;
-  last_error: string | null;
-  created_at: string;
 }
 
 const OP_TYPE_LABEL: Record<string, string> = {
@@ -287,7 +290,11 @@ export default function ReservasPage() {
     setActionResult(null);
     try {
       const res = await fetch(`/api/orders/${order.id}/cancel`, { method: 'POST' });
-      const data = (await res.json()) as { success?: boolean; error?: string };
+      const data = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        message?: string | string[];
+      };
       if (data.success) {
         setOrders((prev) =>
           prev.map((o) => (o.id === order.id ? { ...o, status: 'cancelled' } : o)),
@@ -299,11 +306,12 @@ export default function ReservasPage() {
           message: 'Reserva cancelada exitosamente',
         });
       } else {
+        const detail = Array.isArray(data.message) ? data.message.join('. ') : data.message;
         setActionResult({
           orderId: order.id,
           type: 'cancel',
           success: false,
-          message: humanizeOrderError(data.error ?? 'No se pudo cancelar'),
+          message: humanizeOrderError(detail ?? data.error ?? 'No se pudo cancelar'),
         });
       }
     } catch {
@@ -312,6 +320,50 @@ export default function ReservasPage() {
         type: 'cancel',
         success: false,
         message: 'Error de conexión',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  /**
+   * Comprueba el historial antes de mostrar la confirmación. El backend vuelve a aplicar la misma
+   * compuerta; esta lectura sólo evita ofrecer en UI un segundo write que será rechazado.
+   */
+  async function requestCancellation(order: Order) {
+    setActionLoading(order.id);
+    setActionResult(null);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/operations`);
+      const data = (await res.json()) as { operations?: OrderOperationView[]; error?: string };
+      if (!res.ok) {
+        setActionResult({
+          orderId: order.id,
+          type: 'cancel',
+          success: false,
+          message: data.error ?? 'No pudimos comprobar si existe una cancelación anterior.',
+        });
+        return;
+      }
+      const block = directCancellationBlock(data.operations ?? []);
+      if (block) {
+        setActionResult({
+          orderId: order.id,
+          type: 'cancel',
+          success: false,
+          message: block,
+        });
+        setDetailOrder(order);
+        return;
+      }
+      setConfirmCancel(order);
+    } catch {
+      setActionResult({
+        orderId: order.id,
+        type: 'cancel',
+        success: false,
+        message:
+          'No pudimos comprobar el historial de cancelación. Por seguridad no se enviará la operación.',
       });
     } finally {
       setActionLoading(null);
@@ -621,72 +673,81 @@ export default function ReservasPage() {
                     (isCar ? (
                       // Autos: el backend de cancelación es provider-aware, mismo endpoint.
                       // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing (todo eso es LATAM).
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={actionLoading === order.id}
-                        onClick={() => setConfirmCancel(order)}
-                        className="gap-1.5 text-xs text-red-600 hover:text-red-700"
-                      >
-                        <XCircle className="size-3.5" /> Cancelar
-                      </Button>
-                    ) : (
-                      <>
-                        {(order.status === 'pending' || order.status === 'confirmed') && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            disabled={actionLoading === order.id}
-                            onClick={() => {
-                              setPayingOrder(order);
-                              setPaymentData(null);
-                            }}
-                            className="gap-1.5 text-xs"
-                          >
-                            <CreditCard className="size-3.5" /> Pagar / Emitir
-                          </Button>
-                        )}
+                      supportsOrderCancellation(order.capabilities, order.status) ? (
                         <Button
                           variant="secondary"
                           size="sm"
                           disabled={actionLoading === order.id}
-                          onClick={() => void handleRetrieve(order)}
-                          className="gap-1.5 text-xs"
-                        >
-                          <Search className="size-3.5" />
-                          {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
-                        </Button>
-                        {order.status === 'ticketed' && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={actionLoading === order.id}
-                            onClick={() => void handleListServices(order)}
-                            className="gap-1.5 text-xs"
-                          >
-                            <Package className="size-3.5" /> Servicios
-                          </Button>
-                        )}
-                        {order.status === 'ticketed' && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={actionLoading === order.id}
-                            onClick={() => void handleReshop(order)}
-                            className="gap-1.5 text-xs"
-                          >
-                            <RefreshCw className="size-3.5" /> Repricing
-                          </Button>
-                        )}
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={actionLoading === order.id}
-                          onClick={() => setConfirmCancel(order)}
+                          onClick={() => void requestCancellation(order)}
                           className="gap-1.5 text-xs text-red-600 hover:text-red-700"
                         >
                           <XCircle className="size-3.5" /> Cancelar
                         </Button>
+                      ) : null
+                    ) : (
+                      <>
+                        {(order.status === 'pending' || order.status === 'confirmed') &&
+                          supportsOrderCapability(order.capabilities, 'pay') && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              disabled={actionLoading === order.id}
+                              onClick={() => {
+                                setPayingOrder(order);
+                                setPaymentData(null);
+                              }}
+                              className="gap-1.5 text-xs"
+                            >
+                              <CreditCard className="size-3.5" /> Pagar / Emitir
+                            </Button>
+                          )}
+                        {supportsOrderCapability(order.capabilities, 'retrieve') && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id}
+                            onClick={() => void handleRetrieve(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Search className="size-3.5" />
+                            {actionLoading === order.id ? 'Consultando…' : 'Consultar estado'}
+                          </Button>
+                        )}
+                        {order.status === 'ticketed' &&
+                          supportsOrderCapability(order.capabilities, 'services') && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={actionLoading === order.id}
+                              onClick={() => void handleListServices(order)}
+                              className="gap-1.5 text-xs"
+                            >
+                              <Package className="size-3.5" /> Servicios
+                            </Button>
+                          )}
+                        {order.status === 'ticketed' &&
+                          supportsOrderCapability(order.capabilities, 'reshop') && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={actionLoading === order.id}
+                              onClick={() => void handleReshop(order)}
+                              className="gap-1.5 text-xs"
+                            >
+                              <RefreshCw className="size-3.5" /> Repricing
+                            </Button>
+                          )}
+                        {supportsOrderCancellation(order.capabilities, order.status) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id}
+                            onClick={() => void requestCancellation(order)}
+                            className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                          >
+                            <XCircle className="size-3.5" /> Cancelar
+                          </Button>
+                        )}
                       </>
                     ))}
                 </div>
@@ -901,11 +962,19 @@ function OrderDetailModal({
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const isCar = isCarOrder(order);
+  const pendingReconciliation = pendingOrderReconciliationMessage(order);
   const itineraries = order.selectedOffer?.itineraries ?? [];
-  const canCancel = !!order.pnr && order.status !== 'cancelled' && order.status !== 'failed';
+  const canCancelByStatus =
+    !!order.pnr &&
+    order.status !== 'cancelled' &&
+    order.status !== 'failed' &&
+    supportsOrderCancellation(order.capabilities, order.status);
   // Pagar/Emitir es flujo LATAM; los autos se pagan en su propio checkout, nunca acá.
   const canPay =
-    !isCar && !!order.pnr && (order.status === 'pending' || order.status === 'confirmed');
+    !isCar &&
+    !!order.pnr &&
+    (order.status === 'pending' || order.status === 'confirmed') &&
+    supportsOrderCapability(order.capabilities, 'pay');
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -960,9 +1029,14 @@ function OrderDetailModal({
     }
   }
 
-  const [operations, setOperations] = useState<OrderOperation[]>([]);
+  const [operations, setOperations] = useState<OrderOperationView[]>([]);
   const [opsLoading, setOpsLoading] = useState(true);
+  const [opsError, setOpsError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [retryMessage, setRetryMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const cancelBlock = directCancellationBlock(operations);
+  const canCancel = canCancelByStatus && !opsLoading && !opsError && !cancelBlock;
 
   useEffect(() => {
     void reloadOps().finally(() => setOpsLoading(false));
@@ -971,18 +1045,49 @@ function OrderDetailModal({
   async function reloadOps() {
     try {
       const res = await fetch(`/api/orders/${order.id}/operations`);
-      const data = (await res.json()) as { operations?: OrderOperation[] };
+      const data = (await res.json()) as { operations?: OrderOperationView[]; error?: string };
+      if (!res.ok) {
+        setOperations([]);
+        setOpsError(data.error ?? 'No se pudo comprobar el historial de cancelaciones.');
+        return;
+      }
       setOperations(data.operations ?? []);
+      setOpsError(null);
     } catch {
       setOperations([]);
+      setOpsError('No se pudo comprobar el historial de cancelaciones.');
     }
   }
 
-  async function retryOp(opId: string) {
-    setRetrying(opId);
+  async function retryOp(operation: OrderOperationView) {
+    if (!canCancelByStatus || !canRetryCancelOperation(operation)) return;
+    setRetrying(operation.id);
+    setRetryMessage(null);
     try {
-      await fetch(`/api/orders/${order.id}/operations/${opId}/retry`, { method: 'POST' });
+      const res = await fetch(`/api/orders/${order.id}/operations/${operation.id}/retry`, {
+        method: 'POST',
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        message?: string | string[];
+      };
+      if (!res.ok || data.success !== true) {
+        const detail = Array.isArray(data.message) ? data.message.join('. ') : data.message;
+        setRetryMessage({
+          ok: false,
+          text: detail ?? data.error ?? 'No se pudo reintentar la cancelación.',
+        });
+        await reloadOps();
+        return;
+      }
+      setRetryMessage({ ok: true, text: 'La cancelación se completó correctamente.' });
       await reloadOps();
+    } catch {
+      setRetryMessage({
+        ok: false,
+        text: 'No pudimos comprobar el resultado. No vuelvas a enviarlo; revisá el historial.',
+      });
     } finally {
       setRetrying(null);
     }
@@ -1018,6 +1123,15 @@ function OrderDetailModal({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          {pendingReconciliation && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p>
+                <span className="font-semibold">Creación pendiente de conciliación:</span>{' '}
+                {pendingReconciliation}
+              </p>
+              <p className="mt-1 font-semibold">No volver a reservar hasta conciliarla.</p>
+            </div>
+          )}
           {order.status === 'failed' && order.errorMessage && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
               <span className="font-semibold">La reserva falló:</span> {order.errorMessage}
@@ -1198,14 +1312,36 @@ function OrderDetailModal({
             </section>
           )}
 
-          {(opsLoading || operations.length > 0) && (
+          {(opsLoading || operations.length > 0 || opsError || retryMessage || cancelBlock) && (
             <section className="border-t border-[var(--color-border)] pt-3">
               <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
                 Historial de operaciones
               </h3>
+              {opsError && (
+                <p className="mb-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-800">
+                  {opsError} Por seguridad, la cancelación queda bloqueada.
+                </p>
+              )}
+              {!opsError && cancelBlock && (
+                <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900">
+                  {cancelBlock}
+                </p>
+              )}
+              {retryMessage && (
+                <p
+                  className={cn(
+                    'mb-2 rounded-md border px-2.5 py-2 text-[11px]',
+                    retryMessage.ok
+                      ? 'border-green-200 bg-green-50 text-green-800'
+                      : 'border-red-200 bg-red-50 text-red-800',
+                  )}
+                >
+                  {retryMessage.text}
+                </p>
+              )}
               {opsLoading ? (
                 <p className="text-xs text-[var(--color-fg-subtle)]">Cargando…</p>
-              ) : (
+              ) : operations.length > 0 ? (
                 <div className="space-y-1.5">
                   {operations.map((op) => (
                     <div
@@ -1244,10 +1380,10 @@ function OrderDetailModal({
                         <time className="text-[10px] text-[var(--color-fg-subtle)]">
                           {formatRelativeDate(op.created_at)}
                         </time>
-                        {op.status === 'failed' && op.type === 'cancel' && (
+                        {canCancelByStatus && canRetryCancelOperation(op) && (
                           <button
                             type="button"
-                            onClick={() => void retryOp(op.id)}
+                            onClick={() => void retryOp(op)}
                             disabled={retrying === op.id}
                             className="rounded-md border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)] disabled:opacity-50"
                           >
@@ -1258,7 +1394,7 @@ function OrderDetailModal({
                     </div>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
           )}
         </div>

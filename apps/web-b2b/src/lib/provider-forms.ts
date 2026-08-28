@@ -123,9 +123,9 @@ const AGENT_CARS: ProviderForm = {
 /**
  * Sabre. Reparto de mitades tal y como lo lee `SabreProviderFactory.toConfig`:
  *
- *  - `epr`, `password`, `homePcc` y `ticketingPcc` van en `credentials` (blob cifrado). `epr`,
- *    `homePcc` y `ticketingPcc` **no son secretos** —el PCC se imprime en el billete— pero el
- *    factory los lee primero de ahí, así que ahí se guardan.
+ *  - `epr`, `password`, `homePcc`, `redSignInPcc` y `ticketingPcc` van en `credentials` (blob
+ *    cifrado). Los PCC **no son secretos**, pero se guardan juntos para que su función quede
+ *    inequívoca. `redSignInPcc` es sólo referencia operativa: nunca sustituye al PCC del token.
  *  - `password` va SÓLO en `credentials`: el factory se niega a leerla de `config`, que es un
  *    JSONB en claro que además se devuelve por el listado.
  *
@@ -167,15 +167,23 @@ const SABRE: ProviderForm = {
       minLength: 3,
       maxLength: 4,
       placeholder: 'AB1C',
-      help: 'Pseudo-city de tu oficina, 3 o 4 caracteres. No es secreto —se imprime en el billete— pero sí determina qué tarifas privadas ves.',
+      help: 'Pseudo-city de tu oficina, 3 o 4 caracteres. No es secreto —se imprime en el billete— pero sí determina qué tarifas privadas ves. No lo cambies mientras existan reservas activas hasta que la postventa quede fijada a una versión de cuenta.',
     },
     {
-      key: 'ticketingPcc',
-      label: 'PCC de emisión (opcional)',
+      key: 'redSignInPcc',
+      label: 'PCC de acceso a Sabre Red CERT (opcional)',
       minLength: 3,
       maxLength: 4,
       placeholder: 'AB1C',
-      help: 'Sólo si emitís desde un PCC distinto al de la oficina. Es la bisagra del modelo consolidador: emitir contra el PCC del consolidador con tu oficina.',
+      help: 'PCC con el que el agente inicia sesión en Sabre Red CERT. Se conserva para comparar certificación, pero no se usa en el token, búsqueda, reserva ni emisión API.',
+    },
+    {
+      key: 'ticketingPcc',
+      label: 'PCC real de emisión (opcional)',
+      minLength: 3,
+      maxLength: 4,
+      placeholder: 'AB1C',
+      help: 'Dejalo vacío si el segundo PCC sólo sirve para entrar a Sabre Red CERT. Este campo queda reservado para una futura emisión real bajo un PCC distinto, operación que hoy no está habilitada.',
     },
   ],
   config: [
@@ -188,7 +196,7 @@ const SABRE: ProviderForm = {
         { value: 'cert', label: 'CERT (pruebas)' },
         { value: 'prod', label: 'Producción' },
       ],
-      help: 'CERT no emite ni factura y usa credenciales distintas a las de producción. Pasá a Producción sólo con las credenciales productivas en la mano.',
+      help: 'CERT no genera operaciones ni cargos productivos; según los permisos del PCC puede crear documentos de prueba. Usa credenciales distintas a Producción.',
     },
     {
       key: 'callPolicy',
@@ -200,6 +208,53 @@ const SABRE: ProviderForm = {
         { value: 'fallback', label: 'Fallback (sólo si faltan ofertas)' },
       ],
       help: 'Define cuándo se consulta a Sabre. "Siempre activo" consulta a Sabre en todas las búsquedas de vuelos.',
+    },
+    {
+      key: 'brandedFares',
+      label: 'Familias tarifarias',
+      defaultValue: 'single',
+      options: [
+        { value: 'single', label: 'Una familia por vuelo (seguro)' },
+        { value: 'upsell', label: 'Varias familias nativas (requiere habilitación)' },
+        { value: 'off', label: 'No solicitar familias' },
+      ],
+      help: 'CERT usa “Una familia” por defecto: este PCC rechaza el upsell nativo con MIP/PROCESS. Elegí varias sólo cuando Sabre confirme el entitlement para este PCC.',
+    },
+    {
+      key: 'brandLadderRounds',
+      label: 'Rondas extra de familias',
+      defaultValue: '0',
+      options: [
+        { value: '0', label: '0 — una sola consulta' },
+        { value: '1', label: '1 — hasta 2 familias' },
+        { value: '2', label: '2 — hasta 3 familias' },
+        { value: '3', label: '3 — hasta 4 familias' },
+        { value: '4', label: '4 — hasta 5 familias' },
+      ],
+      help: 'Cada ronda ejecuta otra búsqueda BFM facturable por aerolínea elegible (aerolíneas × rondas). Se aísla por aerolínea para que códigos de marca iguales no oculten familias y se detiene cuando no aparece una nueva.',
+    },
+    {
+      key: 'upsellLimit',
+      label: 'Límite de upsells nativos',
+      defaultValue: '3',
+      options: [
+        { value: '1', label: '1 familia adicional' },
+        { value: '2', label: '2 familias adicionales' },
+        { value: '3', label: '3 familias adicionales' },
+        { value: '4', label: '4 familias adicionales' },
+        { value: '5', label: '5 familias adicionales' },
+      ],
+      help: 'Sólo aplica al modo de varias familias nativas; no aumenta las rondas de la escalera.',
+    },
+    {
+      key: 'multipleFares',
+      label: 'Multiple Fares Per Itinerary',
+      defaultValue: 'off',
+      options: [
+        { value: 'off', label: 'Desactivado (seguro)' },
+        { value: 'with-baggage', label: 'Comparar sin/con maleta' },
+      ],
+      help: 'MFPI es una capacidad distinta de las marcas y también puede requerir habilitación por PCC. Al activarlo se piden dos grupos: tarifa base y tarifa con pieza facturada.',
     },
     {
       key: 'agencyIata',

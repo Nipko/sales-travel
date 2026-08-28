@@ -5,6 +5,14 @@ export interface Passenger {
   /** Id que genera el llamador y usa como referencia interna (LATAM: `<PaxRefID>`). */
   paxId: string;
   /**
+   * Índice global, base cero, del viajero en la búsqueda que originó la oferta.
+   *
+   * Sabre NDC lo exige para enlazar de forma inequívoca cada pasajero real con el `id` que
+   * devolvió Offer Price. Es opcional en el puerto compartido porque otros proveedores y el
+   * carril ATPCO no lo necesitan; el adapter Sabre falla cerrado si falta en una reserva NDC.
+   */
+  requestedTravelerIndex?: number;
+  /**
    * Id de pasajero EMITIDO por el proveedor en el paso de precio, cuando el proveedor no
    * acepta el nuestro. En Sabre es `travelers[].id` de `createBooking`, y el contrato se
    * contradice sobre quién lo elige: `booking-management-v1.yml:6156-6159` lo describe como

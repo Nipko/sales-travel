@@ -31,6 +31,7 @@ import {
   type SabreCreateBookingMapped,
 } from './booking/create.response.mapper';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
+import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
 import { logRedacted, type SabreLogLevel } from './redaction';
@@ -312,9 +313,13 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
    * traducción por la puerta pública sin montar un `fetch` falso.
    */
   plan(request: OrderCreateRequest, options: SabreOrderCreateOptions = {}): SabreCreateBookingPlan {
+    const product = productOf(
+      request.offer,
+      options.flightStatusCode ?? DEFAULT_FLIGHT_STATUS_CODE,
+    );
     const input: SabreCreateBookingInput = {
-      product: productOf(request.offer, options.flightStatusCode ?? DEFAULT_FLIGHT_STATUS_CODE),
-      travelers: request.passengers.map(travelerOf),
+      product,
+      travelers: travelersOf(request),
       contactInfo: contactInfoOf(request.contactInfo),
       carriers: carriersOf(request.offer),
       ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
@@ -561,7 +566,8 @@ function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityD
   };
 }
 
-function travelerOf(passenger: Passenger): SabreTravelerInput {
+function travelerOf(passenger: Passenger, boundProviderPaxId?: string): SabreTravelerInput {
+  const providerPaxId = boundProviderPaxId ?? passenger.providerPaxId;
   return {
     givenName: passenger.givenName,
     surname: passenger.surname,
@@ -572,9 +578,7 @@ function travelerOf(passenger: Passenger): SabreTravelerInput {
     // `providerPaxId` es el id que EMITIÓ el proveedor en el paso de precio. Si no lo hay no se
     // inventa uno nuestro: el contrato se contradice sobre quién lo elige (ver `Passenger`), y un
     // id inventado que Sabre no reconozca rompe la referencia entre traveler y offerItem.
-    ...(passenger.providerPaxId === undefined
-      ? {}
-      : { providerTravelerId: passenger.providerPaxId }),
+    ...(providerPaxId === undefined ? {} : { providerTravelerId: providerPaxId }),
     ...documentoDe(passenger),
     ...(passenger.loyaltyProgramAccount === undefined
       ? {}
@@ -592,6 +596,163 @@ function travelerOf(passenger: Passenger): SabreTravelerInput {
   // `linkedInfantPosition` NO se rellena: el dominio no dice con qué adulto viaja cada infante, y
   // elegir "el primer adulto" sería inventar un dato que acaba impreso en un billete. Quien lo
   // sepa lo pasa por el builder, que sí lo admite.
+}
+
+interface PricePassengerBindingRaw {
+  readonly pricePassengerId: string;
+  readonly requestedTravelerIndex: number;
+  readonly paxType: 'ADT' | 'CHD' | 'INF';
+  readonly requestedPtc: string;
+  readonly pricedPtc: string;
+}
+
+/**
+ * NDC: el viajero se enlaza por `requestedTravelerIndex` + tipo y recibe el id de price. ATPCO y
+ * Flight Check no usan esta cadena. No hay fallback por orden ni por «el único adulto» porque ese
+ * atajo se vuelve intercambio de documentos en cuanto se reserva más de un pasajero.
+ */
+function travelersOf(request: OrderCreateRequest): SabreTravelerInput[] {
+  const priceOfferId = rawId(request.offer, SABRE_RAW_KEYS.priceOfferId);
+  const priceOfferItemIds = rawIds(request.offer, SABRE_RAW_KEYS.priceOfferItemIds);
+  if (priceOfferId === null || priceOfferItemIds === null) {
+    return request.passengers.map((passenger) => travelerOf(passenger));
+  }
+
+  const bindings = rawPricePassengerBindings(request.offer);
+  const declaredIds = rawIds(request.offer, SABRE_RAW_KEYS.pricePassengerIds);
+  if (bindings === null || declaredIds === null) {
+    throw new SabreOrderCreateInputError(
+      'la oferta NDC no trae pricePassengerBindings/pricePassengerIds completos: no se puede ' +
+        'asociar cada traveler con el id emitido por Offer Price',
+    );
+  }
+
+  const expectedTypes = expectedPaxTypes(request);
+  if (
+    expectedTypes.length !== request.passengers.length ||
+    bindings.length !== expectedTypes.length
+  ) {
+    throw new SabreOrderCreateInputError(
+      'el binding de pasajeros de Offer Price no cubre exactamente los pasajeros solicitados',
+    );
+  }
+
+  const bindingByIndex = new Map<number, PricePassengerBindingRaw>();
+  const providerIds = new Set<string>();
+  for (const binding of bindings) {
+    const expected = expectedTypes[binding.requestedTravelerIndex];
+    if (
+      expected === undefined ||
+      expected !== binding.paxType ||
+      bindingByIndex.has(binding.requestedTravelerIndex) ||
+      providerIds.has(binding.pricePassengerId) ||
+      requestedPtcFor(expected) !== binding.requestedPtc
+    ) {
+      throw new SabreOrderCreateInputError(
+        'pricePassengerBindings es ambiguo o no coincide con requestedTravelerIndex/paxType',
+      );
+    }
+    bindingByIndex.set(binding.requestedTravelerIndex, binding);
+    providerIds.add(binding.pricePassengerId);
+  }
+  const boundIds = [...bindings]
+    .sort((left, right) => left.requestedTravelerIndex - right.requestedTravelerIndex)
+    .map((binding) => binding.pricePassengerId);
+  if (
+    declaredIds.length !== boundIds.length ||
+    declaredIds.some((id, index) => id !== boundIds[index])
+  ) {
+    throw new SabreOrderCreateInputError(
+      'pricePassengerIds no coincide con el binding explícito de Offer Price',
+    );
+  }
+
+  const passengerByIndex = new Map<number, Passenger>();
+  for (const passenger of request.passengers) {
+    const index = passenger.requestedTravelerIndex;
+    if (
+      index === undefined ||
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      passengerByIndex.has(index) ||
+      expectedTypes[index] !== passenger.paxType
+    ) {
+      throw new SabreOrderCreateInputError(
+        'cada pasajero NDC debe declarar un requestedTravelerIndex único que coincida con su paxType',
+      );
+    }
+    passengerByIndex.set(index, passenger);
+  }
+
+  const travelers: SabreTravelerInput[] = [];
+  for (let index = 0; index < expectedTypes.length; index += 1) {
+    const passenger = passengerByIndex.get(index);
+    const binding = bindingByIndex.get(index);
+    if (passenger === undefined || binding === undefined) {
+      throw new SabreOrderCreateInputError(
+        'el binding de Offer Price quedó incompleto para uno de los requestedTravelerIndex',
+      );
+    }
+    if (
+      passenger.providerPaxId !== undefined &&
+      passenger.providerPaxId !== binding.pricePassengerId
+    ) {
+      throw new SabreOrderCreateInputError(
+        'providerPaxId contradice el binding de pasajero confirmado por Offer Price',
+      );
+    }
+    travelers.push(travelerOf(passenger, binding.pricePassengerId));
+  }
+  return travelers;
+}
+
+function expectedPaxTypes(request: OrderCreateRequest): Array<'ADT' | 'CHD' | 'INF'> {
+  return [
+    ...Array.from({ length: request.criteria.paxCount.adults }, () => 'ADT' as const),
+    ...Array.from({ length: request.criteria.paxCount.children }, () => 'CHD' as const),
+    ...Array.from({ length: request.criteria.paxCount.infants }, () => 'INF' as const),
+  ];
+}
+
+function requestedPtcFor(paxType: 'ADT' | 'CHD' | 'INF'): string {
+  return paxType === 'CHD' ? 'CNN' : paxType;
+}
+
+function rawPricePassengerBindings(offer: Offer): PricePassengerBindingRaw[] | null {
+  const value = (offer.provider.raw ?? {})[SABRE_RAW_KEYS.pricePassengerBindings];
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const bindings: PricePassengerBindingRaw[] = [];
+  for (const entry of value) {
+    if (entry === null || Array.isArray(entry) || typeof entry !== 'object') return null;
+    const record = entry as Record<string, unknown>;
+    const pricePassengerId = record['pricePassengerId'];
+    const requestedTravelerIndex = record['requestedTravelerIndex'];
+    const paxType = record['paxType'];
+    const requestedPtc = record['requestedPtc'];
+    const pricedPtc = record['pricedPtc'];
+    if (
+      typeof pricePassengerId !== 'string' ||
+      pricePassengerId.length === 0 ||
+      typeof requestedTravelerIndex !== 'number' ||
+      !Number.isSafeInteger(requestedTravelerIndex) ||
+      requestedTravelerIndex < 0 ||
+      (paxType !== 'ADT' && paxType !== 'CHD' && paxType !== 'INF') ||
+      typeof requestedPtc !== 'string' ||
+      requestedPtc.length === 0 ||
+      typeof pricedPtc !== 'string' ||
+      pricedPtc.length === 0
+    ) {
+      return null;
+    }
+    bindings.push({
+      pricePassengerId,
+      requestedTravelerIndex,
+      paxType,
+      requestedPtc,
+      pricedPtc,
+    });
+  }
+  return bindings;
 }
 
 /**
@@ -661,9 +822,32 @@ function rawId(offer: Offer, key: string): string | null {
  * `offers/price`, y `flightOffer` ni siquiera declara el bloque (`:4952-4981`).
  */
 function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductInput {
+  const bookingOfferId = rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId);
+  const bookingOfferItemIds = rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds);
   const offerId = rawId(offer, SABRE_RAW_KEYS.priceOfferId);
   const offerItemIds = rawIds(offer, SABRE_RAW_KEYS.priceOfferItemIds);
   const segments = segmentsOf(offer);
+
+  // Flight Check materializa una oferta ATPCO cacheada en handles de Booking Management. El
+  // bloque wire es `flightOffer` igual que para NDC; `kind: 'ndc'` es sólo el nombre histórico
+  // del discriminante interno del builder y no describe la fuente comercial.
+  if (bookingOfferId !== null && bookingOfferItemIds !== null) {
+    return {
+      kind: 'ndc',
+      offerId: bookingOfferId,
+      selectedOfferItems: bookingOfferItemIds,
+      ...(segments.length === 0 ? {} : { segmentCount: segments.length }),
+    };
+  }
+
+  if (bookingOfferId !== null || bookingOfferItemIds !== null) {
+    throw new SabreOrderCreateInputError(
+      `la oferta trae sólo la mitad de la cadena de identificadores de Flight Check ` +
+        `(${SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId}: ${String(bookingOfferId !== null)}, ` +
+        `${SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds}: ${String(bookingOfferItemIds !== null)}): ` +
+        'reservar con media cadena es reservar otra cosa',
+    );
+  }
 
   if (offerId !== null && offerItemIds !== null) {
     return {

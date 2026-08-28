@@ -74,7 +74,11 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async enqueueCancelRetry(data: CancelRetryJob): Promise<boolean> {
-    return this.add(POST_SALE_JOBS.cancel, data);
+    // Evita dos jobs simultáneos para el mismo write. La autorización durable sigue viviendo en
+    // order_operations: el jobId sólo cubre carreras mientras BullMQ conserva el job.
+    return this.add(POST_SALE_JOBS.cancel, data, {
+      jobId: `${POST_SALE_JOBS.cancel}:${data.orderId}`,
+    });
   }
 
   async enqueueVerifyCreation(data: VerifyCreationJob): Promise<boolean> {

@@ -321,6 +321,35 @@ describe('getBooking — billetes e índices 1-based', () => {
     });
     expect(snapshot.warnings).not.toContain('traveler-index-out-of-range');
   });
+
+  it('infiere reserva emitida si falta isTicketed pero existen flightTickets', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      flights: [{ itemId: '1', airlineCode: 'AA', flightStatusName: 'Confirmed' }],
+      flightTickets: [{ number: '0167489825830', travelerIndex: 1 }],
+      travelers: [{}],
+    });
+
+    expect(snapshot.isTicketed).toBe(true);
+    expect(snapshot.warnings).toContain('airline-locator-absent');
+  });
+
+  it('la evidencia documental gana incluso ante un flag false o un número ilegible', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      isTicketed: false,
+      flightTickets: [{ number: { raw: 'DOCUMENTO-ILEGIBLE' } }],
+    });
+
+    expect(snapshot.isTicketed).toBe(true);
+    expect(snapshot.warnings).toContain('ticket-number-malformed');
+  });
+
+  it.each(['nonElectronicTickets', 'accountingItems'] as const)(
+    '%s también prueba que ya existe un documento cumplido',
+    (field) => {
+      const snapshot = mapSabreGetBookingForDisplay({ [field]: [{}] });
+      expect(snapshot.isTicketed).toBe(true);
+    },
+  );
 });
 
 describe('getBooking — la vista NO puede llevar PII', () => {

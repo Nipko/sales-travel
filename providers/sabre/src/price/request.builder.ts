@@ -143,6 +143,12 @@ export const SABRE_RAW_KEYS = {
   priceOfferItemIds: 'priceOfferItemIds',
   /** `offerItems[].passengers[].id`: lo que referencia `travelers[].id` en `createBooking`. */
   pricePassengerIds: 'pricePassengerIds',
+  /**
+   * Enlace explícito entre el id de Offer Price y el índice/tipo solicitado. La respuesta no
+   * devuelve `requestedTravelerIndex`, así que este vínculo nace en el request de price y debe
+   * sobrevivir hasta `createBooking`; el orden de los arrays no es una clave.
+   */
+  pricePassengerBindings: 'pricePassengerBindings',
 } as const;
 
 /**

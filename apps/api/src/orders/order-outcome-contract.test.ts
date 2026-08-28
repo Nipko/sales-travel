@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BadRequestException } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import type {
   OrderCreateResult,
@@ -11,9 +12,10 @@ import type { BrandingService } from '../branding/branding.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
-import type { FlightProviderAdapter } from '../providers/provider.types.js';
+import type { FlightProviderAdapter, ProviderCapabilities } from '../providers/provider.types.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
+import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
@@ -36,8 +38,31 @@ import { OrdersService, type CreateOrderDto } from './orders.service.js';
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const USER = '22222222-2222-4222-8222-222222222222';
 const PROVEEDOR = 'stub-air';
+const QUOTATION_ID = '33333333-3333-4333-8333-333333333333';
+const IDEMPOTENCY_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 /** Un número de documento: PII que el proveedor nos devuelve en `fieldValue` tal cual se la mandamos. */
 const DOCUMENTO_DEL_PASAJERO = 'AB1234567';
+const PRICING_SIN_REGLAS = {
+  getApplicableRules: () => Promise.resolve([]),
+} as unknown as PricingService;
+
+const PASAJERO_ADULTO: Passenger = {
+  paxId: 'P1',
+  paxType: 'ADT',
+  title: 'Mr',
+  givenName: 'Juan',
+  surname: 'Pérez',
+  birthdate: '1990-01-01',
+  gender: 'M',
+  citizenshipCountryCode: 'CO',
+  identityDoc: {
+    type: 'CC',
+    // Distinto del sentinel que el proveedor devuelve en `fieldValue`: la respuesta de creación
+    // sí incluye al pasajero de la orden, pero nunca debe copiar el valor libre de la incidencia.
+    number: 'CC999999',
+    issuingCountryCode: 'CO',
+  },
+};
 
 function ofertaDe(code: string): Offer {
   return {
@@ -48,17 +73,44 @@ function ofertaDe(code: string): Offer {
     total: { amountMinor: 100_000, currency: 'USD' },
     baseFare: { amountMinor: 80_000, currency: 'USD' },
     taxes: { amountMinor: 20_000, currency: 'USD' },
+    itineraries: [
+      {
+        segments: [
+          {
+            carrier: 'AV',
+            flightNumber: '123',
+            origin: 'BOG',
+            destination: 'LIM',
+            departureAt: '2026-09-10T09:00:00-05:00',
+            arrivalAt: '2026-09-10T12:00:00-05:00',
+            durationMinutes: 180,
+            cabin: 'economy',
+            bookingClass: 'Y',
+          },
+        ],
+        totalDurationMinutes: 180,
+        stops: 0,
+      },
+    ],
     fetchedAt: '2026-08-26T12:00:00.000Z',
-    expiresAt: '2026-08-26T12:30:00.000Z',
+    expiresAt: '2099-08-26T12:30:00.000Z',
   };
 }
 
 function dto(): CreateOrderDto {
   return {
     offer: ofertaDe(PROVEEDOR),
-    searchCriteria: { origin: 'BOG', destination: 'LIM' },
-    passengers: [] as Passenger[],
+    searchCriteria: {
+      origin: 'BOG',
+      destination: 'LIM',
+      departureDate: '2026-09-10',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+      cabin: 'economy',
+      currency: 'USD',
+    },
+    passengers: [PASAJERO_ADULTO],
     contactInfo: { email: 'pasajero@ejemplo.test', phone: '+573000000000' },
+    quotationId: QUOTATION_ID,
   };
 }
 
@@ -97,8 +149,10 @@ function dbFalsa(): { db: DatabaseService; insertado: () => Record<string, unkno
     select: () => select,
     selectAll: () => select,
     where: () => select,
-    executeTakeFirst: () => Promise.resolve(undefined),
-    executeTakeFirstOrThrow: () => Promise.resolve({ next: 1 }),
+    forUpdate: () => select,
+    executeTakeFirst: () => Promise.resolve({ id: QUOTATION_ID, tenant_id: TENANT }),
+    executeTakeFirstOrThrow: () =>
+      Promise.resolve({ id: QUOTATION_ID, tenant_id: TENANT, next: 1 }),
   };
   const update = {
     set: (v: Record<string, unknown>) => {
@@ -145,6 +199,7 @@ function banco(resultado: OrderCreateResult): Banco {
     new RecordingQueueService().asService(),
     {} as unknown as AgentCarsProviderFactory,
     new RecordingAuditService().asService(),
+    PRICING_SIN_REGLAS,
   );
 
   return { orders, adapter, insertado };
@@ -168,7 +223,7 @@ function vueloSiAsientoNo(): OrderCreateResult {
         severity: 'ERROR',
         category: 'APPLICATION_ERROR',
         type: 'SEAT_NOT_AVAILABLE',
-        message: 'The requested seat is no longer available',
+        message: `The requested seat for document ${DOCUMENTO_DEL_PASAJERO} is no longer available`,
         fieldPath: 'flights[0].seats[0]',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO_DEL_PASAJERO,
@@ -211,9 +266,9 @@ describe('OrdersService.createOrder — el desenlace decide el estado de la fila
 
     const mensaje = b.insertado()?.error_message;
     expect(mensaje).toContain('SEAT_NOT_AVAILABLE');
-    expect(mensaje).toContain('The requested seat is no longer available');
-    // `fieldValue` es el valor que MANDAMOS, devuelto tal cual: PII hoy, y un PAN el día que
-    // alguien encienda el flag de tarjeta. `error_message` se persiste y se muestra.
+    expect(mensaje).not.toContain('The requested seat');
+    // Tanto `fieldValue` como `message` son texto libre que puede repetir lo que mandamos: PII
+    // hoy, y un PAN el día que alguien encienda el flag de tarjeta.
     expect(mensaje).not.toContain(DOCUMENTO_DEL_PASAJERO);
   });
 
@@ -230,13 +285,17 @@ describe('OrdersService.createOrder — el desenlace decide el estado de la fila
 
 interface BancoHttp {
   controller: OrdersController;
+  orders: OrdersService;
+  insertado: () => Record<string, unknown> | undefined;
   brandingResolve: ReturnType<typeof vi.fn>;
   mailerSend: ReturnType<typeof vi.fn>;
 }
 
-function bancoHttp(res: OrderCreateResult): BancoHttp {
+function bancoHttp(
+  res: OrderCreateResult,
+  capabilities: Partial<ProviderCapabilities> = {},
+): BancoHttp {
   const { orders, insertado } = banco(res);
-  void insertado;
 
   const brandingResolve = vi.fn(() => Promise.resolve(null));
   const mailerSend = vi.fn(() => Promise.resolve(true));
@@ -247,13 +306,71 @@ function bancoHttp(res: OrderCreateResult): BancoHttp {
     { sendToTenant: mailerSend } as unknown as MailerService,
     { resolve: brandingResolve } as unknown as BrandingService,
     { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry([], { isEnabledForTenant: () => Promise.resolve(false) }),
+    new FlightProviderRegistry([new StubProviderFactory({ code: PROVEEDOR, capabilities })], {
+      isEnabledForTenant: () => Promise.resolve(false),
+    }),
   );
 
-  return { controller, brandingResolve, mailerSend };
+  return { controller, orders, insertado, brandingResolve, mailerSend };
 }
 
 describe('OrdersController.create — lo que sale por HTTP', () => {
+  it('exige Idempotency-Key UUID cuando el body no lleva quotationId', async () => {
+    const b = bancoHttp(resultado({ outcome: 'CONFIRMED' }));
+    const input = dto();
+    delete input.quotationId;
+
+    await expect(b.controller.create(USER, input)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(b.controller.create(USER, input, 'no-es-uuid')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    await expect(b.controller.create(USER, input, IDEMPOTENCY_KEY)).resolves.toMatchObject({
+      providerResult: { outcome: 'CONFIRMED' },
+    });
+    expect(b.insertado()?.create_request_key).toBe(`c:${IDEMPOTENCY_KEY}`);
+  });
+
+  it('serializa las capacidades del proveedor para gatear la post-venta en UI', async () => {
+    const b = bancoHttp(resultado({ outcome: 'CONFIRMED' }), {
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    });
+
+    const respuesta = await b.controller.create(USER, dto());
+
+    expect(respuesta.order.capabilities).toEqual({
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    });
+  });
+
+  it('una orden emitida anuncia cancel=false y el endpoint no toca el servicio de cancelación', async () => {
+    const b = bancoHttp(resultado({ outcome: 'CONFIRMED' }), {
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    });
+    const settled = await b.orders.createOrder(TENANT, USER, dto());
+    const ticketed = { ...settled.order, status: 'ticketed' as const };
+    vi.spyOn(b.orders, 'findById').mockResolvedValue(ticketed);
+    const cancel = vi.spyOn(b.orders, 'cancelOrder');
+
+    await expect(b.controller.findOne(USER, ticketed.id)).resolves.toMatchObject({
+      order: { capabilities: { cancel: false } },
+    });
+    await expect(b.controller.cancel(USER, ticketed.id)).rejects.toThrow(/emitida|VOID|REFUND/i);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it('viaja el outcome, no un booleano', async () => {
     const b = bancoHttp(vueloSiAsientoNo());
     const respuesta = await b.controller.create(USER, dto());
@@ -263,7 +380,33 @@ describe('OrdersController.create — lo que sale por HTTP', () => {
     expect(respuesta.providerResult.items).toHaveLength(2);
   });
 
-  it('las incidencias salen SIN fieldValue', async () => {
+  it('expone flags top-level cuando el resultado externo no pudo conciliarse', async () => {
+    const b = bancoHttp(resultado({ outcome: 'CONFIRMED' }));
+    const settled = await b.orders.createOrder(TENANT, USER, dto());
+    vi.spyOn(b.orders, 'createOrder').mockResolvedValue({
+      ...settled,
+      order: { ...settled.order, status: 'pending' },
+      saga: {
+        kind: 'escalate',
+        reason: 'result-persistence-unavailable',
+        status: 'pending',
+      },
+    });
+
+    const respuesta = await b.controller.create(USER, dto());
+
+    expect(respuesta).toMatchObject({
+      orderId: 'order-1',
+      retryForbidden: true,
+      reconciliationRequired: true,
+      providerResult: { outcome: 'CONFIRMED', pnr: 'ABC123' },
+      saga: { kind: 'escalate', reason: 'result-persistence-unavailable', status: 'pending' },
+    });
+    expect(b.brandingResolve).not.toHaveBeenCalled();
+    expect(b.mailerSend).not.toHaveBeenCalled();
+  });
+
+  it('las incidencias salen con lista blanca, SIN fieldValue ni message libre', async () => {
     const b = bancoHttp(vueloSiAsientoNo());
     const respuesta = await b.controller.create(USER, dto());
 
@@ -271,6 +414,7 @@ describe('OrdersController.create — lo que sale por HTTP', () => {
     expect(incidencia?.type).toBe('SEAT_NOT_AVAILABLE');
     expect(incidencia?.fieldPath).toBe('flights[0].seats[0]');
     expect(incidencia).not.toHaveProperty('fieldValue');
+    expect(incidencia).not.toHaveProperty('message');
     expect(JSON.stringify(respuesta)).not.toContain(DOCUMENTO_DEL_PASAJERO);
   });
 

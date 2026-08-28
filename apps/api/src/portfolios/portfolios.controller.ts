@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -22,6 +23,27 @@ function assertPositiveAmount(amountMinor: unknown): number {
     throw new BadRequestException('amountMinor must be a positive integer');
   }
   return amountMinor;
+}
+
+function assertUuid(value: unknown, label: string): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
+    throw new BadRequestException(`${label} must be a valid UUID`);
+  }
+  return value.toLowerCase();
+}
+
+function assertCurrency(currency: unknown): string {
+  if (typeof currency !== 'string') {
+    throw new BadRequestException('currency must be a 3-letter ISO code');
+  }
+  const normalized = currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) {
+    throw new BadRequestException('currency must be a 3-letter ISO code');
+  }
+  return normalized;
 }
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
@@ -63,15 +85,18 @@ export class PortfoliosController {
   async deposit(
     @CurrentUser() userId: string | undefined,
     @Body() body: { amountMinor: number; notes?: string },
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
     const amount = assertPositiveAmount(body.amountMinor);
+    const key = assertUuid(idempotencyKey, 'Idempotency-Key');
     const { portfolio, transaction } = await this.portfolios.deposit(
       tenantId,
       amount,
       userId,
+      key,
       body.notes,
     );
     return {
@@ -85,15 +110,18 @@ export class PortfoliosController {
   async withdraw(
     @CurrentUser() userId: string | undefined,
     @Body() body: { amountMinor: number; notes?: string },
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
     const amount = assertPositiveAmount(body.amountMinor);
+    const key = assertUuid(idempotencyKey, 'Idempotency-Key');
     const { portfolio, transaction } = await this.portfolios.withdraw(
       tenantId,
       amount,
       userId,
+      key,
       body.notes,
     );
     return {
@@ -127,16 +155,22 @@ export class PortfoliosController {
   @Post('hold-booking')
   async hold(
     @CurrentUser() userId: string | undefined,
-    @Body() body: { orderId: string; amountMinor: number },
+    @Body() body: { orderId: string; amountMinor?: number; currency?: string },
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const amount = assertPositiveAmount(body.amountMinor);
+    const orderId = assertUuid(body.orderId, 'orderId');
+    const expected = {
+      ...(body.amountMinor === undefined
+        ? {}
+        : { amountMinor: assertPositiveAmount(body.amountMinor) }),
+      ...(body.currency === undefined ? {} : { currency: assertCurrency(body.currency) }),
+    };
     const { portfolio, transaction } = await this.portfolios.holdBooking(
       tenantId,
-      body.orderId,
-      amount,
+      orderId,
       userId,
+      expected,
     );
     return {
       portfolio: this.serializePortfolio(portfolio),
@@ -148,20 +182,22 @@ export class PortfoliosController {
   @Post('orders/:orderId/approve')
   async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
+    const canonicalOrderId = assertUuid(orderId, 'orderId');
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
-    return this.portfolios.approveBooking(tenantId, orderId);
+    return this.portfolios.approveBooking(tenantId, canonicalOrderId);
   }
 
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/reject')
   async reject(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
     if (!userId) throw new ForbiddenException();
+    const canonicalOrderId = assertUuid(orderId, 'orderId');
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
-    return this.portfolios.rejectBooking(tenantId, orderId);
+    return this.portfolios.rejectBooking(tenantId, canonicalOrderId, userId);
   }
 
   private serializePortfolio(p: PortfolioRow) {

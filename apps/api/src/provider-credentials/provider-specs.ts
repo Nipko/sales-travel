@@ -100,12 +100,20 @@ const SABRE: ProviderSpec = {
         'Falta `homePcc` (PCC de la oficina). Va DENTRO del clientId del que se deriva el token (V1:{EPR}:{PCC}:AA), así que sin él no hay autenticación posible: la cuenta se guarda, Sabre desaparece de las búsquedas y nadie ve un error.',
     },
     {
+      key: 'redSignInPcc',
+      origin: 'encrypted-or-config',
+      minLength: 3,
+      maxLength: 4,
+      reason:
+        'El PCC de acceso a Sabre Red es un pseudo-city de 3 o 4 caracteres. Se conserva como referencia de certificación y no se usa para autenticar ni para emitir por API.',
+    },
+    {
       key: 'ticketingPcc',
       origin: 'encrypted-or-config',
       minLength: 3,
       maxLength: 4,
       reason:
-        'El PCC de emisión es un pseudo-city de 3 o 4 caracteres. Fuera de rango, la cuenta se guarda y revienta en la primera búsqueda.',
+        'El PCC de emisión es un pseudo-city de 3 o 4 caracteres. Hoy se conserva como referencia y no participa en búsqueda ni reserva.',
     },
     {
       key: 'sabreGroup',
@@ -134,8 +142,13 @@ const SABRE: ProviderSpec = {
     'sabreGroup',
     'sabreCurrentCity',
     'homePcc',
+    'redSignInPcc',
     'ticketingPcc',
     'callPolicy',
+    'brandedFares',
+    'brandLadderRounds',
+    'upsellLimit',
+    'multipleFares',
     'allowCardBinPricing',
     'mock',
   ],

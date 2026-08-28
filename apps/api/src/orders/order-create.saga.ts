@@ -131,6 +131,10 @@ export type CompensationReason =
 export type EscalationReason =
   /** La llamada de creación lanzó: **no sabemos** si hay reserva del otro lado. */
   | 'create-uncertain'
+  /** El proveedor respondió, pero no se pudo consolidar ese resultado en el intent durable. */
+  | 'result-persistence-unavailable'
+  /** El resultado se consolidó, pero falló la verificación/aplicación posterior al write. */
+  | 'post-create-finalization-unavailable'
   /** Hay reserva pero el proveedor no la devuelve como localizador utilizable. */
   | 'created-without-locator'
   /** El proveedor no sabe leer reservas, o la lectura de cierre falló: la creación no se cerró. */
@@ -334,13 +338,13 @@ export function decideAfterVerify(input: {
  * La creación LANZÓ. No es lo mismo que `FAILED`.
  *
  * Un `FAILED` es el proveedor diciendo "no reservé nada". Un timeout es el proveedor no diciendo
- * nada: la reserva puede existir. Por eso el estado es `failed` —no hay orden utilizable— pero la
- * decisión es `escalate` con `create-uncertain`, para que quede una fila que una persona pueda
- * buscar en el PCC. Tratarlo como un `FAILED` normal es como se pierden reservas fantasma que
- * siguen ocupando asiento y se emiten solas.
+ * nada: la reserva puede existir. Por eso el estado sigue `pending` y la decisión es `escalate`
+ * con `create-uncertain`, para que quede una fila que una persona pueda buscar en el PCC. Marcarla
+ * `failed` habilitaría otro intento aunque el primero quizá sí creó el PNR: así aparecen reservas
+ * duplicadas que siguen ocupando asiento y se emiten solas.
  */
 export function decideAfterCreateThrew(): SagaDecision {
-  return { kind: 'escalate', reason: 'create-uncertain', status: 'failed' };
+  return { kind: 'escalate', reason: 'create-uncertain', status: 'pending' };
 }
 
 /**

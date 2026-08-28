@@ -70,4 +70,24 @@ d('order_operations (post-venta durable)', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('permite un solo claim pending de cancelación por orden', async () => {
+    const first = await pool.query<{ id: string }>(
+      `INSERT INTO order_operations (tenant_id, order_id, type, status)
+       VALUES ($1,$2,'cancel','pending') RETURNING id`,
+      [tenantId, orderId],
+    );
+
+    await expect(
+      pool.query(
+        `INSERT INTO order_operations (tenant_id, order_id, type, status)
+         VALUES ($1,$2,'cancel','pending')`,
+        [tenantId, orderId],
+      ),
+    ).rejects.toMatchObject({ code: '23505' });
+
+    await pool.query(`UPDATE order_operations SET status = 'failed' WHERE id = $1`, [
+      first.rows[0]!.id,
+    ]);
+  });
 });

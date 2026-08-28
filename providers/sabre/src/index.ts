@@ -109,6 +109,8 @@ export * from './booking/cancel.request.builder';
 export * from './booking/cancel.response.mapper';
 export * from './price/request.builder';
 export * from './price/response.mapper';
+export * from './flight-check/request.builder';
+export * from './flight-check/response.mapper';
 
 // `./booking/create.response.mapper` va nombrado y NO con `export *`.
 //
@@ -142,5 +144,6 @@ export type {
 // ---------------------------------------------------------------------------------------------
 
 export * from './sabre-offer-price.adapter';
+export * from './sabre-flight-check.adapter';
 export * from './sabre-order-create.adapter';
 export * from './sabre-order-manage.adapter';

@@ -24,6 +24,7 @@ import {
   type SabrePriceChange,
   type SabrePriceHandles,
   type SabrePriceProviderMessage,
+  type SabrePriceRequestedTraveler,
   type SabrePriceWarning,
 } from './price/response.mapper';
 
@@ -132,7 +133,9 @@ export interface SabrePricedQuote {
   readonly offer: Offer;
   readonly handles: SabrePriceHandles;
   readonly priceChange: SabrePriceChange;
+  /** Importe o identidad tarifaria (marca/fare basis/RBD/cabina/segmentos) cambiaron. */
   readonly priceChanged: boolean;
+  readonly fareIdentityChanged: boolean;
   /** `true` si se tarificó SIN forma de pago: el total puede subir al cobrar. */
   readonly priceSubjectToFormOfPayment: boolean;
   /**
@@ -162,16 +165,16 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
    * El puerto del dominio. Devuelve lo poco que `OfferPriceResult` admite; quien necesite el
    * delta, el origen o el aviso de forma de pago llama a {@link priceQuote}.
    *
-   * `criteria` no se usa: en Sabre la revalidación se direcciona por los `offerItemId` que la
-   * propia oferta transporta, no por los criterios de búsqueda. Se acepta porque lo exige la
-   * firma del puerto.
+   * Los vuelos se direccionan por `offerItemId`, pero los criterios sí son imprescindibles para
+   * declarar pasajeros con ids técnicos estables. La respuesta repite esos ids y así conserva el
+   * vínculo explícito `requestedTravelerIndex` que consumirá Create Booking.
    */
   async priceOffer(
     offer: Offer,
-    _criteria: FlightSearchCriteria,
+    criteria: FlightSearchCriteria,
     ctx: SearchContext,
   ): Promise<OfferPriceResult> {
-    const quote = await this.priceQuote(offer, ctx);
+    const quote = await this.priceQuote(offer, criteria, ctx);
     return {
       offer: quote.offer,
       priceChanged: quote.priceChanged,
@@ -186,15 +189,21 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
   /** La cotización completa: identificadores, cambio de precio y procedencia de los ids. */
   async priceQuote(
     offer: Offer,
+    criteria: FlightSearchCriteria,
     ctx: SearchContext,
     options: SabreOfferPriceOptions = {},
   ): Promise<SabrePricedQuote> {
     const formOfPayment = await this.resolveFormOfPayment(ctx.tenantId, options.formOfPayment);
     const { offerItemIds, origin } = readSabreOfferItemIds(offer, options.granularity ?? 'fare');
+    const requestedTravelers = buildSabrePriceRequestedTravelers(criteria);
 
     const request: SabrePriceRequest = buildSabrePriceRequest(
       {
         query: [{ offerItemIds: [...offerItemIds] }],
+        passengers: requestedTravelers.map((traveler) => ({
+          id: traveler.requestPassengerId,
+          type: traveler.requestedPtc,
+        })),
         ...(formOfPayment === undefined ? {} : { formOfPayment }),
       },
       {
@@ -225,6 +234,7 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
       fetchedAt,
       // La oferta de búsqueda es la referencia del cambio de precio Y la fuente del itinerario.
       basis: offer,
+      requestedTravelers,
       formOfPaymentDeclared: formOfPayment !== undefined,
     });
 
@@ -238,6 +248,7 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
       origin,
       source: first.handles.source,
       priceChanged: mapped.priceChanged,
+      fareIdentityChanged: first.fareIdentityChanged,
       priceChangeKind: first.priceChange.kind,
       ...(first.priceChange.deltaMinor === undefined
         ? {}
@@ -252,6 +263,7 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
       handles: first.handles,
       priceChange: first.priceChange,
       priceChanged: mapped.priceChanged,
+      fareIdentityChanged: first.fareIdentityChanged,
       priceSubjectToFormOfPayment: mapped.priceSubjectToFormOfPayment,
       origin,
       warnings: mapped.warnings,
@@ -282,6 +294,31 @@ export class SabreOfferPriceAdapter implements OfferPricePort {
   private log(level: SabreLogLevel, message: string, meta: Record<string, unknown>): void {
     logRedacted(this.deps.logger, level, message, meta);
   }
+}
+
+/**
+ * Orden canónico del request: ADT, CHD/CNN, INF. El índice es global y base cero; el id técnico
+ * se manda en `params.passengers[]` y luego debe volver idéntico en `passengerOffer.id`.
+ */
+export function buildSabrePriceRequestedTravelers(
+  criteria: FlightSearchCriteria,
+): SabrePriceRequestedTraveler[] {
+  const travelers: SabrePriceRequestedTraveler[] = [];
+  const add = (count: number, paxType: 'ADT' | 'CHD' | 'INF', requestedPtc: string): void => {
+    for (let position = 0; position < count; position += 1) {
+      const requestedTravelerIndex = travelers.length;
+      travelers.push({
+        requestPassengerId: `Passenger${String(requestedTravelerIndex + 1)}`,
+        requestedTravelerIndex,
+        paxType,
+        requestedPtc,
+      });
+    }
+  };
+  add(criteria.paxCount.adults, 'ADT', 'ADT');
+  add(criteria.paxCount.children, 'CHD', 'CNN');
+  add(criteria.paxCount.infants, 'INF', 'INF');
+  return travelers;
 }
 
 /** `binNumber` o `cardType` presentes = la llamada tarifica con datos de tarjeta. */

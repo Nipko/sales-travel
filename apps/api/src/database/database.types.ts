@@ -264,6 +264,7 @@ export interface OrdersTable {
   order_number: number;
   provider_raw: unknown;
   error_message: string | null;
+  create_request_key: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -391,6 +392,7 @@ export interface PortfolioTransactionsTable {
   amount_minor: number;
   transaction_type: string;
   reference_id: string | null;
+  idempotency_key: Generated<string | null>;
   notes: string | null;
   created_by: string;
   created_at: Generated<Timestamp>;

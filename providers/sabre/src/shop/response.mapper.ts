@@ -6,6 +6,7 @@ import {
   SegmentSchema,
   type CabinClass,
   type FareBreakdownEntry,
+  type FareComponent,
   type Itinerary,
   type Offer,
   type ProviderRawValue,
@@ -668,7 +669,8 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
   const expiry = resolveOfferExpiry(pricing, args.fetchedAt, args.ttlSeconds);
   const fees = resolveFees(totalFare, currency);
   const policies = resolvePolicies(pricing, passengers);
-  const fareFamily = resolveFareFamily(pricing, itineraries, passengers, dicts);
+  const fareComponents = resolveFareComponents(passengers, dicts);
+  const fareFamily = resolveFareFamily(pricing, itineraries, fareComponents, passengers, dicts);
 
   // La franquicia FACTURADA, que es la única que el carril ATPCO informa.
   //
@@ -693,7 +695,7 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
       name: SABRE_PROVIDER_NAME,
       offerRef: buildOfferRef(pricing, itinerary, path),
       source: normalizeContentSource(pricing),
-      raw: buildProviderRaw(pricing, itinerary, itineraries, passengers, dicts),
+      raw: buildProviderRaw(pricing, itinerary, itineraries, passengers, fareComponents, dicts),
     },
     total,
     baseFare,
@@ -702,6 +704,7 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
     ...(fareBreakdown.length === 0 ? {} : { fareBreakdown }),
     itineraries,
     ...(fareFamily === null ? {} : { fareFamily }),
+    ...(fareComponents.length === 0 ? {} : { fareComponents }),
     ...(checked === null ? {} : { baggage: { checked } }),
     ...(policies === null ? {} : { policies }),
     fetchedAt: args.fetchedAt,
@@ -1301,27 +1304,127 @@ function resolveBrandCode(
   passengers: readonly SabrePassengerInfo[],
   dicts: Dictionaries,
 ): string | null {
+  const codes = new Set<string>();
   for (const passenger of passengers) {
     for (const component of passenger.fareComponents ?? []) {
       if (component.ref === undefined) continue;
       const code = dicts.fareComponents.get(component.ref)?.brand?.code?.trim();
-      if (code !== undefined && code.length > 0) return code;
+      if (code !== undefined && code.length > 0) codes.add(code);
     }
   }
-  return null;
+  // El singular sólo es honesto cuando toda la oferta comparte la misma marca. Una combinación
+  // ida/vuelta distinta viaja completa en `fareComponents` y no se aplana a la primera.
+  return codes.size === 1 ? [...codes][0]! : null;
+}
+
+/**
+ * Conserva la identidad tarifaria por componente y su asociación con los segmentos.
+ *
+ * Se usa el primer pasajero que trae componentes: las marcas y fare basis describen el producto
+ * del itinerario, mientras los importes por PTC ya viven en `fareBreakdown`. Duplicar el mismo
+ * componente por ADT/CHD haría que la UI mostrara familias repetidas.
+ */
+function resolveFareComponents(
+  passengers: readonly SabrePassengerInfo[],
+  dicts: Dictionaries,
+): FareComponent[] {
+  const passenger = passengers.find((item) => (item.fareComponents?.length ?? 0) > 0);
+  if (passenger === undefined) return [];
+
+  const out: FareComponent[] = [];
+  let segmentIndex = 0;
+
+  for (const component of passenger.fareComponents ?? []) {
+    const desc = component.ref === undefined ? undefined : dicts.fareComponents.get(component.ref);
+    const pricedSegments = component.segments ?? [];
+    const segmentRefs = pricedSegments.map(() => segmentIndex++);
+    if (segmentRefs.length === 0) continue;
+
+    const bookingClasses = [
+      ...new Set(
+        pricedSegments
+          .map((item) => item.segment?.bookingCode?.trim())
+          .filter((value): value is string => value !== undefined && value.length > 0),
+      ),
+    ];
+    const cabins = [
+      ...new Set(
+        pricedSegments
+          .map((item) => item.segment?.cabinCode ?? desc?.cabinCode)
+          .map((code) => (code === undefined ? undefined : CABIN_BY_SABRE_CODE[code]))
+          .filter((value): value is CabinClass => value !== undefined),
+      ),
+    ];
+
+    const brandName = desc?.brand?.brandName?.trim();
+    const brandCode = desc?.brand?.code?.trim();
+    const programCode = desc?.brand?.programCode?.trim();
+    const hasBrand = [brandName, brandCode, programCode].some(
+      (value) => value !== undefined && value.length > 0,
+    );
+    const fareBasisCode = desc?.fareBasisCode?.trim();
+    const origin = normalizeAirport(component.beginAirport);
+    const destination = normalizeAirport(component.endAirport);
+
+    out.push({
+      segmentRefs,
+      ...(hasBrand
+        ? {
+            brand: {
+              ...(brandCode === undefined || brandCode.length === 0 ? {} : { code: brandCode }),
+              ...(brandName === undefined || brandName.length === 0 ? {} : { name: brandName }),
+              ...(programCode === undefined || programCode.length === 0 ? {} : { programCode }),
+            },
+          }
+        : {}),
+      ...(fareBasisCode === undefined || fareBasisCode.length === 0 ? {} : { fareBasisCode }),
+      ...(bookingClasses.length === 0 ? {} : { bookingClasses }),
+      ...(origin === undefined ? {} : { origin }),
+      ...(destination === undefined ? {} : { destination }),
+      ...(cabins.length === 1 ? { cabin: cabins[0]! } : {}),
+    });
+  }
+
+  return out;
 }
 
 function resolveFareFamily(
   pricing: SabrePricingInformation,
   itineraries: readonly Itinerary[],
+  fareComponents: readonly FareComponent[],
   passengers: readonly SabrePassengerInfo[],
   dicts: Dictionaries,
 ): { name: string; cabin: CabinClass } | null {
-  const name = resolveBrandName(pricing, passengers, dicts);
+  const directName = pricing.brand?.trim();
+  const componentNames = new Set(
+    fareComponents
+      .map((component) => component.brand?.name ?? component.brand?.code)
+      .filter((value): value is string => value !== undefined && value.length > 0),
+  );
+  // La propiedad singular se conserva sólo cuando no aplana una combinación de marcas. Incluso
+  // si Sabre repite un `pricing.brand` global, los componentes son la fuente más específica.
+  if (componentNames.size > 1) return null;
+  const name =
+    directName !== undefined && directName.length > 0
+      ? directName
+      : componentNames.size === 1
+        ? [...componentNames][0]!
+        : resolveBrandName(pricing, passengers, dicts);
   if (name === null) return null;
-  const cabin = itineraries[0]?.segments[0]?.cabin;
+  const componentCabins = new Set(
+    fareComponents
+      .map((component) => component.cabin)
+      .filter((value): value is CabinClass => value !== undefined),
+  );
+  const cabin =
+    componentCabins.size === 1 ? [...componentCabins][0] : itineraries[0]?.segments[0]?.cabin;
   if (cabin === undefined) return null;
   return { name, cabin };
+}
+
+function normalizeAirport(value: string | undefined): string | undefined {
+  const upper = value?.trim().toUpperCase();
+  return upper !== undefined && /^[A-Z]{3}$/.test(upper) ? upper : undefined;
 }
 
 /**
@@ -1344,6 +1447,7 @@ function buildProviderRaw(
   itinerary: SabreItineraryNode,
   itineraries: readonly Itinerary[],
   passengers: readonly SabrePassengerInfo[],
+  fareComponents: readonly FareComponent[],
   dicts: Dictionaries,
 ): Record<string, ProviderRawValue> {
   const flights: ProviderRawValue[] = [];
@@ -1395,6 +1499,40 @@ function buildProviderRaw(
     brandCode: resolveBrandCode(passengers, dicts),
     flights,
   };
+  if (fareComponents.length > 0) {
+    const rawFareComponents: ProviderRawValue[] = fareComponents.map((component) => ({
+      segmentRefs: component.segmentRefs,
+      ...(component.brand === undefined
+        ? {}
+        : {
+            brand: {
+              ...(component.brand.code === undefined ? {} : { code: component.brand.code }),
+              ...(component.brand.name === undefined ? {} : { name: component.brand.name }),
+              ...(component.brand.programCode === undefined
+                ? {}
+                : { programCode: component.brand.programCode }),
+              ...(component.brand.programId === undefined
+                ? {}
+                : { programId: component.brand.programId }),
+            },
+          }),
+      ...(component.fareBasisCode === undefined ? {} : { fareBasisCode: component.fareBasisCode }),
+      ...(component.bookingClasses === undefined
+        ? {}
+        : { bookingClasses: component.bookingClasses }),
+      ...(component.origin === undefined ? {} : { origin: component.origin }),
+      ...(component.destination === undefined ? {} : { destination: component.destination }),
+      ...(component.cabin === undefined ? {} : { cabin: component.cabin }),
+    }));
+    raw['fareComponents'] = rawFareComponents;
+    raw['brandCodes'] = [
+      ...new Set(
+        fareComponents
+          .map((component) => component.brand?.code)
+          .filter((value): value is string => value !== undefined),
+      ),
+    ];
+  }
   if (allowances.length > 0) raw['baggageAllowance'] = allowances;
   return raw;
 }

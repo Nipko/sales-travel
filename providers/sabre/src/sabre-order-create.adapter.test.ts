@@ -3,6 +3,7 @@ import type { OrderCreateRequest, OrderCreateResult, SearchContext } from '@sale
 import { describe, expect, it } from 'vitest';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import { SABRE_HOSTS, type SabreConfig } from './config';
+import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import { SabreHttpClient } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
 import {
@@ -130,6 +131,32 @@ function ndcOffer(): Offer {
       raw: {
         [SABRE_RAW_KEYS.priceOfferId]: 'dx369rfr7jt8dnd2i0-1',
         [SABRE_RAW_KEYS.priceOfferItemIds]: ['dx369rfr7jt8dnd2i0-1-1'],
+        [SABRE_RAW_KEYS.pricePassengerIds]: ['Passenger1'],
+        [SABRE_RAW_KEYS.pricePassengerBindings]: [
+          {
+            pricePassengerId: 'Passenger1',
+            requestedTravelerIndex: 0,
+            paxType: 'ADT',
+            requestedPtc: 'ADT',
+            pricedPtc: 'ADT',
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** ATPCO ya revalidado: Flight Check entrega handles compatibles con Booking Management. */
+function flightCheckedOffer(): Offer {
+  return {
+    ...atpcoOffer(),
+    provider: {
+      name: 'sabre',
+      offerRef: 'ATPCO-CHECKED-1',
+      source: 'ATPCO',
+      raw: {
+        [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId]: 'checked-offer-1',
+        [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds]: ['checked-offer-1-1'],
       },
     },
   };
@@ -148,6 +175,7 @@ function request(offer: Offer): OrderCreateRequest {
     passengers: [
       {
         paxId: 'pax-1',
+        requestedTravelerIndex: 0,
         paxType: 'ADT',
         givenName: 'Juanito',
         surname: 'Perezosa',
@@ -292,6 +320,155 @@ describe('cotización ATPCO', () => {
       selectedOfferItems: ['dx369rfr7jt8dnd2i0-1-1'],
     });
     expect(wire.raw).not.toContain('flightPricing');
+  });
+
+  it('NDC enlaza el traveler con el id de price por requestedTravelerIndex y tipo', async () => {
+    const wire = await book(request(ndcOffer()), CONFIRMED_RESPONSE);
+    const travelers = wire.body['travelers'] as Array<Record<string, unknown>>;
+    expect(travelers[0]?.['id']).toBe('Passenger1');
+  });
+
+  it('NDC sin binding de pasajero falla antes de tocar la red', async () => {
+    const offer = ndcOffer();
+    const raw = { ...(offer.provider.raw ?? {}) };
+    delete raw[SABRE_RAW_KEYS.pricePassengerBindings];
+    await expect(
+      book(request({ ...offer, provider: { ...offer.provider, raw } }), CONFIRMED_RESPONSE),
+    ).rejects.toThrow(/pricePassengerBindings/);
+  });
+
+  it('NDC sin requestedTravelerIndex explícito no cae al orden del array', async () => {
+    const input = request(ndcOffer());
+    const passenger = input.passengers[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    const { requestedTravelerIndex: _removed, ...withoutIndex } = passenger;
+    await expect(
+      book({ ...input, passengers: [withoutIndex] }, CONFIRMED_RESPONSE),
+    ).rejects.toThrow(/requestedTravelerIndex único/);
+  });
+
+  it('un providerPaxId manual que contradice price falla cerrado', async () => {
+    const input = request(ndcOffer());
+    const passenger = input.passengers[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    await expect(
+      book(
+        { ...input, passengers: [{ ...passenger, providerPaxId: 'StalePassenger' }] },
+        CONFIRMED_RESPONSE,
+      ),
+    ).rejects.toThrow(/providerPaxId contradice/);
+  });
+
+  it('dos adultos se ordenan por índice explícito aunque el formulario los mande al revés', async () => {
+    const offer = ndcOffer();
+    const raw = {
+      ...(offer.provider.raw ?? {}),
+      [SABRE_RAW_KEYS.pricePassengerIds]: ['Passenger1', 'Passenger2'],
+      [SABRE_RAW_KEYS.pricePassengerBindings]: [
+        {
+          pricePassengerId: 'Passenger1',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+        {
+          pricePassengerId: 'Passenger2',
+          requestedTravelerIndex: 1,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+      ],
+    };
+    const input = request({ ...offer, provider: { ...offer.provider, raw } });
+    const first = input.passengers[0];
+    if (first === undefined) throw new Error('fixture sin pasajero');
+    const second = {
+      ...first,
+      paxId: 'pax-2',
+      requestedTravelerIndex: 1,
+      givenName: 'Maria',
+    };
+    const wire = await book(
+      {
+        ...input,
+        criteria: {
+          ...input.criteria,
+          paxCount: { adults: 2, children: 0, infants: 0 },
+        },
+        passengers: [second, first],
+      },
+      CONFIRMED_RESPONSE,
+    );
+    const travelers = wire.body['travelers'] as Array<Record<string, unknown>>;
+    expect(travelers.map((traveler) => traveler['id'])).toEqual(['Passenger1', 'Passenger2']);
+    expect(travelers.map((traveler) => traveler['givenName'])).toEqual(['Juanito', 'Maria']);
+  });
+
+  it('binding duplicado o incompleto no autoriza Create Booking', async () => {
+    const offer = ndcOffer();
+    const raw = {
+      ...(offer.provider.raw ?? {}),
+      [SABRE_RAW_KEYS.pricePassengerIds]: ['Passenger1', 'Passenger2'],
+      [SABRE_RAW_KEYS.pricePassengerBindings]: [
+        {
+          pricePassengerId: 'Passenger1',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+        {
+          pricePassengerId: 'Passenger2',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+      ],
+    };
+    const input = request({ ...offer, provider: { ...offer.provider, raw } });
+    const first = input.passengers[0];
+    if (first === undefined) throw new Error('fixture sin pasajero');
+    await expect(
+      book(
+        {
+          ...input,
+          criteria: {
+            ...input.criteria,
+            paxCount: { adults: 2, children: 0, infants: 0 },
+          },
+          passengers: [first, { ...first, paxId: 'pax-2', requestedTravelerIndex: 1 }],
+        },
+        CONFIRMED_RESPONSE,
+      ),
+    ).rejects.toThrow(/ambiguo|no coincide/);
+  });
+
+  it('ATPCO revalidado reserva exactamente los handles de Flight Check', async () => {
+    const wire = await book(request(flightCheckedOffer()), CONFIRMED_RESPONSE);
+
+    expect(wire.body['flightDetails']).toBeUndefined();
+    expect(wire.body['flightOffer']).toEqual({
+      offerId: 'checked-offer-1',
+      selectedOfferItems: ['checked-offer-1-1'],
+    });
+  });
+
+  it('ATPCO con media cadena de Flight Check falla antes de salir al cable', async () => {
+    const checked = flightCheckedOffer();
+    const offer: Offer = {
+      ...checked,
+      provider: {
+        ...checked.provider,
+        raw: { [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId]: 'checked-offer-1' },
+      },
+    };
+
+    await expect(book(request(offer), CONFIRMED_RESPONSE)).rejects.toThrow(
+      /mitad de la cadena de identificadores de Flight Check/,
+    );
   });
 });
 

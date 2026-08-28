@@ -11,6 +11,7 @@ import {
   mapSabrePriceResponse,
   resolveSabrePriceExpiry,
   type SabrePriceMapResult,
+  type SabrePriceRequestedTraveler,
   type SabrePriceWarning,
   type SabrePriceWarningCode,
 } from './response.mapper';
@@ -35,8 +36,24 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function requestedTravelers(
+  paxTypes: readonly ('ADT' | 'CHD' | 'INF')[] = ['ADT'],
+): SabrePriceRequestedTraveler[] {
+  return paxTypes.map((paxType, requestedTravelerIndex) => ({
+    requestPassengerId: `Passenger${String(requestedTravelerIndex + 1)}`,
+    requestedTravelerIndex,
+    paxType,
+    requestedPtc: paxType === 'CHD' ? 'CNN' : paxType,
+  }));
+}
+
 function run(raw: unknown, ctx: Partial<Parameters<typeof mapSabrePriceResponse>[1]> = {}) {
-  return mapSabrePriceResponse(raw, { tenantId: TENANT_ID, fetchedAt: FETCHED_AT, ...ctx });
+  return mapSabrePriceResponse(raw, {
+    tenantId: TENANT_ID,
+    fetchedAt: FETCHED_AT,
+    ...ctx,
+    requestedTravelers: ctx.requestedTravelers ?? requestedTravelers(),
+  });
 }
 
 function codes(warnings: readonly SabrePriceWarning[]): SabrePriceWarningCode[] {
@@ -128,6 +145,15 @@ describe('el ejemplo oficial de ida', () => {
       offerId: 'dd07bbd7fb57c88nclq1qixyj3-1',
       offerItemIds: ['dd07bbd7fb57c88nclq1qixyj3-1-1'],
       passengerIds: ['Passenger1'],
+      passengerBindings: [
+        {
+          pricePassengerId: 'Passenger1',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+      ],
       source: 'NDC',
       ttlSeconds: 1200,
       offerExpirationDateTime: '2024-12-12T03:00:23Z',
@@ -138,6 +164,9 @@ describe('el ejemplo oficial de ida', () => {
     expect(offer.provider.raw?.[SABRE_RAW_KEYS.priceOfferId]).toBe(handles.offerId);
     expect(offer.provider.raw?.[SABRE_RAW_KEYS.priceOfferItemIds]).toEqual(handles.offerItemIds);
     expect(offer.provider.raw?.[SABRE_RAW_KEYS.pricePassengerIds]).toEqual(handles.passengerIds);
+    expect(offer.provider.raw?.[SABRE_RAW_KEYS.pricePassengerBindings]).toEqual(
+      handles.passengerBindings,
+    );
   });
 
   it('el vencimiento se persiste del proveedor, no se calcula', () => {
@@ -163,7 +192,9 @@ describe('el ejemplo oficial de ida', () => {
 
 describe('el ejemplo oficial de varios pasajeros', () => {
   it('agrupa los dos adultos en una entrada de desglose que suma el total', () => {
-    const { offer } = onlyPriced(run(clone(multipaxFixture)));
+    const { offer } = onlyPriced(
+      run(clone(multipaxFixture), { requestedTravelers: requestedTravelers(['ADT', 'ADT']) }),
+    );
 
     expect(offer.total).toEqual({ amountMinor: 23780, currency: 'USD' });
     expect(offer.fareBreakdown).toEqual([
@@ -182,9 +213,16 @@ describe('el ejemplo oficial de varios pasajeros', () => {
   });
 
   it('los dos pasajeros aparecen en los handles, sin duplicados', () => {
-    const { handles } = onlyPriced(run(clone(multipaxFixture)));
+    const { handles, offer } = onlyPriced(
+      run(clone(multipaxFixture), { requestedTravelers: requestedTravelers(['ADT', 'ADT']) }),
+    );
     expect(handles.passengerIds).toEqual(['Passenger1', 'Passenger2']);
     expect(handles.offerItemIds).toEqual(['dd07bbd7fb57jkq5llq1qhzkd6-1-1']);
+    expect(handles.passengerBindings.map((binding) => binding.requestedTravelerIndex)).toEqual([
+      0, 1,
+    ]);
+    // El mismo componente repetido por ADT no se duplica por pasajero ni por precio.
+    expect(offer.fareComponents).toHaveLength(1);
   });
 });
 
@@ -449,6 +487,39 @@ describe('las cotas de createBooking se comprueban en el paso de precio', () => 
 });
 
 describe('casos que los ejemplos oficiales no traen', () => {
+  it('un id de pasajero que no salió en el request invalida la oferta', () => {
+    const payload = clone(onewayFixture) as Json;
+    const passenger = (firstAirItem(payload)['passengers'] as Json[])[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    passenger['id'] = 'ProviderInventedId';
+
+    const result = run(payload);
+    expect(result.priced).toHaveLength(0);
+    expect(codes(result.warnings)).toContain('passenger-binding-invalid');
+  });
+
+  it('si falta uno de los requestedTravelerIndex la oferta falla cerrada', () => {
+    const result = run(clone(onewayFixture), {
+      requestedTravelers: requestedTravelers(['ADT', 'ADT']),
+    });
+    expect(result.priced).toHaveLength(0);
+    expect(codes(result.warnings)).toContain('passenger-binding-invalid');
+  });
+
+  it('el reorder de passengerOffer no cambia el binding: vuelve ordenado por índice explícito', () => {
+    const payload = clone(multipaxFixture) as Json;
+    const passengers = firstAirItem(payload)['passengers'] as Json[];
+    passengers.reverse();
+
+    const { handles } = onlyPriced(
+      run(payload, { requestedTravelers: requestedTravelers(['ADT', 'ADT']) }),
+    );
+    expect(handles.passengerBindings.map((binding) => binding.pricePassengerId)).toEqual([
+      'Passenger1',
+      'Passenger2',
+    ]);
+  });
+
   it('ADT+CNN produce dos offerItems y dos entradas de desglose (RF-07 CA-2)', () => {
     // Sintético, derivado del ejemplo oficial de ida: no hay ejemplo oficial multi-PTC. La forma
     // —un `offerItem` por tipo de pasajero— es la que fijan los scripts de WF-18 de la colección
@@ -471,7 +542,9 @@ describe('casos que los ejemplos oficiales no traen', () => {
       curCode: 'USD',
     };
 
-    const { offer, handles } = onlyPriced(run(payload));
+    const { offer, handles } = onlyPriced(
+      run(payload, { requestedTravelers: requestedTravelers(['ADT', 'CHD']) }),
+    );
     expect(handles.offerItemIds).toEqual([
       'dd07bbd7fb57c88nclq1qixyj3-1-1',
       'dd07bbd7fb57c88nclq1qixyj3-1-2',
@@ -505,7 +578,7 @@ describe('casos que los ejemplos oficiales no traen', () => {
     expect(warning?.detail).toBe('CNN->ADT');
   });
 
-  it('un ancillary `type: "Service"` se avisa y su id entra en los items reservables', () => {
+  it('un Service opcional se avisa pero nunca entra en selectedOfferItems', () => {
     // Sintético: la forma es la de `ServiceOfferItem` (`:556-598`). El item existe en el contrato
     // de price aunque ningún ejemplo oficial lo traiga.
     const payload = clone(onewayFixture) as Json;
@@ -513,6 +586,7 @@ describe('casos que los ejemplos oficiales no traen', () => {
     (offer['offerItems'] as Json[]).push({
       type: 'Service',
       id: 'dd07bbd7fb57c88nclq1qixyj3-1-2',
+      mandatoryInd: false,
       passengerRefs: ['Passenger1'],
       segmentRefs: ['Isgm0a0067c77c814'],
       serviceDefinition: {},
@@ -522,7 +596,45 @@ describe('casos que los ejemplos oficiales no traen', () => {
     const result = run(payload);
     const { handles } = onlyPriced(result);
     expect(codes(result.warnings)).toContain('service-offer-item-not-mapped');
-    expect(handles.offerItemIds).toContain('dd07bbd7fb57c88nclq1qixyj3-1-2');
+    expect(handles.offerItemIds).toEqual(['dd07bbd7fb57c88nclq1qixyj3-1-1']);
+  });
+
+  it('un Service obligatorio falla cerrado: no se omite ni se reserva como vuelo', () => {
+    const payload = clone(onewayFixture) as Json;
+    const offer = firstOffer(payload);
+    (offer['offerItems'] as Json[]).push({
+      type: 'Service',
+      id: 'dd07bbd7fb57c88nclq1qixyj3-1-2',
+      mandatoryInd: true,
+      passengerRefs: ['Passenger1'],
+      segmentRefs: ['Isgm0a0067c77c814'],
+      serviceDefinition: {},
+      price: { totalAmount: { amount: '30.00', curCode: 'USD' } },
+    });
+
+    const result = run(payload);
+    expect(result.priced).toHaveLength(0);
+    expect(result.warnings).toContainEqual({
+      code: 'offer-invalid',
+      path: 'response.offers[0].offerItems[1]',
+      detail: 'mandatory-item-not-air',
+    });
+  });
+
+  it('un Air opcional tampoco aporta offerItemId ni passengerId a los handles', () => {
+    const payload = clone(onewayFixture) as Json;
+    const optional = clone(firstAirItem(payload));
+    optional['id'] = 'dd07bbd7fb57c88nclq1qixyj3-1-2';
+    optional['mandatoryInd'] = false;
+    const passengers = optional['passengers'] as Json[];
+    const passenger = passengers[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero opcional');
+    passenger['id'] = 'OptionalPassenger';
+    (firstOffer(payload)['offerItems'] as Json[]).push(optional);
+
+    const { handles } = onlyPriced(run(payload));
+    expect(handles.offerItemIds).toEqual(['dd07bbd7fb57c88nclq1qixyj3-1-1']);
+    expect(handles.passengerIds).toEqual(['Passenger1']);
   });
 
   it('un `type` desconocido se avisa sin tumbar la oferta', () => {
@@ -539,6 +651,128 @@ describe('el itinerario se arrastra de la búsqueda y no se reinventa', () => {
     const basis = basisOffer();
     const { offer } = onlyPriced(run(clone(onewayFixture), { basis }));
     expect(offer.itineraries).toEqual(basis.itineraries);
+  });
+
+  it('reemplaza la identidad de shop por la confirmada y marca el cambio aunque el total sea igual', () => {
+    const basis = basisOffer({
+      fareComponents: [
+        {
+          segmentRefs: [0],
+          brand: { code: 'BASIC', name: 'Basic', programCode: 'AVW' },
+          fareBasisCode: 'BASIC1',
+          bookingClasses: ['B'],
+          origin: 'JFK',
+          destination: 'SFO',
+          cabin: 'economy',
+        },
+      ],
+    });
+    const result = run(clone(onewayFixture), { basis });
+    const { offer, fareIdentityChanged, priceChange } = onlyPriced(result);
+
+    expect(offer.fareComponents).toEqual([
+      {
+        fareBasisCode: 'OVAHZSBX',
+        bookingClasses: ['B'],
+        segmentRefs: [0],
+        origin: 'JFK',
+        destination: 'SFO',
+        cabin: 'economy',
+      },
+    ]);
+    expect(priceChange.kind).toBe('unchanged');
+    expect(fareIdentityChanged).toBe(true);
+    expect(result.priceChanged).toBe(true);
+    expect(codes(result.warnings)).toContain('fare-identity-changed');
+  });
+
+  it('misma identidad real no dispara una aceptación de cambio', () => {
+    const basis = basisOffer({
+      fareComponents: [
+        {
+          fareBasisCode: 'OVAHZSBX',
+          bookingClasses: ['B'],
+          segmentRefs: [0],
+          origin: 'JFK',
+          destination: 'SFO',
+          cabin: 'economy',
+        },
+      ],
+    });
+    const result = run(clone(onewayFixture), { basis });
+    expect(onlyPriced(result).fareIdentityChanged).toBe(false);
+    expect(result.priceChanged).toBe(false);
+  });
+
+  it('la cabina forma parte de la identidad: un cambio sólo de cabin también se detecta', () => {
+    const basis = basisOffer({
+      fareComponents: [
+        {
+          fareBasisCode: 'OVAHZSBX',
+          bookingClasses: ['B'],
+          segmentRefs: [0],
+          origin: 'JFK',
+          destination: 'SFO',
+          cabin: 'business',
+        },
+      ],
+    });
+    const result = run(clone(onewayFixture), { basis });
+    expect(onlyPriced(result).fareIdentityChanged).toBe(true);
+    expect(result.priceChanged).toBe(true);
+  });
+
+  it('mapea marca y programa desde passengerOffer, no desde la búsqueda', () => {
+    const payload = clone(onewayFixture) as Json;
+    const passenger = (firstAirItem(payload)['passengers'] as Json[])[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    const component = (passenger['fareComponents'] as Json[])[0];
+    if (component === undefined) throw new Error('fixture sin componente');
+    component['brand'] = {
+      code: 'ECONFLEX',
+      brandName: 'Economy Flex',
+      programCode: 'CFFBA',
+      programID: 12345,
+    };
+
+    const { offer } = onlyPriced(run(payload, { basis: basisOffer() }));
+    expect(offer.fareComponents?.[0]?.brand).toEqual({
+      code: 'ECONFLEX',
+      name: 'Economy Flex',
+      programCode: 'CFFBA',
+      programId: 12345,
+    });
+    expect(offer.fareFamily).toEqual({ name: 'Economy Flex', cabin: 'economy' });
+  });
+
+  it('si price omite fareComponents no conserva silenciosamente los de shop', () => {
+    const payload = clone(onewayFixture) as Json;
+    const passenger = (firstAirItem(payload)['passengers'] as Json[])[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    delete passenger['fareComponents'];
+
+    const result = run(payload, {
+      basis: basisOffer({
+        fareComponents: [{ fareBasisCode: 'OLD', bookingClasses: ['B'], segmentRefs: [0] }],
+      }),
+    });
+    expect(result.priced).toHaveLength(0);
+    expect(codes(result.warnings)).toContain('fare-components-unavailable');
+  });
+
+  it('un segmento de price que no coincide de forma única con el itinerario falla cerrado', () => {
+    const payload = clone(onewayFixture) as Json;
+    const passenger = (firstAirItem(payload)['passengers'] as Json[])[0];
+    if (passenger === undefined) throw new Error('fixture sin pasajero');
+    const component = (passenger['fareComponents'] as Json[])[0];
+    if (component === undefined) throw new Error('fixture sin componente');
+    const responseSegment = (component['segments'] as Json[])[0];
+    if (responseSegment === undefined) throw new Error('fixture sin segmento');
+    responseSegment['flightNumber'] = '999';
+
+    const result = run(payload, { basis: basisOffer() });
+    expect(result.priced).toHaveLength(0);
+    expect(codes(result.warnings)).toContain('fare-component-unmapped');
   });
 
   it('sin oferta de referencia sale SIN itinerario, no con uno a medias', () => {

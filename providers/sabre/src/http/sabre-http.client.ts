@@ -22,7 +22,7 @@ import {
   type SabreFailureClass,
   type SabreIssue,
 } from '../errors';
-import { logRedacted, type SabreLogLevel } from '../redaction';
+import { logRedacted, redactPath, type SabreLogLevel } from '../redaction';
 
 /**
  * Operaciones que mueven dinero o crean estado en el GDS. **Cero reintentos, siempre**, aunque
@@ -171,7 +171,7 @@ export class SabreHttpClient {
     // usables esta llamada FALLA, que es lo único que no puede convertirse en una oferta.
     if (!hasUsableSabreCredentials(this.cfg)) {
       throw new SabreConfigError(
-        `sin credenciales de Sabre no se puede llamar a ${path} (faltan: ${missingSabreCredentials(this.cfg).join(', ')})`,
+        `sin credenciales de Sabre no se puede llamar a ${redactPath(path)} (faltan: ${missingSabreCredentials(this.cfg).join(', ')})`,
       );
     }
 

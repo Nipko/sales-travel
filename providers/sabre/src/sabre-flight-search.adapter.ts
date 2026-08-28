@@ -45,8 +45,79 @@ function codigoDeMarca(offer: Offer): string | null {
   return typeof code === 'string' && code.length > 0 ? code : null;
 }
 
-function codigosDeMarca(offers: readonly Offer[]): string[] {
-  return offers.map(codigoDeMarca).filter((code): code is string => code !== null);
+/** Carrier comercializador único de toda la oferta; `null` para interline/multi-carrier. */
+function carrierUnico(offer: Offer): string | null {
+  const carriers = new Set(
+    (offer.itineraries ?? []).flatMap((itinerary) =>
+      itinerary.segments.map((segment) => segment.carrier),
+    ),
+  );
+  return carriers.size === 1 ? [...carriers][0]! : null;
+}
+
+/**
+ * Identidad del vuelo, deliberadamente sin clase de reserva ni marca: ambas cambian al subir la
+ * escalera. Incluye los límites de tramo para no confundir dos combinaciones con los mismos
+ * segmentos en distinto sentido.
+ */
+function claveDeItinerario(offer: Offer): string | null {
+  if (offer.itineraries === undefined || offer.itineraries.length === 0) return null;
+  return JSON.stringify(
+    offer.itineraries.map((itinerary) =>
+      itinerary.segments.map((segment) => [
+        segment.carrier,
+        segment.flightNumber,
+        segment.origin,
+        segment.destination,
+        segment.departureAt,
+        segment.arrivalAt,
+      ]),
+    ),
+  );
+}
+
+interface EscaleraCarrier {
+  /** Códigos ya observados POR vuelo; jamás se unen globalmente. */
+  itinerarios: Map<string, Set<string>>;
+}
+
+/** Sólo excluye un código si TODOS los vuelos de este carrier ya lo tienen. */
+function codigosComunes(state: EscaleraCarrier): string[] {
+  let comunes: Set<string> | null = null;
+  for (const vistos of state.itinerarios.values()) {
+    if (comunes === null) {
+      comunes = new Set(vistos);
+      continue;
+    }
+    for (const code of comunes) {
+      if (!vistos.has(code)) comunes.delete(code);
+    }
+  }
+  return [...(comunes ?? new Set<string>())].sort();
+}
+
+function estadosDeEscalera(offers: readonly Offer[]): Map<string, EscaleraCarrier> {
+  const carriers = new Map<string, EscaleraCarrier>();
+  for (const offer of offers) {
+    const code = codigoDeMarca(offer);
+    const carrier = carrierUnico(offer);
+    const itinerary = claveDeItinerario(offer);
+    // Un filtro request-level no puede aislar con honestidad un itinerario interline ni una
+    // combinación ida/vuelta con códigos de marca distintos (`brandCode` es null en ese caso).
+    if (code === null || carrier === null || itinerary === null) continue;
+    const state = carriers.get(carrier) ?? { itinerarios: new Map<string, Set<string>>() };
+    const vistos = state.itinerarios.get(itinerary) ?? new Set<string>();
+    vistos.add(code);
+    state.itinerarios.set(itinerary, vistos);
+    carriers.set(carrier, state);
+  }
+  return carriers;
+}
+
+/** Clase cerrada para diagnóstico; nunca usa `message`, que puede arrastrar texto del proveedor. */
+function claseSeguraDeError(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'NonErrorThrown';
+  return /^[A-Za-z][A-Za-z0-9]{0,79}$/.test(name) ? name : 'UnknownError';
 }
 
 /** El más conservador de dos modos. `off` < `single` < `upsell`. */
@@ -310,11 +381,16 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
    * Es la comparación de tarifas SIN el producto de upsell, que este PCC no tiene. `SingleBranded
    * Fare` devuelve la marca más barata de cada vuelo; volver a preguntar excluyendo esa devuelve
    * la siguiente. Verificado contra CERT: excluida `MAIN`, American pasó de «MAIN CABIN»
-   * (no reembolsable) a «MAIN CABIN FLEXIBLE» (reembolsable, +14%). Delta, no excluida, siguió
-   * igual — el filtro es por código y no toca a los demás carriers.
+   * (no reembolsable) a «MAIN CABIN FLEXIBLE» (reembolsable, +14%).
    *
-   * **Cada ronda es una llamada de shop y Sabre cobra por consulta.** Por eso arranca en 0 y se
-   * sube por cuenta: es el único parámetro del paquete cuyo coste es lineal y en dinero.
+   * `BrandFilters.Brand` NO tiene carrier: mandarlo en la búsqueda original excluiría un código
+   * homónimo para todas las aerolíneas. Por eso cada ronda se acota a un único marketing carrier
+   * con `VendorPref=Only`; las ofertas interline se conservan en la base y no se escalan. Dentro
+   * del carrier sólo se excluyen códigos ya vistos en TODOS sus itinerarios, para que una marca de
+   * un vuelo tampoco salte una familia todavía no observada en otro.
+   *
+   * **Cada ronda y carrier es una llamada de shop y Sabre cobra por consulta.** Por eso arranca en
+   * 0 y se sube por cuenta: es el único parámetro del paquete cuyo coste es lineal y en dinero.
    *
    * Para en cuanto una ronda no aporta marcas nuevas. No hace falta agotar el presupuesto para
    * descubrir que el carrier sólo publica dos.
@@ -332,45 +408,72 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     if (rondas <= 0 || args.modo === 'off') return [...args.base];
 
     const ofertas = [...args.base];
-    const vistas = new Set(codigosDeMarca(args.base));
-    if (vistas.size === 0) return ofertas;
+    const porCarrier = estadosDeEscalera(args.base);
+    if (porCarrier.size === 0) return ofertas;
 
-    for (let ronda = 0; ronda < rondas; ronda += 1) {
-      let extra;
-      try {
-        const respuesta = await this.http.postJson<unknown>(
-          SABRE_SHOP_PATH,
-          buildSabreShopRequest(args.criteria, this.cfg, {
-            ...args.opciones,
-            brandedFares: args.modo,
-            multipleFares: args.multi,
-            excludeBrands: [...vistas],
-          }),
-          args.httpOptions,
-        );
-        extra = this.mapear(respuesta, args.criteria, args.ctx);
-      } catch (err) {
-        // Una ronda extra NO puede costar la búsqueda: lo que ya se tiene es válido y vendible.
-        // Es la misma regla que la degradación, aplicada a un enriquecimiento aún más opcional.
-        if (!esRechazoDeCapacidad(err)) throw err;
-        this.log('warn', 'sabre.shop.escalera_de_marcas_cortada', {
-          path: SABRE_SHOP_PATH,
-          ronda,
-          ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
+    for (const [carrier, state] of porCarrier) {
+      let exclusionAnterior = '';
+      for (let ronda = 0; ronda < rondas; ronda += 1) {
+        const excludeBrands = codigosComunes(state);
+        const firma = excludeBrands.join('\u0000');
+        // Sin intersección no existe un filtro seguro. Si no avanzó, repetir la llamada sólo
+        // devolvería lo mismo y volvería a cobrarla.
+        if (excludeBrands.length === 0 || firma === exclusionAnterior) break;
+        exclusionAnterior = firma;
+
+        let extra;
+        try {
+          const respuesta = await this.http.postJson<unknown>(
+            SABRE_SHOP_PATH,
+            buildSabreShopRequest(
+              args.criteria,
+              this.cfg,
+              {
+                ...args.opciones,
+                brandedFares: args.modo,
+                multipleFares: args.multi,
+                excludeBrands,
+              },
+              { onlyMarketingCarrier: carrier },
+            ),
+            args.httpOptions,
+          );
+          extra = this.mapear(respuesta, args.criteria, args.ctx);
+        } catch (err) {
+          // Una ronda extra NO puede costar la búsqueda: lo que ya se tiene es válido y vendible.
+          // Esto incluye transporte/timeout, auth, capacidad y mapeo. A diferencia de la primera
+          // ronda, la escalera no determina si hay oferta: sólo intenta enriquecer una base que ya
+          // pasó contrato. El diagnóstico conserva clase/código cerrados, nunca `message`.
+          this.log('warn', 'sabre.shop.escalera_de_marcas_cortada', {
+            path: SABRE_SHOP_PATH,
+            carrier,
+            ronda,
+            errorClass: claseSeguraDeError(err),
+            ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
+          });
+          break;
+        }
+
+        // La respuesta se vuelve a comprobar: ni un proveedor que ignore `VendorPref`, ni un
+        // itinerario nuevo que entró por el ranking puede contaminar el estado de la escalera.
+        // Se filtra antes de actualizar los sets para conservar ofertas distintas de la misma
+        // familia (p.ej. otra fuente/PCC) dentro del mismo vuelo.
+        const nuevas = extra.offers.filter((offer) => {
+          if (carrierUnico(offer) !== carrier) return false;
+          const itinerary = claveDeItinerario(offer);
+          const code = codigoDeMarca(offer);
+          if (itinerary === null || code === null) return false;
+          const vistos = state.itinerarios.get(itinerary);
+          return vistos !== undefined && !vistos.has(code);
         });
-        break;
-      }
+        if (nuevas.length === 0) break;
 
-      const nuevas = extra.offers.filter((offer) => {
-        const code = codigoDeMarca(offer);
-        return code !== null && !vistas.has(code);
-      });
-      if (nuevas.length === 0) break;
-
-      for (const offer of nuevas) {
-        const code = codigoDeMarca(offer);
-        if (code !== null) vistas.add(code);
-        ofertas.push(offer);
+        for (const offer of nuevas) {
+          const itinerary = claveDeItinerario(offer)!;
+          const code = codigoDeMarca(offer)!;
+          state.itinerarios.get(itinerary)!.add(code);
+          ofertas.push(offer);
+        }
       }
     }
 

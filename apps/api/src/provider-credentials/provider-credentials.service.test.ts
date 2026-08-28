@@ -90,6 +90,31 @@ describe('listSafe — `config` no sale verbatim', () => {
     expect(cuenta?.config).toEqual({ environment: 'cert', mock: true, agencyIata: '12345678' });
   });
 
+  it('la lista blanca devuelve las opciones de shop Sabre y no las marca como pérdidas', async () => {
+    const service = servicioCon([
+      {
+        provider_code: 'sabre',
+        config: {
+          brandedFares: 'single',
+          brandLadderRounds: '2',
+          upsellLimit: '3',
+          multipleFares: 'off',
+        },
+        credentials: { epr: EPR, password: PASSWORD, homePcc: 'AB1C' },
+      },
+    ]);
+
+    const [cuenta] = await service.listSafe('t1');
+    expect(cuenta?.config).toEqual({
+      brandedFares: 'single',
+      brandLadderRounds: '2',
+      upsellLimit: '3',
+      multipleFares: 'off',
+    });
+    expect(cuenta?.redactedConfigKeys).toEqual([]);
+    expect(cuenta?.configVerified).toBe(true);
+  });
+
   it('un proveedor SIN lista blanca no afirma que su config esté vacía: la marca sin verificar', async () => {
     const service = servicioCon([
       {

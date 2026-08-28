@@ -74,36 +74,287 @@ export function dedupeFlightOffers(
 
   const preference = options.preference ?? DEFAULT_PROVIDER_PREFERENCE;
 
-  // Posición del grupo (para conservar el orden) + campeón actual.
-  const winners = new Map<string, { position: number; offer: Offer }>();
-  const salida: (Offer | null)[] = [];
+  interface ProductGroup {
+    readonly firstIndex: number;
+    readonly entries: IndexedOffer[];
+  }
 
-  for (const offer of offers) {
+  const productGroups = new Map<string, ProductGroup>();
+  const productKeyByIndex: (string | null)[] = [];
+
+  for (const [index, offer] of offers.entries()) {
     const key = flightProductKey(offer);
+    productKeyByIndex.push(key);
 
     // Sin clave: paquete, hotel, itinerario ausente o fecha ilegible. Pasa entera y sola.
+    if (key === null) continue;
+
+    const current = productGroups.get(key);
+    if (current) {
+      current.entries.push({ index, offer });
+    } else {
+      productGroups.set(key, { firstIndex: index, entries: [{ index, offer }] });
+    }
+  }
+
+  // Un producto base puede tener N familias del mismo proveedor. Primero se resuelve la
+  // competencia ENTRE proveedores; después se deduplican únicamente las identidades tarifarias
+  // repetidas del proveedor ganador. Incluir la marca en `flightProductKey` rompería el dedupe
+  // LATAM-vs-Sabre porque cada proveedor usa un vocabulario de marcas distinto.
+  const survivorsAtFirstIndex = new Map<number, readonly Offer[]>();
+  for (const group of productGroups.values()) {
+    survivorsAtFirstIndex.set(
+      group.firstIndex,
+      winningProviderFareVariants(group.entries, preference),
+    );
+  }
+
+  const salida: Offer[] = [];
+  for (const [index, offer] of offers.entries()) {
+    const key = productKeyByIndex[index];
     if (key === null) {
       salida.push(offer);
       continue;
     }
 
-    const current = winners.get(key);
-    if (!current) {
-      winners.set(key, { position: salida.length, offer });
-      salida.push(offer);
-      continue;
+    const survivors = survivorsAtFirstIndex.get(index);
+    if (survivors !== undefined) salida.push(...survivors);
+  }
+  return salida;
+}
+
+interface IndexedOffer {
+  readonly index: number;
+  readonly offer: Offer;
+}
+
+interface FareVariant {
+  readonly firstIndex: number;
+  offer: Offer;
+}
+
+/**
+ * Conserva todas las familias únicas del proveedor que gana el producto base.
+ *
+ * La comparación cross-provider se hace con la mejor variante de cada proveedor y sigue usando
+ * exactamente `compareOffers`. Las familias del ganador se ordenan por su primera aparición; si
+ * una copia posterior de la misma familia gana por precio/preferencia, reemplaza el contenido sin
+ * mover la fila.
+ */
+function winningProviderFareVariants(
+  entries: readonly IndexedOffer[],
+  preference: readonly ProviderPreference[],
+): Offer[] {
+  const byProvider = new Map<string, Map<string, FareVariant>>();
+
+  for (const { index, offer } of entries) {
+    let variants = byProvider.get(offer.provider.name);
+    if (variants === undefined) {
+      variants = new Map<string, FareVariant>();
+      byProvider.set(offer.provider.name, variants);
     }
 
-    // Hueco: el duplicado desaparece de la lista, y el campeón se queda en la posición del
-    // primero del grupo.
-    salida.push(null);
-    if (compareOffers(offer, current.offer, preference) < 0) {
+    const identity = providerFareIdentity(offer);
+    const current = variants.get(identity);
+    if (current === undefined) {
+      variants.set(identity, { firstIndex: index, offer });
+    } else if (compareOffers(offer, current.offer, preference) < 0) {
       current.offer = offer;
-      salida[current.position] = offer;
     }
   }
 
-  return salida.filter((o): o is Offer => o !== null);
+  let winningVariants: Map<string, FareVariant> | undefined;
+  let winningRepresentative: Offer | undefined;
+  for (const variants of byProvider.values()) {
+    const representative = bestOffer(
+      [...variants.values()].map((variant) => variant.offer),
+      preference,
+    );
+    if (
+      winningRepresentative === undefined ||
+      compareOffers(representative, winningRepresentative, preference) < 0
+    ) {
+      winningRepresentative = representative;
+      winningVariants = variants;
+    }
+  }
+
+  return [...(winningVariants?.values() ?? [])]
+    .sort((a, b) => a.firstIndex - b.firstIndex)
+    .map((variant) => variant.offer);
+}
+
+function bestOffer(offers: readonly Offer[], preference: readonly ProviderPreference[]): Offer {
+  // `winningProviderFareVariants` sólo crea un proveedor cuando ya tiene al menos una oferta.
+  let best = offers[0] as Offer;
+  for (let index = 1; index < offers.length; index += 1) {
+    const candidate = offers[index] as Offer;
+    if (compareOffers(candidate, best, preference) < 0) best = candidate;
+  }
+  return best;
+}
+
+interface NormalizedFareComponent {
+  readonly segmentRefs?: readonly number[];
+  readonly brandCode?: string;
+  readonly brandName?: string;
+  readonly programCode?: string;
+  readonly programId?: string;
+  readonly fareBasisCode?: string;
+  readonly bookingClasses?: readonly string[];
+}
+
+/**
+ * Identidad tarifaria DENTRO de un proveedor.
+ *
+ * No forma parte de `flightProductKey`: una marca Sabre `MAIN` y una marca LATAM `FULL` pueden
+ * describir el mismo producto y deben seguir compitiendo entre sí. Sólo se usa para impedir que
+ * dos familias Sabre del mismo vuelo se borren antes de llegar al vendedor.
+ */
+function providerFareIdentity(offer: Offer): string {
+  const canonicalIdentity = fareComponentsIdentity(offer.fareComponents);
+  if (canonicalIdentity !== null) return `components:${canonicalIdentity}`;
+
+  // Compatibilidad con ofertas cacheadas y con ACLs que todavía sólo publican el arreglo en raw.
+  const raw = offer.provider.raw;
+  const rawComponents = raw?.['fareComponents'];
+  const rawIdentity = fareComponentsIdentity(
+    Array.isArray(rawComponents) ? rawComponents : undefined,
+  );
+  if (rawIdentity !== null) return `components:${rawIdentity}`;
+
+  const brandCode = normalizedValue(raw?.['brandCode']);
+  const brandName = normalizedValue(offer.fareFamily?.name ?? raw?.['brandName']);
+  const programCode = normalizedValue(raw?.['programCode']);
+  const programId = normalizedValue(raw?.['programId']);
+  const fareBasisCode = normalizedValue(raw?.['fareBasisCode'] ?? raw?.['fareBasis']);
+  const bookingClasses =
+    bookingClassesFromRawFlights(raw?.['flights']) ?? bookingClassesFromItineraries(offer);
+
+  return `legacy:${JSON.stringify({
+    brandCode,
+    brandName,
+    programCode,
+    programId,
+    fareBasisCode,
+    bookingClasses,
+  })}`;
+}
+
+/**
+ * Serializa el arreglo EN ORDEN: cambiar la clase o la base del segundo componente tiene que
+ * producir otra familia aunque el primero sea idéntico.
+ */
+function fareComponentsIdentity(components: readonly unknown[] | undefined): string | null {
+  if (components === undefined || components.length === 0) return null;
+
+  let hasIdentity = false;
+  const normalized = components.map((component): NormalizedFareComponent => {
+    if (!isRecord(component)) return {};
+
+    const brand = isRecord(component['brand']) ? component['brand'] : undefined;
+    const token: NormalizedFareComponent = {
+      segmentRefs: normalizedNumberList(component['segmentRefs']),
+      brandCode: normalizedScalar(brand?.['code'] ?? component['brandCode']),
+      brandName: normalizedScalar(
+        brand?.['name'] ?? brand?.['brandName'] ?? component['brandName'],
+      ),
+      programCode: normalizedScalar(brand?.['programCode'] ?? component['programCode']),
+      programId: normalizedScalar(brand?.['programId'] ?? component['programId']),
+      fareBasisCode: normalizedScalar(
+        component['fareBasisCode'] ?? fareBasisCodeFromNested(component['fareBasis']),
+      ),
+      bookingClasses: bookingClassesFromComponent(component),
+    };
+
+    if (Object.values(token).some((value) => value !== undefined)) hasIdentity = true;
+    return token;
+  });
+
+  return hasIdentity ? JSON.stringify(normalized) : null;
+}
+
+function bookingClassesFromComponent(
+  component: Record<string, unknown>,
+): readonly string[] | undefined {
+  const direct = normalizedStringList(
+    component['bookingClasses'] ?? component['bookingClass'] ?? component['bookingCodes'],
+  );
+  if (direct !== undefined) return direct;
+
+  const segments = component['segments'];
+  if (!Array.isArray(segments)) return undefined;
+  const values = segments.flatMap((segment): string[] => {
+    if (!isRecord(segment)) return [];
+    const nested = isRecord(segment['segment']) ? segment['segment'] : undefined;
+    const value = normalizedScalar(
+      segment['bookingClass'] ?? segment['bookingCode'] ?? nested?.['bookingCode'],
+    );
+    return value === undefined ? [] : [value];
+  });
+  return values.length === 0 ? undefined : values;
+}
+
+function bookingClassesFromRawFlights(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const classes = value.flatMap((flight): string[] => {
+    if (!isRecord(flight)) return [];
+    const token = normalizedScalar(flight['bookingClass'] ?? flight['bookingCode']);
+    return token === undefined ? [] : [token];
+  });
+  return classes.length === 0 ? undefined : classes;
+}
+
+function bookingClassesFromItineraries(offer: Offer): readonly string[] | undefined {
+  const classes =
+    offer.itineraries?.flatMap((itinerary) =>
+      itinerary.segments.flatMap((segment) => {
+        const token = normalizedScalar(segment.bookingClass);
+        return token === undefined ? [] : [token];
+      }),
+    ) ?? [];
+  return classes.length === 0 ? undefined : classes;
+}
+
+function fareBasisCodeFromNested(value: unknown): unknown {
+  return isRecord(value) ? (value['fareBasisCode'] ?? value['code']) : value;
+}
+
+function normalizedValue(value: unknown): string | readonly string[] | undefined {
+  if (Array.isArray(value)) return normalizedStringList(value);
+  return normalizedScalar(value);
+}
+
+function normalizedStringList(value: unknown): readonly string[] | undefined {
+  const values = (Array.isArray(value) ? value : [value]).flatMap((item): string[] => {
+    if (isRecord(item)) {
+      const token = normalizedScalar(
+        item['bookingClass'] ?? item['bookingCode'] ?? item['code'] ?? item['value'],
+      );
+      return token === undefined ? [] : [token];
+    }
+    const token = normalizedScalar(item);
+    return token === undefined ? [] : [token];
+  });
+  return values.length === 0 ? undefined : values;
+}
+
+function normalizedNumberList(value: unknown): readonly number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const numbers = value.filter(
+    (item): item is number => typeof item === 'number' && Number.isInteger(item) && item >= 0,
+  );
+  return numbers.length === 0 ? undefined : numbers;
+}
+
+function normalizedScalar(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const normalized = String(value).trim().replace(/\s+/g, ' ').toUpperCase();
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -150,9 +401,10 @@ export function flightProductKey(offer: Offer): string | null {
  * otro—, así que meterlo en la clave impediría todo colapso. `SegmentSchema.cabin` siempre
  * está, y un tramo en business no es el mismo producto que el mismo tramo en economy.
  *
- * `bookingClass` NO entra, por decisión de RF-06 CA-1: dos fuentes pueden vender la misma
- * tarifa en clases de reserva distintas, y el producto que el cliente compra queda descrito
- * por cabina + equipaje + políticas, que sí están en la clave.
+ * `bookingClass` NO entra en esta clave cross-provider, por decisión de RF-06 CA-1: dos fuentes
+ * pueden vender la misma tarifa en clases de reserva distintas. Sí participa después en
+ * `providerFareIdentity`, donde distingue familias del MISMO proveedor sin impedir que dos
+ * vocabularios tarifarios distintos compitan por cabina + equipaje + políticas.
  */
 function segmentKey(segment: Segment): string | null {
   const salida = Date.parse(segment.departureAt);

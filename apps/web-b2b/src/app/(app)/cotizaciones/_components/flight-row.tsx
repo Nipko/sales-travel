@@ -7,6 +7,7 @@ import { cn } from '../../../../lib/cn';
 import { providerTagFor } from '../../../../lib/provider-disclosure';
 import { airlineName } from './airline-names';
 import { FareFamilyMatrix } from './fare-family-matrix';
+import { fareFamilySummary } from './fare-components-view';
 import {
   buildItineraryView,
   layoverLabel,
@@ -312,6 +313,7 @@ export function FlightRow({
   // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
   const sellMinor = cheapest.pricing?.finalMinor ?? cheapest.total.amountMinor;
   const hasMarkup = (cheapest.pricing?.ownMarkupMinor ?? 0) > 0;
+  const familySummary = fareFamilySummary(cheapest);
 
   return (
     <article
@@ -362,9 +364,9 @@ export function FlightRow({
                   Ida y vuelta
                 </span>
               ) : null}
-              {cheapest.fareFamily ? (
+              {familySummary ? (
                 <span className="truncate rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium text-[var(--color-fg-muted)]">
-                  {cheapest.fareFamily.name}
+                  {familySummary}
                 </span>
               ) : null}
             </div>

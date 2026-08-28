@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useConfirm } from '../../../components/ui/dialog';
+import { PORTFOLIO_ISSUANCE, PORTFOLIO_REJECTION } from '../../../lib/portfolio-workflow';
 import { toast } from 'sonner';
 import {
   Wallet,
@@ -60,6 +61,20 @@ interface CarterasClientProps {
   role?: string;
 }
 
+function apiErrorDetail(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return 'Intente nuevamente';
+  const body = value as Record<string, unknown>;
+  const message = body['message'];
+  if (typeof message === 'string' && message.length > 0) return message;
+  if (Array.isArray(message)) {
+    const messages = message.filter((item): item is string => typeof item === 'string');
+    if (messages.length > 0) return messages.join('. ');
+  }
+  return typeof body['error'] === 'string' && body['error'].length > 0
+    ? body['error']
+    : 'Intente nuevamente';
+}
+
 export function CarterasClient({
   initialPortfolio,
   initialTransactions,
@@ -75,6 +90,10 @@ export function CarterasClient({
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositNotes, setDepositNotes] = useState('');
+  const [isDepositSubmitting, setIsDepositSubmitting] = useState(false);
+  // Se conserva ante una respuesta incierta; cambiar el contenido o completar la acción genera
+  // una clave nueva y evita reciclarla para otro movimiento.
+  const depositIdempotencyKey = useRef<string | null>(null);
 
   const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
   const [creditLimitInput, setCreditLimitInput] = useState('');
@@ -97,6 +116,7 @@ export function CarterasClient({
 
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isDepositSubmitting) return;
     const amountVal = parseFloat(depositAmount);
     if (isNaN(amountVal) || amountVal <= 0) {
       toast.error('Monto de recarga inválido');
@@ -104,22 +124,39 @@ export function CarterasClient({
     }
 
     const amountMinor = Math.round(amountVal * 100);
+    const requestKey = depositIdempotencyKey.current ?? crypto.randomUUID();
+    depositIdempotencyKey.current = requestKey;
+    setIsDepositSubmitting(true);
 
-    const res = await fetch('/api/portfolios/deposit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amountMinor, notes: depositNotes }),
-    });
+    try {
+      const res = await fetch('/api/portfolios/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
+        body: JSON.stringify({ amountMinor, notes: depositNotes }),
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      setPortfolio(data.portfolio);
-      setTransactions([data.transaction, ...transactions]);
-      setIsDepositModalOpen(false);
-      setDepositAmount('');
-      setDepositNotes('');
-    } else {
-      toast.error('Error al realizar depósito');
+      if (res.ok) {
+        const data = await res.json();
+        setPortfolio(data.portfolio);
+        setTransactions((current) =>
+          current.some((transaction) => transaction.id === data.transaction.id)
+            ? current
+            : [data.transaction, ...current],
+        );
+        depositIdempotencyKey.current = null;
+        setIsDepositModalOpen(false);
+        setDepositAmount('');
+        setDepositNotes('');
+      } else {
+        // La misma clave se reutiliza si el usuario reintenta sin cambiar el contenido.
+        toast.error('Error al realizar depósito');
+      }
+    } catch {
+      // Resultado incierto: conservar la clave hace que el siguiente clic consulte/reproduzca el
+      // mismo asiento en vez de acreditar otra vez si el primer request sí llegó al API.
+      toast.error('No se pudo confirmar la recarga. Reintentá sin cambiar los datos.');
+    } finally {
+      setIsDepositSubmitting(false);
     }
   };
 
@@ -149,49 +186,11 @@ export function CarterasClient({
     }
   };
 
-  const handleApproveOrder = async (orderId: string) => {
-    const ok = await confirmAction({
-      title: 'Aprobar reserva',
-      description:
-        'El saldo retenido se debita en forma permanente y se emite el tiquete. No se puede deshacer.',
-      confirmLabel: 'Aprobar y emitir',
-      destructive: false,
-    });
-    if (!ok) return;
-
-    const res = await fetch(`/api/portfolios/orders/${orderId}/approve`, {
-      method: 'POST',
-    });
-
-    if (res.ok) {
-      toast.success('Reserva aprobada y tiquete emitido correctamente.');
-      // Refresh state
-      const ordersRes = await fetch('/api/orders');
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        setOrders(ordersData.orders || []);
-      }
-      const portfolioRes = await fetch('/api/portfolios');
-      if (portfolioRes.ok) {
-        const portfolioData = await portfolioRes.json();
-        setPortfolio(portfolioData.portfolio);
-      }
-      const txsRes = await fetch('/api/portfolios/transactions');
-      if (txsRes.ok) {
-        const txsData = await txsRes.json();
-        setTransactions(txsData.transactions || []);
-      }
-    } else {
-      const err = await res.json();
-      toast.error(`Error al aprobar: ${err.error || 'Intente nuevamente'}`);
-    }
-  };
-
   const handleRejectOrder = async (orderId: string) => {
     const ok = await confirmAction({
-      title: 'Rechazar reserva',
-      description: 'Se libera el saldo retenido y vuelve a la cartera de la agencia.',
-      confirmLabel: 'Rechazar',
+      title: 'Cancelar reserva',
+      description: PORTFOLIO_REJECTION.description,
+      confirmLabel: PORTFOLIO_REJECTION.confirmLabel,
     });
     if (!ok) return;
 
@@ -200,7 +199,7 @@ export function CarterasClient({
     });
 
     if (res.ok) {
-      toast.success('Reserva rechazada y saldo liberado correctamente.');
+      toast.success(PORTFOLIO_REJECTION.success);
       // Refresh state
       const ordersRes = await fetch('/api/orders');
       if (ordersRes.ok) {
@@ -218,8 +217,8 @@ export function CarterasClient({
         setTransactions(txsData.transactions || []);
       }
     } else {
-      const err = await res.json();
-      toast.error(`Error al rechazar: ${err.error || 'Intente nuevamente'}`);
+      const err: unknown = await res.json();
+      toast.error(`No se canceló la reserva: ${apiErrorDetail(err)}`);
     }
   };
 
@@ -245,6 +244,8 @@ export function CarterasClient({
         return 'bg-red-50 text-red-700 border-red-100';
       case 'BOOKING_HOLD':
         return 'bg-amber-50 text-amber-700 border-amber-100';
+      case 'BOOKING_RELEASED':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
       case 'BOOKING_REJECTED':
         return 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]';
       default:
@@ -260,6 +261,8 @@ export function CarterasClient({
         return 'Compra PNR';
       case 'BOOKING_HOLD':
         return 'Retención PNR';
+      case 'BOOKING_RELEASED':
+        return 'Liberación PNR';
       case 'BOOKING_REJECTED':
         return 'Retención Devuelta';
       default:
@@ -281,8 +284,8 @@ export function CarterasClient({
             Cartera & Líneas de Crédito
           </h1>
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Consulte su saldo disponible, realice recargas contables y apruebe reservas con
-            retención preventiva.
+            Consulte su saldo disponible, realice recargas contables y revise reservas con retención
+            preventiva.
           </p>
         </div>
         <div className="flex gap-2">
@@ -298,7 +301,10 @@ export function CarterasClient({
             </button>
           )}
           <button
-            onClick={() => setIsDepositModalOpen(true)}
+            onClick={() => {
+              depositIdempotencyKey.current = null;
+              setIsDepositModalOpen(true);
+            }}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2.5 text-xs font-bold text-white shadow-md hover:-translate-y-0.5 transition-all duration-200"
           >
             <Plus className="size-4" />
@@ -389,7 +395,7 @@ export function CarterasClient({
                 : 'border-transparent text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]'
             }`}
           >
-            Reservas por Aprobar (Cartera)
+            Reservas retenidas (Cartera)
             {pendingApprovals.length > 0 && (
               <span className="absolute top-2 right-1 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[8px] font-extrabold text-white animate-bounce">
                 {pendingApprovals.length}
@@ -468,11 +474,9 @@ export function CarterasClient({
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 flex gap-3">
               <Info className="size-5 shrink-0" />
               <div>
-                <p className="font-bold">Workflow Administrativo de Dos Pasos</p>
+                <p className="font-bold">Operaciones verificadas con el proveedor</p>
                 <p className="mt-0.5 leading-relaxed">
-                  Las reservas pagadas con cartera B2B quedan retenidas preventivamente. Como
-                  administrador, puede **Aprobar** (emitiendo tiquete real en GDS y cobrando
-                  cartera) o **Rechazar** (cancelando PNR y liberando saldo).
+                  {PORTFOLIO_ISSUANCE.description} {PORTFOLIO_REJECTION.description}
                 </p>
               </div>
             </div>
@@ -498,7 +502,7 @@ export function CarterasClient({
                         </span>
                         <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
                           <Clock className="size-3" />
-                          Por Aprobar
+                          Retención pendiente
                         </span>
                       </div>
 
@@ -534,14 +538,16 @@ export function CarterasClient({
                         className="flex-1 inline-flex items-center justify-center gap-1.5 border border-[var(--color-border)] text-[var(--color-fg-muted)] bg-white hover:bg-[var(--color-surface-muted)] rounded-xl py-2 text-xs font-bold shadow-sm transition"
                       >
                         <X className="size-3.5" />
-                        Rechazar / Liberar
+                        Cancelar / Liberar
                       </button>
                       <button
-                        onClick={() => handleApproveOrder(o.id)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold rounded-xl py-2 text-xs shadow-md hover:-translate-y-0.5 transition"
+                        type="button"
+                        disabled={!PORTFOLIO_ISSUANCE.enabled}
+                        title={PORTFOLIO_ISSUANCE.description}
+                        className="flex-1 inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] py-2 text-xs font-bold text-[var(--color-fg-subtle)] opacity-80"
                       >
                         <Check className="size-3.5" />
-                        Aprobar / Emitir
+                        {PORTFOLIO_ISSUANCE.label}
                       </button>
                     </div>
                   </div>
@@ -561,7 +567,11 @@ export function CarterasClient({
                 Recargar Saldo
               </h2>
               <button
-                onClick={() => setIsDepositModalOpen(false)}
+                disabled={isDepositSubmitting}
+                onClick={() => {
+                  depositIdempotencyKey.current = null;
+                  setIsDepositModalOpen(false);
+                }}
                 className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
               >
                 <X className="size-5" />
@@ -590,7 +600,10 @@ export function CarterasClient({
                     min="1000"
                     placeholder="Ej: 500000"
                     value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
+                    onChange={(e) => {
+                      depositIdempotencyKey.current = null;
+                      setDepositAmount(e.target.value);
+                    }}
                     className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-[var(--color-fg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
                   />
                 </div>
@@ -602,7 +615,10 @@ export function CarterasClient({
                 </label>
                 <textarea
                   value={depositNotes}
-                  onChange={(e) => setDepositNotes(e.target.value)}
+                  onChange={(e) => {
+                    depositIdempotencyKey.current = null;
+                    setDepositNotes(e.target.value);
+                  }}
                   placeholder="Ej: Transferencia Bancolombia #54223"
                   className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-3 py-2.5 rounded-xl text-xs mt-1.5 h-20 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white"
                 />
@@ -611,16 +627,21 @@ export function CarterasClient({
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
                 <button
                   type="button"
-                  onClick={() => setIsDepositModalOpen(false)}
+                  disabled={isDepositSubmitting}
+                  onClick={() => {
+                    depositIdempotencyKey.current = null;
+                    setIsDepositModalOpen(false);
+                  }}
                   className="px-4 py-2.5 border border-[var(--color-border)] text-[var(--color-fg-subtle)] font-bold hover:bg-[var(--color-surface-muted)] rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-white font-bold shadow-md hover:-translate-y-0.5 rounded-xl transition"
+                  disabled={isDepositSubmitting}
+                  className="px-5 py-2.5 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-white font-bold shadow-md hover:-translate-y-0.5 rounded-xl transition disabled:cursor-wait disabled:opacity-60"
                 >
-                  Acreditar Saldo
+                  {isDepositSubmitting ? 'Acreditando…' : 'Acreditar Saldo'}
                 </button>
               </div>
             </form>

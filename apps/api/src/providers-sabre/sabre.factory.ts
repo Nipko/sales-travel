@@ -18,11 +18,13 @@ import type {
 } from '@sales-travel/domain';
 import {
   SABRE_HOSTS,
+  SabreFlightCheckAdapter,
   SabreFlightSearchAdapter,
   SabreHttpClient,
   SabreOfferPriceAdapter,
   SabreOrderCreateAdapter,
   SabreOrderManageAdapter,
+  SabreShopOptionsSchema,
   SabreTokenService,
   cancellableItemsOf,
   missingSabreCredentials,
@@ -31,6 +33,7 @@ import {
   type SabreCardBinPricingPolicy,
   type SabreConfig,
   type SabreEnvironment,
+  type SabreShopOptions,
 } from '@sales-travel/sabre';
 import { z } from '@sales-travel/validation';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
@@ -62,6 +65,67 @@ export const SABRE_PROVIDER_CODE = 'sabre';
 const SABRE_DEFAULT_ENVIRONMENT: SabreEnvironment = 'cert';
 
 /**
+ * Las cuatro palancas comerciales de BFM que una cuenta puede declarar en su `config`.
+ *
+ * Se guardan planas porque el formulario BYOC trabaja con campos escalares. El objeto tipado que
+ * consume el ACL se reconstruye acá, en el borde del factory, para que un POST directo no pueda
+ * colar strings o valores fuera de rango hasta el request de Sabre.
+ */
+const SABRE_ACCOUNT_SHOP_OPTION_KEYS = [
+  'brandedFares',
+  'brandLadderRounds',
+  'upsellLimit',
+  'multipleFares',
+] as const;
+
+export interface SabreAccountShopOptionsResult {
+  readonly options: SabreShopOptions;
+  /** Rutas de configuración inválidas, nunca sus valores. */
+  readonly invalidFields: readonly string[];
+}
+
+/** Convierte el texto de un `select` numérico sin aceptar decimales, signos ni overflow. */
+function integerConfigValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!/^(0|[1-9]\d*)$/.test(trimmed)) return value;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : value;
+}
+
+/**
+ * `provider_accounts.config` → opciones de shop validadas.
+ *
+ * Ante cualquier entrada inválida se vuelve al conjunto conservador del ACL (`single`, sin MFPI
+ * y sin rondas pagadas) y se entregan sólo los nombres de campo para el log. No se hace coerción
+ * permisiva: `2.5`, `-1` o una palabra desconocida no pueden cambiar la petición real.
+ */
+export function sabreShopOptionsFromAccountConfig(
+  config: Readonly<Record<string, unknown>>,
+): SabreAccountShopOptionsResult {
+  const candidate: Record<string, unknown> = {};
+  for (const key of SABRE_ACCOUNT_SHOP_OPTION_KEYS) {
+    const value = config[key];
+    if (value === undefined) continue;
+    candidate[key] =
+      key === 'brandLadderRounds' || key === 'upsellLimit' ? integerConfigValue(value) : value;
+  }
+
+  const parsed = SabreShopOptionsSchema.safeParse(candidate);
+  if (parsed.success) return { options: parsed.data, invalidFields: [] };
+
+  const fallback = SabreShopOptionsSchema.parse({});
+  const invalidFields = [
+    ...new Set(
+      parsed.error.issues.map((issue) =>
+        issue.path.length === 0 ? 'shopOptions' : issue.path.map(String).join('.'),
+      ),
+    ),
+  ].sort();
+  return { options: fallback, invalidFields };
+}
+
+/**
  * `config.allowCardBinPricing` sólo puede ser un booleano. `optional()` y no `default(false)`:
  * el default vive en {@link SabreProviderFactory.cardBinPolicy}, donde además se registra, y un
  * `default` aquí escondería que la cuenta no dijo nada.
@@ -85,9 +149,42 @@ const DENY_ALL_CARD_BIN_PRICING: SabreCardBinPricingPolicy = {
  */
 interface SabreAdapterSet {
   readonly search: SabreFlightSearchAdapter;
-  readonly price: SabreOfferPriceAdapter;
+  readonly price: SabreOfferRevalidationRouter;
   readonly create: SabreOrderCreateAdapter;
   readonly manage: SabreOrderManageAdapter;
+}
+
+/**
+ * El checkout de Sabre tiene dos entradas según el contenido.
+ *
+ * - NDC ya transporta `offerItemId` y conserva `/offers/price`.
+ * - ATPCO nace de caché: necesita `/offers/flightCheck` para materializar una oferta viva y
+ *   obtener los ids compatibles con Booking Management.
+ * - LCC no pertenece al contrato ATPCO de Flight Check y se rechaza antes de salir a la red.
+ *
+ * Separarlo aquí evita que `OrdersService` conozca vocabulario de Sabre y deja una única puerta
+ * `priceOffer` para la UI y para la revalidación obligatoria justo antes de reservar.
+ */
+export class SabreOfferRevalidationRouter {
+  constructor(
+    private readonly ndc: Pick<SabreOfferPriceAdapter, 'priceOffer'>,
+    private readonly atpco: Pick<SabreFlightCheckAdapter, 'priceOffer'>,
+  ) {}
+
+  priceOffer(
+    offer: Offer,
+    criteria: FlightSearchCriteria,
+    ctx: SearchContext,
+  ): Promise<OfferPriceResult> {
+    if (offer.provider.source === 'LCC') {
+      return Promise.reject(
+        new SabreOperationNotSupportedError('revalidar una oferta LCC con Flight Check'),
+      );
+    }
+    return offer.provider.source === 'NDC'
+      ? this.ndc.priceOffer(offer, criteria, ctx)
+      : this.atpco.priceOffer(offer, criteria, ctx);
+  }
 }
 
 /**
@@ -144,6 +241,7 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     ctx: SearchContext,
   ): Promise<OrderCreateAudit> {
     const outcome = await this.inner.create.createBooking(request, ctx);
+
     return {
       result: outcome.result,
       audit: {
@@ -397,14 +495,23 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const tokens = new SabreTokenService(cfg, { cacheNamespace: ownerTenantId });
     const http = new SabreHttpClient(cfg, tokens, { logger });
     const cardBinPricing = this.cardBinPolicy(config, ownerTenantId);
+    const shopOptions = sabreShopOptionsFromAccountConfig(config);
+    if (shopOptions.invalidFields.length > 0) {
+      this.logger.warn(
+        `configuración de shop de Sabre inválida para ${ownerTenantId}: campos [${shopOptions.invalidFields.join(', ')}] — se aplican defaults conservadores`,
+      );
+    }
+    const ndcPrice = new SabreOfferPriceAdapter(cfg, http, { cardBinPricing });
+    const atpcoPrice = new SabreFlightCheckAdapter(cfg, http, { logger });
 
     return {
       search: new SabreFlightSearchAdapter(cfg, {
         cacheNamespace: ownerTenantId,
         tokens,
         logger,
+        shopOptions: shopOptions.options,
       }),
-      price: new SabreOfferPriceAdapter(cfg, http, { cardBinPricing }),
+      price: new SabreOfferRevalidationRouter(ndcPrice, atpcoPrice),
       create: new SabreOrderCreateAdapter(cfg, http),
       manage: new SabreOrderManageAdapter(cfg, http),
     };

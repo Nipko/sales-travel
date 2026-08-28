@@ -19,7 +19,10 @@ import {
   type SabreCancelBookingRequest,
   type SabreCancelErrorPolicy,
   type SabreCancelScope,
+  type SabreFlightTicketOperation,
+  type SabreRefundDocumentsType,
   type SabreTicketCheckEvidence,
+  SabreCancelBookingBuildError,
 } from './booking/cancel.request.builder';
 import {
   mapSabreCancelResponse,
@@ -112,6 +115,12 @@ export interface SabreCancelOptions extends SabreOrderManageOptions {
   /** `true` ⇒ la respuesta trae lo que quedó vivo. Cuesta latencia; lo vale tras un parcial. */
   readonly retrieveBooking?: boolean;
   readonly receivedFrom?: string;
+  /** Obligatorio para una reserva ATPCO/LCC emitida: VOID o REFUND no son equivalentes. */
+  readonly ticketOperation?: SabreFlightTicketOperation;
+  /** Oferta de cancelación elegida en el check previo de una orden NDC emitida. */
+  readonly offerItemId?: string;
+  readonly voidNonElectronicTickets?: boolean;
+  readonly refundDocumentsType?: SabreRefundDocumentsType;
 }
 
 /**
@@ -251,6 +260,17 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
   ): Promise<SabreOrderCancelOutcome> {
     const snapshot = await this.snapshotForDisplay(orderId, ctx, options);
 
+    if (
+      snapshot.isTicketed === true &&
+      options.ticketOperation === undefined &&
+      options.offerItemId === undefined
+    ) {
+      throw new SabreCancelBookingBuildError(
+        'TICKET_OPERATION_REQUIRED',
+        'la reserva ya está emitida: hay que elegir explícitamente VOID, REFUND o una oferta NDC después de comprobar los billetes',
+      );
+    }
+
     const needsCheck = requiresTicketCheck({
       items: snapshot.items,
       ...(snapshot.isTicketed === undefined ? {} : { isTicketed: snapshot.isTicketed }),
@@ -275,6 +295,16 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
         : { retrieveBooking: options.retrieveBooking }),
       ...(options.receivedFrom === undefined ? {} : { receivedFrom: options.receivedFrom }),
       ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
+      ...(options.ticketOperation === undefined
+        ? {}
+        : { ticketOperation: options.ticketOperation }),
+      ...(options.offerItemId === undefined ? {} : { offerItemId: options.offerItemId }),
+      ...(options.voidNonElectronicTickets === undefined
+        ? {}
+        : { voidNonElectronicTickets: options.voidNonElectronicTickets }),
+      ...(options.refundDocumentsType === undefined
+        ? {}
+        : { refundDocumentsType: options.refundDocumentsType }),
     });
 
     const shape = describeSabreCancelRequest(request);

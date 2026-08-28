@@ -52,8 +52,8 @@ describe('catálogo de proveedores', () => {
     const credKeys = form.credentials.map((f) => f.key);
     const configKeys = form.config.map((f) => f.key);
 
-    // epr/password/homePcc/ticketingPcc viven en el blob cifrado: es donde el factory mira primero.
-    expect(credKeys).toEqual(['epr', 'password', 'homePcc', 'ticketingPcc']);
+    // El PCC de Red se guarda como referencia separada: nunca se confunde con token o emisión.
+    expect(credKeys).toEqual(['epr', 'password', 'homePcc', 'redSignInPcc', 'ticketingPcc']);
     // `password` NO puede ofrecerse en config: config es JSONB en claro y se devuelve por el listado.
     expect(configKeys).not.toContain('password');
     expect(configKeys).toContain('environment');
@@ -64,6 +64,23 @@ describe('catálogo de proveedores', () => {
     expect(byKey.get('password')?.secret).toBe(true);
     expect(byKey.get('homePcc')?.secret).not.toBe(true);
     expect(byKey.get('epr')?.secret).not.toBe(true);
+  });
+
+  it('expone las cuatro palancas de shop con defaults conservadores para CERT', () => {
+    const byKey = new Map(sabre().config.map((field) => [field.key, field]));
+
+    expect(byKey.get('brandedFares')?.defaultValue).toBe('single');
+    expect(byKey.get('brandLadderRounds')?.defaultValue).toBe('0');
+    expect(byKey.get('upsellLimit')?.defaultValue).toBe('3');
+    expect(byKey.get('multipleFares')?.defaultValue).toBe('off');
+    expect(byKey.get('brandLadderRounds')?.options?.map((o) => o.value)).toEqual([
+      '0',
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    expect(byKey.get('brandLadderRounds')?.help).toContain('aerolíneas × rondas');
   });
 });
 
@@ -131,6 +148,23 @@ describe('validateProviderDraft — Sabre', () => {
       credentials: { ...draft.credentials, ticketingPcc: 'ABCDE' },
     });
     expect(tooLong.fieldErrors[fieldKey('credentials', 'ticketingPcc')]).toBeDefined();
+  });
+
+  it('separa el PCC de acceso a Red del PCC API y del de emisión', () => {
+    const form = sabre();
+    const red = form.credentials.find((field) => field.key === 'redSignInPcc');
+    const ticketing = form.credentials.find((field) => field.key === 'ticketingPcc');
+
+    expect(red?.label).toContain('Sabre Red CERT');
+    expect(red?.help).toContain('no se usa');
+    expect(ticketing?.label).toContain('real de emisión');
+
+    const draft = validSabreDraft();
+    const tooLong = validateProviderDraft(form, {
+      ...draft,
+      credentials: { ...draft.credentials, redSignInPcc: 'ABCDE' },
+    });
+    expect(tooLong.fieldErrors[fieldKey('credentials', 'redSignInPcc')]).toBeDefined();
   });
 
   it('rechaza un entorno que no sea cert o prod', () => {
@@ -231,6 +265,30 @@ describe('buildProviderAccountPayload', () => {
     const payload = buildProviderAccountPayload(sabre(), validSabreDraft());
     // cert y no prod: el default tiene que ser el entorno que no factura ni emite.
     expect(payload.config['environment']).toBe('cert');
+  });
+
+  it('persiste los defaults seguros de shop aunque el operador no toque los selects', () => {
+    const payload = buildProviderAccountPayload(sabre(), validSabreDraft());
+    expect(payload.config).toMatchObject({
+      brandedFares: 'single',
+      brandLadderRounds: '0',
+      upsellLimit: '3',
+      multipleFares: 'off',
+    });
+  });
+
+  it('persiste una escalera habilitada sin mezclarla con las credenciales cifradas', () => {
+    const payload = buildProviderAccountPayload(sabre(), {
+      ...validSabreDraft(),
+      config: {
+        brandedFares: 'single',
+        brandLadderRounds: '2',
+        upsellLimit: '3',
+        multipleFares: 'off',
+      },
+    });
+    expect(payload.config['brandLadderRounds']).toBe('2');
+    expect(payload.credentials).not.toHaveProperty('brandLadderRounds');
   });
 
   it('no filtra la contraseña al JSONB en claro', () => {

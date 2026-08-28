@@ -97,6 +97,40 @@ export const FareBreakdownEntrySchema = z.object({
 export type FareBreakdownEntry = z.infer<typeof FareBreakdownEntrySchema>;
 
 /**
+ * Identidad comercial de una marca tarifaria.
+ *
+ * `code`/`programCode` son identificadores del proveedor; `name` es la etiqueta que se muestra.
+ * Se mantienen separados porque un mismo nombre ("LIGHT", "FLEX") puede repetirse entre
+ * aerolíneas y programas, y porque Flight Check identifica algunos programas con un entero.
+ */
+export const FareBrandSchema = z.object({
+  code: z.string().min(1).max(80).optional(),
+  name: z.string().min(1).max(160).optional(),
+  programCode: z.string().min(1).max(80).optional(),
+  programId: z.number().int().nonnegative().optional(),
+});
+export type FareBrand = z.infer<typeof FareBrandSchema>;
+
+/**
+ * Tarifa aplicada a uno o más segmentos de la oferta.
+ *
+ * Round-trip no implica una única familia: Sabre puede devolver una marca distinta por
+ * componente/trayecto. `segmentRefs` usa índices sobre todos los segmentos de `itineraries`,
+ * aplanados en orden, para conservar esa asociación sin introducir IDs de un proveedor en el
+ * dominio canónico.
+ */
+export const FareComponentSchema = z.object({
+  brand: FareBrandSchema.optional(),
+  fareBasisCode: z.string().min(1).max(120).optional(),
+  bookingClasses: z.array(z.string().min(1).max(20)).min(1).optional(),
+  segmentRefs: z.array(z.number().int().nonnegative()).min(1),
+  origin: z.string().length(3).optional(),
+  destination: z.string().length(3).optional(),
+  cabin: CabinClassSchema.optional(),
+});
+export type FareComponent = z.infer<typeof FareComponentSchema>;
+
+/**
  * Una Offer es **inmutable** y tiene TTL. Representa el precio y disponibilidad
  * que un proveedor garantiza por un tiempo acotado. Para reservar se debe usar
  * `providerRef` antes de que `expiresAt` venza, o re-cotizar.
@@ -144,6 +178,12 @@ export const OfferSchema = z.object({
       cabin: CabinClassSchema,
     })
     .optional(),
+
+  /**
+   * Fuente de verdad para familias por tramo/componente. `fareFamily` se conserva como etiqueta
+   * derivada por compatibilidad y sólo debe interpretarse como global cuando todas coinciden.
+   */
+  fareComponents: z.array(FareComponentSchema).min(1).optional(),
 
   /**
    * Equipaje, con las tres piezas OPCIONALES por separado.

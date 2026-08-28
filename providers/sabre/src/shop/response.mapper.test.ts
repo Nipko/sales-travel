@@ -702,9 +702,98 @@ describe('políticas y datos del proveedor', () => {
     const payload = clone(adultFixture) as unknown as Json;
     const g = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']!;
     const descs = g['fareComponentDescs'] as Array<Record<string, unknown>>;
-    descs[0]!['brand'] = { brandName: 'Economy Flex', code: 'EF' };
+    descs[0]!['brand'] = { brandName: 'Economy Flex', code: 'EF', programCode: 'AVW' };
 
-    expect(onlyOffer(run(payload)).fareFamily?.name).toBe('Economy Flex');
+    const offer = onlyOffer(run(payload));
+    expect(offer.fareFamily?.name).toBe('Economy Flex');
+    expect(offer.fareComponents?.[0]).toEqual({
+      brand: { name: 'Economy Flex', code: 'EF', programCode: 'AVW' },
+      fareBasisCode: 'OSAVI5',
+      bookingClasses: ['O'],
+      segmentRefs: [0],
+      origin: 'WAW',
+      destination: 'SPU',
+      cabin: 'economy',
+    });
+    expect(offer.provider.raw?.['fareComponents']).toEqual(offer.fareComponents);
+    expect(offer.provider.raw?.['brandCodes']).toEqual(['EF']);
+  });
+
+  it('ida y vuelta con marcas diferentes no se aplana a la primera', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const g = (payload as Record<string, Record<string, unknown>>)['groupedItineraryResponse']!;
+    const descs = g['fareComponentDescs'] as Array<Record<string, unknown>>;
+    descs[0]!['brand'] = { brandName: 'Basic', code: 'BASIC', programCode: 'AVW' };
+    descs[1]!['brand'] = { brandName: 'Flex', code: 'FLEX', programCode: 'AVW' };
+    const groups = g['itineraryGroups'] as Array<Record<string, unknown>>;
+    const itineraries = groups[0]!['itineraries'] as Array<Record<string, unknown>>;
+    const pricing = itineraries[0]!['pricingInformation'] as Array<Record<string, unknown>>;
+    // Un label global no puede ganar sobre los dos componentes más específicos.
+    pricing[0]!['brand'] = 'Basic';
+
+    const offer = onlyOffer(run(payload));
+    expect(offer.fareFamily).toBeUndefined();
+    expect(offer.fareComponents?.map((component) => component.brand?.name)).toEqual([
+      'Basic',
+      'Flex',
+    ]);
+    expect(offer.fareComponents?.map((component) => component.segmentRefs)).toEqual([[0], [1]]);
+    // El singular histórico no puede mentir sobre una combinación; la lista completa sí viaja.
+    expect(offer.provider.raw?.['brandCode']).toBeNull();
+    expect(offer.provider.raw?.['brandCodes']).toEqual(['BASIC', 'FLEX']);
+  });
+
+  it('cada `pricingInformation` de un mismo vuelo conserva su propia familia', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const body = payload['groupedItineraryResponse'] as Json;
+    const groups = body['itineraryGroups'] as Json[];
+    const itinerary = ((groups[0] as Json)['itineraries'] as Json[])[0] as Json;
+    const basePricing = (itinerary['pricingInformation'] as Json[])[0] ?? {};
+    const descs = body['fareComponentDescs'] as Json[];
+    const baseDescs = clone(descs);
+    const variants = [
+      { name: 'Basic', code: 'BASIC', delta: 0 },
+      { name: 'Classic', code: 'CLASSIC', delta: 50 },
+      { name: 'Flex', code: 'FLEX', delta: 100 },
+    ];
+
+    itinerary['pricingInformation'] = variants.map((variant, variantIndex) => {
+      const pricing = clone(basePricing);
+      const refs = baseDescs.map((desc, componentIndex) => {
+        const id = variantIndex * baseDescs.length + componentIndex + 1;
+        descs.push({
+          ...clone(desc),
+          id,
+          brand: { brandName: variant.name, code: variant.code, programCode: 'AVW' },
+        });
+        return id;
+      });
+      const fare = pricing['fare'] as Json;
+      const totalFare = fare['totalFare'] as Json;
+      totalFare['totalPrice'] = Number(totalFare['totalPrice']) + variant.delta;
+      const passengerList = fare['passengerInfoList'] as Json[];
+      const passenger = (passengerList[0] as Json)['passengerInfo'] as Json;
+      const components = passenger['fareComponents'] as Json[];
+      components.forEach((component, index) => {
+        component['ref'] = refs[index];
+      });
+      return pricing;
+    });
+    // Se reemplazan los descriptores base por los nueve específicos de variante.
+    descs.splice(0, baseDescs.length);
+
+    const result = run(payload);
+    expect(result.offers).toHaveLength(3);
+    expect(result.offers.map((offer) => offer.fareFamily?.name)).toEqual([
+      'Basic',
+      'Classic',
+      'Flex',
+    ]);
+    expect(result.offers.map((offer) => offer.provider.raw?.['brandCodes'])).toEqual([
+      ['BASIC'],
+      ['CLASSIC'],
+      ['FLEX'],
+    ]);
   });
 
   it('sin nombre legible cae al código, antes que quedarse sin marca', () => {

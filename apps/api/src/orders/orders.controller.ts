@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -13,7 +14,7 @@ import {
 import type { ProviderIssue } from '@sales-travel/domain';
 import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
-import type { ProviderCapability } from '../providers/provider.types.js';
+import type { ProviderCapabilities, ProviderCapability } from '../providers/provider.types.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -28,20 +29,41 @@ import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.serv
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
-/** Incidencia del proveedor tal como sale por HTTP: es `ProviderIssue` SIN `fieldValue`. */
-type PublicProviderIssue = Omit<ProviderIssue, 'fieldValue'>;
+/** Lista blanca HTTP: ningún texto libre ni valor reenviado por el proveedor cruza este borde. */
+type PublicProviderIssue = Pick<
+  ProviderIssue,
+  'severity' | 'category' | 'type' | 'fieldPath' | 'fieldName'
+>;
+
+const NO_FLIGHT_CAPABILITIES: ProviderCapabilities = {
+  retrieve: false,
+  cancel: false,
+  pay: false,
+  services: false,
+  reshop: false,
+};
+
+/** AgentCars vive en otro registry/puerto: hoy sólo expone cancelación dentro de Orders. */
+const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
+  retrieve: false,
+  cancel: true,
+  pay: false,
+  services: false,
+  reshop: false,
+};
 
 /**
- * Quita `fieldValue` antes de que la incidencia salga del backend.
- *
- * `fieldValue` es el valor que mandamos, devuelto tal cual por el proveedor: puede llevar el
- * número de documento del pasajero y, si algún día se activara el flag de tarjeta, el PAN.
- * El resto de la incidencia (`category`, `type`, `fieldPath`, `fieldName`, `message`) es lo que
- * el vendedor necesita para entender qué falló, y no es dato del pasajero.
+ * Selecciona campos estructurados antes de que la incidencia salga del backend. `message` y
+ * `fieldValue` son texto libre: ambos pueden contener PII que Sabre haya copiado del request.
  */
 function publicIssue(issue: ProviderIssue): PublicProviderIssue {
-  const { fieldValue: _descartado, ...resto } = issue;
-  return resto;
+  return {
+    severity: issue.severity,
+    category: issue.category,
+    type: issue.type,
+    ...(issue.fieldPath === undefined ? {} : { fieldPath: issue.fieldPath }),
+    ...(issue.fieldName === undefined ? {} : { fieldName: issue.fieldName }),
+  };
 }
 
 @Roles(...SELLING_ROLES)
@@ -61,11 +83,17 @@ export class OrdersController {
   async create(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(CreateOrderSchema)) body: CreateOrderDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
 
-    const { order, providerResult, saga } = await this.orders.createOrder(tenantId, userId, body);
+    const { order, providerResult, saga } = await this.orders.createOrder(
+      tenantId,
+      userId,
+      body,
+      idempotencyKey,
+    );
 
     // Confirmación por email al contacto (best-effort: nunca rompe la reserva).
     //
@@ -76,6 +104,11 @@ export class OrdersController {
     if (saga.kind === 'settled' && saga.status === 'confirmed') {
       void this.sendConfirmationEmail(tenantId, order);
     }
+
+    const createReconciliationRequired =
+      saga.kind === 'escalate' &&
+      (saga.reason === 'result-persistence-unavailable' ||
+        saga.reason === 'post-create-finalization-unavailable');
 
     return {
       order: this.serialize(order),
@@ -93,6 +126,13 @@ export class OrdersController {
         status: saga.status,
         ...(saga.kind === 'settled' ? {} : { reason: saga.reason }),
       },
+      ...(createReconciliationRequired
+        ? {
+            orderId: order.id,
+            retryForbidden: true as const,
+            reconciliationRequired: true as const,
+          }
+        : {}),
     };
   }
 
@@ -182,11 +222,26 @@ export class OrdersController {
    * que no la implementa. Ahora lo decide el propio proveedor, declarando sus capacidades.
    */
   private assertSupports(row: OrderRow, capability: ProviderCapability): void {
-    if (!this.registry.capabilitiesOf(row.provider)?.[capability]) {
+    if (capability === 'cancel' && row.status === 'ticketed') {
+      throw new BadRequestException(
+        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
+      );
+    }
+    if (!this.capabilitiesForOrder(row)[capability]) {
       throw new BadRequestException(
         `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
       );
     }
+  }
+
+  private capabilitiesFor(provider: string): ProviderCapabilities {
+    if (provider === 'agent-cars') return AGENT_CARS_ORDER_CAPABILITIES;
+    return this.registry.capabilitiesOf(provider) ?? NO_FLIGHT_CAPABILITIES;
+  }
+
+  private capabilitiesForOrder(row: Pick<OrderRow, 'provider' | 'status'>): ProviderCapabilities {
+    const capabilities = this.capabilitiesFor(row.provider);
+    return row.status === 'ticketed' ? { ...capabilities, cancel: false } : capabilities;
   }
 
   @Post(':id/cancel')
@@ -195,6 +250,7 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupports(row, 'cancel');
     const { result } = await this.orders.cancelOrder(tenantId, id, row.provider_order_id, userId);
     return result;
   }
@@ -217,6 +273,9 @@ export class OrdersController {
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupports(row, 'cancel');
     const { result } = await this.orders.retryOperation(tenantId, id, opId, userId);
     return result;
   }
@@ -285,6 +344,7 @@ export class OrdersController {
       userId: row.user_id,
       quotationId: row.quotation_id,
       provider: row.provider,
+      capabilities: this.capabilitiesForOrder(row as Pick<OrderRow, 'provider' | 'status'>),
       pnr: row.provider_order_id,
       status: row.status,
       searchCriteria: row.search_criteria,

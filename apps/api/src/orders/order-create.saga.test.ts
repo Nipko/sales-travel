@@ -245,12 +245,12 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
 describe('decideAfterCreateThrew — una excepción no es un FAILED', () => {
   it('escala como incierta: puede haber reserva del otro lado', () => {
     // Un `FAILED` es el proveedor diciendo "no reservé nada"; un timeout es el proveedor no
-    // diciendo nada. Tratarlos igual es como se pierden reservas fantasma que siguen ocupando
-    // asiento y se emiten solas.
+    // diciendo nada. Dejarlo pending bloquea otro create hasta que una persona concilie el PCC;
+    // marcarlo failed invitaría a crear un segundo PNR encima del primero.
     expect(decideAfterCreateThrew()).toEqual({
       kind: 'escalate',
       reason: 'create-uncertain',
-      status: 'failed',
+      status: 'pending',
     });
   });
 });

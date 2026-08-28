@@ -121,8 +121,10 @@ export type SabreCancelRule =
   | 'QUEUE_NUMBER_INVALID'
   | 'RECEIVED_FROM_INVALID'
   | 'NDC_CANCEL_WITHOUT_TICKET_CHECK'
+  | 'TICKET_OPERATION_REQUIRED'
   | 'NDC_ORDER_PARTIAL_CANCEL'
   | 'TICKET_CHECK_MALFORMED'
+  | 'TICKET_CHECK_REPORTED_ERRORS'
   | 'TICKET_CHECK_FOR_ANOTHER_BOOKING'
   | 'OFFER_ITEM_ID_NOT_OFFERED'
   | 'CANCEL_OFFER_EXPIRED';
@@ -186,6 +188,10 @@ export interface SabreTicketCheckEvidence {
 const CheckTicketsResponseSchema = z.object({
   timestamp: z.string().optional(),
   request: z.object({ confirmationId: z.string().optional() }).optional(),
+  // El contrato omite `errors` en respuestas exitosas. Un HTTP 200 no convierte un sobre que
+  // los trae en evidencia autorizante: Booking Management comunica fallos de negocio dentro del
+  // body y el cancel posterior es destructivo.
+  errors: z.array(z.unknown()).optional(),
   tickets: z
     .array(
       z.object({
@@ -241,6 +247,13 @@ export function readSabreTicketCheck(
     throw new SabreCancelBookingBuildError(
       'TICKET_CHECK_MALFORMED',
       'la respuesta de checkFlightTickets no encaja con CheckTicketsResponse (booking-management-v1.yml:660-692)',
+    );
+  }
+
+  if ((parsed.data.errors ?? []).length > 0) {
+    throw new SabreCancelBookingBuildError(
+      'TICKET_CHECK_REPORTED_ERRORS',
+      'checkFlightTickets declaró errors[]; un HTTP 200 con fallo de negocio no autoriza cancelar',
     );
   }
 
@@ -407,9 +420,13 @@ const QueueNumberSchema = z.number().int().min(SABRE_QUEUE_NUMBER_MIN).max(SABRE
  *     sobre qué. Misma razón que el 2.
  */
 export function requiresTicketCheck(content: SabreCancelContentContext): boolean {
+  // Un documento emitido siempre mueve dinero: ATPCO también necesita conocer si todavía admite
+  // VOID o si ya pasó a REFUND. Limitar el check a NDC deja al carril GDS cancelando el PNR pero
+  // sin saber qué ocurrió con el billete.
+  if (content.isTicketed === true) return true;
   const flights = content.items.filter((item) => item.kind === 'FLIGHT');
   if (flights.some((item) => item.lane === 'NDC' || item.lane === undefined)) return true;
-  return content.isTicketed === true && flights.length === 0;
+  return false;
 }
 
 /** Los ítems de vuelo NDC de la reserva. Los NDC se cancelan **todos o ninguno**. */

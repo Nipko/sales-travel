@@ -7,6 +7,7 @@ import {
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
+  type SabreShopRequestScope,
   type SabreShopRequest,
 } from './request.builder';
 
@@ -48,8 +49,9 @@ function build(
   c: Partial<FlightSearchCriteria> = {},
   config: Partial<SabreConfig> = {},
   options: SabreShopOptions = {},
+  scope: SabreShopRequestScope = {},
 ): SabreShopRequest['OTA_AirLowFareSearchRQ'] {
-  return buildSabreShopRequest(criteria(c), cfg(config), options).OTA_AirLowFareSearchRQ;
+  return buildSabreShopRequest(criteria(c), cfg(config), options, scope).OTA_AirLowFareSearchRQ;
 }
 
 /** Recolecta todos los valores de una clave, a cualquier profundidad del árbol serializado. */
@@ -199,6 +201,35 @@ describe('DataSources: NDC y ATPCO a la vez, LCC fuera', () => {
   });
 });
 
+describe('scope interno de carrier para BrandFilters', () => {
+  it('la búsqueda normal permanece multi-carrier y no manda VendorPref', () => {
+    expect(build().TravelPreferences.VendorPref).toBeUndefined();
+  });
+
+  it('una ronda auxiliar pide sólo el marketing carrier indicado', () => {
+    const body = build({}, {}, { excludeBrands: ['BASIC'] }, { onlyMarketingCarrier: 'AA' });
+
+    expect(body.TravelPreferences.VendorPref).toEqual([
+      { Code: 'AA', PreferLevel: 'Only', Type: 'Marketing' },
+    ]);
+    expect(
+      body.TravelerInfoSummary.PriceRequestInformation.TPA_Extensions?.BrandedFareIndicators
+        .BrandFilters,
+    ).toEqual({ Brand: [{ Code: 'BASIC', PreferLevel: 'Unacceptable' }] });
+  });
+
+  it('no permite construir BrandFilters globales sin aislar una aerolínea', () => {
+    expect(() => build({}, {}, { excludeBrands: ['BASIC'] })).toThrow(
+      /excludeBrands requiere onlyMarketingCarrier/,
+    );
+  });
+
+  it('rechaza un carrier inválido antes de construir el request', () => {
+    expect(() => build({}, {}, {}, { onlyMarketingCarrier: 'aa' })).toThrow(SabreConfigError);
+    expect(() => build({}, {}, {}, { onlyMarketingCarrier: 'AAAA' })).toThrow(SabreConfigError);
+  });
+});
+
 describe('equipaje y penalidades: los dos interruptores, siempre', () => {
   it('Baggage.RequestType "C" pide franquicia y cargos', () => {
     expect(build().TravelPreferences.Baggage).toEqual({
@@ -305,15 +336,13 @@ describe('volumen: tier e itinerarios', () => {
     expect(body.TravelPreferences.TPA_Extensions.NumTrips).toEqual({ Number: 12 });
   });
 
-  it('POR DEFECTO pide el upsell, con las dos banderas del ejemplo oficial', () => {
-    // Se puede pedir lo más rico porque la degradación baja UN escalón: si el motor lo rechaza
-    // cae a `single`, que en producción funciona, y no a `off`. Antes el default era `single`
-    // justamente porque la degradación apagaba las marcas enteras.
+  it('POR DEFECTO pide una sola marca: CERT rechaza el upsell nativo', () => {
+    // El PCC certificado devuelve MIP/PROCESS con MultipleBrandedFares. La cuenta que tenga ese
+    // entitlement puede encender `upsell`, pero una cuenta nueva no debe pagar un rechazo y una
+    // segunda llamada en cada arranque del proceso.
     expect(build().TravelerInfoSummary.PriceRequestInformation.TPA_Extensions).toEqual({
       BrandedFareIndicators: {
         SingleBrandedFare: true,
-        MultipleBrandedFares: true,
-        UpsellLimit: 3,
       },
     });
   });

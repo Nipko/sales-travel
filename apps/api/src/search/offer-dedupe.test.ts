@@ -1,4 +1,4 @@
-import type { Offer, Segment } from '@sales-travel/canonical';
+import type { FareComponent, Offer, Segment } from '@sales-travel/canonical';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PROVIDER_PREFERENCE,
@@ -12,6 +12,7 @@ interface SegmentSpec {
   flightNumber?: string;
   departureAt?: string;
   cabin?: Segment['cabin'];
+  bookingClass?: string;
   operatingCarrier?: string;
   operatingFlightNumber?: string;
 }
@@ -26,13 +27,15 @@ function segment(spec: SegmentSpec = {}): Segment {
     arrivalAt: '2026-12-01T11:30:00-05:00',
     durationMinutes: 210,
     cabin: spec.cabin ?? 'economy',
-    bookingClass: 'Y',
+    bookingClass: spec.bookingClass ?? 'Y',
     ...(spec.operatingCarrier === undefined ? {} : { operatingCarrier: spec.operatingCarrier }),
     ...(spec.operatingFlightNumber === undefined
       ? {}
       : { operatingFlightNumber: spec.operatingFlightNumber }),
   };
 }
+
+type FareComponentSpec = FareComponent;
 
 interface OfferSpec {
   id?: string;
@@ -45,6 +48,9 @@ interface OfferSpec {
   itineraries?: Segment[][] | null;
   checkedBags?: number;
   policies?: { refundable: boolean; changeable: boolean };
+  fareFamilyName?: string;
+  fareComponents?: readonly FareComponentSpec[];
+  providerRaw?: NonNullable<Offer['provider']['raw']>;
   priced?: boolean;
 }
 
@@ -54,7 +60,7 @@ function offer(spec: OfferSpec = {}): Offer {
   const currency = spec.currency ?? 'USD';
   const segs = spec.itineraries === undefined ? [[segment()]] : spec.itineraries;
 
-  return {
+  const result = {
     id: spec.id ?? `${provider}-${amountMinor}`,
     tenantId: '11111111-1111-4111-8111-111111111111',
     products: spec.products ?? ['flight'],
@@ -62,6 +68,7 @@ function offer(spec: OfferSpec = {}): Offer {
       name: provider,
       offerRef: spec.offerRef ?? `${provider}-REF`,
       ...(spec.source === undefined ? {} : { source: spec.source }),
+      ...(spec.providerRaw === undefined ? {} : { raw: spec.providerRaw }),
     },
     total: { amountMinor, currency },
     baseFare: { amountMinor: Math.round(amountMinor * 0.8), currency },
@@ -85,6 +92,10 @@ function offer(spec: OfferSpec = {}): Offer {
           },
         }),
     ...(spec.policies === undefined ? {} : { policies: spec.policies }),
+    ...(spec.fareFamilyName === undefined
+      ? {}
+      : { fareFamily: { name: spec.fareFamilyName, cabin: 'economy' as const } }),
+    ...(spec.fareComponents === undefined ? {} : { fareComponents: spec.fareComponents }),
     ...(spec.priced === true
       ? {
           pricing: {
@@ -98,6 +109,7 @@ function offer(spec: OfferSpec = {}): Offer {
     fetchedAt: '2026-08-26T12:00:00.000Z',
     expiresAt: '2026-08-26T12:30:00.000Z',
   };
+  return result as Offer;
 }
 
 const codes = (offers: Offer[]): string[] => offers.map((o) => o.provider.name);
@@ -124,6 +136,192 @@ describe('dedupeFlightOffers — el mismo vuelo por dos fuentes', () => {
 
   it('la preferencia por defecto es exactamente LATAM NDC directo', () => {
     expect(DEFAULT_PROVIDER_PREFERENCE).toEqual([{ provider: 'latam-ndc' }]);
+  });
+});
+
+describe('dedupeFlightOffers — familias tarifarias del mismo proveedor', () => {
+  it('conserva diferencias de marca, programa, base y clase en CADA componente', () => {
+    const first: FareComponentSpec = {
+      segmentRefs: [0],
+      brand: { code: 'MAIN', name: 'Main Cabin', programCode: 'AA', programId: 1 },
+      fareBasisCode: 'YMAIN1',
+      bookingClasses: ['Y'],
+    };
+    const second: FareComponentSpec = {
+      segmentRefs: [1],
+      brand: { code: 'MAIN', name: 'Main Cabin', programCode: 'AA', programId: 1 },
+      fareBasisCode: 'YMAIN2',
+      bookingClasses: ['Y'],
+    };
+    const family = (secondComponent: FareComponentSpec): readonly FareComponentSpec[] => [
+      first,
+      secondComponent,
+    ];
+    const roundTrip = [
+      [segment()],
+      [segment({ flightNumber: '2440', departureAt: '2026-12-08T08:00:00-05:00' })],
+    ];
+
+    const out = dedupeFlightOffers([
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'base',
+        itineraries: roundTrip,
+        fareComponents: family(second),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'brand-code',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, brand: { ...second.brand, code: 'MAINFL' } }),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'brand-name',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, brand: { ...second.brand, name: 'Main Flexible' } }),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'program-code',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, brand: { ...second.brand, programCode: 'AA-FLEX' } }),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'program-id',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, brand: { ...second.brand, programId: 2 } }),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'fare-basis',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, fareBasisCode: 'YFLEX2' }),
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'booking-class',
+        itineraries: roundTrip,
+        fareComponents: family({ ...second, bookingClasses: ['B'] }),
+      }),
+    ]);
+
+    expect(out.map((item) => item.id)).toEqual([
+      'base',
+      'brand-code',
+      'brand-name',
+      'program-code',
+      'program-id',
+      'fare-basis',
+      'booking-class',
+    ]);
+  });
+
+  it('colapsa copias de la MISMA identidad normalizando espacios y mayúsculas', () => {
+    const out = dedupeFlightOffers([
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'cara',
+        amountMinor: 120_000,
+        fareComponents: [
+          {
+            segmentRefs: [0],
+            brand: { code: ' main ', name: ' Main   Cabin ', programCode: ' aa ', programId: 1 },
+            fareBasisCode: ' ymain ',
+            bookingClasses: [' y '],
+          },
+        ],
+      }),
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        id: 'barata',
+        amountMinor: 90_000,
+        fareComponents: [
+          {
+            segmentRefs: [0],
+            brand: { code: 'MAIN', name: 'MAIN CABIN', programCode: 'AA', programId: 1 },
+            fareBasisCode: 'YMAIN',
+            bookingClasses: ['Y'],
+          },
+        ],
+      }),
+    ]);
+
+    expect(out.map((item) => item.id)).toEqual(['barata']);
+  });
+
+  it('soporta las ofertas Sabre antiguas con brandCode, nombre y flights en provider.raw', () => {
+    const main = offer({
+      provider: 'sabre',
+      checkedBags: 1,
+      id: 'main',
+      fareFamilyName: 'Main Cabin',
+      providerRaw: { brandCode: 'MAIN', flights: [{ bookingClass: 'Y' }] },
+    });
+    const flexible = offer({
+      provider: 'sabre',
+      checkedBags: 1,
+      id: 'flexible',
+      fareFamilyName: 'Main Cabin Flexible',
+      providerRaw: { brandCode: 'MAINFL', flights: [{ bookingClass: 'B' }] },
+    });
+
+    expect(dedupeFlightOffers([main, flexible]).map((item) => item.id)).toEqual([
+      'main',
+      'flexible',
+    ]);
+  });
+
+  it('mantiene el dedupe cross-provider aunque las marcas y clases se llamen distinto', () => {
+    const out = dedupeFlightOffers([
+      offer({
+        provider: 'sabre',
+        checkedBags: 1,
+        fareFamilyName: 'Main Cabin',
+        providerRaw: { brandCode: 'MAIN', flights: [{ bookingClass: 'Y' }] },
+      }),
+      offer({
+        provider: 'latam-ndc',
+        checkedBags: 1,
+        fareFamilyName: 'Full',
+        itineraries: [[segment({ bookingClass: 'B' })]],
+      }),
+    ]);
+
+    expect(codes(out)).toEqual(['latam-ndc']);
+  });
+
+  it('conserva todas las familias únicas del proveedor que gana el producto', () => {
+    const out = dedupeFlightOffers(
+      [
+        offer({
+          provider: 'sabre',
+          checkedBags: 1,
+          id: 'main',
+          providerRaw: { brandCode: 'MAIN', flights: [{ bookingClass: 'Y' }] },
+        }),
+        offer({ provider: 'otro', checkedBags: 1, id: 'otro' }),
+        offer({
+          provider: 'sabre',
+          checkedBags: 1,
+          id: 'flex',
+          providerRaw: { brandCode: 'MAINFL', flights: [{ bookingClass: 'B' }] },
+        }),
+      ],
+      { preference: [{ provider: 'sabre' }] },
+    );
+
+    expect(out.map((item) => item.id)).toEqual(['main', 'flex']);
   });
 });
 
