@@ -303,6 +303,28 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)(terser@5.46.2)
 
+  providers/tbo-hotels:
+    dependencies:
+      '@sales-travel/canonical':
+        specifier: workspace:*
+        version: link:../../packages/canonical
+      '@sales-travel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@sales-travel/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@20.19.39)(lightningcss@1.32.0)(terser@5.46.2)
+
   tools/db-migrate:
     dependencies:
       pg:
