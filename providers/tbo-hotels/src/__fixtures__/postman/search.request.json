@@ -1,0 +1,78 @@
+{
+  "source": "Postman: Search. Colección 'HotelAPI_Client.postman_collection 7.json' (SHA-256 d5ec68fccf57d808), request 'Search', body raw literal reformateado. Ver ../README.md.",
+  "method": "POST",
+  "url": "http://api.tbotechnology.in/TBOHolidays_HotelAPI/search",
+  "discrepancies": [
+    {
+      "path": "url",
+      "rule": "C-35: el PDF escribe /Search (p. 7, 10); Postman, /search. El cliente usa el casing del PDF (TBO_OPERATIONS.search.path)."
+    },
+    {
+      "path": "CheckIn",
+      "rule": "Fecha ya pasada respecto del 2026-09-25: no se reutiliza. Las fechas las pone el criterio de búsqueda."
+    },
+    {
+      "path": "CheckOut",
+      "rule": "Ídem CheckIn."
+    },
+    {
+      "path": "GuestNationality",
+      "rule": "KP-1 (p. 71): 'AE' en todos los ejemplos es una nacionalidad fija. La nuestra es la del huésped líder, sin valor por defecto (S-05)."
+    },
+    {
+      "path": "PaxRooms.0.ChildrenAges",
+      "rule": "C-04 / Q-13: [0] con Children 0 contradice 'The length of array is equal to the number of children' (p. 11). Por defecto enviamos [] (emptyChildrenAges 'empty-array'); 'zero' reproduce esta forma sólo para la sonda PR-01."
+    },
+    {
+      "path": "ResponseTime",
+      "rule": "C-09: 20.0 escrito como decimal; la tabla dice Integer (p. 11). El nuestro es 10 por defecto (D-TBO-17 A)."
+    },
+    {
+      "path": "IsDetailedResponse",
+      "rule": "S-04 / KP-2 (p. 71): true en un listado de 13 hoteles. Nosotros, false en todo listado y true sólo con un único código."
+    },
+    {
+      "path": "Filters.MealType",
+      "rule": "C-10 / S-03: entero 0; el PDF lo declara enum de strings All, WithMeal, RoomOnly (p. 11, 69). Enviamos 'All'."
+    },
+    {
+      "path": "Filters.OrderBy",
+      "rule": "C-11 / S-02: no documentado en el PDF. No se envía."
+    },
+    {
+      "path": "Filters.StarRating",
+      "rule": "C-11 / S-02: no documentado en Search (sólo existe la enumeración de p. 69-70). No se envía."
+    },
+    {
+      "path": "Filters.HotelName",
+      "rule": "C-11 / S-02: no documentado. No se envía."
+    },
+    {
+      "path": "Filters.Refundable",
+      "rule": "No es un defecto: true filtra sólo reembolsables. El nuestro sale de refundableOnly, false por defecto (p. 11)."
+    }
+  ],
+  "body": {
+    "CheckIn": "2025-11-20",
+    "CheckOut": "2025-11-24",
+    "HotelCodes": "376565,1345318,1345320,1200255,1128760,1250333,1078234,1347149,1358855,1345321,1108025,1356271,1267547",
+    "GuestNationality": "AE",
+    "PaxRooms": [
+      {
+        "Adults": 1,
+        "Children": 0,
+        "ChildrenAges": [0]
+      }
+    ],
+    "ResponseTime": 20.0,
+    "IsDetailedResponse": true,
+    "Filters": {
+      "Refundable": true,
+      "NoOfRooms": 0,
+      "MealType": 0,
+      "OrderBy": 0,
+      "StarRating": 0,
+      "HotelName": null
+    }
+  }
+}

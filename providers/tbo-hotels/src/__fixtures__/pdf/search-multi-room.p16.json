@@ -1,0 +1,80 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1120548",
+      "Currency": "USD",
+      "Rooms": [
+        {
+          "Name": ["Luxury Room, 1 King Bed", "Luxury Room, 1 King Bed"],
+          "BookingCode": "1120548!TB!2!TB!9a47646b-1bba-4746-91d5-969149db1185",
+          "Inclusion": "Free WiFi",
+          "TotalFare": 305.75,
+          "TotalTax": 56.24,
+          "ExtraGuestCharges": "17.22",
+          "RecommendedSellingRate": "321.34",
+          "RoomPromotion": ["Private sale", "Private sale"],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ],
+            [
+              {
+                "Index": 2,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": ["Luxury Room, 2 Twin Beds", "Luxury Room, 2 Twin Beds"],
+          "BookingCode": "1120548!TB!4!TB!9a47646b-1bba-4746-91d5-969149db1185",
+          "Inclusion": "Free WiFi",
+          "TotalFare": 305.75,
+          "TotalTax": 56.24,
+          "ExtraGuestCharges": "17.22",
+          "RecommendedSellingRate": "321.34",
+          "RoomPromotion": ["Private sale", "Private sale"],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ],
+            [
+              {
+                "Index": 2,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}
