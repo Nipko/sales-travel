@@ -3,19 +3,36 @@
 import { BedDouble, ChevronDown, MapPin, ShieldCheck, ShieldX, Star, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../../../../lib/cn';
-import type { HotelOffer, HotelRoompack } from '../actions';
+import type { HotelOffer } from '../actions';
 import { boardLabel, cancellationLabel, formatMoney } from './hotel-format';
+import { cheapestRoompack, rateProviderLabel } from './hotel-provider-view';
 
-function cheapest(roompacks: HotelRoompack[]): HotelRoompack | undefined {
-  if (roompacks.length === 0) return undefined;
-  return roompacks.reduce((min, rp) =>
-    rp.price.total.amountMinor < min.price.total.amountMinor ? rp : min,
+/**
+ * Pastilla del proveedor de UNA tarifa. Con los tokens del design system y no con el color de
+ * la ficha del proveedor, igual que la fila de vuelos: son los únicos que siguen al tema oscuro.
+ */
+function ProviderPill({ label }: { label: string | undefined }) {
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-px text-xs font-medium text-[var(--color-fg-muted)]">
+      <span className="sr-only">Proveedor: </span>
+      {label}
+    </span>
   );
 }
 
-export function HotelResultCard({ offer }: { offer: HotelOffer }) {
+interface HotelResultCardProps {
+  offer: HotelOffer;
+  /**
+   * Ajuste efectivo de divulgación de proveedor del tenant, el mismo que en vuelos. Apagado por
+   * defecto: de quién compra el consolidador es un dato interno suyo.
+   */
+  showProvider?: boolean;
+}
+
+export function HotelResultCard({ offer, showProvider = false }: HotelResultCardProps) {
   const [open, setOpen] = useState(false);
-  const best = cheapest(offer.roompacks);
+  const best = cheapestRoompack(offer.roompacks);
   const anyRefundable = offer.roompacks.some((rp) => rp.cancellation.refundable);
 
   return (
@@ -64,6 +81,13 @@ export function HotelResultCard({ offer }: { offer: HotelOffer }) {
           {best ? (
             <p className="text-[11px] text-[var(--color-fg-muted)]">{boardLabel(best.board)}</p>
           ) : null}
+          {/* La del "desde" es la de la tarifa más barata, no la del hotel: un hotel puede
+              reunir tarifas de varios proveedores. */}
+          {best ? (
+            <div className="mt-1 flex justify-end">
+              <ProviderPill label={rateProviderLabel(best, showProvider)} />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -80,14 +104,20 @@ export function HotelResultCard({ offer }: { offer: HotelOffer }) {
 
       {open ? (
         <ul className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+          {/* El id de una tarifa es único dentro de SU proveedor: en una tarjeta que reúne
+              tarifas de varios, dos pueden repetirlo. */}
           {offer.roompacks.map((rp) => (
-            <li key={rp.id} className="flex items-start justify-between gap-4 px-4 py-3">
+            <li
+              key={`${rp.provider?.name ?? ''}:${rp.id}`}
+              className="flex items-start justify-between gap-4 px-4 py-3"
+            >
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <BedDouble className="size-3.5 text-[var(--color-fg-subtle)]" />
                   <span className="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary)]">
                     {boardLabel(rp.board)}
                   </span>
+                  <ProviderPill label={rateProviderLabel(rp, showProvider)} />
                 </div>
                 <p className="mt-1 truncate text-xs text-[var(--color-fg)]">
                   {rp.rooms

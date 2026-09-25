@@ -54,8 +54,21 @@ export interface HotelRoomItem {
   choiceId?: string;
 }
 
+/** De qué proveedor es una tarifa y con qué referencia se reserva. Espejo del contrato neutral. */
+export interface HotelProviderRef {
+  /** Código del proveedor en el registry (`despegar-hotels`), no su nombre legible. */
+  name: string;
+  offerRef: string;
+}
+
 export interface HotelRoompack {
   id: string;
+  /**
+   * De qué proveedor es ESTA tarifa. Viaja siempre; pintarlo o no lo decide
+   * `showProviderInResults`. Opcional sólo para tolerar un API anterior a la búsqueda
+   * multi-proveedor: sin él no se pinta nada.
+   */
+  provider?: HotelProviderRef;
   board: 'RO' | 'BB' | 'HB' | 'FB' | 'AI';
   rooms: HotelRoomItem[];
   cancellation: HotelCancellation;
@@ -76,10 +89,53 @@ export interface RoomDistribution {
   childrenAges: number[];
 }
 
+/** Por qué un proveedor no aportó tarifas a esta búsqueda. Espejo de `HotelSkipReason`. */
+export type HotelProviderSkipReason =
+  | 'opt-in-disabled'
+  | 'fallback-not-needed'
+  | 'catalog-empty'
+  | 'no-destination-map'
+  | 'foreign-hotel-ids'
+  | 'occupancy-limits'
+  | 'currency-mismatch';
+
+/** Qué pasó con cada proveedor en esta búsqueda. Espejo de `HotelProviderOutcome` en el API. */
+export interface HotelProviderOutcome {
+  code: string;
+  status: 'ok' | 'empty' | 'error' | 'skipped' | 'unavailable';
+  count: number;
+  /** Motivo ya humanizado por el API. */
+  reason?: string;
+  skipReason?: HotelProviderSkipReason;
+  unavailableReason?: 'no-credentials' | 'incomplete-account';
+  /** Tarifas que respondió y no se muestran por venir en otra moneda. */
+  droppedForCurrency?: number;
+}
+
 export interface HotelSearchResult {
   ok: boolean;
   hotels: HotelOffer[];
+  /** Parte por proveedor. Vacío = un API anterior a la búsqueda multi-proveedor. */
+  providers: HotelProviderOutcome[];
+  /**
+   * El ajuste "Origen de las tarifas en los resultados", ya resuelto por el API con la herencia
+   * de la red. Es el mismo que en vuelos. Un API que no lo mande deja las pastillas apagadas, que
+   * es el lado seguro.
+   */
+  showProviderInResults: boolean;
   error?: string;
+}
+
+/** Sobre del endpoint. `providers` y el booleano son ADITIVOS: `{ hotels }` no cambió. */
+interface HotelSearchEnvelope {
+  hotels: HotelOffer[];
+  providers?: HotelProviderOutcome[];
+  showProviderInResults?: boolean;
+}
+
+/** Salida de error del formulario, con el sobre completo para no olvidar ningún campo. */
+function fallo(error: string): HotelSearchResult {
+  return { ok: false, hotels: [], providers: [], showProviderInResults: false, error };
 }
 
 function asString(value: FormDataEntryValue | null): string {
@@ -143,27 +199,13 @@ export async function searchHotelsAction(
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
 
   // --- Validaciones de borde (el API revalida con Zod) ---
-  if (!DATE_RE.test(checkinDate)) {
-    return { ok: false, hotels: [], error: 'Ingresá una fecha de entrada válida.' };
-  }
-  if (!DATE_RE.test(checkoutDate)) {
-    return { ok: false, hotels: [], error: 'Ingresá una fecha de salida válida.' };
-  }
-  if (checkinDate < todayISO()) {
-    return { ok: false, hotels: [], error: 'La fecha de entrada no puede ser anterior a hoy.' };
-  }
-  if (checkoutDate <= checkinDate) {
-    return { ok: false, hotels: [], error: 'La salida debe ser posterior a la entrada.' };
-  }
-  if (rooms.length === 0) {
-    return { ok: false, hotels: [], error: 'Indicá al menos una habitación con un adulto.' };
-  }
+  if (!DATE_RE.test(checkinDate)) return fallo('Ingresá una fecha de entrada válida.');
+  if (!DATE_RE.test(checkoutDate)) return fallo('Ingresá una fecha de salida válida.');
+  if (checkinDate < todayISO()) return fallo('La fecha de entrada no puede ser anterior a hoy.');
+  if (checkoutDate <= checkinDate) return fallo('La salida debe ser posterior a la entrada.');
+  if (rooms.length === 0) return fallo('Indicá al menos una habitación con un adulto.');
   if (hotelIds.length === 0 && destinationId === undefined) {
-    return {
-      ok: false,
-      hotels: [],
-      error: 'Elegí un destino del autocompletado o indicá IDs de hotel.',
-    };
+    return fallo('Elegí un destino del autocompletado o indicá IDs de hotel.');
   }
 
   const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms };
@@ -171,11 +213,17 @@ export async function searchHotelsAction(
   if (destinationId !== undefined) body.destinationId = destinationId;
   if (refundableOnly) body.refundableOnly = true;
 
-  const res = await api<{ hotels: HotelOffer[] }>('/hotels/availability', {
+  const res = await api<HotelSearchEnvelope>('/hotels/availability', {
     method: 'POST',
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) return { ok: false, hotels: [], error: res.error.message };
-  return { ok: true, hotels: res.data.hotels };
+  if (!res.ok) return fallo(res.error.message);
+  return {
+    ok: true,
+    hotels: res.data.hotels,
+    providers: res.data.providers ?? [],
+    // `=== true`, como vuelos: cualquier otra cosa (ausente, null, texto) es oculto.
+    showProviderInResults: res.data.showProviderInResults === true,
+  };
 }

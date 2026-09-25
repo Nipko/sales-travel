@@ -1,14 +1,20 @@
 'use client';
 
-import { Hotel, Info, Loader2, Search } from 'lucide-react';
+import { Hotel, Info, Loader2, Search, TriangleAlert } from 'lucide-react';
 import { useActionState, useState } from 'react';
 import { cn } from '../../../lib/cn';
-import { searchHotelsAction, type HotelSearchResult } from './actions';
+import { searchHotelsAction, type HotelProviderOutcome, type HotelSearchResult } from './actions';
 import { DestinationCombobox } from './_components/destination-combobox';
 import { HotelResultCard } from './_components/hotel-result-card';
+import { degradedProviders } from './_components/hotel-provider-view';
 import { RoomsPicker } from './_components/rooms-picker';
 
-const INITIAL: HotelSearchResult = { ok: false, hotels: [] };
+const INITIAL: HotelSearchResult = {
+  ok: false,
+  hotels: [],
+  providers: [],
+  showProviderInResults: false,
+};
 
 const inputClass = cn(
   'flex h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)]',
@@ -19,6 +25,43 @@ const inputClass = cn(
 function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Resultados incompletos: un proveedor no respondió, se omitió en esta búsqueda o respondió con
+ * tarifas que no se pueden mostrar. Sin este aviso, una lista corta —o vacía— se lee como "no hay
+ * más hoteles", y eso es lo que el vendedor le dice a su cliente.
+ */
+function DegradedProvidersNotice({ providers }: { providers: HotelProviderOutcome[] }) {
+  const degraded = degradedProviders(providers);
+  if (degraded.length === 0) return null;
+
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2.5 rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/5 px-4 py-3 text-sm text-[var(--color-fg)]"
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[var(--color-danger)]" />
+      <div>
+        <strong className="font-semibold">
+          Resultados incompletos:{' '}
+          {degraded.length === 1
+            ? 'un proveedor no aportó todas sus tarifas'
+            : `${degraded.length} proveedores no aportaron todas sus tarifas`}
+          .
+        </strong>{' '}
+        Puede haber hoteles y tarifas que no se están mostrando.
+        <ul className="mt-1.5 space-y-0.5 text-xs text-[var(--color-fg-muted)]">
+          {degraded.map((p) => (
+            <li key={p.code}>
+              <span className="font-medium">{p.code}</span>
+              {p.reason ? ` · ${p.reason}` : null}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
 }
 
 export default function HotelesPage() {
@@ -36,7 +79,7 @@ export default function HotelesPage() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-[var(--color-fg)]">Hoteles</h1>
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Búsqueda de disponibilidad vía Despegar/HotelDo
+            Disponibilidad en los proveedores de hoteles habilitados para tu agencia
           </p>
         </div>
       </header>
@@ -150,14 +193,22 @@ export default function HotelesPage() {
         </div>
       ) : null}
 
+      {state.ok ? <DegradedProvidersNotice providers={state.providers} /> : null}
+
       {state.ok ? (
         state.hotels.length > 0 ? (
           <div className="space-y-3">
             <p className="text-xs text-[var(--color-fg-muted)]">
               {state.hotels.length} hotel{state.hotels.length === 1 ? '' : 'es'} con disponibilidad
             </p>
-            {state.hotels.map((offer) => (
-              <HotelResultCard key={offer.hotelId} offer={offer} />
+            {/* Con varios proveedores, dos pueden devolver el mismo id de hotel: el id solo no
+                es una clave única de la lista. */}
+            {state.hotels.map((offer, i) => (
+              <HotelResultCard
+                key={`${i}:${offer.hotelId}`}
+                offer={offer}
+                showProvider={state.showProviderInResults}
+              />
             ))}
           </div>
         ) : (
