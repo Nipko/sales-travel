@@ -1,13 +1,47 @@
-import { z } from 'zod';
+import { HotelProviderCodeSchema } from '@sales-travel/canonical';
+import { CountryCodeSchema, CurrencyCodeSchema, z } from '@sales-travel/validation';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha esperada YYYY-MM-DD');
 const lang = z.enum(['EN', 'ES', 'PT']);
 const identificationType = z.enum(['LOCAL', 'PASSPORT']);
 
+/**
+ * Topes de ocupación del BORDE: lo máximo que la plataforma acepta de cualquier vendedor.
+ *
+ * Cada proveedor declara los suyos, más estrechos, en su `searchProfile.occupancy`; el que no
+ * los cumple queda fuera de esa búsqueda con el motivo en `providers[]`, y los demás buscan
+ * igual. Por eso estos no se achican al del proveedor más restrictivo: le quitarían a todos lo
+ * que sólo uno no admite.
+ */
+export const PLATFORM_OCCUPANCY_LIMITS = {
+  maxRooms: 8,
+  maxAdultsPerRoom: 8,
+  maxChildrenPerRoom: 6,
+  maxChildAge: 17,
+} as const;
+
 export const RoomDistributionSchema = z.object({
-  adults: z.number().int().min(1).max(8),
-  childrenAges: z.array(z.number().int().min(0).max(17)).max(6).default([]),
+  adults: z.number().int().min(1).max(PLATFORM_OCCUPANCY_LIMITS.maxAdultsPerRoom),
+  childrenAges: z
+    .array(z.number().int().min(0).max(PLATFORM_OCCUPANCY_LIMITS.maxChildAge))
+    .max(PLATFORM_OCCUPANCY_LIMITS.maxChildrenPerRoom)
+    .default([]),
 });
+
+const rooms = z.array(RoomDistributionSchema).min(1).max(PLATFORM_OCCUPANCY_LIMITS.maxRooms);
+
+/**
+ * Moneda de VENTA de la búsqueda: la puerta de moneda descarta las tarifas que no vengan en ella.
+ * Se normaliza acá porque un `'cop'` que pasara tal cual haría descartar todas, que llegan en
+ * mayúsculas.
+ */
+const saleCurrency = z.string().trim().toUpperCase().pipe(CurrencyCodeSchema);
+
+/**
+ * Nacionalidad del huésped principal, ISO 3166-1 alfa-2. No es el país del punto de venta
+ * (`countryCode`) y nunca se deduce de él.
+ */
+const guestNationality = z.string().trim().toUpperCase().pipe(CountryCodeSchema);
 
 // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -20,15 +54,15 @@ export const HotelAvailabilityInputSchema = z
   .object({
     checkinDate: isoDate,
     checkoutDate: isoDate,
-    currency: z.string().length(3).optional(),
+    currency: saleCurrency.optional(),
     // Uno de los dos: lista explícita de hoteles, o destino (city_id) que el API resuelve
-    // a IDs vía el catálogo de inventario.
+    // a IDs vía el catálogo de inventario de cada proveedor.
     hotelIds: z.array(z.string().min(1)).max(100).optional(),
     destinationId: z.coerce.number().int().positive().optional(),
-    rooms: z.array(RoomDistributionSchema).min(1).max(8),
+    rooms,
+    guestNationality: guestNationality.optional(),
     countryCode: z.string().length(2).optional(),
     language: lang.optional(),
-    ttl: z.number().int().positive().optional(),
     refundableOnly: z.boolean().optional(),
   })
   .refine((v) => (v.hotelIds && v.hotelIds.length > 0) || v.destinationId != null, {
@@ -38,14 +72,16 @@ export const HotelAvailabilityInputSchema = z
 
 export const HotelDetailInputSchema = z.object({
   hotelId: z.string().min(1),
+  /** De qué proveedor es el hotel. Ausente: el del espacio de ids de la plataforma. */
+  provider: HotelProviderCodeSchema.optional(),
   checkinDate: isoDate,
   checkoutDate: isoDate,
-  currency: z.string().length(3).optional(),
-  rooms: z.array(RoomDistributionSchema).min(1).max(8),
+  currency: saleCurrency.optional(),
+  rooms,
   roompackId: z.string().min(1).optional(),
+  guestNationality: guestNationality.optional(),
   countryCode: z.string().length(2).optional(),
   language: lang.optional(),
-  ttl: z.number().int().positive().optional(),
   refundableOnly: z.boolean().optional(),
 });
 
