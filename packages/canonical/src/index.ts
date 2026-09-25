@@ -4,3 +4,4 @@ export * from './segment';
 export * from './itinerary';
 export * from './hotel';
 export * from './offer';
+export * from './hotel-offer';
