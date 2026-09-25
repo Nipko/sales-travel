@@ -1,0 +1,11 @@
+{
+  "row": "01 §8.3 · 200 SUCCESS",
+  "source": "Code y Description de la tabla (p. 8); forma de Status de p. 13. Cuerpo recortado: sólo importa el envelope.",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json; charset=utf-8" },
+    "bodyJson": { "Status": { "Code": 200, "Description": "Successful" }, "HotelResult": [] }
+  },
+  "expect": { "outcome": "SUCCESS", "status": 200, "tboCode": 200 }
+}

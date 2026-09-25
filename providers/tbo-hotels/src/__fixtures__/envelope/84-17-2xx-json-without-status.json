@@ -1,0 +1,17 @@
+{
+  "row": "01 §8.4 · HTTP 2xx con JSON sin Status",
+  "source": "Postura de 01 §8.4.",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "HotelResult": []
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "MALFORMED_RESPONSE",
+    "status": 200,
+    "tboCode": null
+  }
+}

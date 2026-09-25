@@ -1,0 +1,18 @@
+{
+  "row": "01 §8.4 · HTTP 404 sin envelope: path equivocado, nunca \"sin disponibilidad\"",
+  "source": "Postura de 01 §3.2 punto 3 y §8.4.",
+  "operation": "search",
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/plain"
+    },
+    "bodyText": "Not Found"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "CLIENT_BUG",
+    "status": 404,
+    "tboCode": null
+  }
+}

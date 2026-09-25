@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · HTTP 2xx con cuerpo vacío",
+  "source": "Postura de 01 §8.4 (Despegar lo devuelve como {}; aquí es error).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyText": ""
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "MALFORMED_RESPONSE",
+    "status": 200,
+    "tboCode": null
+  }
+}

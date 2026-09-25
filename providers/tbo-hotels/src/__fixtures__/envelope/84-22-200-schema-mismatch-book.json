@@ -1,0 +1,21 @@
+{
+  "row": "01 §8.4 · Status.Code 200 con un cuerpo que no pasa el esquema de la operación (Book 200 sin ConfirmationNumber, 08 RF-03 CA-2)",
+  "source": "Postura de 01 §8.4 y §8.5. El esquema de la prueba sólo exige ConfirmationNumber.",
+  "operation": "book",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": {
+        "Code": 200,
+        "Description": "Successful"
+      }
+    }
+  },
+  "responseSchema": {
+    "ConfirmationNumber": "string"
+  },
+  "expect": {
+    "error": "TboResponseMappingError",
+    "issues": ["ConfirmationNumber:invalid_type"]
+  }
+}

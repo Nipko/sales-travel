@@ -1,0 +1,12 @@
+{
+  "row": "01 §8.3 · 207 RATE_UNAVAILABLE",
+  "source": "Code y Description de la tabla (p. 9). Sin ejemplo publicado (H-10).",
+  "operation": "prebook",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": { "Code": 207, "Description": "Given rate is not Available for booking anymore." }
+    }
+  },
+  "expect": { "error": "TboApiError", "kind": "RATE_UNAVAILABLE", "status": 200, "tboCode": 207 }
+}

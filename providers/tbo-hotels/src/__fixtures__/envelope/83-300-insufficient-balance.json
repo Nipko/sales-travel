@@ -1,0 +1,20 @@
+{
+  "row": "01 §8.3 · 300 INSUFFICIENT_BALANCE",
+  "source": "Code y Description de la tabla (p. 10). Sin ejemplo publicado (H-10).",
+  "operation": "book",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": {
+        "Code": 300,
+        "Description": "Agency has Insufficient Funds for requested booking."
+      }
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "INSUFFICIENT_BALANCE",
+    "status": 200,
+    "tboCode": 300
+  }
+}

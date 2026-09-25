@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 402 AGENT_BLOCKED",
+  "source": "Code y Description de la tabla (p. 10). Sin ejemplo publicado (H-10).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 402, "Description": "Agency blocked at TBO end." } }
+  },
+  "expect": { "error": "TboApiError", "kind": "ACCOUNT_BLOCKED", "status": 200, "tboCode": 402 }
+}

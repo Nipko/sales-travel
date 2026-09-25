@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 400 INVALID_REQUEST",
+  "source": "Code y Description de la tabla (p. 9). Sin ejemplo publicado (H-10).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 400, "Description": "Invalid Request" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "CLIENT_BUG", "status": 200, "tboCode": 400 }
+}

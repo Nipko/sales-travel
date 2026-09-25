@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · sin respuesta: red, DNS o conexión rechazada (status 0)",
+  "source": "Postura de 01 §8.4. No hay cuerpo: el fetch espiado rechaza.",
+  "operation": "search",
+  "response": {
+    "network": "refused"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "TRANSPORT",
+    "status": 0,
+    "tboCode": null,
+    "timedOut": false
+  }
+}

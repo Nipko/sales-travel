@@ -1,0 +1,18 @@
+{
+  "row": "01 §8.4 · HTTP 5xx sin envelope (la página de un proxy)",
+  "source": "Postura de 01 §8.4.",
+  "operation": "search",
+  "response": {
+    "status": 503,
+    "headers": {
+      "content-type": "text/html"
+    },
+    "bodyText": "<html><head><title>503 Service Unavailable</title></head><body>upstream down</body></html>"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "UPSTREAM",
+    "status": 503,
+    "tboCode": null
+  }
+}
