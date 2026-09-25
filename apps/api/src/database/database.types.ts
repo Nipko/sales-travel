@@ -210,14 +210,25 @@ export interface AirportsTable {
   updated_at: Generated<Timestamp>;
 }
 
-/** Catálogo de hoteles por proveedor (ciudad→IDs). Cross-tenant; lo escribe el job de sync. */
+/**
+ * `pg` devuelve NUMERIC como string (no hay type parser registrado) para no perder precisión.
+ * Tiparlo como `number` dejaría compilar `a.score + b.score`, que en ejecución concatena.
+ */
+type Numeric = ColumnType<string, number | string, number | string>;
+
+/**
+ * Catálogo de hoteles por proveedor (ciudad→IDs). Cross-tenant; lo escribe el job de sync y la
+ * app sólo lo lee (0041 le quitó la escritura que 0001 daba por defecto a toda tabla nueva).
+ */
 export interface HotelInventoryTable {
   provider_code: string;
   hotel_id: string;
+  /** Id de ciudad de Despegar. Los demás proveedores usan `provider_city_code`. */
   city_id: number | null;
   country_code: string | null;
   name: string | null;
-  stars: number | null;
+  /** NUMERIC(2,1): llega como `'4.5'`, no como `4.5`. */
+  stars: Numeric | null;
   property_type: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -225,6 +236,98 @@ export interface HotelInventoryTable {
   zipcode: string | null;
   merged_ids: unknown;
   synced_at: Generated<Timestamp>;
+  /** 0041: código de ciudad en el espacio de ids del propio proveedor. NULL en Despegar. */
+  provider_city_code: string | null;
+  /** 0041: baja lógica. La búsqueda sólo usa activos; el inactivo se conserva para vouchers. */
+  active: Generated<boolean>;
+  /** 0041: inicio de la última corrida que vio el hotel. NULL si el catálogo se reemplaza entero. */
+  last_seen_at: Timestamp | null;
+}
+
+/** 0041: ciudades de cada proveedor y checkpoint del sync. Cross-tenant; la app sólo lee. */
+export interface HotelProviderCityTable {
+  provider_code: string;
+  provider_city_code: string;
+  country_code: string;
+  name: string;
+  /** Minúsculas, sin acentos ni puntuación. Lo calcula el sync, no la base. */
+  name_norm: string;
+  hotel_count: number | null;
+  /** Mediana de las coordenadas de sus hoteles activos. */
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  synced_at: Timestamp | null;
+  last_status_code: number | null;
+}
+
+export type HotelDestinationMapMethod = 'overlap' | 'centroid' | 'manual';
+export type HotelDestinationMapStatus = 'accepted' | 'ambiguous' | 'rejected';
+
+/** 0041: destino de la UI → ciudades de otro proveedor. Sólo `accepted` se usa para vender. */
+export interface HotelDestinationMapTable {
+  source_provider_code: string;
+  source_city_id: string;
+  target_provider_code: string;
+  target_city_code: string;
+  method: HotelDestinationMapMethod;
+  score: Numeric | null;
+  status: HotelDestinationMapStatus;
+  computed_at: Generated<Timestamp>;
+}
+
+export type HotelMatchMethod = 'heuristic' | 'manual' | 'giata';
+export type HotelMatchStatus = 'accepted' | 'review' | 'rejected';
+
+/** 0041: el mismo hotel en varios proveedores comparte `canonical_hotel_id`. */
+export interface HotelMatchTable {
+  canonical_hotel_id: string;
+  provider_code: string;
+  hotel_id: string;
+  method: HotelMatchMethod;
+  score: Numeric | null;
+  status: HotelMatchStatus;
+  computed_at: Generated<Timestamp>;
+}
+
+/** Qué llamada del proveedor produjo el contenido: `details` gana sobre `listing`. */
+export type HotelContentSource = 'details' | 'listing';
+
+/** 0041: contenido de hotel por proveedor e idioma. */
+export interface HotelContentTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  name: string | null;
+  /** Saneado con lista blanca al ingerir. */
+  description_html: string | null;
+  /** `[{ label, text }]`. */
+  sections: unknown;
+  /** `string[]`. */
+  facilities: unknown;
+  attractions_html: string | null;
+  /** `string[]` de URLs: se enlazan, no se copian. */
+  images: unknown;
+  phone: string | null;
+  website_url: string | null;
+  /** TIME: `pg` lo devuelve como `'HH:MM:SS'`. */
+  check_in_time: string | null;
+  check_out_time: string | null;
+  source: HotelContentSource;
+  content_hash: string;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+export interface HotelRoomContentTable {
+  provider_code: string;
+  hotel_id: string;
+  room_id: string;
+  lang: LanguageCode;
+  name: string | null;
+  size_text: string | null;
+  description: string | null;
+  images: unknown;
+  fetched_at: Generated<Timestamp>;
 }
 
 export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'cancelled';
@@ -485,6 +588,11 @@ export interface DB {
   domain_events: DomainEventsTable;
   airports: AirportsTable;
   hotel_inventory: HotelInventoryTable;
+  hotel_provider_city: HotelProviderCityTable;
+  hotel_destination_map: HotelDestinationMapTable;
+  hotel_match: HotelMatchTable;
+  hotel_content: HotelContentTable;
+  hotel_room_content: HotelRoomContentTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
