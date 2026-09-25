@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import { redisConnection } from './redis-connection.js';
 
 export const POST_SALE_QUEUE = 'post-sale-retry';
@@ -16,9 +17,17 @@ export const POST_SALE_JOBS = {
   compensate: 'compensate',
 } as const;
 
+export type PostSaleJobName = (typeof POST_SALE_JOBS)[keyof typeof POST_SALE_JOBS];
+
 export interface CancelRetryJob {
   tenantId: string;
   orderId: string;
+  /**
+   * La operación `cancel` de `order_operations` que se reintenta: es el intento del `jobId`. El
+   * reintento reusa el mismo claim durable (`claimCancelRetry`), así que dos encolados del mismo
+   * intento son el mismo job; una cancelación nueva abre otra operación y otro job.
+   */
+  operationId: string;
   type: 'cancel';
 }
 
@@ -43,6 +52,47 @@ export interface CompensateJob {
   actorUserId?: string;
 }
 
+export interface PostSaleEnqueueOptions {
+  /** Milisegundos antes de que el job pueda correr (p. ej. la relectura a 120 s de un Book incierto). */
+  delayMs?: number;
+}
+
+/**
+ * Entero y no negativo. Un retardo calculado que sale negativo es un error del llamador, no un
+ * "ya": se rechaza en vez de adivinar qué quiso decir.
+ */
+export function isValidDelayMs(delayMs: number): boolean {
+  return Number.isSafeInteger(delayMs) && delayMs >= 0;
+}
+
+/**
+ * `jobId` determinista de la cola: `<nombre>:<orderId>:<paso>`.
+ *
+ * Tres segmentos exactos no es estilo: BullMQ 5.x rechaza un `jobId` con `:` que no tenga tres
+ * ("Custom Id cannot contain :", `Job.validateOptions`), `add()` lo atrapa y devuelve `false`.
+ * Así se perdía el reintento de toda cancelación con el antiguo `cancel:<orderId>`. Ningún
+ * segmento puede traer `:`: por eso el paso de la compensación es un hash y no la lista de ítems.
+ */
+export function postSaleJobId(name: PostSaleJobName, orderId: string, step: string): string {
+  return `${name}:${orderId}:${step}`;
+}
+
+export function cancelRetryJobId(data: CancelRetryJob): string {
+  return postSaleJobId(POST_SALE_JOBS.cancel, data.orderId, data.operationId);
+}
+
+/**
+ * La huella es el sha256 de la lista ORDENADA, no la lista unida con comas: un `itemId` es un id
+ * del proveedor y puede traer `:` —rompería los tres segmentos— o `,` —`['a,b']` y `['a', 'b']`
+ * darían la misma huella y la segunda compensación se descartaría como duplicada—.
+ */
+export function compensationJobId(data: CompensateJob): string {
+  const huella = createHash('sha256')
+    .update(JSON.stringify([...data.cancellableItemIds].sort()))
+    .digest('hex');
+  return postSaleJobId(POST_SALE_JOBS.compensate, data.orderId, huella);
+}
+
 /**
  * Cola de post-venta y de sagas de reserva (BullMQ sobre Redis) — D9: las sagas con dinero corren
  * sobre esta cola, no sobre Temporal, hasta que Temporal entre antes del primer reembolso real.
@@ -65,24 +115,36 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    this.queue = new Queue(POST_SALE_QUEUE, { connection });
+    this.queue = this.createQueue(connection);
     this.logger.log('cola de reintentos de post-venta inicializada');
+  }
+
+  /** Protegido para que el test contra BullMQ real use un `prefix` propio y no la cola viva. */
+  protected createQueue(connection: ConnectionOptions): Queue {
+    return new Queue(POST_SALE_QUEUE, { connection });
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.queue?.close();
   }
 
-  async enqueueCancelRetry(data: CancelRetryJob): Promise<boolean> {
+  async enqueueCancelRetry(
+    data: CancelRetryJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
     // Evita dos jobs simultáneos para el mismo write. La autorización durable sigue viviendo en
-    // order_operations: el jobId sólo cubre carreras mientras BullMQ conserva el job.
-    return this.add(POST_SALE_JOBS.cancel, data, {
-      jobId: `${POST_SALE_JOBS.cancel}:${data.orderId}`,
-    });
+    // order_operations: el jobId sólo cubre carreras mientras BullMQ conserva el job. Como el
+    // intento es la operación, un reintento manual de esa misma operación no abre otra cadena
+    // automática mientras BullMQ guarde el job ya terminado: agotado (`removeOnFail: 500`) o
+    // cerrado sin write porque el claim lo tenía el manual (`removeOnComplete: 100`).
+    return this.add(POST_SALE_JOBS.cancel, data, cancelRetryJobId(data), options);
   }
 
-  async enqueueVerifyCreation(data: VerifyCreationJob): Promise<boolean> {
-    return this.add(POST_SALE_JOBS.verifyCreation, data);
+  async enqueueVerifyCreation(
+    data: VerifyCreationJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.verifyCreation, data, undefined, options);
   }
 
   /**
@@ -95,11 +157,11 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
    * proveedor —`sabreCancelIdempotencyKey`, el sha256 del cuerpo canónico— y esa vive en el
    * `domain_event` de la cancelación, que es append-only.
    */
-  async enqueueCompensation(data: CompensateJob): Promise<boolean> {
-    const huella = [...data.cancellableItemIds].sort().join(',');
-    return this.add(POST_SALE_JOBS.compensate, data, {
-      jobId: `${POST_SALE_JOBS.compensate}:${data.orderId}:${huella}`,
-    });
+  async enqueueCompensation(
+    data: CompensateJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.compensate, data, compensationJobId(data), options);
   }
 
   /**
@@ -107,15 +169,25 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
    * ya existe del otro lado—. Pero devuelve `false` en vez de tragárselo, porque el saga tiene que
    * poder anotar en el `domain_event` que el paso quedó sin encolar.
    */
-  private async add(name: string, data: object, extra: { jobId?: string } = {}): Promise<boolean> {
+  private async add(
+    name: PostSaleJobName,
+    data: object,
+    jobId: string | undefined,
+    { delayMs }: PostSaleEnqueueOptions,
+  ): Promise<boolean> {
     if (!this.queue) return false;
+    if (delayMs !== undefined && !isValidDelayMs(delayMs)) {
+      this.logger.error(`no se pudo encolar '${name}': retardo inválido (${delayMs} ms)`);
+      return false;
+    }
     try {
       await this.queue.add(name, data, {
         attempts: 5,
         backoff: { type: 'exponential', delay: 10_000 },
         removeOnComplete: 100,
         removeOnFail: 500,
-        ...extra,
+        ...(jobId === undefined ? {} : { jobId }),
+        ...(delayMs === undefined ? {} : { delay: delayMs }),
       });
       return true;
     } catch (err) {

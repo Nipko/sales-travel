@@ -66,12 +66,28 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # La cola de post-venta sólo se prueba de verdad contra BullMQ sobre Redis: el doble de
+      # pruebas no pasa por BullMQ y dejó pasar un `jobId` que BullMQ rechazaba, con lo que el
+      # reintento de las cancelaciones no se encolaba nunca.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       PGHOST: localhost
       PGPORT: '5432'
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: sales_travel
+      # Sin REDIS_HOST, `post-sale-queue.integration.test.ts` se salta en silencio. Turbo filtra
+      # el entorno: también van declaradas en la tarea `test` de turbo.json.
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
       APP_USER_PASSWORD: app_user_ci_pw
       MIGRATIONS_DIR: ${{ github.workspace }}/db/migrations
       # Clave de prueba (base64 de 32 bytes) para el cipher de credenciales/PII en los tests.

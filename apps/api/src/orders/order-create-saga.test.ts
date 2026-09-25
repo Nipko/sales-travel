@@ -796,6 +796,9 @@ describe('saga de creación — la compensación es selectiva y va a la cola', (
         actorUserId: USER,
       },
     ]);
+    expect(b.queue.jobs.map((job) => job.name)).toEqual(['compensate']);
+    expect(b.queue.jobs[0]?.jobId).toMatch(/^compensate:order-1:[0-9a-f]{64}$/);
+    expect(b.queue.jobs[0]).not.toHaveProperty('rejection');
   });
 
   it('un PARTIAL no se persiste como confirmado aunque haya PNR', async () => {
@@ -1326,7 +1329,15 @@ describe('cancelación auditada — `UNVERIFIED` es PROHIBIDO-REINTENTAR', () =>
 
     await expect(b.orders.cancelOrder(TENANT, 'order-1', PNR, USER)).rejects.toBe(preflight);
 
-    expect(b.queue.cancels).toEqual([{ tenantId: TENANT, orderId: 'order-1', type: 'cancel' }]);
+    const opId = String(b.operaciones()[0]?.['id']);
+    expect(b.queue.cancels).toEqual([
+      { tenantId: TENANT, orderId: 'order-1', operationId: opId, type: 'cancel' },
+    ]);
+    // Pedirlo no basta: con `cancel:<orderId>` BullMQ rechazaba el id, `add()` devolvía `false`
+    // y el reintento no existía. El doble aplica la regla de BullMQ y el intento es la operación.
+    expect(b.queue.jobs.map((job) => job.name)).toEqual(['cancel']);
+    expect(b.queue.jobs[0]?.jobId).toBe(`cancel:order-1:${opId}`);
+    expect(b.queue.jobs[0]).not.toHaveProperty('rejection');
     expect(JSON.parse(String(b.operaciones()[0]?.['result']))).toMatchObject({
       outcome: 'FAILED',
       retryable: true,
@@ -1406,7 +1417,12 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
 
   it('enruta la cancelación', async () => {
     const e = servicioEspiado();
-    await runPostSaleJob(e.orders, 'cancel', { tenantId: TENANT, orderId: 'o1', type: 'cancel' });
+    await runPostSaleJob(e.orders, 'cancel', {
+      tenantId: TENANT,
+      orderId: 'o1',
+      operationId: 'op-1',
+      type: 'cancel',
+    });
     expect(e.runCancelById).toHaveBeenCalledWith(TENANT, 'o1');
   });
 
@@ -1440,7 +1456,12 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
     // hacer y la cola diría que todo salió bien.
     const e = servicioEspiado();
     await expect(
-      runPostSaleJob(e.orders, 'inventado', { tenantId: TENANT, orderId: 'o1', type: 'cancel' }),
+      runPostSaleJob(e.orders, 'inventado', {
+        tenantId: TENANT,
+        orderId: 'o1',
+        operationId: 'op-1',
+        type: 'cancel',
+      }),
     ).rejects.toThrow(/desconocido/);
   });
 });

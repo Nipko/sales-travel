@@ -1483,7 +1483,12 @@ export class OrdersService {
     } catch (err) {
       const policy = classifyCancelThrownFailure(err);
       if (policy.retryable) {
-        await this.queue.enqueueCancelRetry({ tenantId, orderId: id, type: 'cancel' });
+        await this.queue.enqueueCancelRetry({
+          tenantId,
+          orderId: id,
+          operationId: claim.operationId,
+          type: 'cancel',
+        });
         throw err;
       }
       throw new ConflictException(
