@@ -103,3 +103,9 @@ tmp/
 # Snapshots crudos de docs de proveedores (fuente pesada; el contenido destilado va en .md)
 *.mhtml
 .env.sabre
+
+# Certificación TBO (tools/tbo/cert-cases.mjs). Se nombra el archivo exacto y no `.env.*` porque
+# `.env.tbo.example` sí se versiona. `.tbo-cert/` guarda las corridas crudas: solo el set enviado,
+# ya pasado por las guardas, se copia a docs/tbo/evidence/cert/.
+.env.tbo
+.tbo-cert/
