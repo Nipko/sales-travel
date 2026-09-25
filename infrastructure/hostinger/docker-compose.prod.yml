@@ -122,6 +122,14 @@ services:
       AGENT_CARS_SUGGEST_URL: ${AGENT_CARS_SUGGEST_URL:-https://suggest.agentcars.com/suggest}
       AGENT_CARS_SOURCE: ${AGENT_CARS_SOURCE:-}
       AGENT_CARS_LANGUAGE: ${AGENT_CARS_LANGUAGE:-}
+      # Gobierno de proveedores. Sin estas líneas no llegaban al contenedor aunque deploy.yml las
+      # escribiera en .env: el kill-switch no existía en producción.
+      # PROVIDERS_DISABLED: `código` apaga todo el proveedor; `código:ventas` sólo Search, PreBook
+      # y Book, y deja leer y cancelar lo ya vendido. Lista separada por comas.
+      PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
+      # `callPolicy: 'opt-in'`: `código` para todos los tenants o `código@<tenantId>` para uno.
+      FLIGHT_PROVIDERS_OPT_IN: ${FLIGHT_PROVIDERS_OPT_IN:-}
+      HOTEL_PROVIDERS_OPT_IN: ${HOTEL_PROVIDERS_OPT_IN:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
       # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
       APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}

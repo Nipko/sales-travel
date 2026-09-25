@@ -31,6 +31,11 @@ interface ErrorShape {
     readonly kind?: unknown;
     readonly retry?: unknown;
   };
+  /**
+   * `false` sólo lo pone quien cortó la llamada antes de enviarla y sabe que puede repetirse tal
+   * cual: el rechazo del circuit breaker (`BreakerRejectionError`, kill-switch o circuito abierto).
+   */
+  readonly sentToProvider?: unknown;
 }
 
 const CANCEL_WRITE_PATH = /(?:^|\/)(?:cancel(?:booking)?|cancel\/bnpl)(?:$|[/?])/i;
@@ -86,6 +91,18 @@ export function classifyCancelThrownFailure(error: unknown): CancelRetryPolicy {
   const name = typeof shape.name === 'string' ? shape.name : '';
   const path = typeof shape.path === 'string' ? shape.path : undefined;
 
+  // El breaker frenó la llamada antes de que saliera: no hubo write que verificar. Es el único
+  // rechazo sin `path` que puede volver a BullMQ; antes caía al final, en `UNVERIFIED`, y una
+  // cancelación que nunca se envió terminaba en conciliación y escalado.
+  if (shape.sentToProvider === false) {
+    return {
+      outcome: 'FAILED',
+      retryable: true,
+      reconciliationRequired: false,
+      reason: 'pre-write-transient',
+    };
+  }
+
   if (CANCEL_RESPONSE_MAPPING_ERROR.test(name)) {
     return {
       outcome: 'UNVERIFIED',
@@ -116,8 +133,8 @@ export function classifyCancelThrownFailure(error: unknown): CancelRetryPolicy {
     };
   }
 
-  // Sólo una ruta conocida distinta del write demuestra que la excepción ocurrió en el
-  // get/check previo. Éste es el único caso que puede entrar a BullMQ.
+  // Fuera del rechazo del breaker, sólo una ruta conocida distinta del write demuestra que la
+  // excepción ocurrió en el get/check previo. Son los dos únicos casos que pueden entrar a BullMQ.
   if (path !== undefined && isTransient(shape)) {
     return {
       outcome: 'FAILED',
