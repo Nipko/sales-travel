@@ -7,6 +7,7 @@ import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
+import { LifecycleModule } from './lifecycle/lifecycle.module.js';
 import { MeModule } from './me/me.module.js';
 import { AirportsModule } from './airports/airports.module.js';
 import { RequestContextMiddleware } from './request-context/request-context.middleware.js';
@@ -37,6 +38,7 @@ import { PackagesModule } from './packages/packages.module.js';
     // Rate limiting global: 300 req/min por IP. Endpoints sensibles (login) bajan el límite
     // con @Throttle. Storage en memoria (1 contenedor api); migrar a Redis si se escala.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    LifecycleModule,
     DatabaseModule,
     RequestContextModule,
     AuditModule,

@@ -88,10 +88,19 @@ services:
   api:
     image: ghcr.io/nipko/sales-travel-api:${IMAGE_TAG:-latest}
     <<: [*restart, *logging]
+    # Apagado ordenado (docs/tbo/09 PR-4.10, RF-22): cada despliegue recrea este contenedor y un
+    # Book de TBO puede tardar 120 s. Con los 10 s por defecto de Docker, el SIGKILL lo cortaba y lo
+    # mandaba a la recuperación. `init: true` pone un init como PID 1 que reenvía la SIGTERM a
+    # `node`; el drenaje (SHUTDOWN_DRAIN_TIMEOUT_MS) tiene que quedar por debajo de este periodo.
+    init: true
+    stop_grace_period: 130s
     environment:
       NODE_ENV: production
       PORT: '3000'
       APP_VERSION: ${IMAGE_TAG:-dev}
+      # Espera máxima a peticiones y sagas en curso antes de cerrar el pool y la cola (ms). Los
+      # 5 s que quedan hasta el stop_grace_period son para ese cierre.
+      SHUTDOWN_DRAIN_TIMEOUT_MS: '125000'
       PGHOST: postgres
       PGPORT: '5432'
       PGUSER: app_user
