@@ -502,9 +502,12 @@ function afterCancel(
               { type: ORDER_EVENTS.cancelled, success: false },
             ],
           };
+    // Un estado raro no dice nada de la cancelación: la que se aceptó sigue pedida, y la que se
+    // rechazó (o no llegó a mandarse) no abrió nada, así que la orden vuelve a su estado. En los dos
+    // casos la mira una persona.
     case 'unknown':
       return {
-        orderStatus: 'keep',
+        orderStatus: outcome === 'accepted' ? 'keep' : 'prior',
         subStatus: 'unknown',
         ...read,
         actions: ['human-review'],
@@ -512,7 +515,7 @@ function afterCancel(
       };
     default:
       return {
-        orderStatus: 'keep',
+        orderStatus: outcome === 'accepted' ? 'keep' : 'prior',
         subStatus: null,
         ...read,
         actions: ['human-review'],

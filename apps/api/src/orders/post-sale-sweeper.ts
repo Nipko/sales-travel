@@ -14,6 +14,10 @@ import {
   POST_SALE_SWEEP_EVERY_MS,
   PostSaleQueueService,
 } from '../queue/post-sale-queue.service.js';
+import {
+  HotelOrderCancellationService,
+  type HotelCancelVerifySweepReport,
+} from './hotel-order-cancellation.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -31,8 +35,8 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * La cola despierta cada paso a su hora, pero no es la fuente de verdad: un job se pierde si Redis
  * no estaba al encolar, si el proceso murió con la reserva en vuelo o si agotó sus reintentos. Cada
  * 15 minutos, este barrido relee Postgres y ejecuta lo vencido. Hoy: la verificación de las reservas
- * de hotel sin respuesta. El seguimiento del HCN y la verificación de cancelaciones se suman aquí
- * con sus PR.
+ * de hotel sin respuesta y la de sus cancelaciones en curso o sin verificar (PR-5.3). El seguimiento
+ * del HCN se suma aquí con su PR.
  *
  * `orders` y `hotel_order_tracking` tienen RLS forzada y la API corre como `app_user`, sin rol de
  * mantenimiento: el barrido recorre los tenants uno por uno, cada uno con `withTenant`. `tenants`
@@ -49,6 +53,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   tenants: number;
   /** Tenants cuya consulta falló entera (la base, no una orden). */
   tenantsFailed: number;
+  /** La verificación de cancelaciones de hotel, con su propio vocabulario de desenlaces. */
+  cancellations: HotelCancelVerifySweepReport;
 };
 
 @Injectable()
@@ -64,6 +70,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly queue: PostSaleQueueService,
     private readonly hotelBookings: HotelBookingVerificationService,
     private readonly work: InflightWorkRegistry,
+    private readonly hotelCancellations: HotelOrderCancellationService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -115,23 +122,55 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       held: 0,
       unavailable: 0,
       skipped: 0,
+      cancellations: {
+        examined: 0,
+        failed: 0,
+        closed: 0,
+        advanced: 0,
+        stuck: 0,
+        settled: 0,
+        held: 0,
+        unavailable: 0,
+        skipped: 0,
+      },
     };
 
     for (const { id } of tenants) {
+      // Cada barrido por separado: una verificación que no puede leer el tenant no deja sin mirar
+      // a la otra.
+      let failed = false;
       try {
         const hotels = await this.hotelBookings.sweepTenant(id, now);
         for (const key of Object.keys(hotels) as (keyof HotelVerificationSweepReport)[]) {
           report[key] += hotels[key];
         }
       } catch (err) {
-        report.tenantsFailed += 1;
+        failed = true;
         this.logger.warn(`post_sale.sweep.tenant_failed tenant=${id} error=${errorName(err)}`);
       }
+      try {
+        const cancellations = await this.hotelCancellations.sweepTenant(id, now);
+        for (const key of Object.keys(cancellations) as (keyof HotelCancelVerifySweepReport)[]) {
+          report.cancellations[key] += cancellations[key];
+        }
+      } catch (err) {
+        failed = true;
+        this.logger.warn(
+          `post_sale.sweep.cancellations.tenant_failed tenant=${id} error=${errorName(err)}`,
+        );
+      }
+      if (failed) report.tenantsFailed += 1;
     }
 
     if (report.examined > 0 || report.tenantsFailed > 0) {
       this.logger.log(
         `post_sale.sweep tenants=${report.tenants} examined=${report.examined} adopted=${report.adopted} consolidated=${report.consolidated} advanced=${report.advanced} notFound=${report['not-found']} held=${report.held} unavailable=${report.unavailable} failed=${report.failed} tenantsFailed=${report.tenantsFailed}`,
+      );
+    }
+    const c = report.cancellations;
+    if (c.examined > 0) {
+      this.logger.log(
+        `post_sale.sweep.cancellations examined=${c.examined} closed=${c.closed} advanced=${c.advanced} stuck=${c.stuck} settled=${c.settled} held=${c.held} unavailable=${c.unavailable} skipped=${c.skipped} failed=${c.failed}`,
       );
     }
     return report;

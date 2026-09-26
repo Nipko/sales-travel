@@ -1415,6 +1415,7 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
       orders: {
         orders: { runCancelById, verifyCreationById, runCompensation },
         hotelBookings: { runJob: vi.fn(() => Promise.resolve()) },
+        hotelCancellations: { runJob: vi.fn(() => Promise.resolve()) },
         sweeper: { run: vi.fn(() => Promise.reject(new Error('no se esperaba el barrido'))) },
       },
       runCancelById,

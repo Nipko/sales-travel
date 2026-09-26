@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HotelBookingVerificationService } from '../hotels/hotel-booking-verification.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
+import type { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import type { OrdersService } from './orders.service.js';
 import type { PostSaleSweeper } from './post-sale-sweeper.js';
 // `vi.mock` sube antes de los imports: el worker ya ve el BullMQ falso.
@@ -40,6 +41,8 @@ vi.mock('bullmq', () => ({
 const orders = {} as OrdersService;
 const runJob = vi.fn<HotelBookingVerificationService['runJob']>(() => Promise.resolve());
 const hotelBookings = { runJob } as unknown as HotelBookingVerificationService;
+const runCancelJob = vi.fn<HotelOrderCancellationService['runJob']>(() => Promise.resolve());
+const hotelCancellations = { runJob: runCancelJob } as unknown as HotelOrderCancellationService;
 const run = vi.fn<PostSaleSweeper['run']>();
 const sweeper = { run } as unknown as PostSaleSweeper;
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -61,7 +64,7 @@ describe('PostSaleWorker en el apagado', () => {
       }),
     );
     const registry = new InflightWorkRegistry();
-    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry);
+    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry, hotelCancellations);
 
     worker.onModuleInit();
     expect(bull.constructed).toBe(1);
@@ -82,7 +85,7 @@ describe('PostSaleWorker en el apagado', () => {
   it('sin Redis no hay worker ni nada que detener', () => {
     vi.stubEnv('REDIS_HOST', '');
     const registry = new InflightWorkRegistry();
-    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry);
+    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry, hotelCancellations);
 
     worker.onModuleInit();
     registry.startShutdown(vi.fn());
@@ -94,11 +97,12 @@ describe('PostSaleWorker en el apagado', () => {
 
 describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () => {
   function manejadores(): PostSaleJobHandlers {
-    return { orders, hotelBookings, sweeper };
+    return { orders, hotelBookings, hotelCancellations, sweeper };
   }
 
   beforeEach(() => {
     runJob.mockClear();
+    runCancelJob.mockClear();
     run.mockReset();
   });
 
@@ -122,6 +126,19 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
     ]);
   });
 
+  it('`verify-cancellation` va a la verificación de cancelaciones, con el último intento avisado (PR-5.3)', async () => {
+    const data = { tenantId: TENANT, orderId: 'o1', step: 1, anchorAt: 1_000 };
+
+    await runPostSaleJob(manejadores(), 'verify-cancellation', data, { made: 0, max: 5 });
+    await runPostSaleJob(manejadores(), 'verify-cancellation', data, { made: 4, max: 5 });
+
+    expect(runCancelJob.mock.calls).toEqual([
+      [data, { final: false }],
+      [data, { final: true }],
+    ]);
+    expect(runJob).not.toHaveBeenCalled();
+  });
+
   it('`post-sale-sweeper` corre el barrido', async () => {
     run.mockResolvedValue({} as Awaited<ReturnType<PostSaleSweeper['run']>>);
 
@@ -132,7 +149,13 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
 
   it('el Worker de BullMQ le pasa al enrutado los intentos del job', async () => {
     vi.stubEnv('REDIS_HOST', 'redis');
-    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, new InflightWorkRegistry());
+    const worker = new PostSaleWorker(
+      orders,
+      hotelBookings,
+      sweeper,
+      new InflightWorkRegistry(),
+      hotelCancellations,
+    );
     worker.onModuleInit();
     const procesar = bull.procesador;
     if (procesar === undefined) throw new Error('no se construyó el Worker');

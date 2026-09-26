@@ -6,6 +6,10 @@ import type {
 } from '../hotels/hotel-booking-verification.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
+import type {
+  HotelCancelVerifySweepReport,
+  HotelOrderCancellationService,
+} from './hotel-order-cancellation.service.js';
 import {
   POST_SALE_SWEEP_FIRST_RUN_MS,
   POST_SALE_SWEEP_SCHEDULE_WAIT_MS,
@@ -42,6 +46,23 @@ function informe(
   };
 }
 
+function informeDeCancelaciones(
+  parcial: Partial<HotelCancelVerifySweepReport> = {},
+): HotelCancelVerifySweepReport {
+  return {
+    examined: 0,
+    failed: 0,
+    closed: 0,
+    advanced: 0,
+    stuck: 0,
+    settled: 0,
+    held: 0,
+    unavailable: 0,
+    skipped: 0,
+    ...parcial,
+  };
+}
+
 function banco(tenants: string[], redis = true) {
   const consulta = { tabla: '', columna: '', orden: '' };
   const db = {
@@ -65,6 +86,9 @@ function banco(tenants: string[], redis = true) {
   const sweepTenant = vi.fn<HotelBookingVerificationService['sweepTenant']>(() =>
     Promise.resolve(informe()),
   );
+  const sweepCancellations = vi.fn<HotelOrderCancellationService['sweepTenant']>(() =>
+    Promise.resolve(informeDeCancelaciones()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -72,8 +96,9 @@ function banco(tenants: string[], redis = true) {
     queue.asService(),
     { sweepTenant } as unknown as HotelBookingVerificationService,
     work,
+    { sweepTenant: sweepCancellations } as unknown as HotelOrderCancellationService,
   );
-  return { sweeper, sweepTenant, queue, consulta, work };
+  return { sweeper, sweepTenant, sweepCancellations, queue, consulta, work };
 }
 
 afterEach(() => {
@@ -221,7 +246,47 @@ describe('PostSaleSweeper — la corrida', () => {
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
+      cancellations: informeDeCancelaciones(),
     });
+  });
+
+  it('también verifica las cancelaciones de hotel, tenant por tenant, con su propio informe (PR-5.3)', async () => {
+    const b = banco([A, B]);
+    b.sweepCancellations.mockImplementation((tenantId) =>
+      Promise.resolve(
+        tenantId === A
+          ? informeDeCancelaciones({ examined: 2, closed: 1, advanced: 1 })
+          : informeDeCancelaciones({ examined: 1, stuck: 1 }),
+      ),
+    );
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepCancellations.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    expect(report.cancellations).toEqual(
+      informeDeCancelaciones({ examined: 3, closed: 1, advanced: 1, stuck: 1 }),
+    );
+    // Los desenlaces de la verificación del Book no se mezclan con los de la cancelación.
+    expect(report.examined).toBe(0);
+  });
+
+  it('una verificación que falla en un tenant no deja sin correr a la otra', async () => {
+    const b = banco([A]);
+    b.sweepTenant.mockRejectedValue(new Error('base caída'));
+    b.sweepCancellations.mockResolvedValue(informeDeCancelaciones({ examined: 1, closed: 1 }));
+
+    const report = await b.sweeper.run();
+
+    expect(report.tenantsFailed).toBe(1);
+    expect(report.cancellations).toMatchObject({ examined: 1, closed: 1 });
+
+    const c = banco([A]);
+    c.sweepCancellations.mockRejectedValue('boom');
+    c.sweepTenant.mockResolvedValue(informe({ examined: 1, held: 1 }));
+    expect(await c.sweeper.run()).toMatchObject({ tenantsFailed: 1, examined: 1, held: 1 });
   });
 
   it('un tenant que falla entero no frena a los demás', async () => {
@@ -246,6 +311,11 @@ describe('PostSaleSweeper — la corrida', () => {
 
   it('sin nada que hacer no hace ruido', async () => {
     const b = banco([A]);
-    expect(await b.sweeper.run()).toEqual({ tenants: 1, tenantsFailed: 0, ...informe() });
+    expect(await b.sweeper.run()).toEqual({
+      tenants: 1,
+      tenantsFailed: 0,
+      ...informe(),
+      cancellations: informeDeCancelaciones(),
+    });
   });
 });

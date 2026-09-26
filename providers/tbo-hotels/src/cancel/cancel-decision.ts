@@ -88,26 +88,31 @@ export type TboCancelAfterReading =
   | { readonly state: 'read'; readonly view: HotelBookingView }
   | { readonly state: 'failed' };
 
-function statusOf(
-  view: HotelBookingView,
-): Pick<HotelCancelResult, 'bookingStatus' | 'providerStatus'> {
+type StatusFields = Pick<HotelCancelResult, 'bookingStatus' | 'providerStatus' | 'refundAwaited'>;
+
+/**
+ * `CancelledAndRefundAwaited` llega como `CANCELLED` más `refundAwaited`: sin la marca, la
+ * post-venta no sabría que el reembolso de TBO a la cuenta sigue pendiente.
+ */
+function statusOf(view: HotelBookingView): StatusFields {
   return {
     ...(view.status === undefined ? {} : { bookingStatus: view.status }),
     ...(view.providerStatus === undefined ? {} : { providerStatus: view.providerStatus }),
+    ...(view.status === 'CANCELLED' && view.refundAwaited === true ? { refundAwaited: true } : {}),
   };
 }
 
 function rejected(
   error: TboCancelError,
   warnings: readonly TboCancelWarning[],
-  fields: Pick<HotelCancelResult, 'bookingStatus' | 'providerStatus'> = {},
+  fields: StatusFields = {},
 ): HotelCancelResult {
   return { success: false, error, ...fields, warnings: [...warnings] };
 }
 
 function accepted(
   warnings: readonly TboCancelWarning[],
-  fields: Pick<HotelCancelResult, 'bookingStatus' | 'providerStatus'> = {},
+  fields: StatusFields = {},
 ): HotelCancelResult {
   return { success: true, ...fields, warnings: [...warnings] };
 }

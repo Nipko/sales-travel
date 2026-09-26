@@ -193,6 +193,31 @@ describe('/Cancel y lectura posterior', () => {
     });
   });
 
+  it('CancelledAndRefundAwaited sale cancelada y con la marca del reembolso pendiente', () => {
+    const awaited: HotelBookingView = {
+      ...view('CANCELLED', 'CancelledAndRefundAwaited'),
+      refundAwaited: true,
+    };
+    expect(decideTboCancelResult(ACCEPTED, { state: 'read', view: awaited })).toEqual({
+      success: true,
+      bookingStatus: 'CANCELLED',
+      providerStatus: 'CancelledAndRefundAwaited',
+      refundAwaited: true,
+      warnings: [],
+    });
+    expect(decideTboCancelPreflight(awaited)).toMatchObject({
+      send: false,
+      result: { success: true, bookingStatus: 'CANCELLED', refundAwaited: true },
+    });
+    // Sólo con una reserva cancelada: la marca en otro estado sería una contradicción del mapper.
+    expect(
+      decideTboCancelResult(ACCEPTED, {
+        state: 'read',
+        view: { ...view('CONFIRMED', 'Confirmed'), refundAwaited: true },
+      }),
+    ).not.toHaveProperty('refundAwaited');
+  });
+
   it('refundAmount nunca: TBO no lo informa y una estimación no es dato del proveedor (04 §4.5)', () => {
     for (const reply of [ACCEPTED, REJECTED]) {
       expect(

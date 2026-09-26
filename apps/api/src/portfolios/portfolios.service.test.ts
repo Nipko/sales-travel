@@ -384,3 +384,49 @@ describe('PortfoliosService.releaseFailedBookingHold (RF-23 CA-2)', () => {
     },
   );
 });
+
+describe('PortfoliosService.releaseCancelledBookingHold (docs/tbo/09 PR-5.3)', () => {
+  it('libera la retención de una orden que el proveedor ya muestra cancelada', async () => {
+    const h = harness({ provider: 'tbo-hotels', vertical: 'hotels', orderStatus: 'cancelled' });
+
+    await expect(h.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'released',
+    );
+    expect(h.insertedValues).toEqual([
+      expect.objectContaining({
+        amount_minor: 125_000,
+        transaction_type: 'BOOKING_RELEASED',
+        reference_id: ORDER,
+        notes: 'Cancelación confirmada por el proveedor; saldo retenido liberado',
+      }),
+    ]);
+    // La cancelación ya ocurrió: liberar no vuelve a llamar al proveedor.
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('es idempotente, y sin retención no hace nada', async () => {
+    const liberada = harness({ orderStatus: 'cancelled', existingRelease: true });
+    await expect(liberada.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'already-released',
+    );
+    expect(liberada.insertInto).not.toHaveBeenCalled();
+
+    const sinRetencion = harness({ orderStatus: 'cancelled', noHold: true });
+    await expect(
+      sinRetencion.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN),
+    ).resolves.toBe('no-hold');
+  });
+
+  it.each(['pending', 'confirmed', 'failed'])(
+    'una orden `%s` conserva su retención: una cancelación en curso sigue cobrable (D-TBO-25 A)',
+    async (orderStatus) => {
+      const h = harness({ orderStatus });
+
+      await expect(
+        h.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(h.insertInto).not.toHaveBeenCalled();
+      expect(h.updateTable).not.toHaveBeenCalled();
+    },
+  );
+});

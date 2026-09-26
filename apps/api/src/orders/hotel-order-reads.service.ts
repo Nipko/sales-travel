@@ -7,11 +7,7 @@ import type {
   ProviderStatusSource,
 } from '../database/database.types.js';
 import { HotelProviderCapabilityError } from '../hotels/hotel-provider-errors.js';
-import {
-  planHotelOrderObservation,
-  type HotelOrderEvent,
-  type HotelOrderPlan,
-} from '../hotels/hotel-order-state.js';
+import { planHotelOrderObservation, type HotelOrderPlan } from '../hotels/hotel-order-state.js';
 import { withProviderPayloadScope } from '../provider-payloads/provider-payload-scope.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import type { HotelProviderCapabilities } from '../providers/hotel-provider.types.js';
@@ -22,7 +18,8 @@ import {
   type HotelOrderReadTarget,
   type HotelOrderTrackingRow,
 } from './hotel-order-tracking.store.js';
-import { ORDER_EVENTS, publicProviderStatus } from './order-events.js';
+import { hotelOrderEventFields } from './hotel-order-events.js';
+import { publicProviderStatus } from './order-events.js';
 
 /**
  * Lecturas de una orden de hotel desde Reservas (docs/tbo/09 PR-5.2; 08 RF-24, RF-26, RF-29;
@@ -46,12 +43,12 @@ import { ORDER_EVENTS, publicProviderStatus } from './order-events.js';
 
 /**
  * Qué operaciones de `/orders/:id/*` sabe ejecutar hoy `OrdersService` para una orden de hotel. Se
- * cruza con lo que declara el proveedor. `cancel` queda apagada hasta que la cancelación enrute por
- * el registry de hoteles (PR-5.3): hoy caería en el adapter de vuelos después de tomar el claim.
+ * cruza con lo que declara el proveedor. La cancelación enruta por el registry de hoteles desde
+ * PR-5.3 (`HotelOrderCancellationService`).
  */
 const HOTEL_ORDER_OPERATIONS: Readonly<Pick<ProviderCapabilities, 'retrieve' | 'cancel'>> = {
   retrieve: true,
-  cancel: false,
+  cancel: true,
 };
 
 /** El seguimiento de una orden de hotel tal como sale por la API: códigos y localizadores. */
@@ -268,38 +265,15 @@ export class HotelOrderReadsService {
         actorUserId: actorUserId ?? target.userId,
         aggregateType: 'order',
         aggregateId: target.orderId,
-        payload: { ...base, ...this.fieldsOf(event, target, view) },
+        payload: {
+          ...base,
+          ...hotelOrderEventFields(event, {
+            providerAccountId: target.providerAccountId,
+            providerOrderId: target.providerOrderId,
+            view,
+          }),
+        },
       });
-    }
-  }
-
-  private fieldsOf(
-    event: HotelOrderEvent,
-    target: HotelOrderReadTarget,
-    view: HotelBookingView,
-  ): Record<string, unknown> {
-    const { type: _type, ...fields } = event;
-    switch (event.type) {
-      case ORDER_EVENTS.escalated:
-        return {
-          ...fields,
-          providerStatus: publicProviderStatus(
-            view.providerStatus,
-            view.status !== undefined && view.status !== 'UNKNOWN',
-          ),
-          retryForbidden: true,
-          reconciliationRequired: true,
-        };
-      case ORDER_EVENTS.reconciliationDiscrepancy:
-        return {
-          ...fields,
-          accountId: target.providerAccountId,
-          confirmationNumber: target.providerOrderId,
-        };
-      case ORDER_EVENTS.hotelConfirmationNumberReceived:
-        return { ...fields, confirmationNumber: target.providerOrderId };
-      default:
-        return fields;
     }
   }
 

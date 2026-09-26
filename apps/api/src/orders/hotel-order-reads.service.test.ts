@@ -470,7 +470,7 @@ describe('consulta manual de una orden de hotel', () => {
 });
 
 describe('lo que el controlador de órdenes expone de una orden de hotel', () => {
-  it('ofrece la consulta; la cancelación, recién cuando la cancelación enrute por hoteles (PR-5.3)', () => {
+  it('ofrece la consulta y la cancelación que declare el proveedor, que enruta por hoteles (PR-5.3)', () => {
     expect(
       hotelOrderCapabilities({
         retrieve: true,
@@ -478,15 +478,15 @@ describe('lo que el controlador de órdenes expone de una orden de hotel', () =>
         retrieveByClientReference: true,
         reconcileByDate: false,
       }),
-    ).toEqual({ retrieve: true, cancel: false, pay: false, services: false, reshop: false });
+    ).toEqual({ retrieve: true, cancel: true, pay: false, services: false, reshop: false });
     expect(
       hotelOrderCapabilities({
         retrieve: false,
         cancel: false,
         retrieveByClientReference: false,
         reconcileByDate: false,
-      }).retrieve,
-    ).toBe(false);
+      }),
+    ).toEqual({ retrieve: false, cancel: false, pay: false, services: false, reshop: false });
   });
 
   it('reconoce sólo proveedores de hoteles registrados', () => {

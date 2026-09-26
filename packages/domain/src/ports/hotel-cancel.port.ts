@@ -22,6 +22,8 @@ export interface HotelCancelResult extends OrderCancelResult {
   /** Estado leído después del pedido. Ausente si esa lectura no se hizo o falló. */
   bookingStatus?: HotelBookingStatus;
   providerStatus?: string;
+  /** Con `bookingStatus: 'CANCELLED'`: el reembolso del proveedor a la cuenta sigue pendiente. */
+  refundAwaited?: boolean;
 }
 
 export interface HotelCancelPort {

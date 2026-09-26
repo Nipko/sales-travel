@@ -20,6 +20,11 @@ export const POST_SALE_JOBS = {
    * llegó (docs/tbo/08 RF-21). Sólo lee: la reserva nunca se reenvía desde la cola, que reintenta.
    */
   verifyHotelBooking: 'verify-hotel-booking',
+  /**
+   * Un paso del calendario que relee una reserva de hotel cuya cancelación quedó en curso o sin
+   * verificar (docs/tbo/04 §4.4). Sólo lee: la cancelación nunca se reenvía desde la cola.
+   */
+  verifyCancellation: 'verify-cancellation',
   /** El barrido periódico que ejecuta lo que la cola perdió (RNF-10: Postgres manda). */
   sweeper: 'post-sale-sweeper',
 } as const;
@@ -74,6 +79,23 @@ export interface VerifyHotelBookingJob {
   actorUserId?: string;
 }
 
+/**
+ * Un paso de la verificación de una cancelación de hotel. Sin datos personales: qué orden, qué
+ * calendario y qué paso; lo demás se lee de Postgres, que decide si el paso sigue vigente.
+ */
+export interface VerifyCancellationJob {
+  tenantId: string;
+  orderId: string;
+  /** Índice del paso en el calendario. */
+  step: number;
+  /**
+   * Epoch ms del ancla del calendario. Una cancelación nueva de la misma orden abre otro
+   * calendario, y el job de un calendario anterior no puede ejecutar el paso del nuevo.
+   */
+  anchorAt: number;
+  actorUserId?: string;
+}
+
 export interface PostSaleEnqueueOptions {
   /** Milisegundos antes de que el job pueda correr (p. ej. la relectura a 120 s de un Book incierto). */
   delayMs?: number;
@@ -121,6 +143,18 @@ export function compensationJobId(data: CompensateJob): string {
  */
 export function verifyHotelBookingJobId(data: VerifyHotelBookingJob): string {
   return postSaleJobId(POST_SALE_JOBS.verifyHotelBooking, data.orderId, String(data.step));
+}
+
+/**
+ * Un job por paso Y por calendario: `<paso>-<ancla>` en el tercer segmento. Con sólo el paso, el job
+ * de una cancelación anterior que BullMQ todavía conserva haría descartar el de la nueva.
+ */
+export function verifyCancellationJobId(data: VerifyCancellationJob): string {
+  return postSaleJobId(
+    POST_SALE_JOBS.verifyCancellation,
+    data.orderId,
+    `${data.step}-${data.anchorAt}`,
+  );
 }
 
 /**
@@ -207,6 +241,22 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
       POST_SALE_JOBS.verifyHotelBooking,
       data,
       verifyHotelBookingJobId(data),
+      options,
+    );
+  }
+
+  /**
+   * Encola un paso de la verificación de una cancelación de hotel, con el retardo hasta su hora.
+   * Como la del Book: los `attempts` repiten ESA lectura; el calendario lo lleva la fila.
+   */
+  async enqueueVerifyCancellation(
+    data: VerifyCancellationJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    return this.add(
+      POST_SALE_JOBS.verifyCancellation,
+      data,
+      verifyCancellationJobId(data),
       options,
     );
   }

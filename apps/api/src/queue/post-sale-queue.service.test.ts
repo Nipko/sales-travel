@@ -7,6 +7,7 @@ import {
   cancelRetryJobId,
   compensationJobId,
   postSaleJobId,
+  verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CompensateJob,
 } from './post-sale-queue.service.js';
@@ -227,6 +228,51 @@ describe('verificación de reservas de hotel y barrido (PR-4.7)', () => {
           removeOnFail: 500,
           jobId: `verify-hotel-booking:${ORDEN}:0`,
           delay: 120_000,
+        },
+      },
+    ]);
+  });
+
+  it('`verify-cancellation`: un job por paso Y por calendario, en tres segmentos (PR-5.3)', () => {
+    const paso = { tenantId: TENANT, orderId: ORDEN, step: 3, anchorAt: 1_790_000_000_000 };
+
+    expect(verifyCancellationJobId(paso)).toBe(`verify-cancellation:${ORDEN}:3-1790000000000`);
+    expect(bullMqJobIdRejection(verifyCancellationJobId(paso))).toBeUndefined();
+    // Una cancelación nueva de la misma orden abre otro calendario: otro job, no un duplicado.
+    expect(verifyCancellationJobId({ ...paso, anchorAt: paso.anchorAt + 1 })).not.toBe(
+      verifyCancellationJobId(paso),
+    );
+  });
+
+  it('el paso de verify-cancellation llega a BullMQ con su jobId, su retardo y los reintentos de una lectura', async () => {
+    const cola = colaConRedis();
+    const paso = { tenantId: TENANT, orderId: ORDEN, step: 0, anchorAt: 1_000 };
+
+    await expect(cola.enqueueVerifyCancellation(paso, { delayMs: 120_000 })).resolves.toBe(true);
+    await expect(cola.enqueueVerifyCancellation({ ...paso, step: 1 })).resolves.toBe(true);
+
+    expect(cola.llamadas).toEqual([
+      {
+        name: 'verify-cancellation',
+        data: paso,
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `verify-cancellation:${ORDEN}:0-1000`,
+          delay: 120_000,
+        },
+      },
+      {
+        name: 'verify-cancellation',
+        data: { ...paso, step: 1 },
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `verify-cancellation:${ORDEN}:1-1000`,
         },
       },
     ]);

@@ -21,8 +21,8 @@ import type { OrderRow, OrdersService } from './orders.service.js';
 /**
  * Lo que `/orders` hace con una orden de hotel (docs/tbo/09 PR-5.2): capacidades del registry de
  * hoteles en vez de fijas, el seguimiento en la respuesta sin PII, y la consulta manual enrutada
- * por vertical. La cancelación de una orden de hotel se rechaza ANTES de tocar nada hasta que la
- * cancelación enrute por hoteles (PR-5.3): hoy iría al adapter de vuelos después de tomar el claim.
+ * por vertical. La cancelación enruta por hoteles desde PR-5.3, con la penalidad estimada antes de
+ * confirmar.
  */
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -95,7 +95,12 @@ function banco(filas: OrderRow[]) {
       Promise.resolve(filas.find((f) => f.id === id)),
     ),
     retrieveOrder: vi.fn(() => Promise.resolve({ vertical: 'hotels' })),
-    cancelOrder: vi.fn(() => Promise.resolve({ result: { success: true, warnings: [] } })),
+    cancelOrder: vi.fn(() =>
+      Promise.resolve({
+        result: { success: true, warnings: [], settlement: 'in-progress' },
+      }),
+    ),
+    cancellationEstimate: vi.fn(() => ({ kind: 'unavailable', reason: 'no-snapshot' })),
   };
   const controller = new OrdersController(
     orders as unknown as OrdersService,
@@ -112,14 +117,14 @@ function banco(filas: OrderRow[]) {
 }
 
 describe('/orders con una orden de hotel', () => {
-  it('las capacidades salen del registry de hoteles: consulta sí, cancelación todavía no', async () => {
+  it('las capacidades salen del registry de hoteles: consulta y cancelación', async () => {
     const b = banco([fila('h1', HOTEL), fila('f1', VUELOS)]);
 
     const { orders } = await b.controller.list(USER);
 
     expect(orders.find((o) => o.id === 'h1')?.capabilities).toEqual({
       retrieve: true,
-      cancel: false,
+      cancel: true,
       pay: false,
       services: false,
       reshop: false,
@@ -179,10 +184,46 @@ describe('/orders con una orden de hotel', () => {
     expect(b.orders.retrieveOrder).not.toHaveBeenCalled();
   });
 
-  it('cancelar una orden de hotel se rechaza antes de tomar el claim (PR-5.3 la cablea)', async () => {
+  it('cancelar una orden de hotel llega al servicio con la fila del tenant y devuelve su resultado', async () => {
     const b = banco([fila('h1', HOTEL)]);
+
+    await expect(b.controller.cancel(USER, 'h1')).resolves.toEqual({
+      success: true,
+      warnings: [],
+      settlement: 'in-progress',
+    });
+    expect(b.orders.cancelOrder).toHaveBeenCalledWith(TENANT, 'h1', 'LOC-h1', USER);
+  });
+
+  it('una orden de hotel emitida no existe (nunca hay `ticketed` en hoteles): se rechaza sin tocar nada', async () => {
+    const b = banco([fila('h1', HOTEL, { status: 'ticketed' })]);
 
     await expect(b.controller.cancel(USER, 'h1')).rejects.toBeInstanceOf(BadRequestException);
     expect(b.orders.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('la penalidad estimada se pide con la fila leída con el tenant; una orden ajena es 404', async () => {
+    const b = banco([fila('h1', HOTEL)]);
+
+    await expect(b.controller.cancellationEstimate(USER, 'h1')).resolves.toEqual({
+      orderId: 'h1',
+      estimate: { kind: 'unavailable', reason: 'no-snapshot' },
+    });
+    expect(b.orders.cancellationEstimate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'h1', provider: HOTEL }),
+    );
+
+    await expect(b.controller.cancellationEstimate(USER, 'otra')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('un proveedor que no cancela no ofrece estimación', async () => {
+    const b = banco([fila('x1', 'sin-cancelacion')]);
+
+    await expect(b.controller.cancellationEstimate(USER, 'x1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(b.orders.cancellationEstimate).not.toHaveBeenCalled();
   });
 });

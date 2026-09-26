@@ -452,6 +452,13 @@ export interface HotelOrderTrackingTable {
   /** Índice del PRÓXIMO paso; sólo avanza. */
   verify_step: number | null;
   verify_next_at: Timestamp | null;
+  /**
+   * 0046: calendario de la lectura que verifica una cancelación aceptada sin terminar o sin
+   * respuesta. Mismas reglas que el de 0044, en columnas propias.
+   */
+  cancel_verify_anchor_at: Timestamp | null;
+  cancel_verify_step: number | null;
+  cancel_verify_next_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

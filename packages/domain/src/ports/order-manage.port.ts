@@ -76,11 +76,28 @@ export type OrderForModification =
       readonly versionStamp: OrderVersionStamp;
     };
 
+/**
+ * En qué quedó una cancelación aceptada.
+ *
+ * - `final`: la reserva ya figura cancelada en el proveedor.
+ * - `in-progress`: el proveedor aceptó el pedido y todavía lo procesa (p. ej. lo mandó al hotel),
+ *   o la lectura que lo diría no se pudo hacer. La orden queda pendiente hasta que una lectura la
+ *   cierre; mostrarla como cancelada sería prometer una habitación liberada que sigue cobrable.
+ */
+export type OrderCancelSettlement = 'final' | 'in-progress';
+
 export interface OrderCancelResult {
   success: boolean;
   refundAmount?: { amountMinor: number; currency: string };
   warnings: string[];
   error?: string;
+  /** Ausente = `final`: los proveedores que responden con el estado final no lo informan. */
+  settlement?: OrderCancelSettlement;
+  /**
+   * Penalidad ESTIMADA por la plataforma con las políticas que se aceptaron al reservar. No es dato
+   * del proveedor y por eso no va en `refundAmount`, que sólo lleva lo que el proveedor informa.
+   */
+  estimatedPenalty?: { amountMinor: number; currency: string };
 }
 
 export interface OrderPayRequest {

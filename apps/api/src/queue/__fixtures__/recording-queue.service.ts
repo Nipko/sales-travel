@@ -4,12 +4,14 @@ import {
   POST_SALE_SWEEP_EVERY_MS,
   compensationJobId,
   isValidDelayMs,
+  verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
   type CompensateJob,
   type PostSaleEnqueueOptions,
   type PostSaleJobName,
   type PostSaleQueueService,
+  type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
 } from '../post-sale-queue.service.js';
@@ -32,7 +34,12 @@ export function bullMqJobIdRejection(jobId: string): string | undefined {
 
 export interface RecordedPostSaleJob {
   name: PostSaleJobName;
-  data: CancelRetryJob | VerifyCreationJob | CompensateJob | VerifyHotelBookingJob;
+  data:
+    | CancelRetryJob
+    | VerifyCreationJob
+    | CompensateJob
+    | VerifyHotelBookingJob
+    | VerifyCancellationJob;
   jobId?: string;
   delayMs?: number;
   /** Por qué la cola real no lo habría encolado; ausente si lo habría aceptado. */
@@ -56,6 +63,7 @@ export class RecordingQueueService {
   readonly verifications: VerifyCreationJob[] = [];
   readonly compensations: CompensateJob[] = [];
   readonly hotelVerifications: VerifyHotelBookingJob[] = [];
+  readonly cancelVerifications: VerifyCancellationJob[] = [];
   /** Intervalos con que se pidió programar el barrido. */
   readonly sweeperSchedules: number[] = [];
   readonly jobs: RecordedPostSaleJob[] = [];
@@ -90,6 +98,19 @@ export class RecordingQueueService {
       POST_SALE_JOBS.verifyHotelBooking,
       data,
       verifyHotelBookingJobId(data),
+      options,
+    );
+  }
+
+  enqueueVerifyCancellation(
+    data: VerifyCancellationJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    this.cancelVerifications.push(data);
+    return this.record(
+      POST_SALE_JOBS.verifyCancellation,
+      data,
+      verifyCancellationJobId(data),
       options,
     );
   }

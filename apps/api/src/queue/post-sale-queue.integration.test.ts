@@ -8,6 +8,7 @@ import {
   POST_SALE_SWEEP_EVERY_MS,
   cancelRetryJobId,
   compensationJobId,
+  verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
   type CompensateJob,
@@ -92,6 +93,9 @@ describe('jobId de post-venta — la regla de BullMQ, sin Redis', () => {
       cancelRetryJobId(reintentoDeCancelacion(orderId)),
       compensationJobId(compensacion(orderId)),
       ...[0, 1, 2, 3].map((step) => verifyHotelBookingJobId({ tenantId: TENANT, orderId, step })),
+      ...[0, 4].map((step) =>
+        verifyCancellationJobId({ tenantId: TENANT, orderId, step, anchorAt: Date.now() }),
+      ),
     ];
 
     expect(ids.map(rechazoDeBullMq)).toEqual(ids.map(() => undefined));
@@ -150,6 +154,13 @@ d('PostSaleQueueService contra BullMQ real', () => {
     await expect(cola.enqueueCompensation(compensa)).resolves.toBe(true);
     await expect(cola.enqueueVerifyCreation(verifica)).resolves.toBe(true);
     await expect(cola.enqueueVerifyHotelBooking(paso, { delayMs: 60_000 })).resolves.toBe(true);
+    const cancelacionEnCurso = { tenantId: TENANT, orderId, step: 0, anchorAt: Date.now() };
+    await expect(
+      cola.enqueueVerifyCancellation(cancelacionEnCurso, { delayMs: 120_000 }),
+    ).resolves.toBe(true);
+    expect((await inspector.getJob(verifyCancellationJobId(cancelacionEnCurso)))?.opts.delay).toBe(
+      120_000,
+    );
 
     expect((await inspector.getJob(cancelRetryJobId(cancelacion)))?.name).toBe('cancel');
     expect((await inspector.getJob(compensationJobId(compensa)))?.name).toBe('compensate');

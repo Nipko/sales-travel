@@ -274,6 +274,21 @@ export class OrdersController {
     return result;
   }
 
+  /**
+   * La penalidad estimada de cancelar una reserva de hotel, para mostrarla antes de confirmar
+   * (docs/tbo/08 RF-25; D-TBO-26 A). No llama al proveedor: sale del snapshot del PreBook que la
+   * orden guardó, y es nuestra estimación, no un dato del proveedor.
+   */
+  @Get(':id/cancellation-estimate')
+  async cancellationEstimate(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    this.assertSupports(row, 'cancel');
+    return { orderId: row.id, estimate: this.orders.cancellationEstimate(row) };
+  }
+
   /** Historial durable de operaciones de post-venta de la reserva. */
   @Get(':id/operations')
   async operations(@CurrentUser() userId: string | undefined, @Param('id') id: string) {

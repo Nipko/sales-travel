@@ -5,7 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import {
   type BookingContactInfo,
   type FlightSearchCriteria,
@@ -23,11 +23,13 @@ import {
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
 import type {
+  DB,
   OrderOperationStatus,
   OrderOperationType,
   OrderStatus,
 } from '../database/database.types.js';
 import { AuditService } from '../audit/audit.service.js';
+import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -48,6 +50,10 @@ import {
   verificationSummary,
   type SagaDecision,
 } from './order-create.saga.js';
+import {
+  HotelOrderCancellationService,
+  type HotelCancelAttempt,
+} from './hotel-order-cancellation.service.js';
 import { HotelOrderReadsService, type HotelOrderReadResult } from './hotel-order-reads.service.js';
 import {
   OrderCreateIntentStore,
@@ -147,6 +153,21 @@ interface CancellationClaim {
   priorStatus: OrderStatus;
 }
 
+/** Lo que se escribe junto con el cierre de la operación `cancel`, en su misma transacción. */
+interface CancellationCompletion {
+  /** Se suma al resultado durable de la operación (vocabulario cerrado). */
+  readonly result?: Readonly<Record<string, unknown>>;
+  readonly inTransaction?: (trx: Transaction<DB>) => Promise<void>;
+}
+
+/** El texto durable de un intento que lanzó: dice qué se puede hacer después, nunca el error. */
+function thrownCancelMessage(failure: CancelRetryPolicy): string {
+  if (failure.reconciliationRequired) return 'Cancelación no verificada; requiere conciliación.';
+  return failure.retryable
+    ? 'Cancelación fallida antes de enviar el write.'
+    : 'Cancelación rechazada antes de completarse.';
+}
+
 export interface OrderOperationRow {
   id: string;
   type: OrderOperationType;
@@ -228,6 +249,8 @@ export class OrdersService {
      * de vuelos, que no la necesitan: en la app siempre está.
      */
     @Optional() private readonly hotelReads?: HotelOrderReadsService,
+    /** La cancelación de las órdenes de hotel (PR-5.3). Opcional por el mismo motivo. */
+    @Optional() private readonly hotelCancellations?: HotelOrderCancellationService,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -925,6 +948,7 @@ export class OrdersService {
     actorUserId?: string,
   ): Promise<CancellationClaim> {
     this.assertGenericCancellationAllowed(order);
+    const hotels = this.hotelCancellationsFor(order);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         const operation = await trx
@@ -958,6 +982,7 @@ export class OrdersService {
             'Otra ejecución cambió la reserva antes de adquirir el claim de cancelación.',
           );
         }
+        await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId: operation.id, priorStatus: order.status };
       });
     } catch (error) {
@@ -981,6 +1006,7 @@ export class OrdersService {
     policy: CancelRetryPolicy,
     actorUserId?: string,
     finalOrderStatus?: OrderStatus,
+    completion: CancellationCompletion = {},
   ): Promise<OrderRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
       const completed = await trx
@@ -989,6 +1015,7 @@ export class OrdersService {
           status,
           last_error: lastError,
           result: JSON.stringify({
+            ...completion.result,
             status,
             ...policy,
             priorOrderStatus: claim.priorStatus,
@@ -1004,6 +1031,7 @@ export class OrdersService {
           'Se perdió el claim durable de cancelación. No se puede reenviar el write hasta conciliar.',
         );
       }
+      await completion.inTransaction?.(trx);
 
       if (finalOrderStatus === undefined) return undefined;
       const order = await trx
@@ -1043,6 +1071,10 @@ export class OrdersService {
     if (existing.status === 'cancelled') {
       throw new ConflictException('La reserva ya está cancelada.');
     }
+    const hotels = this.hotelCancellationsFor(existing);
+    if (hotels !== undefined) {
+      return this.runHotelCancel(hotels, tenantId, existing, claim, actorUserId);
+    }
 
     let result: OrderCancelResult;
     /** Lo que el proveedor cuenta de la cancelación además del booleano. */
@@ -1076,17 +1108,12 @@ export class OrdersService {
       }
     } catch (err) {
       const failure = classifyCancelThrownFailure(err);
-      const durableError = failure.reconciliationRequired
-        ? 'Cancelación no verificada; requiere conciliación.'
-        : failure.retryable
-          ? 'Cancelación fallida antes de enviar el write.'
-          : 'Cancelación rechazada antes de completarse.';
       await this.completeCancellationOperation(
         tenantId,
         id,
         claim,
         'failed',
-        durableError,
+        thrownCancelMessage(failure),
         failure,
         actorUserId,
         failure.reconciliationRequired ? undefined : claim.priorStatus,
@@ -1183,6 +1210,107 @@ export class OrdersService {
     return { result };
   }
 
+  /** El servicio de cancelación de hoteles, si la orden es de un proveedor de hoteles. */
+  private hotelCancellationsFor(
+    order: Pick<OrderRow, 'provider'>,
+  ): HotelOrderCancellationService | undefined {
+    return this.hotelCancellations?.handles(order.provider) === true
+      ? this.hotelCancellations
+      : undefined;
+  }
+
+  /**
+   * La cancelación de una orden de hotel (docs/tbo/09 PR-5.3; 04 §4.4). Mismo claim, misma
+   * política y mismo `OrderCancellationAttempted` que la de vuelos; cambia qué queda de la orden:
+   * una cancelación aceptada que el proveedor todavía procesa la deja `pending` ("Cancelación en
+   * curso") con una lectura agendada que la cierra, y el seguimiento se escribe en la misma
+   * transacción que cierra la operación.
+   */
+  private async runHotelCancel(
+    hotels: HotelOrderCancellationService,
+    tenantId: string,
+    order: OrderRow,
+    claim: CancellationClaim,
+    actorUserId?: string,
+  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    let attempt: HotelCancelAttempt;
+    try {
+      attempt = await hotels.send(tenantId, order);
+    } catch (err) {
+      const failure = classifyCancelThrownFailure(err);
+      const tracking = hotels.thrownTracking(failure, Date.now());
+      const verifyScheduled = tracking.openCalendar !== undefined;
+      await this.completeCancellationOperation(
+        tenantId,
+        order.id,
+        claim,
+        'failed',
+        thrownCancelMessage(failure),
+        failure,
+        actorUserId,
+        failure.reconciliationRequired ? undefined : claim.priorStatus,
+        {
+          result: { vertical: 'hotels', verifyScheduled },
+          inTransaction: (trx) => hotels.writeTracking(trx, tenantId, order.id, tracking),
+        },
+      );
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.cancelled,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: order.provider,
+          vertical: 'hotels',
+          success: false,
+          threw: true,
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+          outcome: failure.outcome,
+          retryable: failure.retryable,
+          reconciliationRequired: failure.reconciliationRequired,
+        },
+      });
+      if (failure.reconciliationRequired) {
+        await this.emitCancellationEscalation(tenantId, order.id, order.provider, actorUserId, {
+          reason: failure.reason,
+          threw: true,
+          vertical: 'hotels',
+          verifyScheduled,
+        });
+      }
+      await hotels.afterThrow(tenantId, order, tracking, actorUserId ?? order.user_id);
+      throw err;
+    }
+
+    const settled = hotels.settle(attempt, claim.priorStatus, Date.now());
+    const { success } = settled.result;
+    const finalized = await this.completeCancellationOperation(
+      tenantId,
+      order.id,
+      claim,
+      success ? 'success' : 'failed',
+      success ? null : 'Cancelación rechazada por el proveedor.',
+      success ? CANCEL_SUCCESS_POLICY : CANCEL_REJECTED_POLICY,
+      actorUserId,
+      settled.outcome.orderStatus,
+      {
+        result: settled.record,
+        inTransaction: (trx) => hotels.writeTracking(trx, tenantId, order.id, settled.tracking),
+      },
+    );
+    await this.audit.emit({
+      eventType: ORDER_EVENTS.cancelled,
+      tenantId,
+      actorUserId,
+      aggregateType: 'order',
+      aggregateId: order.id,
+      payload: { provider: order.provider, success, ...settled.record },
+    });
+    await hotels.afterSettled(tenantId, settled, actorUserId);
+    return success ? { result: settled.result, order: finalized } : { result: settled.result };
+  }
+
   /**
    * Un resultado ambiguo nunca se convierte en un retry. Queda en la cola humana con una señal
    * cerrada y sin copiar texto libre del proveedor al evento durable.
@@ -1265,6 +1393,7 @@ export class OrdersService {
     operationId: string,
     order: OrderRow,
   ): Promise<CancellationClaim | undefined> {
+    const hotels = this.hotelCancellationsFor(order);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         const claimed = await trx
@@ -1296,6 +1425,7 @@ export class OrdersService {
             'La reserva cambió antes de adquirir el claim de reintento de cancelación.',
           );
         }
+        await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId, priorStatus: order.status };
       });
     } catch (error) {
@@ -1379,8 +1509,25 @@ export class OrdersService {
         );
       }
     }
+    await this.hotelCancellationsFor(current)?.assertCancellable(tenantId, current);
     const claim = await this.beginCancellationOperation(tenantId, current, actorUserId);
     return this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+  }
+
+  /**
+   * La penalidad estimada de cancelar una orden de hotel, para mostrarla antes de confirmar (RF-25;
+   * D-TBO-26 A). `row` es la fila que el controlador ya leyó con el tenant fijado.
+   */
+  cancellationEstimate(
+    row: Pick<OrderRow, 'provider' | 'selected_offer'>,
+  ): HotelCancellationEstimate {
+    const hotels = this.hotelCancellationsFor(row);
+    if (hotels === undefined) {
+      throw new BadRequestException(
+        'La penalidad estimada sólo existe para reservas de hotel: el resto la informa el proveedor al cancelar.',
+      );
+    }
+    return hotels.estimate(row);
   }
 
   /**
@@ -1478,6 +1625,8 @@ export class OrdersService {
     const order = await this.findById(tenantId, orderId);
     if (!order?.provider_order_id) return;
     if (order.status === 'cancelled') return;
+    // Una reserva de hotel no tiene ítems que compensar por separado: se cancela entera o nada.
+    if (this.hotelCancellationsFor(order) !== undefined) return;
 
     const previous = await this.latestCancelOperation(tenantId, orderId);
     let claim: CancellationClaim | undefined;
@@ -1674,6 +1823,7 @@ export class OrdersService {
       throw new ConflictException('La reserva ya está cancelada.');
     }
     this.assertGenericCancellationAllowed(order);
+    await this.hotelCancellationsFor(order)?.assertCancellable(tenantId, order);
     const claim = await this.claimCancelRetry(tenantId, opId, order);
     if (!claim) {
       throw new ConflictException('Otra ejecución ya tomó esta operación de cancelación.');
