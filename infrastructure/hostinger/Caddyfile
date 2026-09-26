@@ -26,6 +26,26 @@ api.planetour.cloud {
 		# clave para que forjar CF-Connecting-IP no alcance para estrenar cupo.
 		header_up -X-Edge-Peer-IP
 		header_up X-Edge-Peer-IP {remote_host}
+		# Despliegue sin 502 (PR-4.10): `docker compose up -d` detiene el api viejo —deja de
+		# aceptar conexiones y drena hasta 125 s— y sólo después arranca el nuevo, que además
+		# espera a `migrate`. En ese hueco la conexión falla (rechazada, o sin nombre que
+		# resolver) y Caddy reintenta en vez de responder 502. Un fallo al CONECTAR se reintenta
+		# con cualquier método porque la petición no llegó al api; si la conexión se cortó
+		# después, sólo GET (el `lb_retry_match` por defecto): ampliarlo a POST podría ejecutar
+		# dos veces un Book.
+		# Que un POST conserve su cuerpo entre reintentos exige Caddy >= 2.11.4: antes, Go lo
+		# cierra en el primer fallo al conectar y el POST que cae en el hueco llega al api nuevo
+		# con el cuerpo cortado y termina igual en 502 (probado con 2.10.2).
+		# 60 s cubren un drenaje de búsquedas y PreBook (llamadas a proveedor de hasta 30 s),
+		# `migrate` y el arranque, y le dejan 40 s a la petición antes del corte de Cloudflare a
+		# los 100 s (524). Un Book (120 s), o un Cancel, una conciliación o contenido de TBO
+		# (60 s) en curso alargan el drenaje: lo que llegue al principio sigue viendo 502.
+		# El precio: con el api caído de verdad, cada petición tarda 60 s en fallar.
+		# El panel (web-b2b) llama al api por la red interna y no pasa por acá.
+		lb_try_duration 60s
+		# El doble del de por defecto (250 ms): la mitad de dials y de consultas DNS mientras no
+		# hay contenedor, a cambio de hasta medio segundo más en engancharse al api nuevo.
+		lb_try_interval 500ms
 	}
 	import security_headers
 }
