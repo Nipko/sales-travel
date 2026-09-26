@@ -10,6 +10,7 @@ import type {
   SearchContext,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
+import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
 
 /**
  * Un adapter de vuelos = los cuatro ports del dominio.
@@ -166,6 +167,24 @@ export interface TenantAdapter<TAdapter> {
    * Y el override de entorno gana sobre esto: es el kill-switch de operaciones.
    */
   readonly callPolicy?: CallPolicy | undefined;
+  /**
+   * Cómo pasan por el breaker las llamadas con ESTE adapter: la huella de la cuenta para el
+   * circuito por cuenta y el efecto de los errores que el ACL lanza sin `failure.circuit`.
+   * `undefined` = como siempre: circuito por código y efecto leído de la forma del error.
+   */
+  readonly circuit?: ProviderCircuitOptions | undefined;
+}
+
+/**
+ * Lo que quien llama sabe de una llamada fallida y el error no trae.
+ *
+ * Existe porque el adapter de una cuenta heredada es el MISMO para el consolidador y para sus
+ * agencias: el error no puede saber si la credencial rechazada es de quien lo ve o de su
+ * consolidador, y el mensaje cambia de destinatario ("verificá tus credenciales" frente a
+ * "avisale al consolidador").
+ */
+export interface ProviderErrorContext {
+  readonly credentialSource?: CredentialSource;
 }
 
 /**
@@ -355,6 +374,28 @@ export class ProviderAccountIncompleteError extends NotFoundException {
       `la cuenta de '${providerCode}' resoluble para este tenant está incompleta (faltan: ${missingFields.join(', ')})`,
     );
     this.name = 'ProviderAccountIncompleteError';
+  }
+}
+
+/**
+ * El tenant SÍ resuelve una cuenta con este proveedor, pero la plataforma no acepta operar con
+ * ella: por ejemplo, TBO mientras sólo se admita la cuenta del consolidador (D-TBO-03 A, Q-77).
+ *
+ * Extiende `NotFoundException` por lo mismo que {@link ProviderAccountIncompleteError}: el efecto
+ * es el de no tener cuenta, y la búsqueda sigue sin el proveedor. Lleva `detail` porque la acción
+ * del vendedor no es ninguna de las dos que el registry sabe decir ("cargá" o "completá"): una
+ * cuenta que se acepta en la bóveda y se rechaza en silencio es una agencia creyendo que vende
+ * con un proveedor que nunca se llama.
+ *
+ * `detail` es un mensaje ya humanizado y sin datos de la cuenta.
+ */
+export class ProviderAccountNotAllowedError extends NotFoundException {
+  constructor(
+    readonly providerCode: string,
+    readonly detail: string,
+  ) {
+    super(`la cuenta de '${providerCode}' resoluble para este tenant no está admitida`);
+    this.name = 'ProviderAccountNotAllowedError';
   }
 }
 

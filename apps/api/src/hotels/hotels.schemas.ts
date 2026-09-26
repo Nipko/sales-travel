@@ -1,5 +1,5 @@
 import { HotelProviderCodeSchema } from '@sales-travel/canonical';
-import { CountryCodeSchema, CurrencyCodeSchema, z } from '@sales-travel/validation';
+import { CurrencyCodeSchema, toIsoCountryAlpha2, z } from '@sales-travel/validation';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha esperada YYYY-MM-DD');
 const lang = z.enum(['EN', 'ES', 'PT']);
@@ -37,11 +37,34 @@ const rooms = z.array(RoomDistributionSchema).min(1).max(PLATFORM_OCCUPANCY_LIMI
  */
 const saleCurrency = z.string().trim().toUpperCase().pipe(CurrencyCodeSchema);
 
+export const GUEST_NATIONALITY_INVALID =
+  'No reconocemos la nacionalidad del pasajero principal: indicá el código ISO del país, de 2 o 3 letras (por ejemplo, CO o COL).';
+
 /**
- * Nacionalidad del huésped principal, ISO 3166-1 alfa-2. No es el país del punto de venta
- * (`countryCode`) y nunca se deduce de él.
+ * Nacionalidad del pasajero principal, que sale siempre en ISO 3166-1 alfa-2 (RF-06). No es el
+ * país del punto de venta (`countryCode`) y nunca se deduce de él ni de la agencia.
+ *
+ * - Alfa-3 se convierte: es como la guarda el CRM (`'COL'` → `'CO'`), y así llega al prellenar la
+ *   búsqueda con un cliente.
+ * - Vacía cuenta como ausente: es lo que manda un formulario con el campo sin completar, y la
+ *   ausencia ya tiene su camino (el proveedor que la necesita queda fuera con el motivo).
+ * - Cualquier otra cosa se rechaza con un mensaje que se la pide al vendedor. No se adivina ni se
+ *   descarta callada: un texto libre del CRM mandado "parecido" es una tarifa de otra nacionalidad.
  */
-const guestNationality = z.string().trim().toUpperCase().pipe(CountryCodeSchema);
+const guestNationality = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z
+    .string()
+    .transform((value, ctx) => {
+      const code = toIsoCountryAlpha2(value);
+      if (code === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: GUEST_NATIONALITY_INVALID });
+        return z.NEVER;
+      }
+      return code;
+    })
+    .optional(),
+);
 
 // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -60,7 +83,7 @@ export const HotelAvailabilityInputSchema = z
     hotelIds: z.array(z.string().min(1)).max(100).optional(),
     destinationId: z.coerce.number().int().positive().optional(),
     rooms,
-    guestNationality: guestNationality.optional(),
+    guestNationality,
     countryCode: z.string().length(2).optional(),
     language: lang.optional(),
     refundableOnly: z.boolean().optional(),
@@ -79,7 +102,7 @@ export const HotelDetailInputSchema = z.object({
   currency: saleCurrency.optional(),
   rooms,
   roompackId: z.string().min(1).optional(),
-  guestNationality: guestNationality.optional(),
+  guestNationality,
   countryCode: z.string().length(2).optional(),
   language: lang.optional(),
   refundableOnly: z.boolean().optional(),

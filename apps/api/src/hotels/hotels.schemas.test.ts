@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BookSchema,
   CancelBodySchema,
+  GUEST_NATIONALITY_INVALID,
   HotelAvailabilityInputSchema,
   HotelDetailInputSchema,
   HotelSuggestQuerySchema,
@@ -215,9 +216,70 @@ describe('HotelAvailabilityInputSchema', () => {
     const r = HotelAvailabilityInputSchema.parse({ ...busqueda, guestNationality: 'ar' });
     expect(r.guestNationality).toBe('AR');
     expect(HotelAvailabilityInputSchema.parse(busqueda)).not.toHaveProperty('guestNationality');
+  });
+});
+
+describe('guestNationality — nacionalidad del pasajero principal (RF-06, PR-2.4)', () => {
+  function nacionalidad(valor: unknown) {
+    return HotelAvailabilityInputSchema.safeParse({ ...busqueda, guestNationality: valor });
+  }
+
+  it("RF-06 CA 2: el alfa-3 del CRM se convierte: 'COL' → 'CO'", () => {
+    expect(nacionalidad('COL').data?.guestNationality).toBe('CO');
+  });
+
+  it('PR-2.4 cambia PR-0.5: un alfa-3 ya no se rechaza, se convierte', () => {
+    expect(nacionalidad('ARG').data?.guestNationality).toBe('AR');
+    expect(nacionalidad(' ven ').data?.guestNationality).toBe('VE');
+  });
+
+  it.each(['Colombia', 'colombiano', 'XX', 'XKX', 'C0', '12', 'COLO', 'ß'])(
+    'RF-06 CA 2: "%s" no convierte, no se envía y se le pide al vendedor',
+    (valor) => {
+      const r = nacionalidad(valor);
+      expect(r.success).toBe(false);
+      expect(r.error?.issues).toEqual([
+        expect.objectContaining({ path: ['guestNationality'], message: GUEST_NATIONALITY_INVALID }),
+      ]);
+    },
+  );
+
+  it('el mensaje le dice al vendedor qué escribir y no repite lo que escribió', () => {
+    expect(GUEST_NATIONALITY_INVALID).toContain('CO o COL');
+    expect(nacionalidad('colombiano').error?.message).not.toContain('colombiano');
+  });
+
+  it.each(['', '   '])(
+    'vacía ("%s") cuenta como ausente: el proveedor que la exige queda fuera',
+    (valor) => {
+      const r = nacionalidad(valor);
+      expect(r.success).toBe(true);
+      expect(r.data?.guestNationality).toBeUndefined();
+    },
+  );
+
+  it('un valor que no es texto no pasa', () => {
+    expect(nacionalidad(57).success).toBe(false);
+  });
+
+  it('el país del punto de venta no se convierte en nacionalidad', () => {
+    const r = HotelAvailabilityInputSchema.parse({ ...busqueda, countryCode: 'CO' });
+    expect(r.guestNationality).toBeUndefined();
+  });
+
+  it('el detalle aplica la misma regla', () => {
+    const detalle = {
+      hotelId: '101',
+      checkinDate: '2026-11-10',
+      checkoutDate: '2026-11-13',
+      rooms: [{ adults: 2 }],
+    };
     expect(
-      HotelAvailabilityInputSchema.safeParse({ ...busqueda, guestNationality: 'ARG' }).success,
-    ).toBe(false);
+      HotelDetailInputSchema.parse({ ...detalle, guestNationality: 'per' }).guestNationality,
+    ).toBe('PE');
+    expect(HotelDetailInputSchema.safeParse({ ...detalle, guestNationality: 'Perú' }).success).toBe(
+      false,
+    );
   });
 });
 

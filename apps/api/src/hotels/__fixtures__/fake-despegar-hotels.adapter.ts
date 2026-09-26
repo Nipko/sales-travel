@@ -43,8 +43,8 @@ import { DespegarHotelsProviderFactory } from '../../providers-despegar/despegar
  * falso, el envoltorio neutral REAL, el registry REAL y el servicio. El snapshot
  * (`availability.snapshot.json`) se reproduce con el mismo insumo.
  *
- * Sólo lo importan tests. Nada lo impide todavía: el guard de alcanzabilidad de fixtures
- * (`search/sin-ofertas-fabricadas.guard.test.ts`) tiene hoy su única raíz en el endpoint de vuelos.
+ * Sólo lo importan tests, y el guard de alcanzabilidad de fixtures
+ * (`search/sin-ofertas-fabricadas.guard.test.ts`) lo vigila desde los endpoints de hoteles.
  */
 
 type RespuestaDespegar = Parameters<typeof mapAvailability>[0];

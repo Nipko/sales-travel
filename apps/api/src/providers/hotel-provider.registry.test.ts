@@ -27,6 +27,7 @@ import {
 import { EnvHotelProviderFlags } from './hotel-providers.module.js';
 import {
   ProviderAccountIncompleteError,
+  ProviderAccountNotAllowedError,
   ProviderNotAvailableError,
   type ProviderFlagsPort,
 } from './provider.types.js';
@@ -300,6 +301,39 @@ describe('HotelProviderRegistry', () => {
       expect(unavailable[0]?.detail).toContain('password');
     });
 
+    it('una cuenta que el proveedor NO admite queda ausente con la acción que él mismo dice', async () => {
+      const detalle = 'Este proveedor sólo opera con la cuenta del consolidador.';
+      const r = registry([
+        new StubHotelProviderFactory({
+          code: 'alfa-hotels',
+          failResolveWith: new ProviderAccountNotAllowedError('alfa-hotels', detalle),
+        }),
+      ]);
+
+      const { active, unavailable } = await r.forTenant(TENANT);
+
+      expect(active).toEqual([]);
+      expect(unavailable).toEqual([
+        { code: 'alfa-hotels', reason: 'no-credentials', detail: detalle },
+      ]);
+      await expect(r.byCode(TENANT, 'alfa-hotels')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+    });
+
+    it('lo que el factory declara para el breaker viaja con el proveedor resuelto', async () => {
+      const circuit = { accountRef: 'acct-1', effectOf: () => 'IGNORE' as const };
+      const r = registry([
+        new StubHotelProviderFactory({ code: 'alfa-hotels', circuit }),
+        new StubHotelProviderFactory({ code: 'beta-hotels' }),
+      ]);
+
+      const { active } = await r.forTenant(TENANT);
+
+      expect(active.find((p) => p.code === 'alfa-hotels')?.circuit).toBe(circuit);
+      expect(active.find((p) => p.code === 'beta-hotels')).not.toHaveProperty('circuit');
+    });
+
     it('un fallo REAL de la bóveda se propaga: no se degrada en silencio', async () => {
       const r = registry([
         new StubHotelProviderFactory({
@@ -365,6 +399,45 @@ describe('HotelProviderRegistry', () => {
 
       expect(beta.adapterFor(TENANT).searchAvailability).toHaveBeenCalledTimes(1);
       expect(alfa.adapterFor(TENANT).searchAvailability).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('byCodeForSale', () => {
+    it("'opt-in' con el flag apagado es 400 sin tocar la bóveda: nombrarlo no lo enciende", async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
+      const { port, isEnabledForTenant } = flags(false);
+      const r = registry([stub], port);
+
+      await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+      expect(isEnabledForTenant).toHaveBeenCalledWith(TENANT, 'alfa-hotels');
+      expect(stub.resolveCalls).toEqual([]);
+    });
+
+    it("'opt-in' con el flag encendido para ESE tenant se resuelve como en `byCode`", async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
+      const r = registry([stub], flags((tenantId) => tenantId === TENANT).port);
+
+      await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).resolves.toMatchObject({
+        code: 'alfa-hotels',
+      });
+      await expect(r.byCodeForSale(OTRO_TENANT, 'alfa-hotels')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+    });
+
+    it('lo que no es `opt-in` no mira el flag, y el desconocido sigue siendo 400', async () => {
+      const { port, isEnabledForTenant } = flags(false);
+      const r = registry([new StubHotelProviderFactory({ code: 'alfa-hotels' })], port);
+
+      await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).resolves.toMatchObject({
+        code: 'alfa-hotels',
+      });
+      await expect(r.byCodeForSale(TENANT, 'no-existe')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+      expect(isEnabledForTenant).not.toHaveBeenCalled();
     });
   });
 

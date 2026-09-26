@@ -51,13 +51,12 @@ export type CircuitEffect = (typeof CIRCUIT_EFFECTS)[number];
  */
 export type CallScope = 'sales' | 'post-sale';
 
-export interface CircuitCallOptions {
-  /**
-   * Por defecto `sales`: una llamada que se olvida de declararse queda del lado que
-   * `código:ventas` apaga. Al revés, olvidarse dejaría vendiendo a un proveedor que operaciones
-   * quiso frenar.
-   */
-  readonly scope?: CallScope;
+/**
+ * Lo que el factory de un proveedor declara sobre cómo pasan por el breaker las llamadas hechas
+ * con UN adapter resuelto. Viaja con el proveedor resuelto hasta cada llamada: quien llama no
+ * conoce ni la cuenta ni los errores del ACL.
+ */
+export interface ProviderCircuitOptions {
   /**
    * Huella de la cuenta con la que sale la llamada (digest del dueño y del usuario de la
    * credencial), NUNCA el id del tenant: con la cuenta heredada, el id del tenant no dice qué
@@ -66,6 +65,23 @@ export interface CircuitCallOptions {
    * circuito del código.
    */
   readonly accountRef?: string;
+  /**
+   * Efecto que el proveedor le asigna a un error, por encima de lo que diga su forma. Existe para
+   * los errores que el ACL lanza ANTES del cable (credenciales, construcción del request, cupo
+   * local) y que no traen `failure.circuit`: sin esto contarían como caída, y cinco búsquedas mal
+   * armadas de una agencia cortarían el proveedor para toda la red (RNF-03 punto 4).
+   * `undefined` = el proveedor no opina y se lee la forma del error.
+   */
+  readonly effectOf?: (err: unknown) => CircuitEffect | undefined;
+}
+
+export interface CircuitCallOptions extends ProviderCircuitOptions {
+  /**
+   * Por defecto `sales`: una llamada que se olvida de declararse queda del lado que
+   * `código:ventas` apaga. Al revés, olvidarse dejaría vendiendo a un proveedor que operaciones
+   * quiso frenar.
+   */
+  readonly scope?: CallScope;
 }
 
 /** Por qué el breaker no dejó salir la llamada. */
@@ -194,7 +210,7 @@ export class CircuitBreakerService {
     run: () => Promise<T>,
     options: CircuitCallOptions = {},
   ): Promise<T> {
-    const { scope = 'sales', accountRef } = options;
+    const { scope = 'sales', accountRef, effectOf: declared } = options;
 
     // Por código y no por la clave del circuito: apagar un proveedor apaga también sus cuentas.
     const level = killLevel(providerCode);
@@ -238,7 +254,7 @@ export class CircuitBreakerService {
       c.state = 'closed';
       return result;
     } catch (err) {
-      this.recordFailure(providerCode, c, accountKey, err);
+      this.recordFailure(providerCode, c, accountKey, err, declared);
       throw err;
     }
   }
@@ -266,8 +282,11 @@ export class CircuitBreakerService {
     c: Circuit,
     accountKey: string | undefined,
     err: unknown,
+    declared: ProviderCircuitOptions['effectOf'],
   ): void {
-    const { effect, kind } = effectOf(err);
+    const shape = effectOf(err);
+    const effect = declared?.(err) ?? shape.effect;
+    const { kind } = shape;
     if (effect === 'IGNORE') return;
 
     if (effect === 'OPEN_ACCOUNT' && accountKey !== undefined) {

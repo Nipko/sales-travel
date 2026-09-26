@@ -12,8 +12,10 @@ import {
 import {
   CallPolicySchema,
   ProviderAccountIncompleteError,
+  ProviderAccountNotAllowedError,
   ProviderNotAvailableError,
   type CallPolicy,
+  type ProviderErrorContext,
   type ProviderFlagsPort,
   type SkippedProvider,
   type UnavailableProvider,
@@ -156,6 +158,26 @@ export class HotelProviderRegistry {
     return resolved.provider;
   }
 
+  /**
+   * Un proveedor concreto para una VENTA que no parte de una tarifa que él ya emitió, como el
+   * detalle de un hotel pedido por código.
+   *
+   * A diferencia de {@link byCode}, respeta el flag de `opt-in` igual que la búsqueda, y antes de
+   * resolver credenciales: sin esto, nombrar al proveedor en el request era una puerta lateral para
+   * consultar, con la cuenta heredada, a un proveedor que la búsqueda de ese tenant nunca llama.
+   */
+  async byCodeForSale(tenantId: string, code: string): Promise<ResolvedHotelProvider> {
+    const factory = this.factories.find((f) => f.code === code);
+    if (
+      factory !== undefined &&
+      this.policyOf(factory) === 'opt-in' &&
+      !(await this.flags.isEnabledForTenant(tenantId, factory.code))
+    ) {
+      throw new ProviderNotAvailableError(code);
+    }
+    return this.byCode(tenantId, code);
+  }
+
   /** Sólo los codes habilitados, en orden estable. Para la clave de caché. */
   async codesForTenant(tenantId: string): Promise<string[]> {
     const { active } = await this.forTenant(tenantId);
@@ -181,9 +203,9 @@ export class HotelProviderRegistry {
   }
 
   /** Traductor de errores del proveedor. Sin factory conocido, el mensaje crudo. */
-  humanizeError(code: string, err: unknown): string {
+  humanizeError(code: string, err: unknown, context?: ProviderErrorContext): string {
     const factory = this.factories.find((f) => f.code === code);
-    if (factory) return factory.humanizeError(err);
+    if (factory) return factory.humanizeError(err, context);
     return err instanceof Error ? err.message : String(err);
   }
 
@@ -215,6 +237,13 @@ export class HotelProviderRegistry {
           },
         };
       }
+      // Hay cuenta, pero la plataforma no opera con ella: la acción la dice el propio factory.
+      if (err instanceof ProviderAccountNotAllowedError) {
+        return {
+          ok: false,
+          absence: { code: factory.code, reason: 'no-credentials', detail: err.detail },
+        };
+      }
       // Sin cuenta resoluble y sin fallback: el proveedor no está habilitado para el tenant.
       // Cualquier otro error (bóveda caída, credencial corrupta) sí se propaga.
       if (err instanceof NotFoundException) return { ok: false, absence: this.sinCuenta(factory) };
@@ -241,6 +270,7 @@ export class HotelProviderRegistry {
         capabilities: factory.capabilities,
         searchProfile: factory.searchProfile,
         callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+        ...(resolved.circuit === undefined ? {} : { circuit: resolved.circuit }),
       },
     };
   }

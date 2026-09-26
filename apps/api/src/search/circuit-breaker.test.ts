@@ -7,6 +7,7 @@ import {
   BreakerRejectionError,
   CircuitBreakerService,
   type CallScope,
+  type CircuitEffect,
 } from './circuit-breaker.service.js';
 
 /** Los mismos números que declara el servicio; si cambian allá, este test debe fallar. */
@@ -575,5 +576,76 @@ describe('CircuitBreakerService — el rechazo local es tipado y previo al enví
       .catch((e: unknown) => e);
     expect(err).toBe(delProveedor);
     expect(err).not.toHaveProperty('sentToProvider');
+  });
+});
+
+describe('CircuitBreakerService — efecto declarado por el proveedor (`effectOf`, PR-2.1)', () => {
+  let breaker: CircuitBreakerService;
+
+  beforeEach(() => {
+    vi.stubEnv('PROVIDERS_DISABLED', '');
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    breaker = new CircuitBreakerService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Un rechazo LOCAL del ACL: sin `failure`, así que por su forma contaría como caída. */
+  const local = (): Error => new Error('request rechazada antes del envío');
+  const soloLocales = (err: unknown): CircuitEffect | undefined =>
+    err instanceof Error && err.message.startsWith('request rechazada') ? 'IGNORE' : undefined;
+
+  it('lo que el proveedor declara `IGNORE` no suma: cinco rechazos locales no abren', async () => {
+    for (let i = 0; i < FAILURE_THRESHOLD; i++) {
+      await expect(
+        breaker.execute('prov-a', () => Promise.reject(local()), { effectOf: soloLocales }),
+      ).rejects.toThrow('request rechazada');
+    }
+
+    const run = vi.fn(ok);
+    await expect(breaker.execute('prov-a', run, { effectOf: soloLocales })).resolves.toBe('ok');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(breaker.snapshot()['prov-a']).toEqual({ state: 'closed', failures: 0 });
+  });
+
+  it('`undefined` = el proveedor no opina y manda la forma del error', async () => {
+    for (let i = 0; i < FAILURE_THRESHOLD; i++) {
+      await breaker.execute('prov-a', CAÍDO, { effectOf: soloLocales }).catch(() => undefined);
+    }
+    expect(breaker.snapshot()['prov-a']?.state).toBe('open');
+  });
+
+  it('lo declarado gana sobre `failure.circuit`', async () => {
+    const siempreIgnora = (): CircuitEffect => 'IGNORE';
+    for (let i = 0; i < FAILURE_THRESHOLD; i++) {
+      await breaker
+        .execute('prov-a', () => Promise.reject(fallo('COUNT')), { effectOf: siempreIgnora })
+        .catch(() => undefined);
+    }
+    expect(breaker.snapshot()['prov-a']).toEqual({ state: 'closed', failures: 0 });
+  });
+
+  it('declarar `OPEN_ACCOUNT` suspende la cuenta con la ventana del `kind` del error', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const abreCuenta = (): CircuitEffect => 'OPEN_ACCOUNT';
+
+    await breaker
+      .execute('prov-a', () => Promise.reject(fallo('IGNORE', 'ACCOUNT_BLOCKED')), {
+        accountRef: 'acct-1',
+        effectOf: abreCuenta,
+      })
+      .catch(() => undefined);
+
+    expect(warn).toHaveBeenLastCalledWith(
+      'circuito de la cuenta prov-a@acct-1 ABIERTO por ACCOUNT_BLOCKED durante 15 min',
+    );
+    const err = await breaker
+      .execute('prov-a', ok, { accountRef: 'acct-1' })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ reason: 'account-circuit' });
   });
 });

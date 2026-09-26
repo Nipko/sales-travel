@@ -97,6 +97,7 @@ export type HotelProviderSkipReason =
   | 'no-destination-map'
   | 'foreign-hotel-ids'
   | 'occupancy-limits'
+  | 'guest-nationality-missing'
   | 'currency-mismatch';
 
 /** Qué pasó con cada proveedor en esta búsqueda. Espejo de `HotelProviderOutcome` en el API. */

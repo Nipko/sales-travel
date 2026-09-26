@@ -1,7 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type CompiledQuery,
+  type DatabaseConnection,
+  type QueryResult,
+} from 'kysely';
 import type { DatabaseService } from '../database/database.service.js';
+import type { DB } from '../database/database.types.js';
 import { encryptCredentials } from './credentials-cipher.js';
 import { ProviderCredentialsService } from './provider-credentials.service.js';
 
@@ -237,6 +248,57 @@ describe('listSafe — completitud: nombres de campo, nunca valores', () => {
     ]);
 
     expect(JSON.stringify(await service.listSafe('t1'))).not.toContain(PASSWORD);
+  });
+});
+
+describe('ownerTenantType — de qué tipo de nodo es el dueño de una cuenta', () => {
+  /**
+   * Con el compilador REAL de Postgres de Kysely: el test afirma sobre el SQL que recibiría la
+   * base, no sobre una cadena de métodos.
+   */
+  function servicioConTenants(filas: readonly { tenant_type: string }[]): {
+    service: ProviderCredentialsService;
+    consultas: CompiledQuery[];
+  } {
+    const consultas: CompiledQuery[] = [];
+    class Driver extends DummyDriver {
+      override async acquireConnection(): Promise<DatabaseConnection> {
+        const base = await super.acquireConnection();
+        return {
+          executeQuery: <R>(q: CompiledQuery): Promise<QueryResult<R>> => {
+            consultas.push(q);
+            return Promise.resolve({ rows: filas as unknown as R[] });
+          },
+          streamQuery: (q, chunkSize) => base.streamQuery(q, chunkSize),
+        };
+      }
+    }
+    const db = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => new Driver(),
+        createIntrospector: (k) => new PostgresIntrospector(k),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    return {
+      service: new ProviderCredentialsService({ db } as unknown as DatabaseService),
+      consultas,
+    };
+  }
+
+  it('lee `tenants.tenant_type` del dueño, por su id y nada más', async () => {
+    const { service, consultas } = servicioConTenants([{ tenant_type: 'consolidator' }]);
+
+    await expect(service.ownerTenantType('owner-1')).resolves.toBe('consolidator');
+    expect(consultas.map((q) => [q.sql, q.parameters])).toEqual([
+      ['select "tenant_type" from "tenants" where "id" = $1', ['owner-1']],
+    ]);
+  });
+
+  it('un dueño que no existe es `undefined`: quien pregunta decide que no se admite', async () => {
+    const { service } = servicioConTenants([]);
+    await expect(service.ownerTenantType('owner-x')).resolves.toBeUndefined();
   });
 });
 

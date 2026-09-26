@@ -27,6 +27,8 @@ import { humanizeDespegarError } from './despegar-hotels-errors.js';
 import { AllHotelProvidersFailedError } from './hotel-provider-errors.js';
 import type { HotelAvailabilityInput } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
+import { HotelSearchContextStore } from './hotel-search-context.store.js';
+import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 
 /**
  * Red de seguridad de `HotelsService` (PR-0.1 del plan de hoteles multi-proveedor, RNF-14
@@ -121,6 +123,7 @@ function banco(
     { getApplicableRules } as unknown as PricingService,
     { assertWithinQuota, instrument } as unknown as SearchTelemetryService,
     breaker,
+    new HotelSearchContextStore(new MemoryCacheAdapter()),
   );
 
   return {

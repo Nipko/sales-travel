@@ -2,6 +2,8 @@ import { Injectable, Module } from '@nestjs/common';
 import { z } from '@sales-travel/validation';
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import { DespegarHotelsProviderModule } from '../providers-despegar/despegar-hotels.module.js';
+import { TboHotelsProviderFactory } from '../providers-tbo/tbo-hotels.factory.js';
+import { TboHotelsProviderModule } from '../providers-tbo/tbo-hotels.module.js';
 import { HotelProviderRegistry } from './hotel-provider.registry.js';
 import {
   HOTEL_PROVIDER_FACTORIES,
@@ -49,12 +51,15 @@ export class EnvHotelProviderFlags implements ProviderFlagsPort {
  * añadir su factory al array de `HOTEL_PROVIDER_FACTORIES` y nada más.
  */
 @Module({
-  imports: [DespegarHotelsProviderModule],
+  imports: [DespegarHotelsProviderModule, TboHotelsProviderModule],
   providers: [
     {
       provide: HOTEL_PROVIDER_FACTORIES,
-      useFactory: (despegar: DespegarHotelsProviderFactory): HotelProviderFactory[] => [despegar],
-      inject: [DespegarHotelsProviderFactory],
+      useFactory: (
+        despegar: DespegarHotelsProviderFactory,
+        tbo: TboHotelsProviderFactory,
+      ): HotelProviderFactory[] => [despegar, tbo],
+      inject: [DespegarHotelsProviderFactory, TboHotelsProviderFactory],
     },
     { provide: HOTEL_PROVIDER_FLAGS, useClass: EnvHotelProviderFlags },
     HotelProviderRegistry,

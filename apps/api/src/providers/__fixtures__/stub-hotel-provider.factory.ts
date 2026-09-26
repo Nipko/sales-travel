@@ -17,6 +17,7 @@ import type {
   HotelProviderFactory,
   HotelSearchProfile,
 } from '../hotel-provider.types.js';
+import type { ProviderCircuitOptions } from '../../search/circuit-breaker.service.js';
 import type { CallPolicy, CredentialSource, TenantAdapter } from '../provider.types.js';
 
 /**
@@ -117,6 +118,8 @@ export interface StubHotelFactoryOptions extends StubHotelAdapterOptions {
   failResolveWith?: Error;
   /** Si `true`, `resolveForTenant` lanza `NotFoundException`: tenant sin credenciales. */
   failResolve?: boolean;
+  /** Lo que el factory declara para el breaker (huella de cuenta, efecto de sus errores). */
+  circuit?: ProviderCircuitOptions;
 }
 
 export class StubHotelProviderFactory implements HotelProviderFactory {
@@ -151,6 +154,7 @@ export class StubHotelProviderFactory implements HotelProviderFactory {
       adapter: this.adapterFor(tenantId),
       credentialSource: this.sourceFor(tenantId),
       callPolicy: this.opts.accountCallPolicy,
+      circuit: this.opts.circuit,
     });
   }
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { ProviderAccountStatus } from '../database/database.types.js';
+import type { ProviderAccountStatus, TenantType } from '../database/database.types.js';
 import { decryptCredentials, encryptCredentials } from './credentials-cipher.js';
 import {
   accountReadiness,
@@ -90,6 +90,24 @@ export class ProviderCredentialsService {
       inherited: row.tenant_id !== tenantId,
       updatedAt: row.updated_at ?? new Date(0),
     };
+  }
+
+  /**
+   * Tipo de nodo (`tenants.tenant_type`) del DUEÑO de una cuenta ya resuelta, o `undefined` si el
+   * tenant no existe.
+   *
+   * Aparte de `resolve` a propósito: sólo lo necesita el proveedor que restringe qué nodos pueden
+   * ser dueños de su cuenta (TBO, D-TBO-03 A), y cambiar la consulta de `resolve` tocaría la
+   * resolución de todos los proveedores. `tenants` no tiene RLS: leer el tipo de un ancestro es
+   * lo mismo que ya hace la jerarquía.
+   */
+  async ownerTenantType(ownerTenantId: string): Promise<TenantType | undefined> {
+    const row = await this.db.db
+      .selectFrom('tenants')
+      .select('tenant_type')
+      .where('id', '=', ownerTenantId)
+      .executeTakeFirst();
+    return row?.tenant_type;
   }
 
   /** Crea o actualiza (upsert) una cuenta de proveedor del tenant. Cifra el secreto. */

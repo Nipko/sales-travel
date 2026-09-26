@@ -1,3 +1,4 @@
+import type { HotelOffer, HotelRatesQuery, HotelSearchCriteria } from '@sales-travel/canonical';
 import type {
   HotelBookPort,
   HotelBookingByClientReferencePort,
@@ -10,8 +11,11 @@ import type {
   HotelRatesDetailPort,
   HotelSearchPort,
   HotelSuggestPort,
+  SearchContext,
 } from '@sales-travel/domain';
+import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
 import type {
+  ProviderErrorContext,
   ResolvedProvider,
   SkippedProvider,
   TenantProviderFactory,
@@ -70,11 +74,24 @@ export type HotelProviderCapability = keyof HotelProviderCapabilities;
 export type HotelIdSpace = 'platform' | 'provider';
 
 /**
- * Con qué criterio se eligen, de su catálogo, los hoteles que se le piden al proveedor cuando el
- * destino tiene más de los que caben en una búsqueda. Hoy sólo existe el orden por id, que es
- * determinista; el de relevancia llega con el primer proveedor que lo necesite.
+ * Proveedor cuyo espacio de ids ES el de la plataforma: su autocompletado da el `destinationId`
+ * del borde HTTP y su catálogo usa `hotel_inventory.city_id`. Es el `source_provider_code` de las
+ * filas de `hotel_destination_map` con que un proveedor de ids propios traduce ese destino a sus
+ * ciudades (docs/tbo/05 §8.1).
  */
-export type HotelCatalogOrder = 'hotel_id';
+export const PLATFORM_ID_SPACE_PROVIDER = 'despegar-hotels';
+
+/**
+ * Con qué criterio se eligen, de su catálogo, los hoteles que se le piden al proveedor cuando el
+ * destino tiene más de los que caben en una búsqueda.
+ *
+ * - `hotel_id`: determinista y sin criterio comercial. Es el de Despegar, que no se cambia sin
+ *   telemetría (docs/tbo/09 PR-0.5).
+ * - `relevance`: primero los de más estrellas, los que no las informan al final y el id como
+ *   desempate (docs/tbo/02 §4.3; D-TBO-17 A). Con cientos de hoteles en una ciudad, el orden por
+ *   id dejaba fuera a los que el vendedor más busca.
+ */
+export type HotelCatalogOrder = 'hotel_id' | 'relevance';
 
 /**
  * Topes de ocupación del PROVEEDOR, más estrechos que los del borde HTTP. Un campo ausente
@@ -97,6 +114,17 @@ export interface HotelSearchProfile {
   readonly maxHotelsPerSearch: number;
   readonly catalogOrder: HotelCatalogOrder;
   readonly occupancy?: HotelOccupancyLimits;
+  /**
+   * Tarifa según la nacionalidad del pasajero principal (TBO, p. 10): sin ella en la búsqueda, el
+   * proveedor queda fuera con motivo y los demás buscan. Ausente, no la necesita.
+   */
+  readonly requiresGuestNationality?: boolean;
+  /**
+   * Su disponibilidad no trae nombre, estrellas, dirección ni coordenadas (TBO, pp. 13-15): el
+   * servicio los completa desde SU fila de `hotel_inventory`, sólo donde el proveedor no los
+   * informó. Ausente, el proveedor los trae y el catálogo no se consulta para eso.
+   */
+  readonly contentFromCatalog?: boolean;
 }
 
 /**
@@ -111,7 +139,7 @@ export interface HotelSearchProfile {
 export interface HotelProviderFactory
   extends Pick<
     TenantProviderFactory<HotelProviderAdapter>,
-    'code' | 'defaultCallPolicy' | 'resolveForTenant' | 'humanizeError'
+    'code' | 'defaultCallPolicy' | 'resolveForTenant'
   > {
   /**
    * Literal y no `ProviderVertical`: un factory de vuelos en la lista de hoteles es un error de
@@ -120,12 +148,20 @@ export interface HotelProviderFactory
   readonly vertical: 'hotels';
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
+  /**
+   * Como el de `TenantProviderFactory`, más lo que sabe quien llama: con una cuenta heredada el
+   * mensaje de una credencial rechazada va dirigido al consolidador, no a la agencia. Un factory
+   * que no lo necesita lo ignora.
+   */
+  humanizeError(err: unknown, context?: ProviderErrorContext): string;
 }
 
 export interface ResolvedHotelProvider
   extends Omit<ResolvedProvider<HotelProviderAdapter>, 'capabilities'> {
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
+  /** Lo que el factory declaró para el breaker; se pasa tal cual en cada llamada al adapter. */
+  readonly circuit?: ProviderCircuitOptions;
 }
 
 /** Un proveedor conocido por la plataforma, sin resolver credenciales de nadie. */
@@ -152,6 +188,87 @@ export const HOTEL_PROVIDER_FACTORIES = 'HOTEL_PROVIDER_FACTORIES';
  * hoteles, que factura distinto.
  */
 export const HOTEL_PROVIDER_FLAGS = 'HOTEL_PROVIDER_FLAGS';
+
+// ───────────────────────── Contexto de búsqueda en el servidor (RF-08) ─────────────────────────
+
+/**
+ * Huella de la cuenta con la que un adapter sale al proveedor: id de la cuenta y su versión,
+ * NUNCA el secreto. Al reservar se compara con la de la búsqueda: si la credencial rotó, o la
+ * agencia pasó de heredada a propia, la tarifa se buscó con otra cuenta y se vuelve a buscar.
+ */
+export interface HotelProviderAccountFingerprint {
+  readonly accountId: string;
+  /** `provider_accounts.updated_at` en ISO 8601: cambia al rotar la credencial. */
+  readonly updatedAt: string;
+}
+
+/**
+ * Lo que la reserva de UNA tarifa necesita reenviar al proveedor y el navegador no puede aportar.
+ * En TBO: `HotelCode`, `BookingCode` y el literal de `TotalFare` (docs/tbo/02 §9.3).
+ */
+export interface HotelSearchPackContext {
+  readonly hotelId: string;
+  /** El mismo `provider.offerRef` del roompack. */
+  readonly offerRef: string;
+  /**
+   * El total tal como lo escribió el proveedor. El Book de TBO lo reenvía y no puede ser una
+   * reconstrucción desde unidades menores (02 §8.3).
+   */
+  readonly totalText: string;
+  readonly currency: string;
+}
+
+/** Lo que una búsqueda deja en el servidor además de las ofertas. */
+export interface HotelSearchContextData {
+  /** Id NUESTRO de la búsqueda: única clave que viaja en `provider.raw` de cada pack. */
+  readonly searchId: string;
+  /** Epoch en ms en que salió el Search: el reloj de la oferta arranca aquí (RF-09). */
+  readonly searchSentAt: number;
+  /** Epoch en ms hasta el que el proveedor sostiene las tarifas: el TTL del contexto. */
+  readonly expiresAt: number;
+  readonly packs: readonly HotelSearchPackContext[];
+}
+
+export interface HotelSearchWithContext extends HotelSearchContextData {
+  readonly offers: HotelOffer[];
+  /**
+   * Presente si parte de los hoteles pedidos no se consultó o su consulta falló, y otra parte sí
+   * respondió (RF-14 CA-3): las ofertas son las de lo que respondió. `cause` es el error del primer
+   * tramo que no aportó, para humanizarlo como cualquier fallo del proveedor. Sin esto, un lote
+   * caído se vería como "no hay más hoteles" (RNF-13).
+   */
+  readonly partial?: { readonly cause: unknown };
+}
+
+export interface HotelRatesWithContext extends HotelSearchContextData {
+  readonly offer: HotelOffer;
+}
+
+/**
+ * Un proveedor cuya reserva depende de lo que dejó su búsqueda (RF-08): el PreBook de TBO recibe
+ * sólo el `BookingCode` y el Book no lleva fechas, edades ni nacionalidad (pp. 19, 32-34). Sin
+ * este registro del lado del servidor, la ocupación y el importe que llegan al proveedor los
+ * pondría el navegador.
+ */
+export interface HotelSearchContextPort {
+  readonly searchAccount: HotelProviderAccountFingerprint;
+  searchAvailabilityWithContext(
+    criteria: HotelSearchCriteria,
+    ctx: SearchContext,
+  ): Promise<HotelSearchWithContext>;
+}
+
+/**
+ * Igual que `HotelSearchContextPort`, para el detalle de un hotel: un proveedor cuyo detalle es
+ * otra búsqueda emite tarifas nuevas, y la que se reserva es la del detalle.
+ */
+export interface HotelRatesContextPort {
+  readonly searchAccount: HotelProviderAccountFingerprint;
+  getHotelRatesWithContext(
+    query: HotelRatesQuery,
+    ctx: SearchContext,
+  ): Promise<HotelRatesWithContext>;
+}
 
 // ───────────────────────── Capacidades opcionales, por presencia ─────────────────────────
 //
@@ -202,4 +319,16 @@ export function supportsHotelBookingsByDate<T extends object>(
   adapter: T,
 ): adapter is T & HotelBookingsByDatePort {
   return hasMethod<HotelBookingsByDatePort>(adapter, 'listBookingsByDate');
+}
+
+export function supportsHotelSearchContext<T extends object>(
+  adapter: T,
+): adapter is T & HotelSearchContextPort {
+  return hasMethod<HotelSearchContextPort>(adapter, 'searchAvailabilityWithContext');
+}
+
+export function supportsHotelRatesContext<T extends object>(
+  adapter: T,
+): adapter is T & HotelRatesContextPort {
+  return hasMethod<HotelRatesContextPort>(adapter, 'getHotelRatesWithContext');
 }

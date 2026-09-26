@@ -23,6 +23,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
+import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
@@ -61,7 +62,7 @@ export interface HotelSearchEnvelope extends HotelSearchResponse {
 
 @Roles(...SELLING_ROLES)
 @Controller('hotels')
-@UseFilters(DespegarHotelsExceptionFilter)
+@UseFilters(DespegarHotelsExceptionFilter, TboHotelsExceptionFilter)
 export class HotelsController {
   constructor(
     private readonly hotels: HotelsService,

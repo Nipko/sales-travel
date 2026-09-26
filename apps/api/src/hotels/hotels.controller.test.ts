@@ -14,6 +14,7 @@ import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
 import type { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
+import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import type { SearchTelemetryService } from '../search/search-telemetry.service.js';
@@ -41,6 +42,8 @@ import {
   type HotelAvailabilityInput,
 } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
+import { HotelSearchContextStore } from './hotel-search-context.store.js';
+import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 
 /**
  * Red de seguridad de `HotelsController` (PR-0.1 del plan de hoteles multi-proveedor, RNF-14
@@ -108,7 +111,14 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
     getApplicableRules: () => Promise.resolve(reglas),
   } as unknown as PricingService;
 
-  const service = new HotelsService(registry, db.service, pricing, telemetry, breaker);
+  const service = new HotelsService(
+    registry,
+    db.service,
+    pricing,
+    telemetry,
+    breaker,
+    new HotelSearchContextStore(new MemoryCacheAdapter()),
+  );
   const reservations = new DespegarHotelReservationsService(registry, factory, breaker);
   const resolve = vi.fn((_userId: string) => Promise.resolve(TENANT));
   const disclosure = {
@@ -241,14 +251,15 @@ describe('HotelsController — superficie HTTP', () => {
       .map((p) => (p as unknown as { schema: unknown }).schema);
   }
 
-  it('cuelga de `/hotels`, sólo para roles que venden, con el filtro de Despegar', () => {
+  it('cuelga de `/hotels`, sólo para roles que venden, con el filtro de cada proveedor', () => {
     const ruta: unknown = Reflect.getMetadata(PATH_METADATA, HotelsController);
     const roles: unknown = Reflect.getMetadata(ROLES_KEY, HotelsController);
     const filtros: unknown = Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, HotelsController);
 
     expect(ruta).toBe('hotels');
     expect(roles).toEqual([...SELLING_ROLES]);
-    expect(filtros).toEqual([DespegarHotelsExceptionFilter]);
+    // Un error de TBO sin su filtro saldría como 500 del filtro global (06 §5.1, A8).
+    expect(filtros).toEqual([DespegarHotelsExceptionFilter, TboHotelsExceptionFilter]);
   });
 
   it.each([
