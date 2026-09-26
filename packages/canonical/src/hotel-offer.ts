@@ -467,18 +467,36 @@ export const HotelRoompackSchema = z
 export type HotelRoompack = z.infer<typeof HotelRoompackSchema>;
 
 /**
+ * Con qué id conoce UN proveedor al hotel de una tarjeta que reúne a varios.
+ */
+export const HotelProviderHotelSchema = z.object({
+  provider: HotelProviderCodeSchema,
+  hotelId: z.string().min(1).max(64),
+});
+export type HotelProviderHotel = z.infer<typeof HotelProviderHotelSchema>;
+
+/**
  * Un hotel con sus tarifas disponibles.
  *
- * No lleva proveedor propio: el de cada tarifa está en su pack. `name`, `stars` y `location`
- * son opcionales porque hay respuestas de disponibilidad que no los traen y se completan desde
- * el catálogo.
+ * No lleva proveedor propio: el de cada tarifa está en su pack. `name`, `stars`, `address` y
+ * `location` son opcionales porque hay respuestas de disponibilidad que no los traen y se
+ * completan desde el catálogo.
  */
 export const HotelOfferSchema = z.object({
   hotelId: z.string().min(1).max(64),
   name: z.string().max(300).optional(),
   stars: z.number().min(0).max(5).optional(),
   type: z.string().max(60).optional(),
+  /** Dirección postal en una línea, como la da el catálogo del proveedor. */
+  address: z.string().min(1).max(500).optional(),
   location: GeoLocationSchema.optional(),
   roompacks: z.array(HotelRoompackSchema),
+  /**
+   * Presente sólo cuando la tarjeta reúne el MISMO hotel de varios proveedores (equivalencia
+   * aceptada entre catálogos): cada uno lo conoce con su propio id, y el detalle o la reserva de
+   * una tarifa van con el id del proveedor de ESA tarifa, no con `hotelId`, que es el del primero.
+   * Uno por proveedor: dos hoteles de un mismo proveedor nunca comparten tarjeta.
+   */
+  providerHotels: z.array(HotelProviderHotelSchema).min(2).optional(),
 });
 export type HotelOffer = z.infer<typeof HotelOfferSchema>;

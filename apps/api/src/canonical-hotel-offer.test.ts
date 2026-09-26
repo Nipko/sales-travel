@@ -550,6 +550,47 @@ describe('HotelOfferSchema — regresión con Despegar', () => {
   });
 });
 
+describe('HotelOfferSchema — dirección y tarjeta de varios proveedores (PR-2.6)', () => {
+  const base = { hotelId: '101', roompacks: [] };
+
+  it('la dirección es una línea opcional, no vacía', () => {
+    expect(HotelOfferSchema.safeParse({ ...base, address: 'Calle 1 # 2-3' }).success).toBe(true);
+    expect(rutasDelError(HotelOfferSchema, { ...base, address: '' })).toEqual(['address']);
+    expect(rutasDelError(HotelOfferSchema, { ...base, address: 'x'.repeat(501) })).toEqual([
+      'address',
+    ]);
+  });
+
+  it('`providerHotels` dice con qué id conoce cada proveedor el hotel de la tarjeta', () => {
+    const tarjeta = {
+      ...base,
+      providerHotels: [
+        { provider: 'despegar-hotels', hotelId: '101' },
+        { provider: 'tbo-hotels', hotelId: '1120548' },
+      ],
+    };
+    expect(HotelOfferSchema.parse(tarjeta)).toEqual(tarjeta);
+  });
+
+  it('sólo existe para una tarjeta que reúne a más de uno, y con códigos del registry', () => {
+    expect(
+      rutasDelError(HotelOfferSchema, {
+        ...base,
+        providerHotels: [{ provider: 'despegar-hotels', hotelId: '101' }],
+      }),
+    ).toEqual(['providerHotels']);
+    expect(
+      rutasDelError(HotelOfferSchema, {
+        ...base,
+        providerHotels: [
+          { provider: 'Despegar Hotels', hotelId: '101' },
+          { provider: 'tbo-hotels', hotelId: '' },
+        ],
+      }),
+    ).toEqual(['providerHotels.0.provider', 'providerHotels.1.hotelId']);
+  });
+});
+
 describe('HotelSearchCriteriaSchema', () => {
   it('valida un criterio con nacionalidad y moneda de venta', () => {
     expect(HotelSearchCriteriaSchema.safeParse(criterio).success).toBe(true);
