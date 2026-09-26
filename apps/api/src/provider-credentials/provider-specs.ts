@@ -13,6 +13,8 @@
  * `safeConfigView` y `accountReadiness`).
  */
 
+import { TboConfigError, parseTboConfig } from '@sales-travel/tbo-hotels';
+
 /** De dónde puede venir el valor de un campo. */
 export type FieldOrigin =
   /**
@@ -53,6 +55,15 @@ export interface ProviderSpec {
    * autentica contra nadie, así que las reglas de obligatoriedad no aplican.
    */
   readonly mockConfigKey?: string;
+  /**
+   * Reglas ENTRE campos que `fields` no puede expresar —p. ej. qué URL admite cada entorno—.
+   * Existe para que el borde aplique la MISMA regla que el ACL aplica al construir el adapter, en
+   * vez de una copia que se separa de ella. Los mensajes nunca llevan el valor recibido.
+   */
+  readonly accountIssues?: (account: {
+    readonly credentials: Record<string, unknown>;
+    readonly config: Record<string, unknown>;
+  }) => readonly ProviderAccountIssue[];
 }
 
 /**
@@ -186,6 +197,128 @@ const DESPEGAR_HOTELS: ProviderSpec = {
   safeConfigKeys: ['baseUrl', 'language', 'countryCode', 'currency', 'locale'],
 };
 
+/**
+ * Reglas de `environment` y `baseUrl` de una cuenta TBO (D-TBO-30 A; docs/tbo/08 RF-01).
+ *
+ * No se reescriben acá: se le pasa la cuenta a `parseTboConfig`, el mismo esquema con el que el
+ * factory construye el adapter, y sólo se traduce cada `ruta:código` a un motivo legible. Así "se
+ * rechaza al guardar y al construir el adapter" es UNA regla y no dos que se separan con el tiempo.
+ * Se le pasa lo que el factory lee y de donde lo lee: `environment` y `baseUrl` de `config`, el
+ * usuario del blob. La contraseña no: su única regla es existir, y esa ya la cubre `fields`.
+ */
+const TBO_URL_REASONS: Readonly<Record<string, string>> = {
+  https_required:
+    'En `live` la `baseUrl` tiene que ser `https`: TBO autentica con Basic Auth, que viaja legible, y la contraseña de producción no puede cruzar internet en claro.',
+  http_only_on_test_host:
+    '`http` sólo se admite con `environment: test` y el host de pruebas de TBO (api.tbotechnology.in), que es el único que TBO publica sin TLS. Cualquier otro host tiene que ser `https`.',
+  live_on_test_endpoint:
+    'Una cuenta `live` no puede apuntar al endpoint de pruebas de TBO: la contraseña de producción terminaría en el entorno de test. Cargá la URL de producción que te dio TBO.',
+  credentials_in_url:
+    'La `baseUrl` no puede llevar usuario ni contraseña: quedarían en cualquier log de la URL. Van en `credentials`, que se cifra.',
+  query_or_fragment:
+    'La `baseUrl` no puede llevar query (`?…`) ni fragmento (`#…`): a esa base se le concatena el nombre de cada operación.',
+};
+
+const TBO_INVALID_URL =
+  'La `baseUrl` tiene que ser una URL absoluta http(s), por ejemplo https://…/HotelAPI. A esa base se le concatena el nombre de cada operación de TBO.';
+
+const TBO_INVALID_ENVIRONMENT =
+  '`environment` es obligatorio y vale `test` o `live`: decide a qué entorno de TBO va la credencial y si se admite `http`. No hay valor por defecto a propósito.';
+
+const TBO_LIVE_WITHOUT_BASE_URL =
+  'En `live` la `baseUrl` es obligatoria: TBO no publica la URL de producción y no hay valor por defecto, para que una credencial de producción nunca termine en el host de pruebas.';
+
+const TBO_COLON_IN_USERNAME =
+  'El `username` no puede contener `:`. Basic Auth separa usuario y contraseña con ese carácter, así que TBO recibiría otro usuario.';
+
+function tboIssue(ref: string): ProviderAccountIssue {
+  const cut = ref.indexOf(':');
+  const field = cut === -1 ? ref : ref.slice(0, cut);
+  const code = cut === -1 ? '' : ref.slice(cut + 1);
+  switch (field) {
+    case 'environment':
+      return { path: ['config', 'environment'], message: TBO_INVALID_ENVIRONMENT };
+    case 'baseUrl':
+      return { path: ['config', 'baseUrl'], message: TBO_URL_REASONS[code] ?? TBO_INVALID_URL };
+    case 'username':
+      return {
+        path: ['credentials', 'username'],
+        message:
+          code === 'colon_in_username'
+            ? TBO_COLON_IN_USERNAME
+            : 'El `username` tiene que ser texto: es el usuario que TBO asignó a la cuenta.',
+      };
+    default:
+      // Una regla nueva del esquema que todavía no tiene motivo redactado: se nombra el campo y el
+      // código —vocabulario nuestro— en vez de perderla.
+      return {
+        path: ['config', field],
+        message: `\`${field}\` no es válido para TBO (${code || 'sin código'}).`,
+      };
+  }
+}
+
+function tboAccountIssues(account: {
+  readonly credentials: Record<string, unknown>;
+  readonly config: Record<string, unknown>;
+}): readonly ProviderAccountIssue[] {
+  const { credentials, config } = account;
+  const username = credentials['username'];
+  const baseUrl = config['baseUrl'];
+  const issues: ProviderAccountIssue[] = [];
+
+  try {
+    parseTboConfig({
+      environment: config['environment'],
+      // Una cadena vacía es "no vino", como la lee el factory; cualquier otra cosa se valida.
+      baseUrl: baseUrl === '' ? undefined : baseUrl,
+      // Sólo si trae algo: la ausencia ya la reporta `fields` con su motivo.
+      username: nonEmptyString(username) ? username : undefined,
+    });
+  } catch (err) {
+    if (!(err instanceof TboConfigError)) throw err;
+    issues.push(...err.issues.map(tboIssue));
+  }
+
+  if (config['environment'] === 'live' && (baseUrl === undefined || baseUrl === '')) {
+    issues.push({ path: ['config', 'baseUrl'], message: TBO_LIVE_WITHOUT_BASE_URL });
+  }
+  return issues;
+}
+
+/**
+ * TBO Holidays, hoteles (docs/tbo/08 RF-37 y RF-01).
+ *
+ * `username` y `password` son `encrypted-only`: el factory los lee SÓLO del blob cifrado, y el
+ * usuario es la mitad de la credencial que acompaña a la contraseña en la cabecera Basic —igual
+ * que el `epr` de Sabre, no se devuelve—. `environment` y `baseUrl` no son secretos y viven en
+ * `config`, así que son lo único que el listado puede devolver.
+ *
+ * Nada se recorta: el borde valida pero guarda lo que llegó, porque un espacio puede ser parte de
+ * la contraseña (Q-06). Sin `mockConfigKey`: TBO no tiene modo simulado que ocupe su lugar.
+ */
+const TBO_HOTELS: ProviderSpec = {
+  label: 'TBO Holidays',
+  fields: [
+    {
+      key: 'username',
+      origin: 'encrypted-only',
+      required: true,
+      reason:
+        'Falta `username` (usuario de la API de TBO). TBO autentica cada llamada con usuario y contraseña; sin usuario la cuenta se guarda pero TBO queda fuera de las búsquedas.',
+    },
+    {
+      key: 'password',
+      origin: 'encrypted-only',
+      required: true,
+      reason:
+        'Falta `password`. Es la mitad secreta de la autenticación Basic de TBO; sin ella la cuenta se guarda pero nunca autentica.',
+    },
+  ],
+  safeConfigKeys: ['environment', 'baseUrl'],
+  accountIssues: tboAccountIssues,
+};
+
 /** BYO-email. `host`/`port`/`secure`/`from*` son datos de servidor; usuario y clave van cifrados. */
 const EMAIL: ProviderSpec = {
   label: 'Email (SMTP)',
@@ -197,6 +330,7 @@ export const PROVIDER_SPECS: Readonly<Record<string, ProviderSpec>> = {
   'latam-ndc': LATAM_NDC,
   'agent-cars': AGENT_CARS,
   'despegar-hotels': DESPEGAR_HOTELS,
+  'tbo-hotels': TBO_HOTELS,
   email: EMAIL,
 };
 
@@ -222,8 +356,8 @@ function isSimulated(spec: ProviderSpec, config: Record<string, unknown>): boole
 /**
  * Lo que está mal en una cuenta según las reglas DECLARADAS de su proveedor.
  *
- * Devuelve lista vacía cuando el proveedor no declara `fields`: aceptar como hoy es la respuesta
- * correcta ahí, no inventar requisitos.
+ * Devuelve lista vacía cuando el proveedor no declara `fields` ni `accountIssues`: aceptar como
+ * hoy es la respuesta correcta ahí, no inventar requisitos.
  */
 export function providerAccountIssues(input: {
   providerCode: string;
@@ -231,9 +365,22 @@ export function providerAccountIssues(input: {
   config?: Record<string, unknown> | undefined;
 }): readonly ProviderAccountIssue[] {
   const spec = providerSpecFor(input.providerCode);
-  if (!spec?.fields) return [];
+  if (!spec) return [];
 
   const config = input.config ?? {};
+  return [
+    ...fieldIssues(spec, input.credentials, config),
+    ...(spec.accountIssues?.({ credentials: input.credentials, config }) ?? []),
+  ];
+}
+
+function fieldIssues(
+  spec: ProviderSpec,
+  credentials: Record<string, unknown>,
+  config: Record<string, unknown>,
+): readonly ProviderAccountIssue[] {
+  if (!spec.fields) return [];
+
   const simulated = isSimulated(spec, config);
   const issues: ProviderAccountIssue[] = [];
 
@@ -247,7 +394,7 @@ export function providerAccountIssues(input: {
       });
     }
 
-    const fromCredentials = input.credentials[rule.key];
+    const fromCredentials = credentials[rule.key];
     const fromConfig = rule.origin === 'encrypted-or-config' ? config[rule.key] : undefined;
     const value = nonEmptyString(fromCredentials)
       ? fromCredentials.trim()

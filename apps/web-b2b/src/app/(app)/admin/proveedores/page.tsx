@@ -33,11 +33,17 @@ import {
   PROVIDER_ACCOUNT_STATUSES,
   STATUS_LABELS,
   accountConfigSummary,
+  canOwnAccount,
+  draftWarnings,
   fieldKey,
   isProviderAccountStatus,
+  ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
   providerFormFor,
+  statusEnablesProvider,
+  statusNotice,
+  type Notice,
   type ProviderAccountStatus,
   type ProviderField,
   type ProviderSection,
@@ -270,6 +276,13 @@ export default function ProveedoresPage() {
     ],
   );
 
+  const warnings = useMemo(
+    () => (provider ? draftWarnings(provider, { credentials, config }) : []),
+    [provider, credentials, config],
+  );
+  const ownershipCallout: Notice | null =
+    provider && selectedTenant ? ownershipNotice(provider, selectedTenant.tenantType) : null;
+
   async function saveDisclosure(choice: DisclosureChoice) {
     if (!selectedTenant) return;
     setDisclosureError('');
@@ -301,10 +314,13 @@ export default function ProveedoresPage() {
   function startCreate(initialCode = 'sabre') {
     setProviderCode(initialCode);
     setLabel(DEFAULT_ACCOUNT_LABEL);
-    setStatus('active');
+    // Un proveedor que pide verificar la credencial antes de habilitarlo arranca en Sandbox.
+    setStatus(providerFormFor(initialCode)?.initialStatus ?? 'active');
     setIsInheritable(true);
     setCredentials({});
-    setConfig({ environment: 'cert', callPolicy: 'always' });
+    // Vacía y no con los defaults de Sabre: cada select cae al `defaultValue` de SU proveedor, y un
+    // `environment: 'cert'` fijo sería un valor inválido para cualquier otro.
+    setConfig({});
     setFieldErrors({});
     setError('');
     setEditor({ kind: 'create', initialProviderCode: initialCode });
@@ -446,6 +462,10 @@ export default function ProveedoresPage() {
           const origin = origins?.get(code);
           const ownAccounts = accounts.filter((a) => a.providerCode === code);
           const activeOwn = ownAccounts.find((a) => a.status === 'active');
+          // Una cuenta guardada que no habilita nada (Sandbox o Deshabilitada). Sin mostrarla, la
+          // tarjeta diría "No configurado" sobre una cuenta que existe y el operador cargaría otra.
+          const idleOwn = activeOwn ? undefined : ownAccounts[0];
+          const ownable = canOwnAccount(form, selectedTenant?.tenantType ?? '');
           const isResolved = isResolvedOrigin(origin);
 
           return (
@@ -528,7 +548,31 @@ export default function ProveedoresPage() {
                       </div>
                     </div>
                   )}
+
+                  {idleOwn && (
+                    <p className="flex items-start gap-1.5 border-t border-[var(--color-border)]/50 pt-2 text-[11px] leading-relaxed text-amber-800">
+                      <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+                      <span>
+                        Cuenta propia «{idleOwn.label}» guardada en{' '}
+                        <strong>
+                          {isProviderAccountStatus(idleOwn.status)
+                            ? STATUS_LABELS[idleOwn.status]
+                            : idleOwn.status}
+                        </strong>
+                        : no habilita {meta.name} hasta guardarla con estado <strong>Activo</strong>
+                        .
+                      </span>
+                    </p>
+                  )}
                 </div>
+
+                {/* Un nodo que no puede tener cuenta propia de este proveedor: se dice por qué, en
+                    vez de ofrecerle un alta que el API va a dejar sin efecto. */}
+                {!ownable && form.ownerRestriction && (
+                  <p className="text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+                    {form.ownerRestriction.explanation}
+                  </p>
+                )}
 
                 {/* Acciones */}
                 <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)]/50 pt-4">
@@ -542,7 +586,22 @@ export default function ProveedoresPage() {
                       <Pencil className="size-3.5" />
                       Editar variables
                     </Button>
-                  ) : (
+                  ) : idleOwn ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="gap-1.5 text-xs font-semibold cursor-pointer"
+                      onClick={() => {
+                        startEdit(idleOwn);
+                        // El botón promete activar: sin esto el editor abre en Sandbox y el guardado
+                        // la deja igual. Sigue siendo un select que el operador puede cambiar.
+                        if (ownable) setStatus('active');
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                      {ownable ? 'Editar y activar' : 'Editar'}
+                    </Button>
+                  ) : ownable ? (
                     <Button
                       size="sm"
                       className="gap-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-xs font-semibold shadow-xs cursor-pointer"
@@ -551,6 +610,10 @@ export default function ProveedoresPage() {
                       <Plus className="size-3.5" />
                       Conectar {meta.name}
                     </Button>
+                  ) : (
+                    <span className="text-[11px] font-medium text-[var(--color-fg-subtle)]">
+                      La carga el consolidador
+                    </span>
                   )}
                 </div>
               </CardContent>
@@ -603,6 +666,9 @@ export default function ProveedoresPage() {
               </p>
             )}
 
+            {/* Sólo al editar una cuenta cargada por API: el alta ya no se le ofrece a este nodo. */}
+            {ownershipCallout && <NoticeCallout notice={ownershipCallout} />}
+
             {/* Form Fields: Credentials & Config */}
             <div className="space-y-5">
               {/* Sección Credenciales */}
@@ -643,6 +709,9 @@ export default function ProveedoresPage() {
                     />
                   ))}
                 </div>
+                {warnings.map((notice) => (
+                  <NoticeCallout key={notice.title} notice={notice} />
+                ))}
               </div>
 
               {/* Estado y Herencia */}
@@ -677,6 +746,9 @@ export default function ProveedoresPage() {
                   </label>
                 </div>
               </div>
+
+              {/* Qué significa el estado elegido: guardar en Sandbox no habilita nada. */}
+              <NoticeCallout notice={statusNotice(status)} />
             </div>
 
             {error && (
@@ -706,7 +778,11 @@ export default function ProveedoresPage() {
                 ) : (
                   <CheckCircle2 className="size-3.5" />
                 )}
-                {saving ? 'Guardando...' : 'Guardar y activar'}
+                {saving
+                  ? 'Guardando...'
+                  : statusEnablesProvider(status)
+                    ? 'Guardar y activar'
+                    : `Guardar en ${STATUS_LABELS[status]}`}
               </Button>
             </div>
           </div>
@@ -852,6 +928,34 @@ function ProviderDisclosureCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+const NOTICE_STYLES: Record<Notice['tone'], { box: string; icon: typeof Info }> = {
+  warn: { box: 'border-amber-200 bg-amber-50 text-amber-900', icon: AlertTriangle },
+  ok: { box: 'border-emerald-200 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
+  muted: {
+    box: 'border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 text-[var(--color-fg-muted)]',
+    icon: Info,
+  },
+};
+
+function NoticeCallout({ notice }: { notice: Notice }) {
+  const style = NOTICE_STYLES[notice.tone];
+  const Icon = style.icon;
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-2.5 rounded-xl border p-3.5 text-xs leading-relaxed',
+        style.box,
+      )}
+    >
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div>
+        <p className="font-bold">{notice.title}</p>
+        <p className="mt-1 opacity-90">{notice.body}</p>
+      </div>
+    </div>
   );
 }
 

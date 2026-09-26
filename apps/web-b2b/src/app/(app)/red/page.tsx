@@ -32,13 +32,16 @@ import {
   accountCertainty,
   accountCertaintyNotice,
   accountConfigSummary,
+  draftWarnings,
   fieldKey,
   inheritableHelp,
   isProviderAccountStatus,
+  ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
   providerFields,
   providerFormFor,
+  providerFormsForNode,
   statusEnablesProvider,
   statusNotice,
   validateProviderDraft,
@@ -719,6 +722,13 @@ function CredentialsModal({
     [provider, label, status, credentials, config, draftOrigin, tenant.name, ownerNameOf, editor],
   );
 
+  const warnings = useMemo(
+    () => (provider ? draftWarnings(provider, { credentials, config }) : []),
+    [provider, credentials, config],
+  );
+  // Sólo aparece al editar una cuenta que este nodo no puede tener: el alta ya no se la ofrece.
+  const ownershipCallout = provider ? ownershipNotice(provider, tenant.tenantType) : null;
+
   /**
    * Foco al abrir el formulario. Se pinta DEBAJO de la lista de cuentas: sin mover el foco, quien
    * navega con teclado o lector de pantalla pulsa "Editar" y no se entera de que apareció nada.
@@ -780,6 +790,9 @@ function CredentialsModal({
   /** Cambiar de proveedor limpia lo tecleado: los campos de uno no significan nada en el otro. */
   function selectProvider(code: string) {
     setProviderCode(code);
+    // Un proveedor que pide verificar la credencial antes de habilitarlo arranca en Sandbox.
+    const initialStatus = providerFormFor(code)?.initialStatus;
+    if (initialStatus) setStatus(initialStatus);
     setCredentials({});
     setConfig({});
     setFieldErrors({});
@@ -897,8 +910,8 @@ function CredentialsModal({
           Las credenciales se cifran y nunca se muestran de vuelta. Sólo cuentan las cuentas en
           estado <strong className="text-[var(--color-fg)]">Activo</strong>: si esta agencia no
           tiene una propia activa, usa la del ancestro heredable más cercano que la tenga. Qué pasa
-          cuando no hay ninguna depende del proveedor — Sabre queda fuera de las búsquedas, y otros
-          caen a las credenciales de la plataforma.
+          cuando no hay ninguna depende del proveedor — Sabre y TBO Holidays quedan fuera de las
+          búsquedas, y otros caen a las credenciales de la plataforma.
         </span>
       </div>
 
@@ -973,6 +986,11 @@ function CredentialsModal({
                           Proveedor desconocido para esta versión del panel: no sabemos qué campos
                           pide, así que no se puede editar desde acá sin riesgo de dejarla
                           inservible.
+                        </div>
+                      )}
+                      {form && ownershipNotice(form, tenant.tenantType) && (
+                        <div className="text-[10px] font-medium text-amber-800">
+                          {form.ownerRestriction?.explanation}
                         </div>
                       )}
                     </div>
@@ -1056,7 +1074,12 @@ function CredentialsModal({
                   className={cn(selectClass, editor.kind === 'edit' && 'opacity-70')}
                   aria-describedby={editor.kind === 'edit' ? 'creds-provider-locked' : undefined}
                 >
-                  {Object.entries(PROVIDERS).map(([code, p]) => (
+                  {/* Al editar el select está bloqueado y tiene que poder mostrar la cuenta abierta,
+                      aunque sea de un proveedor que este nodo ya no puede dar de alta. */}
+                  {(editor.kind === 'edit'
+                    ? Object.entries(PROVIDERS)
+                    : providerFormsForNode(tenant.tenantType)
+                  ).map(([code, p]) => (
                     <option key={code} value={code}>
                       {p.label}
                     </option>
@@ -1089,6 +1112,7 @@ function CredentialsModal({
               <span>{provider.note}</span>
             </p>
           )}
+          {ownershipCallout && <NoticeBox notice={ownershipCallout} />}
 
           {/* Las dos mitades, separadas y rotuladas: cuál se cifra y cuál se guarda en claro no
               es un detalle interno —decide dónde puede acabar una contraseña. */}
@@ -1123,6 +1147,10 @@ function CredentialsModal({
                 </fieldset>
               );
             })}
+
+          {warnings.map((notice) => (
+            <NoticeBox key={notice.title} notice={notice} />
+          ))}
 
           {provider &&
             [...provider.credentials, ...provider.config].some((f) => f.required === true) && (

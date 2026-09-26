@@ -68,6 +68,9 @@ importers:
       '@sales-travel/sabre':
         specifier: workspace:*
         version: link:../../providers/sabre
+      '@sales-travel/tbo-hotels':
+        specifier: workspace:*
+        version: link:../../providers/tbo-hotels
       '@sales-travel/validation':
         specifier: workspace:*
         version: link:../../packages/validation
