@@ -3,11 +3,13 @@ import {
   cancelRetryJobId,
   POST_SALE_SWEEP_EVERY_MS,
   compensationJobId,
+  hcnCheckJobId,
   isValidDelayMs,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
   type CompensateJob,
+  type HcnCheckJob,
   type PostSaleEnqueueOptions,
   type PostSaleJobName,
   type PostSaleQueueService,
@@ -39,7 +41,8 @@ export interface RecordedPostSaleJob {
     | VerifyCreationJob
     | CompensateJob
     | VerifyHotelBookingJob
-    | VerifyCancellationJob;
+    | VerifyCancellationJob
+    | HcnCheckJob;
   jobId?: string;
   delayMs?: number;
   /** Por qué la cola real no lo habría encolado; ausente si lo habría aceptado. */
@@ -64,6 +67,7 @@ export class RecordingQueueService {
   readonly compensations: CompensateJob[] = [];
   readonly hotelVerifications: VerifyHotelBookingJob[] = [];
   readonly cancelVerifications: VerifyCancellationJob[] = [];
+  readonly hcnChecks: HcnCheckJob[] = [];
   /** Intervalos con que se pidió programar el barrido. */
   readonly sweeperSchedules: number[] = [];
   readonly jobs: RecordedPostSaleJob[] = [];
@@ -113,6 +117,11 @@ export class RecordingQueueService {
       verifyCancellationJobId(data),
       options,
     );
+  }
+
+  enqueueHcnCheck(data: HcnCheckJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
+    this.hcnChecks.push(data);
+    return this.record(POST_SALE_JOBS.hcnCheck, data, hcnCheckJobId(data), options);
   }
 
   scheduleSweeper(everyMs: number = POST_SALE_SWEEP_EVERY_MS): Promise<boolean> {

@@ -9,6 +9,8 @@ import { ProviderDisclosureModule } from '../provider-disclosure/provider-disclo
 import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import { SearchModule } from '../search/search.module.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
+import { HcnTrackingService } from './hcn-tracking.service.js';
+import { HcnTrackingStore } from './hcn-tracking.store.js';
 import { HotelBookingVerificationService } from './hotel-booking-verification.service.js';
 import { HotelBookingVerificationStore } from './hotel-booking-verification.store.js';
 import { HotelBookingService } from './hotel-booking.service.js';
@@ -36,8 +38,9 @@ import { HotelsService } from './hotels.service.js';
  * dependencia de la saga con sus eventos quede declarada; `BrandingModule` y `LifecycleModule`
  * también son globales.
  *
- * La verificación de una reserva sin respuesta (PR-4.7) se exporta para `PostSaleModule`, que
- * la ejecuta desde la cola y el barrido; la cola de post-venta es global (`QueueModule`).
+ * La verificación de una reserva sin respuesta (PR-4.7) y el seguimiento del HCN (PR-5.4) se
+ * exportan para `PostSaleModule`, que los ejecuta desde la cola y el barrido; la cola de post-venta
+ * es global (`QueueModule`). El plan del HCN lo abren la saga y la verificación al confirmar.
  *
  * La saga retiene el precio de venta en la cartera de la agencia antes del Book y la libera si el
  * proveedor no reservó (PR-4.8): `PortfoliosModule`.
@@ -67,10 +70,12 @@ import { HotelsService } from './hotels.service.js';
     HotelBookingService,
     HotelBookingVerificationStore,
     HotelBookingVerificationService,
+    HcnTrackingStore,
+    HcnTrackingService,
     HotelContentService,
     { provide: HOTEL_SEARCH_CONTEXT_CACHE, useClass: MemoryCacheAdapter },
     { provide: HOTEL_CONTENT_CACHE, useClass: MemoryCacheAdapter },
   ],
-  exports: [HotelBookingVerificationService],
+  exports: [HotelBookingVerificationService, HcnTrackingService],
 })
 export class HotelsModule {}

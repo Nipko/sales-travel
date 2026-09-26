@@ -1,11 +1,13 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
+import { HcnTrackingService } from '../hotels/hcn-tracking.service.js';
 import { HotelBookingVerificationService } from '../hotels/hotel-booking-verification.service.js';
 import {
   POST_SALE_JOBS,
   POST_SALE_QUEUE,
   type CancelRetryJob,
   type CompensateJob,
+  type HcnCheckJob,
   type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
@@ -25,6 +27,7 @@ export type PostSaleJob =
   | CompensateJob
   | VerifyHotelBookingJob
   | VerifyCancellationJob
+  | HcnCheckJob
   | PostSaleSweepJob;
 
 /** A quién le toca cada job. Cada uno decide con sus funciones puras; el worker sólo enruta. */
@@ -32,6 +35,7 @@ export interface PostSaleJobHandlers {
   readonly orders: Pick<OrdersService, 'runCancelById' | 'verifyCreationById' | 'runCompensation'>;
   readonly hotelBookings: Pick<HotelBookingVerificationService, 'runJob'>;
   readonly hotelCancellations: Pick<HotelOrderCancellationService, 'runJob'>;
+  readonly hcn: Pick<HcnTrackingService, 'runJob'>;
   readonly sweeper: Pick<PostSaleSweeper, 'run'>;
 }
 
@@ -84,6 +88,10 @@ export async function runPostSaleJob(
       // Como la del Book: el payload viene de Redis y lo valida el servicio.
       await handlers.hotelCancellations.runJob(data, { final: attempt.made + 1 >= attempt.max });
       return;
+    case POST_SALE_JOBS.hcnCheck:
+      // "Todavía sin HCN" no lanza; sólo un fallo de transporte, que la cola repite.
+      await handlers.hcn.runJob(data, { final: attempt.made + 1 >= attempt.max });
+      return;
     case POST_SALE_JOBS.sweeper:
       await handlers.sweeper.run();
       return;
@@ -98,8 +106,8 @@ export async function runPostSaleJob(
  *
  * Aquí NO vive ninguna decisión. Este fichero enruta por nombre de job y llama a `OrdersService`
  * (que consulta el saga puro de `order-create.saga.ts`), a la verificación de reservas de hotel
- * (`hotel-booking-verification.ts`), a la de sus cancelaciones (`hotel-cancellation-verification.ts`)
- * o al barrido. Es la condición que hace barata la migración a
+ * (`hotel-booking-verification.ts`), a la de sus cancelaciones (`hotel-cancellation-verification.ts`),
+ * al seguimiento del HCN (`hcn-plan.ts`) o al barrido. Es la condición que hace barata la migración a
  * Temporal: cuando llegue, se reescribe este fichero y nada más — la lógica que decide si hay que
  * compensar una reserva, o si una reserva sin respuesta existe, no se toca.
  *
@@ -120,8 +128,9 @@ export class PostSaleWorker implements OnModuleInit, OnModuleDestroy {
     sweeper: PostSaleSweeper,
     private readonly work: InflightWorkRegistry,
     hotelCancellations: HotelOrderCancellationService,
+    hcn: HcnTrackingService,
   ) {
-    this.handlers = { orders, hotelBookings, hotelCancellations, sweeper };
+    this.handlers = { orders, hotelBookings, hotelCancellations, hcn, sweeper };
   }
 
   onModuleInit(): void {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { HcnTrackingService } from '../hotels/hcn-tracking.service.js';
 import type { HotelBookingVerificationService } from '../hotels/hotel-booking-verification.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import type { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
@@ -43,6 +44,8 @@ const runJob = vi.fn<HotelBookingVerificationService['runJob']>(() => Promise.re
 const hotelBookings = { runJob } as unknown as HotelBookingVerificationService;
 const runCancelJob = vi.fn<HotelOrderCancellationService['runJob']>(() => Promise.resolve());
 const hotelCancellations = { runJob: runCancelJob } as unknown as HotelOrderCancellationService;
+const runHcnJob = vi.fn<HcnTrackingService['runJob']>(() => Promise.resolve());
+const hcn = { runJob: runHcnJob } as unknown as HcnTrackingService;
 const run = vi.fn<PostSaleSweeper['run']>();
 const sweeper = { run } as unknown as PostSaleSweeper;
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -64,7 +67,14 @@ describe('PostSaleWorker en el apagado', () => {
       }),
     );
     const registry = new InflightWorkRegistry();
-    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry, hotelCancellations);
+    const worker = new PostSaleWorker(
+      orders,
+      hotelBookings,
+      sweeper,
+      registry,
+      hotelCancellations,
+      hcn,
+    );
 
     worker.onModuleInit();
     expect(bull.constructed).toBe(1);
@@ -85,7 +95,14 @@ describe('PostSaleWorker en el apagado', () => {
   it('sin Redis no hay worker ni nada que detener', () => {
     vi.stubEnv('REDIS_HOST', '');
     const registry = new InflightWorkRegistry();
-    const worker = new PostSaleWorker(orders, hotelBookings, sweeper, registry, hotelCancellations);
+    const worker = new PostSaleWorker(
+      orders,
+      hotelBookings,
+      sweeper,
+      registry,
+      hotelCancellations,
+      hcn,
+    );
 
     worker.onModuleInit();
     registry.startShutdown(vi.fn());
@@ -97,12 +114,13 @@ describe('PostSaleWorker en el apagado', () => {
 
 describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () => {
   function manejadores(): PostSaleJobHandlers {
-    return { orders, hotelBookings, hotelCancellations, sweeper };
+    return { orders, hotelBookings, hotelCancellations, hcn, sweeper };
   }
 
   beforeEach(() => {
     runJob.mockClear();
     runCancelJob.mockClear();
+    runHcnJob.mockClear();
     run.mockReset();
   });
 
@@ -139,6 +157,20 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
     expect(runJob).not.toHaveBeenCalled();
   });
 
+  it('`hcn-check` va al seguimiento del HCN, con el último intento avisado (PR-5.4)', async () => {
+    const data = { tenantId: TENANT, orderId: 'o1', attempt: 2 };
+
+    await runPostSaleJob(manejadores(), 'hcn-check', data, { made: 0, max: 5 });
+    await runPostSaleJob(manejadores(), 'hcn-check', data, { made: 4, max: 5 });
+
+    expect(runHcnJob.mock.calls).toEqual([
+      [data, { final: false }],
+      [data, { final: true }],
+    ]);
+    expect(runJob).not.toHaveBeenCalled();
+    expect(runCancelJob).not.toHaveBeenCalled();
+  });
+
   it('`post-sale-sweeper` corre el barrido', async () => {
     run.mockResolvedValue({} as Awaited<ReturnType<PostSaleSweeper['run']>>);
 
@@ -155,6 +187,7 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
       sweeper,
       new InflightWorkRegistry(),
       hotelCancellations,
+      hcn,
     );
     worker.onModuleInit();
     const procesar = bull.procesador;

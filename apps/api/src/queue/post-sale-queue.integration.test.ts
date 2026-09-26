@@ -8,6 +8,7 @@ import {
   POST_SALE_SWEEP_EVERY_MS,
   cancelRetryJobId,
   compensationJobId,
+  hcnCheckJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
@@ -96,6 +97,7 @@ describe('jobId de post-venta — la regla de BullMQ, sin Redis', () => {
       ...[0, 4].map((step) =>
         verifyCancellationJobId({ tenantId: TENANT, orderId, step, anchorAt: Date.now() }),
       ),
+      ...[0, 3].map((attempt) => hcnCheckJobId({ tenantId: TENANT, orderId, attempt })),
     ];
 
     expect(ids.map(rechazoDeBullMq)).toEqual(ids.map(() => undefined));
@@ -161,6 +163,10 @@ d('PostSaleQueueService contra BullMQ real', () => {
     expect((await inspector.getJob(verifyCancellationJobId(cancelacionEnCurso)))?.opts.delay).toBe(
       120_000,
     );
+    // P5: una lectura del HCN a cinco días.
+    const hcn = { tenantId: TENANT, orderId, attempt: 0 };
+    await expect(cola.enqueueHcnCheck(hcn, { delayMs: 120 * 3_600_000 })).resolves.toBe(true);
+    expect((await inspector.getJob(hcnCheckJobId(hcn)))?.opts.delay).toBe(120 * 3_600_000);
 
     expect((await inspector.getJob(cancelRetryJobId(cancelacion)))?.name).toBe('cancel');
     expect((await inspector.getJob(compensationJobId(compensa)))?.name).toBe('compensate');

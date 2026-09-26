@@ -58,6 +58,7 @@ import {
   type HotelBookObservation,
   type HotelBookRejection,
 } from './hotel-booking.saga.js';
+import { HcnTrackingService } from './hcn-tracking.service.js';
 import { HotelBookingVerificationService } from './hotel-booking-verification.service.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
 import {
@@ -334,6 +335,9 @@ interface HoldRef {
  * sale a los 120 s del fallo, fuera de la petición, y `OrderEscalated` dice si quedó programada
  * (`queued`). Si no, la recoge el barrido.
  *
+ * Una reserva que queda `confirmed` abre el plan del HCN (PR-5.4; 04 §6.3 filas 2 y 3): también si
+ * la lectura de cierre falló, porque las lecturas del plan leen igual por el localizador.
+ *
  * La retención sigue a la orden (RF-23 CA-2): se libera cuando la orden queda `failed` —el
  * proveedor no reservó, o no salió nada— y se mantiene mientras esté `pending` o `confirmed`. Un
  * rechazo por la cuenta del proveedor (sin saldo, bloqueada) avisa además a su dueño con
@@ -356,6 +360,7 @@ export class HotelBookingService {
     private readonly inflight: InflightWorkRegistry,
     private readonly verification: HotelBookingVerificationService,
     private readonly portfolios: PortfoliosService,
+    private readonly hcn: HcnTrackingService,
     @Optional() @Inject(HOTEL_BOOK_OPTIONS) options?: HotelBookOptions,
   ) {
     if (options?.syncWaitMs !== undefined) {
@@ -982,6 +987,9 @@ export class HotelBookingService {
     });
 
     const closing = decideAfterClosingRead(view);
+    if (closing.status === 'confirmed') {
+      await this.hcn.schedule({ tenantId: run.tenantId, orderId: order.id });
+    }
     if (closing.kind === 'settled') return { ...this.summaryOf(run, order), reason: 'confirmed' };
 
     await this.escalate(run, closing.reason, { outcome: 'CONFIRMED' });

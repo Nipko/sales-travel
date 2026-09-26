@@ -35,6 +35,7 @@ import {
   type HotelVerificationTarget,
 } from './hotel-booking-verification.store.js';
 import { hotelBookProviderRaw, planBookVerification } from './hotel-booking.saga.js';
+import { HcnTrackingService } from './hcn-tracking.service.js';
 
 /**
  * Verificación de una reserva de hotel cuya respuesta no llegó (docs/tbo/09 PR-4.7; 08 RF-21,
@@ -184,6 +185,7 @@ export class HotelBookingVerificationService {
     private readonly breaker: CircuitBreakerService,
     private readonly audit: AuditService,
     private readonly queue: PostSaleQueueService,
+    private readonly hcn: HcnTrackingService,
   ) {}
 
   // ───────────────────────── 1. Desde la saga ─────────────────────────
@@ -397,7 +399,10 @@ export class HotelBookingVerificationService {
     }
   }
 
-  /** La encontró confirmada: el mismo CAS que la saga, con el localizador de la lectura. */
+  /**
+   * La encontró confirmada: el mismo CAS que la saga, con el localizador de la lectura. Después, el
+   * plan del HCN, como una reserva que confirmó en línea (04 §6.3 fila 6).
+   */
   private async consolidate(
     run: Run,
     decision: Extract<HotelVerificationDecision, { kind: 'consolidate' }>,
@@ -459,6 +464,7 @@ export class HotelBookingVerificationService {
         step: run.step,
       },
     });
+    await this.hcn.schedule({ tenantId: run.tenantId, orderId: target.orderId });
     return 'consolidated';
   }
 

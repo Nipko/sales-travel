@@ -62,6 +62,7 @@ import type { CredentialSource } from '../providers/provider.types.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
 import { MemoryVerificationStore } from './__fixtures__/memory-verification-store.js';
+import type { HcnScheduled, HcnTrackingService } from './hcn-tracking.service.js';
 import {
   HotelAcceptedTotalMismatchError,
   HotelAgencyContactMissingError,
@@ -546,6 +547,16 @@ interface Banco {
   tracking: MemoryVerificationStore;
   verification: HotelBookingVerificationService;
   fondos: Fondos;
+  /** El plan del HCN que abre la confirmación (PR-5.4). */
+  hcn: HcnFake;
+}
+
+type HcnFake = { schedule: Mock<HcnTrackingService['schedule']> };
+
+function hcnFake(): HcnFake {
+  return {
+    schedule: vi.fn(() => Promise.resolve<HcnScheduled>({ opened: true, queued: true })),
+  };
 }
 
 const SOPORTE: SupportContact = { email: 'reservas@agencia.example', phone: '+57 601 555 0000' };
@@ -577,6 +588,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
   const audit = { emit } as unknown as AuditService;
   const queue = new RecordingQueueService(opts.redis ?? true);
   const tracking = new MemoryVerificationStore(() => memory.rows());
+  const hcn = hcnFake();
   const verification = new HotelBookingVerificationService(
     registry,
     tracking.asStore(),
@@ -584,6 +596,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     breaker,
     audit,
     queue.asService(),
+    hcn as unknown as HcnTrackingService,
   );
   const fondos = carteraDe(opts.cartera);
   const service = new HotelBookingService(
@@ -598,6 +611,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     inflight,
     verification,
     fondos.service,
+    hcn as unknown as HcnTrackingService,
     opts.sinOpciones === true ? undefined : (opts.options ?? { syncWaitMs: 5_000 }),
   );
   return {
@@ -616,6 +630,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     tracking,
     verification,
     fondos,
+    hcn,
   };
 }
 
@@ -820,6 +835,8 @@ describe('RF-20: la orden existe antes del Book, y el Book sale con lo que reval
       tenantId: AGENCIA,
       requestId: fila(b)['id'],
     });
+    // Confirmada: abre el plan del HCN (04 §6.3 fila 2; PR-5.4).
+    expect(b.hcn.schedule.mock.calls).toEqual([[{ tenantId: AGENCIA, orderId: fila(b)['id'] }]]);
   });
 
   it('la fila: C2, huéspedes originales y enviados, contacto del huésped, lista blanca y vertical', async () => {
@@ -1056,6 +1073,7 @@ describe('las puertas: todo rechazo ocurre ANTES de abrir la orden y de llamar a
         b.inflight,
         b.verification,
         b.fondos.service,
+        b.hcn as unknown as HcnTrackingService,
         { syncWaitMs: 5_000 },
       );
 
@@ -1513,6 +1531,7 @@ describe('RF-20 CA-2: un rechazo definitivo del proveedor → failed, clave libr
       providerStatus: '207',
     });
     expect(b.adapter.getBooking).not.toHaveBeenCalled();
+    expect(b.hcn.schedule).not.toHaveBeenCalled();
     await expect(
       b.contexts.resolveOffer(
         AGENCIA,
@@ -1600,6 +1619,8 @@ describe('RF-20 CA-3: un desenlace incierto deja la orden `pending` y a verifica
       uncertain: true,
       dispatched: true,
     });
+    // Sin reserva confirmada no hay HCN: lo abre la verificación si la encuentra.
+    expect(b.hcn.schedule).not.toHaveBeenCalled();
     expect(evento(b, ORDER_EVENTS.escalated)).toEqual({
       provider: STUB,
       vertical: 'hotels',
@@ -1737,6 +1758,8 @@ describe('la lectura de cierre por el localizador (03 §5.1)', () => {
       queued: false,
     });
     expect(fila(b)['status']).toBe('confirmed');
+    // Sigue confirmada: el plan del HCN lee igual por el localizador (04 §6.3 fila 3).
+    expect(b.hcn.schedule.mock.calls).toEqual([[{ tenantId: AGENCIA, orderId: fila(b)['id'] }]]);
   });
 
   it('un proveedor que no sabe leer reservas no se llama: se escala igual', async () => {
@@ -1776,6 +1799,8 @@ describe('la lectura de cierre por el localizador (03 §5.1)', () => {
         error_message: CREATE_PENDING_RECONCILIATION_MARKER,
       });
       expect(evento(b, ORDER_EVENTS.escalated)).toMatchObject({ reason, queued: false });
+      // Vuelta a pending: no hay HCN que seguir mientras una persona la mira.
+      expect(b.hcn.schedule).not.toHaveBeenCalled();
     },
   );
 
@@ -2515,6 +2540,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
   const intents = new ExternalOrderIntentService(memory.db);
   const queue = new RecordingQueueService();
   const tracking = new MemoryVerificationStore(() => memory.rows());
+  const hcn = hcnFake();
   const verification = new HotelBookingVerificationService(
     registry,
     tracking.asStore(),
@@ -2522,6 +2548,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     breaker,
     audit,
     queue.asService(),
+    hcn as unknown as HcnTrackingService,
   );
   const fondos = carteraDe();
   const hotels = new HotelsService(
@@ -2552,6 +2579,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     new InflightWorkRegistry(),
     verification,
     fondos.service,
+    hcn as unknown as HcnTrackingService,
     { syncWaitMs: 5_000 },
   );
   return {

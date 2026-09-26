@@ -6,6 +6,7 @@ import {
   PostSaleQueueService,
   cancelRetryJobId,
   compensationJobId,
+  hcnCheckJobId,
   postSaleJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
@@ -273,6 +274,55 @@ describe('verificación de reservas de hotel y barrido (PR-4.7)', () => {
           removeOnComplete: 100,
           removeOnFail: 500,
           jobId: `verify-cancellation:${ORDEN}:1-1000`,
+        },
+      },
+    ]);
+  });
+
+  it('`hcn-check`: un job por lectura del plan, en tres segmentos (PR-5.4)', () => {
+    const lecturas = [0, 1, 2, 3].map((attempt) =>
+      hcnCheckJobId({ tenantId: TENANT, orderId: ORDEN, attempt }),
+    );
+
+    expect(lecturas).toEqual([0, 1, 2, 3].map((n) => `hcn-check:${ORDEN}:${n}`));
+    expect(lecturas.map(bullMqJobIdRejection)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(POST_SALE_JOBS.hcnCheck).toBe('hcn-check');
+  });
+
+  it('la lectura del HCN llega a BullMQ con su jobId, su retardo de días y los reintentos de una lectura', async () => {
+    const cola = colaConRedis();
+    const lectura = { tenantId: TENANT, orderId: ORDEN, attempt: 0 };
+
+    await expect(cola.enqueueHcnCheck(lectura, { delayMs: 120 * 3_600_000 })).resolves.toBe(true);
+    await expect(cola.enqueueHcnCheck({ ...lectura, attempt: 1 })).resolves.toBe(true);
+
+    expect(cola.llamadas).toEqual([
+      {
+        name: 'hcn-check',
+        data: lectura,
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `hcn-check:${ORDEN}:0`,
+          delay: 120 * 3_600_000,
+        },
+      },
+      {
+        name: 'hcn-check',
+        data: { ...lectura, attempt: 1 },
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `hcn-check:${ORDEN}:1`,
         },
       },
     ]);

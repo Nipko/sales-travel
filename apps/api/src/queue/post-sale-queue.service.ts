@@ -25,6 +25,11 @@ export const POST_SALE_JOBS = {
    * verificar (docs/tbo/04 §4.4). Sólo lee: la cancelación nunca se reenvía desde la cola.
    */
   verifyCancellation: 'verify-cancellation',
+  /**
+   * Una lectura del plan del número de confirmación del hotel (HCN, docs/tbo/04 §8). Sólo lee: el
+   * plan y sus intentos viven en la fila de seguimiento, no en la cola.
+   */
+  hcnCheck: 'hcn-check',
   /** El barrido periódico que ejecuta lo que la cola perdió (RNF-10: Postgres manda). */
   sweeper: 'post-sale-sweeper',
 } as const;
@@ -96,6 +101,17 @@ export interface VerifyCancellationJob {
   actorUserId?: string;
 }
 
+/**
+ * Una lectura del plan del HCN. Sin datos personales: qué orden y cuántas lecturas se hicieron antes
+ * de ésta; la fila de seguimiento decide si la lectura sigue vigente.
+ */
+export interface HcnCheckJob {
+  tenantId: string;
+  orderId: string;
+  /** Lecturas ya hechas (0 = la del SLA): es el tercer segmento del `jobId`. */
+  attempt: number;
+}
+
 export interface PostSaleEnqueueOptions {
   /** Milisegundos antes de que el job pueda correr (p. ej. la relectura a 120 s de un Book incierto). */
   delayMs?: number;
@@ -155,6 +171,14 @@ export function verifyCancellationJobId(data: VerifyCancellationJob): string {
     data.orderId,
     `${data.step}-${data.anchorAt}`,
   );
+}
+
+/**
+ * Un job por lectura del plan. Una orden tiene un solo plan de HCN en su vida (la fila nunca lo
+ * reabre), así que el número de lectura alcanza para no duplicar ni pisar.
+ */
+export function hcnCheckJobId(data: HcnCheckJob): string {
+  return postSaleJobId(POST_SALE_JOBS.hcnCheck, data.orderId, String(data.attempt));
 }
 
 /**
@@ -259,6 +283,15 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
       verifyCancellationJobId(data),
       options,
     );
+  }
+
+  /**
+   * Encola una lectura del plan del HCN, con el retardo hasta su hora (hasta 5 días en P5). Los
+   * `attempts` de la cola repiten ESA lectura ante un fallo de transporte y no cuentan como
+   * lecturas del plan.
+   */
+  async enqueueHcnCheck(data: HcnCheckJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.hcnCheck, data, hcnCheckJobId(data), options);
   }
 
   /**

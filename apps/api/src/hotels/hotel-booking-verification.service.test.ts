@@ -14,6 +14,7 @@ import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.ser
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { MemoryVerificationStore } from './__fixtures__/memory-verification-store.js';
+import type { HcnTrackingService } from './hcn-tracking.service.js';
 import {
   HOTEL_BOOK_VERIFY_ENQUEUE_WAIT_MS,
   HotelBookingVerificationService,
@@ -69,6 +70,9 @@ function banco(opts: Opciones = {}) {
   const tracking = new MemoryVerificationStore(() => memory.rows());
   const queue = new RecordingQueueService(opts.redis ?? true);
   const emit = vi.fn((_event: unknown) => Promise.resolve());
+  const schedule = vi.fn<HcnTrackingService['schedule']>(() =>
+    Promise.resolve({ opened: true, queued: true }),
+  );
   const service = new HotelBookingVerificationService(
     hotelRegistry([stub], hotelFlags(true)),
     tracking.asStore(),
@@ -76,8 +80,20 @@ function banco(opts: Opciones = {}) {
     new CircuitBreakerService(),
     { emit } as unknown as AuditService,
     queue.asService(),
+    { schedule } as unknown as HcnTrackingService,
   );
-  return { service, adapter, leer, bookWithContext, memory, intents, tracking, queue, emit };
+  return {
+    service,
+    adapter,
+    leer,
+    bookWithContext,
+    memory,
+    intents,
+    tracking,
+    queue,
+    emit,
+    schedule,
+  };
 }
 
 type Banco = ReturnType<typeof banco>;
@@ -365,6 +381,8 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
       });
       // Consolidada, el calendario no encola nada más.
       expect(b.queue.hotelVerifications).toHaveLength(1);
+      // Y abre el plan del HCN como una reserva que confirmó en línea (04 §6.3 fila 6, PR-5.4).
+      expect(b.schedule.mock.calls).toEqual([[{ tenantId: AGENCIA, orderId: id }]]);
     });
 
     it('sin estado crudo, no inventa uno', async () => {
@@ -388,6 +406,7 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
 
       expect(b.emit).not.toHaveBeenCalled();
       expect(b.tracking.tracking.get(id)?.step).toBe(0);
+      expect(b.schedule).not.toHaveBeenCalled();
     });
 
     it('si el seguimiento no se escribe, la orden ya dice `confirmed` y el evento sale igual', async () => {

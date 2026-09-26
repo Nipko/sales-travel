@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
+import type { HcnSweepReport, HcnTrackingService } from '../hotels/hcn-tracking.service.js';
 import type {
   HotelBookingVerificationService,
   HotelVerificationSweepReport,
@@ -63,6 +64,23 @@ function informeDeCancelaciones(
   };
 }
 
+function informeHcn(parcial: Partial<HcnSweepReport> = {}): HcnSweepReport {
+  return {
+    examined: 0,
+    adopted: 0,
+    failed: 0,
+    received: 0,
+    advanced: 0,
+    missing: 0,
+    stopped: 0,
+    paused: 0,
+    unavailable: 0,
+    'window-entered': 0,
+    skipped: 0,
+    ...parcial,
+  };
+}
+
 function banco(tenants: string[], redis = true) {
   const consulta = { tabla: '', columna: '', orden: '' };
   const db = {
@@ -89,6 +107,7 @@ function banco(tenants: string[], redis = true) {
   const sweepCancellations = vi.fn<HotelOrderCancellationService['sweepTenant']>(() =>
     Promise.resolve(informeDeCancelaciones()),
   );
+  const sweepHcn = vi.fn<HcnTrackingService['sweepTenant']>(() => Promise.resolve(informeHcn()));
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -97,8 +116,9 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant } as unknown as HotelBookingVerificationService,
     work,
     { sweepTenant: sweepCancellations } as unknown as HotelOrderCancellationService,
+    { sweepTenant: sweepHcn } as unknown as HcnTrackingService,
   );
-  return { sweeper, sweepTenant, sweepCancellations, queue, consulta, work };
+  return { sweeper, sweepTenant, sweepCancellations, sweepHcn, queue, consulta, work };
 }
 
 afterEach(() => {
@@ -247,6 +267,7 @@ describe('PostSaleSweeper — la corrida', () => {
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
       cancellations: informeDeCancelaciones(),
+      hcn: informeHcn(),
     });
   });
 
@@ -271,6 +292,44 @@ describe('PostSaleSweeper — la corrida', () => {
     );
     // Los desenlaces de la verificación del Book no se mezclan con los de la cancelación.
     expect(report.examined).toBe(0);
+  });
+
+  it('también sigue el HCN, tenant por tenant, con su propio informe (PR-5.4)', async () => {
+    const b = banco([A, B]);
+    b.sweepHcn.mockImplementation((tenantId) =>
+      Promise.resolve(
+        tenantId === A
+          ? informeHcn({ examined: 3, adopted: 1, advanced: 1, 'window-entered': 1 })
+          : informeHcn({ examined: 1, missing: 1 }),
+      ),
+    );
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepHcn.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    expect(report.hcn).toEqual(
+      informeHcn({ examined: 4, adopted: 1, advanced: 1, 'window-entered': 1, missing: 1 }),
+    );
+    expect(report.examined).toBe(0);
+    expect(report.cancellations.examined).toBe(0);
+  });
+
+  it('un seguimiento del HCN que falla en un tenant no frena a las verificaciones ni a los demás tenants', async () => {
+    const b = banco([A, B]);
+    b.sweepHcn.mockImplementation((tenantId) =>
+      tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(informeHcn({ examined: 1, received: 1 })),
+    );
+    b.sweepTenant.mockResolvedValue(informe({ examined: 1, held: 1 }));
+
+    const report = await b.sweeper.run();
+
+    expect(report).toMatchObject({ tenantsFailed: 1, examined: 2, held: 2 });
+    expect(report.hcn).toMatchObject({ examined: 1, received: 1 });
   });
 
   it('una verificación que falla en un tenant no deja sin correr a la otra', async () => {
@@ -316,6 +375,7 @@ describe('PostSaleSweeper — la corrida', () => {
       tenantsFailed: 0,
       ...informe(),
       cancellations: informeDeCancelaciones(),
+      hcn: informeHcn(),
     });
   });
 });

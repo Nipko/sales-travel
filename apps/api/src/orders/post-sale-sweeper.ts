@@ -5,6 +5,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
+import { HcnTrackingService, type HcnSweepReport } from '../hotels/hcn-tracking.service.js';
 import {
   HotelBookingVerificationService,
   type HotelVerificationSweepReport,
@@ -35,12 +36,14 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * La cola despierta cada paso a su hora, pero no es la fuente de verdad: un job se pierde si Redis
  * no estaba al encolar, si el proceso murió con la reserva en vuelo o si agotó sus reintentos. Cada
  * 15 minutos, este barrido relee Postgres y ejecuta lo vencido. Hoy: la verificación de las reservas
- * de hotel sin respuesta y la de sus cancelaciones en curso o sin verificar (PR-5.3). El seguimiento
- * del HCN se suma aquí con su PR.
+ * de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3) y el seguimiento
+ * del HCN (PR-5.4): sus lecturas perdidas, sus entradas en ventana y las órdenes confirmadas que se
+ * quedaron sin plan.
  *
- * `orders` y `hotel_order_tracking` tienen RLS forzada y la API corre como `app_user`, sin rol de
- * mantenimiento: el barrido recorre los tenants uno por uno, cada uno con `withTenant`. `tenants`
- * no tiene RLS, así que la lista sale entera. Un tenant que falla no frena a los demás.
+ * `orders`, `order_operations` y `hotel_order_tracking` tienen RLS forzada y la API corre como
+ * `app_user`, sin rol de mantenimiento ni función que la salte: el barrido recorre los tenants uno
+ * por uno, cada uno con `withTenant` (pendiente c de la Fase 5). `tenants` no tiene RLS, así que la
+ * lista sale entera. Un tenant que falla no frena a los demás.
  *
  * Con Redis corre como el job `post-sale-sweeper` de un Job Scheduler de BullMQ (D-TBO-29 A): una
  * corrida por intervalo aunque haya varias réplicas. Sin Redis —o si Redis no acepta el scheduler,
@@ -55,6 +58,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   tenantsFailed: number;
   /** La verificación de cancelaciones de hotel, con su propio vocabulario de desenlaces. */
   cancellations: HotelCancelVerifySweepReport;
+  /** El seguimiento del HCN, con el suyo. */
+  hcn: HcnSweepReport;
 };
 
 @Injectable()
@@ -71,6 +76,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly hotelBookings: HotelBookingVerificationService,
     private readonly work: InflightWorkRegistry,
     private readonly hotelCancellations: HotelOrderCancellationService,
+    private readonly hcn: HcnTrackingService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -133,6 +139,19 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
         unavailable: 0,
         skipped: 0,
       },
+      hcn: {
+        examined: 0,
+        adopted: 0,
+        failed: 0,
+        received: 0,
+        advanced: 0,
+        missing: 0,
+        stopped: 0,
+        paused: 0,
+        unavailable: 0,
+        'window-entered': 0,
+        skipped: 0,
+      },
     };
 
     for (const { id } of tenants) {
@@ -159,6 +178,15 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
           `post_sale.sweep.cancellations.tenant_failed tenant=${id} error=${errorName(err)}`,
         );
       }
+      try {
+        const hcn = await this.hcn.sweepTenant(id, now);
+        for (const key of Object.keys(hcn) as (keyof HcnSweepReport)[]) {
+          report.hcn[key] += hcn[key];
+        }
+      } catch (err) {
+        failed = true;
+        this.logger.warn(`post_sale.sweep.hcn.tenant_failed tenant=${id} error=${errorName(err)}`);
+      }
       if (failed) report.tenantsFailed += 1;
     }
 
@@ -171,6 +199,12 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     if (c.examined > 0) {
       this.logger.log(
         `post_sale.sweep.cancellations examined=${c.examined} closed=${c.closed} advanced=${c.advanced} stuck=${c.stuck} settled=${c.settled} held=${c.held} unavailable=${c.unavailable} skipped=${c.skipped} failed=${c.failed}`,
+      );
+    }
+    const h = report.hcn;
+    if (h.examined > 0) {
+      this.logger.log(
+        `post_sale.sweep.hcn examined=${h.examined} adopted=${h.adopted} windowEntered=${h['window-entered']} received=${h.received} advanced=${h.advanced} missing=${h.missing} stopped=${h.stopped} paused=${h.paused} unavailable=${h.unavailable} skipped=${h.skipped} failed=${h.failed}`,
       );
     }
     return report;
