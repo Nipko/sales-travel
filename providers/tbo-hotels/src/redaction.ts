@@ -128,6 +128,10 @@ export const TBO_LOG_FIELDS: ReadonlySet<string> = new Set([
   'packsReceived',
   'packsMapped',
   'unknownKeys',
+  // Lectura del contenido estático: sólo conteos. Los nombres de hotel y las direcciones no entran
+  // aunque no sean datos personales: el log es una lista blanca (docs/tbo/05 §6.6).
+  'itemsReceived',
+  'itemsMapped',
   // Resultado de una búsqueda del adapter: nuestro `searchId` y conteos. Nunca los códigos de hotel,
   // las fechas ni la ocupación, y menos la nacionalidad del huésped (02 §5.3 punto 7).
   'searchId',
@@ -140,6 +144,9 @@ export const TBO_LOG_FIELDS: ReadonlySet<string> = new Set([
   'bookingReferenceId',
   'clientReferenceId',
   'confirmationNumber',
+  // Estado de la reserva en TBO como CÓDIGO: la grafía del enum o el valor desconocido saneado a
+  // letras, dígitos, `_` y `-` (`detail/booking-status.ts`). Nunca texto libre del proveedor.
+  'providerStatus',
 ]);
 
 export type TboLogValue = string | number | boolean | readonly string[];

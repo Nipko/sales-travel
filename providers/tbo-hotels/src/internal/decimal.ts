@@ -172,3 +172,48 @@ export function toMinorUnits(amount: unknown, currency: string): MinorUnits {
   if (!isSupportedCurrency(currency)) return rejected('UNSUPPORTED_CURRENCY');
   return decimalToMinor(amount, SUPPORTED_MINOR_UNIT_EXPONENT);
 }
+
+/**
+ * Techo de la comparación exacta. Un importe de TBO no pasa de 16 dígitos significativos; más es un
+ * dato roto, y un exponente enorme haría crecer `10n ** n` sin límite.
+ */
+const MAX_COMPARE_DIGITS = 64;
+
+interface ExactDecimal {
+  /** Valor = `units × 10^-scale`. */
+  readonly units: bigint;
+  readonly scale: number;
+}
+
+function exactDecimal(amount: unknown): ExactDecimal | undefined {
+  const text = decimalText(amount);
+  const match = text === undefined ? null : DECIMAL.exec(text);
+  if (match === null) return undefined;
+  const [, sign, intPart = '', fracPart = '', expPart = '0'] = match;
+  const exp10 = Number(expPart);
+  const digits = `${intPart}${fracPart}`;
+  if (!Number.isSafeInteger(exp10) || Math.abs(exp10) > MAX_COMPARE_DIGITS) return undefined;
+  if (digits.length > MAX_COMPARE_DIGITS) return undefined;
+  const magnitude = BigInt(digits);
+  return { units: sign === '-' ? -magnitude : magnitude, scale: fracPart.length - exp10 };
+}
+
+/**
+ * Compara dos importes como decimales EXACTOS, sin tolerancia ni coma flotante (docs/tbo/03 §2.9
+ * regla 1): `305.75` y `"305.750"` son iguales; `305.75` y `305.76`, no. A diferencia de
+ * {@link decimalToMinor} no redondea: dos importes que difieren en la tercera cifra decimal son
+ * distintos aunque den las mismas unidades menores.
+ *
+ * `undefined` si alguno no es un decimal legible: comparar lo que no se sabe leer no puede
+ * responder "igual".
+ */
+export function compareDecimals(left: unknown, right: unknown): -1 | 0 | 1 | undefined {
+  const a = exactDecimal(left);
+  const b = exactDecimal(right);
+  if (a === undefined || b === undefined) return undefined;
+  const scale = Math.max(a.scale, b.scale);
+  const aligned = (value: ExactDecimal): bigint => value.units * 10n ** BigInt(scale - value.scale);
+  const x = aligned(a);
+  const y = aligned(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}

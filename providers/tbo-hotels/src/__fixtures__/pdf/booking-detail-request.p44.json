@@ -1,0 +1,10 @@
+{
+  "byConfirmationNumber": {
+    "ConfirmationNumber": "YOSUR8",
+    "PaymentMode": "Limit"
+  },
+  "byBookingReferenceId": {
+    "BookingReferenceId": "AVw12118",
+    "PaymentMode": "Limit"
+  }
+}

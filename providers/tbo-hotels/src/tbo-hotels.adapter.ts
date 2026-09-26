@@ -1,15 +1,62 @@
-import type { HotelOffer, HotelRatesQuery, HotelSearchCriteria } from '@sales-travel/canonical';
+import {
+  HotelRoomOccupancySchema,
+  type HotelOffer,
+  type HotelRatesQuery,
+  type HotelRoomOccupancy,
+  type HotelSearchCriteria,
+} from '@sales-travel/canonical';
 import type { LoggerPort, MetricsPort } from '@sales-travel/core';
-import type { HotelRatesDetailPort, HotelSearchPort, SearchContext } from '@sales-travel/domain';
+import type {
+  HotelBookPort,
+  HotelBookRequest,
+  HotelBookResult,
+  HotelBookingByClientReferencePort,
+  HotelBookingContact,
+  HotelBookingReadPort,
+  HotelBookingRoomGuests,
+  HotelBookingView,
+  HotelPrebookPort,
+  HotelPrebookRequest,
+  HotelPrebookResult,
+  HotelRatesDetailPort,
+  HotelSearchPort,
+  SearchContext,
+} from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { buildTboBookRequest, TboBookRequestSchema } from './booking/book.request.builder';
+import {
+  mapTboBookResponse,
+  type TboBookReply,
+  type TboBookReplyDiagnostics,
+} from './booking/book.response.mapper';
+import { TboBookEnvelopeSchema } from './booking/book.response.schema';
+import { tboBookingReferenceEnvironment } from './booking/booking-reference';
+import {
+  classifyTboBookOutcome,
+  type TboBookClassification,
+} from './booking/classify-book-outcome';
 import { requireUsableTboConfig, type TboHotelsConfig } from './config';
+import {
+  buildTboBookingDetailRequest,
+  TboBookingDetailRequestSchema,
+} from './detail/booking-detail.request.builder';
+import {
+  mapTboBookingDetailResponse,
+  type TboBookingDetailMapping,
+  type TboBookingLookup,
+} from './detail/response.mapper';
+import { TboBookingDetailEnvelopeSchema } from './detail/response.schema';
 import {
   TboApiError,
   TboConfigError,
   TboDispatchRejectedError,
   TboError,
+  TboOfferExpiredError,
+  TboRequestBuildError,
+  TboResponseMappingError,
   TboUnsupportedCurrencyError,
+  type TboFailureKind,
 } from './errors';
 import { TBO_LIMITER_DEFAULTS } from './http/limiter';
 import {
@@ -17,11 +64,16 @@ import {
   TBO_SEARCH_RESPONSE_TIME_S,
   TBO_SEARCH_TIMEOUT_MARGIN_MS,
   tboSearchTimeoutMs,
+  type TboLane,
 } from './http/operations';
 import { TboHttpClient, type TboAccountContext, type TboHttpDeps } from './http/tbo-http.client';
 import { zodIssueRefs } from './internal/zod-issues';
+import { buildTboPrebookRequest, TboPrebookRequestSchema } from './prebook/prebook.request.builder';
+import { mapTboPrebookResponse, type TboPrebookMapping } from './prebook/response.mapper';
+import { TboPrebookEnvelopeSchema } from './prebook/response.schema';
 import { TBO_HOTELS_PROVIDER_CODE } from './provider-code';
 import { pickTboLogMeta } from './redaction';
+import { TBO_OFFER_TTL_MS } from './search/offer-window';
 import {
   mapTboSearchResponse,
   type TboHotelRejection,
@@ -40,14 +92,30 @@ import {
   type TboSearchRequest,
 } from './search/search.request.builder';
 
-// Tipos NUESTROS que produce el mapper, no crudos de TBO: el reporte de búsqueda los expone para
-// el contexto del servidor (RF-08). El mapper, que recibe el sobre crudo, sigue sin publicarse.
+// Tipos NUESTROS que producen los mappers, no crudos de TBO: los reportes de búsqueda y de PreBook
+// los exponen para el servidor (RF-08). Los mappers, que reciben el sobre crudo, no se publican.
 export type {
   TboHotelRejection,
   TboPackRejection,
   TboSearchDiagnostics,
   TboSearchPackContext,
 } from './search/response.mapper';
+export type {
+  TboPrebookDiagnostics,
+  TboPrebookMapping,
+  TboPrebookWarning,
+} from './prebook/response.mapper';
+export type { TboBookReply, TboBookReplyDiagnostics } from './booking/book.response.mapper';
+export type {
+  TboBookedHotel,
+  TboBookedRoomSummary,
+  TboBookingDetailDiagnostics,
+  TboBookingDetailMapping,
+  TboBookingDetailSummary,
+  TboBookingDetailWarning,
+  TboBookingLookup,
+  TboVoucherStatus,
+} from './detail/response.mapper';
 
 /**
  * Búsqueda y detalle de un hotel en TBO por los puertos neutrales (docs/tbo/09 PR-1.5; 08 RF-14
@@ -74,6 +142,24 @@ export type {
  * El puerto devuelve sólo ofertas. Lo que el servidor necesita además —`searchId`, `searchSentAt`,
  * `BookingCode` y literal de `TotalFare` por pack, estado de cada lote— sale por los métodos
  * `…Report`, que son la entrada que usa el factory de `apps/api`.
+ *
+ * **PreBook** (docs/tbo/09 PR-4.1; 08 RF-09, RF-15 a RF-17): `HotelPrebookPort` más
+ * `prebookReport`, que devuelve además lo que el Book reenvía (el `BookingCode` de PreBook y el
+ * literal de su `TotalFare`) y la huella de las condiciones para la comparación C2. Pasado
+ * `searchSentAt + 27 min` no sale ninguna llamada: `TboOfferExpiredError` (RF-09). Los reintentos
+ * los decide el cliente: uno solo tras un fallo rápido y dentro de los 23 s, nunca tras un timeout
+ * (08 §9 C-24). Comparar contra lo que vio el vendedor es del servidor (`compareTboRates`).
+ *
+ * **Book** (docs/tbo/09 PR-4.2; 03 §3-§4; 08 RF-18 a RF-21): `HotelBookPort` más `bookReport`. UN
+ * intento, 120 s y nunca un reintento (lo garantiza el cliente, `money-paths.guard.test.ts`);
+ * `PaymentMode: "Limit"` y sin `PaymentInfo`. Lo que TBO responde con `200` se devuelve clasificado
+ * (`CONFIRMED` o `UNCERTAIN`, `classifyTboBookOutcome`); lo que no, se LANZA tal cual, para que el
+ * breaker cuente la caída o suspenda la cuenta, y la saga lo clasifica con la misma función pura
+ * (`FAILED` o `UNCERTAIN`). Pasado `searchSentAt + 27 min` no sale ningún Book (RF-09).
+ *
+ * **BookingDetail** (04 §3; 08 RF-24): `HotelBookingReadPort` por `ConfirmationNumber` y
+ * `HotelBookingByClientReferencePort` por nuestra `BookingReferenceId`, más `bookingDetailReport`
+ * con el resumen para la post-venta. Es una lectura: se reintenta ante red, 5xx o 429.
  */
 
 // ───────────────────────── Opciones ─────────────────────────
@@ -231,6 +317,244 @@ export interface TboHotelRatesReport extends Omit<TboSearchReport, 'offers'> {
   readonly offer: HotelOffer;
 }
 
+// ───────────────────────── PreBook ─────────────────────────
+
+/**
+ * Qué revalidar. Todo sale del contexto de búsqueda que guardó el servidor (RF-08), nunca del
+ * navegador: el `HotelCode` y la ocupación que PreBook no recibe pero su respuesta tiene que
+ * cumplir, y el instante del Search del que sale el vencimiento.
+ */
+export interface TboPrebookQuery {
+  readonly hotelCode: string;
+  /** El `BookingCode` del pack elegido, tal como lo dio Search. */
+  readonly bookingCode: string;
+  readonly searchId: string;
+  /** Epoch en ms del ENVÍO del Search que emitió la tarifa (RF-09). */
+  readonly searchSentAt: number;
+  /** Ocupación pedida, en el orden del Search: `Name[j]` es la habitación j (p. 20). */
+  readonly rooms: readonly HotelRoomOccupancy[];
+  /** Señal del request del vendedor: PreBook es una lectura interactiva (01 §5.4). */
+  readonly signal?: AbortSignal;
+}
+
+export interface TboPrebookReport extends TboPrebookMapping {
+  /** El de la llamada HTTP, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly requestId: string;
+  /** Huella de la cuenta que revalidó (`tboAccountRef`), nunca el usuario. */
+  readonly accountRef: string;
+  /** Intentos que hizo el cliente: 2 sólo tras un fallo rápido dentro de los 23 s (C-24). */
+  readonly attempts: number;
+  readonly durationMs: number;
+}
+
+/**
+ * Las claves de `HotelPrebookRequest.providerOptions` que lee el ACL de TBO, para quien llama por el
+ * puerto neutral: lo que PreBook exige y un `ProviderRef` no lleva. Ninguna es PII.
+ */
+export interface TboPrebookProviderOptions {
+  readonly hotelCode: string;
+  readonly rooms: readonly HotelRoomOccupancy[];
+}
+
+/** Reloj del servidor frente al instante guardado: más adelantado que esto no es deriva. */
+const SEARCH_SENT_AT_MAX_SKEW_MS = 5_000;
+
+const PrebookQuerySchema = z.object({
+  hotelCode: z.string().min(1).max(64),
+  bookingCode: z.string().min(1).max(255),
+  searchId: z.string().min(1).max(128),
+  searchSentAt: z.number().int().nonnegative(),
+  rooms: HotelRoomOccupancySchema.array().min(1).max(8),
+});
+
+const PrebookProviderOptionsSchema = z.object({
+  hotelCode: z.string().min(1).max(64),
+  rooms: HotelRoomOccupancySchema.array().min(1).max(8),
+});
+
+const PREBOOK_PATH = TBO_OPERATIONS.prebook.path;
+
+// ───────────────────────── Book ─────────────────────────
+
+/**
+ * Qué reservar. Todo sale de lo que la saga ya persistió en el intent y del snapshot del PreBook de
+ * revalidación (C2), nunca del navegador (RF-20): el `BookingCode` y el literal de `TotalFare` son
+ * los de ese PreBook, la ocupación es la del Search y la referencia se generó antes de insertar.
+ */
+export interface TboBookQuery {
+  /** `pack.bookingCode` del PreBook de revalidación (Q-30). */
+  readonly bookingCode: string;
+  /** `pack.totalFare` del PreBook de revalidación: el literal, no una reconstrucción. */
+  readonly totalFare: string;
+  /** `generateTboBookingReference`, ya persistida en el intent (RF-19). */
+  readonly bookingReferenceId: string;
+  /** Epoch en ms del ENVÍO del Search que emitió la tarifa (RF-09). */
+  readonly searchSentAt: number;
+  /** `PaxRooms` del Search, en su orden. */
+  readonly occupancy: readonly HotelRoomOccupancy[];
+  /** Huéspedes por habitación, en el orden de `occupancy`. */
+  readonly rooms: readonly HotelBookingRoomGuests[];
+  /** El contacto que viaja a TBO: el operativo de la agencia (D-TBO-23 A). */
+  readonly contact: HotelBookingContact;
+}
+
+/** Lo que volvió de un Book con `200`, para que la saga lo registre sin volver al cuerpo. */
+export interface TboBookReplySummary {
+  readonly confirmationNumber?: string;
+  readonly clientReferenceId?: string;
+}
+
+export interface TboBookReport {
+  /** `CONFIRMED` o `UNCERTAIN`: un Book que no respondió `200` se lanza, no se devuelve. */
+  readonly result: HotelBookResult;
+  readonly classification: TboBookClassification;
+  readonly reply: TboBookReplySummary;
+  readonly bookingReferenceId: string;
+  /** El de la llamada HTTP, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly requestId: string;
+  /** Huella de la cuenta que reservó (`tboAccountRef`): la post-venta tiene que usar la misma. */
+  readonly accountRef: string;
+  /** Siempre 1 (money-paths.guard.test.ts). */
+  readonly attempts: number;
+  readonly durationMs: number;
+  readonly diagnostics: TboBookReplyDiagnostics;
+}
+
+/**
+ * Las claves de `HotelBookRequest.providerOptions` que lee el ACL de TBO, para quien llama por el
+ * puerto neutral: lo que el Book exige y el puerto no lleva. Ninguna es PII.
+ */
+export interface TboBookProviderOptions {
+  /** Literal decimal del `TotalFare` del PreBook de revalidación. */
+  readonly totalFare: string;
+  /** ISO 8601 del envío del Search que emitió la tarifa. */
+  readonly searchSentAt: string;
+  /** `PaxRooms` del Search, en su orden. */
+  readonly rooms: readonly HotelRoomOccupancy[];
+}
+
+const BookQueryShapeSchema = z.object({
+  bookingCode: z.string().min(1).max(255),
+  totalFare: z.string().min(1).max(64),
+  bookingReferenceId: z.string().min(1).max(64),
+  searchSentAt: z.number().int().nonnegative(),
+  occupancy: HotelRoomOccupancySchema.array().min(1).max(8),
+});
+
+const BookProviderOptionsSchema = z.object({
+  totalFare: z.string().min(1).max(64),
+  searchSentAt: z.string().min(1).max(64),
+  rooms: HotelRoomOccupancySchema.array().min(1).max(8),
+});
+
+const BOOK_PATH = TBO_OPERATIONS.book.path;
+const DETAIL_PATH = TBO_OPERATIONS.bookingDetail.path;
+
+/**
+ * `HotelBookRequest` → consulta de Book. El pago tiene que ser el crédito de la cuenta (`Limit`):
+ * un token de checkout alojado no tiene a dónde ir en TBO y pedirlo con `Limit` cargaría la reserva
+ * a la cuenta sin que nadie lo decidiera.
+ */
+function bookQueryFromPort(request: HotelBookRequest): TboBookQuery {
+  const issues: string[] = [];
+  if (request.offer.name !== TBO_HOTELS_PROVIDER_CODE) issues.push('offer.name:not_tbo_hotels');
+  const options = BookProviderOptionsSchema.safeParse(request.providerOptions ?? {});
+  if (!options.success) issues.push(...zodIssueRefs(options.error, 'providerOptions'));
+  const sentAt = options.success ? Date.parse(options.data.searchSentAt) : Number.NaN;
+  if (options.success && !Number.isFinite(sentAt))
+    issues.push('providerOptions.searchSentAt:invalid');
+  if (request.payment.kind !== 'agency-credit') {
+    throw new TboRequestBuildError(BOOK_PATH, 'PAYMENT_MODE', ['payment.kind:not_agency_credit']);
+  }
+  if (issues.length > 0 || !options.success) {
+    throw new TboRequestBuildError(BOOK_PATH, 'SCHEMA', issues);
+  }
+  return {
+    bookingCode: request.offer.offerRef,
+    totalFare: options.data.totalFare,
+    bookingReferenceId: request.bookingReference,
+    searchSentAt: sentAt,
+    occupancy: options.data.rooms,
+    rooms: request.rooms,
+    contact: request.contact,
+  };
+}
+
+// ───────────────────────── BookingDetail ─────────────────────────
+
+/**
+ * Para qué se lee: decide el cupo del limitador y cuántos intentos (01 §7.2; tabla de operaciones).
+ *
+ * - `recovery`: verificar un Book (el incierto por referencia, el de cierre por localizador). Va al
+ *   cupo de dinero, que no espera detrás de las búsquedas.
+ * - `interactive`: el vendedor espera la respuesta (panel). Dos intentos.
+ * - `background`: HCN, conciliación, antes y después de un Cancel.
+ */
+export type TboBookingDetailPurpose = 'recovery' | 'interactive' | 'background';
+
+const DETAIL_PURPOSES: Readonly<
+  Record<TboBookingDetailPurpose, { readonly lane: TboLane; readonly maxAttempts: number }>
+> = Object.freeze({
+  recovery: { lane: 'money', maxAttempts: 3 },
+  interactive: { lane: 'sales', maxAttempts: 2 },
+  background: { lane: 'background', maxAttempts: 3 },
+});
+
+export type TboBookingDetailQuery = TboBookingLookup & {
+  /** Por defecto `recovery` si se lee por referencia y `background` si por localizador. */
+  readonly purpose?: TboBookingDetailPurpose;
+  /** Señal del request del vendedor, para la lectura interactiva. */
+  readonly signal?: AbortSignal;
+};
+
+interface TboCallInfo {
+  readonly requestId: string;
+  readonly accountRef: string;
+  readonly durationMs: number;
+}
+
+export type TboBookingDetailReport =
+  | (TboBookingDetailMapping &
+      TboCallInfo & {
+        readonly found: true;
+        readonly attempts: number;
+      })
+  | (TboCallInfo & {
+      readonly found: false;
+      readonly view: HotelBookingView;
+      /** El `Status.Code` con que TBO dijo que no la tiene. */
+      readonly tboCode: number;
+      readonly failureKind: TboFailureKind;
+    });
+
+/**
+ * Qué respuesta de BookingDetail se lee como "no la tiene". El contrato no lo documenta (PV-01;
+ * Q-37) y la sonda PR-05 lo va a fijar (RF-21 CA-5). Hasta entonces, provisorio: un envelope con un
+ * código que dice "no hay datos" (`201`), "pedido que no entiendo" (`400`) o uno fuera de la tabla.
+ * Nada de eso prueba que la reserva no exista (D-TBO-24 A): sólo que esta lectura no la encontró.
+ * Todo lo demás —red, 5xx, 429, cuenta, cuerpo roto— se lanza, porque no dice nada de la reserva.
+ */
+const NOT_FOUND_KINDS: ReadonlySet<TboFailureKind> = new Set<TboFailureKind>([
+  'NO_AVAILABILITY',
+  'CLIENT_BUG',
+  'UNKNOWN_CODE',
+]);
+
+/** Aviso de la vista "no encontrada" hasta que la sonda PR-05 fije la forma real. */
+const NOT_FOUND_WARNING = 'NOT_FOUND_SHAPE_UNCONFIRMED';
+
+/**
+ * Sólo los identificadores de la consulta. Si llegan los dos (o ninguno), pasan así al builder, que
+ * es quien se niega: elegir uno aquí escondería el error de quien llama.
+ */
+function lookupOf(query: TboBookingDetailQuery): TboBookingLookup {
+  const { confirmationNumber, bookingReferenceId } = query;
+  return {
+    ...(confirmationNumber === undefined ? {} : { confirmationNumber }),
+    ...(bookingReferenceId === undefined ? {} : { bookingReferenceId }),
+  } as TboBookingLookup;
+}
+
 // ───────────────────────── Piezas ─────────────────────────
 
 const SEARCH_PATH = TBO_OPERATIONS.search.path;
@@ -331,9 +655,44 @@ interface SearchRun {
   readonly criteria: TboSearchCriteria;
 }
 
+/**
+ * `HotelPrebookRequest` → consulta de PreBook. El `ProviderRef` tiene que ser de TBO y traer su
+ * `searchId`; el instante del Search es obligatorio porque sin él no se puede garantizar la ventana
+ * de 30 minutos (RF-09).
+ */
+function prebookQueryFromPort(request: HotelPrebookRequest): TboPrebookQuery {
+  const issues: string[] = [];
+  if (request.offer.name !== TBO_HOTELS_PROVIDER_CODE) issues.push('offer.name:not_tbo_hotels');
+  const searchId: unknown = request.offer.raw?.['searchId'];
+  if (typeof searchId !== 'string') issues.push('offer.raw.searchId:missing');
+  const sentAt = request.searchSentAt === undefined ? Number.NaN : Date.parse(request.searchSentAt);
+  if (request.searchSentAt === undefined) issues.push('searchSentAt:missing');
+  else if (!Number.isFinite(sentAt)) issues.push('searchSentAt:invalid');
+  const options = PrebookProviderOptionsSchema.safeParse(request.providerOptions ?? {});
+  if (!options.success) issues.push(...zodIssueRefs(options.error, 'providerOptions'));
+  if (issues.length > 0 || typeof searchId !== 'string' || !options.success) {
+    throw new TboRequestBuildError(PREBOOK_PATH, 'SCHEMA', issues);
+  }
+  return {
+    hotelCode: options.data.hotelCode,
+    bookingCode: request.offer.offerRef,
+    searchId,
+    searchSentAt: sentAt,
+    rooms: options.data.rooms,
+  };
+}
+
 // ───────────────────────── Adapter ─────────────────────────
 
-export class TboHotelsAdapter implements HotelSearchPort, HotelRatesDetailPort {
+export class TboHotelsAdapter
+  implements
+    HotelSearchPort,
+    HotelRatesDetailPort,
+    HotelPrebookPort,
+    HotelBookPort,
+    HotelBookingReadPort,
+    HotelBookingByClientReferencePort
+{
   // Campos `#`, como el cliente: un adapter volcado a un log no arrastra nada de la cuenta.
   readonly #client: TboHttpClient;
   readonly #policy: SearchPolicy;
@@ -419,6 +778,363 @@ export class TboHotelsAdapter implements HotelSearchPort, HotelRatesDetailPort {
       },
       packs: packs.filter((pack) => pack.hotelCode === query.hotelId),
     };
+  }
+
+  /**
+   * `HotelPrebookPort`. `offer.offerRef` es el `BookingCode`, `offer.raw.searchId` la búsqueda que lo
+   * emitió y `searchSentAt` su instante de envío; el hotel y la ocupación van en `providerOptions`
+   * ({@link TboPrebookProviderOptions}). Sin cualquiera de ellos no hay PreBook honesto: se falla
+   * con `TboRequestBuildError` antes del cable.
+   */
+  async prebook(request: HotelPrebookRequest, ctx: SearchContext): Promise<HotelPrebookResult> {
+    return (await this.prebookReport(prebookQueryFromPort(request), ctx)).result;
+  }
+
+  /**
+   * PreBook con `PaymentMode: "Limit"` (D1) y la lectura completa para el servidor. Lanza, sin
+   * llamar a TBO, `TboOfferExpiredError` si la oferta venció en nuestro reloj (RF-09 CA-1) y
+   * `TboRequestBuildError` si la consulta no tiene forma; después, lo que decida el cliente por
+   * `Status.Code` (201/207 invalidan la oferta, 315 el contexto: RF-15 CA-4) o la lectura.
+   */
+  async prebookReport(query: TboPrebookQuery, _ctx: SearchContext): Promise<TboPrebookReport> {
+    const parsed = PrebookQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new TboRequestBuildError(PREBOOK_PATH, 'SCHEMA', zodIssueRefs(parsed.error, 'query'));
+    }
+    const input = parsed.data;
+    const now = this.#now();
+    if (input.searchSentAt > now + SEARCH_SENT_AT_MAX_SKEW_MS) {
+      // Un instante en el futuro estiraría la ventana de 30 minutos más allá de la de TBO.
+      throw new TboRequestBuildError(PREBOOK_PATH, 'SCHEMA', ['query.searchSentAt:in_the_future']);
+    }
+    const expiresAtMs = input.searchSentAt + TBO_OFFER_TTL_MS;
+    if (now >= expiresAtMs) {
+      this.#count('tbo.prebook.expired_locally', 1, { op: 'prebook' });
+      throw new TboOfferExpiredError(new Date(expiresAtMs).toISOString());
+    }
+
+    const result = await this.#client.send(
+      'prebook',
+      buildTboPrebookRequest({ bookingCode: input.bookingCode }),
+      {
+        requestSchema: TboPrebookRequestSchema,
+        responseSchema: TboPrebookEnvelopeSchema,
+        ...(query.signal === undefined ? {} : { signal: query.signal }),
+      },
+    );
+    if (result.outcome !== 'SUCCESS') {
+      // Inalcanzable con la tabla actual: sólo Search lee un 201 como vacío. Si alguien cambia la
+      // fila, un PreBook "vacío" no puede pasar por una revalidación.
+      throw new TboResponseMappingError(
+        PREBOOK_PATH,
+        ['Status.Code:no_availability'],
+        result.requestId,
+      );
+    }
+    const mapping = mapTboPrebookResponse(
+      result.data,
+      {
+        hotelCode: input.hotelCode,
+        bookingCode: input.bookingCode,
+        searchId: input.searchId,
+        searchSentAt: input.searchSentAt,
+        rooms: input.rooms,
+        requestId: result.requestId,
+      },
+      { metrics: this.#metrics, logger: this.#logger },
+    );
+    return {
+      ...mapping,
+      requestId: result.requestId,
+      accountRef: this.#client.accountRef,
+      attempts: result.attempts,
+      durationMs: result.durationMs,
+    };
+  }
+
+  /**
+   * `HotelBookPort`. `offer.offerRef` es el `BookingCode` del PreBook de revalidación,
+   * `bookingReference` nuestra referencia ya persistida y `payment` tiene que ser
+   * `{ kind: 'agency-credit' }`; el literal de `TotalFare`, el instante del Search y la ocupación van
+   * en `providerOptions` ({@link TboBookProviderOptions}).
+   *
+   * Devuelve `CONFIRMED` o `UNCERTAIN`. Nunca `FAILED`: un rechazo de TBO se lanza como `TboApiError`
+   * para que el breaker lo vea, y "una excepción tampoco es FAILED" (puerto). Quien llama lo
+   * clasifica con `classifyTboBookOutcome`.
+   */
+  async book(request: HotelBookRequest, ctx: SearchContext): Promise<HotelBookResult> {
+    return (await this.bookReport(bookQueryFromPort(request), ctx)).result;
+  }
+
+  /**
+   * Book con `PaymentMode: "Limit"`, UN intento y 120 s (p. 8; BK-07). Lanza, sin llamar a TBO,
+   * `TboOfferExpiredError` si la ventana venció en nuestro reloj y `TboRequestBuildError` si la
+   * consulta no tiene forma, los huéspedes no cuadran con la ocupación, el `TotalFare` no se puede
+   * mandar exacto o la referencia es de otro entorno. Después, lo que decida el cliente por
+   * `Status.Code`; con `200`, la clasificación de la respuesta.
+   */
+  async bookReport(query: TboBookQuery, _ctx: SearchContext): Promise<TboBookReport> {
+    const shape = BookQueryShapeSchema.safeParse(query);
+    if (!shape.success) {
+      throw new TboRequestBuildError(BOOK_PATH, 'SCHEMA', zodIssueRefs(shape.error, 'query'));
+    }
+    const now = this.#now();
+    const { searchSentAt } = shape.data;
+    if (searchSentAt > now + SEARCH_SENT_AT_MAX_SKEW_MS) {
+      throw new TboRequestBuildError(BOOK_PATH, 'SCHEMA', ['query.searchSentAt:in_the_future']);
+    }
+    const expiresAtMs = searchSentAt + TBO_OFFER_TTL_MS;
+    if (now >= expiresAtMs) {
+      this.#count('tbo.book.expired_locally', 1, { op: 'book' });
+      throw new TboOfferExpiredError(new Date(expiresAtMs).toISOString());
+    }
+    this.#requireReferenceEnvironment(BOOK_PATH, query.bookingReferenceId);
+
+    const body = buildTboBookRequest({
+      bookingCode: query.bookingCode,
+      bookingReferenceId: query.bookingReferenceId,
+      totalFare: query.totalFare,
+      rooms: query.rooms,
+      occupancy: query.occupancy,
+      contact: query.contact,
+    });
+    const expected = { clientReferenceId: query.bookingReferenceId };
+    const started = this.#now();
+
+    let reply: TboBookReply;
+    let meta: { requestId: string; attempts: number; durationMs: number };
+    try {
+      const result = await this.#client.send('book', body, {
+        requestSchema: TboBookRequestSchema,
+        responseSchema: TboBookEnvelopeSchema,
+      });
+      if (result.outcome !== 'SUCCESS') {
+        // Inalcanzable con la tabla actual: sólo Search lee un 201 como vacío. Si alguien cambia la
+        // fila, un Book "vacío" no puede pasar por confirmado.
+        throw new TboResponseMappingError(
+          BOOK_PATH,
+          ['Status.Code:no_availability'],
+          result.requestId,
+        );
+      }
+      reply = mapTboBookResponse(result.data, {
+        metrics: this.#metrics,
+        logger: this.#logger,
+        requestId: result.requestId,
+      });
+      meta = {
+        requestId: result.requestId,
+        attempts: result.attempts,
+        durationMs: result.durationMs,
+      };
+    } catch (err) {
+      const classification = classifyTboBookOutcome({ kind: 'threw', error: err }, expected);
+      this.#logBook(classification, query.bookingReferenceId, {
+        durationMs: this.#now() - started,
+        ...(err instanceof TboApiError || err instanceof TboResponseMappingError
+          ? { requestId: err.requestId }
+          : {}),
+      });
+      throw err;
+    }
+
+    const classification = classifyTboBookOutcome({ kind: 'answered', reply }, expected);
+    this.#logBook(classification, query.bookingReferenceId, meta);
+    const confirmed = classification.outcome === 'CONFIRMED';
+    const warnings: string[] = confirmed ? [] : [classification.reason];
+    if (reply.diagnostics.confirmationNumberMalformed) {
+      warnings.push('confirmation-number-malformed');
+    }
+    if (reply.diagnostics.clientReferenceIdMalformed) {
+      warnings.push('client-reference-malformed');
+    }
+    return {
+      result: {
+        outcome: confirmed ? 'CONFIRMED' : 'UNCERTAIN',
+        // Un localizador de un Book incierto no se adopta: puede ser de otra reserva (03 §3.9).
+        ...(confirmed && classification.confirmationNumber !== undefined
+          ? { providerBookingId: classification.confirmationNumber }
+          : {}),
+        ...(reply.clientReferenceId === undefined
+          ? {}
+          : { bookingReference: reply.clientReferenceId }),
+        providerStatus: String(reply.tboCode),
+        warnings,
+      },
+      classification,
+      reply: {
+        ...(reply.confirmationNumber === undefined
+          ? {}
+          : { confirmationNumber: reply.confirmationNumber }),
+        ...(reply.clientReferenceId === undefined
+          ? {}
+          : { clientReferenceId: reply.clientReferenceId }),
+      },
+      bookingReferenceId: query.bookingReferenceId,
+      requestId: meta.requestId,
+      accountRef: this.#client.accountRef,
+      attempts: meta.attempts,
+      durationMs: meta.durationMs,
+      diagnostics: reply.diagnostics,
+    };
+  }
+
+  /** `HotelBookingReadPort`: BookingDetail por el localizador de TBO. */
+  async getBooking(providerBookingId: string, ctx: SearchContext): Promise<HotelBookingView> {
+    return (await this.bookingDetailReport({ confirmationNumber: providerBookingId }, ctx)).view;
+  }
+
+  /**
+   * `HotelBookingByClientReferencePort`: BookingDetail por NUESTRA referencia, la única forma de
+   * verificar un Book cuya respuesta no llegó (p. 42; RF-21). Va al cupo de dinero.
+   */
+  async getBookingByClientReference(
+    bookingReference: string,
+    ctx: SearchContext,
+  ): Promise<HotelBookingView> {
+    return (await this.bookingDetailReport({ bookingReferenceId: bookingReference }, ctx)).view;
+  }
+
+  /**
+   * BookingDetail con `PaymentMode: "Limit"` y exactamente un identificador (RF-24). Lanza
+   * `TboRequestBuildError` sin llamar a TBO si llegan los dos o ninguno, o si la referencia es de
+   * otro entorno; `TboResponseMappingError` si un `200` no trae la reserva pedida; y los
+   * `TboApiError` que no son un "no la tengo" ({@link NOT_FOUND_KINDS}).
+   */
+  async bookingDetailReport(
+    query: TboBookingDetailQuery,
+    _ctx: SearchContext,
+  ): Promise<TboBookingDetailReport> {
+    const lookup = lookupOf(query);
+    const body = buildTboBookingDetailRequest(lookup);
+    if (lookup.bookingReferenceId !== undefined) {
+      this.#requireReferenceEnvironment(DETAIL_PATH, lookup.bookingReferenceId);
+    }
+    const purpose =
+      query.purpose ?? (lookup.bookingReferenceId === undefined ? 'background' : 'recovery');
+    const { lane, maxAttempts } = DETAIL_PURPOSES[purpose] ?? DETAIL_PURPOSES.background;
+    const started = this.#now();
+    const identifier =
+      lookup.bookingReferenceId === undefined
+        ? { confirmationNumber: lookup.confirmationNumber }
+        : { bookingReferenceId: lookup.bookingReferenceId };
+
+    try {
+      const result = await this.#client.send('bookingDetail', body, {
+        requestSchema: TboBookingDetailRequestSchema,
+        responseSchema: TboBookingDetailEnvelopeSchema,
+        lane,
+        maxAttempts,
+        ...(query.signal === undefined ? {} : { signal: query.signal }),
+      });
+      if (result.outcome !== 'SUCCESS') {
+        throw new TboResponseMappingError(
+          DETAIL_PATH,
+          ['Status.Code:no_availability'],
+          result.requestId,
+        );
+      }
+      const mapping = mapTboBookingDetailResponse(
+        result.data,
+        { lookup, requestId: result.requestId },
+        { metrics: this.#metrics, logger: this.#logger },
+      );
+      return {
+        ...mapping,
+        found: true,
+        requestId: result.requestId,
+        accountRef: this.#client.accountRef,
+        attempts: result.attempts,
+        durationMs: result.durationMs,
+      };
+    } catch (err) {
+      if (
+        !(err instanceof TboApiError) ||
+        err.tboCode === undefined ||
+        !NOT_FOUND_KINDS.has(err.kind)
+      ) {
+        throw err;
+      }
+      this.#count('tbo.booking_detail.not_found', 1, {
+        op: 'bookingDetail',
+        tbo_code: String(err.tboCode),
+      });
+      this.#log('warn', 'tbo.booking_detail.not_found', {
+        provider: TBO_HOTELS_PROVIDER_CODE,
+        op: 'bookingDetail',
+        requestId: err.requestId,
+        accountRef: this.#client.accountRef,
+        tboCode: err.tboCode,
+        kind: err.kind,
+        ...identifier,
+      });
+      return {
+        found: false,
+        view: {
+          found: false,
+          ...(lookup.bookingReferenceId === undefined
+            ? {}
+            : { bookingReference: lookup.bookingReferenceId }),
+          providerStatus: String(err.tboCode),
+          warnings: [NOT_FOUND_WARNING],
+        },
+        tboCode: err.tboCode,
+        failureKind: err.kind,
+        requestId: err.requestId,
+        accountRef: this.#client.accountRef,
+        durationMs: this.#now() - started,
+      };
+    }
+  }
+
+  /**
+   * Una referencia de producción no sale por la cuenta de test ni al revés: el entorno va escrito en
+   * la propia referencia (`booking-reference.ts`). Una referencia que no es nuestra la rechaza el
+   * builder con su propio motivo.
+   */
+  #requireReferenceEnvironment(path: string, reference: string): void {
+    const environment = tboBookingReferenceEnvironment(reference);
+    if (environment !== undefined && environment !== this.#client.environment) {
+      throw new TboRequestBuildError(path, 'SCHEMA', ['bookingReferenceId:environment_mismatch']);
+    }
+  }
+
+  /**
+   * Una línea por Book: sólo path, código, duración y referencias (03 §4.2 punto 2). `error` si el
+   * desenlace es incierto: hay una verificación obligatoria pendiente (01 §11.1).
+   */
+  #logBook(
+    classification: TboBookClassification,
+    bookingReferenceId: string,
+    meta: { readonly requestId?: string; readonly durationMs: number },
+  ): void {
+    const level =
+      classification.outcome === 'UNCERTAIN'
+        ? 'error'
+        : classification.outcome === 'FAILED'
+          ? 'warn'
+          : 'info';
+    this.#count('tbo.book.outcome', 1, {
+      op: 'book',
+      outcome: classification.outcome,
+      reason: classification.reason,
+    });
+    this.#log(level, 'tbo.book.outcome', {
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      op: 'book',
+      path: BOOK_PATH,
+      accountRef: this.#client.accountRef,
+      bookingReferenceId,
+      outcome: classification.outcome,
+      reason: classification.reason,
+      durationMs: meta.durationMs,
+      ...(meta.requestId === undefined ? {} : { requestId: meta.requestId }),
+      ...(classification.tboCode === undefined ? {} : { tboCode: classification.tboCode }),
+      ...(classification.errorClass === undefined ? {} : { errorClass: classification.errorClass }),
+      ...(classification.confirmationNumber === undefined
+        ? {}
+        : { confirmationNumber: classification.confirmationNumber }),
+    });
   }
 
   async #search(criteria: TboSearchCriteria, detailed: boolean): Promise<TboSearchReport> {
@@ -668,7 +1384,7 @@ export class TboHotelsAdapter implements HotelSearchPort, HotelRatesDetailPort {
     this.#safely(() => this.#metrics?.counter(name, value, tags));
   }
 
-  #log(level: 'warn', message: string, meta: Record<string, unknown>): void {
+  #log(level: 'info' | 'warn' | 'error', message: string, meta: Record<string, unknown>): void {
     const logger = this.#logger;
     if (logger === undefined) return;
     this.#safely(() => logger[level](message, pickTboLogMeta(meta)));

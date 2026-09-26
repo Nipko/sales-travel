@@ -1,0 +1,74 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "BookingDetail": {
+    "BookingStatus": "Confirmed",
+    "VoucherStatus": true,
+    "ConfirmationNumber": "YOSUR8",
+    "InvoiceNumber": "MW34325",
+    "CheckIn": "2021-10-16T00:00:00",
+    "CheckOut": "2021-10-17T00:00:00",
+    "BookingDate": "2021-07-1317T00:00:00",
+    "NoOfRooms": 1,
+    "HotelDetails": {
+      "HotelName": "Golden Sands Hotel Apartments",
+      "Rating": "ThreeStar",
+      "Map": "25.251559|55.295027",
+      "City": "Dubai"
+    },
+    "Rooms": [
+      {
+        "Currency": "USD",
+        "Name": ["STUDIO STANDARD"],
+        "Inclusion": "ROOM ONLY",
+        "TotalFare": 107.14,
+        "TotalTax": 0.0,
+        "RoomPromotion": ["Early Booking discount"],
+        "CancelPolicies": [
+          {
+            "FromDate": "12-07-2021 00:00:00",
+            "ChargeType": "Fixed",
+            "CancellationCharge": 0.0
+          },
+          {
+            "FromDate": "11-10-2021 00:00:00",
+            "ChargeType": "Fixed",
+            "CancellationCharge": 0.0
+          },
+          {
+            "FromDate": "15-10-2021 00:00:00",
+            "ChargeType": "Percentage",
+            "CancellationCharge": 100.0
+          }
+        ],
+        "MealType": "Room_Only",
+        "IsRefundable": false,
+        "CustomerDetails": [
+          {
+            "CustomerNames": [
+              {
+                "Title": "Mr",
+                "FirstName": "Shubham",
+                "LastName": "Gupta",
+                "Type": "Adult"
+              },
+              {
+                "Title": "Mr",
+                "FirstName": "Kunal",
+                "LastName": "Agrawal",
+                "Type": "Child"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "RateConditions": [
+      "Early check out will attract full cancellation charge unless otherwise specified",
+      "Please note that the cancellation policy is based on the hotel�s time.",
+      "10.00 AED payable at arrival in hotel. .1x STUDIO Estimated total amount of taxes & fees for this booking: 10.00 Utd. Arab Emir. Dirham payable on arrival. Car park YES (without additional debit notes). Check-in hour 14:00 - . No Name change allowed any time of the yearNOT VALID FOR Germany MarketDubai Mall shuttle bus For Golden Sands Hotel Sharjah- From Golden Sands Hotel Sharjah to Dubai Mall at: 11:00 am / 03:00 pm / 07:00 pm only- From Dubai Mall to Golden Sands Hotel Sharjah at: 4:00 pm and 8:00pm only As a result of local government measures and guidelines put in place by services providers � including hotels and ancillaries � guests may find that some facilities or services are not available.Please visit https://static-sources.s3-eu-west-1.amazonaws.com/policy/index.html for further information (15/05/2020-31/12/2021)."
+    ]
+  }
+}

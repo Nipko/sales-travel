@@ -1,0 +1,24 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Success"
+  },
+  "CityList": [
+    {
+      "Code": "100758",
+      "Name": "Abersee"
+    },
+    {
+      "Code": "100117",
+      "Name": "Abfaltersbach"
+    },
+    {
+      "Code": "100443",
+      "Name": "Absam"
+    },
+    {
+      "Code": "100650",
+      "Name": "Abtenau"
+    }
+  ]
+}

@@ -121,18 +121,142 @@ export {
   tboOfferExpiresAt,
 } from './search/offer-window';
 
-// Búsqueda y detalle de un hotel por los puertos neutrales (PR-1.5): la salida del paquete hacia el
-// factory de `apps/api`. Los tipos del reporte son nuestros; el sobre crudo no sale.
+// Búsqueda, detalle de un hotel, PreBook, Book y BookingDetail por los puertos neutrales (PR-1.5,
+// PR-4.1, PR-4.2): la salida del paquete hacia el factory de `apps/api`. Los tipos del reporte son
+// nuestros; el sobre crudo no sale.
 export { TBO_SEARCH_BATCHING_LIMITS, TboHotelsAdapter } from './tbo-hotels.adapter';
 export type {
+  TboBookProviderOptions,
+  TboBookQuery,
+  TboBookReply,
+  TboBookReplyDiagnostics,
+  TboBookReplySummary,
+  TboBookReport,
+  TboBookedHotel,
+  TboBookedRoomSummary,
+  TboBookingDetailDiagnostics,
+  TboBookingDetailMapping,
+  TboBookingDetailPurpose,
+  TboBookingDetailQuery,
+  TboBookingDetailReport,
+  TboBookingDetailSummary,
+  TboBookingDetailWarning,
+  TboBookingLookup,
   TboHotelRatesReport,
   TboHotelRejection,
   TboHotelsAdapterOptions,
   TboPackRejection,
+  TboPrebookDiagnostics,
+  TboPrebookMapping,
+  TboPrebookProviderOptions,
+  TboPrebookQuery,
+  TboPrebookReport,
+  TboPrebookWarning,
   TboSearchBatchReport,
   TboSearchBatchStatus,
   TboSearchBatching,
   TboSearchDiagnostics,
   TboSearchPackContext,
   TboSearchReport,
+  TboVoucherStatus,
 } from './tbo-hotels.adapter';
+
+// PreBook (PR-4.1): lo que el servidor necesita para decidir con lo que devuelve el adapter. La
+// comparación C1/C2 es pura y sobre tipos neutrales; la huella se recalcula desde el snapshot
+// persistido. El builder, el esquema, el saneo de `RateConditions` y el mapper trabajan con el JSON
+// crudo de TBO y no salen: fuera se leen las condiciones ya saneadas.
+export {
+  TBO_RATE_CONDITION_CHANGES,
+  TBO_REPRICE_OUTCOMES,
+  compareTboRates,
+} from './prebook/compare';
+export type {
+  TboPriceDirection,
+  TboRateConditionChange,
+  TboRateSnapshot,
+  TboRepriceComparison,
+  TboRepriceOutcome,
+  TboRepriceStage,
+} from './prebook/compare';
+export { tboRateConditionsHash } from './prebook/rate-conditions';
+export { TBO_PREBOOK_WARNINGS } from './prebook/response.mapper';
+
+// Book y referencias de reserva (PR-4.2): lo que la saga de `apps/api` necesita ANTES del Book
+// —generar y persistir la referencia (RF-19) y validar los huéspedes contra la ocupación para
+// responder 400 sin insertar el intent (RF-18)— y DESPUÉS —clasificar lo que el Book lanzó con la
+// misma regla que el adapter aplica a un `200` (03 §3.9)—. El builder, el esquema y el mapper
+// trabajan con el JSON crudo de TBO y no salen.
+export {
+  TBO_BOOKING_REFERENCE_ALPHABET,
+  TBO_BOOKING_REFERENCE_PATTERN,
+  TBO_CONFIRMATION_NUMBER_PATTERN,
+  generateTboBookingReference,
+  isTboBookingReference,
+  isTboConfirmationNumber,
+  tboBookingReferenceEnvironment,
+} from './booking/booking-reference';
+export type { TboRandomBytes } from './booking/booking-reference';
+export {
+  TBO_BOOK_LIMITS,
+  TBO_GUEST_TITLES,
+  checkTboBookGuests,
+} from './booking/book.request.builder';
+export type {
+  TboBookGuest,
+  TboGuestCheck,
+  TboGuestTitle,
+  TboNameRejection,
+} from './booking/book.request.builder';
+export { TBO_BOOK_OUTCOME_REASONS, classifyTboBookOutcome } from './booking/classify-book-outcome';
+export type {
+  TboBookClassification,
+  TboBookExpectation,
+  TboBookObservation,
+  TboBookOutcome,
+  TboBookOutcomeReason,
+} from './booking/classify-book-outcome';
+
+// BookingDetail (PR-4.2): el vocabulario de lo que devuelve el adapter. El estado ya sale
+// normalizado en la vista; el valor crudo se lee como código con esta lista.
+export { TBO_BOOKING_STATUSES } from './detail/booking-status';
+export { TBO_BOOKING_DETAIL_WARNINGS } from './detail/response.mapper';
+
+// Contenido estático (PR-3.1): el cliente del sync de catálogo, sin métodos de venta (06 §4.2), y
+// los tipos ya normalizados que devuelve. Los builders, los esquemas y los mappers trabajan con el
+// JSON crudo de TBO y no salen; el saneador de HTML se aplica dentro del cliente, al ingerir.
+export { TBO_STATIC_TIMEOUTS_MS, TboStaticContentClient } from './tbo-static-content.client';
+export type {
+  TboCityHotelsQuery,
+  TboCityHotelsResult,
+  TboCityListResult,
+  TboCountryListResult,
+  TboHotelCodeListResult,
+  TboHotelDetailsResult,
+  TboStaticCall,
+  TboStaticCallOptions,
+  TboStaticContentOptions,
+  TboStaticOperation,
+} from './tbo-static-content.client';
+
+export { TBO_CONTENT_LANGUAGES } from './static/content.types';
+export type {
+  TboCatalogHotel,
+  TboCity,
+  TboCityHotelsMapping,
+  TboCityListMapping,
+  TboContentLanguage,
+  TboContentSection,
+  TboContentSource,
+  TboCountry,
+  TboCountryListMapping,
+  TboGeoPoint,
+  TboHotelCodeListMapping,
+  TboHotelContent,
+  TboHotelDetailsMapping,
+  TboStaticDiagnostics,
+  TboStaticNote,
+  TboStaticRejection,
+} from './static/content.types';
+
+// El lote de HotelDetails lo parte el sync (E4): necesita el techo y el tamaño por defecto.
+export { TBO_HOTEL_DETAILS_LIMITS } from './static/hotel-details.request.builder';

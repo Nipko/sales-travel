@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SUPPORTED_MINOR_UNIT_EXPONENT,
+  compareDecimals,
   decimalToMinor,
   isSupportedCurrency,
   minorUnitExponent,
@@ -169,5 +170,36 @@ describe('decimalToMinor: lo que no es un importe', () => {
       precisionLoss: true,
     });
     expect(Date.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe('compareDecimals: exacto y sin tolerancia (docs/tbo/03 §2.9 regla 1)', () => {
+  it.each<[unknown, unknown, -1 | 0 | 1]>([
+    ['305.75', '305.750', 0],
+    [305.75, '305.75', 0],
+    ['0305.75', 305.75, 0],
+    ['305.75', '305.76', -1],
+    ['305.76', 305.75, 1],
+    // Dan las mismas unidades menores y aun así son distintos: la comparación no redondea.
+    ['305.754', '305.751', 1],
+    ['1.5e-7', '0.00000015', 0],
+    ['1e2', '100', 0],
+    ['0', '-0', 0],
+    ['-1.00', '0', -1],
+  ])('%j frente a %j → %i', (left, right, expected) => {
+    expect(compareDecimals(left, right)).toBe(expected);
+  });
+
+  it.each<[unknown, unknown]>([
+    ['305,75', '305.75'],
+    ['305.75', ''],
+    [Number.NaN, 1],
+    [1, Number.POSITIVE_INFINITY],
+    ['1e999999', '1'],
+    [`${'9'.repeat(80)}`, '1'],
+    [null, '1'],
+  ])('%j frente a %j no se sabe comparar: undefined, nunca "igual"', (left, right) => {
+    expect(compareDecimals(left, right)).toBeUndefined();
+    expect(compareDecimals(right, left)).toBeUndefined();
   });
 });

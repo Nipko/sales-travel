@@ -1,0 +1,56 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Success"
+  },
+  "Hotels": [
+    {
+      "HotelCode": "1010099",
+      "HotelName": "Holiday Inn Express New York - Manhattan West Side",
+      "HotelRating": "ThreeStar",
+      "Address": "538 West 48th Street New York CityNew York 10036 ",
+      "Attractions": [
+        "Distances are displayed to the nearest 0.1 mile and kilometer. <br /> <p> American Lyric Theater - 0.9 km / 0.5 mi <br /> Ambassador Theatre - 1 km / 0.6 mi <br /> Gershwin Theater - 1 km / 0.6 mi <br /> Richard Rodgers Theatre - 1 km / 0.6 mi <br /> Lunt-Fontanne Theatre - 1.1 km / 0.7 mi <br /> The Majestic Theater - 1.1 km / 0.7 mi <br /> Jacob K. Javits Convention Center - 1.1 km / 0.7 mi <br /> Times Square - 1.1 km / 0.7 mi <br /> St. James Theatre - 1.1 km / 0.7 mi <br /> Shubert Theatre - 1.2 km / 0.7 mi <br /> Broadway - 1.2 km / 0.7 mi <br /> Winter Garden Theatre - 1.2 km / 0.7 mi <br /> Minskoff Theater - 1.2 km / 0.8 mi <br /> Broadway Theatre - 1.3 km / 0.8 mi <br /> New York Times Building - 1.3 km / 0.8 mi <br /> </p><p>The nearest airports are:<br />LaGuardia Airport (LGA) - 16.3 km / 10.2 mi<br /> John F. Kennedy Intl. Airport (JFK) - 29.6 km / 18.4 mi<br /> Liberty Intl. Airport (EWR) - 27.1 km / 16.8 mi<br /> New York",
+        " NY (NYS-Skyports Seaplane Base) - 4.9 km / 3 mi<br /> Teterboro",
+        " NJ (TEB) - 18.7 km / 11.6 mi<br /> </p><p>The preferred airport for Holiday Inn Express New York - Manhattan West Side is LaGuardia Airport (LGA). </p>"
+      ],
+      "CountryName": "USA",
+      "CountryCode": "US",
+      "Description": "<p>HeadLine : Near Gershwin Theater</p><p>Location : A stay at Holiday Inn Express New York - Manhattan West Side places you in the heart of New York, within a 15-minute walk of Gershwin Theater and Jacob K. Javits Convention Center. This hotel is 0.7 mi (1.1 km) from Times Square and 0.7 mi (1.2 km) from Broadway.</p><p>Rooms : Make yourself at home in one of the 177 air-conditioned rooms featuring refrigerators and flat-screen televisions. Your room comes with a pillowtop bed. Complimentary wireless Internet access keeps you connected, and cable programming is available for your entertainment. Private bathrooms with shower/tub combinations feature complimentary toiletries and hair dryers.</p><p>Dining : Grab a bite from the grocery/convenience store, or stay in and take advantage of the hotel s room service (during limited hours). A complimentary buffet breakfast is included.</p><p>CheckIn Instructions : Extra-person charges may apply and vary depending on property policy Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed No onsite parking is available This property accepts credit cards, debit cards, cash, and mobile payments Safety features at this property include a carbon monoxide detector, a fire extinguisher, a smoke detector, a security system, a first aid kit, and window guards</p><p>Special Instructions : Front desk staff will greet guests on arrival.</p>",
+      "FaxNumber": "1-212-582-0693",
+      "HotelFacilities": [
+        "Visual alarms in hallways",
+        "Handrails in stairways",
+        "elevator",
+        "Fitness facilities",
+        "24-hour front desk",
+        "Free breakfast",
+        "Grocery/convenience store",
+        "Express check-out",
+        "Dry cleaning/laundry service",
+        "Free WiFi",
+        "Smoke-free property",
+        "Luggage storage",
+        "ATM/banking",
+        "24-hour business center",
+        "Wheelchair accessible (may have limitations)",
+        "Wheelchair accessible path of travel",
+        "Television in common areas",
+        "Accessible bathroom",
+        "24-hour fitness facilities",
+        "Roll-in shower",
+        "In-room accessibility",
+        "Assistive listening devices available",
+        "Braille or raised signage",
+        "Wheelchair-accessible path to elevator",
+        "Multilingual staff",
+        "Wheelchair-accessible registration desk"
+      ],
+      "Map": "40.764167|-73.994468",
+      "PhoneNumber": "1-212-582-0692",
+      "PinCode": "10036",
+      "HotelWebsiteUrl": "http://www.ihg.com/holidayinnexpress/hotels/us/en/new-york/nychk/hotel",
+      "CityName": "New York"
+    }
+  ]
+}

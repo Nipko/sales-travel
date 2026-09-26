@@ -45,11 +45,144 @@ nota de p. 57), suplementos `Included` y `HotelResult` sin `Currency`. Esos caso
 los tests a partir de estos fixtures, con los valores de PreBook y BookingDetail de p. 24, 28 y 50
 cuando existen, y cada uno cita su página.
 
+## `pdf/` — contenido estático (docs/tbo/05; PR-3.1)
+
+[05](../../../../docs/tbo/05-contenido-estatico-e-inventario.md) CE-13 pedía fixtures sólo de
+respuestas reales, porque cinco de los seis ejemplos del PDF son JSON inválido. El plan (09 PR-3.1)
+los pide igual desde el PDF, con las correcciones de [00](../../../../docs/tbo/00-fuentes.md) §8.4
+declaradas: son la única evidencia hasta la sonda de PR-1.6 y se reemplazan como las de Search.
+
+| Archivo                          | Ejemplo del PDF                             | Páginas | ¿JSON válido en el PDF? | Normalización (detalle abajo)                                                                                      |
+| -------------------------------- | ------------------------------------------- | ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `country-list.p52.json`          | 11.2.1 Sample Response (`CountryList`)      | 52-53   | **No**                  | Truncado: se cierran el array y la raíz tras el quinto país.                                                       |
+| `city-list.p54.json`             | 12.2.1 Sample Response (`CityList`)         | 54      | **No**                  | Truncado: se cierran el array y la raíz tras la cuarta ciudad.                                                     |
+| `hotelcodelist.p55.json`         | 13.2.1 Sample Response (`hotelcodelist`)    | 55      | **No**                  | Se quitan las dos líneas `.` de relleno. Sin `Status`, como en el PDF.                                             |
+| `hotel-details-request.p58.json` | 14.1.1 Sample Request (`HotelDetails`)      | 58      | Sí                      | Ninguna salvo la sangría. `Hotelcodes` queda NÚMERO, como en el PDF.                                               |
+| `hotel-details.p59.json`         | 14.2.1 Sample Response (`HotelDetails`)     | 59-62   | **No**                  | Coma sobrante tras la última URL de `Images`; strings largos reunidos desde el recuadro partido.                   |
+| `tbo-hotel-code-list.p67.json`   | 16.2.1 Sample Response (`TBOHotelCodeList`) | 67-69   | **No**                  | `Attractions` reconstruido (el más delicado, INFERIDO); se cierran `Hotels` y la raíz tras el `},` final de p. 69. |
+
+Reglas comunes a los seis, comparadas contra la PNG de cada página (00 §5):
+
+- **Saltos de línea del recuadro.** El PDF parte los strings largos en el borde del recuadro, a veces
+  en medio de una palabra (`"A stay a` / `t Sofitel"`, `"Ob` / `elisk"`, `"Egyp` / `t"`) y a veces
+  tras un guion (`"5-` / `minute"`, `"check-` / `in"`, `"new-` / `york"` en la web de p. 69). Se unen
+  sin agregar nada; entre dos palabras enteras (`"connected,` / `and"`, `"mobile payments` /
+  `Safety"`) va un espacio. Los dobles espacios que el texto extraído conserva (`"Island.  This"`,
+  `"arrival.  Due"`) se dejan.
+- **Caracteres no ASCII desde la PNG**, no desde `pdftotext`, que los cambia por `�`: `café`
+  (p. 60-61), `property’s` con U+2019 (p. 60) y `Wheelchair accessible – no` con U+2013 (p. 61).
+- **Datos intactos**: los apóstrofes perdidos en origen (`hotel s`, `doesn t`, `Kitchener s`), el
+  espacio final de la dirección de p. 67 y el `CityNew` pegado se copian tal cual; los tipos también
+  (`HotelRating` `"ThreeStar"` frente a `5`, `CityId` string, `HotelCodes` enteros).
+
+Detalle por archivo:
+
+- `country-list.p52.json`: el ejemplo trae cinco países y termina en `},` al principio de p. 53, sin
+  `]` ni `}`. Se cierra ahí.
+- `city-list.p54.json`: cuatro ciudades y el recuadro acaba sin `]` ni `}`. Se cierran.
+- `hotelcodelist.p55.json`: `[1000000, 1000001, 1000002, ., ., 5000008]` pasa a los cuatro códigos
+  visibles. El rango real no se conoce (Q-61).
+- `hotel-details-request.p58.json`: se copia tal cual para dejar escrita la discrepancia (CE-03): el
+  PDF manda `Hotelcodes` como número y el builder, como string CSV igual que Postman y p. 56.
+  `hotel-details.request.builder.test.ts` fija que difieren sólo en ese tipo.
+- `hotel-details.p59.json`: además de la coma tras la segunda URL de `Images` (p. 62), cada URL se
+  reúne de sus tres renglones (`…img=9eMP+0FIICgCIk6ZC` / `lzZH9Cs+…K6we` / `UG+E=`). Los 47
+  servicios, en el orden del PDF. La nota de habitaciones de p. 56-57 (`IsRoomDetailRequired`) NO se
+  copia: no dice dónde va el contenedor (Q-65) y el detalle por habitación sigue apagado.
+- `tbo-hotel-code-list.p67.json`: el primer trozo de `Attractions` se corta en p. 67 con ocho líneas
+  `/` sueltas, y fuera del recuadro quedan ocho renglones con la forma `1.1 km   0.7 mi` a los que
+  les falta justamente la `/`. Se reconstruye (INFERIDO) poniendo cada `/` en su renglón y los ocho
+  renglones a continuación de `Lunt-Fontanne Theatre -`, con lo que el primer trozo termina en
+  `… 16.8 mi<br /> New York`. La prueba de que es la lectura correcta es el propio ejemplo: unidos con
+  `","`, los tres trozos dan `New York, NY (NYS-Skyports Seaplane Base)` y `Teterboro, NJ (TEB)`, que
+  es lo que 05 §3 infiere (un HTML cortado en cada coma). El texto `<p>` / `American Lyric Theater`,
+  partido entre renglones, se une con un espacio, como lo cita 05 §2.5.
+
+## `pdf/` — PreBook (docs/tbo/03; PR-4.1)
+
+| Archivo                                | Ejemplo del PDF                                          | Páginas | ¿JSON válido en el PDF? | Para qué                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------- | ------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `prebook-request-limit.p19.json`       | 7.1.2 Sample Request (Multiple Room) \_Booking By Limit  | 19      | Sí                      | El builder lo reproduce con su `BookingCode`. Los ejemplos 7.1.1 y 7.1.3 (`NewCard`, `SavedCard`) no se copian: D1.               |
+| `prebook-newcard-single-room.p23.json` | 7.2.1 Sample Response (Single Room) \_By New Credit Card | 23-27   | Sí                      | SÓLO para probar que `CreditCardBillingOptions` se descarta (03 §2.8). No trae datos de tarjeta: PreBook no los lleva (p. 19-20). |
+| `prebook-limit-multi-room.p28.json`    | 7.2.2 Sample Response (Multiple Room) \_By Limit         | 27-32   | Sí                      | El caso principal: dos habitaciones, suplementos `AtProperty` en AED, `RecommendedSellingRate` y las 13 `RateConditions` enteras. |
+
+- **Qué se tomó de dónde.** Estructura y valores de PyMuPDF sobre el PDF, comparados contra la PNG de
+  cada página: a diferencia de `pdftotext`, conserva `°` (`60°C/140°F`, p. 31-32) y las comillas
+  tipográficas U+201C/U+201D de `“Tourism Dirham”` (p. 30), que están DENTRO de un string y no rompen el
+  JSON. El título de 7.2.2 está en p. 27 y su JSON empieza en p. 28 (de ahí el nombre del archivo).
+- **Saltos de línea del recuadro**, con la regla del contenido estático: en medio de una palabra
+  (`otherwis` / `e`, `Gov` / `ernment-`, `&lt;/l` / `i&gt;`, `&` / `lt;li&gt;`) se une sin nada; tras un
+  guion (`Extra-` / `person`, `check-` / `in`, `AED 7-` / `20`, `commonly-` / `touched`) también; entre
+  dos palabras enteras, un espacio (`charged` / `by`, `may` / `not`, `are` / `provided`). El espacio con
+  que empiezan algunos renglones del ítem largo de p. 31 (` eservations`, ` formation`) es la sangría del
+  recuadro, no texto. `stays -` / ` 24 hours` y `Terms of Use -` / `http://…` llevan un espacio a cada
+  lado del guion.
+- **Espacios que el PDF sí trae y se conservan:** el final de `"CheckIn Time-Begin: 3:00 PM "`, el
+  inicial de `" CheckIn Time-End: 3:00 AM"`, `" Special Instructions : … arrival. "` (la comilla de
+  cierre cae en el renglón siguiente) y los espacios entre etiquetas escapadas (`&lt;/li&gt;   &lt;li&gt;`).
+  Donde la PNG muestra varios espacios entre etiquetas y no se pueden contar con precisión (7.2.2,
+  "Optional Fees"), van dos: el saneo los colapsa y ningún test depende de cuántos son.
+- **Comprobación:** el generador verifica que cada ítem de `RateConditions`, sin espacios, aparece
+  igual en el texto del PDF sin espacios (quitadas la cabecera y el pie de página que cortan los ítems
+  que cruzan de p. 30 a 31 y de 31 a 32).
+- **Números:** como en Search, el JSON conserva el tipo y el valor, no el literal: `17.10` queda `17.1`,
+  `15.15762150` queda `15.1576215` y `20.00` queda `20.0`. `ExtraGuestCharges` y
+  `RecommendedSellingRate` siguen siendo strings.
+- **Lo que el PDF no muestra y los tests construyen** a partir de 7.2.2, citando la página: otro
+  `BookingCode` en la respuesta (Q-30), `Supplements` plano, una moneda de otro exponente, dos
+  `HotelResult`, una norma que no es texto y el `&amp;lt;script&amp;gt;` de RF-16 CA-1. Las señales
+  "No Name change allowed" y "NOT VALID FOR Germany Market" salen del `RateConditions` de
+  BookingDetail (p. 51), que es de otro método y no se copia como fixture de PreBook.
+
+## `pdf/` — Book y BookingDetail (docs/tbo/03 y 04; PR-4.2)
+
+| Archivo                                  | Ejemplo del PDF                                               | Páginas | ¿JSON válido en el PDF? | Para qué                                                                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------- | ------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `book-request-limit-multi-room.p35.json` | 8.1.2 Sample Request (Multiple Room) \_Booking By Limit       | 35-36   | Sí                      | El builder lo reproduce con nuestras referencias y `PaymentMode` explícito (CK-10, CK-11). `EmailId` y `PhoneNumber` **sustituidos** por sintéticos.       |
+| `book-response.p41.json`                 | 8.2.1 Sample Response                                         | 41      | Sí                      | La respuesta del Book. El título está en p. 40 y el JSON en p. 41. Su `ClientReferenceId` no es el de ningún request del PDF: contra el nuestro, incierto. |
+| `booking-detail-request.p44.json`        | 10.1.1 y 10.1.2 Sample Request (por localizador y referencia) | 44      | Sí                      | Los dos requests en un objeto (`byConfirmationNumber`, `byBookingReferenceId`). El builder reproduce el primero y la forma del segundo.                    |
+| `booking-detail.p49.json`                | 10.2.1 Sample Response                                        | 49-51   | **No**                  | La lectura de BookingDetail (RF-24 CA-1), con el `BookingDate` imposible conservado como test de robustez.                                                 |
+
+- **Datos personales sustituidos en 8.1.2.** El PDF manda `<email-de-ejemplo-del-PDF>`, el buzón de una
+  persona de TBO, y `919999999999`. Van `reservas@agencia.example` (dominio reservado, RFC 2606) y
+  `573001234567`, que es la forma que el builder emite: dígitos con prefijo de país, sin `+`, y el
+  contacto de la agencia (D-TBO-23 A). Nada más cambia: el `ClientReferenceId`
+  (`1626135861wq4415-5686105`) y el `BookingReferenceId` (`AVw12118`) del PDF quedan como están,
+  aunque nuestro builder nunca los emitiría (no son referencias nuestras), porque el test compara la
+  FORMA y reemplaza esos dos valores.
+- **Los otros ejemplos de Book no se copian.** 8.1.1 (p. 34-35) usa `NewCard` con datos de tarjeta y
+  comillas tipográficas; 8.1.3 (p. 36-38) se titula "by limit" pero usa `NewCard` con un número con
+  forma de PAN (`5555555555554444`); 8.1.4 (p. 39-40) usa `SavedCard` con `CvvNumber` y le falta una
+  coma. Los tres quedan fuera por D1 (03 §3.7).
+- **Correcciones de 10.2.1** (comparadas contra la PNG de p. 49-51):
+  - `"Type": “Adult”` y `"Type": “Child”` (p. 50-51) llevan comillas tipográficas U+201C/U+201D; se
+    reemplazan por `"`. Es la corrección que 04 §3.4 declara y lo único que hacía inválido el JSON.
+  - `"BookingDate": "2021-07-1317T00:00:00"` se conserva tal cual: es el caso de robustez de RF-24
+    CA-1 (PV-03).
+  - `RateConditions` se reúne de los renglones del recuadro con la regla del contenido estático: entre
+    dos palabras enteras un espacio (`otherwise` / `specified`, `Germany` / `MarketDubai`), tras un
+    guion nada (`s3-eu-` / `west-1`). Los tres caracteres de reemplazo `�` (U+FFFD) que muestra la
+    PNG se conservan donde están (`hotel�s time`, `providers � including`, `ancillaries � guests`):
+    `pdftotext` y PyMuPDF los pierden como saltos de línea, y son justo el encoding roto que motiva
+    D-TBO-23 A. La pegadura de `yearNOT VALID` y `MarketDubai` es del PDF y se deja.
+  - Los datos de los huéspedes (`Shubham Gupta`, `Kunal Agrawal`) son los del ejemplo publicado y se
+    dejan: el test de RF-24 CA-3 verifica que no salen de la lectura ni llegan a un log.
+- **Números:** como en Search y PreBook, Prettier reescribe el literal y conserva el valor:
+  `107.14000000000000` queda `107.14`, `0.00` queda `0.0` y `100.00` queda `100.0`. Da igual para el
+  test: `JSON.parse` pierde el literal de todas formas, y el mapper toma el texto decimal del número
+  (`tboDecimalText`).
+- **Lo que el PDF no muestra y los tests construyen** a partir de 10.2.1: `HotelConfirmationNumber`
+  (con valor, vacío y `null`, PV-05), `VoucherStatus` `false` y `"Confirm"` (PV-02), los estados de
+  cancelación del enum (p. 70-71) y `Vouchered` (p. 64), `Rooms` en sus dos formas (PV-07),
+  `CustomerDetails` y `CreditCardOptions` a nivel de reserva (PV-06) y los desenlaces de "no existe",
+  que el PDF no documenta (PV-01, Q-37) y fija la sonda PR-05.
+
 ## `postman/` — requests esperados
 
-| Archivo               | Request de la colección | Qué es                                                                                                                                                                                                                                                                             |
-| --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `search.request.json` | `Search`                | El `body` es el raw literal, reformateado (`ResponseTime` sigue escrito `20.0`). Postman no guarda respuestas. El archivo lleva además `url` y la lista `discrepancies`, una entrada por campo en que la colección contradice al PDF o a nuestras reglas, con la regla que aplica. |
+| Archivo                | Request de la colección | Qué es                                                                                                                                                                                                                                                                             |
+| ---------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search.request.json`  | `Search`                | El `body` es el raw literal, reformateado (`ResponseTime` sigue escrito `20.0`). Postman no guarda respuestas. El archivo lleva además `url` y la lista `discrepancies`, una entrada por campo en que la colección contradice al PDF o a nuestras reglas, con la regla que aplica. |
+| `prebook.request.json` | `PreBook`               | Mismo formato. `discrepancies` vacía: path `/PreBook` con el casing del PDF y `PaymentMode: "Limit"`. `prebook.request.builder.test.ts` fija que el builder serializa exactamente este `body` (RF-15 CA-1).                                                                        |
 
 Las discrepancias de `search.request.json`, en resumen (02 §2.2): path `/search` en minúscula (C-35);
 fechas ya pasadas; `GuestNationality` fija `"AE"` (KP-1); `ChildrenAges: [0]` con `Children: 0`

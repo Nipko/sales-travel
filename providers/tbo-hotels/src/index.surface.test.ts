@@ -4,21 +4,51 @@ import { describe, expect, it } from 'vitest';
 
 import * as index from './index';
 
+import * as bookBuilder from './booking/book.request.builder';
+import * as bookMapper from './booking/book.response.mapper';
+import * as bookSchema from './booking/book.response.schema';
+import * as bookingReference from './booking/booking-reference';
+import * as classifyBook from './booking/classify-book-outcome';
 import * as policyMapper from './cancellation/policy.mapper';
 import * as config from './config';
+import * as detailBuilder from './detail/booking-detail.request.builder';
+import * as bookingStatus from './detail/booking-status';
+import * as detailMapper from './detail/response.mapper';
+import * as detailSchema from './detail/response.schema';
 import * as errors from './errors';
 import * as limiter from './http/limiter';
 import * as operations from './http/operations';
 import * as statusEnvelope from './http/status-envelope';
 import * as httpClient from './http/tbo-http.client';
+import * as prebookCompare from './prebook/compare';
+import * as prebookBuilder from './prebook/prebook.request.builder';
+import * as rateConditions from './prebook/rate-conditions';
+import * as prebookMapper from './prebook/response.mapper';
+import * as prebookSchema from './prebook/response.schema';
 import * as providerCode from './provider-code';
 import * as redaction from './redaction';
+import * as roompackMapper from './roompack/roompack.mapper';
 import * as mealType from './search/meal-type';
 import * as offerWindow from './search/offer-window';
 import * as searchMapper from './search/response.mapper';
 import * as searchSchema from './search/response.schema';
 import * as searchBuilder from './search/search.request.builder';
+import * as cityListBuilder from './static/city-list.request.builder';
+import * as cityListMapper from './static/city-list.response.mapper';
+import * as contentTypes from './static/content.types';
+import * as countryListMapper from './static/country-list.response.mapper';
+import * as hotelCodeListMapper from './static/hotel-code-list.response.mapper';
+import * as hotelDetailsBuilder from './static/hotel-details.request.builder';
+import * as hotelDetailsMapper from './static/hotel-details.response.mapper';
+import * as hotelRecord from './static/hotel-record';
+import * as htmlSanitizer from './static/html-sanitizer';
+import * as staticNormalize from './static/normalize';
+import * as staticObserver from './static/observer';
+import * as staticSchema from './static/response.schema';
+import * as cityHotelsBuilder from './static/tbo-hotel-code-list.request.builder';
+import * as cityHotelsMapper from './static/tbo-hotel-code-list.response.mapper';
 import * as adapter from './tbo-hotels.adapter';
+import * as staticClient from './tbo-static-content.client';
 
 /**
  * La SONDA del entry público, sobre el modelo de `providers/sabre/src/index.surface.test.ts`.
@@ -43,6 +73,13 @@ interface ProbedModule {
   /** Exports del módulo que el entry NO publica, con el motivo. Una omisión es una decisión escrita. */
   readonly notPublished?: Readonly<Record<string, string>>;
 }
+
+const RAW_SCHEMA = 'esquema crudo de TBO (08 RF-07 CA-6)';
+const NORMALIZER = 'lo aplican los mappers; fuera se leen los tipos ya normalizados';
+const SANITIZER =
+  'se aplica al ingerir, dentro del cliente: lo que sale ya es HTML seguro (RNF-16)';
+const RAW_RATE_CONDITIONS =
+  'recibe el texto crudo de TBO; fuera se leen las condiciones ya saneadas del reporte (RF-16)';
 
 const PROBED: readonly ProbedModule[] = [
   { name: 'config', module: config },
@@ -124,6 +161,239 @@ const PROBED: readonly ProbedModule[] = [
         'recibe tramos crudos de TBO; lo comparten los mappers de Search y PreBook',
     },
   },
+  {
+    name: 'roompack/roompack.mapper',
+    module: roompackMapper,
+    notPublished: {
+      mapTboRoompack: 'recibe la habitación cruda de TBO; lo comparten Search y PreBook',
+      readTboHotelCurrency: 'recibe la moneda cruda de un HotelResult',
+      rejectTbo: 'helper de los mappers',
+      tboDecimalText: 'helper de los mappers: el literal sale ya en TboSearchPackContext',
+    },
+  },
+  // ───────────── PreBook (PR-4.1) ─────────────
+  {
+    name: 'prebook/prebook.request.builder',
+    module: prebookBuilder,
+    notPublished: {
+      buildTboPrebookRequest: 'arma el body crudo de TBO; fuera se llama al adapter',
+      TboPrebookRequestSchema: RAW_SCHEMA,
+      TBO_PREBOOK_PAYMENT_MODE: 'el modo no se elige fuera del builder: siempre "Limit" (D1)',
+    },
+  },
+  {
+    name: 'prebook/response.schema',
+    module: prebookSchema,
+    notPublished: {
+      TboPrebookEnvelopeSchema: 'esquema crudo de TBO; lo pasa el adapter como responseSchema',
+      TboPrebookRoomSchema: RAW_SCHEMA,
+      TboPrebookHotelSchema: RAW_SCHEMA,
+      TBO_PREBOOK_IGNORED_HOTEL_KEYS: 'detalle de la detección de claves desconocidas del mapper',
+      TBO_PREBOOK_ROOT_KEYS: 'ídem',
+      TBO_PREBOOK_HOTEL_KEYS: 'ídem',
+      TBO_PREBOOK_ROOM_KEYS: 'ídem',
+    },
+  },
+  {
+    name: 'prebook/response.mapper',
+    module: prebookMapper,
+    notPublished: {
+      mapTboPrebookResponse:
+        'recibe el sobre crudo de TBO; fuera del paquete la salida es el adapter',
+    },
+  },
+  {
+    name: 'prebook/rate-conditions',
+    module: rateConditions,
+    notPublished: {
+      TBO_RATE_SIGNALS: 'el vocabulario es el de HotelRateSignal del dominio',
+      readTboRateConditions: RAW_RATE_CONDITIONS,
+      tboRateConditionToText: RAW_RATE_CONDITIONS,
+      classifyTboRateCondition: RAW_RATE_CONDITIONS,
+      detectTboRateSignals: RAW_RATE_CONDITIONS,
+    },
+  },
+  { name: 'prebook/compare', module: prebookCompare },
+  // ───────────── Book y BookingDetail (PR-4.2) ─────────────
+  { name: 'booking/booking-reference', module: bookingReference },
+  {
+    name: 'booking/book.request.builder',
+    module: bookBuilder,
+    notPublished: {
+      buildTboBookRequest: 'arma el body crudo de TBO; fuera se llama al adapter',
+      TboBookRequestSchema: RAW_SCHEMA,
+      TBO_BOOK_PAYMENT_MODE: 'el modo no se elige fuera del builder: siempre "Limit" (D1)',
+      TBO_BOOK_BOOKING_TYPE: 'constante del contrato (p. 33): fuera no hay nada que elegir',
+      normalizeTboGuestName:
+        'la aplica `checkTboBookGuests`, que devuelve los nombres ya normalizados',
+    },
+  },
+  {
+    name: 'booking/book.response.schema',
+    module: bookSchema,
+    notPublished: {
+      TboBookEnvelopeSchema: 'esquema crudo de TBO; lo pasa el adapter como responseSchema',
+      TBO_BOOK_ROOT_KEYS: 'detalle de la detección de claves desconocidas del mapper',
+    },
+  },
+  {
+    name: 'booking/book.response.mapper',
+    module: bookMapper,
+    notPublished: {
+      mapTboBookResponse: 'recibe el sobre crudo de TBO; fuera del paquete la salida es el adapter',
+    },
+  },
+  { name: 'booking/classify-book-outcome', module: classifyBook },
+  {
+    name: 'detail/booking-detail.request.builder',
+    module: detailBuilder,
+    notPublished: {
+      buildTboBookingDetailRequest: 'arma el body crudo de TBO; fuera se llama al adapter',
+      TboBookingDetailRequestSchema: RAW_SCHEMA,
+      TBO_BOOKING_DETAIL_PAYMENT_MODE:
+        'el modo no se elige fuera del builder: siempre "Limit" (D1)',
+    },
+  },
+  {
+    name: 'detail/response.schema',
+    module: detailSchema,
+    notPublished: {
+      TboBookingDetailEnvelopeSchema:
+        'esquema crudo de TBO; lo pasa el adapter como responseSchema',
+      TboBookingDetailSchema: RAW_SCHEMA,
+      TboBookedRoomSchema: RAW_SCHEMA,
+      TboBookedHotelSchema: RAW_SCHEMA,
+      TBO_BOOKING_DETAIL_ROOT_KEYS: 'detalle de la detección de claves desconocidas del mapper',
+      TBO_BOOKING_DETAIL_KEYS: 'ídem',
+      TBO_BOOKED_HOTEL_KEYS: 'ídem',
+      TBO_BOOKED_ROOM_KEYS: 'ídem',
+    },
+  },
+  {
+    name: 'detail/booking-status',
+    module: bookingStatus,
+    notPublished: {
+      readTboBookingStatus: 'recibe el valor crudo de TBO; fuera se lee `status` de la vista',
+    },
+  },
+  {
+    name: 'detail/response.mapper',
+    module: detailMapper,
+    notPublished: {
+      mapTboBookingDetailResponse:
+        'recibe el sobre crudo de TBO; fuera del paquete la salida es el adapter',
+    },
+  },
+  // ───────────── Contenido estático (PR-3.1) ─────────────
+  { name: 'tbo-static-content.client', module: staticClient },
+  { name: 'static/content.types', module: contentTypes },
+  {
+    name: 'static/hotel-details.request.builder',
+    module: hotelDetailsBuilder,
+    notPublished: {
+      buildTboHotelDetailsRequest: 'arma el body crudo de TBO; fuera se llama al cliente',
+    },
+  },
+  {
+    name: 'static/city-list.request.builder',
+    module: cityListBuilder,
+    notPublished: {
+      buildTboCityListRequest: 'arma el body crudo de TBO; fuera se llama al cliente',
+    },
+  },
+  {
+    name: 'static/tbo-hotel-code-list.request.builder',
+    module: cityHotelsBuilder,
+    notPublished: {
+      buildTboCityHotelsRequest: 'arma el body crudo de TBO; fuera se llama al cliente',
+    },
+  },
+  {
+    name: 'static/country-list.response.mapper',
+    module: countryListMapper,
+    notPublished: { mapTboCountryListResponse: 'recibe el sobre crudo de TBO' },
+  },
+  {
+    name: 'static/city-list.response.mapper',
+    module: cityListMapper,
+    notPublished: { mapTboCityListResponse: 'recibe el sobre crudo de TBO' },
+  },
+  {
+    name: 'static/tbo-hotel-code-list.response.mapper',
+    module: cityHotelsMapper,
+    notPublished: { mapTboCityHotelsResponse: 'recibe el sobre crudo de TBO' },
+  },
+  {
+    name: 'static/hotel-details.response.mapper',
+    module: hotelDetailsMapper,
+    notPublished: { mapTboHotelDetailsResponse: 'recibe el sobre crudo de TBO' },
+  },
+  {
+    name: 'static/hotel-code-list.response.mapper',
+    module: hotelCodeListMapper,
+    notPublished: { mapTboHotelCodeListResponse: 'recibe el sobre crudo de TBO' },
+  },
+  {
+    name: 'static/response.schema',
+    module: staticSchema,
+    notPublished: {
+      TboCountryListEnvelopeSchema: RAW_SCHEMA,
+      TboCityListEnvelopeSchema: RAW_SCHEMA,
+      TboCityHotelsEnvelopeSchema: RAW_SCHEMA,
+      TboHotelDetailsEnvelopeSchema: RAW_SCHEMA,
+      TboHotelCodeListEnvelopeSchema: RAW_SCHEMA,
+      TboStaticCodeSchema: RAW_SCHEMA,
+      TboCountryItemSchema: RAW_SCHEMA,
+      TboCityItemSchema: RAW_SCHEMA,
+      TboHotelItemSchema: RAW_SCHEMA,
+      TboTextFieldSchema: RAW_SCHEMA,
+      TboRatingFieldSchema: RAW_SCHEMA,
+      TboListFieldSchema: RAW_SCHEMA,
+      TboAttractionsFieldSchema: RAW_SCHEMA,
+      TBO_STATIC_ROOT_KEYS: 'detalle de la detección de claves desconocidas de los mappers',
+      TBO_COUNTRY_ITEM_KEYS: 'ídem',
+      TBO_CITY_ITEM_KEYS: 'ídem',
+      TBO_HOTEL_FIELD_KEYS: 'ídem',
+    },
+  },
+  {
+    name: 'static/observer',
+    module: staticObserver,
+    notPublished: { TboStaticObserver: 'contador interno de los mappers de contenido estático' },
+  },
+  {
+    name: 'static/hotel-record',
+    module: hotelRecord,
+    notPublished: { readTboHotelRecord: 'recibe un hotel crudo de TBO' },
+  },
+  {
+    name: 'static/normalize',
+    module: staticNormalize,
+    notPublished: {
+      normalizeTboText: NORMALIZER,
+      stripTboControlChars: NORMALIZER,
+      normalizeTboStars: NORMALIZER,
+      normalizeTboMap: NORMALIZER,
+      normalizeTboCountryCode: NORMALIZER,
+      normalizeTboCheckTime: NORMALIZER,
+      normalizeTboImageUrl: NORMALIZER,
+      normalizeTboWebsiteUrl: NORMALIZER,
+      toTboTextList: NORMALIZER,
+      joinTboAttractions: NORMALIZER,
+    },
+  },
+  {
+    name: 'static/html-sanitizer',
+    module: htmlSanitizer,
+    notPublished: {
+      TBO_HTML_ALLOWED_TAGS: SANITIZER,
+      decodeTboHtmlEntities: 'la usan el saneador y las condiciones de PreBook, dentro del paquete',
+      sanitizeTboHtml: SANITIZER,
+      tboHtmlToText: SANITIZER,
+      splitTboDescriptionSections: SANITIZER,
+      classifyTboFacility: SANITIZER,
+    },
+  },
 ];
 
 const surface = index as unknown as Record<string, unknown>;
@@ -187,6 +457,7 @@ describe('el entry no publica nada fuera de los módulos sondeados', () => {
       'isTboIsoDate',
       'zodIssueRef',
       'zodIssueRefs',
+      'compareDecimals',
     ]) {
       expect(Object.hasOwn(surface, name), `'${name}' es interno y no debe publicarse`).toBe(false);
     }
@@ -210,6 +481,33 @@ describe('la fuente del entry', () => {
 
   it('no re-exporta nada de src/internal', () => {
     expect(source).not.toMatch(/from\s+'\.\/internal\//);
+  });
+
+  it('no re-exporta los builders, esquemas, mappers ni normalizadores del contenido estático', () => {
+    expect(source).not.toMatch(
+      /from\s+'\.\/static\/(response\.schema|observer|hotel-record|normalize|html-sanitizer|[\w-]+\.response\.mapper)'/,
+    );
+    expect(source).not.toMatch(/\bbuildTbo(CityList|CityHotels|HotelDetails)Request\b/);
+  });
+
+  it('no re-exporta el builder, el esquema, el saneo ni el mapeo de PreBook (08 RF-07 CA-6)', () => {
+    expect(source).not.toMatch(
+      /from\s+'\.\/prebook\/(response\.schema|prebook\.request\.builder)'/,
+    );
+    expect(source).not.toMatch(/from\s+'\.\/roompack\//);
+    expect(source).not.toMatch(
+      /\b(mapTboPrebookResponse|buildTboPrebookRequest|TboPrebookRequest|readTboRateConditions)\b/,
+    );
+  });
+
+  it('no re-exporta el builder, los esquemas ni los mappers de Book y BookingDetail (08 RF-07 CA-6)', () => {
+    expect(source).not.toMatch(/from\s+'\.\/booking\/book\.response\.(schema|mapper)'/);
+    expect(source).not.toMatch(
+      /from\s+'\.\/detail\/(response\.schema|booking-detail\.request\.builder)'/,
+    );
+    expect(source).not.toMatch(
+      /\b(buildTboBookRequest|TboBookRequest|TboBookRequestSchema|buildTboBookingDetailRequest|TboBookingDetailRequest|mapTboBookResponse|mapTboBookingDetailResponse|readTboBookingStatus|normalizeTboGuestName)\b/,
+    );
   });
 
   it('no re-exporta los esquemas crudos de TBO ni los mappers que los reciben (08 RF-07 CA-6)', () => {

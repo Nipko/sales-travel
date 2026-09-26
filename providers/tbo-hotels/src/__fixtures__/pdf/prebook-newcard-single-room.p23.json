@@ -1,0 +1,139 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1435427",
+      "Currency": "USD",
+      "Rooms": [
+        {
+          "Name": ["Standard Twin Room,2 Large Twin Beds"],
+          "BookingCode": "1435427!TB!2!TB!a5419e54-559d-4607-a8ee-ce743288bd51",
+          "Inclusion": "Free WiFi",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 15.1576215
+              }
+            ]
+          ],
+          "TotalFare": 17.1,
+          "TotalTax": 1.94,
+          "ExtraGuestCharges": "6.45",
+          "RoomPromotion": ["Save10%"],
+          "CancelPolicies": [
+            {
+              "FromDate": "05-05-2022 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0.0
+            },
+            {
+              "FromDate": "12-05-2022 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100.0
+            }
+          ],
+          "MealType": "Room_Only",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "Amenities": [
+            "Non-Smoking",
+            "Premium bedding",
+            "Turndown service",
+            "Iron/ironing board (on request)",
+            "Satellite TV service",
+            "Soundproofed rooms",
+            "Room service",
+            "In-room climate control (air conditioning)",
+            "Blackout drapes/curtains",
+            "Minibar",
+            "Separate bathtub and shower",
+            "Free wired internet",
+            "Daily housekeeping",
+            "Free WiFi",
+            "Individually decorated",
+            "Bidet",
+            "Individually furnished",
+            "Phone",
+            "Designer toiletries",
+            "MP3 docking station",
+            "Child-size bathrobes",
+            "Roll-in shower",
+            "Connecting/adjoining rooms available",
+            "Soap",
+            "Mini-fridge",
+            "Toilet paper",
+            "Shampoo",
+            "DVD player",
+            "Toothbrush and toothpaste available on request",
+            "Slippers",
+            "Private bathroom",
+            "Bathrobes",
+            "Wheelchair accessible",
+            "Free toiletries",
+            "Hair dryer",
+            "In-room safe",
+            "Rainfall showerhead",
+            "Rollaway/extra beds (surcharge)",
+            "Room service (24 hours)",
+            "Flat-panel TV",
+            "Free newspaper",
+            "Free bottled water"
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified.",
+        "Please note that this a special rate which should be sold only with an airline ticket as part of a package.",
+        "Please refer to the following Terms of Use - http://mytravelagent.online/termsofuse.pdf",
+        "CheckIn Time-Begin: 2:00 PM",
+        "CheckOut Time: 12:00 PM",
+        "CheckIn Instructions: &lt;ul&gt; &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards and cash&lt;/li&gt; &lt;/ul&gt; ",
+        " Special Instructions : Front desk staff will greet guests on arrival. ",
+        "Minimum CheckIn Age : 15",
+        " Optional Fees: &lt;p&gt;The following fees and deposits are charged by the property at time of service, check-in, or check-out. &lt;/p&gt; &lt;ul&gt; &lt;li&gt;Fee for cooked-to-order breakfast: VND 40000 for adults and VND 30000 for children (approximately)&lt;/li&gt;   &lt;li&gt;Self parking fee: VND 50000 per day&lt;/li&gt;   &lt;li&gt;Early check-in is available for a fee (subject to availability, amount varies)&lt;/li&gt; &lt;li&gt;Late check-out is available for a fee (subject to availability, amount varies)&lt;/li&gt; &lt;li&gt;Credit card charges are subject to a surcharge of 3 percent &lt;/li&gt; &lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Debit cards not accepted,Cash,Mastercard",
+        "Pets not allowed"
+      ],
+      "CreditCardBillingOptions": [
+        {
+          "Amount": 61.93,
+          "Currency": "GBP",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 85.822,
+          "Currency": "USD",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 666.53,
+          "Currency": "HKD",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 1244728.99,
+          "Currency": "IDR",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 359.71,
+          "Currency": "MYR",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 25.81,
+          "Currency": "KWD",
+          "ConvenienceCharges": 0.0
+        },
+        {
+          "Amount": 315.22,
+          "Currency": "AED",
+          "ConvenienceCharges": 0.0
+        }
+      ]
+    }
+  ]
+}

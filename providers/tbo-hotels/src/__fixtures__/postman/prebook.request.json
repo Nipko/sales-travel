@@ -1,0 +1,10 @@
+{
+  "source": "Postman: PreBook. Colección 'HotelAPI_Client.postman_collection 7.json' (SHA-256 d5ec68fccf57d808), request 'PreBook', body raw literal reformateado. Ver ../README.md.",
+  "method": "POST",
+  "url": "http://api.tbotechnology.in/TBOHolidays_HotelAPI/PreBook",
+  "discrepancies": [],
+  "body": {
+    "BookingCode": "1160804!TB!10!TB!6110a41c-558c-405c-a0d3-6bdd3e131146",
+    "PaymentMode": "Limit"
+  }
+}

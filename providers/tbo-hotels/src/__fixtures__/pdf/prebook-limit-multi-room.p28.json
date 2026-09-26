@@ -1,0 +1,125 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1120548",
+      "Currency": "USD",
+      "Rooms": [
+        {
+          "Name": ["Luxury Room, 2 Twin Beds", "Luxury Room, 2 Twin Beds"],
+          "BookingCode": "1120548!TB!4!TB!9a47646b-1bba-4746-91d5-969149db1185",
+          "Inclusion": "Free WiFi",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 124.756485
+              }
+            ],
+            [
+              {
+                "BasePrice": 124.756485
+              }
+            ]
+          ],
+          "TotalFare": 305.75,
+          "TotalTax": 56.24,
+          "ExtraGuestCharges": "6.45",
+          "RecommendedSellingRate": "321.34",
+          "RoomPromotion": ["Private sale", "Private sale"],
+          "CancelPolicies": [
+            {
+              "FromDate": "05-05-2022 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100.0
+            }
+          ],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ],
+            [
+              {
+                "Index": 2,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "Amenities": [
+            "Non-Smoking",
+            "Premium bedding",
+            "Turndown service",
+            "Iron/ironing board (on request)",
+            "Satellite TV service",
+            "Soundproofed rooms",
+            "Room service",
+            "In-room climate control (air conditioning)",
+            "Blackout drapes/curtains",
+            "Minibar",
+            "Separate bathtub and shower",
+            "Free wired internet",
+            "Daily housekeeping",
+            "Free WiFi",
+            "Individually decorated",
+            "Bidet",
+            "Individually furnished",
+            "Phone",
+            "Designer toiletries",
+            "MP3 docking station",
+            "Child-size bathrobes",
+            "Roll-in shower",
+            "Connecting/adjoining rooms available",
+            "Soap",
+            "Mini-fridge",
+            "Toilet paper",
+            "Shampoo",
+            "DVD player",
+            "Toothbrush and toothpaste available on request",
+            "Slippers",
+            "Private bathroom",
+            "Bathrobes",
+            "Wheelchair accessible",
+            "Free toiletries",
+            "Hair dryer",
+            "In-room safe",
+            "Rainfall showerhead",
+            "Rollaway/extra beds (surcharge)",
+            "Room service (24 hours)",
+            "Flat-panel TV",
+            "Free newspaper",
+            "Free bottled water"
+          ]
+        }
+      ],
+      "RateConditions": [
+        "W.e.f 31.03.2014, Government of Dubai is applying “Tourism Dirham” a fee ranging from AED 7-20 per room per night, which the guests availing the stay will have to pay to the hotel directly as applied before check-out.",
+        "Early check out will attract full cancellation charge unless otherwise specified.",
+        "Please note that this a special rate which should be sold only with an airline ticket as part of a package.",
+        "Please refer to the following Terms of Use - http://mytravelagent.online/termsofuse.pdf",
+        "CheckIn Time-Begin: 3:00 PM ",
+        " CheckIn Time-End: 3:00 AM",
+        "CheckOut Time: 12:00 PM",
+        "CheckIn Instructions: &lt;ul&gt; &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;The name on the credit card used at check-in to pay for incidentals must be the primary name on the guestroom reservation&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher, a smoke detector, a security system, and a first aid kit&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt; &lt;/ul&gt; ",
+        " Special Instructions : Front desk staff will greet guests on arrival. ",
+        "Mandatory Fees: &lt;p&gt;You'll be asked to pay the following charges at the property:&lt;/p&gt; &lt;ul&gt;&lt;li&gt;A tax is imposed by the city: AED 20.00 per accommodation, per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;We have included all charges provided to us by the property. &lt;/p&gt; ",
+        " Optional Fees: &lt;p&gt;The following fees and deposits are charged by the property at time of service, check-in, or check-out. &lt;/p&gt; &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: AED 145 per person (approximately)&lt;/li&gt;  &lt;li&gt;Early check-in is available for a fee (subject to availability)&lt;/li&gt;  &lt;li&gt;Rollaway bed fee: AED 240.0 per night&lt;/li&gt;  &lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Diners Club,Debit cards,American Express,Cash,Mastercard",
+        "&lt;ul&gt; &lt;li&gt;Reservations are required for spa treatments. Reservations can be made by contacting the hotel prior to arrival, using the contact information on the booking confirmation. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;This property advises that enhanced cleaning and guest safety measures are currently in place.&lt;/li&gt;&lt;li&gt;Disinfectant is used to clean the property; commonly-touched surfaces are cleaned with disinfectant between stays; bed sheets and towels are laundered at a temperature of at least 60°C/140°F.&lt;/li&gt;&lt;li&gt;Personal protective equipment, including masks and gloves, will be available to guests.&lt;/li&gt;&lt;li&gt;Social distancing measures are in place; staff at the property wear personal protective equipment; a shield is in place between staff and guests in main contact areas; periodic temperature checks are conducted on staff; temperature checks are available to guests; guests are provided with hand sanitizer; cashless payment methods are available for all transactions; contactless room service is available; masks are required in public areas.&lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt;&lt;li&gt;Enhanced food service safety measures are in place.&lt;/li&gt;&lt;li&gt;Each guestroom is kept vacant for a minimum of 24 hours between bookings.&lt;/li&gt;&lt;li&gt;This property affirms that it follows the cleaning and disinfection practices of ALLSAFE (Accor Hotels).&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Property follows a brand or regulatory agency's sanitization guidelines ALLSAFE (Accor Hotels),Gap period enforced between guest stays - 24 hours,Shield between guests and staff in main contact areas,Contactless check-out is available,Caters to women only,Property confirms they are implementing guest safety measures,Temperature checks are available to guests,Contactless food service / room service is available,Social distancing measures are in place,Staff temperature checks are conducted regularly,Property is cleaned with disinfectant,Guests are provided with free hand sanitizer,Property confirms they are implementing enhanced cleaning measures,Staff wears personal protective equipment,Cashless transactions are available,Masks are available to guests,Bed sheets and towels are washed at a temperature of at least 60°C/140°F,Food service has been amended for enhanced safety,Protective clothing is available to guests,Contactless check-in is available,Gloves are available to guests,Masks are compulsory at the property,UNESCO sustainable tourism pledge,Commonly-touched surfaces are cleaned with disinfectant"
+      ]
+    }
+  ]
+}
