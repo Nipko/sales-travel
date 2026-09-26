@@ -2,13 +2,31 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 
-export interface WaterfallStep {
+/** Lo que sumó una regla de markup de un nivel de la red (consolidador, agencia, sub-agencia). */
+export interface MarkupStep {
   tenantId: string;
   tenantName: string;
   level: number;
   ruleType: string;
   addedMinor: number;
 }
+
+/** `ruleType` del paso que agrega el piso del proveedor. Ninguna regla de markup puede tenerlo. */
+export const PROVIDER_FLOOR_RULE_TYPE = 'provider_floor';
+
+/**
+ * Lo que subió el precio el piso del proveedor (RF-12), por encima de la cascada.
+ *
+ * No es una regla de ningún nivel de la red, por eso no lleva nombre ni nivel: es una condición
+ * del proveedor. Se atribuye al tenant que VENDE, que es quien la cobra.
+ */
+export interface ProviderFloorStep {
+  tenantId: string;
+  ruleType: typeof PROVIDER_FLOOR_RULE_TYPE;
+  addedMinor: number;
+}
+
+export type WaterfallStep = MarkupStep | ProviderFloorStep;
 
 export interface WaterfallResult {
   netMinor: number;
@@ -34,6 +52,11 @@ export interface TenantPricingView {
   currency: string;
 }
 
+/**
+ * El piso del proveedor nunca entra al costo de nadie: si lo hiciera, la agencia que vende vería
+ * como margen de su consolidador un importe que el consolidador no configuró, y pagaría por él.
+ * Sólo lo cuenta como margen propio el tenant al que se atribuyó, que es el que vende.
+ */
 export function toTenantView(
   w: WaterfallResult,
   tenantId: string,
@@ -43,7 +66,7 @@ export function toTenantView(
   let fromAncestors = 0;
   for (const step of w.breakdown) {
     if (step.tenantId === tenantId) own += step.addedMinor;
-    else fromAncestors += step.addedMinor;
+    else if (step.ruleType !== PROVIDER_FLOOR_RULE_TYPE) fromAncestors += step.addedMinor;
   }
   return {
     costMinor: w.netMinor + fromAncestors,
@@ -86,6 +109,40 @@ export function applyCascade(netMinor: number, rules: ApplicableRule[]): Waterfa
     finalMinor: running,
     totalMarkupMinor: running - netMinor,
     breakdown,
+  };
+}
+
+/**
+ * Piso de precio del proveedor, DESPUÉS de la cascada (RF-12, D-TBO-16 A):
+ * `finalMinor = max(finalMinor de la cascada, floorMinor)`.
+ *
+ * TBO prohíbe vender por debajo de su `RecommendedSellingRate` en cualquier canal. Si la cascada
+ * ya queda en el piso o por encima, el resultado es el mismo objeto: no hay paso que registrar.
+ * Si queda por debajo, la diferencia entra al `breakdown` como paso `provider_floor` atribuido a
+ * `sellerTenantId` —el tenant que vende—, así la vista de cualquier ancestro no la cuenta como
+ * margen propio ni como costo de la agencia.
+ *
+ * Sin piso (`undefined`) no cambia nada: los proveedores que no lo informan, como Despegar,
+ * siguen con la cascada tal cual.
+ */
+export function applyProviderFloor(
+  w: WaterfallResult,
+  floorMinor: number | undefined,
+  sellerTenantId: string,
+): WaterfallResult {
+  if (floorMinor === undefined || floorMinor <= w.finalMinor) return w;
+  return {
+    netMinor: w.netMinor,
+    finalMinor: floorMinor,
+    totalMarkupMinor: floorMinor - w.netMinor,
+    breakdown: [
+      ...w.breakdown,
+      {
+        tenantId: sellerTenantId,
+        ruleType: PROVIDER_FLOOR_RULE_TYPE,
+        addedMinor: floorMinor - w.finalMinor,
+      },
+    ],
   };
 }
 
