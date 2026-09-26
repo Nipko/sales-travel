@@ -680,6 +680,147 @@ d('conciliación contra Postgres (0047)', () => {
     expect(rows[0]).toEqual({ status: 'cancelled', next: null });
   });
 
+  it('R6, R7 y R8 sobre datos sembrados: se registran sin tocar la orden, cada uno en su tenant', async () => {
+    await pool.query(`DELETE FROM orders WHERE provider = $1`, [PROVEEDOR]);
+    const { service, listado } = servicio();
+
+    const precio = await orden({ tenantId: agenciaA, creadaHace: 2 * DAY });
+    const rara = await orden({ tenantId: agenciaB, creadaHace: 2 * DAY });
+    const atascada = await orden({ tenantId: agenciaA, status: 'pending', creadaHace: 5 * DAY });
+    // El calendario de verify-cancellation se agotó hace rato y el proveedor sigue "en curso".
+    await pool.query(
+      `INSERT INTO hotel_order_tracking (order_id, tenant_id, provider_status, provider_status_at,
+                                         provider_status_source, cancel_verify_anchor_at,
+                                         cancel_verify_step, cancel_verify_next_at)
+       VALUES ($1, $2, 'CxlRequestSentToHotel', now() - interval '80 hours', 'cancel',
+               now() - interval '80 hours', 5, NULL)`,
+      [atascada.id, agenciaA],
+    );
+
+    const creada = fecha(-2);
+    listado.filas = [
+      {
+        providerBookingId: precio.locator!,
+        bookingDate: creada,
+        bookingReference: precio.ref,
+        status: 'CONFIRMED',
+        providerStatus: 'Confirmed',
+        total: { amountMinor: 60_000, currency: 'USD' },
+        agencyCommission: { amountMinor: 5_000, currency: 'USD' },
+      },
+      {
+        providerBookingId: rara.locator!,
+        bookingDate: creada,
+        bookingReference: rara.ref,
+        status: 'UNKNOWN',
+        providerStatus: 'OnHold',
+      },
+      {
+        providerBookingId: atascada.locator!,
+        bookingDate: fecha(-5),
+        bookingReference: atascada.ref,
+        status: 'CANCELLATION_IN_PROGRESS',
+        providerStatus: 'CxlRequestSentToHotel',
+      },
+    ];
+    listado.lecturas.set(rara.locator!, {
+      found: true,
+      providerBookingId: rara.locator!,
+      status: 'UNKNOWN',
+      providerStatus: 'OnHold',
+      warnings: [],
+    });
+
+    const report = await correr(service);
+
+    expect(report).toMatchObject({ status: 'completed', rowsRead: 3 });
+    expect(report.outcomes).toEqual({ recorded: 1, review: 2 });
+    expect(listado.cancelBooking).not.toHaveBeenCalled();
+
+    // Ninguno de los tres cambia la orden.
+    const estados = await pool.query<{ id: string; status: string }>(
+      `SELECT id, status FROM orders WHERE id = ANY($1::uuid[])`,
+      [[precio.id, rara.id, atascada.id]],
+    );
+    const de = (id: string) => estados.rows.find((r) => r.id === id)?.status;
+    expect([de(precio.id), de(rara.id), de(atascada.id)]).toEqual([
+      'confirmed',
+      'confirmed',
+      'pending',
+    ]);
+    // R7: el valor crudo queda en el seguimiento y la orden, a revisión.
+    const seguimiento = await pool.query<{ provider_status: string; sub_status: string | null }>(
+      `SELECT provider_status, sub_status FROM hotel_order_tracking WHERE order_id = $1`,
+      [rara.id],
+    );
+    expect(seguimiento.rows[0]).toEqual({ provider_status: 'OnHold', sub_status: 'unknown' });
+
+    // R6 con los montos sólo en el dueño de la cuenta; R7 y R8 en el tenant de su orden. Los ítems
+    // son append-only y los casos anteriores dejaron los suyos en la cuenta: se miran los de ESTA corrida.
+    const deLaCorrida = (tenantId: string) =>
+      database.withTenant(tenantId, (trx) =>
+        trx
+          .selectFrom('provider_reconciliation_items')
+          .select(['kind', 'order_id', 'provider_booking_id', 'details'])
+          .where('run_id', '=', report.runId!)
+          .execute(),
+      );
+    const delDueno = await deLaCorrida(consolidador);
+    expect(delDueno.map((i) => [i.kind, i.order_id, i.provider_booking_id])).toEqual([
+      ['R6', null, precio.locator!],
+    ]);
+    expect(delDueno[0]?.details).toMatchObject({
+      providerNet: { amountMinor: 55_000, currency: 'USD' },
+      storedNet: { amountMinor: 50_000, currency: 'USD' },
+    });
+    const deA = await deLaCorrida(agenciaA);
+    expect(deA.map((i) => [i.kind, i.order_id])).toEqual([['R8', atascada.id]]);
+    const deB = await deLaCorrida(agenciaB);
+    expect(deB.map((i) => [i.kind, i.order_id])).toEqual([['R7', rara.id]]);
+    expect(await deLaCorrida(agenciaAjena)).toEqual([]);
+
+    const eventos = await pool.query<{
+      tenant_id: string;
+      event_type: string;
+      aggregate_id: string;
+      payload: Record<string, unknown>;
+    }>(
+      `SELECT tenant_id, event_type, aggregate_id, payload FROM domain_events
+        WHERE payload ->> 'runId' = $1`,
+      [report.runId],
+    );
+    const discrepancias = eventos.rows
+      .filter((e) => e.event_type === ORDER_EVENTS.reconciliationDiscrepancy)
+      .map((e) => [e.tenant_id, e.aggregate_id, e.payload['kind']]);
+    expect(discrepancias).toEqual(
+      expect.arrayContaining([
+        [agenciaA, precio.id, 'R6'],
+        [agenciaA, atascada.id, 'R8'],
+      ]),
+    );
+    const escalada = eventos.rows.find((e) => e.event_type === ORDER_EVENTS.escalated);
+    expect(escalada).toMatchObject({
+      tenant_id: agenciaB,
+      aggregate_id: rara.id,
+      payload: expect.objectContaining({ reason: 'provider-status-unknown' }) as unknown,
+    });
+    // La agencia recibe el aviso de R6 sin los montos del dueño. Se buscan las claves y no los
+    // números: la referencia sintética rellena con ceros y puede contener "60000".
+    const deLaAgencia = eventos.rows.filter((e) => e.tenant_id === agenciaA);
+    expect(JSON.stringify(deLaAgencia)).not.toMatch(
+      /amountMinor|providerNet|storedNet|agencyCommission|"total"/,
+    );
+
+    // Repetir la corrida no duplica ítems ni avisos.
+    const otra = await correr(service);
+    expect(otra.outcomes).not.toHaveProperty('recorded');
+    const repetidos = await pool.query(
+      `SELECT count(*)::int AS n FROM domain_events WHERE payload ->> 'runId' = $1`,
+      [otra.runId],
+    );
+    expect(repetidos.rows[0]).toEqual({ n: 0 });
+  });
+
   it('una respuesta con una fila fuera de la ventana invalida la corrida y no cambia nada', async () => {
     const { service, listado } = servicio();
     const intent = await orden({
