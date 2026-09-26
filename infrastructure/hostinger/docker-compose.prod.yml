@@ -109,6 +109,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       # BYOC: clave maestra AES-256-GCM para cifrar credenciales de proveedor (base64 de 32 bytes).
       PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:-}
+      # Bóveda de payloads de proveedor (0043): clave AES-256-GCM PROPIA (base64 de 32 bytes).
+      # Vacía = bóveda apagada, sin efecto sobre la venta. _PREVIOUS sólo durante una rotación.
+      PROVIDER_PAYLOADS_KEY: ${PROVIDER_PAYLOADS_KEY:-}
+      PROVIDER_PAYLOADS_KEY_PREVIOUS: ${PROVIDER_PAYLOADS_KEY_PREVIOUS:-}
+      PROVIDER_PAYLOADS_RETENTION_DAYS: ${PROVIDER_PAYLOADS_RETENTION_DAYS:-30}
       LATAM_API_URL: ${LATAM_API_URL:-https://sandbox.api.latam.com}
       LATAM_API_KEY: ${LATAM_API_KEY:-}
       LATAM_API_SECRET: ${LATAM_API_SECRET:-}

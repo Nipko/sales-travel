@@ -655,6 +655,49 @@ export interface DomainEventsTable {
   meta: Generated<unknown>;
 }
 
+/**
+ * 0043: vocabulario de `provider_payloads.environment`. Valor y no sólo tipo porque el CHECK de la
+ * migración tiene que decir lo mismo, y un test los compara.
+ */
+export const PROVIDER_PAYLOAD_ENVIRONMENTS = ['test', 'live'] as const;
+export type ProviderPayloadEnvironment = (typeof PROVIDER_PAYLOAD_ENVIRONMENTS)[number];
+
+/**
+ * 0043: bóveda de RQ/RS completos de proveedor. Los cuerpos llegan cifrados desde la app; la base
+ * no ve ninguno en claro. Sin UPDATE ni DELETE para `app_user`: se borra sólo con
+ * `purge_expired_provider_payloads`. La lectura la acota `can_read_provider_payloads`.
+ */
+export interface ProviderPayloadsTable {
+  id: Generated<string>;
+  provider_code: string;
+  request_id: string;
+  attempt: number;
+  operation: string;
+  environment: ProviderPayloadEnvironment;
+  owner_tenant_id: string;
+  provider_account_id: string | null;
+  account_ref: string | null;
+  tenant_id: string | null;
+  /** Sin FK: la fila se escribe en segundo plano, fuera de la transacción de la orden. */
+  order_id: string | null;
+  sent_at: Timestamp;
+  duration_ms: number;
+  /** 0 = no llegó una respuesta completa. */
+  http_status: number;
+  provider_status_code: number | null;
+  outcome: string;
+  key_id: string;
+  /** Tamaño del cuerpo original; NULL = no hubo cuerpo. */
+  request_bytes: number | null;
+  /** NULL con `request_bytes` = no se guardó por su tamaño. */
+  request_enc: Buffer | null;
+  response_bytes: number | null;
+  response_enc: Buffer | null;
+  /** A lo sumo 90 días después de `created_at` (CHECK de la migración). */
+  expires_at: Timestamp;
+  created_at: Generated<Timestamp>;
+}
+
 export interface DB {
   tenants: TenantsTable;
   users: UsersTable;
@@ -667,6 +710,7 @@ export interface DB {
   crm_tasks: CrmTasksTable;
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
+  provider_payloads: ProviderPayloadsTable;
   airports: AirportsTable;
   hotel_inventory: HotelInventoryTable;
   hotel_provider_city: HotelProviderCityTable;

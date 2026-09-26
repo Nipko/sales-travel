@@ -18,6 +18,10 @@ import {
   ProviderCredentialsService,
   type ResolvedProviderAccount,
 } from '../provider-credentials/provider-credentials.service.js';
+import {
+  PROVIDER_PAYLOAD_WRITER,
+  type ProviderPayloadWriter,
+} from '../provider-payloads/provider-payloads.types.js';
 import type {
   HotelProviderAdapter,
   HotelProviderCapabilities,
@@ -33,6 +37,7 @@ import {
 } from '../providers/provider.types.js';
 import { TboHotelProviderAdapter } from './tbo-hotel-provider.adapter.js';
 import { humanizeTboError, tboCircuitEffect } from './tbo-hotels-errors.js';
+import { tboPayloadVault } from './tbo-payload-vault.js';
 
 /** Literal para que el guard de órdenes lo encuentre; `satisfies` lo ata al código del ACL. */
 const PROVIDER_CODE = 'tbo-hotels' satisfies typeof TBO_HOTELS_PROVIDER_CODE;
@@ -149,9 +154,16 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
    */
   private readonly limiter: TboRateLimiter = new TboInMemoryRateLimiter();
 
+  /**
+   * @param payloadWriter la bóveda de payloads (PR-4.9). Sin ella, o apagada por falta de clave,
+   *   el ACL no guarda RQ/RS y todo lo demás funciona igual.
+   */
   constructor(
     private readonly creds: ProviderCredentialsService,
     @Optional() @Inject(TBO_HOTELS_FETCH) private readonly fetchImpl?: TboFetch,
+    @Optional()
+    @Inject(PROVIDER_PAYLOAD_WRITER)
+    private readonly payloadWriter?: ProviderPayloadWriter,
   ) {}
 
   async resolveForTenant(tenantId: string): Promise<TenantAdapter<HotelProviderAdapter>> {
@@ -179,7 +191,9 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
       // quedaría grabado en cada línea de log de los demás. La huella de la cuenta sí va: es la
       // misma para todos los que la heredan, y el contexto de cada búsqueda la guarda (RF-08).
       adapter = new TboHotelProviderAdapter(
-        new TboHotelsAdapter(cfg, this.httpDeps(), { ownerTenantId: resolved.ownerTenantId }),
+        new TboHotelsAdapter(cfg, this.httpDeps(resolved), {
+          ownerTenantId: resolved.ownerTenantId,
+        }),
         { accountId: resolved.id, updatedAt: resolved.updatedAt.toISOString() },
       );
       this.cache.set(key, adapter);
@@ -242,11 +256,24 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
     }
   }
 
-  private httpDeps(): TboHttpDeps {
+  /**
+   * La bóveda de payloads va atada a la cuenta con que se construye el cliente: cada RQ/RS queda
+   * con su dueño, que es quien lo puede leer después (0043). El cliente la escribe sin esperarla.
+   */
+  private httpDeps(resolved: ResolvedProviderAccount): TboHttpDeps {
+    const writer = this.payloadWriter;
     return {
       logger: this.loggerPort(),
       limiter: this.limiter,
       ...(this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl }),
+      ...(writer?.enabled === true
+        ? {
+            payloadVault: tboPayloadVault(writer, {
+              accountId: resolved.id,
+              ownerTenantId: resolved.ownerTenantId,
+            }),
+          }
+        : {}),
     };
   }
 
