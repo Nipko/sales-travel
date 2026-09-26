@@ -91,6 +91,7 @@ describe('10.2.1 (p. 49-51), comillas normalizadas (RF-24 CA-1)', () => {
       providerBookingId: 'YOSUR8',
       status: 'CONFIRMED',
       providerStatus: 'Confirmed',
+      voucherIssued: true,
       warnings: [],
     });
   });
@@ -218,14 +219,18 @@ describe('estado de la reserva (04 §6.3)', () => {
       expect(view.status).toBe('CONFIRMED');
       expect(view.warnings).toEqual(['VOUCHER_NOT_ISSUED']);
       expect(detail.voucherStatus).toBe('NOT_VOUCHERED');
+      // El contrato neutral lo dice sin el aviso de TBO: la post-venta no lee sus códigos.
+      expect(view.voucherIssued).toBe(false);
     },
   );
 
   it('VoucherStatus "Voucher" es emitido; un valor raro se avisa aparte', () => {
     expect(read(withDetail({ VoucherStatus: 'Voucher' })).detail.voucherStatus).toBe('VOUCHERED');
-    expect(read(withDetail({ VoucherStatus: 'Maybe' })).view.warnings).toEqual([
-      'VOUCHER_STATUS_UNKNOWN',
-    ]);
+    expect(read(withDetail({ VoucherStatus: 'Voucher' })).view.voucherIssued).toBe(true);
+    const raro = read(withDetail({ VoucherStatus: 'Maybe' })).view;
+    expect(raro.warnings).toEqual(['VOUCHER_STATUS_UNKNOWN']);
+    // Lo que no se entiende no se traduce a sí o no.
+    expect(raro).not.toHaveProperty('voucherIssued');
   });
 });
 

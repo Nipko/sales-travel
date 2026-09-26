@@ -37,6 +37,7 @@ import {
 import {
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
+  ProviderOrderAccountUnavailableError,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
 import { TboHotelProviderAdapter } from './tbo-hotel-provider.adapter.js';
@@ -534,8 +535,8 @@ describe('caché de adapters por dueño de la cuenta (RNF-06, RF-36 CA-3)', () =
 
     expect(nueva.adapter).not.toBe(vieja.adapter);
     expect(cache()).toEqual([
-      `byoc:${OTRO_CONSOLIDADOR}:${new Date('2026-09-01T00:00:00Z').getTime()}`,
-      `byoc:${CONSOLIDADOR}:${rotada.getTime()}`,
+      `byoc:${OTRO_CONSOLIDADOR}:acc-${OTRO_CONSOLIDADOR}:${new Date('2026-09-01T00:00:00Z').getTime()}`,
+      `byoc:${CONSOLIDADOR}:acc-${CONSOLIDADOR}:${rotada.getTime()}`,
     ]);
   });
 
@@ -774,5 +775,109 @@ describe('PR-3.6: contenido de un hotel con la MISMA cuenta y el mismo limitador
     ).resolveForTenant(CONSOLIDADOR);
 
     expect(JSON.stringify(adapter)).toBe('{}');
+  });
+});
+
+describe('post-venta con la cuenta que hizo la reserva (RF-29; D-TBO-28 A)', () => {
+  const ORDEN = '99999999-9999-4999-8999-999999999999';
+  const VIEJA = 'acc-vieja';
+  const NUEVA = 'acc-nueva';
+
+  function cuenta(
+    id: string,
+    ownerTenantId: string,
+    username: string,
+    tenantId = AGENCIA,
+  ): ResolvedProviderAccount {
+    return {
+      id,
+      ownerTenantId,
+      providerCode: TBO_HOTELS_PROVIDER_CODE,
+      label: id,
+      config: { environment: 'test' },
+      credentials: { username, password: CONTRASENA },
+      inherited: ownerTenantId !== tenantId,
+      updatedAt: new Date('2026-09-01T00:00:00Z'),
+    };
+  }
+
+  /** La vigente del tenant es `NUEVA`; la de la orden, la que diga `deLaOrden`. */
+  function bovedaDeOrden(deLaOrden: () => Promise<ResolvedProviderAccount>) {
+    const resolve = vi.fn(() => Promise.resolve(cuenta(NUEVA, CONSOLIDADOR, 'cuenta-nueva')));
+    const resolveForOrder = vi.fn(deLaOrden);
+    const ownerTenantType = vi.fn((ownerTenantId: string) => Promise.resolve(TIPOS[ownerTenantId]));
+    const service = {
+      resolve,
+      resolveForOrder,
+      ownerTenantType,
+    } as unknown as ProviderCredentialsService;
+    return { service, resolve, resolveForOrder };
+  }
+
+  it('sale con la cuenta de la orden aunque el tenant hoy resuelva otra (RF-29 CA 1)', async () => {
+    const b = bovedaDeOrden(() => Promise.resolve(cuenta(VIEJA, CONSOLIDADOR, 'cuenta-vieja')));
+    const fetch = vi.fn<TboFetch>(() => Promise.resolve(sinDisponibilidad()));
+    const factory = new TboHotelsProviderFactory(b.service, fetch);
+
+    const deLaOrden = await factory.resolveForOrder(AGENCIA, ORDEN);
+    const vigente = await factory.resolveForTenant(AGENCIA);
+
+    expect(b.resolveForOrder).toHaveBeenCalledWith(AGENCIA, ORDEN);
+    expect((deLaOrden.adapter as TboHotelProviderAdapter).searchAccount.accountId).toBe(VIEJA);
+    expect((vigente.adapter as TboHotelProviderAdapter).searchAccount.accountId).toBe(NUEVA);
+    // Dos cuentas del mismo dueño son dos clientes: nunca se cruzan en la caché.
+    expect(deLaOrden.adapter).not.toBe(vigente.adapter);
+    expect(deLaOrden).toMatchObject({ credentialSource: 'inherited' });
+    expect(deLaOrden.accountOwnerTenantId).toBe(CONSOLIDADOR);
+  });
+
+  it('la cuenta de la orden pasa por las mismas puertas: una de agencia no se admite', async () => {
+    const b = bovedaDeOrden(() => Promise.resolve(cuenta(VIEJA, AGENCIA, 'cuenta-de-agencia')));
+    await expect(
+      new TboHotelsProviderFactory(b.service).resolveForOrder(AGENCIA, ORDEN),
+    ).rejects.toBeInstanceOf(ProviderAccountNotAllowedError);
+  });
+
+  it('si la bóveda no la resuelve, no cae a la cuenta vigente', async () => {
+    const b = bovedaDeOrden(() => Promise.reject(new NotFoundException('fuera de la red')));
+    await expect(
+      new TboHotelsProviderFactory(b.service).resolveForOrder(AGENCIA, ORDEN),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(b.resolve).not.toHaveBeenCalled();
+  });
+
+  it('el registry la usa para la orden y, sin cuenta en la orden, usa la vigente', async () => {
+    const b = bovedaDeOrden(() => Promise.resolve(cuenta(VIEJA, CONSOLIDADOR, 'cuenta-vieja')));
+    const registry = registryCon([new TboHotelsProviderFactory(b.service)]);
+
+    const conCuenta = await registry.forOrder(AGENCIA, {
+      orderId: ORDEN,
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      providerAccountId: VIEJA,
+    });
+    const sinCuenta = await registry.forOrder(AGENCIA, {
+      orderId: ORDEN,
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      providerAccountId: null,
+    });
+
+    expect((conCuenta.adapter as TboHotelProviderAdapter).searchAccount.accountId).toBe(VIEJA);
+    expect((sinCuenta.adapter as TboHotelProviderAdapter).searchAccount.accountId).toBe(NUEVA);
+    expect(conCuenta.capabilities).toMatchObject({ retrieve: true, cancel: true });
+  });
+
+  it('el registry para con un 409 propio si la cuenta de la orden ya no está disponible', async () => {
+    const b = bovedaDeOrden(() => Promise.reject(new NotFoundException('fuera de la red')));
+    const registry = registryCon([new TboHotelsProviderFactory(b.service)]);
+
+    const intento = registry.forOrder(AGENCIA, {
+      orderId: ORDEN,
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      providerAccountId: VIEJA,
+    });
+
+    await expect(intento).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+    await expect(intento).rejects.toMatchObject({ reason: 'ORDER_PROVIDER_ACCOUNT_UNAVAILABLE' });
+    expect(b.resolve).not.toHaveBeenCalled();
   });
 });

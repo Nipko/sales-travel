@@ -19,6 +19,7 @@ import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
 
@@ -309,6 +310,12 @@ function bancoHttp(
     new FlightProviderRegistry([new StubProviderFactory({ code: PROVEEDOR, capabilities })], {
       isEnabledForTenant: () => Promise.resolve(false),
     }),
+    // Un proveedor de vuelos: la post-venta de hoteles no lo reconoce.
+    {
+      handles: () => false,
+      capabilitiesOf: () => undefined,
+      trackingOf: () => Promise.resolve(new Map()),
+    } as unknown as HotelOrderReadsService,
   );
 
   return { controller, orders, insertado, brandingResolve, mailerSend };

@@ -257,6 +257,14 @@ describe('openExternalCreateIntent — el intent existe antes de llamar al prove
     expect(error).toBeInstanceOf(ProviderBookingRefTakenError);
     expect(error).toMatchObject({ provider: PROVIDER });
     expect(b.rows().filter((row) => row['tenant_id'] === TENANT_B)).toEqual([]);
+    // 409 por el nombre del índice, y no el de una venta repetida: no se abrió nada, se puede
+    // volver a intentar, y por eso no lleva las marcas de conciliación.
+    expect(error).toBeInstanceOf(ConflictException);
+    const http = error as ConflictException;
+    expect(http.getStatus()).toBe(409);
+    expect(http).toMatchObject({ reason: 'BOOKING_REFERENCE_TAKEN' });
+    expect(http.getResponse()).not.toMatchObject({ duplicateRequest: true });
+    expect(http.getResponse()).not.toMatchObject({ retryForbidden: true });
 
     // La transacción se deshizo entera: la misma clave con una referencia nueva sí entra.
     const retried = await b.service.openExternalCreateIntent(

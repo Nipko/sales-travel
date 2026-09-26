@@ -3,6 +3,7 @@ import { z } from '@sales-travel/validation';
 import {
   HOTEL_PROVIDER_FACTORIES,
   HOTEL_PROVIDER_FLAGS,
+  type HotelOrderProviderRef,
   type HotelProviderCapabilities,
   type HotelProviderFactory,
   type HotelProviderRegistration,
@@ -14,6 +15,7 @@ import {
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
   ProviderNotAvailableError,
+  ProviderOrderAccountUnavailableError,
   type CallPolicy,
   type ProviderErrorContext,
   type ProviderFlagsPort,
@@ -156,6 +158,50 @@ export class HotelProviderRegistry {
     const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
     if (!resolved.ok) throw new ProviderNotAvailableError(code);
     return resolved.provider;
+  }
+
+  /**
+   * El proveedor de una orden YA hecha, con la cuenta con la que se reservó (RF-29; D-TBO-28 A):
+   * la post-venta de una agencia que después cambió de cuenta sigue saliendo con la anterior, que
+   * es la única que el proveedor reconoce para esa reserva.
+   *
+   * Una orden sin cuenta guardada (anterior a 0042, o de un proveedor que no la usa) sale con la
+   * vigente, como antes. Una con cuenta nunca cae a otra: si la suya ya no está disponible para el
+   * tenant (salió de su red, se desactivó, quedó incompleta o no se admite), se para con
+   * {@link ProviderOrderAccountUnavailableError}. Como {@link byCode}, no consulta el flag de
+   * `opt-in`: apagar un proveedor no puede dejar sus reservas sin post-venta.
+   */
+  async forOrder(tenantId: string, order: HotelOrderProviderRef): Promise<ResolvedHotelProvider> {
+    const factory = this.factories.find((f) => f.code === order.provider);
+    if (!factory) throw new ProviderNotAvailableError(order.provider);
+    if (order.providerAccountId === null) return this.byCode(tenantId, order.provider);
+    if (factory.resolveForOrder === undefined) {
+      throw new ProviderOrderAccountUnavailableError(factory.code);
+    }
+
+    let resolved;
+    try {
+      resolved = await factory.resolveForOrder(tenantId, order.orderId);
+    } catch (err) {
+      // Incompleta y no admitida también son `NotFoundException`: para esta reserva, lo mismo.
+      if (err instanceof NotFoundException) {
+        throw new ProviderOrderAccountUnavailableError(factory.code);
+      }
+      throw err;
+    }
+    const callPolicy = this.policyOf(factory);
+    return {
+      code: factory.code,
+      adapter: resolved.adapter,
+      credentialSource: resolved.credentialSource,
+      capabilities: factory.capabilities,
+      searchProfile: factory.searchProfile,
+      callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+      ...(resolved.circuit === undefined ? {} : { circuit: resolved.circuit }),
+      ...(resolved.accountOwnerTenantId === undefined
+        ? {}
+        : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
+    };
   }
 
   /**

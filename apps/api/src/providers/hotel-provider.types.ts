@@ -32,6 +32,7 @@ import type {
   ProviderErrorContext,
   ResolvedProvider,
   SkippedProvider,
+  TenantAdapter,
   TenantProviderFactory,
   UnavailableProvider,
 } from './provider.types.js';
@@ -163,6 +164,17 @@ export interface HotelProviderFactory
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
   /**
+   * El adapter con la cuenta con la que se hizo UNA orden (`orders.provider_account_id`), para su
+   * post-venta: no la vigente del tenant, que puede ser otra si la agencia cambió de cuenta
+   * (RF-29; D-TBO-28 A). La orden se lee con el tenant fijado y la cuenta tiene que seguir en su red.
+   *
+   * Opcional: un proveedor cuyas reservas no pasan por órdenes (Despegar, D-TBO-08 A) no lo
+   * necesita, y el registry no inventa un reemplazo.
+   *
+   * Lanza `NotFoundException` si la cuenta de la orden ya no está disponible para el tenant.
+   */
+  resolveForOrder?(tenantId: string, orderId: string): Promise<TenantAdapter<HotelProviderAdapter>>;
+  /**
    * Como el de `TenantProviderFactory`, más lo que sabe quien llama: con una cuenta heredada el
    * mensaje de una credencial rechazada va dirigido al consolidador, no a la agencia. Un factory
    * que no lo necesita lo ignora.
@@ -178,6 +190,15 @@ export interface ResolvedHotelProvider
   readonly circuit?: ProviderCircuitOptions;
   /** Tenant dueño de la cuenta con que sale el adapter (ver `TenantAdapter`). */
   readonly accountOwnerTenantId?: string;
+}
+
+/** Lo que el registry necesita de una orden para resolver su post-venta. */
+export interface HotelOrderProviderRef {
+  readonly orderId: string;
+  /** `orders.provider`. */
+  readonly provider: string;
+  /** `orders.provider_account_id`; `null` en órdenes que no la guardaron. */
+  readonly providerAccountId: string | null;
 }
 
 /** Un proveedor conocido por la plataforma, sin resolver credenciales de nadie. */

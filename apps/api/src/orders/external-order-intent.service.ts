@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { CurrencyCodeSchema, z } from '@sales-travel/validation';
 import { DatabaseService } from '../database/database.service.js';
 import type { ProviderVertical } from '../providers/provider.types.js';
@@ -68,10 +68,19 @@ export class ExternalOrderIntentInputError extends Error {
  * un generador criptográfico por cada envío, así que un choque es una referencia REUTILIZADA, y
  * mandarla al proveedor haría que la recuperación consulte la reserva de otra orden. No se
  * reintenta acá: el intent no se creó y quien llama no debe llamar al proveedor.
+ *
+ * 409 por el nombre del índice (`uq_orders_provider_booking_ref`), distinto del de una clave de
+ * idempotencia repetida (`uq_orders_create_request_key`): aquel es "esta venta ya existe, no la
+ * repitas"; éste es "no se abrió nada y no salió nada", y el vendedor puede volver a intentarlo, que
+ * sale con otra referencia. Por eso no lleva las marcas de conciliación.
  */
-export class ProviderBookingRefTakenError extends Error {
+export class ProviderBookingRefTakenError extends ConflictException {
+  readonly reason = 'BOOKING_REFERENCE_TAKEN';
+
   constructor(readonly provider: string) {
-    super(`La referencia de reserva ya está en uso para el proveedor ${provider}.`);
+    super(
+      'No pudimos abrir la reserva: la referencia que generamos para el proveedor ya estaba en uso. No se envió nada; volvé a intentarlo.',
+    );
     this.name = 'ProviderBookingRefTakenError';
   }
 }

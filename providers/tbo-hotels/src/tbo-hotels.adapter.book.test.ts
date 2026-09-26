@@ -465,6 +465,7 @@ describe('BookingDetail por ConfirmationNumber', () => {
       providerBookingId: 'YOSUR8',
       status: 'CONFIRMED',
       providerStatus: 'Confirmed',
+      voucherIssued: true,
       warnings: [],
     });
     expect(h.lanes).toEqual(['background']);

@@ -17,6 +17,7 @@ import { FlightProviderRegistry } from '../providers/flight-provider.registry.js
 import type { ProviderCapabilities, ProviderCapability } from '../providers/provider.types.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
+import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
@@ -25,6 +26,10 @@ import { orderConfirmationEmailHtml } from '../mail/templates.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
+import {
+  HotelOrderReadsService,
+  type PublicHotelOrderTracking,
+} from './hotel-order-reads.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -43,7 +48,7 @@ const NO_FLIGHT_CAPABILITIES: ProviderCapabilities = {
   reshop: false,
 };
 
-/** AgentCars vive en otro registry/puerto: hoy sólo expone cancelación dentro de Orders. */
+/** AgentCars no tiene registry: su factory es único y hoy sólo expone cancelación dentro de Orders. */
 const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
   retrieve: false,
   cancel: true,
@@ -68,7 +73,12 @@ function publicIssue(issue: ProviderIssue): PublicProviderIssue {
 
 @Roles(...SELLING_ROLES)
 @Controller('orders')
-@UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter, AgentCarsExceptionFilter)
+@UseFilters(
+  LatamNdcExceptionFilter,
+  SabreExceptionFilter,
+  AgentCarsExceptionFilter,
+  TboHotelsExceptionFilter,
+)
 export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
@@ -77,6 +87,7 @@ export class OrdersController {
     private readonly branding: BrandingService,
     private readonly activeTenant: ActiveTenantService,
     private readonly registry: FlightProviderRegistry,
+    private readonly hotelReads: HotelOrderReadsService,
   ) {}
 
   @Post()
@@ -187,7 +198,11 @@ export class OrdersController {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const rows = await this.orders.findAll(tenantId);
-    return { orders: rows.map((r) => this.serialize(r)) };
+    const tracking = await this.hotelReads.trackingOf(
+      tenantId,
+      rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
+    );
+    return { orders: rows.map((r) => this.serialize(r, tracking.get(r.id))) };
   }
 
   @Get(':id')
@@ -196,7 +211,10 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row) return { order: null };
-    return { order: this.serialize(row) };
+    const tracking = this.hotelReads.handles(row.provider)
+      ? await this.hotelReads.trackingOf(tenantId, [row.id])
+      : undefined;
+    return { order: this.serialize(row, tracking?.get(row.id)) };
   }
 
   @Post(':id/retrieve')
@@ -206,12 +224,8 @@ export class OrdersController {
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupports(row, 'retrieve');
-    const result = await this.orders.retrieveFromProvider(
-      tenantId,
-      row.provider_order_id,
-      row.provider,
-    );
-    return result;
+    // La fila ya se leyó con el tenant fijado: una orden de otra agencia no llega hasta aquí.
+    return this.orders.retrieveOrder(tenantId, row, userId);
   }
 
   /**
@@ -234,9 +248,14 @@ export class OrdersController {
     }
   }
 
+  /** Lo declara el registry de la vertical del proveedor; ninguna vertical se fija aquí. */
   private capabilitiesFor(provider: string): ProviderCapabilities {
     if (provider === 'agent-cars') return AGENT_CARS_ORDER_CAPABILITIES;
-    return this.registry.capabilitiesOf(provider) ?? NO_FLIGHT_CAPABILITIES;
+    return (
+      this.hotelReads.capabilitiesOf(provider) ??
+      this.registry.capabilitiesOf(provider) ??
+      NO_FLIGHT_CAPABILITIES
+    );
   }
 
   private capabilitiesForOrder(row: Pick<OrderRow, 'provider' | 'status'>): ProviderCapabilities {
@@ -319,25 +338,33 @@ export class OrdersController {
     return this.orders.payOrder(tenantId, id, row, body.payment as never, userId);
   }
 
-  private serialize(row: {
-    id: string;
-    tenant_id: string;
-    user_id: string;
-    quotation_id: string | null;
-    provider: string;
-    provider_order_id: string | null;
-    status: string;
-    search_criteria: unknown;
-    selected_offer: unknown;
-    passengers: unknown;
-    contact_info: unknown;
-    total_amount: number;
-    currency: string;
-    order_number: number;
-    error_message: string | null;
-    created_at: Date;
-    updated_at: Date;
-  }) {
+  /**
+   * `providerTracking`: el seguimiento de una orden de hotel (subestado, estado del proveedor y
+   * HCN), sólo códigos y localizadores. `null` en las demás verticales y en una orden de hotel que
+   * todavía no tiene lecturas.
+   */
+  private serialize(
+    row: {
+      id: string;
+      tenant_id: string;
+      user_id: string;
+      quotation_id: string | null;
+      provider: string;
+      provider_order_id: string | null;
+      status: string;
+      search_criteria: unknown;
+      selected_offer: unknown;
+      passengers: unknown;
+      contact_info: unknown;
+      total_amount: number;
+      currency: string;
+      order_number: number;
+      error_message: string | null;
+      created_at: Date;
+      updated_at: Date;
+    },
+    tracking?: PublicHotelOrderTracking,
+  ) {
     return {
       id: row.id,
       tenantId: row.tenant_id,
@@ -355,6 +382,7 @@ export class OrdersController {
       currency: row.currency,
       orderNumber: row.order_number,
       errorMessage: row.error_message,
+      providerTracking: tracking ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

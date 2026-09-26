@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   DummyDriver,
@@ -14,7 +14,10 @@ import {
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { encryptCredentials } from './credentials-cipher.js';
-import { ProviderCredentialsService } from './provider-credentials.service.js';
+import {
+  ProviderAccountInUseError,
+  ProviderCredentialsService,
+} from './provider-credentials.service.js';
 
 /**
  * `listSafe` por su puerta pública, con la base sustituida por las filas que devolvería.
@@ -304,4 +307,169 @@ describe('ownerTenantType — de qué tipo de nodo es el dueño de una cuenta', 
 
 afterAll(() => {
   vi.restoreAllMocks();
+});
+
+describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja de heredarse', () => {
+  const CUENTA = 'acc-tbo';
+  const DUENO = '33333333-3333-4333-8333-333333333333';
+
+  interface Existente {
+    readonly status: 'active' | 'sandbox' | 'disabled';
+    readonly is_inheritable: boolean;
+  }
+
+  /**
+   * La base contesta por el SQL que recibe: la cuenta existente, los conteos de
+   * `provider_account_active_orders` (0045) o `undefined` si no contesta por ella. Todo corre en
+   * UNA transacción, como `withTenant`.
+   */
+  function servicioConCuenta(
+    existente: Existente,
+    activas: { own_orders: number; inherited_orders: number } | undefined,
+  ): { service: ProviderCredentialsService; consultas: string[] } {
+    const consultas: string[] = [];
+    class Driver extends DummyDriver {
+      override async acquireConnection(): Promise<DatabaseConnection> {
+        const base = await super.acquireConnection();
+        return {
+          executeQuery: <R>(q: CompiledQuery): Promise<QueryResult<R>> => {
+            consultas.push(q.sql);
+            if (q.sql.includes('provider_account_active_orders')) {
+              return Promise.resolve({ rows: (activas === undefined ? [] : [activas]) as R[] });
+            }
+            if (q.sql.startsWith('select') && q.sql.includes('"provider_accounts"')) {
+              return Promise.resolve({ rows: [{ id: CUENTA, ...existente }] as R[] });
+            }
+            return Promise.resolve({ rows: [] as R[], numAffectedRows: 1n });
+          },
+          streamQuery: (q, chunkSize) => base.streamQuery(q, chunkSize),
+        };
+      }
+    }
+    const db = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => new Driver(),
+        createIntrospector: (k) => new PostgresIntrospector(k),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    const database = {
+      db,
+      withTenant: <T>(_tenantId: string, fn: (trx: unknown) => Promise<T>) =>
+        db.transaction().execute((trx) => fn(trx)),
+    } as unknown as DatabaseService;
+    return { service: new ProviderCredentialsService(database), consultas };
+  }
+
+  function upsert(
+    service: ProviderCredentialsService,
+    cambio: { status?: 'active' | 'sandbox' | 'disabled'; isInheritable?: boolean },
+  ) {
+    return service.upsert({
+      tenantId: DUENO,
+      providerCode: 'tbo-hotels',
+      credentials: { username: 'u', password: 'nueva' },
+      config: { environment: 'test' },
+      ...cambio,
+    });
+  }
+
+  const actualizo = (consultas: string[]) =>
+    consultas.some((sql) => sql.startsWith('update "provider_accounts"'));
+
+  beforeAll(() => {
+    process.env['PROVIDER_CREDENTIALS_KEY'] ??= randomBytes(32).toString('base64');
+  });
+
+  it.each(['disabled', 'sandbox'] as const)(
+    'pasarla de active a %s con reservas activas se rechaza con mensaje y no escribe',
+    async (status) => {
+      const { service, consultas } = servicioConCuenta(
+        { status: 'active', is_inheritable: true },
+        { own_orders: 1, inherited_orders: 2 },
+      );
+
+      const error = await upsert(service, { status }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ProviderAccountInUseError);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error).toMatchObject({
+        reason: 'PROVIDER_ACCOUNT_IN_USE',
+        publicDetails: { activeOrders: 3 },
+      });
+      expect((error as Error).message).toContain('3 reserva(s) activa(s)');
+      expect(actualizo(consultas)).toBe(false);
+    },
+  );
+
+  it('un upsert sin `status` también desactiva (el default es sandbox): se rechaza igual', async () => {
+    const { service } = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 1, inherited_orders: 0 },
+    );
+    await expect(upsert(service, {})).rejects.toBeInstanceOf(ProviderAccountInUseError);
+  });
+
+  it('rotar la contraseña de una cuenta que sigue activa y heredable no consulta nada', async () => {
+    const { service, consultas } = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 5, inherited_orders: 5 },
+    );
+
+    await expect(upsert(service, { status: 'active', isInheritable: true })).resolves.toEqual({
+      id: CUENTA,
+    });
+    expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
+    expect(actualizo(consultas)).toBe(true);
+  });
+
+  it('dejar de heredar se rechaza si hay reservas de la red, no por las del propio dueño', async () => {
+    const conRed = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 0, inherited_orders: 2 },
+    );
+    const soloPropias = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 4, inherited_orders: 0 },
+    );
+
+    const error = await upsert(conRed.service, { status: 'active', isInheritable: false }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ publicDetails: { activeOrders: 2 } });
+    expect((error as Error).message).toContain('agencias de tu red');
+    await expect(
+      upsert(soloPropias.service, { status: 'active', isInheritable: false }),
+    ).resolves.toEqual({ id: CUENTA });
+  });
+
+  it('sin reservas activas se desactiva', async () => {
+    const { service, consultas } = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 0, inherited_orders: 0 },
+    );
+    await expect(upsert(service, { status: 'disabled' })).resolves.toEqual({ id: CUENTA });
+    expect(actualizo(consultas)).toBe(true);
+  });
+
+  it('si la base no contesta por la cuenta, no se suelta: "no se pudo comprobar" no es "no hay"', async () => {
+    const { service, consultas } = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      undefined,
+    );
+    await expect(upsert(service, { status: 'disabled' })).rejects.toMatchObject({
+      publicDetails: { activeOrders: null },
+    });
+    expect(actualizo(consultas)).toBe(false);
+  });
+
+  it('una cuenta que ya no estaba activa se puede seguir editando sin consultar', async () => {
+    const { service, consultas } = servicioConCuenta(
+      { status: 'sandbox', is_inheritable: true },
+      { own_orders: 9, inherited_orders: 9 },
+    );
+    await expect(upsert(service, { status: 'disabled' })).resolves.toEqual({ id: CUENTA });
+    expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
+  });
 });

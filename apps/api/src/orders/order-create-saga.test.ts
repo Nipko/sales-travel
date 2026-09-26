@@ -249,7 +249,11 @@ function dbFalsa(
             operation['status'] === 'pending',
         )
       ) {
-        throw Object.assign(new Error('duplicate pending cancel'), { code: '23505' });
+        // Como `pg`: el 23505 dice qué índice lo produjo, y el servicio decide por ese nombre.
+        throw Object.assign(new Error('duplicate pending cancel'), {
+          code: '23505',
+          constraint: 'uq_order_operations_pending_cancel',
+        });
       }
       if (!operationValue) throw new Error('insert sin values');
       operaciones.push(operationValue);

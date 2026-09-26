@@ -1,7 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { sql } from 'kysely';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { ProviderAccountStatus, TenantType } from '../database/database.types.js';
+import type { DB, ProviderAccountStatus, TenantType } from '../database/database.types.js';
 import { decryptCredentials, encryptCredentials } from './credentials-cipher.js';
 import {
   accountReadiness,
@@ -56,11 +56,82 @@ export interface SafeProviderAccount {
   updatedAt: Date;
 }
 
+/** Reservas activas hechas con una cuenta: las de su dueño y las de la red que la hereda. */
+export interface ProviderAccountActiveOrders {
+  readonly own: number;
+  readonly inherited: number;
+}
+
+/**
+ * La cuenta no se puede desactivar ni dejar de heredar: todavía hay reservas activas hechas con
+ * ella, y es la única con la que el proveedor deja leerlas y cancelarlas (RF-29 CA 2; D-TBO-28 A).
+ * Rotar la contraseña de la misma cuenta sí se puede.
+ */
+export class ProviderAccountInUseError extends ConflictException {
+  readonly reason = 'PROVIDER_ACCOUNT_IN_USE';
+  /** Sólo conteos: el dueño de la cuenta ve cuántas, no de quién ni cuáles. */
+  readonly publicDetails: { readonly activeOrders: number | null };
+
+  /** @param activeOrders `null` = no se pudo comprobar, y ante la duda no se suelta la cuenta. */
+  constructor(change: 'deactivate' | 'stop-inheritance', activeOrders: number | null) {
+    super(
+      activeOrders === null
+        ? change === 'deactivate'
+          ? 'No pudimos comprobar si esta cuenta tiene reservas activas, así que no se desactiva. Volvé a intentarlo en unos minutos.'
+          : 'No pudimos comprobar si hay reservas activas de tu red hechas con esta cuenta, así que sigue heredándose. Volvé a intentarlo en unos minutos.'
+        : change === 'deactivate'
+          ? `Esta cuenta tiene ${activeOrders} reserva(s) activa(s) hechas con ella. No se puede desactivar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas. Podés actualizar la contraseña sin desactivarla.`
+          : `Hay ${activeOrders} reserva(s) activa(s) de agencias de tu red hechas con esta cuenta. No se puede dejar de heredar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas.`,
+    );
+    this.name = 'ProviderAccountInUseError';
+    this.publicDetails = { activeOrders };
+  }
+}
+
 @Injectable()
 export class ProviderCredentialsService {
   private readonly logger = new Logger(ProviderCredentialsService.name);
 
   constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * La cuenta con la que se hizo la orden `orderId` del tenant (`orders.provider_account_id`), para
+   * operar su post-venta con ELLA y no con la vigente del tenant (RF-29; D-TBO-28 A). Descifra el
+   * secreto. SOLO uso interno.
+   *
+   * La orden se lee con el tenant fijado, así que una orden de otra agencia no resuelve nada aunque
+   * compartan la cuenta. Y la cuenta tiene que seguir en la red del tenant (propia, o de un ancestro
+   * que la deja heredar) y activa: la FK de 0042 sólo prueba que existía al reservar
+   * (`resolve_order_provider_account`, 0045).
+   *
+   * @throws NotFoundException si la orden no es del tenant, no guarda cuenta, o la cuenta ya no
+   *   está disponible para él.
+   */
+  async resolveForOrder(tenantId: string, orderId: string): Promise<ResolvedProviderAccount> {
+    const row = await this.db.withTenant(tenantId, async (trx) => {
+      const result = await sql<ResolveRow>`
+        SELECT id, tenant_id, provider_code, label, credentials_enc, config, status, updated_at
+        FROM resolve_order_provider_account(${orderId}::uuid)
+      `.execute(trx);
+      return result.rows[0];
+    });
+    if (!row?.id || !row.credentials_enc || !row.tenant_id || !row.provider_code) {
+      // Sin el id de la orden ni el del tenant en el mensaje: la excepción puede llegar a un log.
+      throw new NotFoundException(
+        'la cuenta de proveedor de la orden no está disponible para el tenant',
+      );
+    }
+    return {
+      id: row.id,
+      ownerTenantId: row.tenant_id,
+      providerCode: row.provider_code,
+      label: row.label ?? 'default',
+      config: (row.config ?? {}) as Record<string, unknown>,
+      credentials: JSON.parse(decryptCredentials(row.credentials_enc)) as Record<string, unknown>,
+      inherited: row.tenant_id !== tenantId,
+      updatedAt: row.updated_at ?? new Date(0),
+    };
+  }
 
   /**
    * Resuelve la cuenta de proveedor a usar para (tenant, provider): la propia del
@@ -110,7 +181,12 @@ export class ProviderCredentialsService {
     return row?.tenant_type;
   }
 
-  /** Crea o actualiza (upsert) una cuenta de proveedor del tenant. Cifra el secreto. */
+  /**
+   * Crea o actualiza (upsert) una cuenta de proveedor del tenant. Cifra el secreto.
+   *
+   * @throws ProviderAccountInUseError si el cambio saca de servicio una cuenta con reservas activas
+   *   (RF-29 CA 2): dejarla de `active`, o dejar de heredarla con reservas de la red hechas con ella.
+   */
   async upsert(input: {
     tenantId: string;
     providerCode: string;
@@ -122,24 +198,27 @@ export class ProviderCredentialsService {
   }): Promise<{ id: string }> {
     const label = input.label ?? 'default';
     const enc = encryptCredentials(JSON.stringify(input.credentials));
+    const status = input.status ?? 'sandbox';
+    const isInheritable = input.isInheritable ?? true;
 
     return this.db.withTenant(input.tenantId, async (trx) => {
       const existing = await trx
         .selectFrom('provider_accounts')
-        .select('id')
+        .select(['id', 'status', 'is_inheritable'])
         .where('tenant_id', '=', input.tenantId)
         .where('provider_code', '=', input.providerCode)
         .where('label', '=', label)
         .executeTakeFirst();
 
       if (existing) {
+        await this.assertReleasable(trx, existing, { status, isInheritable });
         await trx
           .updateTable('provider_accounts')
           .set({
             credentials_enc: enc,
             config: JSON.stringify(input.config ?? {}),
-            is_inheritable: input.isInheritable ?? true,
-            status: input.status ?? 'sandbox',
+            is_inheritable: isInheritable,
+            status,
           })
           .where('id', '=', existing.id)
           .execute();
@@ -154,13 +233,58 @@ export class ProviderCredentialsService {
           label,
           credentials_enc: enc,
           config: JSON.stringify(input.config ?? {}),
-          is_inheritable: input.isInheritable ?? true,
-          status: input.status ?? 'sandbox',
+          is_inheritable: isInheritable,
+          status,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
       return { id: created.id };
     });
+  }
+
+  /**
+   * Reservas activas hechas con la cuenta, en toda la red que la hereda
+   * (`provider_account_active_orders`, 0045). Corre en la transacción del dueño: `undefined` = la
+   * base no contestó por ella (la cuenta no es del tenant activo), que NO es "no hay reservas".
+   */
+  private async activeOrdersOf(
+    trx: Transaction<DB>,
+    accountId: string,
+  ): Promise<ProviderAccountActiveOrders | undefined> {
+    const result = await sql<{ own_orders: number | string; inherited_orders: number | string }>`
+      SELECT own_orders, inherited_orders FROM provider_account_active_orders(${accountId}::uuid)
+    `.execute(trx);
+    const row = result.rows[0];
+    if (row === undefined) return undefined;
+    return { own: Number(row.own_orders), inherited: Number(row.inherited_orders) };
+  }
+
+  /**
+   * RF-29 CA 2. Sólo mira lo que saca la cuenta de servicio; rotar la contraseña o cambiar la
+   * configuración de una cuenta que sigue activa y heredable no consulta nada. Corre en la misma
+   * transacción que el UPDATE, así que no ve una orden que todavía no está comprometida: la post-venta
+   * de esa orden encontraría la cuenta inactiva y fallaría con su mensaje, sin usar otra.
+   */
+  private async assertReleasable(
+    trx: Transaction<DB>,
+    current: { id: string; status: ProviderAccountStatus; is_inheritable: boolean },
+    next: { status: ProviderAccountStatus; isInheritable: boolean },
+  ): Promise<void> {
+    const deactivates = current.status === 'active' && next.status !== 'active';
+    const stopsInheritance = current.is_inheritable && !next.isInheritable;
+    if (!deactivates && !stopsInheritance) return;
+
+    const active = await this.activeOrdersOf(trx, current.id);
+    if (active === undefined) {
+      throw new ProviderAccountInUseError(deactivates ? 'deactivate' : 'stop-inheritance', null);
+    }
+    if (deactivates && active.own + active.inherited > 0) {
+      throw new ProviderAccountInUseError('deactivate', active.own + active.inherited);
+    }
+    // Dejar de heredar no le quita la cuenta a su dueño: sólo cuentan las reservas de la red.
+    if (stopsInheritance && active.inherited > 0) {
+      throw new ProviderAccountInUseError('stop-inheritance', active.inherited);
+    }
   }
 
   /**

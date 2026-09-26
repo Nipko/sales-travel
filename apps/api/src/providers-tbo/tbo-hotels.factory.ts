@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
 import {
   TBO_SEARCH_LIMITS,
@@ -85,10 +85,11 @@ const INHERITED_AGENCY_ACCOUNT =
  *    un 500 que tumbe la búsqueda de Despegar.
  * 3. **Credenciales completas** (`missingTboCredentials`): usuario, contraseña y URL.
  *
- * La caché es por dueño de la cuenta y por versión (`byoc:{ownerTenantId}:{updatedAt}`): las
+ * La caché es por cuenta y por versión (`byoc:{ownerTenantId}:{accountId}:{updatedAt}`): las
  * agencias que heredan la cuenta del consolidador comparten el cliente —es la misma credencial y el
- * mismo cupo—, dos dueños nunca, y al rotar la credencial la entrada vieja se descarta. Basic Auth no
- * tiene sesión (p. 7), así que la clave no necesita más que eso.
+ * mismo cupo—, dos cuentas nunca, y al rotar la credencial la entrada vieja se descarta. Basic Auth no
+ * tiene sesión (p. 7), así que la clave no necesita más que eso. La post-venta de una orden
+ * (`resolveForOrder`) usa la misma caché: con la misma cuenta, el mismo cliente y el mismo cupo.
  */
 @Injectable()
 export class TboHotelsProviderFactory implements HotelProviderFactory {
@@ -175,7 +176,30 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
     // Sin `try/catch`: la `NotFoundException` de la bóveda se propaga tal cual y el registry la
     // traduce a "no habilitado". Atraparla aquí para caer a otra cuenta es lo que este factory NO
     // hace (06 §5.2).
-    const resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
+    return this.adapterFor(await this.creds.resolve(tenantId, PROVIDER_CODE));
+  }
+
+  /**
+   * La post-venta de una orden sale con la cuenta que la creó (RF-29; D-TBO-28 A): la bóveda la
+   * resuelve desde la orden, con el tenant fijado y sólo si sigue en su red. Pasa por las mismas
+   * tres puertas que la venta: una cuenta que hoy no se admite o quedó incompleta no opera, tampoco
+   * para leer. Sin `try/catch` por lo mismo que {@link resolveForTenant}.
+   */
+  async resolveForOrder(
+    tenantId: string,
+    orderId: string,
+  ): Promise<TenantAdapter<HotelProviderAdapter>> {
+    const resolved = await this.creds.resolveForOrder(tenantId, orderId);
+    if (resolved.providerCode !== PROVIDER_CODE) {
+      // La bóveda ya exige el proveedor de la orden; esto cubre un cableado equivocado del registry.
+      throw new NotFoundException('la cuenta de la orden no es de TBO');
+    }
+    return this.adapterFor(resolved);
+  }
+
+  private async adapterFor(
+    resolved: ResolvedProviderAccount,
+  ): Promise<TenantAdapter<HotelProviderAdapter>> {
     await this.assertOwnerAllowed(resolved);
     const cfg = this.toConfig(resolved);
 
@@ -188,7 +212,9 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
       throw new ProviderAccountIncompleteError(PROVIDER_CODE, missing);
     }
 
-    const key = `byoc:${resolved.ownerTenantId}:${resolved.updatedAt.getTime()}`;
+    // Con el id de la cuenta: la post-venta resuelve por cuenta, y un dueño con dos cuentas de TBO
+    // no puede recibir el adapter de la otra.
+    const key = `byoc:${resolved.ownerTenantId}:${resolved.id}:${resolved.updatedAt.getTime()}`;
     let adapter = this.cache.get(key);
     if (!adapter) {
       // Sin `credentialSource` en el contexto del cliente: el adapter es el mismo para el
@@ -317,11 +343,11 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
     };
   }
 
-  /** Conserva sólo la entrada vigente por dueño: al rotar la credencial cambia `updatedAt`. */
+  /** Conserva sólo la entrada vigente por cuenta: al rotar la credencial cambia `updatedAt`. */
   private evictStale(currentKey: string): void {
-    const ownerPrefix = currentKey.split(':').slice(0, 2).join(':') + ':';
+    const accountPrefix = currentKey.split(':').slice(0, 3).join(':') + ':';
     for (const key of this.cache.keys()) {
-      if (key !== currentKey && key.startsWith(ownerPrefix)) this.cache.delete(key);
+      if (key !== currentKey && key.startsWith(accountPrefix)) this.cache.delete(key);
     }
   }
 }

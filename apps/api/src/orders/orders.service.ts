@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { sql } from 'kysely';
 import {
@@ -47,10 +48,11 @@ import {
   verificationSummary,
   type SagaDecision,
 } from './order-create.saga.js';
+import { HotelOrderReadsService, type HotelOrderReadResult } from './hotel-order-reads.service.js';
 import {
   OrderCreateIntentStore,
   createRequestKey,
-  isUniqueViolation,
+  uniqueViolationConstraint,
 } from './order-create-intent.store.js';
 import { ORDER_EVENTS, createdSummary } from './order-events.js';
 import {
@@ -126,6 +128,12 @@ function fareSelectionChanged(before: Offer, after: Offer): boolean {
   const selectedLegacy = legacySelection(before);
   return selectedLegacy !== null && selectedLegacy !== legacySelection(after);
 }
+
+/**
+ * El índice de 0037 que hace de CAS entre dos cancelaciones de la misma orden. Un 23505 de otro
+ * índice no es "ya hay una cancelación pendiente": sale tal cual y no se disfraza de 409.
+ */
+const PENDING_CANCEL_CONSTRAINT = 'uq_order_operations_pending_cancel';
 
 interface CreatedOrderResult {
   result: OrderCreateResult;
@@ -215,6 +223,11 @@ export class OrdersService {
     private readonly agentCars: AgentCarsProviderFactory,
     private readonly audit: AuditService,
     private readonly pricing: PricingService,
+    /**
+     * La post-venta de las órdenes de hotel (PR-5.2). Opcional sólo para los dobles de las suites
+     * de vuelos, que no la necesitan: en la app siempre está.
+     */
+    @Optional() private readonly hotelReads?: HotelOrderReadsService,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -866,6 +879,26 @@ export class OrdersService {
   }
 
   /**
+   * La consulta manual de una orden, por su vertical (docs/tbo/09 PR-5.2). `row` es la fila que el
+   * controlador ya leyó con el tenant fijado; una orden de hotel se vuelve a leer con su
+   * seguimiento dentro de su servicio, antes de llamar al proveedor, y sale con la cuenta que hizo
+   * la reserva.
+   */
+  async retrieveOrder(
+    tenantId: string,
+    row: Pick<OrderRow, 'id' | 'provider' | 'provider_order_id'>,
+    actorUserId?: string,
+  ): Promise<OrderView | HotelOrderReadResult> {
+    if (this.hotelReads?.handles(row.provider) === true) {
+      return this.hotelReads.retrieve(tenantId, row.id, actorUserId);
+    }
+    if (!row.provider_order_id) {
+      throw new NotFoundException('La reserva no existe o no tiene localizador.');
+    }
+    return this.retrieveFromProvider(tenantId, row.provider_order_id, row.provider);
+  }
+
+  /**
    * Lectura de SÓLO VISUALIZACIÓN. No sirve —ni puede servir— como paso previo de una
    * modificación: su tipo de retorno no lleva firma de concurrencia. Ver RF-09.
    */
@@ -929,7 +962,7 @@ export class OrdersService {
       });
     } catch (error) {
       if (error instanceof ConflictException) throw error;
-      if (isUniqueViolation(error)) {
+      if (uniqueViolationConstraint(error) === PENDING_CANCEL_CONSTRAINT) {
         throw new ConflictException(
           'Ya hay una cancelación pendiente. Hay que consultar y conciliar su estado antes de reenviar el write.',
         );
@@ -1267,7 +1300,7 @@ export class OrdersService {
       });
     } catch (error) {
       if (error instanceof ConflictException) throw error;
-      if (isUniqueViolation(error)) {
+      if (uniqueViolationConstraint(error) === PENDING_CANCEL_CONSTRAINT) {
         throw new ConflictException('Otra ejecución ya tomó la cancelación pendiente.');
       }
       throw error;

@@ -434,6 +434,9 @@ export function mapTboBookingDetailResponse(
     status: status.status,
     providerStatus: status.providerStatus,
     ...(status.refundAwaited ? { refundAwaited: true } : {}),
+    // `UNKNOWN` no se traduce: el neutral sólo dice sí o no, y lo raro ya va en `warnings`.
+    ...(voucherStatus === 'VOUCHERED' ? { voucherIssued: true } : {}),
+    ...(voucherStatus === 'NOT_VOUCHERED' ? { voucherIssued: false } : {}),
     ...(hcn === undefined ? {} : { hotelConfirmationNumber: hcn }),
     warnings,
   };

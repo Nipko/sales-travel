@@ -1,4 +1,9 @@
-import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   FlightSearchPort,
   OfferPricePort,
@@ -419,5 +424,24 @@ export class ProviderNotAvailableError extends BadRequestException {
       `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisá Mi Red → Credenciales.`,
     );
     this.name = 'ProviderNotAvailableError';
+  }
+}
+
+/**
+ * La reserva se hizo con una cuenta que el tenant ya no puede usar: la cuenta salió de su red (dejó
+ * de heredarse o se desactivó), quedó incompleta o la plataforma ya no la admite. La post-venta no
+ * cae a la cuenta vigente del tenant, porque el proveedor sólo reconoce la reserva con la que la
+ * creó (RF-29; D-TBO-28 A): se para y lo dice.
+ *
+ * 409 y no 404: la reserva existe y es del tenant; lo que falta es con qué operarla.
+ */
+export class ProviderOrderAccountUnavailableError extends ConflictException {
+  readonly reason = 'ORDER_PROVIDER_ACCOUNT_UNAVAILABLE';
+
+  constructor(readonly providerCode: string) {
+    super(
+      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pedile al administrador de tu red que la revise en Mi Red → Credenciales.',
+    );
+    this.name = 'ProviderOrderAccountUnavailableError';
   }
 }

@@ -29,6 +29,12 @@ export interface HotelBookingView {
   providerSubStatus?: string;
   /** Cancelada, con el reembolso del proveedor a la cuenta todavía pendiente. */
   refundAwaited?: boolean;
+  /**
+   * Si el proveedor ya emitió el voucher. Ausente = no lo informó o informó algo que no se
+   * entiende. Una reserva confirmada con `false` sigue confirmada y se avisa: hay proveedores
+   * que sólo reservan con voucher, y un "confirmada sin voucher" es algo que mirar.
+   */
+  voucherIssued?: boolean;
   /** Número de confirmación del HOTEL, que no es el localizador del proveedor y llega más tarde. */
   hotelConfirmationNumber?: string;
   warnings: string[];
