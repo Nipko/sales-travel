@@ -23,21 +23,10 @@ export function rateProviderLabel(
 }
 
 /**
- * La tarifa más barata del hotel: la del "desde". La pastilla del "desde" es la de ESTA tarifa,
- * no la del hotel: un hotel puede tener tarifas de varios proveedores.
- */
-export function cheapestRoompack(roompacks: readonly HotelRoompack[]): HotelRoompack | undefined {
-  return roompacks.reduce<HotelRoompack | undefined>(
-    (min, rp) =>
-      min === undefined || rp.price.total.amountMinor < min.price.total.amountMinor ? rp : min,
-    undefined,
-  );
-}
-
-/**
  * Proveedores que dejaron la lista incompleta y el vendedor tiene que saberlo antes de darle un
  * precio al cliente: los que fallaron, los que se omitieron por algo de ESTA búsqueda (moneda,
- * catálogo, ocupación, destino) y los que respondieron pero con tarifas que no se muestran.
+ * catálogo, ocupación, destino), los que respondieron sólo por una parte de sus hoteles y los que
+ * respondieron con tarifas que no se muestran.
  *
  * No entran los apagados para la agencia ni los de respaldo que no hizo falta llamar: no faltan
  * por esta búsqueda, faltan por configuración.
@@ -53,6 +42,50 @@ export function degradedProviders(
     if (p.status === 'skipped') {
       return p.skipReason !== 'opt-in-disabled' && p.skipReason !== 'fallback-not-needed';
     }
+    if (p.partial === true) return true;
     return p.status === 'ok' && (p.droppedForCurrency ?? 0) > 0;
   });
+}
+
+/** El estado vacío de la búsqueda (U-08): qué decir cuando no hay ningún hotel. */
+export interface EmptyResultsView {
+  readonly title: string;
+  readonly hint: string;
+}
+
+/**
+ * Sin hoteles hay lecturas muy distintas, y el vendedor le repite la que ve al cliente:
+ * "no hay disponibilidad" sólo es cierto si todos los proveedores contestaron. Si alguno faltó,
+ * la lista vacía es la de los que respondieron, y el aviso de arriba dice quién faltó. Y si no
+ * contestó ninguno —fallaron, se omitieron o la agencia no tiene ninguno activo—, no se buscó.
+ */
+export function emptyResultsView(providers: readonly HotelProviderOutcome[]): EmptyResultsView {
+  const missing = degradedProviders(providers).length;
+  // Contestar es responder, con hoteles o sin ellos: un `error`, un `skipped` o un
+  // `unavailable` no buscó nada.
+  const answered = providers.some((p) => p.status === 'ok' || p.status === 'empty');
+  if (!answered) {
+    return missing > 0
+      ? {
+          title: 'Ningún proveedor pudo buscar esta vez.',
+          hint: 'Revisá el aviso de arriba: dice qué pasó con cada uno. Que no haya resultados no quiere decir que no haya lugar.',
+        }
+      : {
+          title: 'Tu agencia no tiene proveedores de hoteles activos.',
+          hint: 'Un administrador puede conectarlos en Proveedores (GDS).',
+        };
+  }
+  if (missing > 0) {
+    return {
+      title: 'Los proveedores que respondieron no tienen tarifas para mostrar.',
+      hint:
+        missing === 1
+          ? 'Un proveedor no aportó todas sus tarifas: revisá el aviso de arriba antes de decirle al cliente que no hay lugar.'
+          : `${missing} proveedores no aportaron todas sus tarifas: revisá el aviso de arriba antes de decirle al cliente que no hay lugar.`,
+    };
+  }
+  return {
+    title: 'No hay disponibilidad para ese destino y esas fechas.',
+    hint: 'Probá con otras fechas, otro destino o menos habitaciones.',
+  };
 }

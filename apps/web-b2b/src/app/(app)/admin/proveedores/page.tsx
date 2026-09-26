@@ -834,7 +834,8 @@ function ProviderDisclosureCard({
                 Origen de las tarifas en los resultados
               </h2>
               <p className="mt-0.5 max-w-prose text-xs text-[var(--color-fg-muted)] leading-relaxed">
-                Decide si el vendedor ve de qué proveedor viene cada oferta cuando busca vuelos.
+                Decide si el vendedor ve de qué proveedor viene cada tarifa cuando busca vuelos y
+                hoteles. Es un solo ajuste para las dos búsquedas.
               </p>
             </div>
           </div>
@@ -885,12 +886,14 @@ function ProviderDisclosureCard({
 
         <div className="space-y-2 text-xs text-[var(--color-fg-muted)] leading-relaxed">
           <p>
-            <strong className="font-semibold text-[var(--color-fg)]">Mostrar:</strong> cada
-            resultado lleva la pastilla del proveedor (Sabre GDS, LATAM NDC…) junto a la tarifa.
+            <strong className="font-semibold text-[var(--color-fg)]">Mostrar:</strong> cada tarifa
+            lleva la pastilla de su proveedor (Sabre GDS, LATAM NDC, Despegar Hotels, TBO
+            Holidays…). Un mismo hotel puede reunir tarifas de varios proveedores: cada una muestra
+            el suyo.
           </p>
           <p>
             <strong className="font-semibold text-[var(--color-fg)]">Ocultar:</strong> el vendedor
-            sigue viendo vuelo, aerolínea, escalas y precio, pero no de dónde salió la tarifa. Es
+            sigue viendo el vuelo o el hotel, la tarifa y el precio, pero no de dónde salió. Es
             información comercial de la casa: dice con quién tiene contrato y por dónde compra.
           </p>
           <p>
@@ -906,7 +909,9 @@ function ProviderDisclosureCard({
           <span>
             El aviso de <strong className="font-semibold">tarifa simulada</strong> no depende de
             este ajuste: una tarifa de prueba se sigue marcando como no cotizable, se muestre o no
-            el proveedor.
+            el proveedor. Tampoco el de{' '}
+            <strong className="font-semibold">resultados incompletos</strong>, que nombra al
+            proveedor que no respondió.
           </span>
         </div>
 

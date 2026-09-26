@@ -1,6 +1,13 @@
 'use server';
 
 import { api } from '../../../lib/api';
+import { toCountryAlpha2 } from '../../../lib/countries';
+
+/*
+ * Espejo del contrato NEUTRAL de hoteles (`packages/canonical/src/hotel-offer.ts`) tal como sale
+ * por `POST /hotels/availability`. Regla de lectura, la misma que el contrato: un campo opcional
+ * ausente es "el proveedor no lo informó", nunca "no aplica".
+ */
 
 export interface Money {
   amountMinor: number;
@@ -21,13 +28,39 @@ export interface HotelTax {
   amount: Money;
 }
 
+/**
+ * Suplemento de una tarifa: a pagar en el hotel o ya incluido. `amount` va en la moneda DEL
+ * SUPLEMENTO, que puede no ser la de la tarifa: nunca se suma al total ni se convierte.
+ */
+export interface HotelFee {
+  /** Habitación, base 1. Ausente: aplica a toda la reserva. */
+  roomIndex?: number;
+  description: string;
+  descriptionRaw?: string;
+  amount: Money;
+  /** Presente cuando la moneda no tiene 2 decimales: se muestra esto y no `amount`. */
+  amountText?: string;
+}
+
 export interface HotelCancellationRule {
   type: string;
   penaltyPercentage?: number;
   penaltyNights?: number;
   fromHours?: number;
   toHours?: number;
+  /** Inicio del tramo en hora LOCAL del hotel, sin zona: `YYYY-MM-DDTHH:mm:ss`. */
+  fromLocalDateTime?: string;
+  fromDateRaw?: string;
+  penaltyAmount?: Money;
+  roomIndex?: number;
 }
+
+/**
+ * De dónde salen las políticas: sin tramos (`none`), de una búsqueda (`search-indicative`, sujetas
+ * a confirmación) o del PreBook (`prebook-final`). Ausente: no declarado, y sólo `prebook-final`
+ * autoriza presentarlas como definitivas.
+ */
+export type HotelPolicySource = 'none' | 'search-indicative' | 'prebook-final';
 
 export interface HotelCancellation {
   refundable: boolean;
@@ -35,14 +68,39 @@ export interface HotelCancellation {
   hoursBeforePenalty?: number;
   vendorNotes?: string;
   rules: HotelCancellationRule[];
+  policySource?: HotelPolicySource;
+  /** Fin de la cancelación sin cargo en hora local del hotel. */
+  freeCancellationUntilLocal?: string;
 }
 
+/** Desglose del proveedor. `total` es el NETO: el precio de venta está en `HotelRoompack.pricing`. */
 export interface HotelPrice {
   total: Money;
   taxes?: Money;
   taxesDetail: HotelTax[];
+  /** Un único cargo en destino en la moneda de la tarifa (Despegar). */
   chargeAtDestination?: Money;
   agencyCommission?: { amount: Money; percentage: number };
+  minimumSellingPrice?: Money;
+  /** Cargo por huésped adicional: sólo para el vendedor y nunca sumado. */
+  extraGuestCharges?: Money;
+  nightly?: Money[][];
+}
+
+/** Waterfall aplicado a la tarifa, visto por ESTE tenant. Sin neto ni margen de los ancestros. */
+export interface HotelPricing {
+  /** Lo que le cuesta a este tenant: neto del proveedor más el markup de su red por encima. */
+  costMinor: number;
+  /** Precio de VENTA al cliente final. */
+  finalMinor: number;
+  /** Margen propio del tenant. */
+  ownMarkupMinor: number;
+  currency: string;
+}
+
+export interface HotelRoomOccupancy {
+  adults: number;
+  childrenAges: number[];
 }
 
 export interface HotelRoomItem {
@@ -52,13 +110,17 @@ export interface HotelRoomItem {
   maxCapacity?: number;
   bedOptions: string[];
   choiceId?: string;
+  occupancy?: HotelRoomOccupancy;
+  promotions?: string[];
 }
 
-/** De qué proveedor es una tarifa y con qué referencia se reserva. Espejo del contrato neutral. */
+/** De qué proveedor es una tarifa y con qué referencia se reserva. */
 export interface HotelProviderRef {
   /** Código del proveedor en el registry (`despegar-hotels`), no su nombre legible. */
   name: string;
   offerRef: string;
+  /** Opaco para la web: se reenvía tal cual al paso siguiente de la venta. */
+  raw?: Readonly<Record<string, unknown>>;
 }
 
 export interface HotelRoompack {
@@ -70,9 +132,25 @@ export interface HotelRoompack {
    */
   provider?: HotelProviderRef;
   board: 'RO' | 'BB' | 'HB' | 'FB' | 'AI';
+  /** Etiqueta del régimen del proveedor ("Desayuno para 1 persona"). Gana sobre `board`. */
+  boardLabel?: string;
+  mealTypeRaw?: string;
   rooms: HotelRoomItem[];
   cancellation: HotelCancellation;
   price: HotelPrice;
+  /** Ausente si el tenant no tiene reglas de markup ni hay piso: venta = neto. */
+  pricing?: HotelPricing;
+  /** Hasta cuándo se puede reservar sin volver a buscar. Instante con zona. */
+  expiresAt?: string;
+  atPropertyCharges?: HotelFee[];
+  includedSupplements?: HotelFee[];
+  includesTransfers?: boolean;
+  inclusionText?: string;
+}
+
+export interface HotelProviderHotel {
+  provider: string;
+  hotelId: string;
 }
 
 export interface HotelOffer {
@@ -80,8 +158,11 @@ export interface HotelOffer {
   name?: string;
   stars?: number;
   type?: string;
+  address?: string;
   location?: { lat: number; lng: number };
   roompacks: HotelRoompack[];
+  /** Presente sólo cuando la tarjeta reúne el mismo hotel de varios proveedores. */
+  providerHotels?: HotelProviderHotel[];
 }
 
 export interface RoomDistribution {
@@ -111,6 +192,18 @@ export interface HotelProviderOutcome {
   unavailableReason?: 'no-credentials' | 'incomplete-account';
   /** Tarifas que respondió y no se muestran por venir en otra moneda. */
   droppedForCurrency?: number;
+  /** Respondió sólo una parte de sus hoteles: `reason` dice qué faltó. */
+  partial?: true;
+}
+
+/** Lo que se buscó, para leer los resultados sin mirar el formulario, que el vendedor ya pudo cambiar. */
+export interface HotelSearchCriteriaView {
+  checkinDate: string;
+  checkoutDate: string;
+  nights: number;
+  rooms: number;
+  guests: number;
+  guestNationality: string;
 }
 
 export interface HotelSearchResult {
@@ -124,6 +217,9 @@ export interface HotelSearchResult {
    * es el lado seguro.
    */
   showProviderInResults: boolean;
+  criteria?: HotelSearchCriteriaView;
+  /** Cuándo llegó la respuesta (epoch en ms): cambia en cada búsqueda aunque el resultado sea igual. */
+  receivedAt?: number;
   error?: string;
 }
 
@@ -149,6 +245,15 @@ function todayISO(): string {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function nightsBetween(checkinDate: string, checkoutDate: string): number {
+  const toUtc = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1);
+  };
+  return Math.round((toUtc(checkoutDate) - toUtc(checkinDate)) / 86_400_000);
+}
 
 /** Autocomplete de destino (ciudad/hotel). Llamado por el combobox con debounce. */
 export async function suggestDestinationsAction(query: string): Promise<GeoSuggestion[]> {
@@ -158,6 +263,35 @@ export async function suggestDestinationsAction(query: string): Promise<GeoSugge
     `/hotels/suggestions?q=${encodeURIComponent(q)}`,
   );
   return res.ok ? res.data.items : [];
+}
+
+/** Lo mínimo de un cliente del CRM para prellenar la búsqueda: nada de documentos ni contacto. */
+export interface CustomerForHotelSearch {
+  name: string;
+  /** Como la guarda el CRM, en alfa-3 (`'COL'`) o en texto libre heredado. */
+  nationality: string | null;
+}
+
+/**
+ * Nombre y nacionalidad de un cliente del CRM para prellenar la nacionalidad del pasajero
+ * principal (RF-06). El resto de la ficha no sale del servidor: la búsqueda no lo necesita.
+ */
+export async function customerForHotelSearchAction(
+  customerId: string,
+): Promise<CustomerForHotelSearch | null> {
+  if (!UUID_RE.test(customerId)) return null;
+  const res = await api<{
+    customer?: { firstName?: unknown; lastName?: unknown; nationality?: unknown };
+  }>(`/customers/${encodeURIComponent(customerId)}`);
+  if (!res.ok || !res.data.customer) return null;
+  const { firstName, lastName, nationality } = res.data.customer;
+  const name = [firstName, lastName]
+    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+    .join(' ');
+  return {
+    name: name || 'el cliente',
+    nationality: typeof nationality === 'string' && nationality.trim() !== '' ? nationality : null,
+  };
 }
 
 function parseRooms(raw: string): RoomDistribution[] {
@@ -198,6 +332,8 @@ export async function searchHotelsAction(
   const destinationRaw = asString(formData.get('destinationId'));
   const destinationId = /^\d+$/.test(destinationRaw) ? Number(destinationRaw) : undefined;
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
+  const nationalityRaw = asString(formData.get('guestNationality'));
+  const guestNationality = toCountryAlpha2(nationalityRaw);
 
   // --- Validaciones de borde (el API revalida con Zod) ---
   if (!DATE_RE.test(checkinDate)) return fallo('Ingresá una fecha de entrada válida.');
@@ -208,8 +344,15 @@ export async function searchHotelsAction(
   if (hotelIds.length === 0 && destinationId === undefined) {
     return fallo('Elegí un destino del autocompletado o indicá IDs de hotel.');
   }
+  // Nunca un valor por defecto: hay proveedores que tarifan según la nacionalidad (RF-06).
+  if (nationalityRaw.trim() === '') {
+    return fallo('Indicá la nacionalidad del pasajero principal.');
+  }
+  if (guestNationality === undefined) {
+    return fallo('No reconocemos esa nacionalidad: elegila de la lista.');
+  }
 
-  const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms };
+  const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms, guestNationality };
   if (hotelIds.length > 0) body.hotelIds = hotelIds;
   if (destinationId !== undefined) body.destinationId = destinationId;
   if (refundableOnly) body.refundableOnly = true;
@@ -226,5 +369,14 @@ export async function searchHotelsAction(
     providers: res.data.providers ?? [],
     // `=== true`, como vuelos: cualquier otra cosa (ausente, null, texto) es oculto.
     showProviderInResults: res.data.showProviderInResults === true,
+    criteria: {
+      checkinDate,
+      checkoutDate,
+      nights: nightsBetween(checkinDate, checkoutDate),
+      rooms: rooms.length,
+      guests: rooms.reduce((n, r) => n + r.adults + r.childrenAges.length, 0),
+      guestNationality,
+    },
+    receivedAt: Date.now(),
   };
 }

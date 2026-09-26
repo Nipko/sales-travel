@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '../../../components/ui/dialog';
@@ -33,6 +34,7 @@ import {
   Tag,
   DollarSign,
   ChevronRight,
+  Hotel,
 } from 'lucide-react';
 
 interface Customer {
@@ -783,7 +785,15 @@ export function ClientesClient({
                 </div>
 
                 {/* ACCIONES RAPIDAS */}
-                <div className="pt-2">
+                <div className="space-y-2 pt-2">
+                  {/* La búsqueda de hoteles toma de la ficha la nacionalidad del pasajero
+                      principal: hay proveedores que tarifan según ella (RF-06). */}
+                  <Link
+                    href={`/hoteles?cliente=${encodeURIComponent(selectedCustomer.id)}`}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2.5 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-muted)]"
+                  >
+                    <Hotel aria-hidden="true" className="size-4" /> Buscar hotel para este cliente
+                  </Link>
                   <a
                     href={`https://wa.me/${(selectedCustomer.phone ?? '').replace(/[^0-9]/g, '')}`}
                     target="_blank"

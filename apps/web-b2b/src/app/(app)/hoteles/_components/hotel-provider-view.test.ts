@@ -1,86 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import type { HotelProviderOutcome, HotelRoompack } from '../actions';
-import { cheapestRoompack, degradedProviders, rateProviderLabel } from './hotel-provider-view';
+import { degradedProviders, emptyResultsView, rateProviderLabel } from './hotel-provider-view';
 
 /**
  * RF-40 del lado de la pantalla de hoteles: "me tiene que mostrar de dónde es".
  *
  * Todo se prueba en la dirección segura: con el ajuste apagado, o con una respuesta que no dice
- * de dónde es cada tarifa, no se pinta ningún proveedor.
+ * de dónde es cada tarifa, no se pinta ningún proveedor. Las filas de la tarjeta (CA 4 a 6) se
+ * prueban en `hotel-rate-view.test.ts`.
  */
 
-function tarifa(id: string, amountMinor: number, provider?: string): HotelRoompack {
-  return {
-    id,
-    ...(provider === undefined ? {} : { provider: { name: provider, offerRef: `${id}-REF` } }),
-    board: 'RO',
-    rooms: [{ name: 'Doble', reference: 1, bedOptions: [] }],
-    cancellation: { refundable: false, status: 'non_refundable', rules: [] },
-    price: { total: { amountMinor, currency: 'USD' }, taxesDetail: [] },
-  };
-}
-
-/** Las etiquetas que pinta una tarjeta: la del "desde" y la de cada tarifa. */
-function etiquetasDeLaTarjeta(packs: HotelRoompack[], show: boolean) {
-  const desde = cheapestRoompack(packs);
-  return {
-    desde: desde === undefined ? undefined : rateProviderLabel(desde, show),
-    tarifas: packs.map((p) => rateProviderLabel(p, show)),
-  };
+function tarifa(id: string, provider?: string): Pick<HotelRoompack, 'provider'> {
+  return provider === undefined ? {} : { provider: { name: provider, offerRef: `${id}-REF` } };
 }
 
 describe('rateProviderLabel — la pastilla de cada tarifa', () => {
   it('con el ajuste encendido, el nombre legible de la ficha del proveedor, no su código', () => {
-    expect(rateProviderLabel(tarifa('A', 100, 'despegar-hotels'), true)).toBe('Despegar Hotels');
+    expect(rateProviderLabel(tarifa('A', 'despegar-hotels'), true)).toBe('Despegar Hotels');
+    expect(rateProviderLabel(tarifa('B', 'tbo-hotels'), true)).toBe('TBO Holidays');
   });
 
   it('un proveedor sin ficha se muestra por su código, como en vuelos', () => {
-    expect(rateProviderLabel(tarifa('A', 100, 'proveedor-nuevo-hotels'), true)).toBe(
+    expect(rateProviderLabel(tarifa('A', 'proveedor-nuevo-hotels'), true)).toBe(
       'proveedor-nuevo-hotels',
     );
   });
 
   it('con el ajuste apagado no se pinta nada', () => {
-    expect(rateProviderLabel(tarifa('A', 100, 'despegar-hotels'), false)).toBeUndefined();
+    expect(rateProviderLabel(tarifa('A', 'despegar-hotels'), false)).toBeUndefined();
   });
 
   it('una tarifa sin proveedor (API anterior) no inventa uno', () => {
-    expect(rateProviderLabel(tarifa('A', 100), true)).toBeUndefined();
-  });
-});
-
-describe('RF-40 CA 4 a 6 — la tarjeta de hotel', () => {
-  // Un hotel con una tarifa de cada proveedor, como la tarjeta agrupada por hotel canónico.
-  const agrupada = [tarifa('A', 120_000, 'despegar-hotels'), tarifa('B', 90_000, 'otro-hotels')];
-
-  it('CA 4/5: encendido → cada tarifa con SU pastilla, y el "desde" con la de la más barata', () => {
-    expect(etiquetasDeLaTarjeta(agrupada, true)).toEqual({
-      desde: 'otro-hotels',
-      tarifas: ['Despegar Hotels', 'otro-hotels'],
-    });
-  });
-
-  it('CA 5: dos tarifas de dos proveedores → dos pastillas distintas', () => {
-    const { tarifas } = etiquetasDeLaTarjeta(agrupada, true);
-    expect(new Set(tarifas).size).toBe(2);
-  });
-
-  it('CA 6: apagado → ninguna pastilla, ni en el "desde" ni en las tarifas', () => {
-    expect(etiquetasDeLaTarjeta(agrupada, false)).toEqual({
-      desde: undefined,
-      tarifas: [undefined, undefined],
-    });
-  });
-});
-
-describe('cheapestRoompack', () => {
-  it('la tarifa de menor precio; ante un empate, la primera', () => {
-    const packs = [tarifa('A', 200), tarifa('B', 100), tarifa('C', 100)];
-    expect(cheapestRoompack(packs)?.id).toBe('B');
-  });
-
-  it('un hotel sin tarifas no tiene "desde"', () => {
-    expect(cheapestRoompack([])).toBeUndefined();
+    expect(rateProviderLabel(tarifa('A'), true)).toBeUndefined();
   });
 });
 
@@ -103,20 +54,95 @@ describe('degradedProviders — el aviso de resultados incompletos', () => {
       droppedForCurrency: 2,
       reason: '2 tarifas en USD no se muestran',
     },
+    {
+      code: 'mitad-hotels',
+      status: 'ok',
+      count: 4,
+      partial: true,
+      reason: 'Una parte de sus hoteles no respondió.',
+    },
     { code: 'apagado-hotels', status: 'skipped', count: 0, skipReason: 'opt-in-disabled' },
     { code: 'respaldo-hotels', status: 'skipped', count: 0, skipReason: 'fallback-not-needed' },
     { code: 'sin-cuenta-hotels', status: 'unavailable', count: 0 },
   ];
 
-  it('avisa lo que falta por ESTA búsqueda: fallos, omisiones con motivo y descartes de moneda', () => {
+  it('avisa lo que falta por ESTA búsqueda: fallos, omisiones, respuestas parciales y descartes', () => {
     expect(degradedProviders(parte).map((p) => p.code)).toEqual([
       'caido-hotels',
       'moneda-hotels',
       'parcial-hotels',
+      'mitad-hotels',
     ]);
+  });
+
+  it('una respuesta parcial vacía también se avisa: no es "no hay hoteles"', () => {
+    const vacioParcial: HotelProviderOutcome = {
+      code: 'x-hotels',
+      status: 'empty',
+      count: 0,
+      partial: true,
+    };
+    expect(degradedProviders([vacioParcial])).toEqual([vacioParcial]);
   });
 
   it('sin nada que avisar, no hay aviso', () => {
     expect(degradedProviders([{ code: 'ok-hotels', status: 'ok', count: 3 }])).toEqual([]);
+  });
+});
+
+describe('emptyResultsView — U-08, sin disponibilidad', () => {
+  it('todos respondieron sin hoteles: no hay disponibilidad, y se dice qué probar', () => {
+    const view = emptyResultsView([
+      { code: 'despegar-hotels', status: 'empty', count: 0 },
+      { code: 'tbo-hotels', status: 'empty', count: 0 },
+    ]);
+    expect(view.title).toBe('No hay disponibilidad para ese destino y esas fechas.');
+    expect(view.hint).toMatch(/otras fechas/);
+  });
+
+  it('faltó un proveedor: no se afirma que no hay lugar', () => {
+    const view = emptyResultsView([
+      { code: 'despegar-hotels', status: 'empty', count: 0 },
+      { code: 'tbo-hotels', status: 'error', count: 0, reason: 'no respondió' },
+    ]);
+    expect(view.title).toBe('Los proveedores que respondieron no tienen tarifas para mostrar.');
+    expect(view.hint).toMatch(/^Un proveedor no aportó todas sus tarifas/);
+  });
+
+  it('con varios faltantes dice cuántos', () => {
+    const view = emptyResultsView([
+      { code: 'despegar-hotels', status: 'empty', count: 0 },
+      { code: 'a-hotels', status: 'error', count: 0 },
+      { code: 'b-hotels', status: 'skipped', count: 0, skipReason: 'catalog-empty' },
+    ]);
+    expect(view.hint).toMatch(/^2 proveedores no aportaron todas sus tarifas/);
+  });
+
+  it('no contestó ninguno: no se habla de disponibilidad, se manda al aviso', () => {
+    const view = emptyResultsView([
+      { code: 'despegar-hotels', status: 'error', count: 0, reason: 'no respondió' },
+      { code: 'tbo-hotels', status: 'skipped', count: 0, skipReason: 'occupancy-limits' },
+    ]);
+    expect(view.title).toBe('Ningún proveedor pudo buscar esta vez.');
+    expect(view.hint).toMatch(/aviso de arriba/);
+  });
+
+  it('sin ningún proveedor activo para la agencia, lo dice en lugar de "no hay disponibilidad"', () => {
+    for (const providers of [
+      [],
+      [
+        {
+          code: 'tbo-hotels',
+          status: 'unavailable',
+          count: 0,
+          unavailableReason: 'no-credentials',
+        },
+        { code: 'despegar-hotels', status: 'skipped', count: 0, skipReason: 'opt-in-disabled' },
+      ] satisfies HotelProviderOutcome[],
+    ]) {
+      expect(emptyResultsView(providers).title).toBe(
+        'Tu agencia no tiene proveedores de hoteles activos.',
+      );
+    }
   });
 });
