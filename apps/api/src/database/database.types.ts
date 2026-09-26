@@ -368,6 +368,76 @@ export interface OrdersTable {
   provider_raw: unknown;
   error_message: string | null;
   create_request_key: string | null;
+  /**
+   * 0042: referencia de reserva que generamos y mandamos al proveedor. Se escribe con el intent,
+   * antes de llamar, y es única por proveedor ENTRE tenants (no sólo dentro del tenant).
+   */
+  provider_booking_ref: string | null;
+  /** 0042: cuenta BYOC con la que se creó la reserva; la post-venta usa esta, no la vigente. */
+  provider_account_id: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/*
+ * 0042: vocabularios cerrados de `hotel_order_tracking`. Son valores y no sólo tipos porque los
+ * CHECK de la migración tienen que decir lo mismo, y un test los compara con el SQL.
+ */
+export const HOTEL_ORDER_SUB_STATUSES = [
+  'create-pending',
+  'create-uncertain',
+  'create-not-found-yet',
+  'cancel-requested',
+  'cancel-unverified',
+  'unverified-read',
+  'unknown',
+] as const;
+export type HotelOrderSubStatus = (typeof HOTEL_ORDER_SUB_STATUSES)[number];
+
+export const PROVIDER_STATUS_SOURCES = [
+  'book',
+  'verify',
+  'retrieve',
+  'cancel',
+  'hcn',
+  'reconciliation',
+] as const;
+export type ProviderStatusSource = (typeof PROVIDER_STATUS_SOURCES)[number];
+
+export const HCN_STATES = ['out-of-window', 'scheduled', 'received', 'missing', 'stopped'] as const;
+export type HcnState = (typeof HCN_STATES)[number];
+
+export const HCN_PRIORITIES = ['P0', 'P1', 'P2', 'P3', 'P4', 'P4+', 'P5'] as const;
+export type HcnPriority = (typeof HCN_PRIORITIES)[number];
+
+/**
+ * 0042: seguimiento de una orden de hotel, una fila por orden. Con tenant_id y RLS forzada, y
+ * `(order_id, tenant_id)` apunta a `(id, tenant_id)` de `orders`: no puede colgar de una orden
+ * de otro tenant. Es la fuente de verdad de los jobs de post-venta. Sin PII.
+ */
+export interface HotelOrderTrackingTable {
+  order_id: string;
+  tenant_id: string;
+  /** Crudo, sin normalizar ni CHECK: un valor desconocido se guarda con `sub_status = 'unknown'`. */
+  provider_status: string | null;
+  /** Booleano o texto según el proveedor; se guarda como texto. */
+  provider_voucher_status: string | null;
+  /** Va junto con `provider_status_source`: los dos o ninguno. */
+  provider_status_at: Timestamp | null;
+  provider_status_source: ProviderStatusSource | null;
+  /** NULL = el estado crudo alcanza para describir la orden. */
+  sub_status: HotelOrderSubStatus | null;
+  refund_awaited: Generated<boolean>;
+  invoice_number: string | null;
+  client_reference_id: string | null;
+  /** Nunca en blanco: "sin HCN" es NULL. */
+  hcn: string | null;
+  hcn_received_at: Timestamp | null;
+  hcn_state: HcnState | null;
+  hcn_priority: HcnPriority | null;
+  /** Sólo en `out-of-window` y `scheduled`; el barrido despierta las vencidas. */
+  hcn_next_check_at: Timestamp | null;
+  hcn_attempts: Generated<number>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -545,7 +615,18 @@ export interface PackageItemsTable {
   updated_at: Generated<Timestamp>;
 }
 
-export type OrderOperationType = 'cancel' | 'pay' | 'reshop' | 'retrieve';
+/**
+ * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
+ * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
+ */
+export type OrderOperationType =
+  | 'cancel'
+  | 'pay'
+  | 'reshop'
+  | 'retrieve'
+  | 'hcn-check'
+  | 'hcn-ticket'
+  | 'reconcile';
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
 export interface OrderOperationsTable {
@@ -596,6 +677,7 @@ export interface DB {
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
+  hotel_order_tracking: HotelOrderTrackingTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;
