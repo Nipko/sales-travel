@@ -120,6 +120,8 @@ export interface StubHotelFactoryOptions extends StubHotelAdapterOptions {
   failResolve?: boolean;
   /** Lo que el factory declara para el breaker (huella de cuenta, efecto de sus errores). */
   circuit?: ProviderCircuitOptions;
+  /** Tenant dueño de la cuenta que resuelve; función para diferenciar por tenant. */
+  accountOwnerTenantId?: string | ((tenantId: string) => string);
 }
 
 export class StubHotelProviderFactory implements HotelProviderFactory {
@@ -150,11 +152,13 @@ export class StubHotelProviderFactory implements HotelProviderFactory {
       );
     }
 
+    const owner = this.opts.accountOwnerTenantId;
     return Promise.resolve({
       adapter: this.adapterFor(tenantId),
       credentialSource: this.sourceFor(tenantId),
       callPolicy: this.opts.accountCallPolicy,
       circuit: this.opts.circuit,
+      accountOwnerTenantId: typeof owner === 'function' ? owner(tenantId) : owner,
     });
   }
 

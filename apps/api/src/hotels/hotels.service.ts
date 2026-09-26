@@ -14,13 +14,7 @@ import { CurrencyCodeSchema } from '@sales-travel/validation';
 import { sql, type SelectQueryBuilder } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
-import {
-  PricingService,
-  applyCascade,
-  applyProviderFloor,
-  toTenantView,
-  type ApplicableRule,
-} from '../pricing/pricing.service.js';
+import { PricingService, type ApplicableRule } from '../pricing/pricing.service.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   PLATFORM_ID_SPACE_PROVIDER,
@@ -33,7 +27,6 @@ import {
   type HotelProviderAdapter,
   type HotelProviderRegistration,
   type HotelSearchContextData,
-  type HotelSearchPackContext,
   type HotelSearchProfile,
   type ResolvedHotelProvider,
 } from '../providers/hotel-provider.types.js';
@@ -69,7 +62,13 @@ import {
   type HotelSearchResponse,
   type ProviderOffers,
 } from './hotel-search.aggregate.js';
-import { HotelSearchContextStore, isStorablePackContext } from './hotel-search-context.store.js';
+import { priceRoompack } from './hotel-pricing.js';
+import {
+  HotelSearchContextStore,
+  isStorablePackContext,
+  searchRateFactsOf,
+  type HotelSearchContextPack,
+} from './hotel-search-context.store.js';
 import type { HotelAvailabilityInput, HotelDetailInput } from './hotels.schemas.js';
 
 /** Idioma del borde HTTP (el de Despegar, en mayúsculas) → idioma del contrato neutral. */
@@ -171,16 +170,7 @@ function tenantCurrency(raw: string | null | undefined): string | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-/**
- * Precio de venta de cada tarifa: el waterfall de la red y, encima, el piso del proveedor (RF-12).
- * `price.total` (el neto) NO se muta.
- *
- * El piso se aplica aunque el tenant no tenga reglas: sin él, el precio de venta sería el neto y
- * quedaría por debajo del mínimo que el proveedor permite. Una tarifa sin reglas NI piso —todas
- * las de Despegar en un tenant sin markup— sale como la mapeó el ACL, sin `pricing`.
- *
- * El piso llega en la moneda de `price.total`: lo exige el esquema neutral, que valida el ACL.
- */
+/** Precio de venta de cada tarifa de un hotel ({@link priceRoompack}). */
 function withPricing(
   offer: HotelOffer,
   rules: ApplicableRule[],
@@ -188,19 +178,7 @@ function withPricing(
 ): HotelOffer {
   return {
     ...offer,
-    roompacks: offer.roompacks.map((pack) => {
-      const floor = pack.price.minimumSellingPrice;
-      if (rules.length === 0 && floor === undefined) return pack;
-      const waterfall = applyProviderFloor(
-        applyCascade(pack.price.total.amountMinor, rules),
-        floor?.amountMinor,
-        sellerTenantId,
-      );
-      return {
-        ...pack,
-        pricing: toTenantView(waterfall, sellerTenantId, pack.price.total.currency),
-      };
-    }),
+    roompacks: offer.roompacks.map((pack) => priceRoompack(pack, rules, sellerTenantId)),
   };
 }
 
@@ -716,6 +694,9 @@ export class HotelsService {
    *
    * - Cada tarifa sale con `provider.raw = { searchId }` y nada más, lo haya puesto el ACL o no:
    *   `raw` viaja al navegador y no puede llevar PII (RF-08 CA-5).
+   * - Con cada tarifa queda lo que la búsqueda MOSTRÓ de ella —neto, reembolsable, régimen, cargos
+   *   en el hotel—, sacado del roompack neutral: es la base de la comparación C1 del PreBook
+   *   (RF-15).
    * - Una tarifa sin contexto utilizable —el ACL no la informó, la informó en otro hotel, repite
    *   una referencia ya vista o su contexto no cabe en el registro— no se muestra: su PreBook no
    *   tendría qué reenviar. Se cuenta, nunca se descarta callada, y no arrastra a las demás.
@@ -732,13 +713,15 @@ export class HotelsService {
     offers: readonly HotelOffer[],
   ): Promise<HotelOffer[]> {
     const byRef = new Map(found.packs.map((p) => [p.offerRef, p]));
-    const kept = new Map<string, HotelSearchPackContext>();
+    const kept = new Map<string, HotelSearchContextPack>();
     let orphans = 0;
 
     const bookable: HotelOffer[] = [];
     for (const offer of offers) {
       const roompacks = offer.roompacks.flatMap((pack) => {
-        const context = byRef.get(pack.provider.offerRef);
+        const reported = byRef.get(pack.provider.offerRef);
+        const context =
+          reported === undefined ? undefined : { ...reported, seen: searchRateFactsOf(pack) };
         if (
           context === undefined ||
           context.hotelId !== offer.hotelId ||

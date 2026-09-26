@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
@@ -29,6 +30,17 @@ export class HotelOperationUnavailableError extends ServiceUnavailableException 
       `Ninguno de los proveedores de hoteles habilitados para esta agencia ofrece ${operation}. Revisá Mi Red → Credenciales.`,
     );
     this.name = 'HotelOperationUnavailableError';
+  }
+}
+
+/**
+ * El código de proveedor de la ruta no es un proveedor de hoteles registrado. Es 404: el recurso
+ * (el contenido de un hotel de ese proveedor) no existe, y no hay configuración que lo arregle.
+ */
+export class UnknownHotelProviderError extends NotFoundException {
+  constructor(readonly providerCode: string) {
+    super(`No hay un proveedor de hoteles '${providerCode}'.`);
+    this.name = 'UnknownHotelProviderError';
   }
 }
 

@@ -36,6 +36,27 @@ export interface FilaFicha {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  zipcode?: string | null;
+  country_code?: string | null;
+}
+
+/**
+ * Una fila de `hotel_content` como la devuelve `pg`: JSONB ya parseado y `TIME` como `'HH:MM:SS'`.
+ * Lo que no se da sale `null`.
+ */
+export interface FilaContenido {
+  lang: string;
+  source: string;
+  name?: string | null;
+  description_html?: string | null;
+  sections?: unknown;
+  facilities?: unknown;
+  attractions_html?: string | null;
+  images?: unknown;
+  phone?: string | null;
+  website_url?: string | null;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
 }
 
 /** Una equivalencia de `hotel_match`, tal como la devuelve la consulta de la búsqueda. */
@@ -45,7 +66,12 @@ export interface FilaEquivalencia {
   hotel_id: string;
 }
 
-type Tabla = 'hotel_inventory' | 'tenants' | 'hotel_destination_map' | 'hotel_match';
+type Tabla =
+  | 'hotel_inventory'
+  | 'tenants'
+  | 'hotel_destination_map'
+  | 'hotel_match'
+  | 'hotel_content';
 
 export interface FakeHotelsDbOptions {
   /**
@@ -69,6 +95,11 @@ export interface FakeHotelsDbOptions {
   equivalencias?: readonly FilaEquivalencia[];
   /** Si se define, la consulta de equivalencias falla con este error. */
   equivalenciasFallan?: Error;
+  /**
+   * Filas de `hotel_content` por proveedor y hotel. La consulta de la ficha las filtra por los
+   * idiomas que pide (sus parámetros), como lo haría Postgres.
+   */
+  contenidos?: Readonly<Record<string, Readonly<Record<string, readonly FilaContenido[]>>>>;
 }
 
 export interface FakeHotelsDb {
@@ -140,9 +171,33 @@ function fichasDe(opts: FakeHotelsDbOptions, q: CompiledQuery): unknown[] {
         address: ficha.address ?? null,
         latitude: ficha.latitude ?? null,
         longitude: ficha.longitude ?? null,
+        zipcode: ficha.zipcode ?? null,
+        country_code: ficha.country_code ?? null,
       },
     ];
   });
+}
+
+/** Contenido del proveedor (primer parámetro) y el hotel (segundo) en los idiomas pedidos (el resto). */
+function contenidosDe(opts: FakeHotelsDbOptions, q: CompiledQuery): unknown[] {
+  const [proveedor, hotelId, ...idiomas] = q.parameters.map(String);
+  const filas = opts.contenidos?.[proveedor ?? '']?.[hotelId ?? ''] ?? [];
+  return filas
+    .filter((f) => idiomas.includes(f.lang))
+    .map((f) => ({
+      lang: f.lang,
+      source: f.source,
+      name: f.name ?? null,
+      description_html: f.description_html ?? null,
+      sections: f.sections ?? null,
+      facilities: f.facilities ?? null,
+      attractions_html: f.attractions_html ?? null,
+      images: f.images ?? null,
+      phone: f.phone ?? null,
+      website_url: f.website_url ?? null,
+      check_in_time: f.check_in_time ?? null,
+      check_out_time: f.check_out_time ?? null,
+    }));
 }
 
 export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
@@ -163,6 +218,8 @@ export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
         return [...(opts.equivalencias ?? [])];
       case 'tenants':
         return tenant ? [tenant] : [];
+      case 'hotel_content':
+        return contenidosDe(opts, q);
       default:
         throw new Error(`consulta no prevista por el doble de hoteles: ${q.sql}`);
     }

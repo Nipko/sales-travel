@@ -5,11 +5,14 @@ import {
   POST_SALE_JOBS,
   POST_SALE_QUEUE,
   PostSaleQueueService,
+  POST_SALE_SWEEP_EVERY_MS,
   cancelRetryJobId,
   compensationJobId,
+  verifyHotelBookingJobId,
   type CancelRetryJob,
   type CompensateJob,
   type VerifyCreationJob,
+  type VerifyHotelBookingJob,
 } from './post-sale-queue.service.js';
 import { redisConnection } from './redis-connection.js';
 import { bullMqJobIdRejection } from './__fixtures__/recording-queue.service.js';
@@ -88,9 +91,10 @@ describe('jobId de post-venta — la regla de BullMQ, sin Redis', () => {
     const ids = [
       cancelRetryJobId(reintentoDeCancelacion(orderId)),
       compensationJobId(compensacion(orderId)),
+      ...[0, 1, 2, 3].map((step) => verifyHotelBookingJobId({ tenantId: TENANT, orderId, step })),
     ];
 
-    expect(ids.map(rechazoDeBullMq)).toEqual([undefined, undefined]);
+    expect(ids.map(rechazoDeBullMq)).toEqual(ids.map(() => undefined));
   });
 
   it('y rechaza el `cancel:<orderId>` de antes', () => {
@@ -140,13 +144,28 @@ d('PostSaleQueueService contra BullMQ real', () => {
     const cancelacion = reintentoDeCancelacion(orderId);
     const compensa = compensacion(orderId);
     const verifica: VerifyCreationJob = { tenantId: TENANT, orderId };
+    const paso: VerifyHotelBookingJob = { tenantId: TENANT, orderId, step: 1 };
 
     await expect(cola.enqueueCancelRetry(cancelacion)).resolves.toBe(true);
     await expect(cola.enqueueCompensation(compensa)).resolves.toBe(true);
     await expect(cola.enqueueVerifyCreation(verifica)).resolves.toBe(true);
+    await expect(cola.enqueueVerifyHotelBooking(paso, { delayMs: 60_000 })).resolves.toBe(true);
 
     expect((await inspector.getJob(cancelRetryJobId(cancelacion)))?.name).toBe('cancel');
     expect((await inspector.getJob(compensationJobId(compensa)))?.name).toBe('compensate');
+    const diferido = await inspector.getJob(verifyHotelBookingJobId(paso));
+    expect(diferido?.name).toBe('verify-hotel-booking');
+    expect(diferido?.opts.delay).toBe(60_000);
+  });
+
+  it('el barrido queda como UN Job Scheduler, aunque la API arranque dos veces', async () => {
+    await expect(cola.scheduleSweeper()).resolves.toBe(true);
+    await expect(cola.scheduleSweeper()).resolves.toBe(true);
+
+    const programadores = await inspector.getJobSchedulers();
+    expect(programadores.map((p) => [p.key, Number(p.every)])).toEqual([
+      ['post-sale-sweeper', POST_SALE_SWEEP_EVERY_MS],
+    ]);
   });
 
   it('BullMQ sigue rechazando el id de dos segmentos (y por eso se cambió)', async () => {

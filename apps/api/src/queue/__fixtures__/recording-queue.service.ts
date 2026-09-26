@@ -1,14 +1,17 @@
 import {
   POST_SALE_JOBS,
   cancelRetryJobId,
+  POST_SALE_SWEEP_EVERY_MS,
   compensationJobId,
   isValidDelayMs,
+  verifyHotelBookingJobId,
   type CancelRetryJob,
   type CompensateJob,
   type PostSaleEnqueueOptions,
   type PostSaleJobName,
   type PostSaleQueueService,
   type VerifyCreationJob,
+  type VerifyHotelBookingJob,
 } from '../post-sale-queue.service.js';
 
 /**
@@ -29,7 +32,7 @@ export function bullMqJobIdRejection(jobId: string): string | undefined {
 
 export interface RecordedPostSaleJob {
   name: PostSaleJobName;
-  data: CancelRetryJob | VerifyCreationJob | CompensateJob;
+  data: CancelRetryJob | VerifyCreationJob | CompensateJob | VerifyHotelBookingJob;
   jobId?: string;
   delayMs?: number;
   /** Por qué la cola real no lo habría encolado; ausente si lo habría aceptado. */
@@ -52,6 +55,9 @@ export class RecordingQueueService {
   readonly cancels: CancelRetryJob[] = [];
   readonly verifications: VerifyCreationJob[] = [];
   readonly compensations: CompensateJob[] = [];
+  readonly hotelVerifications: VerifyHotelBookingJob[] = [];
+  /** Intervalos con que se pidió programar el barrido. */
+  readonly sweeperSchedules: number[] = [];
   readonly jobs: RecordedPostSaleJob[] = [];
 
   /** `false` simula "no hay Redis": el saga tiene que registrarlo, no darlo por hecho. */
@@ -73,6 +79,24 @@ export class RecordingQueueService {
   enqueueCompensation(data: CompensateJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
     this.compensations.push(data);
     return this.record(POST_SALE_JOBS.compensate, data, compensationJobId(data), options);
+  }
+
+  enqueueVerifyHotelBooking(
+    data: VerifyHotelBookingJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    this.hotelVerifications.push(data);
+    return this.record(
+      POST_SALE_JOBS.verifyHotelBooking,
+      data,
+      verifyHotelBookingJobId(data),
+      options,
+    );
+  }
+
+  scheduleSweeper(everyMs: number = POST_SALE_SWEEP_EVERY_MS): Promise<boolean> {
+    this.sweeperSchedules.push(everyMs);
+    return Promise.resolve(this.accepted);
   }
 
   asService(): PostSaleQueueService {

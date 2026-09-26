@@ -6,6 +6,9 @@ import { ProviderDisclosureService } from '../provider-disclosure/provider-discl
 import { stubHotelOffer } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
+import type { HotelBookingService } from './hotel-booking.service.js';
+import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
 import { HotelsController } from './hotels.controller.js';
 import type { HotelAvailabilityInput } from './hotels.schemas.js';
@@ -81,6 +84,9 @@ function controllerCon(
     {} as DespegarHotelReservationsService,
     { resolve: () => Promise.resolve(tenantId) } as unknown as ActiveTenantService,
     disclosure,
+    {} as HotelPrebookService,
+    {} as HotelBookingService,
+    {} as HotelContentService,
   );
   return { controller, searchAvailability };
 }

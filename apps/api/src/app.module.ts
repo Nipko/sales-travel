@@ -13,6 +13,7 @@ import { AirportsModule } from './airports/airports.module.js';
 import { RequestContextMiddleware } from './request-context/request-context.middleware.js';
 import { RequestContextModule } from './request-context/request-context.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { PostSaleModule } from './orders/post-sale.module.js';
 import { QuotationsModule } from './quotations/quotations.module.js';
 import { SearchModule } from './search/search.module.js';
 import { TenantsModule } from './tenants/tenants.module.js';
@@ -65,6 +66,7 @@ import { PackagesModule } from './packages/packages.module.js';
     MailerModule,
     QueueModule,
     HotelsModule,
+    PostSaleModule,
     CarsModule,
   ],
   controllers: [HealthController],

@@ -1,4 +1,5 @@
 import { HttpStatus, Logger } from '@nestjs/common';
+import type { HotelRoompack } from '@sales-travel/canonical';
 import type { CachePort } from '@sales-travel/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { HotelProviderAccountFingerprint } from '../providers/hotel-provider.types.js';
@@ -7,13 +8,17 @@ import {
   HOTEL_SEARCH_CONTEXT_MAX_LIFETIME_MS,
   HotelOfferNotInSearchError,
   HotelOfferReferenceSchema,
+  HotelOfferUnavailableError,
   HotelSearchAccountChangedError,
   HotelSearchContextExpiredError,
   HotelSearchContextStore,
   HotelSearchContextUnavailableError,
+  HotelSearchNationalityMissingError,
   isStorablePackContext,
+  searchRateFactsOf,
   type HotelOfferReference,
   type HotelSearchContext,
+  type HotelSearchContextPack,
 } from './hotel-search-context.store.js';
 
 /**
@@ -40,6 +45,28 @@ const CUENTA: HotelProviderAccountFingerprint = {
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
 
+/** Lo que la búsqueda mostró de la tarifa: la base de C1 (RF-15). */
+function visto(amountMinor: number): HotelSearchContextPack['seen'] {
+  return {
+    total: { amountMinor, currency: 'USD' },
+    refundable: false,
+    board: 'RO',
+    mealTypeRaw: 'Room_Only',
+    atPropertyCharges: [
+      {
+        roomIndex: 1,
+        description: 'Impuesto obligatorio',
+        descriptionRaw: 'mandatory_tax',
+        amount: { amountMinor: 2000, currency: 'AED' },
+      },
+    ],
+  };
+}
+
+function tarifa(offerRef: string, totalText: string, amountMinor: number): HotelSearchContextPack {
+  return { hotelId: '1120548', offerRef, totalText, currency: 'USD', seen: visto(amountMinor) };
+}
+
 function contexto(overrides: Partial<HotelSearchContext> = {}): HotelSearchContext {
   return {
     tenantId: AGENCIA,
@@ -55,10 +82,7 @@ function contexto(overrides: Partial<HotelSearchContext> = {}): HotelSearchConte
     searchSentAt: T0,
     expiresAt: VENCE,
     account: CUENTA,
-    packs: [
-      { hotelId: '1120548', offerRef: BOOKING_CODE, totalText: '305.750', currency: 'USD' },
-      { hotelId: '1120548', offerRef: OTRO_BOOKING_CODE, totalText: '310.10', currency: 'USD' },
-    ],
+    packs: [tarifa(BOOKING_CODE, '305.750', 30_575), tarifa(OTRO_BOOKING_CODE, '310.10', 31_010)],
     ...overrides,
   };
 }
@@ -134,9 +158,7 @@ describe('guardar y leer por (tenantId, searchId)', () => {
     await b.store.save(
       contexto({
         tenantId: OTRA_AGENCIA,
-        packs: [
-          { hotelId: '1120548', offerRef: OTRO_BOOKING_CODE, totalText: '999.00', currency: 'USD' },
-        ],
+        packs: [tarifa(OTRO_BOOKING_CODE, '999.00', 99_900)],
       }),
     );
 
@@ -214,6 +236,7 @@ describe('RF-08 CA-2: una referencia fuera del contexto es 400 antes de llamar a
         offerRef: OTRO_BOOKING_CODE,
         totalText: '310.10',
         currency: 'USD',
+        seen: visto(31_010),
       },
     });
   });
@@ -447,6 +470,40 @@ describe('entradas validadas con Zod', () => {
       'una habitación con un dato de más',
       { rooms: [{ adults: 2, childrenAges: [], names: ['Ana'] }] },
     ],
+    [
+      'una tarifa sin lo que mostró la búsqueda',
+      { packs: [{ ...tarifa(BOOKING_CODE, '305.75', 30_575), seen: undefined }] },
+    ],
+    [
+      'lo mostrado con un dato de más',
+      {
+        packs: [
+          {
+            ...tarifa(BOOKING_CODE, '305.75', 30_575),
+            seen: { ...visto(30_575), leadGuest: 'Ana' },
+          },
+        ],
+      },
+    ],
+    [
+      'un cargo en el hotel con un dato de más en el importe',
+      {
+        packs: [
+          {
+            ...tarifa(BOOKING_CODE, '305.75', 30_575),
+            seen: {
+              ...visto(30_575),
+              atPropertyCharges: [
+                {
+                  description: 'Impuesto',
+                  amount: { amountMinor: 1, currency: 'AED', raw: '1.00' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
   ])('%s → no se guarda y la búsqueda de ese proveedor falla con motivo', async (_caso, cambio) => {
     const b = banco();
 
@@ -460,12 +517,7 @@ describe('entradas validadas con Zod', () => {
   });
 
   it('pack por pack: los literales que el decimal del ACL de TBO admite y el registro no, se detectan antes de guardar', () => {
-    const pack = {
-      hotelId: '1120548',
-      offerRef: BOOKING_CODE,
-      totalText: '305.750',
-      currency: 'USD',
-    };
+    const pack = tarifa(BOOKING_CODE, '305.750', 30_575);
 
     expect(isStorablePackContext(pack)).toBe(true);
     for (const totalText of ['3.0575E2', '1e-7', '-0.00', ' 305.75', '+305.75']) {
@@ -482,9 +534,7 @@ describe('entradas validadas con Zod', () => {
         contexto({
           guestNationality: 'COL',
           rooms: [{ adults: 2, childrenAges: [99] }],
-          packs: [
-            { hotelId: '1120548', offerRef: BOOKING_CODE, totalText: 'x305', currency: 'USD' },
-          ],
+          packs: [tarifa(BOOKING_CODE, 'x305', 30_500)],
         }),
       )
       .catch(() => undefined);
@@ -495,5 +545,111 @@ describe('entradas validadas con Zod', () => {
     for (const valor of ['COL', '99', 'x305', BOOKING_CODE, SEARCH_ID]) {
       expect(logueado).not.toContain(valor);
     }
+  });
+});
+
+describe('lo que la búsqueda mostró de cada tarifa (base de C1, RF-15)', () => {
+  const PACK: HotelRoompack = {
+    id: BOOKING_CODE,
+    provider: { name: PROVEEDOR, offerRef: BOOKING_CODE, raw: { searchId: SEARCH_ID } },
+    board: 'RO',
+    boardLabel: 'Sólo alojamiento',
+    mealTypeRaw: 'Room_Only',
+    rooms: [{ name: 'Luxury Room', reference: 0, bedOptions: [] }],
+    cancellation: { refundable: false, status: 'non_refundable', rules: [], policySource: 'none' },
+    price: {
+      total: { amountMinor: 30_575, currency: 'USD' },
+      taxesDetail: [],
+      minimumSellingPrice: { amountMinor: 32_134, currency: 'USD' },
+    },
+    atPropertyCharges: [
+      {
+        roomIndex: 1,
+        description: 'Impuesto obligatorio',
+        descriptionRaw: 'mandatory_tax',
+        amount: { amountMinor: 2000, currency: 'AED' },
+      },
+    ],
+    inclusionText: 'Free WiFi',
+  };
+
+  it('neto, reembolsable, régimen y cargos en el hotel; nada del resto del pack', () => {
+    expect(searchRateFactsOf(PACK)).toEqual(visto(30_575));
+  });
+
+  it('sin literal de régimen ni cargos en el hotel: sin régimen crudo y lista vacía', () => {
+    const { mealTypeRaw: _meal, atPropertyCharges: _fees, ...sinNada } = PACK;
+
+    expect(searchRateFactsOf(sinNada)).toEqual({
+      total: { amountMinor: 30_575, currency: 'USD' },
+      refundable: false,
+      board: 'RO',
+      atPropertyCharges: [],
+    });
+  });
+
+  it('es una copia: cambiar el pack después no cambia lo que se mostró', () => {
+    const pack = structuredClone(PACK);
+    const hechos = searchRateFactsOf(pack);
+
+    pack.price.total.amountMinor = 1;
+    const cargo = pack.atPropertyCharges?.[0];
+    if (cargo !== undefined) cargo.amount.amountMinor = 1;
+
+    expect(hechos).toEqual(visto(30_575));
+  });
+});
+
+describe('RF-15 CA-4: una tarifa que el proveedor dio por no disponible', () => {
+  it('responde 409 sin volver a preguntar; las otras tarifas de la búsqueda siguen', async () => {
+    const b = banco();
+    await b.store.save(contexto());
+
+    await b.store.invalidateOffer(AGENCIA, SEARCH_ID, BOOKING_CODE);
+
+    const err: unknown = await b.store
+      .resolveOffer(AGENCIA, referencia(), CUENTA)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HotelOfferUnavailableError);
+    expect((err as HotelOfferUnavailableError).getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((err as HotelOfferUnavailableError).reason).toBe('OFFER_UNAVAILABLE');
+    await expect(
+      b.store.resolveOffer(AGENCIA, referencia({ offerRef: OTRO_BOOKING_CODE }), CUENTA),
+    ).resolves.toMatchObject({ pack: { offerRef: OTRO_BOOKING_CODE } });
+  });
+
+  it('la marca es del tenant y vence con la búsqueda', async () => {
+    const b = banco();
+    await b.store.save(contexto());
+    await b.store.save(contexto({ tenantId: OTRA_AGENCIA }));
+
+    vi.setSystemTime(T0 + 7 * MIN);
+    await b.store.invalidateOffer(AGENCIA, SEARCH_ID, BOOKING_CODE);
+
+    expect(b.set.mock.calls[2]?.[2]).toBe(20 * 60);
+    // La referencia va digerida: el `BookingCode` no aparece en la clave.
+    expect(String(b.set.mock.calls[2]?.[0])).not.toContain(BOOKING_CODE);
+    await expect(b.store.resolveOffer(OTRA_AGENCIA, referencia(), CUENTA)).resolves.toMatchObject({
+      tenantId: OTRA_AGENCIA,
+    });
+  });
+
+  it('sin búsqueda vigente no deja ninguna marca', async () => {
+    const b = banco();
+
+    await b.store.invalidateOffer(AGENCIA, SEARCH_ID, BOOKING_CODE);
+
+    expect(b.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('errores con motivo máquina', () => {
+  it('sin la nacionalidad del pasajero principal: 409, volver a buscar indicándola', () => {
+    const err = new HotelSearchNationalityMissingError();
+
+    expect(err.getStatus()).toBe(HttpStatus.CONFLICT);
+    expect(err.reason).toBe('GUEST_NATIONALITY_MISSING');
+    expect(err.name).toBe('HotelSearchNationalityMissingError');
+    expect(err.message).toContain('Volvé a buscar');
   });
 });

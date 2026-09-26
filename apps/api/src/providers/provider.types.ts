@@ -173,6 +173,16 @@ export interface TenantAdapter<TAdapter> {
    * `undefined` = como siempre: circuito por código y efecto leído de la forma del error.
    */
   readonly circuit?: ProviderCircuitOptions | undefined;
+  /**
+   * Tenant DUEÑO de la cuenta con que sale el adapter: el propio, o el ancestro del que se hereda.
+   * `undefined` = no hay cuenta de un tenant detrás (credenciales de la plataforma) o el factory no
+   * lo dice.
+   *
+   * Existe porque un problema de la cuenta (sin saldo, bloqueada) lo arregla su dueño y no quien
+   * vende, y la agencia no puede leer la fila de una cuenta heredada (`provider_accounts` tiene RLS
+   * forzada): sólo el factory, que la resolvió, sabe de quién es.
+   */
+  readonly accountOwnerTenantId?: string | undefined;
 }
 
 /**

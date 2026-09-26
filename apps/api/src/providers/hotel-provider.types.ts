@@ -1,13 +1,27 @@
-import type { HotelOffer, HotelRatesQuery, HotelSearchCriteria } from '@sales-travel/canonical';
+import type {
+  BoardType,
+  HotelFee,
+  HotelOffer,
+  HotelRatesQuery,
+  HotelRoomOccupancy,
+  HotelRoompack,
+  HotelSearchCriteria,
+  Money,
+} from '@sales-travel/canonical';
 import type {
   HotelBookPort,
+  HotelBookResult,
   HotelBookingByClientReferencePort,
+  HotelBookingContact,
   HotelBookingReadPort,
+  HotelBookingRoomGuests,
   HotelBookingsByDatePort,
   HotelCancelPort,
   HotelPaymentOptionsPort,
   HotelPrebookPort,
+  HotelPrebookResult,
   HotelPriceJumpRecoveryPort,
+  HotelRateSignal,
   HotelRatesDetailPort,
   HotelSearchPort,
   HotelSuggestPort,
@@ -162,6 +176,8 @@ export interface ResolvedHotelProvider
   readonly searchProfile: HotelSearchProfile;
   /** Lo que el factory declaró para el breaker; se pasa tal cual en cada llamada al adapter. */
   readonly circuit?: ProviderCircuitOptions;
+  /** Tenant dueño de la cuenta con que sale el adapter (ver `TenantAdapter`). */
+  readonly accountOwnerTenantId?: string;
 }
 
 /** Un proveedor conocido por la plataforma, sin resolver credenciales de nadie. */
@@ -270,6 +286,302 @@ export interface HotelRatesContextPort {
   ): Promise<HotelRatesWithContext>;
 }
 
+// ───────────────────────── PreBook con contexto (RF-15) ─────────────────────────
+
+/**
+ * Lo que la búsqueda MOSTRÓ de una tarifa y la primera comparación de precio (C1) tiene que
+ * sostener: neto, moneda, si es reembolsable, régimen y cargos a pagar en el hotel (docs/tbo/03
+ * §2.9; 08 RF-15). El servicio lo toma del roompack neutral al guardar el contexto: es lo que vio
+ * el vendedor, no lo que el ACL quiera repetir en el PreBook.
+ */
+export interface HotelSearchRateFacts {
+  readonly total: Money;
+  readonly refundable: boolean;
+  readonly board: BoardType;
+  readonly mealTypeRaw?: string;
+  readonly atPropertyCharges: readonly HotelFee[];
+}
+
+/**
+ * La tarifa que el vendedor aceptó en un PreBook, tal como quedó en el servidor: la base de la
+ * segunda comparación (C2), justo antes del Book.
+ */
+export interface HotelAcceptedRate {
+  /** El literal del total del PreBook: lo que el Book reenvía. */
+  readonly totalText: string;
+  readonly roompack: HotelRoompack;
+  readonly signals: readonly HotelRateSignal[];
+  /** Huella del texto saneado de las condiciones de la tarifa. */
+  readonly rateConditionsHash: string;
+}
+
+/** Contra qué se compara lo que devuelve el PreBook. */
+export type HotelRateBaseline =
+  | {
+      readonly stage: 'C1';
+      /** El literal del total de la búsqueda. */
+      readonly totalText: string;
+      readonly seen: HotelSearchRateFacts;
+    }
+  | { readonly stage: 'C2'; readonly accepted: HotelAcceptedRate };
+
+/**
+ * Qué revalidar. Todo sale del contexto de búsqueda del servidor (RF-08), nunca del navegador: el
+ * hotel y la ocupación que el PreBook no recibe pero su respuesta tiene que cumplir, y el instante
+ * del Search del que sale el vencimiento.
+ */
+export interface HotelPrebookContextRequest {
+  readonly searchId: string;
+  readonly hotelId: string;
+  /** La referencia reservable que se revalida (en TBO, el `BookingCode`). */
+  readonly offerRef: string;
+  /** Epoch en ms del envío del Search que emitió la tarifa (RF-09). */
+  readonly searchSentAt: number;
+  /** En el orden del Search. */
+  readonly rooms: readonly HotelRoomOccupancy[];
+  readonly baseline: HotelRateBaseline;
+}
+
+export type HotelRepriceStage = HotelRateBaseline['stage'];
+
+/** Resultado de comparar dos lecturas de la misma tarifa (03 §2.9 regla 2). */
+export type HotelRepriceOutcome = 'UNCHANGED' | 'DECREASED' | 'INCREASED' | 'CONDITIONS_CHANGED';
+
+/** Dirección del precio. `NOT_COMPARABLE` cuando cambió la moneda. */
+export type HotelPriceDirection = 'SAME' | 'DOWN' | 'UP' | 'NOT_COMPARABLE';
+
+/** Qué condición cambió. Vocabulario cerrado: el evento y la web razonan por código, no por texto. */
+export type HotelRateConditionChange =
+  | 'CURRENCY'
+  | 'REFUNDABLE'
+  | 'MEAL_TYPE'
+  | 'AT_PROPERTY_CHARGES'
+  | 'CANCEL_POLICIES'
+  | 'SIGNALS'
+  | 'RATE_CONDITIONS';
+
+export interface HotelRepriceComparison {
+  readonly stage: HotelRepriceStage;
+  readonly outcome: HotelRepriceOutcome;
+  readonly price: HotelPriceDirection;
+  readonly changes: readonly HotelRateConditionChange[];
+  /** Netos del proveedor en unidades menores: sin texto del proveedor (va a `domain_events`). */
+  readonly previousTotal: Money;
+  readonly currentTotal: Money;
+}
+
+export interface HotelPrebookWithContext {
+  /** La tarifa revalidada, con las políticas que el proveedor da por finales. */
+  readonly result: HotelPrebookResult & { readonly roompack: HotelRoompack };
+  /**
+   * Lo que el Book reenvía: la referencia y el literal del total DE ESTE PreBook, que pueden no
+   * ser los de la búsqueda (Q-30).
+   */
+  readonly pack: HotelSearchPackContext;
+  /** Huella del texto saneado de las condiciones, para la comparación C2. */
+  readonly rateConditionsHash: string;
+  readonly comparison: HotelRepriceComparison;
+  /** El de la llamada, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly requestId?: string;
+}
+
+/**
+ * Qué deja inservible un error del PreBook: la tarifa (ya no está disponible) o la búsqueda entera
+ * (la sesión del proveedor venció, TBO `315`).
+ */
+export type HotelOfferInvalidation = 'offer' | 'search';
+
+/**
+ * Un proveedor cuyo PreBook se arma con el contexto de su búsqueda y se compara contra lo que se
+ * mostró (TBO). Lo que significan sus errores para esa búsqueda lo dice el propio proveedor: el
+ * servicio no conoce sus códigos.
+ */
+export interface HotelPrebookContextPort {
+  readonly searchAccount: HotelProviderAccountFingerprint;
+  prebookWithContext(
+    request: HotelPrebookContextRequest,
+    ctx: SearchContext,
+  ): Promise<HotelPrebookWithContext>;
+  /** `undefined`: el error no dice nada de la tarifa ni de la búsqueda (red, cuenta, breaker). */
+  offerInvalidatedBy(err: unknown): HotelOfferInvalidation | undefined;
+}
+
+// ───────────────────────── Book con contexto (RF-18 a RF-20) ─────────────────────────
+
+/** Un huésped tal como sale al proveedor: lo que la orden guarda como "enviado" (RF-18). */
+export interface HotelGuestSent {
+  readonly title: 'Mr' | 'Mrs' | 'Ms';
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly paxType: 'ADT' | 'CHD';
+}
+
+/**
+ * Los huéspedes contra la ocupación de la búsqueda, con las reglas del proveedor. `issues` son
+ * `ruta:código` en el vocabulario de la entrada (`rooms.1.guests.0.lastName:too_short`), nunca
+ * valores: son nombres de personas.
+ */
+export type HotelGuestCheck =
+  | { readonly ok: true; readonly rooms: readonly (readonly HotelGuestSent[])[] }
+  | { readonly ok: false; readonly issues: readonly string[] };
+
+/**
+ * Qué reservar. Todo sale del intent ya persistido y del PreBook de revalidación (C2), nunca del
+ * navegador (RF-20): la referencia de la tarifa y el literal del total son los de ese PreBook, la
+ * ocupación es la del Search y la referencia de reserva se escribió en la orden antes de llamar.
+ */
+export interface HotelBookContextRequest {
+  /** `pack.offerRef` del PreBook de revalidación (Q-30). */
+  readonly offerRef: string;
+  /** `pack.totalText` del PreBook de revalidación: el literal, no una reconstrucción (CK-11). */
+  readonly totalText: string;
+  /** La referencia NUESTRA que ya está en `orders.provider_booking_ref`. */
+  readonly bookingReference: string;
+  /** Epoch en ms del envío del Search que emitió la tarifa (RF-09). */
+  readonly searchSentAt: number;
+  /** Ocupación del Search, en su orden. */
+  readonly occupancy: readonly HotelRoomOccupancy[];
+  /** Huéspedes por habitación, en el orden de `occupancy`. */
+  readonly rooms: readonly HotelBookingRoomGuests[];
+  /** El contacto que viaja al proveedor (D-TBO-23 A: el operativo de la agencia). */
+  readonly contact: HotelBookingContact;
+}
+
+/**
+ * Lo que el proveedor respondió a un Book que NO lanzó: `CONFIRMED` o un desenlace que hay que
+ * verificar leyendo. Un rechazo del proveedor se LANZA, para que el breaker lo cuente; quien llama
+ * lo traduce con {@link HotelBookingContextPort.bookFailureOf}.
+ */
+export interface HotelBookWithContext {
+  readonly result: HotelBookResult;
+  /** Motivo en el vocabulario cerrado del proveedor (`confirmed`, `missing-confirmation-number`…). */
+  readonly reason: string;
+  /** El de la llamada, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly requestId?: string;
+}
+
+/**
+ * Qué significa un error que lanzó el Book (docs/tbo/03 §3.9).
+ *
+ * - `FAILED` con `dispatched: true`: el proveedor dijo que no reservó nada. Se libera la clave.
+ * - `FAILED` con `dispatched: false`: no salió ningún byte (rechazo local antes del cable).
+ * - `UNCERTAIN`: puede haber reserva del otro lado. Se verifica leyendo, nunca reintentando.
+ */
+export interface HotelBookFailure {
+  readonly outcome: 'FAILED' | 'UNCERTAIN';
+  /** Vocabulario cerrado del proveedor: viaja a `domain_events` y a `provider_raw`. */
+  readonly reason: string;
+  readonly dispatched: boolean;
+  /** Código del proveedor, como texto, si lo hubo. */
+  readonly providerStatus?: string;
+  /** Nombre de la clase del error, nunca su mensaje. */
+  readonly errorClass?: string;
+}
+
+/**
+ * Un proveedor cuyo Book sale con lo que su búsqueda y su PreBook dejaron en el servidor, con una
+ * referencia nuestra que se persiste ANTES de llamar (D-TBO-07 A; RF-19). Es lo que exige la saga
+ * de reserva con órdenes: un proveedor sin este puerto no reserva por ella (Despegar sigue con su
+ * flujo propio, D-TBO-08 A).
+ */
+export interface HotelBookingContextPort {
+  readonly searchAccount: HotelProviderAccountFingerprint;
+  /** Una referencia nueva para UN request de Book (RF-19): nunca se reutiliza. */
+  newBookingReference(): string;
+  /** Huéspedes contra la ocupación, con las reglas del proveedor, sin llamarlo (RF-18). */
+  checkBookingGuests(
+    rooms: readonly HotelBookingRoomGuests[],
+    occupancy: readonly HotelRoomOccupancy[],
+  ): HotelGuestCheck;
+  /** UN intento: el reintento de un Book puede reservar dos veces (03 §4.4). */
+  bookWithContext(
+    request: HotelBookContextRequest,
+    ctx: SearchContext,
+  ): Promise<HotelBookWithContext>;
+  bookFailureOf(err: unknown): HotelBookFailure;
+}
+
+// ───────────────────────── Problemas de la cuenta (RF-23) ─────────────────────────
+
+/**
+ * Un rechazo del proveedor que no es de la tarifa ni de la reserva sino de la CUENTA con que se
+ * opera, y que sólo su dueño puede resolver (docs/tbo/03 §6): sin saldo o crédito para la reserva
+ * (TBO `300`) o bloqueada por el proveedor (TBO `402`). Vocabulario cerrado: viaja a
+ * `domain_events`.
+ */
+export type HotelProviderAccountIssue = 'insufficient-balance' | 'agent-blocked';
+
+/**
+ * Un proveedor que sabe decir si un error suyo es un problema de la cuenta. Con una cuenta
+ * heredada, la agencia que vende no puede arreglarlo ni debe ver el saldo de la cuenta: el aviso
+ * va a su dueño.
+ */
+export interface HotelAccountIssuePort {
+  /** `undefined`: el error no dice nada de la cuenta. */
+  accountIssueOf(err: unknown): HotelProviderAccountIssue | undefined;
+}
+
+// ───────────────────────── Contenido de un hotel bajo demanda (PR-3.6) ─────────────────────────
+
+/** Idiomas de contenido: los de `hotel_content.lang` (0041) y `LanguageCodeSchema`. */
+export const HOTEL_CONTENT_LANGUAGES = ['es', 'pt', 'en'] as const;
+export type HotelContentLanguage = (typeof HOTEL_CONTENT_LANGUAGES)[number];
+
+/** Una sección `Etiqueta : texto` de la descripción, en texto plano. */
+export interface HotelContentSection {
+  readonly label: string;
+  readonly text: string;
+}
+
+/**
+ * Contenido de UN hotel en UN idioma, leído del proveedor en el momento: las columnas de
+ * `hotel_content` más lo que el proveedor dice del hotel. `null` o lista vacía = no lo informó.
+ * El HTML llega saneado con lista blanca por el ACL, y quien lo muestra lo verifica igual.
+ */
+export interface HotelProviderContent {
+  readonly hotelId: string;
+  readonly lang: HotelContentLanguage;
+  readonly name: string | null;
+  readonly stars: number | null;
+  readonly address: string | null;
+  readonly zipcode: string | null;
+  readonly countryCode: string | null;
+  readonly location: { readonly lat: number; readonly lng: number } | null;
+  readonly descriptionHtml: string | null;
+  readonly sections: readonly HotelContentSection[];
+  /** Sólo los servicios disponibles: uno negado ("… – no") no está. */
+  readonly facilities: readonly string[];
+  readonly attractionsHtml: string | null;
+  readonly images: readonly string[];
+  readonly phone: string | null;
+  readonly websiteUrl: string | null;
+  /** `HH:mm`. */
+  readonly checkInTime: string | null;
+  readonly checkOutTime: string | null;
+}
+
+export interface HotelContentFetchOptions {
+  /** Plazo de la llamada; sólo acorta el del proveedor. Del otro lado hay un vendedor esperando. */
+  readonly timeoutMs: number;
+  /** Corta la espera entera, cola del limitador incluida. */
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Un proveedor cuyo contenido estático se puede pedir para UN hotel cuando el catálogo todavía no
+ * lo tiene (TBO `HotelDetails`, docs/tbo/05 §6.3). Es una lectura: no escribe nada, y las tablas
+ * del catálogo las sigue escribiendo sólo el sync.
+ */
+export interface HotelContentPort {
+  /** `null`: el proveedor respondió, pero sin ese hotel. */
+  fetchHotelContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelProviderContent | null>;
+}
+
 // ───────────────────────── Capacidades opcionales, por presencia ─────────────────────────
 //
 // Mismo criterio que `supportsAuditedCreate` en vuelos: el registry entrega
@@ -331,4 +643,28 @@ export function supportsHotelRatesContext<T extends object>(
   adapter: T,
 ): adapter is T & HotelRatesContextPort {
   return hasMethod<HotelRatesContextPort>(adapter, 'getHotelRatesWithContext');
+}
+
+export function supportsHotelPrebookContext<T extends object>(
+  adapter: T,
+): adapter is T & HotelPrebookContextPort {
+  return hasMethod<HotelPrebookContextPort>(adapter, 'prebookWithContext');
+}
+
+export function supportsHotelBookingContext<T extends object>(
+  adapter: T,
+): adapter is T & HotelBookingContextPort {
+  return hasMethod<HotelBookingContextPort>(adapter, 'bookWithContext');
+}
+
+export function supportsHotelAccountIssues<T extends object>(
+  adapter: T,
+): adapter is T & HotelAccountIssuePort {
+  return hasMethod<HotelAccountIssuePort>(adapter, 'accountIssueOf');
+}
+
+export function supportsHotelContent<T extends object>(
+  adapter: T,
+): adapter is T & HotelContentPort {
+  return hasMethod<HotelContentPort>(adapter, 'fetchHotelContent');
 }

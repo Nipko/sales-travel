@@ -30,7 +30,10 @@ import {
   DespegarHotelInputError,
   DespegarHotelProviderAdapter,
 } from '../providers-despegar/despegar-hotel-provider.adapter.js';
-import type { HotelProviderFactory } from '../providers/hotel-provider.types.js';
+import {
+  supportsHotelContent,
+  type HotelProviderFactory,
+} from '../providers/hotel-provider.types.js';
 import {
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
@@ -292,6 +295,9 @@ describe('dueño de la cuenta: sólo plataforma o consolidador mientras Q-77 sig
     expect(agencia.credentialSource).toBe('inherited');
     expect(consolidador.credentialSource).toBe('own');
     expect(agencia.adapter).toBeInstanceOf(TboHotelProviderAdapter);
+    // RF-23: un `300` de la cuenta heredada se avisa al consolidador, que es quien la resolvió.
+    expect(agencia.accountOwnerTenantId).toBe(CONSOLIDADOR);
+    expect(consolidador.accountOwnerTenantId).toBe(CONSOLIDADOR);
   });
 
   it('la cuenta de la plataforma es admitida', async () => {
@@ -710,5 +716,63 @@ describe('humanizeError', () => {
     expect(r.humanizeError('tbo-hotels', err, { credentialSource: 'inherited' })).toBe(
       factory.humanizeError(err, { credentialSource: 'inherited' }),
     );
+  });
+});
+
+describe('PR-3.6: contenido de un hotel con la MISMA cuenta y el mismo limitador', () => {
+  /** HotelDetails de un hotel, la forma más corta que el ACL acepta. */
+  function detalleDeHotel(): Response {
+    return new Response(
+      JSON.stringify({
+        Status: { Code: 200, Description: 'Successful' },
+        HotelDetails: [
+          {
+            HotelCode: '1000000',
+            HotelName: 'Sofitel Legend Old Cataract Aswan',
+            Images: ['https://api.tbotechnology.in/imageresource.aspx?img=abc'],
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
+  it('el adapter del factory lee HotelDetails por el mismo `fetch` y con la cuenta de la bóveda', async () => {
+    const { fetch } = cable(detalleDeHotel);
+    const { adapter } = await factoryCon(
+      boveda(() => [{ tenantId: CONSOLIDADOR }]),
+      fetch,
+    ).resolveForTenant(AGENCIA);
+
+    expect(supportsHotelContent(adapter)).toBe(true);
+    if (!supportsHotelContent(adapter)) return;
+    const ficha = await adapter.fetchHotelContent(
+      '1000000',
+      'es',
+      { tenantId: AGENCIA },
+      {
+        timeoutMs: 6_000,
+      },
+    );
+
+    expect(ficha).toMatchObject({
+      hotelId: '1000000',
+      name: 'Sofitel Legend Old Cataract Aswan',
+      images: ['https://api.tbotechnology.in/imageresource.aspx?img=abc'],
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${TBO_BASE_URLS.test}/HotelDetails`);
+    expect(JSON.parse(init.body as string)).toEqual({ Hotelcodes: '1000000', Language: 'ES' });
+    const esperado = `Basic ${Buffer.from(`${USUARIO}:${CONTRASENA}`, 'utf8').toString('base64')}`;
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(esperado);
+  });
+
+  it('volcado a un log, el adapter con su cliente de contenido sigue sin arrastrar la cuenta', async () => {
+    const { adapter } = await factoryCon(
+      boveda(() => [{ tenantId: CONSOLIDADOR }]),
+    ).resolveForTenant(CONSOLIDADOR);
+
+    expect(JSON.stringify(adapter)).toBe('{}');
   });
 });

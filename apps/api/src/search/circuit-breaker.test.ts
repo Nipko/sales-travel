@@ -649,3 +649,92 @@ describe('CircuitBreakerService — efecto declarado por el proveedor (`effectOf
     expect(err).toMatchObject({ reason: 'account-circuit' });
   });
 });
+
+describe('CircuitBreakerService — llamada pasiva (contenido de hotel, PR-3.6)', () => {
+  let breaker: CircuitBreakerService;
+
+  beforeEach(() => {
+    vi.stubEnv('PROVIDERS_DISABLED', '');
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    breaker = new CircuitBreakerService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  const PASIVA = { passive: true } as const;
+
+  it('su éxito no borra la racha: 4 caídas + 1 pasiva que responde + 1 caída abren igual', async () => {
+    for (let i = 0; i < FAILURE_THRESHOLD - 1; i++) {
+      await breaker.execute('prov-a', CAÍDO).catch(() => undefined);
+    }
+    await expect(breaker.execute('prov-a', ok, PASIVA)).resolves.toBe('ok');
+    expect(breaker.snapshot()['prov-a']).toEqual({
+      state: 'closed',
+      failures: FAILURE_THRESHOLD - 1,
+    });
+
+    await breaker.execute('prov-a', CAÍDO).catch(() => undefined);
+    expect(breaker.snapshot()['prov-a']?.state).toBe('open');
+  });
+
+  it('su fallo no suma, aunque el error diga `COUNT` u `OPEN_ACCOUNT`', async () => {
+    for (let i = 0; i < FAILURE_THRESHOLD; i++) {
+      await expect(
+        breaker.execute('prov-a', () => Promise.reject(fallo('COUNT')), PASIVA),
+      ).rejects.toThrow();
+    }
+    await breaker
+      .execute('prov-a', () => Promise.reject(fallo('OPEN_ACCOUNT')), {
+        ...PASIVA,
+        accountRef: 'acct-1',
+      })
+      .catch(() => undefined);
+
+    expect(breaker.snapshot()['prov-a']).toEqual({ state: 'closed', failures: 0 });
+    await expect(breaker.execute('prov-a', ok, { accountRef: 'acct-1' })).resolves.toBe('ok');
+  });
+
+  it('respeta el circuito abierto, la cuenta suspendida y el kill-switch: no sale', async () => {
+    await abrirCircuito(breaker, 'prov-a');
+    const run = vi.fn(ok);
+    await expect(breaker.execute('prov-a', run, PASIVA)).rejects.toMatchObject({
+      reason: 'provider-circuit',
+    });
+
+    await breaker
+      .execute('prov-b', () => Promise.reject(fallo('OPEN_ACCOUNT')), { accountRef: 'acct-1' })
+      .catch(() => undefined);
+    await expect(
+      breaker.execute('prov-b', run, { ...PASIVA, accountRef: 'acct-1' }),
+    ).rejects.toMatchObject({ reason: 'account-circuit' });
+
+    vi.stubEnv('PROVIDERS_DISABLED', 'prov-c:ventas');
+    await expect(breaker.execute('prov-c', run, PASIVA)).rejects.toMatchObject({
+      reason: 'kill-switch',
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('vencida la ventana pasa, pero no gasta la sonda ni cierra el circuito', async () => {
+    vi.useFakeTimers();
+    await abrirCircuito(breaker, 'prov-a');
+    vi.advanceTimersByTime(OPEN_MS);
+
+    await expect(breaker.execute('prov-a', ok, PASIVA)).resolves.toBe('ok');
+    expect(breaker.snapshot()['prov-a']).toEqual({ state: 'open', failures: FAILURE_THRESHOLD });
+
+    // La sonda es la siguiente que sí se escucha: si falla, reabre al instante.
+    await breaker.execute('prov-a', CAÍDO).catch(() => undefined);
+    expect(breaker.snapshot()['prov-a']?.state).toBe('open');
+    const run = vi.fn(ok);
+    await expect(breaker.execute('prov-a', run)).rejects.toMatchObject({
+      reason: 'provider-circuit',
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+});

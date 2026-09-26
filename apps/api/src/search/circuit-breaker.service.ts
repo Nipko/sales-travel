@@ -82,6 +82,14 @@ export interface CircuitCallOptions extends ProviderCircuitOptions {
    * quiso frenar.
    */
   readonly scope?: CallScope;
+  /**
+   * La llamada respeta el kill-switch, el circuito abierto y la cuenta suspendida, pero no mueve
+   * el circuito: ni su fallo suma ni su éxito lo cierra, y no gasta la sonda de un half-open. Es
+   * para lecturas secundarias por otro endpoint del proveedor (contenido de un hotel): que
+   * responda no dice que la búsqueda ande, y un éxito suyo reabriría el paso a búsquedas que
+   * esperarían su timeout entero contra un Search caído.
+   */
+  readonly passive?: boolean;
 }
 
 /** Por qué el breaker no dejó salir la llamada. */
@@ -210,7 +218,7 @@ export class CircuitBreakerService {
     run: () => Promise<T>,
     options: CircuitCallOptions = {},
   ): Promise<T> {
-    const { scope = 'sales', accountRef, effectOf: declared } = options;
+    const { scope = 'sales', accountRef, effectOf: declared, passive = false } = options;
 
     // Por código y no por la clave del circuito: apagar un proveedor apaga también sus cuentas.
     const level = killLevel(providerCode);
@@ -241,9 +249,11 @@ export class CircuitBreakerService {
           `${providerCode} no está respondiendo. Reintentá en unos segundos.`,
         );
       }
-      // Vencida la ventana, se deja pasar UNA llamada de sonda.
-      c.state = 'half-open';
+      // Vencida la ventana, se deja pasar UNA llamada de sonda. Una pasiva pasa sin serlo: su
+      // resultado no se escucha, así que la sonda queda para la siguiente que sí.
+      if (!passive) c.state = 'half-open';
     }
+    if (passive) return run();
 
     try {
       const result = await run();

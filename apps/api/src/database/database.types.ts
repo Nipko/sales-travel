@@ -46,6 +46,12 @@ export interface TenantsTable {
   /** 0033: host propio de la agencia. Sólo resuelve si está verificado. */
   custom_domain: string | null;
   custom_domain_verified_at: Timestamp | null;
+  /**
+   * 0007: crédito interno que la red le da a la agencia, en unidades MAYORES de
+   * `default_currency` (NUMERIC(14,2), que `pg` devuelve como texto). 0 = sin crédito. La agencia
+   * no lo edita: acota lo que puede reservar con una cuenta de proveedor heredada (RF-23).
+   */
+  credit_limit: Generated<string>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -438,6 +444,14 @@ export interface HotelOrderTrackingTable {
   /** Sólo en `out-of-window` y `scheduled`; el barrido despierta las vencidas. */
   hcn_next_check_at: Timestamp | null;
   hcn_attempts: Generated<number>;
+  /**
+   * 0044: calendario de verificación de una reserva sin respuesta. El ancla y el paso van juntos;
+   * `verify_next_at` sólo existe con calendario y es lo que despierta el barrido.
+   */
+  verify_anchor_at: Timestamp | null;
+  /** Índice del PRÓXIMO paso; sólo avanza. */
+  verify_step: number | null;
+  verify_next_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

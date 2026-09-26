@@ -5,12 +5,14 @@ import {
   GUEST_NATIONALITY_INVALID,
   HotelAvailabilityInputSchema,
   HotelDetailInputSchema,
+  HotelPrebookBodySchema,
   HotelSuggestQuerySchema,
   PLATFORM_OCCUPANCY_LIMITS,
   PaymentOptionsQuerySchema,
   PrebookSchema,
   RecoveryBodySchema,
   RoomDistributionSchema,
+  isNeutralHotelPrebook,
 } from './hotels.schemas.js';
 
 /**
@@ -354,6 +356,57 @@ describe('PrebookSchema', () => {
 
   it('sin `choiceId` no pasa', () => {
     expect(PrebookSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('HotelPrebookBodySchema (PR-4.5): el cuerpo neutral o el de Despegar', () => {
+  const NEUTRAL = {
+    providerCode: 'tbo-hotels',
+    searchId: '6110a41c-558c-405c-a0d3-6bdd3e131146',
+    offerRef: '1120548!TB!4!TB!6110a41c-558c-405c-a0d3-6bdd3e131146',
+  };
+
+  it('el neutral es proveedor, búsqueda y tarifa; lo que venga de más se descarta (RF-08 CA-4)', () => {
+    const parsed = HotelPrebookBodySchema.parse({
+      ...NEUTRAL,
+      rooms: [{ adults: 1, childrenAges: [] }],
+      totalText: '1.00',
+      guestNationality: 'AR',
+    });
+
+    expect(parsed).toEqual(NEUTRAL);
+    expect(isNeutralHotelPrebook(parsed)).toBe(true);
+  });
+
+  it('el de Despegar pasa como siempre y no es el neutral', () => {
+    const parsed = HotelPrebookBodySchema.parse({ choiceId: 'CH-1', lang: 'es' });
+
+    expect(parsed).toEqual({ choiceId: 'CH-1', lang: 'es' });
+    expect(isNeutralHotelPrebook(parsed)).toBe(false);
+  });
+
+  it.each([
+    ['vacío', {}],
+    ['neutral sin búsqueda', { providerCode: 'tbo-hotels', offerRef: 'x' }],
+    ['un código de proveedor que no es del registry', { ...NEUTRAL, providerCode: 'TBO Hoteles' }],
+    ['un id de búsqueda con comodines', { ...NEUTRAL, searchId: 'hotels:*' }],
+  ])('%s no pasa', (_caso, cuerpo) => {
+    expect(HotelPrebookBodySchema.safeParse(cuerpo).success).toBe(false);
+  });
+
+  it('D-TBO-08 A: un 400 sigue nombrando el campo que falta, en el cuerpo de Despegar y en el neutral', () => {
+    const rutas = (body: unknown): string[] => {
+      const parsed = HotelPrebookBodySchema.safeParse(body);
+      return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'));
+    };
+
+    // Con `z.union` salían como un único `(general): Invalid input`.
+    expect(rutas({})).toEqual(['choiceId']);
+    expect(rutas({ choiceId: 'CH-1', lang: 'ES' })).toEqual(['lang']);
+    expect(rutas({ providerCode: 'tbo-hotels', offerRef: 'x' })).toEqual(['searchId']);
+    expect(rutas({ choiceId: '', providerCode: 'tbo-hotels' })).toEqual(['choiceId']);
+    expect(rutas(null)).toEqual(['']);
+    expect(rutas('texto')).toEqual(['']);
   });
 });
 

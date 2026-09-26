@@ -15,9 +15,19 @@ export const POST_SALE_JOBS = {
   verifyCreation: 'verify-creation',
   /** Compensación SELECTIVA por `itemId` de un éxito parcial (saga, paso 3). */
   compensate: 'compensate',
+  /**
+   * Un paso del calendario que lee por NUESTRA referencia una reserva de hotel cuya respuesta no
+   * llegó (docs/tbo/08 RF-21). Sólo lee: la reserva nunca se reenvía desde la cola, que reintenta.
+   */
+  verifyHotelBooking: 'verify-hotel-booking',
+  /** El barrido periódico que ejecuta lo que la cola perdió (RNF-10: Postgres manda). */
+  sweeper: 'post-sale-sweeper',
 } as const;
 
 export type PostSaleJobName = (typeof POST_SALE_JOBS)[keyof typeof POST_SALE_JOBS];
+
+/** Cada cuánto corre el barrido (docs/tbo/08 RNF-10 punto 1). */
+export const POST_SALE_SWEEP_EVERY_MS = 15 * 60_000;
 
 export interface CancelRetryJob {
   tenantId: string;
@@ -49,6 +59,18 @@ export interface CompensateJob {
   orderId: string;
   cancellableItemIds: string[];
   reason: string;
+  actorUserId?: string;
+}
+
+/**
+ * Un paso de la verificación de una reserva de hotel. Sin datos personales: el job sólo dice qué
+ * orden y qué paso; lo demás se lee de Postgres, que es quien decide si el paso sigue vigente.
+ */
+export interface VerifyHotelBookingJob {
+  tenantId: string;
+  orderId: string;
+  /** Índice del paso en el calendario: es el tercer segmento del `jobId`. */
+  step: number;
   actorUserId?: string;
 }
 
@@ -91,6 +113,14 @@ export function compensationJobId(data: CompensateJob): string {
     .update(JSON.stringify([...data.cancellableItemIds].sort()))
     .digest('hex');
   return postSaleJobId(POST_SALE_JOBS.compensate, data.orderId, huella);
+}
+
+/**
+ * Un job por paso: el mismo paso encolado dos veces (la saga y el barrido, o un reintento del
+ * encolado) es el mismo job mientras BullMQ lo conserve.
+ */
+export function verifyHotelBookingJobId(data: VerifyHotelBookingJob): string {
+  return postSaleJobId(POST_SALE_JOBS.verifyHotelBooking, data.orderId, String(data.step));
 }
 
 /**
@@ -162,6 +192,51 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
     options: PostSaleEnqueueOptions = {},
   ): Promise<boolean> {
     return this.add(POST_SALE_JOBS.compensate, data, compensationJobId(data), options);
+  }
+
+  /**
+   * Encola un paso de la verificación de una reserva de hotel, con el retardo hasta su hora. Los
+   * `attempts` de la cola son reintentos de ESA lectura ante un fallo de transporte; el calendario
+   * lo lleva la fila de seguimiento, no BullMQ.
+   */
+  async enqueueVerifyHotelBooking(
+    data: VerifyHotelBookingJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    return this.add(
+      POST_SALE_JOBS.verifyHotelBooking,
+      data,
+      verifyHotelBookingJobId(data),
+      options,
+    );
+  }
+
+  /**
+   * Programa el barrido periódico con un Job Scheduler de BullMQ (D-TBO-29 A). Es idempotente: el
+   * id del programador es el nombre del job, así que cada arranque de la API lo actualiza en vez de
+   * sumar otro. Un intento por corrida: si falla, la próxima corrida vuelve a mirar lo mismo.
+   */
+  async scheduleSweeper(everyMs: number = POST_SALE_SWEEP_EVERY_MS): Promise<boolean> {
+    if (!this.queue) return false;
+    if (!isValidDelayMs(everyMs) || everyMs === 0) {
+      this.logger.error(`no se pudo programar el barrido: intervalo inválido (${everyMs} ms)`);
+      return false;
+    }
+    try {
+      await this.queue.upsertJobScheduler(
+        POST_SALE_JOBS.sweeper,
+        { every: everyMs },
+        {
+          name: POST_SALE_JOBS.sweeper,
+          data: {},
+          opts: { attempts: 1, removeOnComplete: 100, removeOnFail: 100 },
+        },
+      );
+      return true;
+    } catch (err) {
+      this.logger.error(`no se pudo programar el barrido: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   /**

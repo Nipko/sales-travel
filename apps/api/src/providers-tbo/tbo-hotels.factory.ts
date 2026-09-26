@@ -5,6 +5,7 @@ import {
   TboConfigError,
   TboHotelsAdapter,
   TboInMemoryRateLimiter,
+  TboStaticContentClient,
   missingTboCredentials,
   parseTboConfig,
   type TBO_HOTELS_PROVIDER_CODE,
@@ -190,11 +191,12 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
       // consolidador y para las agencias que heredan su cuenta, y el primero que lo construyó
       // quedaría grabado en cada línea de log de los demás. La huella de la cuenta sí va: es la
       // misma para todos los que la heredan, y el contexto de cada búsqueda la guarda (RF-08).
+      const account = { ownerTenantId: resolved.ownerTenantId };
       adapter = new TboHotelProviderAdapter(
-        new TboHotelsAdapter(cfg, this.httpDeps(resolved), {
-          ownerTenantId: resolved.ownerTenantId,
-        }),
+        new TboHotelsAdapter(cfg, this.httpDeps(resolved), account),
         { accountId: resolved.id, updatedAt: resolved.updatedAt.toISOString() },
+        cfg.environment,
+        new TboStaticContentClient(cfg, this.contentDeps(), account),
       );
       this.cache.set(key, adapter);
       this.evictStale(key);
@@ -204,6 +206,7 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
       adapter,
       credentialSource: resolved.inherited ? 'inherited' : 'own',
       circuit: { accountRef: adapter.accountRef, effectOf: tboCircuitEffect },
+      accountOwnerTenantId: resolved.ownerTenantId,
     };
   }
 
@@ -274,6 +277,20 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
             }),
           }
         : {}),
+    };
+  }
+
+  /**
+   * El contenido bajo demanda (PR-3.6) sale por el MISMO limitador que la venta, en su cupo de
+   * fondo, así que nunca le quita capacidad a una búsqueda o a un Book (01 §7.2). No va a la bóveda
+   * de payloads: `HotelDetails` no mueve dinero ni es un caso de certificación, y guardaría HTML de
+   * catálogo junto a los RQ/RS de las reservas.
+   */
+  private contentDeps(): TboHttpDeps {
+    return {
+      logger: this.loggerPort(),
+      limiter: this.limiter,
+      ...(this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl }),
     };
   }
 

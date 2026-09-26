@@ -198,6 +198,13 @@ describe('búsqueda: el proveedor con contexto lo deja en el servidor antes de m
           offerRef: `${STUB}-S-1-REF`,
           totalText: '1000.00',
           currency: 'USD',
+          // Lo que la búsqueda mostró de la tarifa, sacado del roompack neutral: la base de C1.
+          seen: {
+            total: { amountMinor: 100_000, currency: 'USD' },
+            refundable: false,
+            board: 'RO',
+            atPropertyCharges: [],
+          },
         },
       ],
     });

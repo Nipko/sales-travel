@@ -25,6 +25,9 @@ import {
   ofertasDespegar,
 } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
+import type { HotelBookingService } from './hotel-booking.service.js';
+import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
@@ -186,6 +189,9 @@ d('TBO en la búsqueda de /hotels, contra Postgres sembrado', () => {
       {} as DespegarHotelReservationsService,
       new ActiveTenantService(database),
       new ProviderDisclosureService(database),
+      {} as HotelPrebookService,
+      {} as HotelBookingService,
+      {} as HotelContentService,
     );
     return { controller, fetch, despegar };
   }

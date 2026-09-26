@@ -271,6 +271,9 @@ export class HotelProviderRegistry {
         searchProfile: factory.searchProfile,
         callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
         ...(resolved.circuit === undefined ? {} : { circuit: resolved.circuit }),
+        ...(resolved.accountOwnerTenantId === undefined
+          ? {}
+          : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
       },
     };
   }

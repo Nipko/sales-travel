@@ -6,13 +6,18 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { HotelProviderCodeSchema, HotelRoomOccupancySchema } from '@sales-travel/canonical';
+import {
+  BoardTypeSchema,
+  HotelFeeSchema,
+  HotelProviderCodeSchema,
+  HotelRoomOccupancySchema,
+  MoneySchema,
+  type HotelRoompack,
+} from '@sales-travel/canonical';
 import type { CachePort } from '@sales-travel/core';
 import { CountryCodeSchema, CurrencyCodeSchema, z } from '@sales-travel/validation';
-import type {
-  HotelProviderAccountFingerprint,
-  HotelSearchPackContext,
-} from '../providers/hotel-provider.types.js';
+import { createHash } from 'node:crypto';
+import type { HotelProviderAccountFingerprint } from '../providers/hotel-provider.types.js';
 
 /**
  * Contexto de búsqueda de hoteles en el servidor (docs/tbo/08 RF-08 y RNF-06 punto 2; 02 §9.3).
@@ -20,8 +25,9 @@ import type {
  * Cada Search de un proveedor que lo necesita (TBO) deja aquí, por `(tenantId, searchId)`, lo que
  * su PreBook y su Book reenvían y el navegador no puede aportar: fechas, ocupación por habitación,
  * nacionalidad del pasajero principal, `searchSentAt`, la huella de la cuenta que buscó y, por
- * tarifa, el hotel, la referencia reservable (`BookingCode`) y el literal del total. La tarifa
- * viaja al navegador sólo con `provider.raw = { searchId }`; lo demás se lee de aquí.
+ * tarifa, el hotel, la referencia reservable (`BookingCode`), el literal del total y lo que la
+ * búsqueda mostró de ella (la base de la comparación C1 del PreBook, RF-15). La tarifa viaja al
+ * navegador sólo con `provider.raw = { searchId }`; lo demás se lee de aquí.
  *
  * Reglas:
  *
@@ -84,14 +90,55 @@ const AccountFingerprintSchema = z
   })
   .strict();
 
+/** Cargos en el hotel de una tarifa: uno por habitación y concepto; más es un pack roto. */
+const MAX_AT_PROPERTY_CHARGES = 64;
+
+/** Lo que la búsqueda mostró de la tarifa, para la comparación C1 del PreBook (RF-15). */
+const SeenRateSchema = z
+  .object({
+    total: MoneySchema.strict(),
+    refundable: z.boolean(),
+    board: BoardTypeSchema,
+    mealTypeRaw: z.string().min(1).max(80).optional(),
+    atPropertyCharges: z
+      .array(HotelFeeSchema.extend({ amount: MoneySchema.strict() }).strict())
+      .max(MAX_AT_PROPERTY_CHARGES),
+  })
+  .strict();
+
 const PackContextSchema = z
   .object({
     hotelId: z.string().min(1).max(64),
     offerRef: z.string().min(1).max(255),
     totalText: DecimalTextSchema,
     currency: CurrencyCodeSchema,
+    seen: SeenRateSchema,
   })
   .strict();
+
+/** Una tarifa tal como queda en el contexto: lo que el PreBook reenvía y lo que se mostró. */
+export type HotelSearchContextPack = z.infer<typeof PackContextSchema>;
+
+/** `HotelSearchRateFacts` tal como se guarda. */
+export type HotelSearchContextRateFacts = HotelSearchContextPack['seen'];
+
+/**
+ * Lo que la búsqueda muestra de una tarifa y C1 compara (docs/tbo/03 §2.9): neto, si es
+ * reembolsable, régimen y cargos a pagar en el hotel. Sale del roompack NEUTRAL, el que llega al
+ * vendedor, y no de lo que el ACL reporte aparte.
+ */
+export function searchRateFactsOf(pack: HotelRoompack): HotelSearchContextRateFacts {
+  return {
+    total: { ...pack.price.total },
+    refundable: pack.cancellation.refundable,
+    board: pack.board,
+    ...(pack.mealTypeRaw === undefined ? {} : { mealTypeRaw: pack.mealTypeRaw }),
+    atPropertyCharges: (pack.atPropertyCharges ?? []).map((fee) => ({
+      ...fee,
+      amount: { ...fee.amount },
+    })),
+  };
+}
 
 /**
  * Si UNA tarifa cabe en un contexto. El servicio la aplica pack por pack antes de guardar: el ACL
@@ -99,7 +146,7 @@ const PackContextSchema = z
  * pack raro dejaría sin contexto —y sin tarifas— a toda la búsqueda de ese proveedor. Como en el
  * ACL, un pack inválido se descarta y se cuenta (RF-07).
  */
-export function isStorablePackContext(pack: HotelSearchPackContext): boolean {
+export function isStorablePackContext(pack: HotelSearchContextPack): boolean {
   return PackContextSchema.safeParse(pack).success;
 }
 
@@ -163,7 +210,7 @@ export type HotelOfferReference = z.infer<typeof HotelOfferReferenceSchema>;
 
 /** La tarifa elegida con todo lo que su búsqueda dejó en el servidor. */
 export interface ResolvedHotelSearchOffer extends Omit<HotelSearchContext, 'packs'> {
-  readonly pack: HotelSearchPackContext;
+  readonly pack: HotelSearchContextPack;
 }
 
 // ───────────────────────── Errores ─────────────────────────
@@ -175,7 +222,9 @@ export interface ResolvedHotelSearchOffer extends Omit<HotelSearchContext, 'pack
 export type HotelSearchContextRejection =
   | 'SEARCH_CONTEXT_EXPIRED'
   | 'OFFER_NOT_IN_SEARCH'
+  | 'OFFER_UNAVAILABLE'
   | 'SEARCH_ACCOUNT_CHANGED'
+  | 'GUEST_NATIONALITY_MISSING'
   | 'SEARCH_CONTEXT_UNAVAILABLE';
 
 /**
@@ -206,6 +255,36 @@ export class HotelOfferNotInSearchError extends BadRequestException {
       'La tarifa elegida no pertenece a ninguna búsqueda vigente de esta agencia. Volvé a buscar y elegila de los resultados.',
     );
     this.name = 'HotelOfferNotInSearchError';
+  }
+}
+
+/**
+ * El proveedor ya dijo que esta tarifa no está disponible (TBO `201` o `207` en un PreBook). Se
+ * responde sin volver a preguntarle: la búsqueda sigue vigente para sus otras tarifas (RF-15 CA-4).
+ */
+export class HotelOfferUnavailableError extends ConflictException {
+  readonly reason: HotelSearchContextRejection = 'OFFER_UNAVAILABLE';
+
+  constructor() {
+    super(
+      'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda o volvé a buscar para ver precios actualizados.',
+    );
+    this.name = 'HotelOfferUnavailableError';
+  }
+}
+
+/**
+ * La búsqueda salió sin la nacionalidad del pasajero principal y el proveedor tarifa según ella
+ * (TBO, p. 10). No se completa con un valor por defecto (RF-06): se vuelve a buscar con ella.
+ */
+export class HotelSearchNationalityMissingError extends ConflictException {
+  readonly reason: HotelSearchContextRejection = 'GUEST_NATIONALITY_MISSING';
+
+  constructor() {
+    super(
+      'Esta tarifa depende de la nacionalidad del pasajero principal y la búsqueda se hizo sin ella. Volvé a buscar indicándola para reservar.',
+    );
+    this.name = 'HotelSearchNationalityMissingError';
   }
 }
 
@@ -243,6 +322,15 @@ export class HotelSearchContextUnavailableError extends ServiceUnavailableExcept
 
 function keyOf(tenantId: string, searchId: string): string {
   return `${KEY_PREFIX}:${tenantId}:${searchId}`;
+}
+
+/**
+ * Marca de una tarifa que el proveedor dio por no disponible. La referencia va digerida: puede
+ * traer cualquier carácter (el `BookingCode` de TBO lleva `!`) y la clave no admite comodines.
+ */
+function goneKeyOf(tenantId: string, searchId: string, offerRef: string): string {
+  const digest = createHash('sha256').update(offerRef).digest('hex');
+  return `${keyOf(tenantId, searchId)}:gone:${digest}`;
 }
 
 /** `ruta:código` de cada problema, sin valores: la ruta de `rooms` no dice edades. */
@@ -343,6 +431,7 @@ export class HotelSearchContextStore {
    * @param currentAccount huella de la cuenta con la que se reservaría AHORA.
    * @throws HotelOfferNotInSearchError la referencia no es una tarifa de esa búsqueda (400).
    * @throws HotelSearchContextExpiredError la búsqueda no está vigente para este tenant (409).
+   * @throws HotelOfferUnavailableError el proveedor ya la dio por no disponible (409).
    * @throws HotelSearchAccountChangedError la cuenta cambió desde la búsqueda (409).
    */
   async resolveOffer(
@@ -363,10 +452,29 @@ export class HotelSearchContextStore {
         : undefined;
     if (pack === undefined) throw new HotelOfferNotInSearchError();
 
+    if ((await this.cache.get<unknown>(goneKeyOf(tenantId, searchId, offerRef))) !== null) {
+      throw new HotelOfferUnavailableError();
+    }
+
     if (!sameAccount(context.account, currentAccount)) throw new HotelSearchAccountChangedError();
 
     const { packs: _packs, ...search } = context;
     return { ...search, pack };
+  }
+
+  /**
+   * Da por no disponible UNA tarifa de una búsqueda vigente: el proveedor lo dijo en un PreBook
+   * (RF-15 CA-4). Es una marca aparte y no una reescritura del contexto: dos PreBooks concurrentes
+   * sobre la misma búsqueda no se pisan, y la marca vence con la búsqueda.
+   */
+  async invalidateOffer(tenantId: string, searchId: string, offerRef: string): Promise<void> {
+    const context = await this.get(tenantId, searchId);
+    if (context === undefined) return;
+    await this.cache.set(
+      goneKeyOf(tenantId, searchId, offerRef),
+      true,
+      Math.ceil((context.expiresAt - Date.now()) / 1000),
+    );
   }
 
   /** Olvida una búsqueda: el proveedor dijo que su sesión venció (TBO `315`, RF-09). */

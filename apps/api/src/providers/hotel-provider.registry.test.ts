@@ -334,6 +334,31 @@ describe('HotelProviderRegistry', () => {
       expect(active.find((p) => p.code === 'beta-hotels')).not.toHaveProperty('circuit');
     });
 
+    it('el dueño de la cuenta viaja con el proveedor resuelto; sin dueño, no aparece (RF-23)', async () => {
+      const DUENO = '99999999-9999-4999-8999-999999999999';
+      const r = registry([
+        new StubHotelProviderFactory({
+          code: 'alfa-hotels',
+          credentialSource: 'inherited',
+          accountOwnerTenantId: DUENO,
+        }),
+        new StubHotelProviderFactory({ code: 'beta-hotels' }),
+      ]);
+
+      const { active } = await r.forTenant(TENANT);
+
+      expect(active.find((p) => p.code === 'alfa-hotels')).toMatchObject({
+        credentialSource: 'inherited',
+        accountOwnerTenantId: DUENO,
+      });
+      expect(active.find((p) => p.code === 'beta-hotels')).not.toHaveProperty(
+        'accountOwnerTenantId',
+      );
+      await expect(r.byCode(TENANT, 'alfa-hotels')).resolves.toMatchObject({
+        accountOwnerTenantId: DUENO,
+      });
+    });
+
     it('un fallo REAL de la bóveda se propaga: no se degrada en silencio', async () => {
       const r = registry([
         new StubHotelProviderFactory({

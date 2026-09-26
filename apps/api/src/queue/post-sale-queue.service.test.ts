@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionOptions, JobsOptions, Queue } from 'bullmq';
 import {
   POST_SALE_JOBS,
+  POST_SALE_SWEEP_EVERY_MS,
   PostSaleQueueService,
   cancelRetryJobId,
   compensationJobId,
   postSaleJobId,
+  verifyHotelBookingJobId,
   type CompensateJob,
 } from './post-sale-queue.service.js';
 import { bullMqJobIdRejection } from './__fixtures__/recording-queue.service.js';
@@ -25,6 +27,7 @@ interface LlamadaAdd {
 /** Sustituye la `Queue` de BullMQ por una que graba cada `add` o falla como Redis caído. */
 class ColaGrabadora extends PostSaleQueueService {
   readonly llamadas: LlamadaAdd[] = [];
+  readonly programadores: unknown[][] = [];
   fallo: Error | null = null;
 
   protected override createQueue(_connection: ConnectionOptions): Queue {
@@ -32,6 +35,11 @@ class ColaGrabadora extends PostSaleQueueService {
       add: (name: string, data: unknown, opts?: JobsOptions): Promise<object> => {
         if (this.fallo) return Promise.reject(this.fallo);
         this.llamadas.push({ name, data, opts });
+        return Promise.resolve({});
+      },
+      upsertJobScheduler: (...args: unknown[]): Promise<object> => {
+        if (this.fallo) return Promise.reject(this.fallo);
+        this.programadores.push(args);
         return Promise.resolve({});
       },
       close: (): Promise<void> => Promise.resolve(),
@@ -187,5 +195,73 @@ describe('PostSaleQueueService — lo que recibe BullMQ', () => {
     cola.fallo = new Error('ECONNREFUSED');
 
     await expect(cola.enqueueCompensation(compensacion(['12']))).resolves.toBe(false);
+  });
+});
+
+describe('verificación de reservas de hotel y barrido (PR-4.7)', () => {
+  it('cada paso es un job de tres segmentos: `verify-hotel-booking:<orderId>:<paso>`', () => {
+    const id = verifyHotelBookingJobId({ tenantId: TENANT, orderId: ORDEN, step: 2 });
+
+    expect(id).toBe(`verify-hotel-booking:${ORDEN}:2`);
+    expect(bullMqJobIdRejection(id)).toBeUndefined();
+  });
+
+  it('el paso llega a BullMQ con su jobId, su retardo y la política de reintentos de una lectura', async () => {
+    const cola = colaConRedis();
+
+    await expect(
+      cola.enqueueVerifyHotelBooking(
+        { tenantId: TENANT, orderId: ORDEN, step: 0 },
+        { delayMs: 120_000 },
+      ),
+    ).resolves.toBe(true);
+
+    expect(cola.llamadas).toEqual([
+      {
+        name: 'verify-hotel-booking',
+        data: { tenantId: TENANT, orderId: ORDEN, step: 0 },
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `verify-hotel-booking:${ORDEN}:0`,
+          delay: 120_000,
+        },
+      },
+    ]);
+  });
+
+  it('el barrido se programa con un Job Scheduler, un intento por corrida', async () => {
+    const cola = colaConRedis();
+
+    await expect(cola.scheduleSweeper()).resolves.toBe(true);
+
+    expect(cola.programadores).toEqual([
+      [
+        'post-sale-sweeper',
+        { every: POST_SALE_SWEEP_EVERY_MS },
+        {
+          name: 'post-sale-sweeper',
+          data: {},
+          opts: { attempts: 1, removeOnComplete: 100, removeOnFail: 100 },
+        },
+      ],
+    ]);
+    expect(POST_SALE_SWEEP_EVERY_MS).toBe(15 * 60_000);
+  });
+
+  it('sin Redis, con un intervalo inválido o con Redis caído, el barrido no queda programado y lo dice', async () => {
+    vi.stubEnv('REDIS_HOST', '');
+    const sinRedis = new ColaGrabadora();
+    sinRedis.onModuleInit();
+    await expect(sinRedis.scheduleSweeper()).resolves.toBe(false);
+
+    const cola = colaConRedis();
+    await expect(cola.scheduleSweeper(0)).resolves.toBe(false);
+    await expect(cola.scheduleSweeper(-1)).resolves.toBe(false);
+    cola.fallo = new Error('ECONNREFUSED');
+    await expect(cola.scheduleSweeper()).resolves.toBe(false);
+    expect(cola.programadores).toEqual([]);
   });
 });

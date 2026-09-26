@@ -29,7 +29,7 @@ import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
-import { runPostSaleJob } from './post-sale.worker.js';
+import { runPostSaleJob, type PostSaleJobHandlers } from './post-sale.worker.js';
 
 /**
  * EL SAGA DE CREACIÓN, por la puerta pública (`OrdersService.createOrder`).
@@ -1399,7 +1399,7 @@ describe('cancelación auditada — `UNVERIFIED` es PROHIBIDO-REINTENTAR', () =>
 
 describe('runPostSaleJob — el runner enruta, no decide', () => {
   function servicioEspiado(): {
-    orders: OrdersService;
+    orders: PostSaleJobHandlers;
     runCancelById: ReturnType<typeof vi.fn>;
     verifyCreationById: ReturnType<typeof vi.fn>;
     runCompensation: ReturnType<typeof vi.fn>;
@@ -1408,7 +1408,11 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
     const verifyCreationById = vi.fn(() => Promise.resolve());
     const runCompensation = vi.fn(() => Promise.resolve());
     return {
-      orders: { runCancelById, verifyCreationById, runCompensation } as unknown as OrdersService,
+      orders: {
+        orders: { runCancelById, verifyCreationById, runCompensation },
+        hotelBookings: { runJob: vi.fn(() => Promise.resolve()) },
+        sweeper: { run: vi.fn(() => Promise.reject(new Error('no se esperaba el barrido'))) },
+      },
       runCancelById,
       verifyCreationById,
       runCompensation,

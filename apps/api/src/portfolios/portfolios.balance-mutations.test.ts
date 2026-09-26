@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { PortfoliosService } from './portfolios.service.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -206,7 +207,12 @@ function bank(options?: { balance?: number; credit?: number; portfolio?: boolean
   } as unknown as DatabaseService;
 
   return {
-    service: new PortfoliosService(db, {} as FlightProviderRegistry, {} as OrdersService),
+    service: new PortfoliosService(
+      db,
+      {} as FlightProviderRegistry,
+      {} as OrdersService,
+      {} as HotelProviderRegistry,
+    ),
     state,
     portfolioInserts: () => portfolioInserts,
     withTenantCalls: () => withTenantCalls,
