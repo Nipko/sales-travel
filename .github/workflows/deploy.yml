@@ -42,6 +42,8 @@ jobs:
           - { name: seed-superadmin, dockerfile: tools/seed-superadmin/Dockerfile }
           - { name: sync-airports, dockerfile: tools/sync-airports/Dockerfile }
           - { name: sync-hotel-inventory, dockerfile: tools/sync-hotel-inventory/Dockerfile }
+          - name: sync-tbo-hotel-inventory
+            dockerfile: tools/sync-tbo-hotel-inventory/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -119,6 +121,9 @@ jobs:
       - name: Render .env
         run: |
           umask 077
+          # Las TBO_SYNC_* van entre comillas simples porque los tres syncs hacen `source .env`: un
+          # valor como `CO, PE` o una contraseña con `&` o `;` cortaría también el de Despegar y el
+          # de aeropuertos (salida 127 con `set -e`). `docker compose --env-file` las lee igual.
           cat > .env <<EOF
           IMAGE_TAG=${{ steps.img.outputs.tag }}
           POSTGRES_ADMIN_PASSWORD=${{ secrets.POSTGRES_ADMIN_PASSWORD }}
@@ -144,6 +149,31 @@ jobs:
           DESPEGAR_COUNTRY=${{ vars.DESPEGAR_COUNTRY }}
           DESPEGAR_CURRENCY=${{ vars.DESPEGAR_CURRENCY }}
           DESPEGAR_LOCALE=${{ vars.DESPEGAR_LOCALE }}
+          TBO_SYNC_ENABLED='${{ vars.TBO_SYNC_ENABLED }}'
+          TBO_SYNC_ENVIRONMENT='${{ vars.TBO_SYNC_ENVIRONMENT }}'
+          TBO_SYNC_BASE_URL='${{ vars.TBO_SYNC_BASE_URL }}'
+          TBO_SYNC_USERNAME='${{ secrets.TBO_SYNC_USERNAME || vars.TBO_SYNC_USERNAME }}'
+          TBO_SYNC_PASSWORD='${{ secrets.TBO_SYNC_PASSWORD }}'
+          TBO_SYNC_COUNTRIES='${{ vars.TBO_SYNC_COUNTRIES }}'
+          TBO_SYNC_STAGES='${{ vars.TBO_SYNC_STAGES }}'
+          TBO_SYNC_MAX_CALLS='${{ vars.TBO_SYNC_MAX_CALLS }}'
+          TBO_SYNC_MAX_MINUTES='${{ vars.TBO_SYNC_MAX_MINUTES }}'
+          TBO_SYNC_RPS='${{ vars.TBO_SYNC_RPS }}'
+          TBO_SYNC_SWEEP_MAX_DROP='${{ vars.TBO_SYNC_SWEEP_MAX_DROP }}'
+          TBO_SYNC_MAX_CONSECUTIVE_429='${{ vars.TBO_SYNC_MAX_CONSECUTIVE_429 }}'
+          TBO_SYNC_MAX_CONSECUTIVE_ERRORS='${{ vars.TBO_SYNC_MAX_CONSECUTIVE_ERRORS }}'
+          TBO_SYNC_DETAILED_RESPONSE='${{ vars.TBO_SYNC_DETAILED_RESPONSE }}'
+          TBO_SYNC_CODELIST_TIMEOUT_MS='${{ vars.TBO_SYNC_CODELIST_TIMEOUT_MS }}'
+          TBO_SYNC_DEMAND_REFRESH_HOURS='${{ vars.TBO_SYNC_DEMAND_REFRESH_HOURS }}'
+          TBO_SYNC_REFRESH_DAYS='${{ vars.TBO_SYNC_REFRESH_DAYS }}'
+          TBO_SYNC_EMPTY_REFRESH_DAYS='${{ vars.TBO_SYNC_EMPTY_REFRESH_DAYS }}'
+          TBO_SYNC_DEMAND_WINDOW_DAYS='${{ vars.TBO_SYNC_DEMAND_WINDOW_DAYS }}'
+          TBO_SYNC_CONTENT_SCOPE='${{ vars.TBO_SYNC_CONTENT_SCOPE }}'
+          TBO_SYNC_LANGS='${{ vars.TBO_SYNC_LANGS }}'
+          TBO_SYNC_LANGS_REGULAR='${{ vars.TBO_SYNC_LANGS_REGULAR }}'
+          TBO_SYNC_DETAILS_BATCH='${{ vars.TBO_SYNC_DETAILS_BATCH }}'
+          TBO_SYNC_CONTENT_REFRESH_DAYS='${{ vars.TBO_SYNC_CONTENT_REFRESH_DAYS }}'
+          TBO_SYNC_LOG_LEVEL='${{ vars.TBO_SYNC_LOG_LEVEL }}'
           AGENT_CARS_ACCESS_TOKEN=${{ secrets.AGENT_CARS_ACCESS_TOKEN || vars.AGENT_CARS_ACCESS_TOKEN }}
           AGENT_CARS_BASE_URL=${{ vars.AGENT_CARS_BASE_URL || 'https://api.dev.agentcars.com/v2/sites' }}
           AGENT_CARS_SUGGEST_URL=${{ vars.AGENT_CARS_SUGGEST_URL || 'https://suggest.agentcars.com/suggest' }}
