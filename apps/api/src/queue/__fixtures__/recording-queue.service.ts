@@ -2,9 +2,11 @@ import {
   POST_SALE_JOBS,
   cancelRetryJobId,
   POST_SALE_SWEEP_EVERY_MS,
+  RECONCILIATION_DAILY_CRON,
   compensationJobId,
   hcnCheckJobId,
   isValidDelayMs,
+  reconcileAccountJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
@@ -13,6 +15,7 @@ import {
   type PostSaleEnqueueOptions,
   type PostSaleJobName,
   type PostSaleQueueService,
+  type ReconcileProviderAccountJob,
   type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
@@ -42,7 +45,8 @@ export interface RecordedPostSaleJob {
     | CompensateJob
     | VerifyHotelBookingJob
     | VerifyCancellationJob
-    | HcnCheckJob;
+    | HcnCheckJob
+    | ReconcileProviderAccountJob;
   jobId?: string;
   delayMs?: number;
   /** Por qué la cola real no lo habría encolado; ausente si lo habría aceptado. */
@@ -68,8 +72,11 @@ export class RecordingQueueService {
   readonly hotelVerifications: VerifyHotelBookingJob[] = [];
   readonly cancelVerifications: VerifyCancellationJob[] = [];
   readonly hcnChecks: HcnCheckJob[] = [];
+  readonly reconciliations: ReconcileProviderAccountJob[] = [];
   /** Intervalos con que se pidió programar el barrido. */
   readonly sweeperSchedules: number[] = [];
+  /** Patrones con que se pidió programar la conciliación diaria. */
+  readonly reconciliationSchedules: string[] = [];
   readonly jobs: RecordedPostSaleJob[] = [];
 
   /** `false` simula "no hay Redis": el saga tiene que registrarlo, no darlo por hecho. */
@@ -122,6 +129,16 @@ export class RecordingQueueService {
   enqueueHcnCheck(data: HcnCheckJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
     this.hcnChecks.push(data);
     return this.record(POST_SALE_JOBS.hcnCheck, data, hcnCheckJobId(data), options);
+  }
+
+  enqueueReconcileAccount(data: ReconcileProviderAccountJob): Promise<boolean> {
+    this.reconciliations.push(data);
+    return this.record(POST_SALE_JOBS.reconcileAccount, data, reconcileAccountJobId(data), {});
+  }
+
+  scheduleReconciliation(pattern: string = RECONCILIATION_DAILY_CRON): Promise<boolean> {
+    this.reconciliationSchedules.push(pattern);
+    return Promise.resolve(this.accepted);
   }
 
   scheduleSweeper(everyMs: number = POST_SALE_SWEEP_EVERY_MS): Promise<boolean> {

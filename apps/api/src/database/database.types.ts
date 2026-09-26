@@ -664,6 +664,75 @@ export interface OrderOperationsTable {
   updated_at: Generated<Timestamp>;
 }
 
+/*
+ * 0047: vocabularios cerrados de la conciliación. Valores y no sólo tipos porque los CHECK de la
+ * migración tienen que decir lo mismo, y un test los compara con el SQL.
+ */
+export const RECONCILIATION_RUN_TRIGGERS = ['scheduled', 'sweep', 'forced'] as const;
+export type ReconciliationRunTrigger = (typeof RECONCILIATION_RUN_TRIGGERS)[number];
+
+export const RECONCILIATION_RUN_STATUSES = [
+  'running',
+  'completed',
+  'failed',
+  'invalid',
+  'abandoned',
+] as const;
+export type ReconciliationRunStatus = (typeof RECONCILIATION_RUN_STATUSES)[number];
+
+export const RECONCILIATION_ITEM_ACTIONS = [
+  'recovered',
+  'cancelled',
+  'cancellation-verifying',
+  'failed',
+  'reported',
+  'recorded',
+  'review',
+] as const;
+export type ReconciliationItemAction = (typeof RECONCILIATION_ITEM_ACTIONS)[number];
+
+/**
+ * 0047: una corrida de la conciliación de UNA cuenta de proveedor. Del dueño de la cuenta, con RLS
+ * forzada. Una sola `running` por cuenta (índice único parcial).
+ */
+export interface ProviderReconciliationRunsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  account_id: string;
+  provider_code: string;
+  trigger: ReconciliationRunTrigger;
+  requested_by: string | null;
+  status: Generated<ReconciliationRunStatus>;
+  windows: Generated<unknown>;
+  rows_read: Generated<number>;
+  rows_matched: Generated<number>;
+  discrepancies: Generated<number>;
+  summary: Generated<unknown>;
+  error_class: string | null;
+  started_at: Generated<Timestamp>;
+  finished_at: Timestamp | null;
+}
+
+/**
+ * 0047: una divergencia R1-R8. Del tenant de la orden o, en R2 y R6, del dueño de la cuenta.
+ * Append-only para `app_user`; única por `(account_id, dedupe_key)`.
+ */
+export interface ProviderReconciliationItemsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  run_id: string;
+  account_id: string;
+  provider_code: string;
+  kind: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8';
+  severity: 'info' | 'warning' | 'critical';
+  action: ReconciliationItemAction;
+  order_id: string | null;
+  provider_booking_id: string | null;
+  dedupe_key: string;
+  details: Generated<unknown>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -743,6 +812,8 @@ export interface DB {
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
   hotel_order_tracking: HotelOrderTrackingTable;
+  provider_reconciliation_runs: ProviderReconciliationRunsTable;
+  provider_reconciliation_items: ProviderReconciliationItemsTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

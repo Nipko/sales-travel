@@ -32,12 +32,25 @@ export const POST_SALE_JOBS = {
   hcnCheck: 'hcn-check',
   /** El barrido periódico que ejecuta lo que la cola perdió (RNF-10: Postgres manda). */
   sweeper: 'post-sale-sweeper',
+  /**
+   * La conciliación de UNA cuenta de proveedor contra nuestras órdenes (docs/tbo/04 §9). Lee al
+   * proveedor; nunca crea ni cancela nada en él.
+   */
+  reconcileAccount: 'reconcile-provider-account',
+  /** El disparo diario que encola una conciliación por cuenta (D-TBO-29 A). */
+  reconcileAccounts: 'reconcile-provider-accounts',
 } as const;
 
 export type PostSaleJobName = (typeof POST_SALE_JOBS)[keyof typeof POST_SALE_JOBS];
 
 /** Cada cuánto corre el barrido (docs/tbo/08 RNF-10 punto 1). */
 export const POST_SALE_SWEEP_EVERY_MS = 15 * 60_000;
+
+/**
+ * Cuándo corre la conciliación diaria: 04:30 UTC, después del sync de inventario de las 03:30
+ * (docs/tbo/04 §9.6). La hora es arbitraria.
+ */
+export const RECONCILIATION_DAILY_CRON = '30 4 * * *';
 
 export interface CancelRetryJob {
   tenantId: string;
@@ -112,6 +125,26 @@ export interface HcnCheckJob {
   attempt: number;
 }
 
+/**
+ * La conciliación de UNA cuenta. Sin datos de reservas: qué cuenta, de quién y por qué corre; lo
+ * demás se lee del proveedor y de Postgres.
+ */
+export interface ReconcileProviderAccountJob {
+  /** Dueño de la cuenta: la corrida es suya y se registra en su tenant. */
+  ownerTenantId: string;
+  accountId: string;
+  providerCode: string;
+  trigger: 'scheduled' | 'sweep' | 'forced';
+  /**
+   * Tercer segmento del `jobId`, sin `:`: el día de la corrida programada (`YYYY-MM-DD`), la hora
+   * del barrido que la recupera (`YYYY-MM-DDTHH`) o el minuto del botón (`m<minutos>`). Dos disparos
+   * del mismo turno son el mismo job mientras BullMQ lo conserve.
+   */
+  slot: string;
+  /** Quien apretó el botón de operaciones. */
+  requestedBy?: string;
+}
+
 export interface PostSaleEnqueueOptions {
   /** Milisegundos antes de que el job pueda correr (p. ej. la relectura a 120 s de un Book incierto). */
   delayMs?: number;
@@ -179,6 +212,11 @@ export function verifyCancellationJobId(data: VerifyCancellationJob): string {
  */
 export function hcnCheckJobId(data: HcnCheckJob): string {
   return postSaleJobId(POST_SALE_JOBS.hcnCheck, data.orderId, String(data.attempt));
+}
+
+/** Una conciliación por cuenta y por turno: `reconcile-provider-account:<cuenta>:<turno>`. */
+export function reconcileAccountJobId(data: ReconcileProviderAccountJob): string {
+  return postSaleJobId(POST_SALE_JOBS.reconcileAccount, data.accountId, data.slot);
 }
 
 /**
@@ -292,6 +330,38 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
    */
   async enqueueHcnCheck(data: HcnCheckJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
     return this.add(POST_SALE_JOBS.hcnCheck, data, hcnCheckJobId(data), options);
+  }
+
+  /**
+   * Encola la conciliación de una cuenta. Los `attempts` de la cola repiten la corrida ante un fallo
+   * de transporte; cada intento es una corrida registrada aparte.
+   */
+  async enqueueReconcileAccount(data: ReconcileProviderAccountJob): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.reconcileAccount, data, reconcileAccountJobId(data), {});
+  }
+
+  /**
+   * Programa el disparo diario de la conciliación con un Job Scheduler de BullMQ (D-TBO-29 A),
+   * idempotente como el del barrido. Un intento por día: si falla, el barrido de post-venta encola
+   * las cuentas que se quedaron sin corrida.
+   */
+  async scheduleReconciliation(pattern: string = RECONCILIATION_DAILY_CRON): Promise<boolean> {
+    if (!this.queue) return false;
+    try {
+      await this.queue.upsertJobScheduler(
+        POST_SALE_JOBS.reconcileAccounts,
+        { pattern, tz: 'UTC' },
+        {
+          name: POST_SALE_JOBS.reconcileAccounts,
+          data: {},
+          opts: { attempts: 1, removeOnComplete: 100, removeOnFail: 100 },
+        },
+      );
+      return true;
+    } catch (err) {
+      this.logger.error(`no se pudo programar la conciliación: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   /**

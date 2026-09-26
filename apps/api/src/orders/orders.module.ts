@@ -22,6 +22,9 @@ import { OrdersService } from './orders.service.js';
  * La cancelación de una orden de hotel (PR-5.3) libera la retención de la cartera cuando la orden
  * queda cancelada. `PortfoliosModule` importa este módulo, así que no se puede importar al revés: se
  * usa `BookingHoldLedger`, que sólo depende de la base. Su verificación la ejecuta `PostSaleModule`.
+ *
+ * La conciliación (PR-5.5, `ReconciliationModule`) cierra órdenes de hotel con lo que confirma una
+ * lectura: usa el mismo seguimiento, la misma transición de la cancelación y la misma retención.
  */
 @Module({
   imports: [
@@ -43,6 +46,13 @@ import { OrdersService } from './orders.service.js';
     HotelOrderCancellationService,
     BookingHoldLedger,
   ],
-  exports: [OrdersService, ExternalOrderIntentService, HotelOrderCancellationService],
+  exports: [
+    OrdersService,
+    ExternalOrderIntentService,
+    HotelOrderCancellationService,
+    HotelOrderTrackingStore,
+    HotelOrderCancellationStore,
+    BookingHoldLedger,
+  ],
 })
 export class OrdersModule {}

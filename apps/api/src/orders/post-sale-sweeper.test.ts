@@ -8,6 +8,10 @@ import type {
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import type {
+  ReconciliationDispatchReport,
+  ReconciliationService,
+} from '../reconciliation/reconciliation.service.js';
+import type {
   HotelCancelVerifySweepReport,
   HotelOrderCancellationService,
 } from './hotel-order-cancellation.service.js';
@@ -81,6 +85,12 @@ function informeHcn(parcial: Partial<HcnSweepReport> = {}): HcnSweepReport {
   };
 }
 
+function informeConciliacion(
+  parcial: Partial<ReconciliationDispatchReport> = {},
+): ReconciliationDispatchReport {
+  return { accounts: 0, queued: 0, ran: 0, failed: 0, ...parcial };
+}
+
 function banco(tenants: string[], redis = true) {
   const consulta = { tabla: '', columna: '', orden: '' };
   const db = {
@@ -108,6 +118,9 @@ function banco(tenants: string[], redis = true) {
     Promise.resolve(informeDeCancelaciones()),
   );
   const sweepHcn = vi.fn<HcnTrackingService['sweepTenant']>(() => Promise.resolve(informeHcn()));
+  const sweepReconciliation = vi.fn<ReconciliationService['sweepTenant']>(() =>
+    Promise.resolve(informeConciliacion()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -117,8 +130,18 @@ function banco(tenants: string[], redis = true) {
     work,
     { sweepTenant: sweepCancellations } as unknown as HotelOrderCancellationService,
     { sweepTenant: sweepHcn } as unknown as HcnTrackingService,
+    { sweepTenant: sweepReconciliation } as unknown as ReconciliationService,
   );
-  return { sweeper, sweepTenant, sweepCancellations, sweepHcn, queue, consulta, work };
+  return {
+    sweeper,
+    sweepTenant,
+    sweepCancellations,
+    sweepHcn,
+    sweepReconciliation,
+    queue,
+    consulta,
+    work,
+  };
 }
 
 afterEach(() => {
@@ -268,6 +291,7 @@ describe('PostSaleSweeper — la corrida', () => {
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
       cancellations: informeDeCancelaciones(),
       hcn: informeHcn(),
+      reconciliation: informeConciliacion(),
     });
   });
 
@@ -315,6 +339,42 @@ describe('PostSaleSweeper — la corrida', () => {
     );
     expect(report.examined).toBe(0);
     expect(report.cancellations.examined).toBe(0);
+  });
+
+  it('también recupera las conciliaciones del día que no salieron, tenant por tenant (PR-5.5)', async () => {
+    const b = banco([A, B]);
+    b.sweepReconciliation.mockImplementation((tenantId) =>
+      Promise.resolve(
+        tenantId === A
+          ? informeConciliacion({ accounts: 2, queued: 2 })
+          : informeConciliacion({ accounts: 1, ran: 1 }),
+      ),
+    );
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepReconciliation.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    expect(report.reconciliation).toEqual(informeConciliacion({ accounts: 3, queued: 2, ran: 1 }));
+    expect(report.examined).toBe(0);
+  });
+
+  it('una conciliación que falla en un tenant no frena al resto del barrido', async () => {
+    const b = banco([A, B]);
+    b.sweepReconciliation.mockImplementation((tenantId) =>
+      tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(informeConciliacion({ accounts: 1, queued: 1 })),
+    );
+    b.sweepHcn.mockResolvedValue(informeHcn({ examined: 1, received: 1 }));
+
+    const report = await b.sweeper.run();
+
+    expect(report.tenantsFailed).toBe(1);
+    expect(report.reconciliation).toEqual(informeConciliacion({ accounts: 1, queued: 1 }));
+    expect(report.hcn).toMatchObject({ examined: 2, received: 2 });
   });
 
   it('un seguimiento del HCN que falla en un tenant no frena a las verificaciones ni a los demás tenants', async () => {
@@ -376,6 +436,7 @@ describe('PostSaleSweeper — la corrida', () => {
       ...informe(),
       cancellations: informeDeCancelaciones(),
       hcn: informeHcn(),
+      reconciliation: informeConciliacion(),
     });
   });
 });

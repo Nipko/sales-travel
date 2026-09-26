@@ -37,6 +37,7 @@ import {
 import {
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
+  ProviderNotAvailableError,
   ProviderOrderAccountUnavailableError,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
@@ -227,12 +228,12 @@ describe('TboHotelsProviderFactory — contrato del registry de hoteles', () => 
     expect(factory.searchProfile.contentFromCatalog).toBe(true);
   });
 
-  it('anuncia la lectura de reservas (PR-4.2) y la cancelación (PR-5.1); las reservas por fecha, con PR-5.5', () => {
+  it('anuncia la lectura de reservas (PR-4.2), la cancelación (PR-5.1) y las reservas por fecha (PR-5.5)', () => {
     expect(factory.capabilities).toEqual({
       retrieve: true,
       cancel: true,
       retrieveByClientReference: true,
-      reconcileByDate: false,
+      reconcileByDate: true,
     });
   });
 });
@@ -879,5 +880,85 @@ describe('post-venta con la cuenta que hizo la reserva (RF-29; D-TBO-28 A)', () 
     await expect(intento).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
     await expect(intento).rejects.toMatchObject({ reason: 'ORDER_PROVIDER_ACCOUNT_UNAVAILABLE' });
     expect(b.resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe('conciliación: el adapter de una cuenta del dueño, no de un tenant (PR-5.5)', () => {
+  const CUENTA_CONSOLIDADOR = 'acc-consolidador';
+
+  function cuentaPropia(ownerTenantId: string): ResolvedProviderAccount {
+    return {
+      id: CUENTA_CONSOLIDADOR,
+      ownerTenantId,
+      providerCode: TBO_HOTELS_PROVIDER_CODE,
+      label: 'default',
+      config: { environment: 'test' },
+      credentials: { username: USUARIO, password: CONTRASENA },
+      inherited: false,
+      updatedAt: new Date('2026-09-01T00:00:00Z'),
+    };
+  }
+
+  function bovedaDeCuenta(propia: () => Promise<ResolvedProviderAccount>) {
+    const resolve = vi.fn(() => Promise.reject(new NotFoundException('no se esperaba')));
+    const resolveOwnAccount = vi.fn(propia);
+    const ownerTenantType = vi.fn((ownerTenantId: string) => Promise.resolve(TIPOS[ownerTenantId]));
+    const service = {
+      resolve,
+      resolveOwnAccount,
+      ownerTenantType,
+    } as unknown as ProviderCredentialsService;
+    return { service, resolve, resolveOwnAccount };
+  }
+
+  it('resuelve la cuenta PROPIA del dueño por id, con el código de TBO, y nunca la vigente de un tenant', async () => {
+    const b = bovedaDeCuenta(() => Promise.resolve(cuentaPropia(CONSOLIDADOR)));
+    const factory = new TboHotelsProviderFactory(b.service);
+
+    const resuelta = await factory.resolveForAccount(CONSOLIDADOR, CUENTA_CONSOLIDADOR);
+
+    expect(b.resolveOwnAccount).toHaveBeenCalledWith(
+      CONSOLIDADOR,
+      CUENTA_CONSOLIDADOR,
+      TBO_HOTELS_PROVIDER_CODE,
+    );
+    expect(b.resolve).not.toHaveBeenCalled();
+    expect((resuelta.adapter as TboHotelProviderAdapter).searchAccount.accountId).toBe(
+      CUENTA_CONSOLIDADOR,
+    );
+    expect(resuelta).toMatchObject({ credentialSource: 'own', accountOwnerTenantId: CONSOLIDADOR });
+  });
+
+  it('pasa por las mismas puertas: la cuenta propia de una agencia no se concilia con TBO', async () => {
+    const b = bovedaDeCuenta(() => Promise.resolve(cuentaPropia(AGENCIA)));
+    await expect(
+      new TboHotelsProviderFactory(b.service).resolveForAccount(AGENCIA, CUENTA_CONSOLIDADOR),
+    ).rejects.toBeInstanceOf(ProviderAccountNotAllowedError);
+  });
+
+  it('el registry la ofrece por cuenta, la anuncia como conciliable y para con un error propio si no está', async () => {
+    const ok = registryCon([
+      new TboHotelsProviderFactory(
+        bovedaDeCuenta(() => Promise.resolve(cuentaPropia(CONSOLIDADOR))).service,
+      ),
+    ]);
+    const conCuenta = await ok.forAccount(CONSOLIDADOR, {
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      accountId: CUENTA_CONSOLIDADOR,
+    });
+    expect(conCuenta.capabilities.reconcileByDate).toBe(true);
+    expect(ok.reconcilableProviders()).toContain(TBO_HOTELS_PROVIDER_CODE);
+
+    const sinCuenta = registryCon([
+      new TboHotelsProviderFactory(
+        bovedaDeCuenta(() => Promise.reject(new NotFoundException('no es del tenant'))).service,
+      ),
+    ]);
+    await expect(
+      sinCuenta.forAccount(CONSOLIDADOR, {
+        provider: TBO_HOTELS_PROVIDER_CODE,
+        accountId: CUENTA_CONSOLIDADOR,
+      }),
+    ).rejects.toBeInstanceOf(ProviderNotAvailableError);
   });
 });

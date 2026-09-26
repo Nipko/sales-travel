@@ -4,6 +4,7 @@ import {
   HOTEL_PROVIDER_FACTORIES,
   HOTEL_PROVIDER_FLAGS,
   type HotelOrderProviderRef,
+  type HotelProviderAccountRef,
   type HotelProviderCapabilities,
   type HotelProviderFactory,
   type HotelProviderRegistration,
@@ -202,6 +203,58 @@ export class HotelProviderRegistry {
         ? {}
         : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
     };
+  }
+
+  /**
+   * El proveedor con UNA cuenta propia del tenant dueño, para lo que se hace por cuenta y no por
+   * tenant: la conciliación lee las reservas de la cuenta entera (docs/tbo/04 §9.2). Nunca cae a
+   * otra cuenta. Como {@link forOrder}, no consulta el flag de `opt-in`: apagar un proveedor no
+   * puede dejar sin conciliar las reservas que ya hizo.
+   *
+   * @throws ProviderNotAvailableError si el proveedor no concilia por cuenta, o si la cuenta ya no
+   *   es una cuenta activa, completa y admitida de ese tenant.
+   */
+  async forAccount(
+    ownerTenantId: string,
+    account: HotelProviderAccountRef,
+  ): Promise<ResolvedHotelProvider> {
+    const factory = this.factories.find((f) => f.code === account.provider);
+    if (!factory || factory.resolveForAccount === undefined) {
+      throw new ProviderNotAvailableError(account.provider);
+    }
+    let resolved;
+    try {
+      resolved = await factory.resolveForAccount(ownerTenantId, account.accountId);
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ProviderAccountIncompleteError ||
+        err instanceof ProviderAccountNotAllowedError
+      ) {
+        throw new ProviderNotAvailableError(factory.code);
+      }
+      throw err;
+    }
+    return {
+      code: factory.code,
+      adapter: resolved.adapter,
+      credentialSource: resolved.credentialSource,
+      capabilities: factory.capabilities,
+      searchProfile: factory.searchProfile,
+      callPolicy:
+        this.policyOverrides[factory.code] ?? resolved.callPolicy ?? this.policyOf(factory),
+      ...(resolved.circuit === undefined ? {} : { circuit: resolved.circuit }),
+      ...(resolved.accountOwnerTenantId === undefined
+        ? {}
+        : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
+    };
+  }
+
+  /** Los proveedores que concilian por cuenta: declaran `reconcileByDate` y resuelven por cuenta. */
+  reconcilableProviders(): string[] {
+    return this.factories
+      .filter((f) => f.capabilities.reconcileByDate && f.resolveForAccount !== undefined)
+      .map((f) => f.code);
   }
 
   /**

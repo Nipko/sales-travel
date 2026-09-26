@@ -175,6 +175,17 @@ export interface HotelProviderFactory
    */
   resolveForOrder?(tenantId: string, orderId: string): Promise<TenantAdapter<HotelProviderAdapter>>;
   /**
+   * El adapter con UNA cuenta propia del tenant dueño, por id: la conciliación lee las reservas de
+   * la cuenta entera, no las de un tenant (docs/tbo/04 §9.2). Pasa por las mismas puertas que la
+   * venta. Opcional: sólo lo implementa quien declara `reconcileByDate`.
+   *
+   * Lanza `NotFoundException` si no es una cuenta activa de ese tenant.
+   */
+  resolveForAccount?(
+    ownerTenantId: string,
+    accountId: string,
+  ): Promise<TenantAdapter<HotelProviderAdapter>>;
+  /**
    * Como el de `TenantProviderFactory`, más lo que sabe quien llama: con una cuenta heredada el
    * mensaje de una credencial rechazada va dirigido al consolidador, no a la agencia. Un factory
    * que no lo necesita lo ignora.
@@ -199,6 +210,14 @@ export interface HotelOrderProviderRef {
   readonly provider: string;
   /** `orders.provider_account_id`; `null` en órdenes que no la guardaron. */
   readonly providerAccountId: string | null;
+}
+
+/** Una cuenta de proveedor, para lo que se hace por cuenta y no por tenant (la conciliación). */
+export interface HotelProviderAccountRef {
+  /** `provider_accounts.provider_code`. */
+  readonly provider: string;
+  /** `provider_accounts.id`, propia del tenant dueño. */
+  readonly accountId: string;
 }
 
 /** Un proveedor conocido por la plataforma, sin resolver credenciales de nadie. */

@@ -8,8 +8,12 @@ import type {
   HotelBookRequest,
   HotelBookResult,
   HotelBookingByClientReferencePort,
+  HotelBookingDateRange,
   HotelBookingRoomGuests,
+  HotelBookingSummary,
   HotelBookingView,
+  HotelBookingsByDatePort,
+  HotelBookingsByDateResult,
   HotelCancelRequest,
   HotelCancelResult,
   HotelPrebookRequest,
@@ -19,6 +23,7 @@ import type {
 } from '@sales-travel/domain';
 import type { HotelRoomOccupancy } from '@sales-travel/canonical';
 import {
+  TBO_BOOKINGS_BY_DATE_MAX_DAYS,
   TBO_OFFER_TTL_MS,
   TBO_OPERATIONS,
   TboApiError,
@@ -28,6 +33,7 @@ import {
   classifyTboBookOutcome,
   compareTboRates,
   generateTboBookingReference,
+  type TboBookingByDate,
   type TboEnvironment,
   type TboHotelsAdapter,
   type TboRateSnapshot,
@@ -77,6 +83,7 @@ export type TboHotelsAcl = Pick<
   | 'book'
   | 'bookReport'
   | 'cancelBooking'
+  | 'listBookingsByDateReport'
 >;
 
 /**
@@ -118,6 +125,31 @@ function contextOf(report: Omit<TboSearchReport, 'offers'>): HotelSearchContextD
 }
 
 const PREBOOK_PATH = TBO_OPERATIONS.prebook.path;
+
+/**
+ * Una fila de `BookingDetailsbasedondate` en el vocabulario neutral. `ClientReferenceNumber` pasa
+ * como nuestra referencia de reserva: es el `ClientReferenceId` del Book, que para nosotros es la
+ * misma `BookingReferenceId` (INFERIDO, PV-31; Q-58). La conciliación no concluye una ausencia con
+ * esa equivalencia sin haberla visto antes en la misma cuenta.
+ */
+function bookingByDateSummary(b: TboBookingByDate): HotelBookingSummary {
+  return {
+    providerBookingId: b.confirmationNumber,
+    bookingDate: b.bookingDate,
+    ...(b.clientReferenceNumber === undefined ? {} : { bookingReference: b.clientReferenceNumber }),
+    ...(b.status === undefined ? {} : { status: b.status }),
+    ...(b.providerStatus === undefined ? {} : { providerStatus: b.providerStatus }),
+    ...(b.refundAwaited === true ? { refundAwaited: true } : {}),
+    ...(b.checkIn === undefined ? {} : { checkinDate: b.checkIn }),
+    ...(b.checkOut === undefined ? {} : { checkoutDate: b.checkOut }),
+    ...(b.hotelCode === undefined ? {} : { hotelId: b.hotelCode }),
+    ...(b.bookingPrice === undefined ? {} : { total: { ...b.bookingPrice } }),
+    ...(b.agentMarkup === undefined ? {} : { agencyCommission: { ...b.agentMarkup } }),
+    ...(b.currency === undefined ? {} : { currency: b.currency }),
+    ...(b.agencyName === undefined ? {} : { agencyName: b.agencyName }),
+    ...(b.bookingId === undefined ? {} : { providerRecordId: b.bookingId }),
+  };
+}
 
 /**
  * La tarifa de la búsqueda como lectura comparable (C1). El contexto guarda sólo lo que C1 mira
@@ -164,13 +196,15 @@ function baselineRate(baseline: HotelRateBaseline, current: HotelRoompack): TboR
  * fechas, edades ni nacionalidad, así que eso queda en el servidor y no lo pone el navegador.
  * Delega la lectura de una reserva, por localizador o por nuestra referencia (PR-4.2), el PreBook
  * con la comparación contra lo que se mostró (PR-4.5), el Book de la saga con órdenes (PR-4.6), el
- * contenido de un hotel que el catálogo todavía no tiene (PR-3.6) y la cancelación (PR-5.1).
+ * contenido de un hotel que el catálogo todavía no tiene (PR-3.6), la cancelación (PR-5.1) y las
+ * reservas de la cuenta por fecha de creación, que lee la conciliación diaria (PR-5.5).
  */
 export class TboHotelProviderAdapter
   implements
     HotelProviderAdapter,
     HotelRatesDetailPort,
     HotelBookingByClientReferencePort,
+    HotelBookingsByDatePort,
     HotelSearchContextPort,
     HotelRatesContextPort,
     HotelPrebookContextPort,
@@ -482,5 +516,33 @@ export class TboHotelProviderAdapter
    */
   cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult> {
     return this.#acl.cancelBooking(request, ctx);
+  }
+
+  /** "Maximum of 60 days (about 2 months)" (p. 62): la conciliación parte los rangos más largos. */
+  get maxBookingDateWindowDays(): number {
+    return TBO_BOOKINGS_BY_DATE_MAX_DAYS;
+  }
+
+  /**
+   * `BookingDetailsbasedondate` de UNA ventana (PR-5.5; docs/tbo/04 §9; 08 RF-28). El ACL la
+   * devuelve entera o lanza: una ventana de más de 60 días no sale, y una respuesta que no es un
+   * `200` legible, o con una fila fuera de la ventana, nunca vuelve como "no hay reservas". Lo que
+   * lance pasa tal cual: la conciliación descarta la corrida entera.
+   *
+   * La cuenta es la de este envoltorio y el listado es de toda la cuenta: quien lo pide lo reparte
+   * entre las órdenes de cada agencia y nunca se lo muestra entero a una (RNF-06 punto 5).
+   */
+  async listBookingsByDate(
+    range: HotelBookingDateRange,
+    ctx: SearchContext,
+  ): Promise<HotelBookingsByDateResult> {
+    const report = await this.#acl.listBookingsByDateReport(
+      { fromDate: range.from, toDate: range.to },
+      ctx,
+    );
+    return {
+      range: { from: report.window.fromDate, to: report.window.toDate },
+      bookings: report.bookings.map(bookingByDateSummary),
+    };
   }
 }

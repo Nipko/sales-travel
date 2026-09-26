@@ -108,16 +108,15 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
    * `ConfirmationNumber`— (PR-4.2) y la cancelación (PR-5.1). Qué ruta de la post-venta la usa lo
    * decide PR-5.3.
    *
-   * `reconcileByDate` sigue apagada aunque el ACL ya lea `BookingDetailsbasedondate` (PR-5.1): lo
-   * hace con su propio reporte de una ventana, no con `HotelBookingsByDatePort`, y el envoltorio no
-   * expone ese puerto. Anunciarla haría que la conciliación confiara en un método que el adapter
-   * resuelto no tiene; se enciende cuando PR-5.5 lo cablee.
+   * `reconcileByDate`: el envoltorio expone `HotelBookingsByDatePort` sobre el reporte de una
+   * ventana del ACL (`BookingDetailsbasedondate`), y este factory resuelve por cuenta
+   * (`resolveForAccount`) para la conciliación diaria (PR-5.5).
    */
   readonly capabilities: HotelProviderCapabilities = {
     retrieve: true,
     cancel: true,
     retrieveByClientReference: true,
-    reconcileByDate: false,
+    reconcileByDate: true,
   };
 
   /**
@@ -195,6 +194,20 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
       throw new NotFoundException('la cuenta de la orden no es de TBO');
     }
     return this.adapterFor(resolved);
+  }
+
+  /**
+   * La conciliación lee las reservas de la cuenta entera, así que resuelve por cuenta y no por
+   * tenant (docs/tbo/04 §9.2): una cuenta PROPIA y activa del dueño, con las mismas tres puertas que
+   * la venta. Sin `try/catch` por lo mismo que {@link resolveForTenant}.
+   */
+  async resolveForAccount(
+    ownerTenantId: string,
+    accountId: string,
+  ): Promise<TenantAdapter<HotelProviderAdapter>> {
+    return this.adapterFor(
+      await this.creds.resolveOwnAccount(ownerTenantId, accountId, PROVIDER_CODE),
+    );
   }
 
   private async adapterFor(

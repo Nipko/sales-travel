@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HcnTrackingService } from '../hotels/hcn-tracking.service.js';
 import type { HotelBookingVerificationService } from '../hotels/hotel-booking-verification.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
+import type { ReconciliationService } from '../reconciliation/reconciliation.service.js';
 import type { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import type { OrdersService } from './orders.service.js';
 import type { PostSaleSweeper } from './post-sale-sweeper.js';
@@ -11,7 +12,8 @@ import { PostSaleWorker, runPostSaleJob, type PostSaleJobHandlers } from './post
 /**
  * El worker de post-venta: el apagado ordenado (docs/tbo/09 PR-4.10) —deja de tomar jobs al
  * llegar la señal y termina los activos antes de `app.close()`, que cierra el pool primero— y el
- * enrutado de los jobs de la verificación de hoteles y del barrido (PR-4.7).
+ * enrutado de los jobs de la verificación de hoteles y del barrido (PR-4.7), y los de la
+ * conciliación (PR-5.5).
  */
 
 type Procesador = (job: {
@@ -46,6 +48,14 @@ const runCancelJob = vi.fn<HotelOrderCancellationService['runJob']>(() => Promis
 const hotelCancellations = { runJob: runCancelJob } as unknown as HotelOrderCancellationService;
 const runHcnJob = vi.fn<HcnTrackingService['runJob']>(() => Promise.resolve());
 const hcn = { runJob: runHcnJob } as unknown as HcnTrackingService;
+const runReconcileJob = vi.fn<ReconciliationService['runJob']>(() => Promise.resolve());
+const runDaily = vi.fn<ReconciliationService['runDaily']>(() =>
+  Promise.resolve({ accounts: 0, queued: 0, ran: 0, failed: 0 }),
+);
+const reconciliation = {
+  runJob: runReconcileJob,
+  runDaily,
+} as unknown as ReconciliationService;
 const run = vi.fn<PostSaleSweeper['run']>();
 const sweeper = { run } as unknown as PostSaleSweeper;
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -74,6 +84,7 @@ describe('PostSaleWorker en el apagado', () => {
       registry,
       hotelCancellations,
       hcn,
+      reconciliation,
     );
 
     worker.onModuleInit();
@@ -102,6 +113,7 @@ describe('PostSaleWorker en el apagado', () => {
       registry,
       hotelCancellations,
       hcn,
+      reconciliation,
     );
 
     worker.onModuleInit();
@@ -114,13 +126,15 @@ describe('PostSaleWorker en el apagado', () => {
 
 describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () => {
   function manejadores(): PostSaleJobHandlers {
-    return { orders, hotelBookings, hotelCancellations, hcn, sweeper };
+    return { orders, hotelBookings, hotelCancellations, hcn, reconciliation, sweeper };
   }
 
   beforeEach(() => {
     runJob.mockClear();
     runCancelJob.mockClear();
     runHcnJob.mockClear();
+    runReconcileJob.mockClear();
+    runDaily.mockClear();
     run.mockReset();
   });
 
@@ -171,6 +185,33 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
     expect(runCancelJob).not.toHaveBeenCalled();
   });
 
+  it('`reconcile-provider-account` va a la conciliación con el payload tal cual y el último intento avisado (PR-5.5)', async () => {
+    const data = {
+      ownerTenantId: TENANT,
+      accountId: '22222222-2222-4222-8222-222222222222',
+      providerCode: 'tbo-hotels',
+      trigger: 'scheduled' as const,
+      slot: '2026-09-26',
+    };
+
+    await runPostSaleJob(manejadores(), 'reconcile-provider-account', data, { made: 0, max: 5 });
+    await runPostSaleJob(manejadores(), 'reconcile-provider-account', data, { made: 4, max: 5 });
+
+    expect(runReconcileJob.mock.calls).toEqual([
+      [data, { final: false }],
+      [data, { final: true }],
+    ]);
+    expect(runDaily).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('`reconcile-provider-accounts` (el planificador diario) reparte una conciliación por cuenta', async () => {
+    await runPostSaleJob(manejadores(), 'reconcile-provider-accounts', {});
+
+    expect(runDaily).toHaveBeenCalledOnce();
+    expect(runReconcileJob).not.toHaveBeenCalled();
+  });
+
   it('`post-sale-sweeper` corre el barrido', async () => {
     run.mockResolvedValue({} as Awaited<ReturnType<PostSaleSweeper['run']>>);
 
@@ -188,6 +229,7 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
       new InflightWorkRegistry(),
       hotelCancellations,
       hcn,
+      reconciliation,
     );
     worker.onModuleInit();
     const procesar = bull.procesador;

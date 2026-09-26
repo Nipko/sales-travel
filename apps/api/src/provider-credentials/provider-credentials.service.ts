@@ -182,6 +182,77 @@ export class ProviderCredentialsService {
   }
 
   /**
+   * Una cuenta PROPIA y activa del tenant, por id, con el secreto descifrado. SOLO uso interno: es
+   * la cuenta con la que la conciliación lee las reservas de la cuenta entera (docs/tbo/04 §9.2).
+   *
+   * Se lee con el tenant fijado y la RLS de `provider_accounts` hace el resto: la cuenta de otro
+   * tenant, incluida la de un ancestro, no existe para esta consulta.
+   *
+   * @throws NotFoundException si no es una cuenta activa del tenant para ese proveedor.
+   */
+  async resolveOwnAccount(
+    ownerTenantId: string,
+    accountId: string,
+    providerCode: string,
+  ): Promise<ResolvedProviderAccount> {
+    const row = await this.db.withTenant(ownerTenantId, (trx) =>
+      trx
+        .selectFrom('provider_accounts')
+        .select([
+          'id',
+          'tenant_id',
+          'provider_code',
+          'label',
+          'credentials_enc',
+          'config',
+          'updated_at',
+        ])
+        .where('id', '=', accountId)
+        .where('tenant_id', '=', ownerTenantId)
+        .where('provider_code', '=', providerCode)
+        .where('status', '=', 'active')
+        .executeTakeFirst(),
+    );
+    if (row === undefined) {
+      // Sin ids en el mensaje: la excepción puede llegar a un log.
+      throw new NotFoundException('la cuenta de proveedor no es una cuenta activa del tenant');
+    }
+    return {
+      id: row.id,
+      ownerTenantId: row.tenant_id,
+      providerCode: row.provider_code,
+      label: row.label,
+      config: (row.config ?? {}) as Record<string, unknown>,
+      credentials: JSON.parse(decryptCredentials(row.credentials_enc)) as Record<string, unknown>,
+      inherited: false,
+      updatedAt: row.updated_at as unknown as Date,
+    };
+  }
+
+  /**
+   * Las cuentas propias y activas del tenant para esos proveedores, sin secreto: qué cuentas tiene
+   * que conciliar (una corrida por cuenta, docs/tbo/04 §9.2). Con el tenant fijado, como todo lo que
+   * lee `provider_accounts`.
+   */
+  async listActiveOwnAccounts(
+    tenantId: string,
+    providerCodes: readonly string[],
+  ): Promise<{ id: string; providerCode: string }[]> {
+    if (providerCodes.length === 0) return [];
+    const rows = await this.db.withTenant(tenantId, (trx) =>
+      trx
+        .selectFrom('provider_accounts')
+        .select(['id', 'provider_code'])
+        .where('tenant_id', '=', tenantId)
+        .where('status', '=', 'active')
+        .where('provider_code', 'in', [...providerCodes])
+        .orderBy('id')
+        .execute(),
+    );
+    return rows.map((r) => ({ id: r.id, providerCode: r.provider_code }));
+  }
+
+  /**
    * Crea o actualiza (upsert) una cuenta de proveedor del tenant. Cifra el secreto.
    *
    * @throws ProviderAccountInUseError si el cambio saca de servicio una cuenta con reservas activas

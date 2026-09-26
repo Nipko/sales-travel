@@ -4,10 +4,12 @@ import {
   POST_SALE_JOBS,
   POST_SALE_SWEEP_EVERY_MS,
   PostSaleQueueService,
+  RECONCILIATION_DAILY_CRON,
   cancelRetryJobId,
   compensationJobId,
   hcnCheckJobId,
   postSaleJobId,
+  reconcileAccountJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CompensateJob,
@@ -359,5 +361,75 @@ describe('verificación de reservas de hotel y barrido (PR-4.7)', () => {
     cola.fallo = new Error('ECONNREFUSED');
     await expect(cola.scheduleSweeper()).resolves.toBe(false);
     expect(cola.programadores).toEqual([]);
+  });
+});
+
+describe('conciliación por cuenta (PR-5.5)', () => {
+  const CUENTA = '44444444-4444-4444-8444-444444444444';
+  const job = {
+    ownerTenantId: TENANT,
+    accountId: CUENTA,
+    providerCode: 'tbo-hotels',
+    trigger: 'scheduled' as const,
+    slot: '2026-09-26',
+  };
+
+  it('una corrida por cuenta y por turno, en tres segmentos: el día, la hora del barrido o el minuto del botón', () => {
+    for (const slot of ['2026-09-26', '2026-09-26T07', 'm29824380']) {
+      const id = reconcileAccountJobId({ ...job, slot });
+      expect(id).toBe(`reconcile-provider-account:${CUENTA}:${slot}`);
+      expect(bullMqJobIdRejection(id)).toBeUndefined();
+    }
+  });
+
+  it('llega a BullMQ con su jobId y los reintentos de siempre, sin retardo', async () => {
+    const cola = colaConRedis();
+
+    await expect(cola.enqueueReconcileAccount(job)).resolves.toBe(true);
+
+    expect(cola.llamadas).toEqual([
+      {
+        name: 'reconcile-provider-account',
+        data: job,
+        opts: {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 10_000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `reconcile-provider-account:${CUENTA}:2026-09-26`,
+        },
+      },
+    ]);
+  });
+
+  it('el disparo diario es un Job Scheduler a las 04:30 UTC, un intento por día', async () => {
+    const cola = colaConRedis();
+
+    await expect(cola.scheduleReconciliation()).resolves.toBe(true);
+
+    expect(cola.programadores).toEqual([
+      [
+        'reconcile-provider-accounts',
+        { pattern: RECONCILIATION_DAILY_CRON, tz: 'UTC' },
+        {
+          name: 'reconcile-provider-accounts',
+          data: {},
+          opts: { attempts: 1, removeOnComplete: 100, removeOnFail: 100 },
+        },
+      ],
+    ]);
+    expect(RECONCILIATION_DAILY_CRON).toBe('30 4 * * *');
+  });
+
+  it('sin Redis o con Redis caído no queda programado y lo dice', async () => {
+    vi.stubEnv('REDIS_HOST', '');
+    const sinRedis = new ColaGrabadora();
+    sinRedis.onModuleInit();
+    await expect(sinRedis.scheduleReconciliation()).resolves.toBe(false);
+    await expect(sinRedis.enqueueReconcileAccount(job)).resolves.toBe(false);
+
+    const cola = colaConRedis();
+    cola.fallo = new Error('ECONNREFUSED');
+    await expect(cola.scheduleReconciliation()).resolves.toBe(false);
   });
 });

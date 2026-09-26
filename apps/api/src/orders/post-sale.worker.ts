@@ -8,12 +8,14 @@ import {
   type CancelRetryJob,
   type CompensateJob,
   type HcnCheckJob,
+  type ReconcileProviderAccountJob,
   type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
 } from '../queue/post-sale-queue.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { redisConnection } from '../queue/redis-connection.js';
+import { ReconciliationService } from '../reconciliation/reconciliation.service.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { OrdersService } from './orders.service.js';
 import { PostSaleSweeper } from './post-sale-sweeper.js';
@@ -28,6 +30,7 @@ export type PostSaleJob =
   | VerifyHotelBookingJob
   | VerifyCancellationJob
   | HcnCheckJob
+  | ReconcileProviderAccountJob
   | PostSaleSweepJob;
 
 /** A quién le toca cada job. Cada uno decide con sus funciones puras; el worker sólo enruta. */
@@ -36,6 +39,7 @@ export interface PostSaleJobHandlers {
   readonly hotelBookings: Pick<HotelBookingVerificationService, 'runJob'>;
   readonly hotelCancellations: Pick<HotelOrderCancellationService, 'runJob'>;
   readonly hcn: Pick<HcnTrackingService, 'runJob'>;
+  readonly reconciliation: Pick<ReconciliationService, 'runJob' | 'runDaily'>;
   readonly sweeper: Pick<PostSaleSweeper, 'run'>;
 }
 
@@ -92,6 +96,13 @@ export async function runPostSaleJob(
       // "Todavía sin HCN" no lanza; sólo un fallo de transporte, que la cola repite.
       await handlers.hcn.runJob(data, { final: attempt.made + 1 >= attempt.max });
       return;
+    case POST_SALE_JOBS.reconcileAccount:
+      // El payload viene de Redis y lo valida el servicio; sólo un fallo transitorio lanza.
+      await handlers.reconciliation.runJob(data, { final: attempt.made + 1 >= attempt.max });
+      return;
+    case POST_SALE_JOBS.reconcileAccounts:
+      await handlers.reconciliation.runDaily();
+      return;
     case POST_SALE_JOBS.sweeper:
       await handlers.sweeper.run();
       return;
@@ -107,9 +118,10 @@ export async function runPostSaleJob(
  * Aquí NO vive ninguna decisión. Este fichero enruta por nombre de job y llama a `OrdersService`
  * (que consulta el saga puro de `order-create.saga.ts`), a la verificación de reservas de hotel
  * (`hotel-booking-verification.ts`), a la de sus cancelaciones (`hotel-cancellation-verification.ts`),
- * al seguimiento del HCN (`hcn-plan.ts`) o al barrido. Es la condición que hace barata la migración a
- * Temporal: cuando llegue, se reescribe este fichero y nada más — la lógica que decide si hay que
- * compensar una reserva, o si una reserva sin respuesta existe, no se toca.
+ * al seguimiento del HCN (`hcn-plan.ts`), a la conciliación (`reconciliation.plan.ts`) o al barrido.
+ * Es la condición que hace barata la migración a Temporal: cuando llegue, se reescribe este fichero
+ * y nada más — la lógica que decide si hay que compensar una reserva, o si una reserva sin respuesta
+ * existe, no se toca.
  *
  * BullMQ maneja backoff y reintentos (5 intentos exponenciales). Un rechazo de NEGOCIO no lanza,
  * así que termina el job sin reintentar; sólo los fallos transitorios se propagan. Sin Redis, el
@@ -129,8 +141,9 @@ export class PostSaleWorker implements OnModuleInit, OnModuleDestroy {
     private readonly work: InflightWorkRegistry,
     hotelCancellations: HotelOrderCancellationService,
     hcn: HcnTrackingService,
+    reconciliation: ReconciliationService,
   ) {
-    this.handlers = { orders, hotelBookings, hotelCancellations, hcn, sweeper };
+    this.handlers = { orders, hotelBookings, hotelCancellations, hcn, reconciliation, sweeper };
   }
 
   onModuleInit(): void {

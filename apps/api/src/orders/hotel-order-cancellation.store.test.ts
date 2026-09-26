@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import type { HotelOrderSnapshot } from '../hotels/hotel-order-state.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 
 /**
@@ -371,5 +372,88 @@ describe('HotelOrderCancellationStore — la verificación', () => {
     await expect(b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify' })).rejects.toThrow(
       'base caída',
     );
+  });
+});
+
+describe('HotelOrderCancellationStore — la conciliación que confirmó una cancelación (PR-5.5)', () => {
+  const ESPERADO: Pick<HotelOrderSnapshot, 'subStatus' | 'providerStatus' | 'hcn' | 'hcnState'> = {
+    subStatus: 'cancel-unverified',
+    providerStatus: null,
+    hcn: null,
+    hcnState: null,
+  };
+
+  function conFilas(tracking: boolean) {
+    return banco((q) => {
+      if (q.sql.startsWith('update "orders"')) return { rows: [{ id: ORDEN }] };
+      if (q.sql.startsWith('insert into "hotel_order_tracking"')) {
+        return { rows: tracking ? [{ order_id: ORDEN }] : [] };
+      }
+      if (q.sql.startsWith('select')) return { rows: [] };
+      return {};
+    });
+  }
+
+  it('transitionByReading a cancelled: CAS de la orden y de la foto, y el calendario queda cerrado', async () => {
+    const b = conFilas(true);
+
+    await expect(
+      b.store.transitionByReading(TENANT, ORDEN, {
+        from: 'pending',
+        to: 'cancelled',
+        expected: ESPERADO,
+        write: { at: T, source: 'reconciliation', subStatus: null, stopHcn: true },
+      }),
+    ).resolves.toBe(true);
+
+    const [orden, seguimiento] = b.negocio();
+    expect(orden?.sql).toBe(
+      'update "orders" set "status" = $1 where "id" = $2 and "tenant_id" = $3 and "status" = $4 returning "id"',
+    );
+    expect(orden?.parameters).toEqual(['cancelled', ORDEN, TENANT, 'pending']);
+    const [, update] = (seguimiento?.sql ?? '').split('on conflict');
+    const cierre = /"cancel_verify_next_at" = \$(\d+)/.exec(update ?? '');
+    expect(cierre).not.toBeNull();
+    expect(seguimiento?.parameters[Number(cierre?.[1]) - 1]).toBeNull();
+    expect(update).toContain('"hotel_order_tracking"."sub_status" is not distinct from $');
+    expect(update).toContain('"hotel_order_tracking"."hcn_state" is not distinct from $');
+  });
+
+  it('transitionByReading a "Cancelación en curso" abre el calendario y no lo cierra', async () => {
+    const b = conFilas(true);
+
+    await b.store.transitionByReading(TENANT, ORDEN, {
+      from: 'confirmed',
+      to: 'pending',
+      expected: { ...ESPERADO, subStatus: null },
+      write: {
+        at: T,
+        source: 'reconciliation',
+        subStatus: null,
+        openCalendar: { anchorAt: T, nextAt: T + 120_000 },
+      },
+    });
+
+    const seguimiento = b.negocio()[1];
+    const [, update] = (seguimiento?.sql ?? '').split('on conflict');
+    // Una sola vez: la del calendario que se abre, no la del cierre.
+    expect(update?.match(/"cancel_verify_next_at" = \$/g)).toHaveLength(1);
+    expect(seguimiento?.parameters).toContainEqual(new Date(T + 120_000));
+    expect(b.negocio().some((q) => q.sql.includes('order_operations'))).toBe(false);
+  });
+
+  it('transitionByReading que pierde el CAS de la foto deshace la orden y devuelve false', async () => {
+    const b = conFilas(false);
+
+    await expect(
+      b.store.transitionByReading(TENANT, ORDEN, {
+        from: 'pending',
+        to: 'cancelled',
+        expected: ESPERADO,
+        write: { at: T, source: 'reconciliation' },
+      }),
+    ).resolves.toBe(false);
+    // La transacción se deshace antes de tocar la operación sin verificar.
+    expect(b.negocio().some((q) => q.sql.includes('order_operations'))).toBe(false);
   });
 });

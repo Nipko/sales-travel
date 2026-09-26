@@ -9,6 +9,7 @@ import {
   cancelRetryJobId,
   compensationJobId,
   hcnCheckJobId,
+  reconcileAccountJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
   type CancelRetryJob,
@@ -98,6 +99,15 @@ describe('jobId de post-venta — la regla de BullMQ, sin Redis', () => {
         verifyCancellationJobId({ tenantId: TENANT, orderId, step, anchorAt: Date.now() }),
       ),
       ...[0, 3].map((attempt) => hcnCheckJobId({ tenantId: TENANT, orderId, attempt })),
+      ...['2026-09-26', '2026-09-26T07', 'm29824380'].map((slot) =>
+        reconcileAccountJobId({
+          ownerTenantId: TENANT,
+          accountId: orderId,
+          providerCode: 'tbo-hotels',
+          trigger: 'forced',
+          slot,
+        }),
+      ),
     ];
 
     expect(ids.map(rechazoDeBullMq)).toEqual(ids.map(() => undefined));
@@ -180,9 +190,23 @@ d('PostSaleQueueService contra BullMQ real', () => {
     await expect(cola.scheduleSweeper()).resolves.toBe(true);
 
     const programadores = await inspector.getJobSchedulers();
-    expect(programadores.map((p) => [p.key, Number(p.every)])).toEqual([
-      ['post-sale-sweeper', POST_SALE_SWEEP_EVERY_MS],
-    ]);
+    expect(
+      programadores
+        .filter((p) => p.key === 'post-sale-sweeper')
+        .map((p) => [p.key, Number(p.every)]),
+    ).toEqual([['post-sale-sweeper', POST_SALE_SWEEP_EVERY_MS]]);
+  });
+
+  it('la conciliación diaria queda como UN Job Scheduler con su cron en UTC (PR-5.5)', async () => {
+    await expect(cola.scheduleReconciliation()).resolves.toBe(true);
+    await expect(cola.scheduleReconciliation()).resolves.toBe(true);
+
+    const programadores = await inspector.getJobSchedulers();
+    expect(
+      programadores
+        .filter((p) => p.key === 'reconcile-provider-accounts')
+        .map((p) => [p.key, p.pattern, p.tz]),
+    ).toEqual([['reconcile-provider-accounts', '30 4 * * *', 'UTC']]);
   });
 
   it('BullMQ sigue rechazando el id de dos segmentos (y por eso se cambió)', async () => {

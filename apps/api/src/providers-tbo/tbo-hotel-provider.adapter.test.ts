@@ -25,6 +25,7 @@ import {
   tboBookingReferenceEnvironment,
   TBO_CONTENT_LANGUAGES,
   type TboBookReport,
+  type TboBookingsByDateReport,
   type TboFailureKind,
   type TboHotelDetailsResult,
   type TboHotelRatesReport,
@@ -223,6 +224,49 @@ type AclDoble = TboHotelsAcl & {
   book: ReturnType<typeof vi.fn>;
   bookReport: ReturnType<typeof vi.fn>;
   cancelBooking: ReturnType<typeof vi.fn>;
+  listBookingsByDateReport: ReturnType<typeof vi.fn>;
+};
+
+/**
+ * Lo que devuelve el ACL de una ventana de `BookingDetailsbasedondate`: una fila completa y una con
+ * lo mínimo. Sintético, sin `TripName` (el ACL no lo lee).
+ */
+const REPORTE_POR_FECHA: TboBookingsByDateReport = {
+  window: { fromDate: '2026-09-24', toDate: '2026-09-26' },
+  bookings: [
+    {
+      confirmationNumber: 'GOF05R',
+      bookingDate: '2026-09-25',
+      clientReferenceNumber: 'STT0123456789ABCDEFGH',
+      bookingId: '264056',
+      status: 'CANCELLED',
+      providerStatus: 'CancelledAndRefundAwaited',
+      refundAwaited: true,
+      currency: 'USD',
+      bookingPrice: { amountMinor: 58389, currency: 'USD' },
+      agentMarkup: { amountMinor: 0, currency: 'USD' },
+      agencyName: 'Agencia de prueba',
+      hotelCode: '1022623',
+      checkIn: '2026-12-02',
+      checkOut: '2026-12-10',
+    },
+    { confirmationNumber: 'FL1IMA', bookingDate: '2026-09-26' },
+  ],
+  diagnostics: {
+    unknownKeys: [],
+    rowsReceived: 2,
+    statusMissing: 1,
+    statusUnknown: 0,
+    clientReferenceMissing: 1,
+    amountsUnreadable: 0,
+    amountsWithPrecisionLoss: 0,
+    stayDatesUnreadable: 1,
+    duplicateConfirmationNumbers: 0,
+  },
+  requestId: 'req-fecha',
+  accountRef: '0123456789abcdef',
+  attempts: 1,
+  durationMs: 12,
 };
 
 /** Lo que el ACL devuelve de una cancelación aceptada que TBO dejó en curso. */
@@ -287,6 +331,7 @@ function acl(): AclDoble {
     book: vi.fn(() => Promise.resolve(RESULTADO_BOOK)),
     bookReport: vi.fn(() => Promise.resolve(reporteBook())),
     cancelBooking: vi.fn(() => Promise.resolve(RESULTADO_CANCEL)),
+    listBookingsByDateReport: vi.fn(() => Promise.resolve(REPORTE_POR_FECHA)),
   };
 }
 
@@ -342,6 +387,59 @@ describe('TboHotelProviderAdapter', () => {
     await expect(adapter.cancelBooking({ providerBookingId: 'FL1IMA' }, CTX)).rejects.toBe(
       incierto,
     );
+  });
+
+  it('PR-5.5: las reservas por fecha pasan del reporte de una ventana del ACL al puerto neutral', async () => {
+    const a = acl();
+    const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
+
+    const leidas = await adapter.listBookingsByDate({ from: '2026-09-24', to: '2026-09-26' }, CTX);
+
+    expect(a.listBookingsByDateReport).toHaveBeenCalledWith(
+      { fromDate: '2026-09-24', toDate: '2026-09-26' },
+      CTX,
+    );
+    expect(leidas).toEqual({
+      range: { from: '2026-09-24', to: '2026-09-26' },
+      bookings: [
+        {
+          providerBookingId: 'GOF05R',
+          bookingDate: '2026-09-25',
+          bookingReference: 'STT0123456789ABCDEFGH',
+          status: 'CANCELLED',
+          providerStatus: 'CancelledAndRefundAwaited',
+          refundAwaited: true,
+          checkinDate: '2026-12-02',
+          checkoutDate: '2026-12-10',
+          hotelId: '1022623',
+          total: { amountMinor: 58389, currency: 'USD' },
+          agencyCommission: { amountMinor: 0, currency: 'USD' },
+          currency: 'USD',
+          agencyName: 'Agencia de prueba',
+          providerRecordId: '264056',
+        },
+        // Sin estado ni referencia: la fila pasa igual, y la conciliación sabe que no la puede
+        // descartar como ajena.
+        { providerBookingId: 'FL1IMA', bookingDate: '2026-09-26' },
+      ],
+    });
+    expect(adapter.maxBookingDateWindowDays).toBe(60);
+    expect(supportsHotelBookingsByDate(adapter)).toBe(true);
+  });
+
+  it('PR-5.5: una ventana que el ACL rechaza sale sin reenvolver (la conciliación descarta la corrida)', async () => {
+    const fueraDeVentana = new TboResponseMappingError(
+      '/BookingDetailsbasedondate',
+      ['BookingDetail.0.BookingDate:outside_window'],
+      'req-fecha',
+    );
+    const a = acl();
+    a.listBookingsByDateReport.mockImplementation(() => Promise.reject(fueraDeVentana));
+    const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
+
+    await expect(
+      adapter.listBookingsByDate({ from: '2026-09-24', to: '2026-09-26' }, CTX),
+    ).rejects.toBe(fueraDeVentana);
   });
 
   it('PR-4.5: el PreBook del puerto neutral va al ACL tal cual', async () => {
@@ -452,7 +550,7 @@ describe('las capacidades se encienden a medida que el ACL implementa cada puert
     retrieve: 'getBooking',
     cancel: 'cancelBooking',
     retrieveByClientReference: 'getBookingByClientReference',
-    reconcileByDate: 'listBookingsByDate',
+    reconcileByDate: 'listBookingsByDateReport',
   };
 
   const factory = new TboHotelsProviderFactory({} as ProviderCredentialsService);

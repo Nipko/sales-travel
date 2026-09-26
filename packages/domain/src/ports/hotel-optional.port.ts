@@ -31,29 +31,60 @@ export interface HotelBookingByClientReferencePort {
 
 // ───────────────────────── Reservas por fecha (conciliación) ─────────────────────────
 
-/** Rango de fechas de reserva, ambos extremos incluidos, en YYYY-MM-DD. */
+/**
+ * Una ventana de fechas de CREACIÓN de reserva, `YYYY-MM-DD`, con los dos extremos incluidos. Nunca
+ * más larga que `maxBookingDateWindowDays` del adapter: quien necesita un rango más largo lo parte.
+ */
 export interface HotelBookingDateRange {
   from: string;
   to: string;
 }
 
+/** Una reserva de la cuenta creada dentro de la ventana pedida. Sin datos del huésped. */
 export interface HotelBookingSummary {
   providerBookingId: string;
+  /** `YYYY-MM-DD`, siempre dentro de la ventana pedida. */
+  bookingDate: string;
+  /** Nuestra referencia, la que mandamos al reservar, si la fila la trae legible. */
   bookingReference?: string;
-  status: HotelBookingStatus;
+  /** Ausente si el proveedor no lo informó en esta lectura. */
+  status?: HotelBookingStatus;
   providerStatus?: string;
-  /** YYYY-MM-DD. */
-  bookingDate?: string;
+  /** Cancelada, con el reembolso del proveedor a la cuenta todavía pendiente. */
+  refundAwaited?: boolean;
   checkinDate?: string;
   checkoutDate?: string;
+  hotelId?: string;
+  /** Lo que el proveedor factura por la reserva, con la comisión de la agencia incluida. */
   total?: Money;
+  /** La comisión de la agencia titular de la cuenta sobre `total`. */
+  agencyCommission?: Money;
+  /** Moneda de la fila, aunque sus montos no se hayan podido leer. */
+  currency?: string;
+  /** Agencia que hizo la reserva según el proveedor: dato comercial del titular de la cuenta. */
+  agencyName?: string;
+  /** Id interno del proveedor, sólo para soporte. */
+  providerRecordId?: string;
 }
 
+/**
+ * Lo que devolvió UNA ventana, entera: el proveedor respondió con éxito y todas las filas caen
+ * dentro de la ventana pedida. Si no, el adapter lanza. De esta lectura sale "la reserva no está en
+ * el proveedor", y eso no se concluye con una ventana a medias.
+ */
+export interface HotelBookingsByDateResult {
+  range: HotelBookingDateRange;
+  bookings: HotelBookingSummary[];
+}
+
+/** Las reservas de la cuenta del adapter, por fecha de creación: la conciliación diaria. */
 export interface HotelBookingsByDatePort {
+  /** Cuántos días de calendario, con los dos extremos, acepta una ventana. */
+  readonly maxBookingDateWindowDays: number;
   listBookingsByDate(
     range: HotelBookingDateRange,
     ctx: SearchContext,
-  ): Promise<HotelBookingSummary[]>;
+  ): Promise<HotelBookingsByDateResult>;
 }
 
 // ───────────────────────── Sugerencias de destino ─────────────────────────

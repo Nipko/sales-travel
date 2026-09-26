@@ -48,11 +48,14 @@ export interface HotelCancelTarget {
   readonly calendar: HotelCancelVerifyCalendar;
 }
 
-/** Lo que la cancelación (o su verificación) deja en la fila de seguimiento. */
+/**
+ * Lo que la cancelación (o su verificación, o la conciliación que ve una cancelación hecha fuera)
+ * deja en la fila de seguimiento.
+ */
 export interface HotelCancelTrackingWrite {
   /** Epoch ms de la observación. */
   readonly at: number;
-  readonly source: Extract<ProviderStatusSource, 'cancel' | 'verify'>;
+  readonly source: Extract<ProviderStatusSource, 'cancel' | 'verify' | 'reconciliation'>;
   /** Ausente = no hubo lectura que registrar. */
   readonly record?: HotelOrderReadRecord;
   /** Ausente = no se toca. */
@@ -293,6 +296,76 @@ export class HotelOrderCancellationStore {
     }
   }
 
+  /**
+   * La conciliación confirmó con una lectura que la reserva se canceló (o se está cancelando) fuera
+   * de una cancelación en curso nuestra (docs/tbo/04 §6.3 fila 14 y §9.4 R3): en una transacción, la
+   * orden de `from` a `to` (CAS sobre su estado), la fila de seguimiento (CAS sobre la foto con la
+   * que se decidió) y, si queda `cancelled`, la operación `cancel` que había quedado sin verificar.
+   *
+   * `false` = otro camino llegó antes (la orden ya no está en `from`, o la fila cambió) y no se
+   * escribió nada.
+   */
+  async transitionByReading(
+    tenantId: string,
+    orderId: string,
+    change: {
+      readonly from: OrderStatus;
+      readonly to: OrderStatus;
+      readonly expected: Pick<
+        HotelOrderSnapshot,
+        'subStatus' | 'providerStatus' | 'hcn' | 'hcnState'
+      >;
+      readonly write: HotelCancelTrackingWrite;
+    },
+  ): Promise<boolean> {
+    const { insert, update: written } = columnsOf(change.write);
+    // Cerrada, ya no hay cancelación en curso que verificar: un paso que quedara programado sólo
+    // releería al proveedor para nada.
+    const update =
+      change.to === 'cancelled' ? { ...written, cancel_verify_next_at: null } : written;
+    const { expected } = change;
+    try {
+      return await this.db.withTenant(tenantId, async (trx) => {
+        const order = await trx
+          .updateTable('orders')
+          .set({ status: change.to })
+          .where('id', '=', orderId)
+          .where('tenant_id', '=', tenantId)
+          .where('status', '=', change.from)
+          .returning('id')
+          .executeTakeFirst();
+        if (order === undefined) return false;
+
+        const row = await trx
+          .insertInto('hotel_order_tracking')
+          .values({ order_id: orderId, tenant_id: tenantId, ...insert })
+          .onConflict((oc) =>
+            oc
+              .column('order_id')
+              .doUpdateSet(update)
+              .where('hotel_order_tracking.sub_status', 'is not distinct from', expected.subStatus)
+              .where(
+                'hotel_order_tracking.provider_status',
+                'is not distinct from',
+                expected.providerStatus,
+              )
+              .where('hotel_order_tracking.hcn', 'is not distinct from', expected.hcn)
+              .where('hotel_order_tracking.hcn_state', 'is not distinct from', expected.hcnState),
+          )
+          .returning('order_id')
+          .executeTakeFirst();
+        // La orden ya cambió dentro de esta transacción: se deshace entera.
+        if (row === undefined) throw new ReadingSuperseded();
+
+        if (change.to === 'cancelled') await this.resolveUnverifiedCancel(trx, orderId);
+        return true;
+      });
+    } catch (err) {
+      if (err instanceof ReadingSuperseded) return false;
+      throw err;
+    }
+  }
+
   private async advanceIn(
     trx: Transaction<DB>,
     tenantId: string,
@@ -381,6 +454,14 @@ class OrderNoLongerPending extends Error {
   constructor() {
     super('la orden ya no está pendiente');
     this.name = 'OrderNoLongerPending';
+  }
+}
+
+/** Marca interna para deshacer una transición cuando la fila cambió desde la lectura. */
+class ReadingSuperseded extends Error {
+  constructor() {
+    super('la fila de seguimiento cambió desde la lectura');
+    this.name = 'ReadingSuperseded';
   }
 }
 

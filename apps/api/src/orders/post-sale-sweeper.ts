@@ -16,6 +16,10 @@ import {
   PostSaleQueueService,
 } from '../queue/post-sale-queue.service.js';
 import {
+  ReconciliationService,
+  type ReconciliationDispatchReport,
+} from '../reconciliation/reconciliation.service.js';
+import {
   HotelOrderCancellationService,
   type HotelCancelVerifySweepReport,
 } from './hotel-order-cancellation.service.js';
@@ -36,9 +40,10 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * La cola despierta cada paso a su hora, pero no es la fuente de verdad: un job se pierde si Redis
  * no estaba al encolar, si el proceso murió con la reserva en vuelo o si agotó sus reintentos. Cada
  * 15 minutos, este barrido relee Postgres y ejecuta lo vencido. Hoy: la verificación de las reservas
- * de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3) y el seguimiento
+ * de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3), el seguimiento
  * del HCN (PR-5.4): sus lecturas perdidas, sus entradas en ventana y las órdenes confirmadas que se
- * quedaron sin plan.
+ * quedaron sin plan; y las cuentas propias del tenant que se quedaron sin conciliación del día
+ * (PR-5.5), que sin Redis es la única vía por la que se concilian.
  *
  * `orders`, `order_operations` y `hotel_order_tracking` tienen RLS forzada y la API corre como
  * `app_user`, sin rol de mantenimiento ni función que la salte: el barrido recorre los tenants uno
@@ -60,6 +65,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   cancellations: HotelCancelVerifySweepReport;
   /** El seguimiento del HCN, con el suyo. */
   hcn: HcnSweepReport;
+  /** Las conciliaciones atrasadas que se encolaron (o corrieron aquí). */
+  reconciliation: ReconciliationDispatchReport;
 };
 
 @Injectable()
@@ -77,6 +84,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly work: InflightWorkRegistry,
     private readonly hotelCancellations: HotelOrderCancellationService,
     private readonly hcn: HcnTrackingService,
+    private readonly reconciliation: ReconciliationService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -152,6 +160,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
         'window-entered': 0,
         skipped: 0,
       },
+      reconciliation: { accounts: 0, queued: 0, ran: 0, failed: 0 },
     };
 
     for (const { id } of tenants) {
@@ -187,6 +196,17 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
         failed = true;
         this.logger.warn(`post_sale.sweep.hcn.tenant_failed tenant=${id} error=${errorName(err)}`);
       }
+      try {
+        const reconciliation = await this.reconciliation.sweepTenant(id, now);
+        for (const key of Object.keys(reconciliation) as (keyof ReconciliationDispatchReport)[]) {
+          report.reconciliation[key] += reconciliation[key];
+        }
+      } catch (err) {
+        failed = true;
+        this.logger.warn(
+          `post_sale.sweep.reconciliation.tenant_failed tenant=${id} error=${errorName(err)}`,
+        );
+      }
       if (failed) report.tenantsFailed += 1;
     }
 
@@ -205,6 +225,12 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     if (h.examined > 0) {
       this.logger.log(
         `post_sale.sweep.hcn examined=${h.examined} adopted=${h.adopted} windowEntered=${h['window-entered']} received=${h.received} advanced=${h.advanced} missing=${h.missing} stopped=${h.stopped} paused=${h.paused} unavailable=${h.unavailable} skipped=${h.skipped} failed=${h.failed}`,
+      );
+    }
+    const r = report.reconciliation;
+    if (r.accounts > 0) {
+      this.logger.log(
+        `post_sale.sweep.reconciliation accounts=${r.accounts} queued=${r.queued} ran=${r.ran} failed=${r.failed}`,
       );
     }
     return report;
