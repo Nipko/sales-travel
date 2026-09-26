@@ -47,6 +47,11 @@ import {
   verificationSummary,
   type SagaDecision,
 } from './order-create.saga.js';
+import {
+  OrderCreateIntentStore,
+  createRequestKey,
+  isUniqueViolation,
+} from './order-create-intent.store.js';
 import { ORDER_EVENTS, createdSummary } from './order-events.js';
 import {
   CANCEL_REJECTED_POLICY,
@@ -122,17 +127,6 @@ function fareSelectionChanged(before: Offer, after: Offer): boolean {
   return selectedLegacy !== null && selectedLegacy !== legacySelection(after);
 }
 
-/**
- * Sentinel cerrado del intent de creación. Nunca contiene el mensaje del proveedor ni datos del
- * pasajero; además permite que el UPDATE final haga CAS usando el schema actual, sin una columna
- * nueva de versión.
- */
-const CREATE_PENDING_RECONCILIATION_MARKER =
-  'Creación pendiente de conciliación con el proveedor. No reenviar la reserva.';
-const CREATE_NOT_SENT_MARKER = 'La creación no se envió al proveedor.';
-const CREATE_REQUEST_KEY_CONSTRAINT = 'uq_orders_create_request_key';
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 interface CreatedOrderResult {
   result: OrderCreateResult;
   audit: Record<string, unknown>;
@@ -143,38 +137,6 @@ interface CancellationClaim {
   operationId: string;
   /** Estado que se restaura sólo cuando se demostró que el write no ocurrió o fue rechazado. */
   priorStatus: OrderStatus;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
-  );
-}
-
-function isCreateRequestKeyViolation(error: unknown): boolean {
-  if (!isUniqueViolation(error)) return false;
-  const constraint =
-    typeof error === 'object' && error !== null && 'constraint' in error
-      ? (error as { constraint?: unknown }).constraint
-      : undefined;
-  return constraint === CREATE_REQUEST_KEY_CONSTRAINT;
-}
-
-function createRequestKey(quotationId: string | undefined, clientRequestId: string | undefined) {
-  if (quotationId !== undefined) return `q:${quotationId.toLowerCase()}`;
-  const normalized = clientRequestId?.trim().toLowerCase();
-  if (normalized === undefined || normalized.length === 0) {
-    throw new BadRequestException(
-      'Se requiere Idempotency-Key UUID cuando la reserva no proviene de una cotización.',
-    );
-  }
-  if (!UUID_PATTERN.test(normalized)) {
-    throw new BadRequestException('Idempotency-Key debe ser un UUID válido.');
-  }
-  return `c:${normalized}`;
 }
 
 export interface OrderOperationRow {
@@ -234,12 +196,18 @@ export interface OrderRow {
   provider_raw: unknown;
   error_message: string | null;
   create_request_key: string | null;
+  /** 0042. Sólo las verticales que mandan su propia referencia al proveedor la escriben. */
+  provider_booking_ref: string | null;
+  /** 0042. Cuenta BYOC con la que se reservó; la post-venta usa ésta y no la vigente. */
+  provider_account_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
 
 @Injectable()
 export class OrdersService {
+  private readonly intents: OrderCreateIntentStore;
+
   constructor(
     private readonly db: DatabaseService,
     private readonly registry: FlightProviderRegistry,
@@ -247,7 +215,11 @@ export class OrdersService {
     private readonly agentCars: AgentCarsProviderFactory,
     private readonly audit: AuditService,
     private readonly pricing: PricingService,
-  ) {}
+  ) {
+    // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
+    // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
+    this.intents = new OrderCreateIntentStore(db);
+  }
 
   /**
    * Proveedor QUE HIZO la reserva, con sus capacidades. Antes se inyectaba el factory de un
@@ -367,7 +339,7 @@ export class OrdersService {
     try {
       verifiedDto = await this.revalidateForCreate(tenantId, provider, dto);
     } catch (error) {
-      await this.failCreateIntentBeforeProviderBestEffort(tenantId, intent);
+      await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
     }
 
@@ -390,7 +362,7 @@ export class OrdersService {
         },
       });
     } catch (error) {
-      await this.failCreateIntentBeforeProviderBestEffort(tenantId, intent);
+      await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
     }
 
@@ -463,7 +435,7 @@ export class OrdersService {
         reason: 'post-create-finalization-unavailable',
         status: 'pending',
       };
-      const marked = await this.markCreatePendingBestEffort(tenantId, order);
+      const marked = await this.intents.markPending(tenantId, order);
       try {
         await this.audit.emit({
           eventType: ORDER_EVENTS.escalated,
@@ -691,216 +663,51 @@ export class OrdersService {
   }
 
   /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */
-  private async insertCreateIntent(
+  private insertCreateIntent(
     tenantId: string,
     userId: string,
     dto: CreateOrderDto,
     providerCode: string,
     requestKey: string,
   ): Promise<OrderRow> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        return await this.insertCreateIntentOnce(tenantId, userId, dto, providerCode, requestKey);
-      } catch (error) {
-        if (!isCreateRequestKeyViolation(error)) throw error;
-
-        const existing = await this.findByCreateRequestKey(tenantId, requestKey);
-        if (existing !== undefined) {
-          throw new ConflictException({
-            statusCode: 409,
-            error: 'Conflict',
-            message:
-              'Esta solicitud de creación ya fue recibida. No vuelvas a reservar; usa la orden existente.',
-            orderId: existing.id,
-            ...(existing.provider_order_id === null ? {} : { pnr: existing.provider_order_id }),
-            duplicateRequest: true,
-            retryForbidden: true,
-            reconciliationRequired: true,
-          });
-        }
-
-        // El primer request pudo liberar la clave al cerrar FAILED entre el 23505 y esta lectura.
-        // Sólo se repite el INSERT; nunca priceOffer/createOrder.
-        if (attempt === 0) continue;
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          message: 'No se pudo adquirir de forma segura la clave de creación.',
-          duplicateRequest: true,
-          retryForbidden: true,
-          reconciliationRequired: true,
-        });
-      }
-    }
-    throw new ConflictException('No se pudo adquirir la clave de creación.');
+    return this.intents.insert(
+      tenantId,
+      {
+        userId,
+        quotationId: dto.quotationId ?? null,
+        provider: providerCode,
+        searchCriteria: dto.searchCriteria,
+        selectedOffer: dto.offer,
+        passengers: dto.passengers,
+        contactInfo: dto.contactInfo,
+        // El cliente paga el precio final (con la cascada de markup); el proveedor
+        // recibe el neto (dto.offer.total). Si no hay pricing, final = neto.
+        totalAmountMinor: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
+        currency: dto.offer.total.currency,
+        requestKey,
+      },
+      'pnr',
+    );
   }
 
-  private async insertCreateIntentOnce(
-    tenantId: string,
-    userId: string,
-    dto: CreateOrderDto,
-    providerCode: string,
-    requestKey: string,
-  ): Promise<OrderRow> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      // Lock real por tenant: dos transacciones no pueden observar el mismo MAX(order_number).
-      await trx
-        .selectFrom('tenants')
-        .select('id')
-        .where('id', '=', tenantId)
-        .forUpdate()
-        .executeTakeFirstOrThrow();
-
-      if (dto.quotationId !== undefined) {
-        const quotation = await trx
-          .selectFrom('quotations')
-          .select('id')
-          .where('id', '=', dto.quotationId)
-          .where('tenant_id', '=', tenantId)
-          .executeTakeFirst();
-        if (quotation === undefined) {
-          throw new BadRequestException('La cotización no pertenece a la agencia activa.');
-        }
-      }
-
-      const nextNumber = await trx
-        .selectFrom('orders')
-        .select(sql<number>`COALESCE(MAX(order_number), 0) + 1`.as('next'))
-        .where('tenant_id', '=', tenantId)
-        .executeTakeFirstOrThrow();
-
-      const row = await trx
-        .insertInto('orders')
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          quotation_id: dto.quotationId ?? null,
-          provider: providerCode,
-          provider_order_id: null,
-          status: 'pending',
-          search_criteria: JSON.stringify(dto.searchCriteria),
-          selected_offer: JSON.stringify(dto.offer),
-          passengers: JSON.stringify(dto.passengers),
-          contact_info: JSON.stringify(dto.contactInfo),
-          // El cliente paga el precio final (con la cascada de markup); el proveedor
-          // recibe el neto (dto.offer.total). Si no hay pricing, final = neto.
-          total_amount: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
-          currency: dto.offer.total.currency,
-          order_number: nextNumber.next,
-          provider_raw: null,
-          error_message: CREATE_PENDING_RECONCILIATION_MARKER,
-          create_request_key: requestKey,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      return row as unknown as OrderRow;
-    });
-  }
-
-  private async findByCreateRequestKey(
-    tenantId: string,
-    requestKey: string,
-  ): Promise<OrderRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const row = await trx
-        .selectFrom('orders')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('create_request_key', '=', requestKey)
-        .executeTakeFirst();
-      return row as unknown as OrderRow | undefined;
-    });
-  }
-
-  /**
-   * Consolida el resultado sobre la MISMA fila. `provider_raw IS NULL` es el CAS compatible con
-   * el schema vigente: todo resultado cerrado escribe una lista blanca no nula, incluso FAILED.
-   */
-  private async settleCreateIntent(
+  /** Consolida con CAS sobre el intent; `undefined` si otro camino ya lo cerró. */
+  private settleCreateIntent(
     tenantId: string,
     intent: OrderRow,
     dto: CreateOrderDto,
     created: CreatedOrderResult,
   ): Promise<OrderRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const row = await trx
-        .updateTable('orders')
-        .set({
-          provider_order_id: created.result.pnr ?? created.result.orderId ?? null,
-          status: ORDER_STATUS_BY_OUTCOME[created.result.outcome],
-          selected_offer: JSON.stringify(dto.offer),
-          search_criteria: JSON.stringify(dto.searchCriteria),
-          total_amount: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
-          currency: dto.offer.total.currency,
-          // Lista BLANCA del adapter (o la nuestra si no la ofrece). Nunca un volcado: la
-          // respuesta cruda de una creación arrastra el eco de lo que mandamos, con la PII de
-          // los viajeros, y `orders.provider_raw` se persiste para siempre.
-          provider_raw: JSON.stringify(created.providerRaw),
-          error_message: summarizeIssues(created.result.issues),
-          ...(created.result.outcome === 'FAILED' ? { create_request_key: null } : {}),
-        })
-        .where('id', '=', intent.id)
-        .where('tenant_id', '=', tenantId)
-        .where('status', '=', 'pending')
-        .where('provider_raw', 'is', null)
-        .returningAll()
-        .executeTakeFirst();
-
-      return row as unknown as OrderRow | undefined;
+    return this.intents.settle(tenantId, intent.id, {
+      status: ORDER_STATUS_BY_OUTCOME[created.result.outcome],
+      providerOrderId: created.result.pnr ?? created.result.orderId ?? null,
+      // Lista BLANCA del adapter (o la nuestra si no la ofrece). Nunca un volcado.
+      providerRaw: created.providerRaw,
+      errorMessage: summarizeIssues(created.result.issues),
+      selectedOffer: dto.offer,
+      searchCriteria: dto.searchCriteria,
+      totalAmountMinor: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
+      currency: dto.offer.total.currency,
     });
-  }
-
-  /** Un fallo anterior a createOrder es reintentable: cierra localmente y libera la clave. */
-  private async failCreateIntentBeforeProviderBestEffort(
-    tenantId: string,
-    intent: OrderRow,
-  ): Promise<void> {
-    try {
-      await this.db.withTenant(tenantId, async (trx) => {
-        await trx
-          .updateTable('orders')
-          .set({
-            status: 'failed',
-            provider_raw: JSON.stringify({ phase: 'pre-create', outcome: 'FAILED' }),
-            error_message: CREATE_NOT_SENT_MARKER,
-            create_request_key: null,
-          })
-          .where('id', '=', intent.id)
-          .where('tenant_id', '=', tenantId)
-          .where('status', '=', 'pending')
-          .where('provider_raw', 'is', null)
-          .where('create_request_key', '=', intent.create_request_key)
-          .execute();
-      });
-    } catch {
-      // Si la base cayó, el intent pending conserva la clave y bloquea un segundo create.
-    }
-  }
-
-  /** Baja el estado a pending sin pisar una transición concurrente; todos los fallos son seguros. */
-  private async markCreatePendingBestEffort(
-    tenantId: string,
-    order: OrderRow,
-  ): Promise<OrderRow | undefined> {
-    try {
-      return await this.db.withTenant(tenantId, async (trx) => {
-        const row = await trx
-          .updateTable('orders')
-          .set({
-            status: 'pending',
-            error_message: CREATE_PENDING_RECONCILIATION_MARKER,
-          })
-          .where('id', '=', order.id)
-          .where('tenant_id', '=', tenantId)
-          .where('status', '=', order.status)
-          .returningAll()
-          .executeTakeFirst();
-        return row as unknown as OrderRow | undefined;
-      });
-    } catch {
-      return undefined;
-    }
   }
 
   /**
