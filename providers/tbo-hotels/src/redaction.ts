@@ -147,6 +147,13 @@ export const TBO_LOG_FIELDS: ReadonlySet<string> = new Set([
   // Estado de la reserva en TBO como CÓDIGO: la grafía del enum o el valor desconocido saneado a
   // letras, dígitos, `_` y `-` (`detail/booking-status.ts`). Nunca texto libre del proveedor.
   'providerStatus',
+  // Ventana de BookingDetailsbasedondate: fechas de CREACIÓN pedidas por nosotros y un conteo. Nunca
+  // las filas, que traen `AgencyName`, montos y `TripName` (docs/tbo/04 §9.5 punto 6).
+  'fromDate',
+  'toDate',
+  'bookingCount',
+  // Avisos de un resultado como CÓDIGOS cerrados (`TBO_CANCEL_WARNINGS`), nunca texto de TBO.
+  'warnings',
 ]);
 
 export type TboLogValue = string | number | boolean | readonly string[];

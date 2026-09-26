@@ -121,9 +121,9 @@ export {
   tboOfferExpiresAt,
 } from './search/offer-window';
 
-// Búsqueda, detalle de un hotel, PreBook, Book y BookingDetail por los puertos neutrales (PR-1.5,
-// PR-4.1, PR-4.2): la salida del paquete hacia el factory de `apps/api`. Los tipos del reporte son
-// nuestros; el sobre crudo no sale.
+// Búsqueda, detalle de un hotel, PreBook, Book, BookingDetail, Cancel y BookingDetailsbasedondate por
+// los puertos neutrales (PR-1.5, PR-4.1, PR-4.2, PR-5.1): la salida del paquete hacia el factory de
+// `apps/api`. Los tipos del reporte son nuestros; el sobre crudo no sale.
 export { TBO_SEARCH_BATCHING_LIMITS, TboHotelsAdapter } from './tbo-hotels.adapter';
 export type {
   TboBookProviderOptions,
@@ -134,6 +134,7 @@ export type {
   TboBookReport,
   TboBookedHotel,
   TboBookedRoomSummary,
+  TboBookingByDate,
   TboBookingDetailDiagnostics,
   TboBookingDetailMapping,
   TboBookingDetailPurpose,
@@ -142,6 +143,13 @@ export type {
   TboBookingDetailSummary,
   TboBookingDetailWarning,
   TboBookingLookup,
+  TboBookingsByDateDiagnostics,
+  TboBookingsByDateMapping,
+  TboBookingsByDateQuery,
+  TboBookingsByDateReport,
+  TboCancelQuery,
+  TboCancelReading,
+  TboCancelReport,
   TboHotelRatesReport,
   TboHotelRejection,
   TboHotelsAdapterOptions,
@@ -220,6 +228,28 @@ export type {
 // normalizado en la vista; el valor crudo se lee como código con esta lista.
 export { TBO_BOOKING_STATUSES } from './detail/booking-status';
 export { TBO_BOOKING_DETAIL_WARNINGS } from './detail/response.mapper';
+
+// Cancel (PR-5.1): el vocabulario cerrado del resultado, para que `apps/api` lo humanice y registre.
+// El builder, el esquema y el mapper de `/Cancel` trabajan con el JSON crudo y no salen; las dos
+// funciones de decisión las aplica el adapter, y fuera se lee su resultado.
+export {
+  TBO_CANCEL_ERRORS,
+  TBO_CANCEL_SKIP_REASONS,
+  TBO_CANCEL_WARNINGS,
+} from './cancel/cancel-decision';
+export type {
+  TboCancelError,
+  TboCancelSkipReason,
+  TboCancelWarning,
+} from './cancel/cancel-decision';
+
+// BookingDetailsbasedondate (PR-5.1): el tope de una ventana y el partidor de rangos que usa la
+// conciliación para el tramo B (04 §9.3). El builder, el esquema y el mapper no salen.
+export {
+  TBO_BOOKINGS_BY_DATE_MAX_DAYS,
+  splitTboBookingDateRange,
+} from './reports/booking-by-date.request.builder';
+export type { TboBookingDateWindow } from './reports/booking-by-date.request.builder';
 
 // Contenido estático (PR-3.1): el cliente del sync de catálogo, sin métodos de venta (06 §4.2), y
 // los tipos ya normalizados que devuelve. Los builders, los esquemas y los mappers trabajan con el

@@ -1,4 +1,3 @@
-import { HttpStatus } from '@nestjs/common';
 import type {
   HotelOffer,
   HotelRatesQuery,
@@ -9,6 +8,7 @@ import type {
   HotelBookRequest,
   HotelBookResult,
   HotelBookingView,
+  HotelCancelResult,
   HotelPrebookResult,
 } from '@sales-travel/domain';
 import {
@@ -16,6 +16,7 @@ import {
   TBO_FAILURE_KINDS,
   TBO_OFFER_TTL_MS,
   TboApiError,
+  TboCancelMappingError,
   TboDispatchRejectedError,
   TboHotelsAdapter,
   TboOfferExpiredError,
@@ -36,6 +37,7 @@ import {
   HOTEL_CONTENT_LANGUAGES,
   supportsHotelBookingByClientReference,
   supportsHotelBookingContext,
+  supportsHotelBookingsByDate,
   supportsHotelContent,
   supportsHotelPrebookContext,
   supportsHotelRatesContext,
@@ -46,20 +48,15 @@ import {
   type HotelSearchRateFacts,
 } from '../providers/hotel-provider.types.js';
 import {
-  TBO_PENDING_OPERATIONS,
   TboContentClientMissingError,
   TboHotelProviderAdapter,
-  TboOperationNotSupportedError,
   type TboContentAcl,
   type TboHotelsAcl,
 } from './tbo-hotel-provider.adapter.js';
 import { TboHotelsProviderFactory } from './tbo-hotels.factory.js';
 import type { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
 
-/**
- * El envoltorio neutral de TBO: delega lo que el ACL sabe hacer y rechaza, tipado y sin salir al
- * cable, lo que todavía no.
- */
+/** El envoltorio neutral de TBO: delega en el ACL y guarda lo que el servidor necesita. */
 
 const CTX = { tenantId: '11111111-1111-4111-8111-111111111111' };
 
@@ -225,6 +222,15 @@ type AclDoble = TboHotelsAcl & {
   prebookReport: ReturnType<typeof vi.fn>;
   book: ReturnType<typeof vi.fn>;
   bookReport: ReturnType<typeof vi.fn>;
+  cancelBooking: ReturnType<typeof vi.fn>;
+};
+
+/** Lo que el ACL devuelve de una cancelación aceptada que TBO dejó en curso. */
+const RESULTADO_CANCEL: HotelCancelResult = {
+  success: true,
+  bookingStatus: 'CANCELLATION_IN_PROGRESS',
+  providerStatus: 'CancellationInProgress',
+  warnings: [],
 };
 
 const REFERENCIA = 'STT0123456789ABCDEFGH';
@@ -280,6 +286,7 @@ function acl(): AclDoble {
     prebookReport: vi.fn(() => Promise.resolve(reportePrebook())),
     book: vi.fn(() => Promise.resolve(RESULTADO_BOOK)),
     bookReport: vi.fn(() => Promise.resolve(reporteBook())),
+    cancelBooking: vi.fn(() => Promise.resolve(RESULTADO_CANCEL)),
   };
 }
 
@@ -296,31 +303,6 @@ describe('TboHotelProviderAdapter', () => {
     expect(adapter.accountRef).toBe('0123456789abcdef');
   });
 
-  it.each(TBO_PENDING_OPERATIONS)(
-    '`%s` todavía no existe: 501 tipado, sin tocar el ACL',
-    async (operacion) => {
-      const a = acl();
-      const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
-
-      const err: unknown = await adapter[operacion]().catch((e: unknown) => e);
-
-      expect(err).toBeInstanceOf(TboOperationNotSupportedError);
-      expect((err as TboOperationNotSupportedError).getStatus()).toBe(HttpStatus.NOT_IMPLEMENTED);
-      expect((err as TboOperationNotSupportedError).operation).toBe(operacion);
-      expect((err as Error).message).toContain('Elegí una tarifa de otro proveedor');
-      expect(a.searchAvailability).not.toHaveBeenCalled();
-      expect(a.getHotelRates).not.toHaveBeenCalled();
-      expect(a.searchAvailabilityReport).not.toHaveBeenCalled();
-      expect(a.getHotelRatesReport).not.toHaveBeenCalled();
-      expect(a.getBooking).not.toHaveBeenCalled();
-      expect(a.getBookingByClientReference).not.toHaveBeenCalled();
-      expect(a.prebook).not.toHaveBeenCalled();
-      expect(a.prebookReport).not.toHaveBeenCalled();
-      expect(a.book).not.toHaveBeenCalled();
-      expect(a.bookReport).not.toHaveBeenCalled();
-    },
-  );
-
   it('PR-4.2: la lectura de una reserva, por localizador o por nuestra referencia, va al ACL tal cual', async () => {
     const a = acl();
     const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
@@ -334,11 +316,31 @@ describe('TboHotelProviderAdapter', () => {
     expect(supportsHotelBookingByClientReference(adapter)).toBe(true);
   });
 
-  it('PR-4.6: el Book salió de las pendientes con la saga de órdenes; sólo queda la cancelación (PR-5.1)', () => {
-    expect(TBO_PENDING_OPERATIONS).toEqual(['cancelBooking']);
+  it('PR-4.6: el Book sale sólo con la saga de órdenes, por el puerto con contexto', () => {
     expect(typeof TboHotelsAdapter.prototype.book).toBe('function');
     expect(supportsHotelBookingContext(new TboHotelProviderAdapter(acl(), CUENTA, 'test'))).toBe(
       true,
+    );
+  });
+
+  it('PR-5.1: la cancelación va al ACL tal cual, con el resultado "aceptada, no final" intacto', async () => {
+    const a = acl();
+    const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
+    const pedido = { providerBookingId: 'FL1IMA' };
+
+    await expect(adapter.cancelBooking(pedido, CTX)).resolves.toBe(RESULTADO_CANCEL);
+    expect(a.cancelBooking).toHaveBeenCalledWith(pedido, CTX);
+    expect(typeof TboHotelsAdapter.prototype.cancelBooking).toBe('function');
+  });
+
+  it('PR-5.1: lo que lanza la cancelación del ACL sale sin reenvolver (la política lee su nombre y su path)', async () => {
+    const incierto = new TboCancelMappingError('/Cancel', ['Status.Code:unknown_code'], 'req-cx');
+    const a = acl();
+    a.cancelBooking.mockImplementation(() => Promise.reject(incierto));
+    const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
+
+    await expect(adapter.cancelBooking({ providerBookingId: 'FL1IMA' }, CTX)).rejects.toBe(
+      incierto,
     );
   });
 
@@ -441,10 +443,10 @@ describe('TboHotelProviderAdapter', () => {
 
 describe('las capacidades se encienden a medida que el ACL implementa cada puerto', () => {
   /**
-   * Qué método del ACL enciende cada capacidad. Si el ACL de TBO gana uno, este test se pone en
-   * rojo: hay que cablearlo en el envoltorio, sacarlo de `TBO_PENDING_OPERATIONS` y encender la
-   * capacidad en el factory. Así la post-venta nunca confía en un método que responde "no
-   * disponible", ni se queda sin usar uno que ya existe.
+   * Qué método del ACL enciende cada capacidad. Si el ACL de TBO gana o pierde uno, este test se
+   * pone en rojo: hay que cablearlo en el envoltorio y encender (o apagar) la capacidad en el
+   * factory. Así la post-venta nunca confía en un método que responde "no disponible", ni se queda
+   * sin usar uno que ya existe.
    */
   const METODO_DEL_ACL: Readonly<Record<keyof HotelProviderCapabilities, string>> = {
     retrieve: 'getBooking',
@@ -460,6 +462,16 @@ describe('las capacidades se encienden a medida que el ACL implementa cada puert
       typeof (TboHotelsAdapter.prototype as unknown as Record<string, unknown>)[metodo] ===
       'function';
     expect(factory.capabilities[capacidad as keyof HotelProviderCapabilities]).toBe(implementa);
+  });
+
+  it('y el envoltorio que resuelve el registry expone el puerto opcional que la capacidad promete', () => {
+    // Capacidad declarada y método presente tienen que decir lo mismo, como en Despegar: si no, la
+    // post-venta confiaría en una verificación o una conciliación que el adapter no puede hacer.
+    const adapter = new TboHotelProviderAdapter(acl(), CUENTA, 'test');
+    expect(supportsHotelBookingByClientReference(adapter)).toBe(
+      factory.capabilities.retrieveByClientReference,
+    );
+    expect(supportsHotelBookingsByDate(adapter)).toBe(factory.capabilities.reconcileByDate);
   });
 });
 

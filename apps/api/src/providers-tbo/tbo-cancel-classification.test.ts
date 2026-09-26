@@ -9,7 +9,6 @@ import {
 import { describe, expect, it } from 'vitest';
 import { classifyCancelThrownFailure } from '../orders/cancel-retry-policy.js';
 import { BreakerRejectionError } from '../search/circuit-breaker.service.js';
-import { TboOperationNotSupportedError } from './tbo-hotel-provider.adapter.js';
 
 /**
  * Los errores de TBO frente a la política de cancelaciones, que decide sin conocer al proveedor
@@ -123,12 +122,21 @@ describe('lo que no salió hacia TBO', () => {
     });
   });
 
-  it('la cancelación que la integración todavía no tiene no sale ni pide conciliar', () => {
-    const err = new TboOperationNotSupportedError('cancelBooking');
-    expect(classifyCancelThrownFailure(err)).toMatchObject({
+  it('RF-25 CA-4: si falla la lectura PREVIA al Cancel, el fallo es previo al envío y reintentable', () => {
+    // El ACL lee BookingDetail antes de mandar el Cancel (04 §4.4) y deja salir su error tal cual:
+    // el path distinto del write es lo que prueba que no se mandó nada.
+    const err = new TboApiError({
+      status: 200,
+      tboCode: 500,
+      path: TBO_OPERATIONS.bookingDetail.path,
+      kind: 'UPSTREAM',
+      requestId: 'req-pre-read',
+    });
+    expect(classifyCancelThrownFailure(err)).toEqual({
       outcome: 'FAILED',
+      retryable: true,
       reconciliationRequired: false,
-      reason: 'deterministic',
+      reason: 'pre-write-transient',
     });
   });
 });

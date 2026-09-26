@@ -102,15 +102,19 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
   readonly defaultCallPolicy: CallPolicy = 'opt-in';
 
   /**
-   * Se encienden a medida que el ACL implementa cada puerto y este factory lo cablea. Ya están la
-   * lectura con BookingDetail y la lectura por nuestra referencia —lo que permite verificar un Book
-   * sin `ConfirmationNumber`— (PR-4.2). Faltan la cancelación y las reservas por fecha para la
-   * conciliación (PR-5.1): anunciarlas antes haría que la post-venta confiara en un método que
-   * responde "no disponible".
+   * Se encienden a medida que el ACL implementa cada puerto y este factory lo cablea: la lectura
+   * con BookingDetail y la lectura por nuestra referencia —lo que permite verificar un Book sin
+   * `ConfirmationNumber`— (PR-4.2) y la cancelación (PR-5.1). Qué ruta de la post-venta la usa lo
+   * decide PR-5.3.
+   *
+   * `reconcileByDate` sigue apagada aunque el ACL ya lea `BookingDetailsbasedondate` (PR-5.1): lo
+   * hace con su propio reporte de una ventana, no con `HotelBookingsByDatePort`, y el envoltorio no
+   * expone ese puerto. Anunciarla haría que la conciliación confiara en un método que el adapter
+   * resuelto no tiene; se enciende cuando PR-5.5 lo cablee.
    */
   readonly capabilities: HotelProviderCapabilities = {
     retrieve: true,
-    cancel: false,
+    cancel: true,
     retrieveByClientReference: true,
     reconcileByDate: false,
   };

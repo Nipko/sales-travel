@@ -1,4 +1,3 @@
-import { NotImplementedException } from '@nestjs/common';
 import type {
   HotelOffer,
   HotelRatesQuery,
@@ -11,6 +10,7 @@ import type {
   HotelBookingByClientReferencePort,
   HotelBookingRoomGuests,
   HotelBookingView,
+  HotelCancelRequest,
   HotelCancelResult,
   HotelPrebookRequest,
   HotelPrebookResult,
@@ -76,6 +76,7 @@ export type TboHotelsAcl = Pick<
   | 'prebookReport'
   | 'book'
   | 'bookReport'
+  | 'cancelBooking'
 >;
 
 /**
@@ -92,39 +93,6 @@ export class TboContentClientMissingError extends Error {
   constructor() {
     super('el envoltorio de TBO se construyó sin cliente de contenido');
     this.name = 'TboContentClientMissingError';
-  }
-}
-
-/**
- * Operaciones del contrato de hoteles que este envoltorio todavía no cablea. Cada una sale de la
- * lista cuando su PR la conecta, junto con la capacidad del factory que la anuncia.
- *
- * La cancelación llega con PR-5.1. El Book salió en PR-4.6: sólo lo llama la saga de reserva con
- * órdenes (`hotels/hotel-booking.service.ts`), que persiste el intent con su referencia ANTES
- * (D-TBO-07 A), y `hotels/hotel-booking.guard.test.ts` impide que otra ruta lo alcance.
- */
-export const TBO_PENDING_OPERATIONS = ['cancelBooking'] as const;
-export type TboPendingOperation = (typeof TBO_PENDING_OPERATIONS)[number];
-
-const OPERATION_LABEL: Readonly<Record<TboPendingOperation, string>> = {
-  cancelBooking: 'cancelar la reserva',
-};
-
-/**
- * Se pidió a TBO una operación que la integración todavía no tiene. No salió nada hacia TBO.
- *
- * Es la segunda línea de defensa: la capacidad `cancel` del factory, en `false`, frena la
- * post-venta antes. Sin esto, el `undefined is not a function` de un camino no gateado saldría
- * como 500. 501 y no 400: no es un dato mal mandado. El nombre termina en `NotSupportedError` para
- * que la política de cancelaciones lo lea como determinista y previo al envío: no hay nada que
- * conciliar.
- */
-export class TboOperationNotSupportedError extends NotImplementedException {
-  constructor(readonly operation: TboPendingOperation) {
-    super(
-      `Todavía no se puede ${OPERATION_LABEL[operation]} con TBO desde la plataforma. Elegí una tarifa de otro proveedor para continuar.`,
-    );
-    this.name = 'TboOperationNotSupportedError';
   }
 }
 
@@ -195,10 +163,8 @@ function baselineRate(baseline: HotelRateBaseline, current: HotelRoompack): TboR
  * PreBook y Book reenvían el `BookingCode` y el `TotalFare` de la búsqueda, y el Book no lleva
  * fechas, edades ni nacionalidad, así que eso queda en el servidor y no lo pone el navegador.
  * Delega la lectura de una reserva, por localizador o por nuestra referencia (PR-4.2), el PreBook
- * con la comparación contra lo que se mostró (PR-4.5), el Book de la saga con órdenes (PR-4.6) y el
- * contenido de un hotel que el catálogo todavía no tiene (PR-3.6). El resto del contrato existe
- * porque `HotelProviderAdapter` lo exige a todo proveedor, y responde con un error tipado en vez de
- * fingir un resultado: una cancelación inventada es peor que ninguna.
+ * con la comparación contra lo que se mostró (PR-4.5), el Book de la saga con órdenes (PR-4.6), el
+ * contenido de un hotel que el catálogo todavía no tiene (PR-3.6) y la cancelación (PR-5.1).
  */
 export class TboHotelProviderAdapter
   implements
@@ -504,7 +470,17 @@ export class TboHotelProviderAdapter
     };
   }
 
-  cancelBooking(): Promise<HotelCancelResult> {
-    return Promise.reject(new TboOperationNotSupportedError('cancelBooking'));
+  /**
+   * La cancelación del ACL (PR-5.1; docs/tbo/04 §4.4): lectura previa, `POST /Cancel` con UN
+   * intento y lectura posterior. `success` dice si quedó pedida y `bookingStatus` si quedó cancelada
+   * o sólo en curso; un `479` vuelve como `success: false`, y lo que no prueba si TBO aplicó el write
+   * se lanza tal cual, con path `/Cancel`, para que la política de cancelaciones lo deje
+   * `UNVERIFIED`. Nada se reenvuelve aquí: un error con otro nombre cambiaría esa clasificación.
+   *
+   * La cuenta es la de este envoltorio: quien lo arma para la post-venta tiene que hacerlo con la
+   * que creó la reserva (RF-29; D-TBO-28 A).
+   */
+  cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult> {
+    return this.#acl.cancelBooking(request, ctx);
   }
 }

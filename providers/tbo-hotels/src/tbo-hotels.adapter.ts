@@ -15,6 +15,9 @@ import type {
   HotelBookingReadPort,
   HotelBookingRoomGuests,
   HotelBookingView,
+  HotelCancelPort,
+  HotelCancelRequest,
+  HotelCancelResult,
   HotelPrebookPort,
   HotelPrebookRequest,
   HotelPrebookResult,
@@ -36,6 +39,18 @@ import {
   classifyTboBookOutcome,
   type TboBookClassification,
 } from './booking/classify-book-outcome';
+import {
+  decideTboCancelPreflight,
+  decideTboCancelResult,
+  type TboCancelSkipReason,
+} from './cancel/cancel-decision';
+import { buildTboCancelRequest, TboCancelRequestSchema } from './cancel/cancel.request.builder';
+import {
+  mapTboCancelResponse,
+  type TboCancelObservation,
+  type TboCancelReply,
+} from './cancel/response.mapper';
+import { TboCancelEnvelopeSchema } from './cancel/response.schema';
 import { requireUsableTboConfig, type TboHotelsConfig } from './config';
 import {
   buildTboBookingDetailRequest,
@@ -49,6 +64,7 @@ import {
 import { TboBookingDetailEnvelopeSchema } from './detail/response.schema';
 import {
   TboApiError,
+  TboCancelMappingError,
   TboConfigError,
   TboDispatchRejectedError,
   TboError,
@@ -73,6 +89,16 @@ import { mapTboPrebookResponse, type TboPrebookMapping } from './prebook/respons
 import { TboPrebookEnvelopeSchema } from './prebook/response.schema';
 import { TBO_HOTELS_PROVIDER_CODE } from './provider-code';
 import { pickTboLogMeta } from './redaction';
+import {
+  buildTboBookingsByDateRequest,
+  TboBookingsByDateRequestSchema,
+  type TboBookingDateWindow,
+} from './reports/booking-by-date.request.builder';
+import {
+  mapTboBookingsByDateResponse,
+  type TboBookingsByDateMapping,
+} from './reports/booking-by-date.response.mapper';
+import { TboBookingsByDateEnvelopeSchema } from './reports/booking-by-date.response.schema';
 import { TBO_OFFER_TTL_MS } from './search/offer-window';
 import {
   mapTboSearchResponse,
@@ -116,6 +142,11 @@ export type {
   TboBookingLookup,
   TboVoucherStatus,
 } from './detail/response.mapper';
+export type {
+  TboBookingByDate,
+  TboBookingsByDateDiagnostics,
+  TboBookingsByDateMapping,
+} from './reports/booking-by-date.response.mapper';
 
 /**
  * Búsqueda y detalle de un hotel en TBO por los puertos neutrales (docs/tbo/09 PR-1.5; 08 RF-14
@@ -160,6 +191,21 @@ export type {
  * **BookingDetail** (04 §3; 08 RF-24): `HotelBookingReadPort` por `ConfirmationNumber` y
  * `HotelBookingByClientReferencePort` por nuestra `BookingReferenceId`, más `bookingDetailReport`
  * con el resumen para la post-venta. Es una lectura: se reintenta ante red, 5xx o 429.
+ *
+ * **Cancel** (docs/tbo/09 PR-5.1; 04 §4.4; 08 RF-25 y §9 C-05): `HotelCancelPort` más
+ * `cancelReport`. Lectura previa, `POST /Cancel` con UN intento y lectura posterior; qué se manda y
+ * qué se devuelve lo deciden las funciones puras de `./cancel/cancel-decision`. Un `479` vuelve
+ * como `success: false` sin lanzar; lo que no dice si TBO aplicó el write se lanza con path
+ * `/Cancel` para que la política de cancelaciones lo deje `UNVERIFIED`.
+ *
+ * **BookingDetailsbasedondate** (PR-5.1; 04 §5 y §9.5; 08 RF-28): `listBookingsByDateReport`, una
+ * ventana de hasta 60 días que vale entera o se lanza. Es una lectura de fondo, para la conciliación.
+ * No se llama `listBookingsByDate` a propósito: ése es el método de `HotelBookingsByDatePort`, que
+ * recibe `{ from, to }` de cualquier largo y devuelve `HotelBookingSummary[]`, y `apps/api` detecta
+ * los puertos opcionales por el NOMBRE del método (`supportsHotelBookingsByDate`). Con el mismo
+ * nombre y otro contrato, el ACL pasaría por un puerto que no cumple, y un resumen sin
+ * `clientReferenceMissing` dejaría concluir "no está en TBO" a ciegas (D-TBO-24 A). El puerto
+ * neutral, y con él la capacidad `reconcileByDate`, llegan con la conciliación (PR-5.5).
  */
 
 // ───────────────────────── Opciones ─────────────────────────
@@ -555,6 +601,71 @@ function lookupOf(query: TboBookingDetailQuery): TboBookingLookup {
   } as TboBookingLookup;
 }
 
+// ───────────────────────── Cancel ─────────────────────────
+
+export interface TboCancelQuery {
+  /** El localizador de TBO con que se creó la reserva (`orders.provider_order_id`). */
+  readonly confirmationNumber: string;
+}
+
+/**
+ * Una lectura de BookingDetail dentro de la secuencia de cancelación. `failed` sólo existe para la
+ * lectura POSTERIOR, que nunca lanza (04 §4.3): trae la clase y el `kind` del error, no el error.
+ */
+export type TboCancelReading =
+  | { readonly state: 'read'; readonly view: HotelBookingView; readonly requestId: string }
+  | {
+      readonly state: 'failed';
+      readonly errorClass: string;
+      readonly kind?: TboFailureKind;
+      readonly requestId?: string;
+    };
+
+export interface TboCancelReport {
+  /** Lo que devuelve el puerto: `success`, `bookingStatus` y avisos (`TBO_CANCEL_WARNINGS`). */
+  readonly result: HotelCancelResult;
+  readonly confirmationNumber: string;
+  /** Salió el `POST /Cancel`. Si no, `skipReason` dice por qué. */
+  readonly sent: boolean;
+  readonly skipReason?: TboCancelSkipReason;
+  /** `Status.Code` de `/Cancel`: `200` (aceptada) o `479` (rechazada). Sólo si salió. */
+  readonly cancelCode?: 200 | 479;
+  /** El de la llamada a `/Cancel`, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly cancelRequestId?: string;
+  /** La lectura previa. Si falló, la cancelación lanzó antes de enviar nada. */
+  readonly before: Extract<TboCancelReading, { state: 'read' }>;
+  /** La lectura posterior, sólo si salió el Cancel. */
+  readonly after?: TboCancelReading;
+  /** Huella de la cuenta con que se canceló: tiene que ser la que reservó (RF-29). */
+  readonly accountRef: string;
+  readonly durationMs: number;
+}
+
+const CANCEL_PATH = TBO_OPERATIONS.cancel.path;
+
+/** El `requestId` de un error de TBO que lo tenga, para ubicar su RQ/RS en la bóveda. */
+function requestIdOf(err: unknown): string | undefined {
+  return err instanceof TboApiError || err instanceof TboResponseMappingError
+    ? err.requestId
+    : undefined;
+}
+
+// ───────────────────────── BookingDetailsbasedondate ─────────────────────────
+
+/** Una ventana de fechas de creación, `YYYY-MM-DD` e inclusiva, de hasta 60 días. */
+export type TboBookingsByDateQuery = TboBookingDateWindow;
+
+export interface TboBookingsByDateReport extends TboBookingsByDateMapping {
+  /** El de la llamada HTTP, para ubicar el RQ/RS en la bóveda de payloads. */
+  readonly requestId: string;
+  /** Huella de la cuenta leída: la conciliación es por cuenta, no por tenant (04 §9.2). */
+  readonly accountRef: string;
+  readonly attempts: number;
+  readonly durationMs: number;
+}
+
+const BY_DATE_PATH = TBO_OPERATIONS.bookingDetailsByDate.path;
+
 // ───────────────────────── Piezas ─────────────────────────
 
 const SEARCH_PATH = TBO_OPERATIONS.search.path;
@@ -691,7 +802,8 @@ export class TboHotelsAdapter
     HotelPrebookPort,
     HotelBookPort,
     HotelBookingReadPort,
-    HotelBookingByClientReferencePort
+    HotelBookingByClientReferencePort,
+    HotelCancelPort
 {
   // Campos `#`, como el cliente: un adapter volcado a un log no arrastra nada de la cuenta.
   readonly #client: TboHttpClient;
@@ -1085,6 +1197,237 @@ export class TboHotelsAdapter
         durationMs: this.#now() - started,
       };
     }
+  }
+
+  /** `HotelCancelPort`: la secuencia completa por el localizador de TBO. */
+  async cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult> {
+    return (await this.cancelReport({ confirmationNumber: request.providerBookingId }, ctx)).result;
+  }
+
+  /**
+   * La cancelación de 04 §4.4, con lo que la post-venta necesita para registrarla (`cancelCode` para
+   * `OrderCancellationAttempted`, las dos lecturas y sus `requestId`).
+   *
+   * Lanza, y sólo en estos casos:
+   * - `TboRequestBuildError` (`/Cancel`) si el localizador no tiene forma: no sale nada;
+   * - lo que lance la lectura PREVIA (path `/BookingDetail`): nada salió hacia `/Cancel`, así que la
+   *   política lo trata como previo al write (RF-25 CA-4);
+   * - lo que lance `/Cancel` salvo el `479`: `TboApiError` con path `/Cancel` (timeout, red, 5xx,
+   *   429 → `UNVERIFIED`; 401, 402, 400 → deterministas), `TboCancelMappingError` si la respuesta o
+   *   su `Status.Code` no se pueden leer, `TboDispatchRejectedError` si el limitador no lo despachó.
+   *
+   * La lectura posterior nunca lanza: si falla, el resultado lo dice con un aviso y el `200` sigue
+   * siendo un `200` (C-05).
+   */
+  async cancelReport(query: TboCancelQuery, ctx: SearchContext): Promise<TboCancelReport> {
+    const started = this.#now();
+    const body = buildTboCancelRequest(query.confirmationNumber);
+    const confirmationNumber = body.ConfirmationNumber;
+    const base = { confirmationNumber, accountRef: this.#client.accountRef };
+
+    const before = await this.#readForCancel(confirmationNumber, ctx);
+    const preflight = decideTboCancelPreflight(before.view);
+    if (!preflight.send) {
+      const report: TboCancelReport = {
+        ...base,
+        result: preflight.result,
+        sent: false,
+        skipReason: preflight.skipReason,
+        before,
+        durationMs: this.#now() - started,
+      };
+      this.#logCancel(report, preflight.skipReason);
+      return report;
+    }
+
+    let observation: TboCancelObservation;
+    let cancelRequestId: string | undefined;
+    try {
+      const sent = await this.#client.send('cancel', body, {
+        requestSchema: TboCancelRequestSchema,
+        responseSchema: TboCancelEnvelopeSchema,
+      });
+      cancelRequestId = sent.requestId;
+      // Inalcanzable con la tabla actual: sólo Search lee un 201 como vacío. Si alguien cambia la
+      // fila, un Cancel "vacío" no dice si se aplicó: es ilegible, no aceptado ni rechazado.
+      observation =
+        sent.outcome === 'SUCCESS'
+          ? { kind: 'answered', envelope: sent.data }
+          : {
+              kind: 'threw',
+              error: new TboCancelMappingError(
+                CANCEL_PATH,
+                ['Status.Code:no_availability'],
+                sent.requestId,
+              ),
+            };
+    } catch (err) {
+      cancelRequestId = requestIdOf(err);
+      observation = { kind: 'threw', error: err };
+    }
+
+    let reply: TboCancelReply;
+    try {
+      reply = mapTboCancelResponse(
+        observation,
+        {
+          confirmationNumber,
+          ...(cancelRequestId === undefined ? {} : { requestId: cancelRequestId }),
+        },
+        { metrics: this.#metrics, logger: this.#logger },
+      );
+    } catch (err) {
+      this.#logCancelThrew(confirmationNumber, err, this.#now() - started);
+      throw err;
+    }
+
+    const after = await this.#readAfterCancel(confirmationNumber, ctx);
+    const report: TboCancelReport = {
+      ...base,
+      result: decideTboCancelResult(
+        reply,
+        after.state === 'read' ? { state: 'read', view: after.view } : { state: 'failed' },
+      ),
+      sent: true,
+      cancelCode: reply.tboCode,
+      ...(cancelRequestId === undefined ? {} : { cancelRequestId }),
+      before,
+      after,
+      durationMs: this.#now() - started,
+    };
+    this.#logCancel(report, reply.success ? 'ACCEPTED' : 'REJECTED');
+    return report;
+  }
+
+  /**
+   * `BookingDetailsbasedondate` de UNA ventana de hasta 60 días (RF-28). Lanza, sin llamar a TBO,
+   * `TboRequestBuildError` si la ventana no vale; después, todo lo que no sea un `200` legible
+   * (nunca es "no hay reservas", PV-26) y `TboResponseMappingError` si alguna fila cae fuera de la
+   * ventana o no se puede cruzar.
+   */
+  async listBookingsByDateReport(
+    query: TboBookingsByDateQuery,
+    _ctx: SearchContext,
+  ): Promise<TboBookingsByDateReport> {
+    const body = buildTboBookingsByDateRequest(query);
+    const window = { fromDate: body.FromDate, toDate: body.ToDate };
+    const result = await this.#client.send('bookingDetailsByDate', body, {
+      requestSchema: TboBookingsByDateRequestSchema,
+      responseSchema: TboBookingsByDateEnvelopeSchema,
+    });
+    if (result.outcome !== 'SUCCESS') {
+      // Inalcanzable con la tabla actual; si alguien cambia la fila, un 201 tampoco es "vacío".
+      throw new TboResponseMappingError(
+        BY_DATE_PATH,
+        ['Status.Code:no_availability'],
+        result.requestId,
+      );
+    }
+    const mapping = mapTboBookingsByDateResponse(
+      result.data,
+      { window, requestId: result.requestId },
+      { metrics: this.#metrics, logger: this.#logger },
+    );
+    this.#log('info', 'tbo.bookings_by_date.read', {
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      op: 'bookingDetailsByDate',
+      requestId: result.requestId,
+      accountRef: this.#client.accountRef,
+      ...window,
+      bookingCount: mapping.bookings.length,
+      durationMs: result.durationMs,
+    });
+    return {
+      ...mapping,
+      requestId: result.requestId,
+      accountRef: this.#client.accountRef,
+      attempts: result.attempts,
+      durationMs: result.durationMs,
+    };
+  }
+
+  /** Lectura previa al Cancel. Lanza: un fallo aquí es previo al write y se puede reintentar. */
+  async #readForCancel(
+    confirmationNumber: string,
+    ctx: SearchContext,
+  ): Promise<Extract<TboCancelReading, { state: 'read' }>> {
+    const report = await this.bookingDetailReport(
+      { confirmationNumber, purpose: 'background' },
+      ctx,
+    );
+    return { state: 'read', view: report.view, requestId: report.requestId };
+  }
+
+  /**
+   * Lectura posterior al Cancel. NUNCA lanza (04 §4.3): una excepción con path `/BookingDetail`
+   * después de un write la política la leería como previa al envío y habilitaría un segundo Cancel.
+   */
+  async #readAfterCancel(
+    confirmationNumber: string,
+    ctx: SearchContext,
+  ): Promise<TboCancelReading> {
+    try {
+      return await this.#readForCancel(confirmationNumber, ctx);
+    } catch (err) {
+      const requestId = requestIdOf(err);
+      return {
+        state: 'failed',
+        errorClass: err instanceof Error ? err.name : 'unknown',
+        ...(err instanceof TboApiError ? { kind: err.kind } : {}),
+        ...(requestId === undefined ? {} : { requestId }),
+      };
+    }
+  }
+
+  /** Una línea por cancelación: localizador, desenlace y códigos, nunca un cuerpo (01 §11.1). */
+  #logCancel(
+    report: TboCancelReport,
+    outcome: TboCancelSkipReason | 'ACCEPTED' | 'REJECTED',
+  ): void {
+    const { result } = report;
+    const settled =
+      outcome === 'ACCEPTED' ||
+      outcome === 'ALREADY_CANCELLED' ||
+      outcome === 'ALREADY_IN_PROGRESS';
+    const level = settled && report.after?.state !== 'failed' ? 'info' : 'warn';
+    this.#count('tbo.cancel.outcome', 1, {
+      op: 'cancel',
+      outcome,
+      success: String(result.success),
+    });
+    this.#log(level, 'tbo.cancel.outcome', {
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      op: 'cancel',
+      path: CANCEL_PATH,
+      accountRef: report.accountRef,
+      confirmationNumber: report.confirmationNumber,
+      outcome,
+      durationMs: report.durationMs,
+      ...(report.cancelCode === undefined ? {} : { tboCode: report.cancelCode }),
+      ...(report.cancelRequestId === undefined ? {} : { requestId: report.cancelRequestId }),
+      ...(result.providerStatus === undefined ? {} : { providerStatus: result.providerStatus }),
+      ...(result.warnings.length === 0 ? {} : { warnings: result.warnings }),
+      ...(report.after?.state === 'failed' ? { errorClass: report.after.errorClass } : {}),
+    });
+  }
+
+  /** `error`: lo que lanzó `/Cancel` puede haberse aplicado (01 §11.1). */
+  #logCancelThrew(confirmationNumber: string, err: unknown, durationMs: number): void {
+    const requestId = requestIdOf(err);
+    this.#count('tbo.cancel.outcome', 1, { op: 'cancel', outcome: 'THREW', success: 'false' });
+    this.#log('error', 'tbo.cancel.outcome', {
+      provider: TBO_HOTELS_PROVIDER_CODE,
+      op: 'cancel',
+      path: CANCEL_PATH,
+      accountRef: this.#client.accountRef,
+      confirmationNumber,
+      outcome: 'THREW',
+      durationMs,
+      errorClass: err instanceof Error ? err.name : 'unknown',
+      ...(err instanceof TboApiError ? { kind: err.kind, status: err.status } : {}),
+      ...(err instanceof TboApiError && err.tboCode !== undefined ? { tboCode: err.tboCode } : {}),
+      ...(requestId === undefined ? {} : { requestId }),
+    });
   }
 
   /**

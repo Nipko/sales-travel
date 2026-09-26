@@ -177,6 +177,28 @@ Detalle por archivo:
   `CustomerDetails` y `CreditCardOptions` a nivel de reserva (PV-06) y los desenlaces de "no existe",
   que el PDF no documenta (PV-01, Q-37) y fija la sonda PR-05.
 
+## `pdf/` — Cancel y BookingDetailsbasedondate (docs/tbo/04; PR-5.1)
+
+| Archivo                            | Ejemplo del PDF                                          | Páginas | ¿JSON válido en el PDF? | Para qué                                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------- | ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cancel-request.p41.json`          | 9.1.1 Sample Request (`Cancel`)                          | 41      | Sí                      | El builder lo reproduce byte a byte: sólo `ConfirmationNumber`, sin `PaymentMode`. En una línea, como en el PDF.                                  |
+| `cancel-response.p42.json`         | 9.2.1 Sample Response (`Cancel`)                         | 42      | Sí                      | El `200` "Cancelled", que el adapter lee como cancelación **aceptada** (PV-16). Sólo trae `Status` y `ConfirmationNumber`: ni cargo ni estado.    |
+| `booking-by-date-request.p63.json` | 15.1.1 Sample Request (By Date)                          | 63      | Sí                      | Deja escrita la discrepancia PV-25: el ejemplo usa `fromdate`/`todate` y el builder, `FromDate`/`ToDate` de la tabla (p. 62) y de Postman.        |
+| `booking-by-date.p64.json`         | 15.2.1 Sample Response (`HotelBookingDetailBasedOnDate`) | 64      | Sí                      | La lectura de la conciliación: dos reservas `Vouchered` (fuera del enum, PV-28), `BookingDetail` como array (PV-27) y los `TripName` a descartar. |
+
+- **Qué se tomó de dónde.** Valores comparados contra la PNG de cada página y contra el texto de
+  PyMuPDF. El título 15.1.1 está en p. 62 y su JSON en p. 63; el título 15.2.1 y su JSON, en p. 64
+  (el pie impreso dice "59": la convención es la página física).
+- **Localizadores.** `GOF05R` lleva la letra O después de la G y un cero antes del 5: en la fuente
+  del PDF el cero va con punto y la O no. `7L4F4E` es tal cual.
+- **Sin normalización** salvo la sangría: `AgentMarkup` y `BookingPrice` siguen siendo strings,
+  `Index` sigue siendo número y las fechas quedan `DD-MMM-YYYY`. `TripName` se conserva a propósito:
+  el test comprueba que no sale del mapper (RF-28).
+- **Lo que el PDF no muestra y los tests construyen** a partir de estos fixtures: los estados de
+  cancelación del enum (p. 70-71) en la lectura de BookingDetail de p. 49, el `479 CANCEL_FAIL`
+  (p. 9, sin ejemplo), un `200` de Cancel que nombra otra reserva, filas fuera de la ventana, sin
+  `BookingStatus` o con `BookingDetail` como objeto único.
+
 ## `postman/` — requests esperados
 
 | Archivo                | Request de la colección | Qué es                                                                                                                                                                                                                                                                             |

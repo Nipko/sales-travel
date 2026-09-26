@@ -226,10 +226,10 @@ describe('TboHotelsProviderFactory — contrato del registry de hoteles', () => 
     expect(factory.searchProfile.contentFromCatalog).toBe(true);
   });
 
-  it('anuncia la lectura de reservas (PR-4.2) y no la post-venta que el ACL todavía no hace', () => {
+  it('anuncia la lectura de reservas (PR-4.2) y la cancelación (PR-5.1); las reservas por fecha, con PR-5.5', () => {
     expect(factory.capabilities).toEqual({
       retrieve: true,
-      cancel: false,
+      cancel: true,
       retrieveByClientReference: true,
       reconcileByDate: false,
     });

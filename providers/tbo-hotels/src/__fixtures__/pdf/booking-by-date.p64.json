@@ -1,0 +1,40 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "HotelBookingDetailBasedOnDate Successful"
+  },
+  "BookingDetail": [
+    {
+      "Index": 1,
+      "BookingId": "264056",
+      "ConfirmationNo": "GOF05R",
+      "BookingDate": "10-Nov-2023",
+      "Currency": "USD",
+      "AgentMarkup": "0.00",
+      "AgencyName": "ATravels",
+      "BookingStatus": "Vouchered",
+      "BookingPrice": "583.89",
+      "TripName": "Sharma_02Dec_Dubai",
+      "TBOHotelCode": "1022623",
+      "CheckInDate": "02-Dec-2023",
+      "CheckOutDate": "10-Dec-2023",
+      "ClientReferenceNumber": "123680"
+    },
+    {
+      "Index": 2,
+      "BookingId": "263915",
+      "ConfirmationNo": "7L4F4E",
+      "BookingDate": "09-Nov-2023",
+      "Currency": "USD",
+      "AgentMarkup": "0.00",
+      "AgencyName": "ATravels",
+      "BookingStatus": "Vouchered",
+      "BookingPrice": "983.23",
+      "TripName": "One_20Nov_London",
+      "TBOHotelCode": "1407362",
+      "CheckInDate": "20-Nov-2023",
+      "CheckOutDate": "21-Nov-2023",
+      "ClientReferenceNumber": "20230320978y8"
+    }
+  ]
+}
