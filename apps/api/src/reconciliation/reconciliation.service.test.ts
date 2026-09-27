@@ -1047,6 +1047,8 @@ describe('disparos: planificador, barrido, botón y job', () => {
   });
 
   it('el job valida su payload y no repite una cuenta ya conciliada hoy (salvo el botón)', async () => {
+    // Con el reloj real, "hoy" empieza a las 04:30 UTC y el test dependía de la hora de la corrida.
+    vi.useFakeTimers({ now: NOW });
     const b = banco([]);
     await expect(b.service.runJob({ accountId: 'x' }, { final: false })).rejects.toBeInstanceOf(
       ReconciliationJobInvalidError,
