@@ -31,6 +31,9 @@ import { CANCEL_SUCCESS_POLICY, persistedCancelRetryPolicy } from './cancel-retr
  * - **La verificación** (`advance`, `close`): CAS sobre el paso del calendario, como la del Book
  *   (0044). El job y el barrido pueden llegar al mismo paso; sólo el que lo avanza sigue.
  *
+ * Toda escritura que deja la orden `cancelled` corta el seguimiento del HCN y cierra su tarea
+ * `hcn-ticket` abierta en la misma transacción (`stopHcn`; docs/tbo/04 §8.6).
+ *
  * Todo corre con el tenant fijado: `orders`, `order_operations` y `hotel_order_tracking` tienen RLS
  * forzada, y el barrido recorre los tenants uno por uno (pendiente c de la Fase 5).
  */
@@ -62,7 +65,10 @@ export interface HotelCancelTrackingWrite {
   /** Ausente = no se toca. */
   readonly subStatus?: HotelOrderSubStatus | null;
   readonly hcn?: HotelOrderHcnRecord;
-  /** La reserva ya no está viva: el seguimiento del HCN se corta. */
+  /**
+   * La reserva ya no está viva (la orden pasa a `cancelled`): el seguimiento del HCN se corta y la
+   * tarea `hcn-ticket` que haya quedado abierta se cierra, en la misma transacción.
+   */
   readonly stopHcn?: boolean;
   /** Abre el calendario de verificación en el paso 0 (reemplaza uno anterior). */
   readonly openCalendar?: { readonly anchorAt: number; readonly nextAt: number };
@@ -165,7 +171,8 @@ function columnsOf(write: HotelCancelTrackingWrite) {
         }),
   };
   // Cortar el HCN sólo toca un seguimiento en curso: uno recibido o dado por perdido se queda como
-  // está. Una fila nueva no tiene seguimiento que cortar.
+  // está (la tarea abierta de uno perdido la cierra `resolveHcnTicketsOf`). Una fila nueva no tiene
+  // seguimiento que cortar.
   const stop =
     write.stopHcn === true
       ? {
@@ -176,19 +183,27 @@ function columnsOf(write: HotelCancelTrackingWrite) {
   return { insert: common, update: { ...common, ...stop } };
 }
 
-/** Una escritura que trae el HCN cierra, en su transacción, la tarea `hcn-ticket` abierta. */
+/**
+ * La tarea `hcn-ticket` abierta se cierra en la transacción de la escritura que le quita el objeto:
+ * la que trae el HCN, o la que corta el seguimiento porque la orden se cancela. Va después de la
+ * escritura de la fila (`resolvePendingHcnTickets`).
+ */
 async function resolveHcnTicketsOf(
   trx: Transaction<DB>,
   tenantId: string,
   orderId: string,
-  write: Pick<HotelCancelTrackingWrite, 'hcn' | 'source' | 'at'>,
+  write: Pick<HotelCancelTrackingWrite, 'hcn' | 'stopHcn' | 'source' | 'at'>,
 ): Promise<void> {
-  if (write.hcn === undefined) return;
-  await resolvePendingHcnTickets(trx, tenantId, orderId, {
-    reason: 'hcn-received',
-    source: write.source,
-    at: write.at,
-  });
+  const observed = { source: write.source, at: write.at };
+  if (write.hcn !== undefined) {
+    await resolvePendingHcnTickets(trx, tenantId, orderId, { reason: 'hcn-received', ...observed });
+  }
+  if (write.stopHcn === true) {
+    await resolvePendingHcnTickets(trx, tenantId, orderId, {
+      reason: 'order-cancelled',
+      ...observed,
+    });
+  }
 }
 
 @Injectable()
@@ -305,9 +320,10 @@ export class HotelOrderCancellationStore {
 
   /**
    * La lectura la ve cancelada: en una transacción, el paso (CAS), la orden de `pending` a
-   * `cancelled` y, si la cancelación había quedado sin verificar, su operación, que pasa a exitosa
-   * con la evidencia de la lectura (PV-B). `false` = otro camino llegó antes (el paso ya no es el
-   * de la fila, o la orden ya no está `pending`) y no se escribió nada.
+   * `cancelled`, el corte del HCN con su tarea abierta y, si la cancelación había quedado sin
+   * verificar, su operación, que pasa a exitosa con la evidencia de la lectura (PV-B). `false` =
+   * otro camino llegó antes (el paso ya no es el de la fila, o la orden ya no está `pending`) y no se
+   * escribió nada.
    */
   async close(
     tenantId: string,
@@ -317,10 +333,12 @@ export class HotelOrderCancellationStore {
   ): Promise<boolean> {
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
+        // El corte va atado a la transición, no al plan que llega: una orden `cancelled` con el
+        // seguimiento vivo, o con la tarea abierta, no tiene quién la cierre después.
         const stepped = await this.advanceIn(trx, tenantId, orderId, fromStep, {
           step: fromStep + 1,
           nextAt: null,
-          write,
+          write: { ...write, stopHcn: true },
         });
         if (!stepped) return false;
 
@@ -348,7 +366,8 @@ export class HotelOrderCancellationStore {
    * La conciliación confirmó con una lectura que la reserva se canceló (o se está cancelando) fuera
    * de una cancelación en curso nuestra (docs/tbo/04 §6.3 fila 14 y §9.4 R3): en una transacción, la
    * orden de `from` a `to` (CAS sobre su estado), la fila de seguimiento (CAS sobre la foto con la
-   * que se decidió) y, si queda `cancelled`, la operación `cancel` que había quedado sin verificar.
+   * que se decidió) y, si queda `cancelled`, el corte del HCN con su tarea abierta y la operación
+   * `cancel` que había quedado sin verificar.
    *
    * `false` = otro camino llegó antes (la orden ya no está en `from`, o la fila cambió) y no se
    * escribió nada.
@@ -366,11 +385,13 @@ export class HotelOrderCancellationStore {
       readonly write: HotelCancelTrackingWrite & { readonly source: 'reconciliation' };
     },
   ): Promise<boolean> {
-    const { insert, update: written } = columnsOf(change.write);
+    const cancelled = change.to === 'cancelled';
+    // Como en `close`: el corte del HCN va atado a la transición, no al plan que llega.
+    const write = cancelled ? { ...change.write, stopHcn: true } : change.write;
+    const { insert, update: written } = columnsOf(write);
     // Cerrada, ya no hay cancelación en curso que verificar: un paso que quedara programado sólo
     // releería al proveedor para nada.
-    const update =
-      change.to === 'cancelled' ? { ...written, cancel_verify_next_at: null } : written;
+    const update = cancelled ? { ...written, cancel_verify_next_at: null } : written;
     const { expected } = change;
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
@@ -405,10 +426,8 @@ export class HotelOrderCancellationStore {
         // La orden ya cambió dentro de esta transacción: se deshace entera.
         if (row === undefined) throw new ReadingSuperseded();
 
-        await resolveHcnTicketsOf(trx, tenantId, orderId, change.write);
-        if (change.to === 'cancelled') {
-          await this.resolveUnverifiedCancel(trx, orderId, 'reconciliation');
-        }
+        await resolveHcnTicketsOf(trx, tenantId, orderId, write);
+        if (cancelled) await this.resolveUnverifiedCancel(trx, orderId, 'reconciliation');
         return true;
       });
     } catch (err) {

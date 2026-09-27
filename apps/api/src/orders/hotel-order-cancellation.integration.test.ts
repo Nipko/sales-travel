@@ -457,6 +457,195 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
 
     expect(await fila(id)).toMatchObject({ sub_status: 'cancel-requested', next: null });
   });
+
+  describe('la orden que queda cancelled cierra su tarea hcn-ticket y corta el plan (04 §8.6)', () => {
+    const TAREA = { vertical: 'hotels', reason: 'sla-exhausted', priority: 'P0', attempts: 4 };
+
+    /**
+     * El seguimiento como lo deja el HCN: `missing` con su tarea abierta, o `scheduled` con una
+     * lectura por delante. Lo siembra el superusuario, como lo habría escrito el seguimiento.
+     */
+    async function conSeguimiento(id: string, estado: 'missing' | 'scheduled'): Promise<void> {
+      await pool.query(
+        `INSERT INTO hotel_order_tracking (order_id, tenant_id, hcn_state, hcn_priority, hcn_attempts, hcn_next_check_at)
+         VALUES ($1, $2, $3, 'P0', $4, $5)`,
+        [
+          id,
+          agenciaA,
+          estado,
+          estado === 'missing' ? 4 : 1,
+          estado === 'scheduled' ? new Date(Date.now() + 60 * MIN) : null,
+        ],
+      );
+      if (estado === 'missing') {
+        await pool.query(
+          `INSERT INTO order_operations (tenant_id, order_id, type, status, result)
+           VALUES ($1, $2, 'hcn-ticket', 'pending', $3::jsonb)`,
+          [agenciaA, id, JSON.stringify(TAREA)],
+        );
+      }
+    }
+
+    async function tareas(id: string) {
+      const { rows } = await pool.query<{ status: string; result: Record<string, unknown> }>(
+        `SELECT status, result FROM order_operations WHERE order_id = $1 AND type = 'hcn-ticket'`,
+        [id],
+      );
+      return rows;
+    }
+
+    async function plan(id: string) {
+      const { rows } = await pool.query<{ hcn_state: string | null; next: Date | null }>(
+        `SELECT hcn_state, hcn_next_check_at AS next FROM hotel_order_tracking WHERE order_id = $1`,
+        [id],
+      );
+      return rows[0]!;
+    }
+
+    function cerrada(source: string) {
+      return {
+        status: 'success',
+        result: {
+          ...TAREA,
+          resolution: {
+            by: 'system',
+            reason: 'order-cancelled',
+            source,
+            at: expect.any(String) as string,
+          },
+        },
+      };
+    }
+
+    it('la cancelación que la deja cancelled cierra la tarea en su transacción; otra orden no se toca', async () => {
+      const s = servicios();
+      const id = await orden();
+      const vecina = await orden();
+      await conSeguimiento(id, 'missing');
+      await conSeguimiento(vecina, 'missing');
+      s.proveedor.adapter.cancelBooking.mockResolvedValue({
+        success: true,
+        bookingStatus: 'CANCELLED',
+        providerStatus: 'Cancelled',
+        warnings: [],
+      });
+
+      const antes = Date.now();
+      const { result } = await s.orders.cancelOrder(agenciaA, id, 'X', usuario);
+
+      expect(result).toMatchObject({ success: true, settlement: 'final' });
+      expect(await fila(id)).toMatchObject({ status: 'cancelled' });
+      const [tarea] = await tareas(id);
+      expect(tarea).toMatchObject(cerrada('cancel'));
+      const at = Date.parse(String((tarea!.result['resolution'] as { at: string }).at));
+      expect(at).toBeGreaterThanOrEqual(antes - 1_000);
+      // Un HCN dado por perdido queda como estaba: no tenía nada programado.
+      expect(await plan(id)).toEqual({ hcn_state: 'missing', next: null });
+      expect(await tareas(vecina)).toMatchObject([{ status: 'pending', result: TAREA }]);
+    });
+
+    it('con el plan en curso, la cancelación lo corta y apaga su próxima lectura', async () => {
+      const s = servicios();
+      const id = await orden();
+      await conSeguimiento(id, 'scheduled');
+      s.proveedor.adapter.cancelBooking.mockResolvedValue({
+        success: true,
+        bookingStatus: 'CANCELLED',
+        providerStatus: 'Cancelled',
+        warnings: [],
+      });
+
+      await s.orders.cancelOrder(agenciaA, id, 'X', usuario);
+
+      expect(await plan(id)).toEqual({ hcn_state: 'stopped', next: null });
+    });
+
+    it('en curso la tarea sigue abierta; la verificación que cierra la orden, la cierra', async () => {
+      const s = servicios();
+      const id = await orden();
+      await conSeguimiento(id, 'missing');
+      s.proveedor.adapter.cancelBooking.mockResolvedValue({
+        success: true,
+        bookingStatus: 'CANCELLATION_IN_PROGRESS',
+        providerStatus: 'CancelPending',
+        warnings: [],
+      });
+      await s.orders.cancelOrder(agenciaA, id, 'X', usuario);
+      expect(await tareas(id)).toMatchObject([{ status: 'pending', result: TAREA }]);
+
+      s.proveedor.adapter.getBooking.mockResolvedValue(cancelada());
+      const [job] = s.queue.cancelVerifications;
+      await s.cancellations.runJob(job, { final: false });
+
+      expect(await fila(id)).toMatchObject({ status: 'cancelled' });
+      expect(await tareas(id)).toMatchObject([cerrada('verify')]);
+    });
+
+    it('la conciliación que la ve cancelada fuera de la plataforma la cierra, aunque el plan no lo pida', async () => {
+      const s = servicios();
+      const id = await orden();
+      await conSeguimiento(id, 'missing');
+      const cambio = {
+        from: 'confirmed',
+        to: 'cancelled',
+        expected: { subStatus: null, providerStatus: null, hcn: null, hcnState: 'missing' },
+        write: {
+          at: Date.now(),
+          source: 'reconciliation',
+          subStatus: null,
+          record: { providerStatus: 'Cancelled', refundAwaited: false },
+        },
+      } as const;
+
+      // Con la tarea todavía abierta: la conciliación de OTRA agencia de la red no cancela esta
+      // orden ni cierra su tarea.
+      await expect(s.store.transitionByReading(agenciaB, id, cambio)).resolves.toBe(false);
+      expect(await fila(id)).toMatchObject({ status: 'confirmed' });
+      expect(await tareas(id)).toMatchObject([{ status: 'pending', result: TAREA }]);
+
+      await expect(s.store.transitionByReading(agenciaA, id, cambio)).resolves.toBe(true);
+
+      expect(await fila(id)).toMatchObject({ status: 'cancelled' });
+      expect(await tareas(id)).toMatchObject([cerrada('reconciliation')]);
+    });
+
+    it('si el cierre de la orden se deshace, la tarea queda abierta', async () => {
+      const s = servicios();
+      const id = await orden();
+      s.proveedor.adapter.cancelBooking.mockResolvedValue({
+        success: true,
+        bookingStatus: 'CANCELLATION_IN_PROGRESS',
+        providerStatus: 'CancelPending',
+        warnings: [],
+      });
+      await s.orders.cancelOrder(agenciaA, id, 'X', usuario);
+      await pool.query(
+        `UPDATE hotel_order_tracking SET hcn_state = 'missing', hcn_priority = 'P0', hcn_attempts = 4 WHERE order_id = $1`,
+        [id],
+      );
+      await pool.query(
+        `INSERT INTO order_operations (tenant_id, order_id, type, status, result)
+         VALUES ($1, $2, 'hcn-ticket', 'pending', $3::jsonb)`,
+        [agenciaA, id, JSON.stringify(TAREA)],
+      );
+      // Otro camino (una persona) movió la orden antes de que la verificación la cerrara.
+      await pool.query(`UPDATE orders SET status = 'confirmed' WHERE id = $1`, [id]);
+
+      const cierre = { at: Date.now(), source: 'verify', subStatus: null } as const;
+
+      await expect(s.store.close(agenciaA, id, 0, cierre)).resolves.toBe(false);
+
+      expect(await tareas(id)).toMatchObject([{ status: 'pending', result: TAREA }]);
+      expect(await plan(id)).toMatchObject({ hcn_state: 'missing' });
+      expect(await fila(id)).toMatchObject({ status: 'confirmed', cancel_verify_step: 0 });
+
+      // Con la orden de nuevo `pending`, el MISMO cierre gana: el CAS del paso coincidía, así que
+      // el primero sí cerró la tarea dentro de su transacción y la deshizo con el resto.
+      await pool.query(`UPDATE orders SET status = 'pending' WHERE id = $1`, [id]);
+      await expect(s.store.close(agenciaA, id, 0, cierre)).resolves.toBe(true);
+      expect(await tareas(id)).toMatchObject([cerrada('verify')]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1203,3 +1203,174 @@ describe('HARD-1 (2): el claim que un proceso dejó en vuelo', () => {
     });
   });
 });
+
+describe('la orden que queda cancelled cierra su tarea hcn-ticket y corta el plan (04 §8.6)', () => {
+  const TAREA = {
+    vertical: 'hotels',
+    provider: PROVEEDOR,
+    reason: 'sla-exhausted',
+    priority: 'P0',
+    attempts: 4,
+    confirmationNumber: LOCALIZADOR,
+  };
+
+  /** Una tarea `hcn-ticket` abierta por el seguimiento, antes de la cancelación. */
+  function tarea(extra: Row = {}): Row {
+    return {
+      id: 'op-hcn',
+      tenant_id: TENANT,
+      order_id: ORDEN,
+      type: 'hcn-ticket',
+      status: 'pending',
+      attempts: 1,
+      result: JSON.stringify(TAREA),
+      actor_user_id: null,
+      created_at: 0,
+      updated_at: 0,
+      ...extra,
+    };
+  }
+
+  /** La orden con el HCN dado por perdido y su tarea abierta, más lo que no es suyo. */
+  function conTarea(hcnState: 'missing' | 'scheduled' = 'missing') {
+    const otra = ordenHotel({ id: 'h2', provider_order_id: 'YOSUR8' });
+    const b = banco([ordenHotel(), otra]);
+    b.mem.state.operations.push(
+      tarea(),
+      tarea({ id: 'op-hcn-h2', order_id: 'h2' }),
+      tarea({ id: 'op-hcn-vieja', status: 'success', result: JSON.stringify({ ...TAREA }) }),
+    );
+    b.mem.state.tracking.set(ORDEN, {
+      sub_status: null,
+      provider_status: 'Confirmed',
+      provider_status_source: 'hcn',
+      provider_voucher_status: 'true',
+      refund_awaited: false,
+      hcn: null,
+      hcn_state: hcnState,
+      cancel_verify_anchor_at: null,
+      cancel_verify_step: null,
+      cancel_verify_next_at: null,
+    });
+    const op = (id: string) => b.mem.state.operations.find((o) => o['id'] === id);
+    return { b, op };
+  }
+
+  function cancelada(): HotelBookingView {
+    return {
+      found: true,
+      providerBookingId: LOCALIZADOR,
+      status: 'CANCELLED',
+      providerStatus: 'Cancelled',
+      warnings: [],
+    };
+  }
+
+  it('200 y ya cancelada: la tarea se cierra con su motivo en la transacción de la cancelación', async () => {
+    const { b, op } = conTarea();
+    b.cancelBooking.mockResolvedValue(
+      respuesta({ bookingStatus: 'CANCELLED', providerStatus: 'Cancelled' }),
+    );
+    const antes = Date.now();
+
+    const { order } = await b.cancelar();
+
+    expect(order?.status).toBe('cancelled');
+    expect(op('op-hcn')?.['status']).toBe('success');
+    const resultado = b.mem.result(op('op-hcn'));
+    // Lo que la abrió queda como estaba; el cierre sólo agrega `resolution`.
+    expect(resultado).toMatchObject(TAREA);
+    expect(resultado['resolution']).toMatchObject({
+      by: 'system',
+      reason: 'order-cancelled',
+      source: 'cancel',
+    });
+    const at = Date.parse(String((resultado['resolution'] as Row)['at']));
+    expect(at).toBeGreaterThanOrEqual(antes);
+    // La de otra orden no se toca, y una ya resuelta tampoco se reescribe.
+    expect(op('op-hcn-h2')).toMatchObject({ status: 'pending', result: JSON.stringify(TAREA) });
+    expect(b.mem.result(op('op-hcn-vieja'))).not.toHaveProperty('resolution');
+    // Un HCN dado por perdido se queda como está: el plan no tenía nada programado.
+    expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('missing');
+  });
+
+  it('con el plan en curso, la cancelación lo corta', async () => {
+    const { b } = conTarea('scheduled');
+    b.cancelBooking.mockResolvedValue(respuesta({ bookingStatus: 'CANCELLED' }));
+
+    await b.cancelar();
+
+    expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('stopped');
+  });
+
+  it('en curso la tarea sigue abierta; la verificación que la cierra, la cierra', async () => {
+    const { b, op } = conTarea('scheduled');
+    b.cancelBooking.mockResolvedValue(respuesta({ bookingStatus: 'CANCELLATION_IN_PROGRESS' }));
+
+    await b.cancelar();
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(op('op-hcn')?.['status']).toBe('pending');
+    expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('scheduled');
+
+    b.getBooking.mockResolvedValue(cancelada());
+    await correrVerificacion(b);
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+    expect(b.mem.result(op('op-hcn'))['resolution']).toMatchObject({
+      reason: 'order-cancelled',
+      source: 'verify',
+    });
+    expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('stopped');
+    // Otra corrida del mismo paso no vuelve a escribir la tarea.
+    const cerrada = op('op-hcn')?.['result'];
+    await correrVerificacion(b);
+    expect(op('op-hcn')?.['result']).toBe(cerrada);
+  });
+
+  it('una cancelación rechazada o sin verificar no toca la tarea ni el plan', async () => {
+    const rechazo = conTarea('scheduled');
+    rechazo.b.cancelBooking.mockResolvedValue(
+      respuesta({
+        success: false,
+        error: 'TBO_CANCEL_FAIL',
+        bookingStatus: 'CONFIRMED',
+        providerStatus: 'Confirmed',
+      }),
+    );
+    await rechazo.b.cancelar();
+
+    const sinVerificar = conTarea('scheduled');
+    sinVerificar.b.cancelBooking.mockRejectedValue(
+      new TboApiError({
+        status: 0,
+        path: '/Cancel',
+        kind: 'TRANSPORT',
+        requestId: 'r',
+        timedOut: true,
+      }),
+    );
+    await expect(sinVerificar.b.cancelar()).rejects.toThrow();
+
+    for (const { b, op } of [rechazo, sinVerificar]) {
+      expect(b.mem.order(ORDEN)?.['status']).not.toBe('cancelled');
+      expect(op('op-hcn')).toMatchObject({ status: 'pending', result: JSON.stringify(TAREA) });
+      expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('scheduled');
+    }
+  });
+
+  it('si la transacción de la cancelación falla, la tarea queda abierta', async () => {
+    const { b, op } = conTarea();
+    // Otro camino movió la orden mientras el Cancel estaba en vuelo: el cierre se deshace entero.
+    b.cancelBooking.mockImplementation(() => {
+      const orden = b.mem.order(ORDEN);
+      if (orden !== undefined) orden['status'] = 'confirmed';
+      return Promise.resolve(respuesta({ bookingStatus: 'CANCELLED' }));
+    });
+
+    await expect(b.cancelar()).rejects.toBeInstanceOf(ConflictException);
+
+    expect(op('op-hcn')).toMatchObject({ status: 'pending', result: JSON.stringify(TAREA) });
+    expect(b.mem.tracking(ORDEN)?.hcn_state).toBe('missing');
+  });
+});

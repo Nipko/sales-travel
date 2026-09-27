@@ -65,7 +65,8 @@ import {
  * emite `HotelConfirmationNumberMissing` y se crea la tarea de operaciones `hcn-ticket`, sin PII:
  * una persona escala a TBO por el canal comercial (D-TBO-27 A). Si el HCN llega después por otra
  * lectura (la consulta manual, la conciliación), la tarea se cierra sola en la transacción que lo
- * guarda (`hcn-ticket.ts`). Nunca cambia `orders.status`.
+ * guarda; si la orden pasa a `cancelled`, en la transacción de ese cambio (`hcn-ticket.ts`). Nunca
+ * cambia `orders.status`.
  *
  * Sólo se sigue el HCN de los proveedores que declaran la capacidad `hcn`: saber leer una reserva
  * no alcanza (`despegar-hotels` lee y no promete un HCN con SLA).

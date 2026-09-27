@@ -403,7 +403,11 @@ export class MemoryReconciliationBank {
         if (o === undefined || o.status !== change.from) return Promise.resolve(false);
         if (!this.matches(tenantId, orderId, change.expected)) return Promise.resolve(false);
         o.status = change.to;
-        this.apply(orderId, change.write);
+        // Como el store: pasar a `cancelled` corta el HCN aunque la escritura no lo pida.
+        this.apply(
+          orderId,
+          change.to === 'cancelled' ? { ...change.write, stopHcn: true } : change.write,
+        );
         if (change.to === 'cancelled') {
           this.tracking.set(orderId, { ...this.trackingOf(orderId), cancelNextAt: null });
         }

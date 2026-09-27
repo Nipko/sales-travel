@@ -739,15 +739,17 @@ pura; un `BookingStatus` desconocido escala sin cambiar el estado; ningún event
 despierta. "Todavía sin HCN" no lanza. Agotados el SLA y los reintentos se emite `HotelConfirmationNumberMissing` y se
 crea la tarea de operaciones de D-TBO-27. El seguimiento se detiene si la reserva se cancela, si pasa el check-in o
 si llega el HCN. Un HCN de relleno (`NA`, `Pending`, `0`…) es "todavía sin HCN" (PV-05). Si el HCN llega con la tarea
-abierta, por cualquier lectura, la tarea se cierra sola con su motivo. Solo se sigue el HCN de los proveedores que
-declaran la capacidad `hcn`.
+abierta, por cualquier lectura, la tarea se cierra sola con su motivo; si la orden pasa a `cancelled`, también, en la
+transacción de ese cambio. Solo se sigue el HCN de los proveedores que declaran la capacidad `hcn`.
 
 **Fuente.** Tabla P0-P5, "Retry every 1 hour", "Maximum 3 retries", "raise an operations ticket" (p. 42-43),
 VERIFICADO-PDF.
 
 **CA.** Los ejemplos E1-E4 de [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §8.4 son tests; la tarea
 de operaciones no copia PII; un relleno no corta el seguimiento; el HCN que llega cierra la tarea abierta en la misma
-transacción; una orden de un proveedor sin la capacidad `hcn` no abre plan.
+transacción; la orden que pasa a `cancelled` (cancelación, `verify-cancellation` o conciliación) corta el plan y cierra
+la tarea abierta en la misma transacción, con motivo `order-cancelled`; una orden de un proveedor sin la capacidad
+`hcn` no abre plan.
 
 **Depende de.** D-TBO-27, D-TBO-29, RF-38. → [Q-54](./10-preguntas-para-tbo.md#q-54), [Q-55](./10-preguntas-para-tbo.md#q-55) (límites de tramo; número de reintentos; canal del
 ticket).

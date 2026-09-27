@@ -387,6 +387,9 @@ export class HotelOrderCancellationService {
         ...trackingOf(plan, now, 'cancel'),
         // El claim es de esta cancelación: ningún desenlace lo deja puesto.
         subStatus: plan.subStatus === 'keep' ? null : plan.subStatus,
+        // La orden cierra `cancelled` en esta misma transacción: el corte del HCN (y el cierre de
+        // su tarea abierta) va atado a eso, como en `close` y en la conciliación.
+        ...(outcome.orderStatus === 'cancelled' ? { stopHcn: true } : {}),
         ...(verify
           ? { openCalendar: { anchorAt: now, nextAt: now + HOTEL_CANCEL_VERIFY_FIRST_MS } }
           : {}),

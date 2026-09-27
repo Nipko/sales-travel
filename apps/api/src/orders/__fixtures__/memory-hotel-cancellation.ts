@@ -19,8 +19,9 @@ import type {
  * Un solo estado para `orders`, `order_operations` y `hotel_order_tracking`, con lo que decide estos
  * casos: RLS por tenant, transacciones que se deshacen ENTERAS si fallan (el seguimiento incluido,
  * porque se escribe dentro de la transacción de la operación), el índice de la cancelación
- * pendiente (0037), el orden del barrido y los CAS del calendario de verificación (0046). El SQL real lo prueba
- * `hotel-order-cancellation.integration.test.ts` contra Postgres.
+ * pendiente (0037), el orden del barrido, los CAS del calendario de verificación (0046) y el cierre
+ * de la tarea `hcn-ticket` abierta. El SQL real lo prueba `hotel-order-cancellation.integration.test.ts`
+ * contra Postgres.
  */
 
 export type Row = Record<string, unknown>;
@@ -298,7 +299,42 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
   /** Las llamadas que recibió, en orden: para afirmar QUÉ se escribió dentro del claim. */
   const calls: { method: string; orderId: string; write?: unknown }[] = [];
 
+  /** La misma regla que `resolveHcnTicketsOf`: el HCN o el corte cierran la tarea abierta. */
+  const resolveHcnTickets = (
+    tenantId: string,
+    orderId: string,
+    write: Pick<HotelCancelTrackingWrite, 'hcn' | 'stopHcn' | 'source' | 'at'>,
+  ): void => {
+    const reasons = [
+      ...(write.hcn === undefined ? [] : ['hcn-received']),
+      ...(write.stopHcn === true ? ['order-cancelled'] : []),
+    ];
+    for (const reason of reasons) {
+      for (const op of state.operations) {
+        if (
+          op['tenant_id'] !== tenantId ||
+          op['order_id'] !== orderId ||
+          op['type'] !== 'hcn-ticket' ||
+          op['status'] !== 'pending'
+        ) {
+          continue;
+        }
+        op['status'] = 'success';
+        op['result'] = JSON.stringify({
+          ...parse(op['result']),
+          resolution: {
+            by: 'system',
+            reason,
+            source: write.source,
+            at: new Date(write.at).toISOString(),
+          },
+        });
+      }
+    }
+  };
+
   const advanceIn = (
+    tenantId: string,
     orderId: string,
     fromStep: number,
     next: HotelCancelVerifyAdvance,
@@ -314,6 +350,7 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
     if (next.write !== undefined) applyTrackingWrite(row, next.write);
     row.cancel_verify_step = next.step;
     row.cancel_verify_next_at = next.nextAt;
+    if (next.write !== undefined) resolveHcnTickets(tenantId, orderId, next.write);
     return true;
   };
 
@@ -343,12 +380,13 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
     },
     writeOutcome: (
       _trx: unknown,
-      _tenantId: string,
+      tenantId: string,
       orderId: string,
       write: HotelCancelTrackingWrite,
     ) => {
       calls.push({ method: 'writeOutcome', orderId, write });
       applyTrackingWrite(trackingOf(orderId), write);
+      resolveHcnTickets(tenantId, orderId, write);
       return Promise.resolve();
     },
     advance: (
@@ -359,7 +397,7 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
     ) =>
       withTenant(tenantId, () => {
         calls.push({ method: 'advance', orderId, write: next });
-        return Promise.resolve(advanceIn(orderId, fromStep, next));
+        return Promise.resolve(advanceIn(tenantId, orderId, fromStep, next));
       }),
     postpone: (
       tenantId: string,
@@ -392,7 +430,10 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
         calls.push({ method: 'close', orderId, write });
         const order = orderOf(tenantId, orderId);
         if (order?.['status'] !== 'pending') return Promise.resolve(false);
-        if (!advanceIn(orderId, fromStep, { step: fromStep + 1, nextAt: null, write })) {
+        const cut = { ...write, stopHcn: true };
+        if (
+          !advanceIn(tenantId, orderId, fromStep, { step: fromStep + 1, nextAt: null, write: cut })
+        ) {
           return Promise.resolve(false);
         }
         order['status'] = 'cancelled';

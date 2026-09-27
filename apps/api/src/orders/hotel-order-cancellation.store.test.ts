@@ -72,6 +72,28 @@ function banco(responder: (q: CompiledQuery) => Respuesta = () => ({})) {
   return { store, db, consultas, negocio };
 }
 
+/** El cierre de las tareas `hcn-ticket` pendientes de la orden (`hcn-ticket.ts`). */
+const CIERRE =
+  'update "order_operations" set "status" = $1, "result" = order_operations.result || $2::jsonb where "tenant_id" = $3 and "order_id" = $4 and "type" = $5 and "status" = $6';
+
+function cierres(b: ReturnType<typeof banco>): CompiledQuery[] {
+  return b.negocio().filter((q) => q.sql === CIERRE);
+}
+
+/** Lo que el cierre agrega a la tarea. */
+function resolucion(q: CompiledQuery | undefined): Record<string, unknown> {
+  const patch = JSON.parse(String(q?.parameters[1])) as { resolution: Record<string, unknown> };
+  return patch.resolution;
+}
+
+/** Lo de la operación `cancel`, sin el cierre de la tarea del HCN. */
+function deLaCancelacion(b: ReturnType<typeof banco>): CompiledQuery[] {
+  return b.negocio().filter((q) => q.sql !== CIERRE);
+}
+
+const CORTE =
+  /CASE WHEN hotel_order_tracking\.hcn_state IN \('out-of-window', 'scheduled'\) THEN 'stopped' ELSE hotel_order_tracking\.hcn_state END/;
+
 function fila(parcial: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: ORDEN,
@@ -192,9 +214,7 @@ describe('HotelOrderCancellationStore — escrituras dentro de la cancelación',
     const [q] = b.negocio();
     expect(q?.sql).toContain('"provider_status_source"');
     expect(q?.sql).toContain('"cancel_verify_step"');
-    expect(q?.sql).toMatch(
-      /CASE WHEN hotel_order_tracking\.hcn_state IN \('out-of-window', 'scheduled'\) THEN 'stopped' ELSE hotel_order_tracking\.hcn_state END/,
-    );
+    expect(q?.sql).toMatch(CORTE);
     // En el INSERT (fila nueva) no hay seguimiento que cortar: sólo en el UPDATE.
     const [insert] = (q?.sql ?? '').split('on conflict');
     expect(insert).not.toContain('CASE WHEN');
@@ -206,6 +226,56 @@ describe('HotelOrderCancellationStore — escrituras dentro de la cancelación',
       .transaction()
       .execute((trx) => b.store.writeOutcome(trx, TENANT, ORDEN, { at: T, source: 'cancel' }));
     expect(b.negocio()).toEqual([]);
+  });
+
+  it('writeOutcome que deja la orden cancelada cierra la tarea hcn-ticket después de escribir la fila', async () => {
+    const b = banco();
+
+    await b.db.transaction().execute((trx) =>
+      b.store.writeOutcome(trx, TENANT, ORDEN, {
+        at: T,
+        source: 'cancel',
+        record: { providerStatus: 'Cancelled', refundAwaited: false },
+        subStatus: null,
+        stopHcn: true,
+      }),
+    );
+
+    const [seguimiento, cierre, ...resto] = b.negocio();
+    expect(seguimiento?.sql).toContain('insert into "hotel_order_tracking"');
+    expect(cierre?.sql).toBe(CIERRE);
+    expect(cierre?.parameters).toEqual([
+      'success',
+      expect.any(String),
+      TENANT,
+      ORDEN,
+      'hcn-ticket',
+      'pending',
+    ]);
+    expect(resolucion(cierre)).toEqual({
+      by: 'system',
+      reason: 'order-cancelled',
+      source: 'cancel',
+      at: new Date(T).toISOString(),
+    });
+    expect(resto).toEqual([]);
+  });
+
+  it('writeOutcome que no corta el HCN (rechazo, en curso, sin verificar) no toca la tarea', async () => {
+    for (const write of [
+      { subStatus: null },
+      { subStatus: 'cancel-unverified' as const, openCalendar: { anchorAt: T, nextAt: T } },
+      { stopHcn: false, record: { providerStatus: 'Confirmed', refundAwaited: false } },
+    ]) {
+      const b = banco();
+      await b.db
+        .transaction()
+        .execute((trx) =>
+          b.store.writeOutcome(trx, TENANT, ORDEN, { at: T, source: 'cancel', ...write }),
+        );
+      expect(cierres(b)).toEqual([]);
+      expect(b.negocio()[0]?.sql).not.toMatch(CORTE);
+    }
   });
 });
 
@@ -281,12 +351,12 @@ describe('HotelOrderCancellationStore — la verificación', () => {
       b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify', subStatus: null }),
     ).resolves.toBe(true);
 
-    const sqls = b.negocio().map((q) => q.sql);
+    const sqls = deLaCancelacion(b).map((q) => q.sql);
     expect(sqls[0]).toContain('update "hotel_order_tracking"');
     expect(sqls[1]).toContain(
       `update "orders" set "status" = $1 where "id" = $2 and "tenant_id" = $3 and "status" = $4`,
     );
-    const op = b.negocio()[3];
+    const op = deLaCancelacion(b)[3];
     expect(op?.sql).toContain('update "order_operations"');
     expect(JSON.parse(String(op?.parameters[2]))).toEqual({
       status: 'success',
@@ -323,7 +393,9 @@ describe('HotelOrderCancellationStore — la verificación', () => {
       await expect(b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify' })).resolves.toBe(
         true,
       );
-      expect(b.negocio().some((q) => q.sql.startsWith('update "order_operations"'))).toBe(false);
+      expect(deLaCancelacion(b).some((q) => q.sql.startsWith('update "order_operations"'))).toBe(
+        false,
+      );
     }
   });
 
@@ -337,7 +409,9 @@ describe('HotelOrderCancellationStore — la verificación', () => {
       return {};
     });
     await b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify' });
-    expect(b.negocio().some((q) => q.sql.startsWith('update "order_operations"'))).toBe(true);
+    expect(deLaCancelacion(b).some((q) => q.sql.startsWith('update "order_operations"'))).toBe(
+      true,
+    );
   });
 
   it('close: sin el prior en el resultado, la operación se resuelve igual', async () => {
@@ -363,7 +437,7 @@ describe('HotelOrderCancellationStore — la verificación', () => {
       return {};
     });
     await b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify' });
-    const op = b.negocio().find((q) => q.sql.startsWith('update "order_operations"'));
+    const op = deLaCancelacion(b).find((q) => q.sql.startsWith('update "order_operations"'));
     expect(JSON.parse(String(op?.parameters[2]))).not.toHaveProperty('priorOrderStatus');
   });
 
@@ -380,8 +454,33 @@ describe('HotelOrderCancellationStore — la verificación', () => {
     await expect(
       noPendiente.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify' }),
     ).resolves.toBe(false);
-    // La transacción se deshace antes de tocar la operación.
-    expect(noPendiente.negocio().some((q) => q.sql.includes('order_operations'))).toBe(false);
+    // La transacción se deshace antes de tocar la operación `cancel`. El cierre de la tarea del HCN
+    // ya corrió dentro de ella y se deshace con el resto (lo prueba la suite de integración).
+    expect(deLaCancelacion(noPendiente).some((q) => q.sql.includes('order_operations'))).toBe(
+      false,
+    );
+  });
+
+  it('close corta el HCN y cierra la tarea abierta aunque el plan que llega no lo pida', async () => {
+    const b = banco((q) => {
+      if (q.sql.startsWith('update "hotel_order_tracking"')) return { numAffectedRows: 1n };
+      if (q.sql.startsWith('update "orders"')) return { rows: [{ id: ORDEN }] };
+      return {};
+    });
+
+    await b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify', subStatus: null });
+
+    const [seguimiento, cierre] = b.negocio();
+    expect(seguimiento?.sql).toMatch(CORTE);
+    expect(cierre?.sql).toBe(CIERRE);
+    expect(resolucion(cierre)).toMatchObject({ reason: 'order-cancelled', source: 'verify' });
+    expect(cierres(b)).toHaveLength(1);
+  });
+
+  it('close que pierde el CAS del paso no cierra ninguna tarea', async () => {
+    const b = banco(() => ({ numAffectedRows: 0n }));
+    await b.store.close(TENANT, ORDEN, 1, { at: T, source: 'verify', stopHcn: true });
+    expect(cierres(b)).toEqual([]);
   });
 
   it('close: un error de la base se propaga', async () => {
@@ -474,11 +573,33 @@ describe('HotelOrderCancellationStore — la conciliación que confirmó una can
       }),
     ).resolves.toBe(true);
 
-    const op = b.negocio().find((q) => q.sql.startsWith('update "order_operations"'));
+    const op = deLaCancelacion(b).find((q) => q.sql.startsWith('update "order_operations"'));
     expect(JSON.parse(String(op?.parameters[2]))).toMatchObject({
       status: 'success',
       priorOrderStatus: 'confirmed',
       resolvedBy: 'reconciliation',
+    });
+  });
+
+  it('transitionByReading a cancelled corta el HCN y cierra la tarea abierta aunque el plan no lo pida', async () => {
+    const b = conFilas(true);
+
+    await b.store.transitionByReading(TENANT, ORDEN, {
+      from: 'confirmed',
+      to: 'cancelled',
+      expected: { ...ESPERADO, subStatus: null, hcnState: 'missing' },
+      write: { at: T, source: 'reconciliation', subStatus: null },
+    });
+
+    const [orden, seguimiento, cierre] = b.negocio();
+    expect(orden?.sql).toContain('update "orders"');
+    expect(seguimiento?.sql).toMatch(CORTE);
+    expect(cierre?.sql).toBe(CIERRE);
+    expect(resolucion(cierre)).toEqual({
+      by: 'system',
+      reason: 'order-cancelled',
+      source: 'reconciliation',
+      at: new Date(T).toISOString(),
     });
   });
 
@@ -502,6 +623,8 @@ describe('HotelOrderCancellationStore — la conciliación que confirmó una can
     // Una sola vez: la del calendario que se abre, no la del cierre.
     expect(update?.match(/"cancel_verify_next_at" = \$/g)).toHaveLength(1);
     expect(seguimiento?.parameters).toContainEqual(new Date(T + 120_000));
+    // La reserva sigue viva mientras se cancela: el HCN sigue y su tarea también.
+    expect(update).not.toMatch(CORTE);
     expect(b.negocio().some((q) => q.sql.includes('order_operations'))).toBe(false);
   });
 
@@ -522,17 +645,10 @@ describe('HotelOrderCancellationStore — la conciliación que confirmó una can
 });
 
 describe('HotelOrderCancellationStore — el HCN cierra la tarea abierta (HARD-3)', () => {
-  const CIERRE =
-    'update "order_operations" set "status" = $1, "result" = order_operations.result || $2::jsonb where "tenant_id" = $3 and "order_id" = $4 and "type" = $5 and "status" = $6';
   const HCN = { hcn: 'HCN-4711', markReceived: true };
 
-  function cierres(b: ReturnType<typeof banco>): CompiledQuery[] {
-    return b.negocio().filter((q) => q.sql === CIERRE);
-  }
-
   function fuente(q: CompiledQuery | undefined): unknown {
-    const patch = JSON.parse(String(q?.parameters[1])) as { resolution: { source: string } };
-    return patch.resolution.source;
+    return resolucion(q)['source'];
   }
 
   it('writeOutcome con el HCN (un rechazo que lo trae) cierra la tarea en la transacción de la cancelación', async () => {
