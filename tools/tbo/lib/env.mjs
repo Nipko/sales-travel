@@ -125,10 +125,12 @@ export function isTboTestEndpoint(baseUrl, acl) {
 }
 
 /**
- * Lo que `check` y `probe` necesitan, validado. Lanza {@link HarnessUsageError} con TODOS los
- * problemas juntos: corregir el `.env.tbo` de a uno es una vuelta por variable.
+ * Lo que el comando necesita, validado. Lanza {@link HarnessUsageError} con TODOS los problemas
+ * juntos: corregir el `.env.tbo` de a uno es una vuelta por variable. `needs.booking` suma el
+ * contacto y `TBO_CANCEL_AFTER` (comandos que reservan) y `needs.zip` el nombre de la empresa: `all`
+ * los valida ANTES de reservar, no al llegar al zip.
  */
-export function readSettings(env, flags, acl, now) {
+export function readSettings(env, flags, acl, now, needs = {}) {
   const missing = ['TBO_USERNAME', 'TBO_PASSWORD'].filter((name) => !env[name]);
   if (missing.length > 0) {
     throw new HarnessUsageError(
@@ -170,11 +172,9 @@ export function readSettings(env, flags, acl, now) {
     issues.push(`el ACL rechaza la configuración: ${err.issues.join(', ')}`);
   }
 
-  if (issues.length > 0) {
-    throw new HarnessUsageError(
-      `Configuración inválida:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`,
-    );
-  }
+  const booking = needs.booking ? readBookingSettings(env, issues) : undefined;
+  const zip = needs.zip ? readZipSettings(env, issues) : undefined;
+  throwIssues(issues);
 
   return Object.freeze({
     baseUrl: new URL(baseUrl).href.replace(/\/+$/, ''),
@@ -184,7 +184,77 @@ export function readSettings(env, flags, acl, now) {
     checkIn: isoDay(now + offsetDays * DAY_MS),
     checkOut: isoDay(now + (offsetDays + nights) * DAY_MS),
     hotelCodes: Object.freeze(hotelCodes),
+    hotelCodesSource: env.TBO_HOTEL_CODES?.trim() ? 'TBO_HOTEL_CODES' : 'default',
     cityCode,
+    ...(booking === undefined ? {} : { booking: Object.freeze(booking) }),
+    ...(zip === undefined ? {} : { zip: Object.freeze(zip) }),
     secrets: new HarnessSecrets(env.TBO_USERNAME, env.TBO_PASSWORD),
   });
+}
+
+/** Lo que valida la guarda de `verify` y `zip`: sólo la credencial, para buscarla en la corrida. */
+export function readSecrets(env) {
+  const missing = ['TBO_USERNAME', 'TBO_PASSWORD'].filter((name) => !env[name]);
+  if (missing.length > 0) {
+    throw new HarnessUsageError(
+      `Faltan ${missing.join(', ')}: la guarda G-1 busca la credencial de test en cada archivo de ` +
+        `la corrida, y sin ella no puede afirmar que no está. Ver tools/tbo/README.md.`,
+    );
+  }
+  return new HarnessSecrets(env.TBO_USERNAME, env.TBO_PASSWORD);
+}
+
+const EMAIL = /^[^\s@"'<>]+@[^\s@"'<>]+\.[A-Za-z]{2,}$/;
+/** Sólo dígitos, prefijo de país sin `+` (p. 35-36): 8 a 15, como un E.164. */
+const PHONE = /^[1-9]\d{7,14}$/;
+
+function booleanSetting(env, name, fallback, issues) {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = raw.trim().toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  issues.push(`${name} tiene que ser true o false`);
+  return fallback;
+}
+
+/**
+ * Lo que necesitan los comandos que RESERVAN (`run`, `all`, `probe --bookings`): el contacto que
+ * viaja en el Book y si se cancela al final. Nunca datos personales: un buzón de rol y un teléfono
+ * ficticio (07 §4.1, §6.6); el arnés no puede saber si lo son, lo dice el README.
+ */
+export function readBookingSettings(env, issues) {
+  const email = env.TBO_CERT_EMAIL?.trim() ?? '';
+  const phone = env.TBO_CERT_PHONE?.trim() ?? '';
+  if (email === '') issues.push('falta TBO_CERT_EMAIL (buzón de rol para las reservas de prueba)');
+  else if (email.length > 254 || !EMAIL.test(email))
+    issues.push('TBO_CERT_EMAIL no es un email válido');
+  if (phone === '') issues.push('falta TBO_CERT_PHONE (teléfono ficticio, sólo dígitos)');
+  else if (!PHONE.test(phone))
+    issues.push('TBO_CERT_PHONE tiene que ser sólo dígitos con prefijo de país, sin +, de 8 a 15');
+  return {
+    email,
+    phone,
+    cancelAfter: booleanSetting(env, 'TBO_CANCEL_AFTER', true, issues),
+  };
+}
+
+/** `<Empresa>` del nombre del zip (07 §5): letras, dígitos y guiones; el `_` separa las partes. */
+const COMPANY_SLUG = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$/;
+
+export function readZipSettings(env, issues) {
+  const slug = env.TBO_COMPANY_SLUG?.trim() ?? '';
+  if (slug === '') issues.push('falta TBO_COMPANY_SLUG (la empresa del nombre del zip)');
+  else if (!COMPANY_SLUG.test(slug))
+    issues.push('TBO_COMPANY_SLUG admite letras, dígitos y guiones (hasta 40)');
+  return { companySlug: slug };
+}
+
+/** Lanza con todos los problemas juntos, como `readSettings`. */
+export function throwIssues(issues) {
+  if (issues.length > 0) {
+    throw new HarnessUsageError(
+      `Configuración inválida:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`,
+    );
+  }
 }

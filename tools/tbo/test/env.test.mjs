@@ -128,6 +128,77 @@ describe('readSettings', () => {
     assert.deepEqual(settings.hotelCodes, ['3', '1', '2']);
   });
 
+  it('los comandos que reservan exigen el contacto de rol y leen TBO_CANCEL_AFTER', () => {
+    assert.throws(
+      () => readSettings(creds, {}, acl, NOW, { booking: true, zip: true }),
+      (err) => {
+        for (const piece of ['TBO_CERT_EMAIL', 'TBO_CERT_PHONE', 'TBO_COMPANY_SLUG']) {
+          assert.ok(err.message.includes(piece), piece);
+        }
+        return true;
+      },
+    );
+    assert.throws(
+      () =>
+        readSettings(
+          {
+            ...creds,
+            TBO_CERT_EMAIL: 'no-es-email',
+            TBO_CERT_PHONE: '+57 300',
+            TBO_CANCEL_AFTER: 'quizas',
+            TBO_COMPANY_SLUG: 'Mi_Empresa',
+          },
+          {},
+          acl,
+          NOW,
+          { booking: true, zip: true },
+        ),
+      (err) => {
+        for (const piece of [
+          'TBO_CERT_EMAIL no es',
+          'TBO_CERT_PHONE tiene',
+          'TBO_CANCEL_AFTER',
+          'TBO_COMPANY_SLUG admite',
+        ]) {
+          assert.ok(err.message.includes(piece), piece);
+        }
+        return true;
+      },
+    );
+    const settings = readSettings(
+      {
+        ...creds,
+        TBO_CERT_EMAIL: 'reservas@example.com',
+        TBO_CERT_PHONE: '573000000000',
+        TBO_CANCEL_AFTER: 'FALSE',
+        TBO_COMPANY_SLUG: 'SalesTravel',
+      },
+      {},
+      acl,
+      NOW,
+      { booking: true, zip: true },
+    );
+    assert.deepEqual(settings.booking, {
+      email: 'reservas@example.com',
+      phone: '573000000000',
+      cancelAfter: false,
+    });
+    assert.deepEqual(settings.zip, { companySlug: 'SalesTravel' });
+    // Sin pedirlo, ni se exige ni aparece: `check` y `probe` no reservan.
+    assert.equal(readSettings(creds, {}, acl, NOW).booking, undefined);
+  });
+
+  it('TBO_CANCEL_AFTER es true por defecto', () => {
+    const settings = readSettings(
+      { ...creds, TBO_CERT_EMAIL: 'reservas@example.com', TBO_CERT_PHONE: '573000000000' },
+      {},
+      acl,
+      NOW,
+      { booking: true },
+    );
+    assert.equal(settings.booking.cancelAfter, true);
+  });
+
   it('las credenciales no salen en un JSON ni en un inspect de la configuración', () => {
     const settings = readSettings(creds, {}, acl, NOW);
     const dumped = `${JSON.stringify(settings)} ${inspect(settings, { depth: 5 })}`;
@@ -161,6 +232,7 @@ describe('parseArgs', () => {
       parseArgs(['probe', '--only', 'pr-01, PR-04', '--out=x', '--skip-hotelcodelist']),
       {
         command: 'probe',
+        rest: [],
         flags: {
           allowNonTestHost: false,
           skipHotelCodeList: true,
@@ -168,9 +240,20 @@ describe('parseArgs', () => {
           help: false,
           only: ['PR-01', 'PR-04'],
           out: 'x',
+          cases: undefined,
+          resume: undefined,
         },
       },
     );
+  });
+
+  it('lee el id de corrida de verify y zip, y --cases y --resume de run', () => {
+    const verify = parseArgs(['verify', '2026-10-15T14-03-22Z']);
+    assert.equal(verify.command, 'verify');
+    assert.deepEqual(verify.rest, ['2026-10-15T14-03-22Z']);
+    const run = parseArgs(['run', '--cases', '1, 4', '--resume=2026-10-15T14-03-22Z']);
+    assert.deepEqual(run.flags.cases, ['1', '4']);
+    assert.equal(run.flags.resume, '2026-10-15T14-03-22Z');
   });
 
   it('rechaza una opción desconocida o sin valor', () => {

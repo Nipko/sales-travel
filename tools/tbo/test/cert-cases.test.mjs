@@ -359,14 +359,59 @@ describe('probe', () => {
 });
 
 describe('uso', () => {
-  it('los comandos que reservan llegan con PR-7.1 y salen con 2 sin tocar la red', async () => {
-    for (const argv of [['run'], ['zip'], ['probe', '--bookings'], ['probe', '--only', 'PR-09']]) {
+  it('los comandos que reservan exigen el contacto de rol y salen con 2 sin tocar la red', async () => {
+    for (const argv of [['run'], ['all'], ['probe', '--bookings']]) {
       const result = await run(argv);
       assert.equal(result.code, 2, argv.join(' '));
-      assert.match(result.stderr, /PR-7\.1/);
+      assert.match(result.stderr, /TBO_CERT_EMAIL/);
+      assert.match(result.stderr, /TBO_CERT_PHONE/);
       assert.equal(result.fake.requests.length, 0);
       assert.equal(result.dir, undefined);
     }
+  });
+
+  it('all exige TBO_COMPANY_SLUG antes de reservar nada', async () => {
+    const result = await run(['all'], {
+      env: { TBO_CERT_EMAIL: 'reservas@example.com', TBO_CERT_PHONE: '573000000000' },
+    });
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /TBO_COMPANY_SLUG/);
+    assert.equal(result.fake.requests.length, 0);
+  });
+
+  it('opciones que no aplican, sondas con reserva sin --bookings y casos fuera de 1-8 salen con 2', async () => {
+    const cases = [
+      [['probe', '--only', 'PR-09'], /agrega --bookings/],
+      [['run', '--only', 'PR-01'], /--only no aplica a run/],
+      [['check', '--cases', '1'], /--cases no aplica a check/],
+      [['run', '--cases', '9'], /Caso desconocido: 9/],
+      [['verify'], /necesita el id de la corrida/],
+      [['verify', '..'], /Id de corrida inválido/],
+      [['zip', 'no-existe'], /TBO_COMPANY_SLUG/],
+      [['verify', 'no-existe'], /No existe la corrida no-existe/],
+      [['cancel'], /necesita el id de la corrida/],
+      [['cancel', 'no-existe'], /No existe la corrida no-existe/],
+      [['check', 'sobra'], /Sobra el argumento sobra/],
+    ];
+    for (const [argv, message] of cases) {
+      const result = await run(argv);
+      assert.equal(result.code, 2, argv.join(' '));
+      assert.match(result.stderr, message, argv.join(' '));
+      assert.equal(result.fake.requests.length, 0);
+      assert.equal(result.dir, undefined);
+    }
+  });
+
+  it('verify y zip piden la credencial: sin ella G-1 no puede afirmar nada', async () => {
+    const stderr = [];
+    const code = await main(['verify', 'x'], {
+      env: {},
+      envFile: join(tmpdir(), 'no-existe.env'),
+      stderr: (line) => stderr.push(line),
+      stdout: () => {},
+    });
+    assert.equal(code, 2);
+    assert.match(stderr.join('\n'), /Faltan TBO_USERNAME, TBO_PASSWORD: la guarda G-1/);
   });
 
   it('sin el ACL compilado indica cómo compilarlo', async () => {

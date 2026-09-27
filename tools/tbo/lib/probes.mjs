@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { BOOKING_PROBES } from './booking-probes.mjs';
 import {
   acceptedByTbo,
   answered,
   describeVariant,
   errorOutcome,
-  searchOutcome,
+  outcomeOfSearch,
+  shortVariant as short,
   syntheticBookingCode,
   variantResult,
 } from './harness.mjs';
@@ -19,25 +21,14 @@ import {
  * RQ que armó el ACL, lo declara en `calls.jsonl` y guarda al lado el RQ original (`*_RQ.acl.json`).
  * El resto del request —fechas, `ResponseTime`, `Filters`, cabeceras— es el de producción.
  *
- * PR-09 a PR-11 crean reservas de test y llegan con PR-7.1 (`probe --bookings`).
+ * PR-09 a PR-11 crean reservas de test (`probe --bookings`) y las cancelan siempre, pida lo que
+ * pida `TBO_CANCEL_AFTER`: no son entregables.
  */
 
 const DAY_MS = 86_400_000;
 
 function isoDay(epochMs) {
   return new Date(epochMs).toISOString().slice(0, 10);
-}
-
-function outcomeOfSearch(result) {
-  return result.error ? errorOutcome(result.error) : searchOutcome(result.value);
-}
-
-function short(variant) {
-  if (variant.calls === 0) return `no salió: ${variant.acl}`;
-  if (variant.httpStatus === 0) return `sin respuesta: ${variant.transportError ?? 'red'}`;
-  if (variant.tboCode === null) return `HTTP ${variant.httpStatus} sin Status.Code`;
-  const description = variant.description ? ` "${variant.description}"` : '';
-  return `HTTP ${variant.httpStatus}, Status.Code ${variant.tboCode}${description}`;
 }
 
 /** Con `201` en todas las variantes, TBO pudo no llegar a validar la forma: la lectura es débil. */
@@ -393,8 +384,10 @@ export const PROBES = Object.freeze([
   { id: 'PR-08', question: 'Q-15', title: 'Search con 101 HotelCodes', run: probeHotelCodeLimit },
 ]);
 
-/** Las que crean reservas: llegan con PR-7.1. */
-export const BOOKING_PROBES = Object.freeze(['PR-09', 'PR-10', 'PR-11']);
+/** Las de reserva (PR-09 a PR-11) viven en `booking-probes.mjs`; sólo corren con `--bookings`. */
+export { BOOKING_PROBES };
+
+const ALL_PROBES = Object.freeze([...PROBES, ...BOOKING_PROBES]);
 
 function renderMarkdown(summary) {
   const lines = [
@@ -467,7 +460,7 @@ export async function runProbes(harness, out, { ids, skipHotelCodeList }) {
 
   const state = {};
   const results = [];
-  for (const probe of PROBES.filter((p) => ids.includes(p.id))) {
+  for (const probe of ALL_PROBES.filter((p) => ids.includes(p.id))) {
     out(`\n${probe.id} · ${probe.question} · ${probe.title}`);
     const folder = harness.evidence.folder(`probes/${probe.id}`);
     const outcome = await probe.run(harness, folder, state, { skipHotelCodeList });

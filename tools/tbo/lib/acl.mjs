@@ -20,6 +20,7 @@ const REQUIRED_EXPORTS = [
   'TboHotelsAdapter',
   'TboHttpClient',
   'TboStaticContentClient',
+  'classifyTboBookOutcome',
   'generateTboBookingReference',
   'parseTboConfig',
 ];

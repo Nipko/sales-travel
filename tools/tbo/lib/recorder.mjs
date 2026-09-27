@@ -183,6 +183,18 @@ export function createRecorder({ fetch: realFetch, secrets, now, allowedHostname
   const violations = [];
 
   /**
+   * La etiqueta de UNA llamada del paso. Un paso del ACL puede hacer varias (la cancelación lee,
+   * cancela y vuelve a leer): `step.callLabel(operación, operaciones previas del paso)` las
+   * distingue en el nombre de archivo; sin ella, todas llevan `step.label`.
+   */
+  function labelFor(step, operation) {
+    const previous = step.operations ?? [];
+    step.operations = [...previous, operation];
+    if (typeof step.callLabel !== 'function') return step.label;
+    return step.callLabel(operation, previous) ?? '';
+  }
+
+  /**
    * Un paso: la carpeta donde se escribe, una etiqueta para el nombre de archivo y, sólo en las
    * sondas, una reescritura declarada del path o del body que el ACL armó.
    */
@@ -221,12 +233,13 @@ export function createRecorder({ fetch: realFetch, secrets, now, allowedHostname
       const mutated = wireUrl !== aclUrl || wireBody !== aclBody;
 
       const operation = operationOf(wireUrl);
+      const label = labelFor(step, operation);
       const seq = step.folder.nextSeq();
-      const base = `${seq}_${operation}${step.label ? `_${safeName(step.label)}` : ''}`;
+      const base = `${seq}_${operation}${label ? `_${safeName(label)}` : ''}`;
       const record = {
         seq: Number(seq),
         folder: step.folder.rel,
-        label: step.label ?? null,
+        label: label || null,
         operation,
         method,
         url: wireUrl,

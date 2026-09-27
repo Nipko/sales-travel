@@ -85,14 +85,22 @@ export class Harness {
     });
   }
 
+  /** La espera de 120 s antes de leer un Book incierto (p. 42): los tests no esperan. */
+  sleep(ms) {
+    return this.#deps.sleep !== undefined
+      ? this.#deps.sleep(ms)
+      : new Promise((done) => setTimeout(done, ms));
+  }
+
   /**
    * Un paso: `call(step)` construye su cliente con `step` y llama. Un error del ACL (`TboError`)
    * es un resultado del paso —la sonda existe para verlo—; cualquier otro, o una guarda del arnés
-   * que bloqueó una llamada, corta la corrida.
+   * que bloqueó una llamada, corta la corrida. `callLabel` nombra cada llamada de un paso que hace
+   * varias (ver `createRecorder`).
    */
-  async step(folder, label, call, { rewrite } = {}) {
+  async step(folder, label, call, { rewrite, callLabel } = {}) {
     const logger = createCapturingLogger();
-    const step = { folder, label, rewrite, logger };
+    const step = { folder, label, rewrite, callLabel, logger };
     const before = this.recorder.calls.length;
     let value;
     let error;
@@ -103,7 +111,7 @@ export class Harness {
       error = err;
     } finally {
       for (const event of logger.events) {
-        const line = JSON.stringify({ label, ...event });
+        const line = JSON.stringify({ label: label || null, ...event });
         await folder.appendLine('acl-events.jsonl', this.settings.secrets.scrubText(line).text);
       }
     }
@@ -174,6 +182,20 @@ export function errorOutcome(err) {
     default:
       return err.name;
   }
+}
+
+/** La lectura del ACL de un paso de Search: la del error o la de sus lotes. */
+export function outcomeOfSearch(result) {
+  return result.error ? errorOutcome(result.error) : searchOutcome(result.value);
+}
+
+/** Una variante en una frase, para las lecturas de las sondas. */
+export function shortVariant(variant) {
+  if (variant.calls === 0) return `no salió: ${variant.acl}`;
+  if (variant.httpStatus === 0) return `sin respuesta: ${variant.transportError ?? 'red'}`;
+  if (variant.tboCode === null) return `HTTP ${variant.httpStatus} sin Status.Code`;
+  const description = variant.description ? ` "${variant.description}"` : '';
+  return `HTTP ${variant.httpStatus}, Status.Code ${variant.tboCode}${description}`;
 }
 
 export function searchOutcome(report) {
