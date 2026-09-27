@@ -324,7 +324,19 @@ function match(
   return { kind: 'matched', order: byRef, by: 'reference' };
 }
 
-type RowState = 'confirmed' | 'cancelling' | 'cancelled' | 'unknown' | 'other' | 'absent';
+/**
+ * `pending` y `failed` son `PENDING` y `FAILED` del contrato neutral: estados que una reserva ya
+ * creada no debería tener. El enum de TBO no tiene ninguno de los dos (04 §6.1), así que en TBO son
+ * un valor fuera de su vocabulario: R7.
+ */
+type RowState =
+  | 'confirmed'
+  | 'cancelling'
+  | 'cancelled'
+  | 'pending'
+  | 'failed'
+  | 'unknown'
+  | 'absent';
 
 function rowState(booking: HotelBookingSummary): RowState {
   switch (booking.status) {
@@ -336,10 +348,12 @@ function rowState(booking: HotelBookingSummary): RowState {
       return 'cancelling';
     case 'CANCELLED':
       return 'cancelled';
+    case 'PENDING':
+      return 'pending';
+    case 'FAILED':
+      return 'failed';
     case 'UNKNOWN':
       return 'unknown';
-    default:
-      return 'other';
   }
 }
 
@@ -393,7 +407,12 @@ function cancellationStuck(order: ReconciliationOrder, now: number): boolean {
   return order.cancelSince !== null && now - order.cancelSince >= RECONCILIATION_CANCEL_STUCK_MS;
 }
 
-/** Qué significa una fila que cruzó con una orden. */
+/**
+ * Qué significa una fila que cruzó con una orden. Todo par (estado de la orden, estado de la fila)
+ * está decidido aquí; lo que no lleva ítem es porque la orden y el proveedor dicen lo mismo, o porque
+ * otro proceso (el claim de cancelación, la verificación del Book o la de la cancelación) es dueño
+ * de la orden.
+ */
 function classifyMatched(
   order: ReconciliationOrder,
   booking: HotelBookingSummary,
@@ -411,7 +430,12 @@ function classifyMatched(
     case 'ticketed': {
       if (state === 'cancelling' || state === 'cancelled')
         return [readFinding('R3', order, booking)];
-      if (state === 'unknown') return [readFinding('R7', order, booking)];
+      // Vendida como confirmada y el proveedor la lista pendiente o fallida: el huésped puede llegar
+      // sin habitación. R7 (04 §9.4): la lectura lo confirma y la tabla de 04 §6.3 sólo escala
+      // (`verified-status-unexpected`); la orden no cambia sin una persona.
+      if (state === 'unknown' || state === 'pending' || state === 'failed') {
+        return [readFinding('R7', order, booking)];
+      }
       const price = priceObservation(order, booking);
       return price === undefined ? [] : [{ kind: 'R6', order, booking, price, severity: 'info' }];
     }
@@ -424,7 +448,9 @@ function classifyMatched(
       }
       if (state === 'cancelled') return [readFinding('settle', order, booking)];
       if (state === 'unknown') return [readFinding('R7', order, booking)];
-      if ((state === 'cancelling' || state === 'confirmed') && cancellationStuck(order, now)) {
+      // Lo demás lo lee y lo escala la verificación de la cancelación, dueña de la orden. R8 mira
+      // NUESTRA cancelación y no lo que diga la fila: pasadas 72 h, ticket al proveedor.
+      if (state !== 'absent' && cancellationStuck(order, now)) {
         return [{ kind: 'R8', order, booking, severity: 'warning' }];
       }
       return [];
@@ -432,7 +458,8 @@ function classifyMatched(
 
     case 'cancelled':
       if (state === 'confirmed') return [readFinding('R4', order, booking)];
-      if (state === 'unknown') return [readFinding('R7', order, booking)];
+      // Pendiente del lado del proveedor todavía puede confirmarse y cobrarse: lo decide la lectura.
+      if (state === 'unknown' || state === 'pending') return [readFinding('R7', order, booking)];
       // El reembolso del proveedor llegó: se registra, no bloquea nada (04 §6.3 fila 10 → 11).
       if (state === 'cancelled' && order.refundAwaited && booking.refundAwaited !== true) {
         return [readFinding('settle', order, booking)];
@@ -444,6 +471,7 @@ function classifyMatched(
       if (state === 'confirmed' || state === 'cancelling') {
         return [readFinding('R4', order, booking)];
       }
+      if (state === 'unknown' || state === 'pending') return [readFinding('R7', order, booking)];
       return [];
   }
 }

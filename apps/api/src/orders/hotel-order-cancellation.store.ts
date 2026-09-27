@@ -68,6 +68,9 @@ export interface HotelCancelTrackingWrite {
   readonly openCalendar?: { readonly anchorAt: number; readonly nextAt: number };
 }
 
+/** Quién cerró una cancelación que había quedado sin verificar: queda en su operación `cancel`. */
+export type CancelResolvedBy = 'verify-cancellation' | 'reconciliation';
+
 /** Lo que cambia en la fila al terminar un paso de la verificación. */
 export interface HotelCancelVerifyAdvance {
   /** El próximo paso: siempre mayor que el que se ejecutó. */
@@ -332,7 +335,7 @@ export class HotelOrderCancellationStore {
         // El paso ya se avanzó dentro de esta transacción: se deshace entera.
         if (order === undefined) throw new OrderNoLongerPending();
 
-        await this.resolveUnverifiedCancel(trx, orderId);
+        await this.resolveUnverifiedCancel(trx, orderId, 'verify-cancellation');
         return true;
       });
     } catch (err) {
@@ -360,7 +363,7 @@ export class HotelOrderCancellationStore {
         HotelOrderSnapshot,
         'subStatus' | 'providerStatus' | 'hcn' | 'hcnState'
       >;
-      readonly write: HotelCancelTrackingWrite;
+      readonly write: HotelCancelTrackingWrite & { readonly source: 'reconciliation' };
     },
   ): Promise<boolean> {
     const { insert, update: written } = columnsOf(change.write);
@@ -403,7 +406,9 @@ export class HotelOrderCancellationStore {
         if (row === undefined) throw new ReadingSuperseded();
 
         await resolveHcnTicketsOf(trx, tenantId, orderId, change.write);
-        if (change.to === 'cancelled') await this.resolveUnverifiedCancel(trx, orderId);
+        if (change.to === 'cancelled') {
+          await this.resolveUnverifiedCancel(trx, orderId, 'reconciliation');
+        }
         return true;
       });
     } catch (err) {
@@ -440,8 +445,13 @@ export class HotelOrderCancellationStore {
   /**
    * La última operación `cancel`, si quedó `UNVERIFIED`, se cierra como exitosa: la lectura probó
    * que la cancelación se aplicó, y dejarla "a conciliar" en el historial contradiría la orden.
+   * `resolvedBy` es el camino que la leyó y la cerró, para que soporte sepa de dónde salió.
    */
-  private async resolveUnverifiedCancel(trx: Transaction<DB>, orderId: string): Promise<void> {
+  private async resolveUnverifiedCancel(
+    trx: Transaction<DB>,
+    orderId: string,
+    resolvedBy: CancelResolvedBy,
+  ): Promise<void> {
     const latest = await trx
       .selectFrom('order_operations')
       .select(['id', 'status', 'result'])
@@ -462,7 +472,7 @@ export class HotelOrderCancellationStore {
           status: 'success',
           ...CANCEL_SUCCESS_POLICY,
           ...(prior === undefined ? {} : { priorOrderStatus: prior }),
-          resolvedBy: 'verify-cancellation',
+          resolvedBy,
         }),
       })
       .where('id', '=', latest.id)

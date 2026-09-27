@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import type { DatabaseService } from '../database/database.service.js';
-import type { OrderStatus } from '../database/database.types.js';
+import type { DB, OrderStatus } from '../database/database.types.js';
 import type { OrderRow } from './orders.service.js';
 
 /**
@@ -85,6 +85,34 @@ export interface CreateIntentValues {
   /** Referencia que mandamos al proveedor. Va en el MISMO INSERT: es la llave de recuperación. */
   providerBookingRef?: string;
   providerAccountId?: string;
+  /**
+   * `provider_accounts.updated_at` (ISO 8601) de la cuenta con la que la saga va a reservar. Con
+   * él, el intent sólo se compromete si la cuenta sigue siendo ésa: ver `ProviderAccountChangedError`.
+   */
+  providerAccountVersion?: string;
+}
+
+/**
+ * La cuenta con la que se iba a reservar cambió (se desactivó, dejó de heredarse, se rotó o se
+ * apuntó a otra cuenta del proveedor) entre que la saga la resolvió y el intent se comprometió. El
+ * intent no se guarda y nada sale al proveedor: reservar con la credencial vieja dejaría una reserva
+ * que la cuenta nueva no puede leer ni cancelar (RF-29).
+ */
+export class ProviderAccountChangedError extends ConflictException {
+  readonly reason = 'PROVIDER_ACCOUNT_CHANGED';
+
+  constructor() {
+    super(
+      'La cuenta del proveedor cambió mientras se abría la reserva. Volvé a buscar para reservar con la cuenta vigente.',
+    );
+    this.name = 'ProviderAccountChangedError';
+  }
+}
+
+function epochOf(value: Date | string | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const epoch = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isNaN(epoch) ? undefined : epoch;
 }
 
 /**
@@ -110,6 +138,30 @@ export interface CreateIntentSettlement {
   searchCriteria?: unknown;
   totalAmountMinor?: number;
   currency?: string;
+}
+
+/**
+ * La cuenta de la orden recién insertada sigue activa, en la red del tenant y en la versión con la
+ * que la saga la resolvió (`resolve_order_provider_account`, 0045). Va DESPUÉS del INSERT a
+ * propósito: la FK ya tomó FOR KEY SHARE sobre la fila de la cuenta, que choca con el FOR UPDATE de
+ * `ProviderCredentialsService.upsert`. Un cambio en curso ya se comprometió y esta lectura lo ve; uno
+ * nuevo espera a que la orden se comprometa, y la cuenta en su conteo de reservas activas.
+ *
+ * @throws ProviderAccountChangedError y la transacción del intent se deshace entera.
+ */
+async function assertAccountStillCurrent(
+  trx: Transaction<DB>,
+  orderId: string,
+  version: string,
+): Promise<void> {
+  const result = await sql<{ updated_at: Date | string | null }>`
+    SELECT updated_at FROM resolve_order_provider_account(${orderId}::uuid)
+  `.execute(trx);
+  // Sin cuenta que resolver, la función devuelve una fila de nulos, no cero filas.
+  const current = epochOf(result.rows[0]?.updated_at);
+  if (current === undefined || current !== epochOf(version)) {
+    throw new ProviderAccountChangedError();
+  }
 }
 
 export class OrderCreateIntentStore {
@@ -220,6 +272,10 @@ export class OrderCreateIntentStore {
         })
         .returningAll()
         .executeTakeFirstOrThrow();
+
+      if (values.providerAccountId !== undefined && values.providerAccountVersion !== undefined) {
+        await assertAccountStillCurrent(trx, row.id, values.providerAccountVersion);
+      }
 
       return row as unknown as OrderRow;
     });

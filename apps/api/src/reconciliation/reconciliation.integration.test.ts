@@ -651,6 +651,14 @@ d('conciliación contra Postgres (0047)', () => {
                now() - interval '1 hour', 1, now() + interval '5 hours')`,
       [enCurso.id, agenciaA],
     );
+    // El Cancel se mandó y no se supo si se aplicó: la operación quedó "a conciliar".
+    await pool.query(
+      `INSERT INTO order_operations (tenant_id, order_id, type, status, result)
+       VALUES ($1, $2, 'cancel', 'failed',
+               '{"outcome":"UNVERIFIED","retryable":false,"reconciliationRequired":true,
+                 "reason":"write-unverified","priorOrderStatus":"confirmed"}'::jsonb)`,
+      [agenciaA, enCurso.id],
+    );
     listado.filas = [
       {
         providerBookingId: enCurso.locator!,
@@ -678,6 +686,92 @@ d('conciliación contra Postgres (0047)', () => {
       [enCurso.id],
     );
     expect(rows[0]).toEqual({ status: 'cancelled', next: null });
+    // La operación dice quién la cerró de verdad: la conciliación, no la verificación.
+    const operaciones = await pool.query<{ status: string; result: Record<string, unknown> }>(
+      `SELECT status, result FROM order_operations WHERE order_id = $1 AND type = 'cancel'`,
+      [enCurso.id],
+    );
+    expect(operaciones.rows).toEqual([
+      {
+        status: 'success',
+        result: expect.objectContaining({
+          outcome: 'SUCCEEDED',
+          priorOrderStatus: 'confirmed',
+          resolvedBy: 'reconciliation',
+        }) as unknown,
+      },
+    ]);
+  });
+
+  it('R7: una orden confirmada que el proveedor informa FAILED o PENDING se escala sin tocarla', async () => {
+    await pool.query(`DELETE FROM orders WHERE provider = $1`, [PROVEEDOR]);
+    const { service, listado } = servicio();
+    const fallida = await orden({ tenantId: agenciaA, creadaHace: 2 * DAY });
+    const pendiente = await orden({ tenantId: agenciaB, creadaHace: 2 * DAY });
+    listado.filas = [
+      { orden: fallida, status: 'FAILED' as const },
+      { orden: pendiente, status: 'PENDING' as const },
+    ].map(({ orden: o, status }) => ({
+      providerBookingId: o.locator!,
+      bookingDate: fecha(-2),
+      bookingReference: o.ref,
+      status,
+      providerStatus: status,
+    }));
+    for (const [o, status] of [
+      [fallida, 'FAILED'],
+      [pendiente, 'PENDING'],
+    ] as const) {
+      listado.lecturas.set(o.locator!, {
+        found: true,
+        providerBookingId: o.locator!,
+        status,
+        providerStatus: status,
+        warnings: [],
+      });
+    }
+
+    const report = await correr(service);
+
+    expect(report.findings).toEqual({ R7: 2 });
+    expect(report.outcomes).toEqual({ review: 2 });
+    expect(listado.cancelBooking).not.toHaveBeenCalled();
+    const { rows } = await pool.query<{ id: string; status: string; provider_status: string }>(
+      `SELECT o.id, o.status, t.provider_status
+         FROM orders o JOIN hotel_order_tracking t ON t.order_id = o.id
+        WHERE o.id = ANY($1::uuid[]) ORDER BY o.order_number`,
+      [[fallida.id, pendiente.id]],
+    );
+    expect(rows).toEqual([
+      { id: fallida.id, status: 'confirmed', provider_status: 'FAILED' },
+      { id: pendiente.id, status: 'confirmed', provider_status: 'PENDING' },
+    ]);
+
+    // Cada ítem en el tenant de su orden, y cada escalada también.
+    const deLaCorrida = (tenantId: string) =>
+      database.withTenant(tenantId, (trx) =>
+        trx
+          .selectFrom('provider_reconciliation_items')
+          .select(['kind', 'severity', 'action', 'order_id'])
+          .where('run_id', '=', report.runId!)
+          .execute(),
+      );
+    expect(await deLaCorrida(agenciaA)).toEqual([
+      { kind: 'R7', severity: 'warning', action: 'review', order_id: fallida.id },
+    ]);
+    expect(await deLaCorrida(agenciaB)).toEqual([
+      { kind: 'R7', severity: 'warning', action: 'review', order_id: pendiente.id },
+    ]);
+    expect(await deLaCorrida(consolidador)).toEqual([]);
+    const escaladas = await pool.query<{ tenant_id: string; aggregate_id: string; reason: string }>(
+      `SELECT tenant_id, aggregate_id, payload ->> 'reason' AS reason FROM domain_events
+        WHERE payload ->> 'runId' = $1 AND event_type = $2 ORDER BY tenant_id = $3 DESC`,
+      [report.runId, ORDER_EVENTS.escalated, agenciaA],
+    );
+    expect(escaladas.rows).toEqual([
+      { tenant_id: agenciaA, aggregate_id: fallida.id, reason: 'verified-status-unexpected' },
+      { tenant_id: agenciaB, aggregate_id: pendiente.id, reason: 'verified-status-unexpected' },
+    ]);
   });
 
   it('R6, R7 y R8 sobre datos sembrados: se registran sin tocar la orden, cada uno en su tenant', async () => {

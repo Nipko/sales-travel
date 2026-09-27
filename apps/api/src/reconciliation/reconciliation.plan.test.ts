@@ -295,6 +295,61 @@ describe('cruce y clasificación (04 §9.4)', () => {
     expect(clases(plan.findings)).toEqual(['R7']);
   });
 
+  it('R7: una orden confirmada (o emitida) que el listado trae PENDING o FAILED, a leer y escalar', () => {
+    for (const status of ['PENDING', 'FAILED'] as const) {
+      for (const estado of ['confirmed', 'ticketed'] as const) {
+        const plan = planReconciliation({
+          now: NOW,
+          windows: TRAMO_A,
+          bookings: [fila({ status, providerStatus: status })],
+          orders: [orden({ status: estado })],
+        });
+        // Una lectura primero (lleva la fila a leer): la clase del listado no cambia la orden sola.
+        expect(plan.findings).toEqual([
+          expect.objectContaining({
+            kind: 'R7',
+            severity: 'warning',
+            booking: expect.objectContaining({ status }) as unknown,
+          }),
+        ]);
+        expect(plan.matched).toBe(1);
+      }
+    }
+  });
+
+  it('una orden cerrada que el proveedor tiene PENDING puede confirmarse y cobrarse: R7; FAILED coincide', () => {
+    for (const cerrada of [
+      orden({ status: 'cancelled', providerStatus: 'Cancelled' }),
+      orden({ status: 'failed', providerOrderId: 'GOF05R', providerStatus: null }),
+    ]) {
+      const pendiente = planReconciliation({
+        now: NOW,
+        windows: TRAMO_A,
+        bookings: [fila({ status: 'PENDING', providerStatus: 'PENDING' })],
+        orders: [cerrada],
+      });
+      expect(clases(pendiente.findings)).toEqual(['R7']);
+
+      const fallida = planReconciliation({
+        now: NOW,
+        windows: TRAMO_A,
+        bookings: [fila({ status: 'FAILED', providerStatus: 'FAILED' })],
+        orders: [cerrada],
+      });
+      expect(fallida.findings).toEqual([]);
+    }
+  });
+
+  it('una orden fallida con un estado fuera del vocabulario también va a R7, como la cancelada', () => {
+    const plan = planReconciliation({
+      now: NOW,
+      windows: TRAMO_A,
+      bookings: [fila({ status: 'UNKNOWN', providerStatus: 'OnHoldByHotel' })],
+      orders: [orden({ status: 'failed', providerStatus: null })],
+    });
+    expect(clases(plan.findings)).toEqual(['R7']);
+  });
+
   it('una fila sin BookingStatus (PV-28) no se compara', () => {
     const { status: _s, providerStatus: _p, ...sinEstado } = fila();
     const plan = planReconciliation({
@@ -332,6 +387,34 @@ describe('cruce y clasificación (04 §9.4)', () => {
         orders: [reciente],
       }).findings,
     ).toEqual([]);
+  });
+
+  it('R8 mira nuestra cancelación: atascada más de 72 h, aunque el listado la traiga PENDING o FAILED', () => {
+    const atascada = orden({
+      status: 'pending',
+      providerStatus: 'CxlRequestSentToHotel',
+      cancelSince: NOW - RECONCILIATION_CANCEL_STUCK_MS,
+    });
+    for (const status of ['PENDING', 'FAILED'] as const) {
+      const plan = planReconciliation({
+        now: NOW,
+        windows: TRAMO_A,
+        bookings: [fila({ status, providerStatus: status })],
+        orders: [atascada],
+      });
+      expect(clases(plan.findings)).toEqual(['R8']);
+
+      // Sin 72 h, la verificación de la cancelación es la que la lee y la escala.
+      const reciente = { ...atascada, cancelSince: NOW - HOUR };
+      expect(
+        planReconciliation({
+          now: NOW,
+          windows: TRAMO_A,
+          bookings: [fila({ status, providerStatus: status })],
+          orders: [reciente],
+        }).findings,
+      ).toEqual([]);
+    }
   });
 
   it('una cancelación nuestra que el proveedor ya terminó se cierra sin ítem (settle)', () => {

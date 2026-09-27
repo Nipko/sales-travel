@@ -747,6 +747,122 @@ describe('R3, R4 y R7 se confirman leyendo la reserva antes de tocar nada (PV-33
     });
   });
 
+  it('R7: una orden confirmada que el proveedor informa PENDING o FAILED se escala y no se toca', async () => {
+    for (const status of ['PENDING', 'FAILED'] as const) {
+      const o = orden({ tenantId: AGENCIA_B, providerOrderId: `LOCB-${status}` });
+      const b = banco([o]);
+      b.mem.tracking.set(
+        o.id,
+        emptyTracking({ providerStatus: 'Confirmed', hcnState: 'scheduled' }),
+      );
+      b.adapter.filas = [fila(`LOCB-${status}`, { status, providerStatus: status })];
+      b.adapter.lecturas.set(
+        `LOCB-${status}`,
+        vista(`LOCB-${status}`, { status, providerStatus: status }),
+      );
+
+      await correr(b);
+      const repetida = await correr(b);
+
+      // Nunca a ciegas: se lee, la orden sigue confirmada y con su retención, y nada sale al proveedor.
+      expect(b.adapter.getBooking).toHaveBeenCalledWith(
+        `LOCB-${status}`,
+        { tenantId: AGENCIA_B, requestId: o.id },
+        { purpose: 'background' },
+      );
+      expect(b.mem.order(o.id).status).toBe('confirmed');
+      expect(b.mem.holdsReleased).toEqual([]);
+      expect(b.adapter.cancelBooking).not.toHaveBeenCalled();
+      expect(b.mem.trackingOf(o.id)).toMatchObject({
+        providerStatus: status,
+        hcnState: 'scheduled',
+      });
+      expect(b.mem.items).toEqual([
+        expect.objectContaining({
+          kind: 'R7',
+          severity: 'warning',
+          action: 'review',
+          orderId: o.id,
+          tenantId: AGENCIA_B,
+        }),
+      ]);
+      // Un solo aviso aunque la ventana se repita.
+      expect(b.audit.types()).toEqual([ORDER_EVENTS.escalated]);
+      expect(b.audit.first(ORDER_EVENTS.escalated)).toMatchObject({
+        tenantId: AGENCIA_B,
+        aggregateId: o.id,
+        payload: expect.objectContaining({
+          reason: 'verified-status-unexpected',
+          source: 'reconciliation',
+        }) as unknown,
+      });
+      expect(repetida.outcomes).toEqual({ review: 1 });
+    }
+  });
+
+  it('R7 que la lectura ve confirmada: el listado traía un estado viejo y no se registra nada', async () => {
+    const o = orden({ tenantId: AGENCIA_A, providerOrderId: 'LOCA07' });
+    const b = banco([o]);
+    b.mem.tracking.set(o.id, emptyTracking({ providerStatus: 'Confirmed' }));
+    b.adapter.filas = [fila('LOCA07', { status: 'FAILED', providerStatus: 'FAILED' })];
+    b.adapter.lecturas.set('LOCA07', vista('LOCA07'));
+
+    const report = await correr(b);
+
+    expect(report.outcomes).toEqual({ unconfirmed: 1 });
+    expect(b.mem.order(o.id).status).toBe('confirmed');
+    expect(b.mem.items).toEqual([]);
+    expect(b.audit.events).toEqual([]);
+  });
+
+  it('el ítem dice lo que confirmó la lectura: un R7 del listado que se lee vivo sobre una orden cancelada es R4', async () => {
+    const o = orden({ tenantId: AGENCIA_B, status: 'cancelled', providerOrderId: 'LOCB02' });
+    const b = banco([o]);
+    b.mem.tracking.set(o.id, emptyTracking({ providerStatus: 'Cancelled' }));
+    b.adapter.filas = [fila('LOCB02', { status: 'PENDING', providerStatus: 'PENDING' })];
+    b.adapter.lecturas.set('LOCB02', vista('LOCB02'));
+
+    const report = await correr(b);
+
+    expect(report.findings).toEqual({ R7: 1 });
+    expect(report.outcomes).toEqual({ review: 1 });
+    expect(b.mem.order(o.id).status).toBe('cancelled');
+    expect(b.adapter.cancelBooking).not.toHaveBeenCalled();
+    expect(b.mem.items).toEqual([
+      expect.objectContaining({ kind: 'R4', severity: 'critical', action: 'review' }),
+    ]);
+    expect(b.audit.first(ORDER_EVENTS.reconciliationDiscrepancy)?.payload).toMatchObject({
+      kind: 'R4',
+      severity: 'critical',
+    });
+  });
+
+  it('una orden fallida que se lee viva es R4 crítico aunque el listado la traiga PENDING: un solo ítem para el mismo hecho', async () => {
+    const o = orden({ tenantId: AGENCIA_A, status: 'failed', providerOrderId: 'LOCA08' });
+    const b = banco([o]);
+    b.mem.tracking.set(o.id, emptyTracking({ providerStatus: null }));
+    b.adapter.lecturas.set('LOCA08', vista('LOCA08'));
+
+    b.adapter.filas = [fila('LOCA08', { status: 'PENDING', providerStatus: 'PENDING' })];
+    const pendiente = await correr(b);
+    b.adapter.filas = [fila('LOCA08')];
+    const confirmada = await correr(b);
+
+    expect(pendiente.findings).toEqual({ R7: 1 });
+    expect(confirmada.findings).toEqual({ R4: 1 });
+    expect(b.mem.order(o.id).status).toBe('failed');
+    expect(b.mem.holdsReleased).toEqual([]);
+    expect(b.adapter.cancelBooking).not.toHaveBeenCalled();
+    expect(b.mem.items).toEqual([
+      expect.objectContaining({
+        kind: 'R4',
+        severity: 'critical',
+        action: 'review',
+        orderId: o.id,
+      }),
+    ]);
+  });
+
   it('una lectura que no se puede hacer no cambia nada: la próxima corrida la reintenta', async () => {
     const o = orden({ tenantId: AGENCIA_A, providerOrderId: 'LOCA05' });
     const b = banco([o]);
@@ -921,6 +1037,13 @@ describe('disparos: planificador, barrido, botón y job', () => {
       ),
     ).toBe(false);
     expect(reconciliationDayStart(t)).toBe(Date.parse('2026-09-26T04:30:00Z'));
+    expect(reconciliationDayStart(Date.parse('2026-09-26T04:30:00Z'))).toBe(
+      Date.parse('2026-09-26T04:30:00Z'),
+    );
+    // De madrugada, el día de conciliación todavía es el anterior: nunca un instante futuro.
+    expect(reconciliationDayStart(Date.parse('2026-09-27T01:23:00Z'))).toBe(
+      Date.parse('2026-09-26T04:30:00Z'),
+    );
   });
 
   it('el job valida su payload y no repite una cuenta ya conciliada hoy (salvo el botón)', async () => {

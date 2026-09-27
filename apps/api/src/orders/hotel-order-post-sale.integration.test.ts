@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NotFoundException } from '@nestjs/common';
@@ -29,8 +29,10 @@ import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-car
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import { ExternalOrderIntentService } from './external-order-intent.service.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
+import { ProviderAccountChangedError } from './order-create-intent.store.js';
 import { OrdersService } from './orders.service.js';
 
 /**
@@ -555,6 +557,140 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
       expect(await fila()).toEqual([
         { provider_status: 'Cancelled', provider_status_source: 'retrieve', hcn: null },
       ]);
+    });
+  });
+
+  describe('pendiente b: una cuenta tbo-hotels con reservas vivas no se apunta a otra cuenta de TBO', () => {
+    const TBO = 'tbo-hotels';
+    let consolidadorTbo: string;
+    let agenciaTbo: string;
+    let cuentaTbo: string;
+    let reservaViva: string;
+
+    function upsertTbo(cambio: {
+      credentials?: Record<string, unknown>;
+      config?: Record<string, unknown>;
+    }) {
+      return creds.upsert({
+        tenantId: consolidadorTbo,
+        providerCode: TBO,
+        credentials: { username: 'usuario-tbo', password: 'rotada' },
+        config: { environment: 'test' },
+        status: 'active',
+        isInheritable: true,
+        ...cambio,
+      });
+    }
+
+    async function version(): Promise<string> {
+      const { rows } = await pool.query<{ updated_at: Date }>(
+        'SELECT updated_at FROM provider_accounts WHERE id = $1',
+        [cuentaTbo],
+      );
+      return rows[0]!.updated_at.toISOString();
+    }
+
+    beforeAll(async () => {
+      consolidadorTbo = await crearTenant(`ps-tc-${sfx}`, 'consolidator', null);
+      agenciaTbo = await crearTenant(`ps-ta-${sfx}`, 'agency', consolidadorTbo);
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO provider_accounts (tenant_id, provider_code, label, credentials_enc, config, is_inheritable, status)
+         VALUES ($1, $2, 'default', $3, '{"environment":"test"}'::jsonb, true, 'active') RETURNING id`,
+        [
+          consolidadorTbo,
+          TBO,
+          encryptCredentials(JSON.stringify({ username: 'usuario-tbo', password: 'no-es-real' })),
+        ],
+      );
+      cuentaTbo = rows[0]!.id;
+      reservaViva = await orden({ tenantId: agenciaTbo, cuenta: cuentaTbo, provider: TBO });
+    });
+
+    afterAll(async () => {
+      for (const id of [agenciaTbo, consolidadorTbo]) {
+        if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
+      }
+    });
+
+    it.each([
+      ['otro usuario', { credentials: { username: 'otro-usuario-tbo', password: 'x' } }],
+      [
+        'otro entorno',
+        { config: { environment: 'live', baseUrl: 'https://tbo.example/HotelAPI' } },
+      ],
+      ['otra URL', { config: { environment: 'test', baseUrl: 'https://otro.example/HotelAPI' } }],
+    ])('%s → 409 PROVIDER_ACCOUNT_IN_USE, y la cuenta sigue como estaba', async (_caso, cambio) => {
+      const antes = await version();
+
+      const error = await upsertTbo(cambio).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ProviderAccountInUseError);
+      expect(error).toMatchObject({
+        reason: 'PROVIDER_ACCOUNT_IN_USE',
+        publicDetails: { activeOrders: 1 },
+      });
+      expect(await version()).toBe(antes);
+      expect((await creds.resolveForOrder(agenciaTbo, reservaViva)).credentials).toEqual({
+        username: 'usuario-tbo',
+        password: 'no-es-real',
+      });
+    });
+
+    it('otra contraseña del mismo usuario se guarda, y la reserva sigue con la misma cuenta', async () => {
+      await expect(upsertTbo({})).resolves.toEqual({ id: cuentaTbo });
+      expect((await creds.resolveForOrder(agenciaTbo, reservaViva)).credentials).toEqual({
+        username: 'usuario-tbo',
+        password: 'rotada',
+      });
+    });
+
+    it('el intent abierto con una versión vieja de la cuenta no se compromete; con la vigente, sí', async () => {
+      const intents = new ExternalOrderIntentService(database);
+      const abrir = (providerAccountVersion: string, n: number) =>
+        intents.openExternalCreateIntent(agenciaTbo, usuario, {
+          provider: TBO,
+          vertical: 'hotels',
+          idempotencyKey: randomUUID(),
+          searchCriteria: { checkoutDate: fecha(40) },
+          selectedOffer: { offerRef: `offer-${sfx}` },
+          passengers: [{ room: 1 }],
+          contactInfo: { email: `huesped-${sfx}@example.test` },
+          totalAmountMinor: 34_012,
+          currency: 'USD',
+          providerBookingRef: `STV${sfx.toUpperCase()}${String(n).padStart(9, '0')}`,
+          providerAccountId: cuentaTbo,
+          providerAccountVersion,
+        });
+      const vieja = await version();
+      await upsertTbo({ credentials: { username: 'usuario-tbo', password: 'otra-vez' } });
+
+      await expect(abrir(vieja, 1)).rejects.toBeInstanceOf(ProviderAccountChangedError);
+      const { rows } = await pool.query(
+        'SELECT 1 FROM orders WHERE tenant_id = $1 AND provider_booking_ref = $2',
+        [agenciaTbo, `STV${sfx.toUpperCase()}${String(1).padStart(9, '0')}`],
+      );
+      expect(rows).toEqual([]);
+
+      const intent = await abrir(await version(), 2);
+      expect(intent).toMatchObject({ status: 'pending', provider_account_id: cuentaTbo });
+
+      // Ya comprometido, el intent cuenta como reserva viva: la cuenta no se apunta a otra.
+      await expect(
+        upsertTbo({ credentials: { username: 'otro-usuario-tbo', password: 'x' } }),
+      ).rejects.toMatchObject({ publicDetails: { activeOrders: 2 } });
+
+      // Desactivada, un intent con su versión tampoco se compromete.
+      await pool.query(`UPDATE orders SET status = 'failed' WHERE provider_account_id = $1`, [
+        cuentaTbo,
+      ]);
+      await creds.upsert({
+        tenantId: consolidadorTbo,
+        providerCode: TBO,
+        credentials: { username: 'usuario-tbo', password: 'otra-vez' },
+        config: { environment: 'test' },
+        status: 'disabled',
+      });
+      await expect(abrir(await version(), 3)).rejects.toBeInstanceOf(ProviderAccountChangedError);
     });
   });
 });

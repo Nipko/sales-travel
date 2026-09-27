@@ -1,3 +1,4 @@
+import { PostgresQueryCompiler, type CompiledQuery, type RootOperationNode } from 'kysely';
 import type { DatabaseService } from '../../database/database.service.js';
 
 /**
@@ -31,6 +32,12 @@ export interface MemoryDbOptions {
   insertError?: Error;
   /** Cotizaciones que existen, cada una con su tenant. */
   quotations?: Row[];
+  /**
+   * Cuentas de proveedor que `resolve_order_provider_account` (0045) resuelve para la orden que las
+   * guarda: `updatedAt` es su versión (ISO). Una cuenta que no está, o con `available: false`, no
+   * se resuelve (desactivada, fuera de la red).
+   */
+  providerAccounts?: readonly { id: string; updatedAt: string; available?: boolean }[];
 }
 
 export function uniqueViolation(constraint: string): Error {
@@ -196,7 +203,29 @@ export function memoryDb(options: MemoryDbOptions = {}) {
       return query;
     };
 
-    return { selectFrom, insertInto, updateTable };
+    // Lo único que el intent ejecuta como SQL crudo: la cuenta de la orden recién insertada.
+    const compiler = new PostgresQueryCompiler();
+    const executor = {
+      transformQuery: (node: RootOperationNode) => node,
+      compileQuery: (node: RootOperationNode) => compiler.compileQuery(node),
+      withPlugins: () => executor,
+      executeQuery: (compiled: CompiledQuery) => {
+        if (!compiled.sql.includes('resolve_order_provider_account')) {
+          return Promise.reject(new Error(`SQL crudo inesperado: ${compiled.sql}`));
+        }
+        log.push({ tx, tenant, op: 'select', table: 'resolve_order_provider_account' });
+        const order = visible('orders').find((row) => row['id'] === compiled.parameters[0]);
+        const account = (options.providerAccounts ?? []).find(
+          (a) => a.id === order?.['provider_account_id'] && a.available !== false,
+        );
+        // Como la función de Postgres: sin cuenta que resolver, una fila de nulos.
+        return Promise.resolve({
+          rows: [{ updated_at: account === undefined ? null : new Date(account.updatedAt) }],
+        });
+      },
+    };
+
+    return { selectFrom, insertInto, updateTable, getExecutor: () => executor };
   };
 
   const db = {

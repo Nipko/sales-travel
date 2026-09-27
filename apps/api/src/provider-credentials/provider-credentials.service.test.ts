@@ -316,6 +316,10 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
   interface Existente {
     readonly status: 'active' | 'sandbox' | 'disabled';
     readonly is_inheritable: boolean;
+    /** La configuración guardada. Por defecto, la misma que manda `upsert`. */
+    readonly config?: Record<string, unknown>;
+    /** Lo que guarda el blob cifrado, o uno que no se puede leer. Por defecto, el usuario `u`. */
+    readonly credentials?: Record<string, unknown> | 'ilegible';
   }
 
   /**
@@ -338,7 +342,20 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
               return Promise.resolve({ rows: (activas === undefined ? [] : [activas]) as R[] });
             }
             if (q.sql.startsWith('select') && q.sql.includes('"provider_accounts"')) {
-              return Promise.resolve({ rows: [{ id: CUENTA, ...existente }] as R[] });
+              const { credentials = { username: 'u', password: 'vieja' }, ...fila } = existente;
+              return Promise.resolve({
+                rows: [
+                  {
+                    id: CUENTA,
+                    config: { environment: 'test' },
+                    credentials_enc:
+                      credentials === 'ilegible'
+                        ? Buffer.from('no-es-un-blob')
+                        : encryptCredentials(JSON.stringify(credentials)),
+                    ...fila,
+                  },
+                ] as R[],
+              });
             }
             return Promise.resolve({ rows: [] as R[], numAffectedRows: 1n });
           },
@@ -364,7 +381,13 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
 
   function upsert(
     service: ProviderCredentialsService,
-    cambio: { status?: 'active' | 'sandbox' | 'disabled'; isInheritable?: boolean },
+    cambio: {
+      status?: 'active' | 'sandbox' | 'disabled';
+      isInheritable?: boolean;
+      providerCode?: string;
+      credentials?: Record<string, unknown>;
+      config?: Record<string, unknown>;
+    },
   ) {
     return service.upsert({
       tenantId: DUENO,
@@ -462,6 +485,156 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       publicDetails: { activeOrders: null },
     });
     expect(actualizo(consultas)).toBe(false);
+  });
+
+  it('la cuenta se lee con FOR UPDATE antes del conteo y del UPDATE, en la misma transacción', async () => {
+    const { service, consultas } = servicioConCuenta(
+      { status: 'active', is_inheritable: true },
+      { own_orders: 0, inherited_orders: 0 },
+    );
+
+    await upsert(service, { status: 'disabled' });
+
+    const lectura = consultas.findIndex(
+      (sql) => sql.startsWith('select') && sql.includes('"provider_accounts"'),
+    );
+    const conteo = consultas.findIndex((sql) => sql.includes('provider_account_active_orders'));
+    const escritura = consultas.findIndex((sql) => sql.startsWith('update "provider_accounts"'));
+    expect(consultas[lectura]).toMatch(/ for update$/);
+    expect(lectura).toBeGreaterThanOrEqual(0);
+    expect(conteo).toBeGreaterThan(lectura);
+    expect(escritura).toBeGreaterThan(conteo);
+  });
+
+  describe('pendiente b: apuntarla a otra cuenta del proveedor también la saca de servicio', () => {
+    it.each([
+      ['otro usuario', { credentials: { username: 'otro-usuario', password: 'nueva' } }],
+      [
+        'el mismo usuario con un espacio de más',
+        { credentials: { username: 'u ', password: 'x' } },
+      ],
+      [
+        'otro entorno',
+        { config: { environment: 'live', baseUrl: 'https://tbo.example/HotelAPI' } },
+      ],
+      ['otra URL', { config: { environment: 'test', baseUrl: 'https://otro.example/HotelAPI' } }],
+    ])(
+      '%s con reservas activas → 409 PROVIDER_ACCOUNT_IN_USE y no escribe',
+      async (_caso, cambio) => {
+        const { service, consultas } = servicioConCuenta(
+          { status: 'active', is_inheritable: true },
+          { own_orders: 1, inherited_orders: 2 },
+        );
+
+        const error = await upsert(service, { status: 'active', ...cambio }).catch(
+          (e: unknown) => e,
+        );
+
+        expect(error).toBeInstanceOf(ProviderAccountInUseError);
+        expect(error).toMatchObject({
+          reason: 'PROVIDER_ACCOUNT_IN_USE',
+          publicDetails: { activeOrders: 3 },
+        });
+        expect((error as Error).message).toContain(
+          'No se puede cambiar el usuario, el entorno ni la URL',
+        );
+        expect(actualizo(consultas)).toBe(false);
+      },
+    );
+
+    it('otra contraseña del mismo usuario, en el mismo entorno, se guarda sin consultar', async () => {
+      const { service, consultas } = servicioConCuenta(
+        { status: 'active', is_inheritable: true, config: { environment: 'test', baseUrl: '' } },
+        { own_orders: 5, inherited_orders: 5 },
+      );
+
+      // `baseUrl` vacía y ausente son lo mismo: el factory lee las dos como "no vino".
+      await expect(upsert(service, { status: 'active' })).resolves.toEqual({ id: CUENTA });
+      expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
+      expect(actualizo(consultas)).toBe(true);
+    });
+
+    it('sin reservas activas se puede apuntar a otra cuenta', async () => {
+      const { service, consultas } = servicioConCuenta(
+        { status: 'active', is_inheritable: true },
+        { own_orders: 0, inherited_orders: 0 },
+      );
+      await expect(
+        upsert(service, { status: 'active', credentials: { username: 'otro', password: 'p' } }),
+      ).resolves.toEqual({ id: CUENTA });
+      expect(actualizo(consultas)).toBe(true);
+    });
+
+    it('si el conteo no contesta, no se cambia: "no se pudo comprobar" no es "no hay"', async () => {
+      const { service } = servicioConCuenta({ status: 'active', is_inheritable: true }, undefined);
+      const error = await upsert(service, {
+        status: 'active',
+        credentials: { username: 'otro', password: 'p' },
+      }).catch((e: unknown) => e);
+      expect(error).toMatchObject({ publicDetails: { activeOrders: null } });
+      expect((error as Error).message).toContain('no se cambia el usuario');
+    });
+
+    it('con el blob guardado ilegible sólo cuenta la configuración: reescribir la credencial es como se arregla', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const ilegible = servicioConCuenta(
+          { status: 'active', is_inheritable: true, credentials: 'ilegible' },
+          { own_orders: 1, inherited_orders: 0 },
+        );
+        await expect(
+          upsert(ilegible.service, {
+            status: 'active',
+            credentials: { username: 'usuario-nuevo', password: 'p' },
+          }),
+        ).resolves.toEqual({ id: CUENTA });
+        // El aviso nombra la cuenta; ni el blob ni la credencial nueva.
+        expect(JSON.stringify(warn.mock.calls)).toContain(CUENTA);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('usuario-nuevo');
+
+        const otroEntorno = servicioConCuenta(
+          { status: 'active', is_inheritable: true, credentials: 'ilegible' },
+          { own_orders: 1, inherited_orders: 0 },
+        );
+        await expect(
+          upsert(otroEntorno.service, {
+            status: 'active',
+            config: { environment: 'live', baseUrl: 'https://tbo.example/HotelAPI' },
+          }),
+        ).rejects.toBeInstanceOf(ProviderAccountInUseError);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('un proveedor que no declara identidad, o una cuenta que no está activa, se editan como hasta hoy', async () => {
+      const otro = servicioConCuenta(
+        { status: 'active', is_inheritable: true },
+        { own_orders: 9, inherited_orders: 9 },
+      );
+      await expect(
+        upsert(otro.service, {
+          status: 'active',
+          providerCode: 'despegar-hotels',
+          credentials: { apiKey: 'otra' },
+          config: { baseUrl: 'https://otra.example' },
+        }),
+      ).resolves.toEqual({ id: CUENTA });
+      expect(otro.consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(
+        false,
+      );
+
+      const sandbox = servicioConCuenta(
+        { status: 'sandbox', is_inheritable: true },
+        { own_orders: 9, inherited_orders: 9 },
+      );
+      await expect(
+        upsert(sandbox.service, {
+          status: 'active',
+          credentials: { username: 'otro', password: 'p' },
+        }),
+      ).resolves.toEqual({ id: CUENTA });
+    });
   });
 
   it('una cuenta que ya no estaba activa se puede seguir editando sin consultar', async () => {

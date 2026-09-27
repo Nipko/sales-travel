@@ -439,6 +439,49 @@ describe('HotelOrderCancellationStore — la conciliación que confirmó una can
     expect(update).toContain('"hotel_order_tracking"."hcn_state" is not distinct from $');
   });
 
+  it('transitionByReading que cierra una cancelación sin verificar dice que la cerró la conciliación', async () => {
+    const b = banco((q) => {
+      if (q.sql.startsWith('update "orders"')) return { rows: [{ id: ORDEN }] };
+      if (q.sql.startsWith('insert into "hotel_order_tracking"')) {
+        return { rows: [{ order_id: ORDEN }] };
+      }
+      if (q.sql.startsWith('select "id", "status", "result" from "order_operations"')) {
+        return {
+          rows: [
+            {
+              id: 'op-1',
+              status: 'failed',
+              result: {
+                outcome: 'UNVERIFIED',
+                retryable: false,
+                reconciliationRequired: true,
+                reason: 'write-unverified',
+                priorOrderStatus: 'confirmed',
+              },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+
+    await expect(
+      b.store.transitionByReading(TENANT, ORDEN, {
+        from: 'pending',
+        to: 'cancelled',
+        expected: ESPERADO,
+        write: { at: T, source: 'reconciliation', subStatus: null },
+      }),
+    ).resolves.toBe(true);
+
+    const op = b.negocio().find((q) => q.sql.startsWith('update "order_operations"'));
+    expect(JSON.parse(String(op?.parameters[2]))).toMatchObject({
+      status: 'success',
+      priorOrderStatus: 'confirmed',
+      resolvedBy: 'reconciliation',
+    });
+  });
+
   it('transitionByReading a "Cancelación en curso" abre el calendario y no lo cierra', async () => {
     const b = conFilas(true);
 

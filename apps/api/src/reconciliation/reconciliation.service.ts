@@ -29,6 +29,7 @@ import {
 import {
   ORDER_EVENTS,
   publicProviderStatus,
+  type DiscrepancySeverity,
   type ReconciliationDiscrepancyKind,
 } from '../orders/order-events.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
@@ -270,9 +271,14 @@ function increment(counts: Record<string, number>, key: string): void {
 
 const KEY = (value: string): string => value.trim().toUpperCase();
 
-/** Instante desde el que cuentan las corridas del día de `now`: las 04:30 UTC. */
+/**
+ * Instante desde el que cuentan las corridas del día de conciliación de `now`: las últimas 04:30 UTC
+ * que ya pasaron. Antes de esa hora el día todavía es el anterior; con las 04:30 de hoy, un job que la
+ * cola entrega de madrugada buscaría corridas en el futuro y repetiría una cuenta ya conciliada.
+ */
 export function reconciliationDayStart(now: number): number {
-  return Date.parse(`${utcDay(now)}T00:00:00Z`) + DAILY_AT_MS;
+  const today = Date.parse(`${utcDay(now)}T00:00:00Z`) + DAILY_AT_MS;
+  return today <= now ? today : today - 24 * 60 * 60_000;
 }
 
 /**
@@ -1158,17 +1164,18 @@ export class ReconciliationService implements OnApplicationBootstrap {
     let inserted = false;
     if (action !== undefined && kind !== 'settle') {
       const observed = this.observedFromRead(view);
+      const confirmed = this.confirmedClass(kind, plan);
       inserted = await this.recordItemAfterChange(order.tenantId, {
         runId: run.runId,
         accountId: run.accountId,
         providerCode: run.providerCode,
-        kind,
-        severity: kind === 'R4' ? 'critical' : 'warning',
+        kind: confirmed.kind,
+        severity: confirmed.severity,
         action,
         orderId: order.orderId,
         providerBookingId: booking.providerBookingId,
         dedupeKey: reconciliationDedupeKey(
-          kind,
+          confirmed.kind,
           { providerBookingId: booking.providerBookingId },
           observed,
         ),
@@ -1197,6 +1204,27 @@ export class ReconciliationService implements OnApplicationBootstrap {
     if (plan.actions.some((a) => HUMAN_ACTIONS.has(a))) return 'review';
     // R3 que la lectura ve vigente, R4 que la ve cancelada, R7 con un estado conocido: nada que decir.
     return kind === 'settle' ? 'recorded' : undefined;
+  }
+
+  /**
+   * La clase que confirmó la LECTURA (PV-33), que es la que queda en el ítem: una fila que el listado
+   * trae pendiente o con un estado raro (R7) puede ser, leída, una cancelación hecha fuera (R3) o una
+   * reserva viva sobre una orden cerrada (R4).
+   *
+   * La revisión urgente de la tabla es justo eso, viva y cobrable con la orden cerrada: R4 también
+   * sobre una `failed`, como la clasifica el plan, aunque la tabla no emita la discrepancia. Así el
+   * mismo hecho deja un solo ítem, traiga el listado `CONFIRMED` o `PENDING`.
+   */
+  private confirmedClass(
+    kind: 'R3' | 'R4' | 'R7',
+    plan: HotelOrderPlan,
+  ): { readonly kind: ReconciliationDiscrepancyKind; readonly severity: DiscrepancySeverity } {
+    if (plan.actions.includes('urgent-human-review')) return { kind: 'R4', severity: 'critical' };
+    let confirmed: ReconciliationDiscrepancyKind = kind;
+    for (const event of plan.events) {
+      if (event.type === ORDER_EVENTS.reconciliationDiscrepancy) confirmed = event.kind;
+    }
+    return { kind: confirmed, severity: confirmed === 'R4' ? 'critical' : 'warning' };
   }
 
   // ───────────────────────── Piezas ─────────────────────────

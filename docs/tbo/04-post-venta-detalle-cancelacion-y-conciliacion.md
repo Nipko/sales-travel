@@ -1003,6 +1003,23 @@ Todo el algoritmo es INFERIDO; las reglas del contrato que usa están citadas.
 | **R7** Estado desconocido   | `BookingStatus` fuera del vocabulario de §6.1                                                                                                 | Guardar el valor crudo                                                                  | Revisión                                                         | `OrderEscalated` `provider-status-unknown`                      |
 | **R8** Cancelación atascada | Estado intermedio de cancelación durante más de 72 h                                                                                          | —                                                                                       | Ticket a TBO                                                     | `OrderReconciliationDiscrepancy` (`kind: 'R8'`)                 |
 
+#### Endurecimiento HARD-4 (2026-09-26, VERIFICADO-CODIGO)
+
+- **Todo par (estado de la orden, estado de la fila) está decidido** (`classifyMatched` en
+  `apps/api/src/reconciliation/reconciliation.plan.ts`). `PENDING` y `FAILED` del contrato neutral no existen en el
+  enum de TBO (§6.1), así que una fila con ellos es **R7**: sobre una orden `confirmed` (el huésped puede llegar
+  sin habitación) y, si es `PENDING`, sobre una `cancelled` o `failed` (todavía puede confirmarse y cobrarse). La
+  lectura la confirma y la tabla de §6.3 sólo escala (`verified-status-unexpected`): la orden no cambia. `FAILED`
+  sobre una orden cerrada coincide y no deja ítem. Una `failed` con un estado fuera del vocabulario también es R7.
+- **R8 mira nuestra cancelación**, no la fila: pasadas 72 h es R8 aunque el listado traiga `PENDING` o `FAILED`.
+- **El ítem guarda la clase que confirmó la lectura** (PV-33): un R7 del listado que se lee vivo sobre una orden
+  cancelada o fallida queda como R4 crítico (el mismo ítem que deja un listado `CONFIRMED`); uno que se lee cancelado
+  sobre una confirmada, como R3.
+- **`resolvedBy` dice quién cerró de verdad** la operación `cancel` que había quedado `UNVERIFIED`:
+  `verify-cancellation` cuando la cierra el job, `reconciliation` cuando la cierra la conciliación (§6.3 fila 14).
+- **El día de conciliación empieza a las 04:30 UTC de la víspera** mientras no sean las 04:30 de hoy: un job que la
+  cola entrega de madrugada ya no busca corridas en el futuro ni repite una cuenta conciliada.
+
 ### 9.5 Reglas de seguridad
 
 1. **La conciliación solo lee.** Nunca crea ni cancela en TBO. Usa `BookingDetailsBasedOnDate` y
@@ -1110,6 +1127,17 @@ Reglas:
 
 - Una cuenta con reservas activas no se puede borrar ni desactivar sin migrar antes su post-venta, porque es la
   única que puede leerlas y cancelarlas (PV-15, INFERIDO).
+  - **HARD-4 (VERIFICADO-CODIGO):** tampoco se la puede apuntar a otra cuenta de TBO mientras esté `active`:
+    otro `username`, otro `environment` u otra `baseUrl` responden el mismo 409 `PROVIDER_ACCOUNT_IN_USE`
+    (`accountIdentity` en `apps/api/src/provider-credentials/provider-specs.ts`). Otra contraseña del mismo usuario
+    sí se guarda. Con el blob guardado ilegible sólo cuenta la configuración: reescribir la credencial es como se
+    arregla esa cuenta.
+  - **Sin ventana entre el conteo y el UPDATE:** `upsert` lee la cuenta con `FOR UPDATE`, que choca con el
+    `FOR KEY SHARE` de la FK `orders.provider_account_id`. Una orden que se está creando con la cuenta se
+    compromete antes del conteo; una nueva espera al cambio y, después del INSERT, el intent comprueba con
+    `resolve_order_provider_account` (0045) que la cuenta sigue activa, en la red y en la versión que resolvió la
+    saga (`providerAccountVersion`). Si no, el intent no se guarda y el Book responde el mismo 409
+    `SEARCH_ACCOUNT_CHANGED` que una cuenta cambiada desde la búsqueda.
 - La fila de seguimiento es una tabla satélite con `tenant_id` y RLS forzada, igual que `order_operations`
   (`db/migrations/0021_order_operations.sql:28-34`). No se agregan columnas específicas de hotel a `orders`: solo
   `provider_account_id` y `provider_booking_ref`, que son genéricas y sirven a cualquier proveedor (migración M2,

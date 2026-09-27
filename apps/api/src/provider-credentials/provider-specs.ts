@@ -64,6 +64,18 @@ export interface ProviderSpec {
     readonly credentials: Record<string, unknown>;
     readonly config: Record<string, unknown>;
   }) => readonly ProviderAccountIssue[];
+  /**
+   * Los campos que dicen A QUÉ cuenta del proveedor apunta la credencial, y no sólo cómo se
+   * autentica. Las reservas existen en esa cuenta y en ese entorno: cambiarlos en una cuenta activa
+   * con reservas vivas las deja sin la única cuenta con la que el proveedor deja leerlas y
+   * cancelarlas, igual que desactivarla (RF-29 CA 2). La contraseña del mismo usuario no está: rotarla
+   * sigue siendo la misma cuenta. `undefined` = no se declaró, y cambiar cualquier campo se permite
+   * como hasta hoy.
+   */
+  readonly accountIdentity?: {
+    readonly credentialKeys: readonly string[];
+    readonly configKeys: readonly string[];
+  };
 }
 
 /**
@@ -317,6 +329,9 @@ const TBO_HOTELS: ProviderSpec = {
   ],
   safeConfigKeys: ['environment', 'baseUrl'],
   accountIssues: tboAccountIssues,
+  // Otro `username` es otra cuenta de TBO; otro `environment` o `baseUrl`, otro sistema: las
+  // reservas hechas con la cuenta anterior no existen para ninguno de los dos.
+  accountIdentity: { credentialKeys: ['username'], configKeys: ['environment', 'baseUrl'] },
 };
 
 /** BYO-email. `host`/`port`/`secure`/`from*` son datos de servidor; usuario y clave van cifrados. */
@@ -426,6 +441,49 @@ function fieldIssues(
   }
 
   return issues;
+}
+
+/** Ausente, `null` y la cadena vacía son lo mismo: el campo no vino (así lo lee el factory). */
+function identityValue(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function sameIdentity(
+  keys: readonly string[],
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  return keys.every((key) => identityValue(before[key]) === identityValue(after[key]));
+}
+
+/**
+ * ¿El cambio apunta la cuenta a OTRA cuenta del proveedor (ver `ProviderSpec.accountIdentity`)?
+ * Compara valores exactos, sin recortar ni normalizar URLs: la credencial se manda tal cual se guardó
+ * (Q-06), y un espacio de más en el usuario es otro usuario para el proveedor. Dos valores que quizá
+ * apuntan a lo mismo cuentan como distintos: ante la duda, no se suelta la cuenta.
+ *
+ * `before.credentials` descifra el blob guardado sólo si hace falta. `null` = no se pudo leer: sólo
+ * cuentan los campos de `config`. Esa cuenta ya no autentica, y exigir el usuario de siempre para
+ * arreglarla la dejaría inservible justo mientras tiene reservas que atender.
+ */
+export function accountIdentityChanged(
+  providerCode: string,
+  before: {
+    readonly credentials: () => Record<string, unknown> | null;
+    readonly config: Record<string, unknown>;
+  },
+  after: {
+    readonly credentials: Record<string, unknown>;
+    readonly config: Record<string, unknown>;
+  },
+): boolean {
+  const identity = providerSpecFor(providerCode)?.accountIdentity;
+  if (identity === undefined) return false;
+  if (!sameIdentity(identity.configKeys, before.config, after.config)) return true;
+  if (identity.credentialKeys.length === 0) return false;
+  const stored = before.credentials();
+  return stored !== null && !sameIdentity(identity.credentialKeys, stored, after.credentials);
 }
 
 export interface SafeConfigView {

@@ -120,8 +120,17 @@ const OpenInputSchema = z
     currency: CurrencyCodeSchema,
     providerBookingRef: ProviderBookingRefSchema.nullable(),
     providerAccountId: z.string().uuid().nullable(),
+    providerAccountVersion: z.string().datetime({ offset: true }).optional(),
   })
-  .strict();
+  .strict()
+  // Una versión sin cuenta no tiene contra qué compararse: se rechaza en vez de no comprobar nada.
+  .refine(
+    (input) => input.providerAccountVersion === undefined || input.providerAccountId !== null,
+    {
+      message: 'requiere providerAccountId',
+      path: ['providerAccountVersion'],
+    },
+  );
 
 /**
  * Una lista blanca PLANA de escalares. Un objeto anidado es la forma de un volcado de respuesta,
@@ -196,6 +205,11 @@ export interface OpenExternalCreateIntentInput {
   providerBookingRef: string | null;
   /** Cuenta BYOC con la que se va a reservar, o `null` si la vertical no la resuelve por cuenta. */
   providerAccountId: string | null;
+  /**
+   * `updated_at` (ISO 8601) de esa cuenta tal como la resolvió la saga. Con él, el intent no se
+   * compromete si la cuenta cambió entretanto (`ProviderAccountChangedError`).
+   */
+  providerAccountVersion?: string;
 }
 
 /** Lo que dijo el proveedor, cuando es definitivo. */
@@ -243,6 +257,7 @@ export class ExternalOrderIntentService {
    * @throws BadRequestException sin `Idempotency-Key` UUID o con una cotización ajena.
    * @throws ConflictException 409 `duplicateRequest` si la clave ya tiene una orden.
    * @throws ProviderBookingRefTakenError si la referencia ya está en uso para ese proveedor.
+   * @throws ProviderAccountChangedError si la cuenta ya no es la de `providerAccountVersion`.
    */
   async openExternalCreateIntent(
     tenantId: string,
@@ -272,6 +287,9 @@ export class ExternalOrderIntentService {
           ...(valid.providerAccountId === null
             ? {}
             : { providerAccountId: valid.providerAccountId }),
+          ...(valid.providerAccountVersion === undefined
+            ? {}
+            : { providerAccountVersion: valid.providerAccountVersion }),
         },
         'providerOrderId',
       );

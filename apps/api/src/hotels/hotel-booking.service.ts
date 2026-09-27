@@ -11,8 +11,14 @@ import { AuditService } from '../audit/audit.service.js';
 import { BrandingService } from '../branding/branding.service.js';
 import type { OrderStatus } from '../database/database.types.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
-import { ExternalOrderIntentService } from '../orders/external-order-intent.service.js';
-import { createRequestKey } from '../orders/order-create-intent.store.js';
+import {
+  ExternalOrderIntentService,
+  type OpenExternalCreateIntentInput,
+} from '../orders/external-order-intent.service.js';
+import {
+  ProviderAccountChangedError,
+  createRequestKey,
+} from '../orders/order-create-intent.store.js';
 import { ORDER_EVENTS } from '../orders/order-events.js';
 import type { OrderRow } from '../orders/orders.service.js';
 import type { BookingHoldPolicy } from '../portfolios/booking-hold.js';
@@ -415,7 +421,7 @@ export class HotelBookingService {
     if (contact === undefined) throw new HotelAgencyContactMissingError();
 
     const bookingReference = adapter.newBookingReference();
-    const intent = await this.intents.openExternalCreateIntent(tenantId, userId, {
+    const intent = await this.openIntent(tenantId, userId, {
       provider: provider.code,
       vertical: 'hotels',
       idempotencyKey,
@@ -436,6 +442,7 @@ export class HotelBookingService {
       currency: shown.currency,
       providerBookingRef: bookingReference,
       providerAccountId: snapshot.account.accountId,
+      providerAccountVersion: snapshot.account.updatedAt,
     });
 
     // Todo lo que sale al proveedor desde aquí —PreBook de C2, Book y lectura de cierre— queda atado
@@ -495,6 +502,24 @@ export class HotelBookingService {
       };
     }
     return { httpStatus: hotelBookHttpStatus(done.status), body: done };
+  }
+
+  /**
+   * Abre el intent con la versión de la cuenta que vio la búsqueda. Si la cuenta cambió entre la
+   * comparación de arriba y el INSERT, es el mismo caso que una cuenta cambiada desde la búsqueda, y
+   * el vendedor recibe el mismo 409: no se guardó nada y nada salió al proveedor.
+   */
+  private async openIntent(
+    tenantId: string,
+    userId: string,
+    input: OpenExternalCreateIntentInput,
+  ): Promise<OrderRow> {
+    try {
+      return await this.intents.openExternalCreateIntent(tenantId, userId, input);
+    } catch (err) {
+      if (err instanceof ProviderAccountChangedError) throw new HotelSearchAccountChangedError();
+      throw err;
+    }
   }
 
   // ───────────────────────── Revalidación (C2), en la petición ─────────────────────────

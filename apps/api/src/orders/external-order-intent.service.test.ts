@@ -16,6 +16,7 @@ import {
   CREATE_NOT_SENT_MARKER,
   CREATE_PENDING_RECONCILIATION_MARKER,
   OrderCreateIntentStore,
+  ProviderAccountChangedError,
 } from './order-create-intent.store.js';
 import type { OrderRow } from './orders.service.js';
 
@@ -141,6 +142,69 @@ describe('openExternalCreateIntent — el intent existe antes de llamar al prove
     });
     expect(b.log.find((s) => s.forUpdate)).toMatchObject({ tx: insert?.tx, table: 'tenants' });
     expect(b.log.filter((s) => s.op === 'update')).toEqual([]);
+    expect(b.rows()).toHaveLength(1);
+  });
+
+  it('RF-29: con la versión de la cuenta, el intent se compromete sólo si la cuenta de la orden sigue siendo ésa', async () => {
+    const VERSION = '2026-09-01T00:00:00.000Z';
+    const vigente = bank({ providerAccounts: [{ id: ACCOUNT, updatedAt: VERSION }] });
+
+    const intent = await vigente.service.openExternalCreateIntent(
+      TENANT_A,
+      USER,
+      input({ providerAccountVersion: VERSION }),
+    );
+
+    expect(intent.provider_account_id).toBe(ACCOUNT);
+    // La comprobación va DESPUÉS del INSERT y en su misma transacción: la FK ya bloqueó la cuenta.
+    expect(vigente.log.map((s) => [s.tx, s.op, s.table])).toEqual([
+      [1, 'select', 'tenants'],
+      [1, 'select', 'orders'],
+      [1, 'insert', 'orders'],
+      [1, 'select', 'resolve_order_provider_account'],
+    ]);
+
+    for (const providerAccounts of [
+      // Rotada o apuntada a otra cuenta del proveedor.
+      [{ id: ACCOUNT, updatedAt: '2026-09-02T00:00:00.000Z' }],
+      // Desactivada, o fuera de la red del tenant.
+      [{ id: ACCOUNT, updatedAt: VERSION, available: false }],
+      [],
+    ]) {
+      const cambiada = bank({ providerAccounts });
+      const error = await rejection(
+        cambiada.service.openExternalCreateIntent(
+          TENANT_A,
+          USER,
+          input({ providerAccountVersion: VERSION }),
+        ),
+      );
+      expect(error).toBeInstanceOf(ProviderAccountChangedError);
+      expect(conflictBody(error)).toMatchObject({ statusCode: 409 });
+      // La transacción se deshizo entera: ni fila ni clave tomada.
+      expect(cambiada.rows()).toEqual([]);
+    }
+  });
+
+  it('sin versión no se comprueba nada (vuelos, verticales sin cuenta); una versión sin cuenta se rechaza', async () => {
+    const b = bank();
+    await b.service.openExternalCreateIntent(TENANT_A, USER, input());
+    expect(b.log.some((s) => s.table === 'resolve_order_provider_account')).toBe(false);
+
+    const error = await rejection(
+      b.service.openExternalCreateIntent(
+        TENANT_A,
+        USER,
+        input({
+          idempotencyKey: KEY_2,
+          providerBookingRef: REF_2,
+          providerAccountId: null,
+          providerAccountVersion: '2026-09-01T00:00:00.000Z',
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(ExternalOrderIntentInputError);
+    expect((error as Error).message).toContain('providerAccountVersion');
     expect(b.rows()).toHaveLength(1);
   });
 

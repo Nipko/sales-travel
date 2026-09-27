@@ -529,6 +529,11 @@ interface OpcionesBanco {
   credentialSource?: CredentialSource;
   /** Dueño de la cuenta con que se reserva. */
   ownerTenantId?: string;
+  /**
+   * La cuenta como la ve la base al abrir el intent. Por defecto, la misma versión que vio la
+   * búsqueda (`CUENTA`).
+   */
+  cuentaEnBase?: { updatedAt?: string; available?: boolean };
 }
 
 interface Banco {
@@ -577,7 +582,17 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
   const snapshots = new HotelPrebookSnapshotStore(cache);
   await contexts.save(contexto());
   await snapshots.save(snap);
-  const memory = memoryDb();
+  const memory = memoryDb({
+    providerAccounts: [
+      {
+        id: CUENTA.accountId,
+        updatedAt: opts.cuentaEnBase?.updatedAt ?? CUENTA.updatedAt,
+        ...(opts.cuentaEnBase?.available === undefined
+          ? {}
+          : { available: opts.cuentaEnBase.available }),
+      },
+    ],
+  });
   const intents = new ExternalOrderIntentService(memory.db);
   const emit = opts.emit ?? vi.fn(() => Promise.resolve());
   const inflight = new InflightWorkRegistry();
@@ -1126,6 +1141,19 @@ describe('las puertas: todo rechazo ocurre ANTES de abrir la orden y de llamar a
     expect(await sinTocarNada(b, b.service.book(AGENCIA, USUARIO, CLAVE, pedido()))).toBeInstanceOf(
       HotelSearchAccountChangedError,
     );
+  });
+
+  it('RF-29: la cuenta cambió (rotada, desactivada o fuera de la red) entre la comparación y el intent → el mismo 409, sin orden ni Book', async () => {
+    for (const cuentaEnBase of [{ updatedAt: '2026-09-02T00:00:00.000Z' }, { available: false }]) {
+      const b = await banco({ cuentaEnBase });
+
+      const err = await sinTocarNada(b, b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+      expect(err).toBeInstanceOf(HotelSearchAccountChangedError);
+      expect(err).toMatchObject({ reason: 'SEARCH_ACCOUNT_CHANGED' });
+      // La clave quedó libre: nada se comprometió.
+      expect(b.memory.log.filter((q) => q.op === 'insert')).toHaveLength(1);
+    }
   });
 
   it('RF-09: sin margen para revalidar, la ventana ya está vencida', async () => {
@@ -2541,7 +2569,9 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
   const breaker = new CircuitBreakerService();
   const emit = vi.fn(() => Promise.resolve());
   const audit = { emit } as unknown as AuditService;
-  const memory = memoryDb();
+  const memory = memoryDb({
+    providerAccounts: [{ id: CUENTA.accountId, updatedAt: CUENTA.updatedAt }],
+  });
   const intents = new ExternalOrderIntentService(memory.db);
   const queue = new RecordingQueueService();
   const tracking = new MemoryVerificationStore(() => memory.rows());
