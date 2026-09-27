@@ -697,6 +697,10 @@ describe('timeouts', () => {
     expect(result).toMatchObject({ outcome: 'SUCCESS', tboCode: 200 });
   });
 
+  // Reloj fijo: Search descuenta del plazo compartido lo que ya pasó, y con el reloj real un
+  // milisegundo de carga pedía 12 999 ms.
+  const frozenClock = (): number => 1_000;
+
   it('cada operación pide la espera de su fila: Book no corta a los 23 s y Search sí', async () => {
     const asked: number[] = [];
     const timeoutSignal = (ms: number): AbortSignal => {
@@ -705,7 +709,7 @@ describe('timeouts', () => {
     };
     for (const operation of NAMES) {
       const { fetch } = spyFetch(json({ Status: { Code: 200 } }));
-      await client({ fetch, timeoutSignal }).send(operation, bodyFor(operation));
+      await client({ fetch, timeoutSignal, now: frozenClock }).send(operation, bodyFor(operation));
     }
     expect(Object.fromEntries(NAMES.map((name, i) => [name, asked[i]]))).toEqual({
       search: 13_000,
@@ -729,7 +733,7 @@ describe('timeouts', () => {
       return new AbortController().signal;
     };
     const { fetch } = spyFetch(json({ Status: { Code: 200 } }));
-    const subject = client({ fetch, timeoutSignal });
+    const subject = client({ fetch, timeoutSignal, now: frozenClock });
     await subject.send('book', {}, { timeoutMs: 200_000 });
     await subject.send('book', {}, { timeoutMs: 5_000 });
     await subject.send('hotelDetails', {}, { timeoutMs: 45_000 });
