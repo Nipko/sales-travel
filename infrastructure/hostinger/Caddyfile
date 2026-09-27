@@ -64,6 +64,27 @@ app.planetour.cloud {
 	import security_headers
 }
 
+# ---- Portal de certificación de TBO (docs/tbo/07 §7.2 A; D-TBO-35 A) ----
+# El panel del stack de docker-compose.cert.yml, que corre aparte con su base y sin credenciales
+# de ningún otro proveedor. Llega por la red `sales-travel-cert-ingress`, que sólo comparten este
+# Caddy y `cert-web-b2b`; el prefijo `cert-` evita que su nombre choque con `web-b2b` de arriba.
+# Sin subdominio para su api: el navegador sólo habla con el panel (CSP `connect-src 'self'`) y el
+# panel llama al api por la red interna del stack, así que exponerlo sólo sumaría superficie.
+# Primer nivel bajo la zona a propósito: el certificado universal de Cloudflare cubre
+# `*.planetour.cloud`, no `*.cert.planetour.cloud`.
+cert-app.planetour.cloud {
+	encode zstd gzip
+	reverse_proxy cert-web-b2b:3001 {
+		header_up X-Real-IP {remote_host}
+		# Misma cabecera que el panel de producción, por el mismo motivo (throttler).
+		header_up -X-Edge-Peer-IP
+		header_up X-Edge-Peer-IP {remote_host}
+	}
+	import security_headers
+	# Un portal de pruebas no se indexa.
+	header X-Robots-Tag "noindex, nofollow"
+}
+
 # ---- Sitio público B2C — agregar cuando exista apps/web-b2c ----
 # planetour.cloud, www.planetour.cloud {
 #	encode zstd gzip

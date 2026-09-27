@@ -16,6 +16,12 @@ networks:
   internal:
     driver: bridge
     internal: true
+  # Por aquí Caddy llega al panel del stack de certificación de TBO (docker-compose.cert.yml). Sólo
+  # la comparten Caddy y `cert-web-b2b`: el api y la base de producción no están en ella. La crea
+  # el paso "Pull & up" de deploy.yml antes de `up`, porque compose no crea una red `external`.
+  cert_ingress:
+    external: true
+    name: sales-travel-cert-ingress
 
 volumes:
   caddy_data:
@@ -34,7 +40,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [edge]
+    networks: [edge, cert_ingress]
     depends_on:
       - api
       - web-b2b

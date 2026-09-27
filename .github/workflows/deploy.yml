@@ -6,8 +6,14 @@ on:
     tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
+      target:
+        description: 'prod = producción. cert = stack de certificación de TBO (docs/tbo/07 §7.2 A), sin build.'
+        required: false
+        type: choice
+        options: [prod, cert]
+        default: prod
       image_tag:
-        description: 'Tag de imagen a desplegar (sha o vX.Y.Z). Vacío = HEAD actual.'
+        description: 'Tag de imagen a desplegar (sha o vX.Y.Z). Vacío = HEAD actual; con cert, el que corre producción.'
         required: false
         type: string
 
@@ -28,7 +34,8 @@ env:
 jobs:
   build:
     name: Build & push ${{ matrix.app.name }}
-    if: github.event_name != 'workflow_dispatch' || inputs.image_tag == ''
+    # El stack de certificación corre las imágenes que ya corre producción: no construye nada.
+    if: github.event_name != 'workflow_dispatch' || (inputs.target != 'cert' && inputs.image_tag == '')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -44,6 +51,8 @@ jobs:
           - { name: sync-hotel-inventory, dockerfile: tools/sync-hotel-inventory/Dockerfile }
           - name: sync-tbo-hotel-inventory
             dockerfile: tools/sync-tbo-hotel-inventory/Dockerfile
+          - name: seed-tbo-cert-tenant
+            dockerfile: tools/seed-tbo-cert-tenant/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +93,7 @@ jobs:
     needs: [build]
     if: |
       always() &&
+      inputs.target != 'cert' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -209,6 +219,10 @@ jobs:
             set -euo pipefail
             cd /opt/sales-travel
             mv -f docker-compose.prod.yml docker-compose.yml 2>/dev/null || true
+            # La red por la que Caddy llega al portal de certificación de TBO: el compose la declara
+            # `external` y sin ella `up` falla. `--internal` porque no es salida a internet de nadie.
+            docker network inspect sales-travel-cert-ingress >/dev/null 2>&1 \
+              || docker network create --internal sales-travel-cert-ingress >/dev/null
             docker compose --env-file .env pull
             docker compose --env-file .env up -d --remove-orphans
             docker image prune -f --filter "until=168h"
@@ -226,4 +240,167 @@ jobs:
             sleep 10
           done
           echo "✗ smoke test failed — chequear logs en el VPS"
+          exit 1
+
+  # Stack de certificación de TBO (docs/tbo/07 §7.2 A; D-TBO-35 A; 08 RC-07). Sólo a mano, con
+  # target = cert: segundo proyecto compose en el mismo VPS, con su base, su Redis y las MISMAS
+  # imágenes que producción. Fuera del acceso SSH al VPS (`HOSTINGER_*`), este job no lee ningún
+  # secret ni variable de producción ni de otro proveedor: todo lo del stack sale de `CERT_*`, y el
+  # `.env` lo escribe render-cert-env.mjs con una lista cerrada
+  # (tools/seed-tbo-cert-tenant/src/stack-contract.test.ts).
+  deploy-cert:
+    name: Deploy TBO cert stack
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'cert'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Los secrets `CERT_*` pueden vivir en este entorno de GitHub, que además admite revisores.
+    environment: tbo-cert
+    env:
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+      SSH_OPTS: -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10
+      CERT_DIR: /opt/sales-travel-cert
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts \
+            || echo "::warning::ssh-keyscan failed (se continúa con accept-new)"
+
+      - name: Resolve image tag
+        id: img
+        env:
+          # Por entorno y no interpolado en el script: un input no se ejecuta como shell.
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          TAG="$REQUESTED_TAG"
+          if [[ -z "$TAG" ]]; then
+            # La imagen que corre producción AHORA, no `latest`: lo que TBO certifica es lo que vende.
+            IMAGE=$(ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+              'cd /opt/sales-travel && docker inspect --format "{{.Config.Image}}" "$(docker compose ps -q api)"' \
+              || true)
+            TAG="${IMAGE##*:}"
+          fi
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "::error::No hay tag de imagen: producción no tiene un api corriendo o image_tag es inválido. Pasa image_tag (sha o vX.Y.Z)."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render .env
+        env:
+          IMAGE_TAG: ${{ steps.img.outputs.tag }}
+          CERT_POSTGRES_ADMIN_PASSWORD: ${{ secrets.CERT_POSTGRES_ADMIN_PASSWORD }}
+          CERT_APP_USER_PASSWORD: ${{ secrets.CERT_APP_USER_PASSWORD }}
+          CERT_REDIS_PASSWORD: ${{ secrets.CERT_REDIS_PASSWORD }}
+          CERT_JWT_SECRET: ${{ secrets.CERT_JWT_SECRET }}
+          CERT_PROVIDER_CREDENTIALS_KEY: ${{ secrets.CERT_PROVIDER_CREDENTIALS_KEY }}
+          CERT_PROVIDER_PAYLOADS_KEY: ${{ secrets.CERT_PROVIDER_PAYLOADS_KEY }}
+          CERT_PROVIDER_PAYLOADS_RETENTION_DAYS: ${{ vars.CERT_PROVIDER_PAYLOADS_RETENTION_DAYS }}
+          CERT_PROVIDERS_DISABLED: ${{ vars.CERT_PROVIDERS_DISABLED }}
+          CERT_TBO_USERNAME: ${{ secrets.CERT_TBO_USERNAME }}
+          CERT_TBO_PASSWORD: ${{ secrets.CERT_TBO_PASSWORD }}
+          CERT_TBO_BASE_URL: ${{ vars.CERT_TBO_BASE_URL }}
+          CERT_VENDEDOR_EMAIL: ${{ vars.CERT_VENDEDOR_EMAIL }}
+          CERT_VENDEDOR_PASSWORD: ${{ secrets.CERT_VENDEDOR_PASSWORD }}
+          CERT_VENDEDOR_NAME: ${{ vars.CERT_VENDEDOR_NAME }}
+          CERT_VENDEDOR_STATUS: ${{ vars.CERT_VENDEDOR_STATUS }}
+          CERT_TENANT_NAME: ${{ vars.CERT_TENANT_NAME }}
+          CERT_COUNTRY: ${{ vars.CERT_COUNTRY }}
+          CERT_CURRENCY: ${{ vars.CERT_CURRENCY }}
+          CERT_WALLET_BALANCE: ${{ vars.CERT_WALLET_BALANCE }}
+          CERT_HOTEL_MARKUP_PERCENT: ${{ vars.CERT_HOTEL_MARKUP_PERCENT }}
+        # Fuera del checkout: seed.env lleva credenciales en claro y no puede acabar en el árbol.
+        run: node infrastructure/hostinger/render-cert-env.mjs "$RUNNER_TEMP/cert-env"
+
+      - name: Sync stack files
+        run: |
+          # /opt es de root: el directorio lo crea provision.sh (o el founder, una vez).
+          if ! ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+            "test -d ${{ env.CERT_DIR }} && test -w ${{ env.CERT_DIR }}"; then
+            echo "::error::Falta ${{ env.CERT_DIR }}. Como root en el VPS: install -d -o deploy -g deploy -m 0750 ${{ env.CERT_DIR }}"
+            exit 1
+          fi
+          rsync -az --delete -e "ssh -p $SSH_PORT $SSH_OPTS" \
+            infrastructure/hostinger/docker-compose.cert.yml \
+            infrastructure/hostinger/postgres-init \
+            "$RUNNER_TEMP/cert-env/.env" \
+            "$RUNNER_TEMP/cert-env/seed.env" \
+            "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ env.CERT_DIR }}/"
+
+      - name: Pull, up & seed
+        run: |
+          ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" bash -s <<'BASH'
+            set -euo pipefail
+            cd /opt/sales-travel-cert
+            # seed.env lleva la cuenta de TBO y la contraseña del vendedor en claro: vive lo que
+            # dura este paso, salga como salga. Después sólo quedan cifradas en la base del stack.
+            trap 'rm -f seed.env' EXIT
+            docker network inspect sales-travel-cert-ingress >/dev/null 2>&1 \
+              || docker network create --internal sales-travel-cert-ingress >/dev/null
+            # El portal existe sólo si el Caddy de producción ya se desplegó con este cambio: unido
+            # a la red y con el bloque de cert-app en el Caddyfile que tiene montado.
+            CADDY=$(cd /opt/sales-travel && docker compose ps -q caddy || true)
+            if [ -z "$CADDY" ] \
+              || ! docker inspect --format '{{json .NetworkSettings.Networks}}' "$CADDY" | grep -q '"sales-travel-cert-ingress"' \
+              || ! docker exec "$CADDY" grep -q 'cert-app.planetour.cloud' /etc/caddy/Caddyfile; then
+              echo "::error::El Caddy de producción no sirve cert-app.planetour.cloud. Despliega producción desde main (target prod) y repite."
+              exit 1
+            fi
+            TAG=$(sed -n 's/^IMAGE_TAG=//p' .env)
+            COMPOSE="docker compose -f docker-compose.cert.yml --env-file .env"
+            $COMPOSE pull
+            # Antes del `up`: con un tag anterior al seed, el stack quedaría arriba sin tenant.
+            SEED_IMAGE="ghcr.io/nipko/sales-travel-seed-tbo-cert-tenant:$TAG"
+            if ! docker pull -q "$SEED_IMAGE"; then
+              echo "::error::No existe la imagen del seed para tag=$TAG (anterior a PR-7.2). Despliega producción desde main o pasa un image_tag que la tenga."
+              exit 1
+            fi
+            # `up` espera a que `migrate` termine antes de arrancar el api (depends_on).
+            $COMPOSE up -d --remove-orphans
+            # `--env-file` de docker, no de compose: toma cada valor literal hasta el fin de línea,
+            # así una contraseña de TBO con `$`, `#` o comillas llega entera.
+            docker run --rm --network sales-travel-cert_internal --env-file seed.env "$SEED_IMAGE"
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if $COMPOSE exec -T cert-api node -e 'fetch("http://127.0.0.1:3000/api/health").then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))'; then
+                echo "✓ cert-api responde (tag=$TAG)"
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "::error::cert-api no responde /api/health — chequear logs en el VPS"
+            exit 1
+          BASH
+
+      # El `trap` de arriba no corre si su paso no llega a empezar: un rsync que falla después de
+      # copiar seed.env, la conexión caída o el job cancelado entre pasos dejarían la cuenta de TBO
+      # en claro en el VPS. Si no se puede confirmar el borrado, el job queda en rojo.
+      - name: Remove seed.env
+        if: always()
+        run: |
+          if ! ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+            "rm -f ${{ env.CERT_DIR }}/seed.env"; then
+            echo "::error::No se pudo borrar ${{ env.CERT_DIR }}/seed.env del VPS: puede llevar la cuenta de TBO en claro. Bórralo a mano."
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS -o /dev/null --max-time 10 https://cert-app.planetour.cloud/login; then
+              echo "✓ portal de certificación arriba (tag=${{ steps.img.outputs.tag }})"
+              exit 0
+            fi
+            echo "waiting for cert-app... ($i/6)"
+            sleep 10
+          done
+          echo "✗ smoke test failed — ¿existe el registro DNS cert-app en Cloudflare? Chequear logs en el VPS"
           exit 1

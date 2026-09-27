@@ -1,0 +1,168 @@
+# Stack de certificación de TBO (docs/tbo/07 §7.2 opción A; D-TBO-35 A; 08 RC-07).
+#
+# Segundo proyecto compose en el mismo VPS, con base, Redis y redes propios, y las MISMAS imágenes
+# que producción (`IMAGE_TAG` = el tag que corre producción, o el que se pida al despachar el job
+# `deploy-cert` de .github/workflows/deploy.yml). El `.env` que lo alimenta lo escribe
+# `render-cert-env.mjs` con una lista cerrada: aquí no llega ninguna credencial de proveedor, y la
+# única cuenta que resuelve es la `tbo-hotels` de test que siembra tools/seed-tbo-cert-tenant en la
+# bóveda de esta base. Un tester de TBO logueado como `vendedor` no tiene con qué reservar en otro
+# proveedor aunque un flag o la herencia fallen.
+#
+# Sin `env_file` a propósito: cada servicio recibe sólo las variables que nombra.
+#
+# Redes:
+#   internal  sólo entre contenedores de este proyecto (Postgres, Redis).
+#   egress    salida a internet del api, para llamar a TBO.
+#   ingress   la ÚNICA red compartida con producción: la crean los dos jobs de despliegue y a ella
+#             se conectan el Caddy de producción y `cert-web-b2b`. El api y la base de producción
+#             no están en ella, y el api de certificación tampoco: ninguno de los dos stacks
+#             puede llamar al otro por la red interna.
+#
+# Los servicios conectados a `ingress` llevan el prefijo `cert-`: Docker publica el nombre del
+# servicio como alias en cada red, y un `web-b2b` aquí haría que el Caddy de producción repartiera
+# el tráfico de app.planetour.cloud entre los dos stacks.
+
+name: sales-travel-cert
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: '20m'
+      max-file: '5'
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  egress:
+    driver: bridge
+  ingress:
+    external: true
+    name: sales-travel-cert-ingress
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?falta POSTGRES_ADMIN_PASSWORD}
+      # Otro nombre que la de producción: un comando pensado para una base no corre en la otra
+      # por error, y el seed se niega a sembrar si la base no se llama así.
+      POSTGRES_DB: sales_travel_cert
+    volumes:
+      - postgres_data:/home/postgres/pgdata/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d sales_travel_cert']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    <<: [*restart, *logging]
+    command:
+      [
+        'redis-server',
+        '--requirepass',
+        '${REDIS_PASSWORD:?falta REDIS_PASSWORD}',
+        '--appendonly',
+        'yes',
+      ]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:?falta REDIS_PASSWORD}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: ghcr.io/nipko/sales-travel-migrate:${IMAGE_TAG:?falta IMAGE_TAG}
+    <<: *logging
+    restart: 'no'
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?falta POSTGRES_ADMIN_PASSWORD}
+      PGDATABASE: sales_travel_cert
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cert-api:
+    image: ghcr.io/nipko/sales-travel-api:${IMAGE_TAG:?falta IMAGE_TAG}
+    <<: [*restart, *logging]
+    # Mismo apagado ordenado que producción (PR-4.10): un Book de TBO puede tardar 120 s.
+    init: true
+    stop_grace_period: 130s
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      APP_VERSION: ${IMAGE_TAG:?falta IMAGE_TAG}
+      SHUTDOWN_DRAIN_TIMEOUT_MS: '125000'
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: app_user
+      PGPASSWORD: ${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}
+      PGDATABASE: sales_travel_cert
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET}
+      # Claves PROPIAS del stack: con las de producción, una sesión o un volcado de una base se
+      # podrían usar en la otra.
+      PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:?falta PROVIDER_CREDENTIALS_KEY}
+      # RQ/RS de TBO en la bóveda cifrada (D-TBO-31 A): son la evidencia ante un hallazgo de TBO.
+      PROVIDER_PAYLOADS_KEY: ${PROVIDER_PAYLOADS_KEY:?falta PROVIDER_PAYLOADS_KEY}
+      PROVIDER_PAYLOADS_RETENTION_DAYS: ${PROVIDER_PAYLOADS_RETENTION_DAYS:-30}
+      # Kill-switch de TBO en este stack (`tbo-hotels` o `tbo-hotels:ventas`). Vacío = nada apagado.
+      PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
+      # TBO es `opt-in` (D-TBO-18 A); aquí se enciende para todos los tenants porque en esta base
+      # sólo existe el de certificación, y así no depende de un id que genera el seed.
+      HOTEL_PROVIDERS_OPT_IN: tbo-hotels
+      FLIGHT_PROVIDERS_OPT_IN: ''
+      # Dos capas más, además de no tener credenciales: ningún proveedor usa las de plataforma, y
+      # los que se llamarían sin flag (`always` por defecto) pasan a `opt-in` apagado, así no tocan
+      # ni la bóveda y el portal no muestra un aviso de proveedor sin cuenta.
+      PLATFORM_DEFAULT_HOTEL_PROVIDERS: ''
+      PLATFORM_DEFAULT_FLIGHT_PROVIDERS: ''
+      HOTEL_PROVIDER_CALL_POLICIES: 'despegar-hotels:opt-in'
+      FLIGHT_PROVIDER_CALL_POLICIES: 'latam-ndc:opt-in,sabre:opt-in'
+      # Enlaces de los correos (verificación, restablecer). Sin SMTP: el stack no envía correo.
+      APP_WEB_URL: https://cert-app.planetour.cloud
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?falta REDIS_PASSWORD}
+    networks: [internal, egress]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  cert-web-b2b:
+    image: ghcr.io/nipko/sales-travel-web-b2b:${IMAGE_TAG:?falta IMAGE_TAG}
+    <<: [*restart, *logging]
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      # El navegador sólo habla con el propio panel (CSP `connect-src 'self'`) y el panel llama al
+      # api por la red interna. Sin esta variable caería a `http://api:3000`, que en estas redes
+      # no resuelve: falla cerrado, nunca contra producción.
+      INTERNAL_API_URL: http://cert-api:3000
+    # Sin `egress`: el panel no sale a internet, sólo lo alcanza el Caddy por `ingress`.
+    networks: [internal, ingress]
+    depends_on:
+      - cert-api
