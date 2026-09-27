@@ -1328,6 +1328,20 @@ Dos tramos que se solapan: **7.a JSON** (PR-7.1 y el envío del zip, en cuanto e
   [Q-84](./10-preguntas-para-tbo.md#q-84), [Q-86](./10-preguntas-para-tbo.md#q-86),
   [Q-94](./10-preguntas-para-tbo.md#q-94).
 
+**Estado de PR-7.3 al 2026-09-27.** Los entregables están en los anexos A a E de [07](./07-certificacion.md),
+revisados contra el código de la rama `feat/tbo-hotels`, y el archivo en
+[evidence/cert/README.md](./evidence/cert/README.md). Tres diferencias con lo planeado:
+
+- `docs/tbo/evidence/cert/<fecha>/` no existe todavía: se crea al enviar el zip, y el README dice cómo.
+- [10](./10-preguntas-para-tbo.md) no cambia: ninguna sonda corrió contra TBO, así que ninguna pregunta se cerró.
+- El Anexo B no se puede enviar todavía: en el stack de PR-7.2 el vendedor no puede elegir un destino de TBO (las
+  sugerencias salen de `despegar-hotels`, que el stack no tiene) y el seed no carga el contacto operativo de la
+  agencia que exige el Book. El detalle está en las condiciones del Anexo B.
+
+El Anexo A registra además dos puntos en que el código se aparta de una decisión firmada, y describe el código: un
+Book incierto no se cierra como fallido antes de 24 h aunque se use el botón de conciliación (D-TBO-24 A), y un `401`
+pausa la cuenta pero no queda como evento del titular, que solo reciben el `300` y el `402` (D-TBO-32 A).
+
 **Actividades sin PR (dueño: founder).** Formulario "Client's Details" (D-TBO-38); envío del workflow y del zip a
 `apisupport@tbo.com` ([00](./00-fuentes.md) §7); JSON Verification; acceso al portal por canal separado; Portal
 Verification; sign-off; "Production Process Form" ([Q-80](./10-preguntas-para-tbo.md#q-80)).

@@ -6,7 +6,7 @@ estado: borrador
 
 # TBO Hotels — Certificación y arnés de captura
 
-Qué cubre: el proceso de certificación de TBO completo, los 8 casos con su ocupación exacta y lo que creemos que TBO revisa en cada uno, el diseño del arnés `tools/tbo/cert-cases.mjs` que genera el zip, el entorno de pruebas que le damos a TBO para la verificación de portal y el checklist de UI. Al final están los anexos en inglés listos para enviar: el documento de workflow, la nota de acceso al portal y el email del zip.
+Qué cubre: el proceso de certificación de TBO completo, los 8 casos con su ocupación exacta y lo que creemos que TBO revisa en cada uno, el diseño del arnés `tools/tbo/cert-cases.mjs` que genera el zip, el entorno de pruebas que le damos a TBO para la verificación de portal y el checklist de UI. Al final están los entregables que envía el founder, en inglés y revisados contra el código de la rama `feat/tbo-hotels` al 2026-09-27: el documento de workflow (Anexo A), la guía de recorrido del portal (Anexo B), el email del zip (Anexo C) y el borrador del formulario "Client's Details" (Anexo D), más los datos a preparar para el "Production Process Form" (Anexo E). El archivo de lo enviado está en [evidence/cert/](./evidence/cert/README.md).
 
 Fuentes y convención de citas: [00-fuentes.md](./00-fuentes.md) §9. El documento de certificación se cita "(Cert, <sección>)" con los nombres de sección de [00](./00-fuentes.md) §4. Los checkpoints de TBO no se publican: toda la lista de §3 es una **reconstrucción nuestra** (INFERIDO) a partir de los Key Points y de las reglas del PDF.
 
@@ -30,10 +30,10 @@ Fuentes y convención de citas: [00-fuentes.md](./00-fuentes.md) §9. El documen
 
 | Fase                           | Qué pasa                                                                                                                                                                                   | Entregable nuestro                                                                                            | Duración        | Quién la cierra                          | Fuente                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------- | --------------------------------------------------- |
-| 0. Alta                        | Completamos "Client's Details". TBO entrega credenciales de test para el endpoint de integración                                                                                           | Formulario (§2.2)                                                                                             | —               | TBO, al entregar credenciales (INFERIDO) | Cert, Client's Details; Cert, TBO Hotel API Details |
+| 0. Alta                        | Completamos "Client's Details". TBO entrega credenciales de test para el endpoint de integración                                                                                           | Formulario (§2.2; [Anexo D](#anexo-d--clients-details-borrador))                                              | —               | TBO, al entregar credenciales (INFERIDO) | Cert, Client's Details; Cert, TBO Hotel API Details |
 | 1. Integration on Test Account | TBO pide un documento de workflow ("what API methods are used, flow of method calls") para definir sus criterios, más RQ y RS de los 8 casos                                               | Workflow ([Anexo A](#anexo-a--integration-workflow-listo-para-enviar)) + zip por email a `apisupport@tbo.com` | —               | Nosotros, al enviar                      | Cert, Integration on Test Account                   |
 | 2. JSON Verification           | TBO agenda una fecha, pide "all the JSON logs", llena su "JSON checkpoint list" y un Excel de Issues, Observations y General queries. Un miembro del equipo de API da sign-off de los JSON | Logs y correcciones                                                                                           | **≥ 3 días**    | TBO                                      | Cert, JSON Verification                             |
-| 3. Website/Portal Verification | Pruebas en el "Staging environment" de TBO. TBO pide acceso a nuestro "Test Portal" con credenciales de login, identifica sus propios casos y prueba. Mismo checkpoint list y Excel        | URL y usuario del portal ([Anexo B](#anexo-b--test-portal-access-listo-para-enviar))                          | **≥ "1 weeks"** | TBO                                      | Cert, Website/Portal Verification                   |
+| 3. Website/Portal Verification | Pruebas en el "Staging environment" de TBO. TBO pide acceso a nuestro "Test Portal" con credenciales de login, identifica sus propios casos y prueba. Mismo checkpoint list y Excel        | URL, usuario y guía del portal ([Anexo B](#anexo-b--portal-walkthrough-listo-para-enviar))                    | **≥ "1 weeks"** | TBO                                      | Cert, Website/Portal Verification                   |
 | 4. Sign Off                    | TBO resume los hallazgos de JSON y portal en una tabla y la envía por email                                                                                                                | —                                                                                                             | —               | TBO                                      | Cert, Sign Off / API Live Credentials               |
 | 5. Producción                  | TBO libera las credenciales live según el "Production Process Form" (Microsoft Forms enlazado en el docx)                                                                                  | Formulario de producción                                                                                      | —               | TBO                                      | Cert, Sign Off / API Live Credentials               |
 
@@ -41,20 +41,20 @@ Regla transversal (Cert, nota final): en cada etapa hay que resolver lo pendient
 
 ### 2.2 Datos que TBO pide del cliente ("Client's Details")
 
-| Bloque                                      | Campo (literal)                                                                   | Qué ponemos                                                 | Dueño      | Estado                                       |
-| ------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------- | -------------------------------------------- |
-| Client's Company Details                    | Company Name                                                                      | Razón social de la entidad que firma con TBO                | Founder    | Abierto (DC-4)                               |
-|                                             | Address                                                                           | Dirección legal                                             | Founder    | Abierto (DC-4)                               |
-|                                             | City/Country                                                                      | Ciudad y país de la entidad                                 | Founder    | Abierto (DC-4)                               |
-| Client's Technical Contact Person           | Name                                                                              | Responsable técnico de la integración                       | Founder    | Abierto (DC-4); el equipo está por contratar |
-|                                             | Email                                                                             | Buzón nominal del responsable, más un buzón de rol en copia | Founder    | Abierto                                      |
-|                                             | Skype ID                                                                          | No aplica: ver nota                                         | —          | → [Q-84](./10-preguntas-para-tbo.md#q-84)    |
-|                                             | Phone/Mobile Number                                                               | Teléfono del responsable                                    | Founder    | Abierto                                      |
-| Client's Application/Infrastructure Details | Client's platform where the TBO API will be integrated ("like: B2B, B2C, Mobile") | "B2B web portal" en la primera ronda (DC-2)                 | Founder    | Abierto (DC-2)                               |
-|                                             | Test Application URL                                                              | URL del portal de certificación (§7)                        | Ingeniería | Depende de DC-1                              |
-|                                             | Application Credentials                                                           | Usuario `vendedor` del tenant de certificación (§7.4)       | Ingeniería | Depende de DC-1                              |
+| Bloque                                      | Campo (literal)                                                                   | Qué ponemos                                                 | Dueño      | Estado                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------- | -------------------------------------------------------------- |
+| Client's Company Details                    | Company Name                                                                      | Razón social de la entidad que firma con TBO                | Founder    | Abierto: dato del founder (D-TBO-38 A)                         |
+|                                             | Address                                                                           | Dirección legal                                             | Founder    | Abierto: dato del founder (D-TBO-38 A)                         |
+|                                             | City/Country                                                                      | Ciudad y país de la entidad                                 | Founder    | Abierto: dato del founder (D-TBO-38 A)                         |
+| Client's Technical Contact Person           | Name                                                                              | Responsable técnico de la integración                       | Founder    | Abierto: dato del founder; el equipo está por contratar        |
+|                                             | Email                                                                             | Buzón nominal del responsable, más un buzón de rol en copia | Founder    | Abierto                                                        |
+|                                             | Skype ID                                                                          | No aplica: ver nota                                         | —          | → [Q-84](./10-preguntas-para-tbo.md#q-84)                      |
+|                                             | Phone/Mobile Number                                                               | Teléfono del responsable                                    | Founder    | Abierto                                                        |
+| Client's Application/Infrastructure Details | Client's platform where the TBO API will be integrated ("like: B2B, B2C, Mobile") | "B2B web portal" en la primera ronda (DC-2)                 | Founder    | Cerrado (D-TBO-36 A)                                           |
+|                                             | Test Application URL                                                              | URL del portal de certificación (§7)                        | Ingeniería | `https://cert-app.planetour.cloud` (D-TBO-35 A), por desplegar |
+|                                             | Application Credentials                                                           | Usuario `vendedor` del tenant de certificación (§7.4)       | Ingeniería | Usuario del seed (D-TBO-35 A), por desplegar                   |
 
-VERIFICADO-CERT (Client's Details) para los campos. Las columnas "Qué ponemos" y "Estado" son propuesta nuestra.
+VERIFICADO-CERT (Client's Details) para los campos. Las columnas "Qué ponemos" y "Estado" son propuesta nuestra. El borrador en inglés, con marcadores `[COMPLETAR]` para lo que solo sabe el founder, está en el [Anexo D](#anexo-d--clients-details-borrador). DC-1, DC-2 y DC-4 ya no bloquean: se aplica la opción A de D-TBO-35 (stack de certificación, `https://cert-app.planetour.cloud`), D-TBO-36 (solo el portal B2B) y D-TBO-38 (la entidad titular de la cuenta que se hereda); lo que falta son los datos concretos de la empresa y del contacto.
 
 - **Skype ID**: Microsoft cerró Skype en mayo de 2025. Es un dato externo, no de las fuentes de TBO, y se marca INFERIDO. El docx se modificó por última vez el 2025-05-29 ([00](./00-fuentes.md) §1), así que el campo quedó desactualizado. Postura: ofrecer Microsoft Teams o WhatsApp y preguntar cuál aceptan. → [Q-84](./10-preguntas-para-tbo.md#q-84).
 - **Las credenciales de la aplicación no van en el mismo email que el zip.** Postura: se entregan por un canal aparte y se rotan al terminar la verificación de portal (§7.4).
@@ -106,11 +106,11 @@ Lo que el documento no dice, y postura:
 
 ### 2.7 Fase 4 — Sign-off
 
-TBO resume los hallazgos en una tabla y la manda por email; con eso la certificación queda completa (Cert, Sign Off / API Live Credentials). VERIFICADO-CERT. Postura: la tabla de sign-off se archiva junto al zip enviado (§6.9), porque es la evidencia de lo que TBO aceptó y en qué versión del código (el SHA de git está en `run.json`).
+TBO resume los hallazgos en una tabla y la manda por email; con eso la certificación queda completa (Cert, Sign Off / API Live Credentials). VERIFICADO-CERT. Postura: la tabla de sign-off se archiva junto al zip enviado (§6.9), porque es la evidencia de lo que TBO aceptó y en qué versión del código (el SHA de git está en `run.json`, en `README.txt` y en `manifest.json` del zip). Plantilla y reglas: [evidence/cert/README.md](./evidence/cert/README.md) (RC-01).
 
 ### 2.8 Fase 5 — Production Process Form y credenciales live
 
-- Las credenciales live se liberan "based on the Production Process Form" (Cert, Sign Off / API Live Credentials). El formulario es de Microsoft Forms y **no se abrió** para este documento, así que sus campos no se conocen. → [Q-80](./10-preguntas-para-tbo.md#q-80) (qué datos pide, por ejemplo IPs de salida, para prepararlos antes).
+- Las credenciales live se liberan "based on the Production Process Form" (Cert, Sign Off / API Live Credentials). El formulario es de Microsoft Forms y **no se abrió** para este documento, así que sus campos no se conocen. → [Q-80](./10-preguntas-para-tbo.md#q-80) (qué datos pide, por ejemplo IPs de salida, para prepararlos antes). Los datos que se pueden preparar sin conocerlo están en el [Anexo E](#anexo-e--datos-para-el-production-process-form-rc-11) (RC-11).
 - La URL live llega con las credenciales: `{Live-URL}/HotelAPI` (p. 7). En la bóveda, test y live no pueden convivir como dos cuentas `active` del mismo tenant, porque `resolve_provider_account` devuelve una sola sin desempate por `label` (`db/migrations/0012_provider_accounts.sql:59-77`). El pase a live es sustituir la cuenta, no añadir otra. El detalle está en [06](./06-seams-integracion-repo.md). VERIFICADO-CODIGO.
 - **Alcance de la certificación en el modelo consolidador.** El Cert no dice si certifica la aplicación (y cualquier cuenta TBO puede usarla) o una cuenta concreta. Para BYOC importa mucho: una agencia de la red con su propia cuenta TBO, ¿puede operar por nuestra integración certificada, o TBO exige algo por agencia? → [Q-77](./10-preguntas-para-tbo.md#q-77). Hasta tener la respuesta, **BYOC de TBO queda deshabilitado** y solo opera la cuenta que se certificó (heredada por la red).
 
@@ -306,24 +306,29 @@ Campos y casing: p. 32–34. `PaymentInfo` no existe en nuestro builder (D1). VE
 
 ## 5. Entrega: zip, nombres de archivo e índice
 
-Nombre del zip: `<Empresa>_TBO_HotelAPI_JSON_Certification_<YYYYMMDD>.zip`. `<Empresa>` sale de DC-4.
+Nombre del zip: `<Empresa>_TBO_HotelAPI_JSON_Certification_<YYYYMMDD>.zip`. `<Empresa>` es `TBO_COMPANY_SLUG` de
+`.env.tbo` y sale de DC-4 (D-TBO-38). La estructura es la que arma `zip` en `tools/tbo/lib/deliverable.mjs`
+(PR-7.1): cada caso termina como cancela la aplicación, con un BookingDetail antes y otro después del Cancel
+([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.4).
 
 ```text
 <Empresa>_TBO_HotelAPI_JSON_Certification_20261015.zip
 ├── README.txt                                  índice en inglés (ver abajo)
+├── manifest.json                               SHA-256 y tamaño de cada archivo, runId y SHA de git
 ├── Case01_1Room_1A/
-│   ├── 01_Search_RQ.json        01_Search_RS.json
-│   ├── 02_PreBook_RQ.json       02_PreBook_RS.json
-│   ├── 03_Book_RQ.json          03_Book_RS.json
-│   ├── 04_BookingDetail_RQ.json 04_BookingDetail_RS.json
-│   ├── 05_Cancel_RQ.json        05_Cancel_RS.json
-│   └── 06_BookingDetail_AfterCancel_RQ.json  06_BookingDetail_AfterCancel_RS.json
+│   ├── 01_Search_RQ.json                       01_Search_RS.json
+│   ├── 02_PreBook_RQ.json                      02_PreBook_RS.json
+│   ├── 03_Book_RQ.json                         03_Book_RS.json
+│   ├── 04_BookingDetail_RQ.json                04_BookingDetail_RS.json
+│   ├── 05_BookingDetail_BeforeCancel_RQ.json   05_BookingDetail_BeforeCancel_RS.json
+│   ├── 06_Cancel_RQ.json                       06_Cancel_RS.json
+│   └── 07_BookingDetail_AfterCancel_RQ.json    07_BookingDetail_AfterCancel_RS.json
 ├── Case02_1Room_1A1C/ …
 ├── Case03_1Room_2A2C/ …
 ├── Case04_2Rooms_1A_1A/ …
 ├── Case05_2Rooms_1A1C_1A/ …
 ├── Case06_2Rooms_1A2C_2A/ …
-├── Case07_Supplements_2Rooms_1A_1A/ …
+├── Case07_Supplements_2Rooms_1A_1A/ …          el sufijo es la ocupación que terminó usando (la del 4 o la del 1)
 └── Case08_BookingDetail_OfCase04/
     ├── 01_BookingDetail_ByConfirmationNumber_RQ.json    …_RS.json
     └── 02_BookingDetail_ByBookingReferenceId_RQ.json    …_RS.json
@@ -331,24 +336,31 @@ Nombre del zip: `<Empresa>_TBO_HotelAPI_JSON_Certification_<YYYYMMDD>.zip`. `<Em
 
 Reglas de los archivos:
 
-- **Bytes exactos**. El RQ es el cuerpo tal como salió por el socket y el RS es el texto tal como llegó, sin re-serializar ni reformatear. Si TBO duda de un archivo, tiene que ser lo que vio su servidor. Los RS de TBO pueden traer HTML escapado y caracteres rotos (p. 26, 51); re-serializarlos los alteraría.
-- **Numeración por paso**, para que el orden de la cadena se lea en el nombre (CK-05).
+- **Bytes exactos**. El RQ es el cuerpo tal como salió por el socket y el RS es el texto tal como llegó, sin re-serializar ni reformatear. Si TBO duda de un archivo, tiene que ser lo que vio su servidor. Los RS de TBO pueden traer HTML escapado y caracteres rotos (p. 26, 51); re-serializarlos los alteraría. Un RS que no es JSON se guarda como `_RS.txt`.
+- **Numeración por llamada**, para que el orden de la cadena se lea en el nombre (CK-05). Si el cliente del ACL repite una lectura (§6.5), la repetición tiene su propio número.
 - **Solo cadenas completas.** Los intentos descartados quedan fuera del zip (§2.5).
 
-`README.txt` (en inglés, lo genera el arnés):
+`README.txt` (en inglés, lo genera `zip`; forma abreviada):
 
 ```text
 TBO Holidays Hotel API (JSON V2.1) - certification samples
 Company: <Empresa>   Run: <runId>   Endpoint: http://api.tbotechnology.in/TBOHolidays_HotelAPI
-Application build: <git sha>        Generated: <UTC timestamp>
+Application build: <git sha>   Generated: <UTC timestamp>
 
-Case | Occupancy (as requested by TBO)      | HotelCode | BookingCode | ConfirmationNumber | BookingReferenceId | Cancelled
-01   | Room 1 - Adult 1                     | ...       | ...         | ...                | ...                | yes
+Sequence per case: Search > PreBook > Book > BookingDetail > Cancel (If Required).
+Our cancellation reads BookingDetail right before sending Cancel and again right after it,
+as our application does; both reads are included (_BeforeCancel and _AfterCancel files).
+Case 08 is BookingDetail of the case 04 booking, by ConfirmationNumber and by
+BookingReferenceId, called after the case 04 Book and before its Cancel.
+
+Case | Occupancy (as requested by TBO) | GuestNationality | HotelCode | BookingCode | ConfirmationNumber | BookingReferenceId | Cancelled
+01   | Room 1 - Adult 1                | CO               | ...       | ...         | ...                | ...                | Cancelled
 ...
-07   | Supplements (occupancy of case 04)   | ...  supplements found: AtProperty mandatory_tax 20.00 AED (room 1, room 2)
-08   | BookingDetail of case 04 by ConfirmationNumber and by BookingReferenceId
+07 supplements found: AtProperty mandatory_tax 20.00 AED (room 1); ...
+08 BookingDetail of case 04 by ConfirmationNumber and by BookingReferenceId (ConfirmationNumber ..., BookingReferenceId ...)
 
-Every call: UTC start time, HTTP status, Status.Code, latency (ms).
+Every call (file prefix, UTC start time, HTTP status, Status.Code, latency ms):
+...
 PaymentMode is "Limit" in every PreBook, Book and BookingDetail. No card data is sent.
 All guest names, email and phone are synthetic test data.
 ```
@@ -549,7 +561,7 @@ Cada sonda responde con evidencia una pregunta que el PDF deja abierta. El resul
 
 ### 6.9 Qué se versiona
 
-- **Sí**: el set enviado, copiado a `docs/tbo/evidence/cert/<YYYY-MM-DD>/` después de pasar las guardas, junto con la tabla de sign-off (§2.7). No lleva secretos (G-1) ni PII (G-4). Es la mejor fuente de fixtures reales para los tests del ACL ([06](./06-seams-integracion-repo.md)): los RS de test entran al paquete como fixtures, con la marca de su origen. Que el set se versione es decisión del founder (DC-7).
+- **Sí**: el set enviado, copiado a `docs/tbo/evidence/cert/<YYYY-MM-DD>/` después de pasar las guardas, junto con la tabla de sign-off (§2.7). No lleva secretos (G-1) ni PII (G-4). Es la mejor fuente de fixtures reales para los tests del ACL ([06](./06-seams-integracion-repo.md)): los RS de test entran al paquete como fixtures, con la marca de su origen. Que el set se versione es decisión del founder (DC-7; D-TBO-33 A). Qué va en cada carpeta, cómo se archiva y qué no entra nunca: [evidence/cert/README.md](./evidence/cert/README.md).
 - **No**: `.tbo-cert/`, las corridas intermedias ni las sondas. Si una sonda cierra una pregunta, lo que se versiona es la respuesta en [10](./10-preguntas-para-tbo.md), no la captura cruda.
 
 ### 6.10 Diferencias con `tools/sabre/cert-probe.mjs`
@@ -751,107 +763,605 @@ la opción recomendada en todas las demás hasta nuevo aviso; lo que manda es el
 
 ## Anexo A — Integration workflow (listo para enviar)
 
-> Se envía como PDF o como cuerpo del email junto con el zip. Los `[…]` salen de DC-2 y DC-4. Los nombres de métodos y campos respetan el casing del PDF.
+> **Cómo se usa.** Va como PDF adjunto (o como cuerpo del email) junto con el zip y el email del
+> [Anexo C](#anexo-c--email-del-zip-listo-para-enviar). El texto a enviar empieza en la línea en negrita que
+> sigue a la tabla de trazabilidad y llega hasta el final de este anexo. Los `[COMPLETAR: …]` los llena el founder
+> (D-TBO-38 A: la entidad titular de la cuenta que se hereda). Los nombres de métodos y campos respetan el casing
+> del PDF.
 
-**[Company legal name] — TBO Holidays Hotel API (JSON, V2.1) — Integration workflow**
-Version 1.0 · [date] · Technical contact: [name, email, phone]
+**Revisión contra el código (2026-09-27, rama `feat/tbo-hotels`).** Cada afirmación del texto sale de lo
+implementado, no del diseño. Con D-TBO-24 A y D-TBO-32 A aplicados, el paso 7 de §3 y la línea de `402` de §4
+cumplen RC-09. Cambios respecto de la versión del 2026-09-23:
+
+- Search: una sola llamada de hasta 100 códigos por búsqueda (D-TBO-17 A), no "parallel requests"; el Search de un
+  hotel con `IsDetailedResponse: true` queda declarado (D-TBO-19 A; [08](./08-requisitos-maestro.md) §9 C-25).
+- PreBook de revalidación inmediatamente antes del Book (C2 de [03](./03-prebook-y-book.md)), que no estaba.
+- Paso 7: el Book incierto incluye `405`, `429`, `500`, códigos desconocidos y el `200` sin `ConfirmationNumber`; el
+  cierre como fallido exige además 24 h desde el intento (R5 de [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md)
+  §9.4).
+- `401` y `402`: circuito de la cuenta de 5 y 15 minutos y la cuenta sin desactivar (D-TBO-32 A); el `402` (y el
+  `300`) en PreBook o Book queda como evento del titular, el `401` no (desviación abajo).
+- Catálogo: el sync usa una cuenta de plataforma aparte de la de reservas (D-TBO-04 A), que la versión anterior no
+  declaraba.
+- Cancel: lectura previa y posterior, calendario de verificación y, desde el día de entrada, soporte.
+- Registro: la bóveda guarda todo PreBook, Book, BookingDetail, Cancel y BookingDetailsbasedondate, y los Search y el
+  contenido estático solo cuando fallan (D-TBO-31 A); la versión anterior decía "every call".
+- Nombres en ASCII y contacto operativo de la agencia en el Book (D-TBO-23 A).
+- §6 nuevo: qué trae el zip y en qué difiere de lo que TBO verá en el portal.
+
+**Desviación registrada.** D-TBO-24 (A) en [08](./08-requisitos-maestro.md#d-tbo-24--qué-pasa-con-un-book-incierto-que-la-verificación-no-encuentra)
+dice que con el botón de conciliación el vendedor espera "minutos". El código no concluye la ausencia antes de 24 h
+desde la creación de la orden (`RECONCILIATION_INTENT_MIN_AGE_MS`, R5): el botón adelanta la corrida, no ese mínimo.
+Gana el código y el paso 7 dice lo que hace.
+
+**Desviación registrada (revisión de PR-7.3).** D-TBO-32 (A) dice que un `401` o un `402` "avisan al titular y
+emiten un evento". El código emite `ProviderAccountIssueDetected` al tenant dueño de la cuenta solo para `300` y `402`
+en PreBook o Book (`accountIssueOf` en `apps/api/src/providers-tbo/tbo-hotel-provider.adapter.ts`, con su test): el
+`401` abre el circuito de la cuenta y le dice al vendedor quién administra esas credenciales, sin evento. Tampoco hay
+otro aviso que el evento. Gana el código: §4 dice "se registra como evento del titular" y no "se avisa".
+
+| Afirmación del workflow                                         | Dónde está                                                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| §1, §2: métodos, verbos, timeouts e intentos                    | `providers/tbo-hotels/src/http/operations.ts` (`TBO_OPERATIONS`)                                                                     |
+| §2, §3.1: un Search de hasta 100 códigos, `ResponseTime` 10     | `providers/tbo-hotels/src/tbo-hotels.adapter.ts` (modo `single`); `providers/tbo-hotels/src/search/search.request.builder.ts`        |
+| §2: sync del catálogo, frecuencias y 1 petición por segundo     | `tools/sync-tbo-hotel-inventory/README.md`                                                                                           |
+| §2: `HotelDetails` de un hotel bajo demanda                     | `apps/api/src/hotels/hotel-content.service.ts`                                                                                       |
+| §3.1: nacionalidad obligatoria y topes de ocupación de TBO      | `apps/api/src/providers-tbo/tbo-hotels.factory.ts` (`searchProfile`)                                                                 |
+| §3.2: 27 minutos de validez de la oferta                        | `providers/tbo-hotels/src/search/offer-window.ts` (`TBO_OFFER_TTL_MS`)                                                               |
+| §3.3, §3.5: tarifa solo con aéreo, cargos en el hotel aceptados | `apps/api/src/hotels/hotel-booking.saga.ts` (`checkBookable`, `decideAfterRevalidation`)                                             |
+| §3.4: huéspedes, ASCII, título y contacto                       | `providers/tbo-hotels/src/booking/book.request.builder.ts`; `apps/api/src/hotels/hotel-booking-contact.ts`                           |
+| §3.5: PreBook de revalidación, referencia y un solo Book        | `apps/api/src/hotels/hotel-booking.service.ts` (`prepare`); `providers/tbo-hotels/src/booking/booking-reference.ts`                  |
+| §3.7: qué desenlace del Book es rechazo y cuál es incierto      | `providers/tbo-hotels/src/booking/classify-book-outcome.ts`                                                                          |
+| §3.7: lecturas a 120 s, 5, 15 y 60 min                          | `apps/api/src/hotels/hotel-booking-verification.ts` (`HOTEL_BOOK_VERIFY_SCHEDULE_MS`)                                                |
+| §3.7: cierre por conciliación (24 h, un día de margen) y botón  | `apps/api/src/reconciliation/reconciliation.plan.ts` (`intentAbsence`); `apps/api/src/reconciliation/reconciliation.controller.ts`   |
+| §3.8: HCN                                                       | `apps/api/src/hotels/hcn-plan.ts`                                                                                                    |
+| §3.9: Cancel                                                    | `providers/tbo-hotels/src/cancel/cancel-decision.ts`; `apps/api/src/hotels/hotel-cancellation-verification.ts`                       |
+| §4: clasificación por `Status.Code`                             | `providers/tbo-hotels/src/http/status-envelope.ts` (`TBO_STATUS_CODES`); `providers/tbo-hotels/src/errors.ts` (`TBO_FAILURE_POLICY`) |
+| §4: `300`, `401` y `402`                                        | `apps/api/src/search/circuit-breaker.service.ts` (`ACCOUNT_OPEN_MS_BY_KIND`); `apps/api/src/hotels/hotel-account-issues.ts`          |
+| §4: qué rechazo queda como evento del titular                   | `apps/api/src/providers-tbo/tbo-hotel-provider.adapter.ts` (`accountIssueOf`)                                                        |
+| §1: cuenta de catálogo aparte                                   | `tools/sync-tbo-hotel-inventory/README.md` (secrets `TBO_SYNC_*`, D-TBO-04 A)                                                        |
+| §4: límite por cuenta                                           | `providers/tbo-hotels/src/http/limiter.ts` (`TBO_LIMITER_DEFAULTS`)                                                                  |
+| §5: bóveda de RQ/RS                                             | `apps/api/src/providers-tbo/tbo-payload-vault.ts`; `apps/api/src/provider-payloads/provider-payloads.config.ts`                      |
+| §6: contenido del zip                                           | `tools/tbo/lib/chain.mjs`; `tools/tbo/lib/deliverable.mjs`                                                                           |
+
+**[COMPLETAR: company legal name] — TBO Holidays Hotel API (JSON, V2.1): integration workflow**
+
+Version 1.0 · [COMPLETAR: date] · Application build: [COMPLETAR: git SHA, as printed in README.txt of the zip] ·
+Technical contact: [COMPLETAR: name, email, phone]
+
+Reference document: "TBOH_Hotel_API_Specifications(V2.1).pdf", SHA-256
+`bb406ac31c5def12863b040d306f10a32e83f4ddaa3620ebe1f20693c277511a`. Page numbers are the physical pages of that file.
 
 **1. Platform**
 
-- [Company] operates a B2B travel platform. Travel agencies in our network use a web portal to search, book and manage hotel reservations. Declared channel for this certification: **B2B web portal**. [Other channels are planned; we will notify TBO before enabling them.]
-- Test portal: [URL]. Access details are sent separately.
-- TBO endpoint used: `http://api.tbotechnology.in/TBOHolidays_HotelAPI` with Basic Authentication and `Content-Type: application/json`.
+- [COMPLETAR: company name] operates a B2B travel platform for a consolidator network in Latin America. Travel
+  agencies and their sub-agencies use our web portal to search, book and manage hotel reservations for their
+  customers.
+- Channel declared for this certification: **B2B web portal** only. No B2C site, mobile app or WhatsApp channel sends
+  requests to the TBO API. We will contact TBO before enabling any of them.
+- TBO account: bookings use one TBO account, held by [COMPLETAR: legal entity that holds the TBO account], used by
+  the agencies of its network. Agencies cannot connect their own TBO accounts to our platform until TBO confirms how
+  certification applies to them.
+- Catalogue synchronisation (§2) runs with a separate platform account dedicated to it, requested from TBO
+  separately, so that it never uses the request capacity of the booking account.
+- Endpoint: `http://api.tbotechnology.in/TBOHolidays_HotelAPI`, Basic Authentication,
+  `Content-Type: application/json`. Every method is `POST` except `CountryList` and `hotelcodelist`, which are `GET`
+  (pp. 51, 55).
+- Test portal for the Website/Portal Verification: a separate certification environment of our platform, connected
+  only to the TBO integration environment. Access details are sent separately.
 
 **2. API methods used**
 
-| Method                        | Endpoint                          | Purpose                                                       | When it is called                                                                                                                                         |
-| ----------------------------- | --------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CountryList                   | `GET /CountryList`                | Static content                                                | Periodic catalogue sync                                                                                                                                   |
-| CityList                      | `POST /CityList`                  | Static content                                                | Periodic catalogue sync, per country in scope                                                                                                             |
-| TBOHotelCodeList              | `POST /TBOHotelCodeList`          | Hotel codes per city                                          | Periodic catalogue sync, per city in scope                                                                                                                |
-| HotelCodeList                 | `GET /hotelcodelist`              | Full hotel code list                                          | Weekly catalogue check to deactivate hotels no longer listed (optional)                                                                                   |
-| HotelDetails                  | `POST /HotelDetails`              | Hotel content: name, address, rating, images, room details    | Periodic catalogue sync; on demand for one hotel without content                                                                                          |
-| Search                        | `POST /Search`                    | Availability                                                  | Each agent search (`IsDetailedResponse: false`); when the agent opens one hotel, one `Search` for that single `HotelCode` with `IsDetailedResponse: true` |
-| PreBook                       | `POST /PreBook`                   | Up-to-date price, availability, cancellation policy and norms | When the agent selects a room option                                                                                                                      |
-| Book                          | `POST /Book`                      | Booking and voucher                                           | When the agent confirms the booking                                                                                                                       |
-| BookingDetail                 | `POST /BookingDetail`             | Booking status and details; HCN                               | After every successful Book; after any Book failure or timeout; for HCN; after Cancel                                                                     |
-| Cancel                        | `POST /Cancel`                    | Cancellation                                                  | When the agent cancels                                                                                                                                    |
-| HotelBookingDetailBasedOnDate | `POST /BookingDetailsbasedondate` | Reconciliation                                                | Daily, date ranges of at most 60 days                                                                                                                     |
+| Method                        | Endpoint                          | Purpose                                                                      | When we call it                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------- | --------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CountryList                   | `GET /CountryList`                | Countries                                                                    | Catalogue synchronisation (nightly)                                                                                                                                                                                                                                                                                                                |
+| CityList                      | `POST /CityList`                  | Cities of each country in scope                                              | Catalogue synchronisation (nightly)                                                                                                                                                                                                                                                                                                                |
+| TBOHotelCodeList              | `POST /TBOHotelCodeList`          | Hotels of each city                                                          | Catalogue synchronisation: cities with recent searches every day, the others every week                                                                                                                                                                                                                                                            |
+| HotelCodeList                 | `GET /hotelcodelist`              | Full list of hotel codes                                                     | Once per catalogue run, to deactivate hotels that are no longer listed. If it fails, nothing is deactivated                                                                                                                                                                                                                                        |
+| HotelDetails                  | `POST /HotelDetails`              | Hotel content: description, facilities, images, check-in and check-out times | Catalogue synchronisation of hotels with demand; on demand, for one hotel whose content we do not have yet, when an agent opens it                                                                                                                                                                                                                 |
+| Search                        | `POST /Search`                    | Availability and prices                                                      | (a) Each agent search: one request with up to 100 `HotelCodes` of the destination and `IsDetailedResponse: false`. (b) When the agent opens a hotel: one request for that single `HotelCode` with `IsDetailedResponse: true`, to show cancellation policies and prices per night "subject to confirmation" (p. 11). The agent books from this list |
+| PreBook                       | `POST /PreBook`                   | Up-to-date price, availability, cancellation policy and rate conditions      | (a) When the agent selects a room option. (b) Again, with the same `BookingCode`, immediately before `Book`                                                                                                                                                                                                                                        |
+| Book                          | `POST /Book`                      | Booking and voucher                                                          | When the agent confirms the booking                                                                                                                                                                                                                                                                                                                |
+| BookingDetail                 | `POST /BookingDetail`             | Booking status and details, HCN                                              | After every successful `Book`; after a failed or timed-out `Book` (by `BookingReferenceId`); when the agent refreshes a booking; to obtain the HCN; before and after `Cancel`                                                                                                                                                                      |
+| Cancel                        | `POST /Cancel`                    | Cancellation                                                                 | When the agent cancels                                                                                                                                                                                                                                                                                                                             |
+| HotelBookingDetailBasedOnDate | `POST /BookingDetailsbasedondate` | Reconciliation                                                               | Daily, per TBO account, with date ranges of at most 60 days                                                                                                                                                                                                                                                                                        |
 
-Not used: `PaymentMode` `NewCard` and `SavedCard`. We never send card data to TBO.
+- Not used: `PaymentMode` `NewCard` and `SavedCard`. `PreBook`, `Book` and `BookingDetail` always send
+  `PaymentMode: "Limit"`. We never send card data (`PaymentInfo`) to TBO.
+- Static content is synchronised by a separate background process every night (between 06:00 and 10:00 UTC), at no
+  more than 1 request per second. The only static-content call made while an agent works is the single-hotel
+  `HotelDetails` described above.
 
 **3. Booking flow**
 
-1. **Search.** The agent enters destination, dates, rooms (adults, children and each child's age) and the **lead guest's nationality**. Nationality is a mandatory field with no default; we never hardcode `GuestNationality`. We resolve the destination to TBO hotel codes from our synced catalogue and call `Search` with at most 100 `HotelCodes` per request (comma-separated) and `IsDetailedResponse: false`. Parallel requests are rate-limited.
-2. **Results.** We show hotel content, room names, meal type, refundability, promotions and inclusions. `Supplements` are always visible. `AtProperty` supplements are labelled "payable at the hotel" with their own amount and currency and are never added to the price we charge. The selling price is never below `RecommendedSellingRate` on any channel that sells to end customers.
-3. **PreBook.** When the agent selects an option, we call `PreBook` with the `BookingCode` and `PaymentMode: "Limit"`. If `TotalFare` differs from Search, the agent must accept the new price before continuing. We display the PreBook cancellation policy, `RateConditions`, supplements and amenities, and store them with the booking as **final**.
-4. **Guest details.** One `CustomerDetails` entry per room, in the same order as `PaxRooms`. Every guest is named, with `Title`, `FirstName`, `LastName` and `Type` (`Adult`/`Child`).
-5. **Book.** Before calling TBO we create our internal booking record and generate a unique `BookingReferenceId` and a `ClientReferenceId`. We then call `Book` with the PreBook `TotalFare`, `BookingType: "Voucher"` and `PaymentMode: "Limit"`. Timeout: 120 s. **Book is never retried automatically.**
-6. **After a successful Book.** We call `BookingDetail` by `ConfirmationNumber`, store status and details, and issue our voucher, which includes the `AtProperty` supplements and the cancellation policy.
-7. **Book failure or timeout.** We wait 120 seconds after the failure and call `BookingDetail` by `BookingReferenceId`, and again after 5, 15 and 60 minutes if the booking is not found. If the booking exists, it is recorded as confirmed. If it does not appear, the booking stays in "verifying" status and blocked, and it is only marked failed when our daily reconciliation with `BookingDetailsbasedondate` (a valid response covering its creation date) does not find it either; our operations team can trigger that reconciliation on demand. It is never re-booked automatically.
-8. **Hotel Confirmation Number.** For check-ins within 30 days, we call `BookingDetail` when the SLA for the check-in window expires (P0–P5 table), then hourly up to 3 retries. If there is still no HCN, we open an operations ticket with TBO.
-9. **Cancel.** Before confirming, we show the agent the penalty according to the PreBook policy. We call `Cancel` with `ConfirmationNumber`, then `BookingDetail` to confirm the final status (`Cancelled`, `CancellationInProgress`, `CancelPending`, `CxlRequestSentToHotel`, `CancelledAndRefundAwaited`).
+1. **Search.** The agent enters the destination, the check-in and check-out dates, the rooms (adults, children and
+   the age of each child) and the **lead guest's nationality**. The nationality is a mandatory, visible field: it can
+   be prefilled from the customer's record or from the agent's previous search, but it is never fixed in
+   configuration or code. We resolve the destination to TBO `HotelCodes` from our synchronised catalogue and send one
+   `Search` with up to 100 codes as a single comma-separated string, one `PaxRooms` element per room (`ChildrenAges`
+   has as many ages as `Children`), `ResponseTime: 10` and `IsDetailedResponse: false`. If an occupancy is outside
+   TBO's limits (pp. 10–11), for example more than 4 children in a room, TBO is not called for that search and the
+   agent sees the reason.
+2. **Results and hotel page.** Results show hotel content from our catalogue (name, stars, address) and, for each
+   option, the room names, meal type, refundability, inclusions and promotions. We show our **selling price**, which
+   is never below `RecommendedSellingRate`. Supplements are always visible: `AtProperty` supplements are labelled
+   "payable at the hotel", with their own amount and currency, and are never added to the price we charge. When the
+   agent opens a hotel, its page shows the hotel content (images, description, facilities, check-in and check-out
+   times) and the options of the single-hotel `Search` (§2), and the agent chooses the option to book there. An
+   offer is valid for 27 minutes after its `Search`: after that we do not call `PreBook` or `Book`, and the agent
+   must search again.
+3. **PreBook.** When the agent selects an option, we call `PreBook` with its `BookingCode` and
+   `PaymentMode: "Limit"`. If the result differs from the `Search`, the agent sees the change: a higher price, a
+   different currency or changed conditions must be explicitly accepted before continuing, and a lower price is
+   shown and applied. We display the cancellation policy (tiers, dates in hotel local time, estimated penalty), the
+   `RateConditions` (decoded, sanitised, full text), the supplements and the inclusions, and we store the policy and
+   the conditions returned by `PreBook` with the booking as final. Rates that are only sold together with a flight
+   cannot be booked.
+4. **Guest details.** One `CustomerDetails` element per room, in the same order as `PaxRooms`. Every guest is named,
+   children included, with `Title` (`Mr`, `Mrs` or `Ms`, chosen by the agent), `FirstName`, `LastName` and `Type`
+   (`Adult` or `Child`, fixed by the search). Names are sent in ASCII ("José Muñoz" is sent as "Jose Munoz"), with at
+   least 2 letters and at most 40 characters, no digits and no two identical names in the same booking; the original
+   spelling stays in our booking and on our voucher. `EmailId` and `PhoneNumber` are those of the booking agency's operations contact; the
+   phone is sent as digits with the country code and without "+".
+5. **Book.** When the agent confirms (after acknowledging the `AtProperty` supplements, if any), we:
+
+   - create our booking record with a new, unique `BookingReferenceId` (20 characters: "ST", an environment letter
+     and 17 random characters), which we also send as `ClientReferenceId`;
+   - call `PreBook` again with the same `BookingCode` to revalidate price and conditions. If the selling price went up
+     or the conditions changed, we do not call `Book` and the agent must accept the new values first; if the price
+     went down, we book at the lower price and tell the agent;
+   - call `Book` with the `BookingCode` and the exact `TotalFare` of that `PreBook`, `BookingType: "Voucher"` and
+     `PaymentMode: "Limit"`, with a 120-second timeout.
+
+   `Book` is sent **once** and is **never retried automatically**. A double click or a page reload does not send a
+   second `Book`.
+
+6. **After a successful Book.** A `Book` response with `Status.Code` 200, a `ConfirmationNumber` and our
+   `ClientReferenceId` confirms the booking. We then call `BookingDetail` by `ConfirmationNumber`, store the status and
+   issue our voucher with the `ConfirmationNumber`, the rooms and guests, the cancellation policy, the rate conditions
+   and the `AtProperty` supplements. The hotel confirmation number (HCN) is added when TBO provides it (step 8).
+7. **Book failure or timeout.**
+   - `Status.Code` 201, 207, 300, 315, 400, 401 or 402 in the `Book` response means that no booking was created. The
+     agent sees the reason and can search again (for 300, 401 and 402, see §4).
+   - Any other outcome is **uncertain**: a timeout, a network error, an HTTP error without a TBO response body, an
+     unreadable body, `Status.Code` 405, 429, 500 or an unknown code, or a 200 without `ConfirmationNumber` or with a
+     different `ClientReferenceId`. The agent sees "verifying with the supplier", never "failed". We wait **120
+     seconds** after the failure and call `BookingDetail` by `BookingReferenceId`, and again 5, 15 and 60 minutes
+     after the failure while the booking is not found. If it exists, it is recorded as confirmed and continues as in
+     step 6.
+   - If it does not appear after the last read, the booking stays in "verifying" status and **blocked**, and it is
+     escalated to our operations team: the agent cannot book the same sale again, and the amount stays held on the
+     agency's balance. It is marked as failed only when our daily reconciliation with `BookingDetailsbasedondate`
+     returns a valid response covering its creation date (with one day of margin on each side for time zones) that
+     does not include it, and never earlier than 24 hours after the attempt; until then it stays blocked. The
+     administrators of the TBO account holder can run the reconciliation on demand. **We never re-send a `Book` automatically**, and a new booking attempt always
+     uses a new `BookingReferenceId`.
+8. **Hotel Confirmation Number.** For check-ins within 30 days of the booking, we call `BookingDetail` when the HCN SLA
+   of its priority expires (P0–P5, p. 43), then every hour, up to 3 retries. If there is still no HCN, we open an
+   internal operations task and our team requests it from TBO. For check-ins further away, the same plan starts when
+   the check-in enters the 30-day window, with the P5 SLA. The agent can also refresh a booking at any time
+   (`BookingDetail`).
+9. **Cancel.** Before confirming, we show the agent the estimated penalty according to the `PreBook` policy. We call
+   `BookingDetail` first: if the booking is already cancelled or its cancellation is in progress, no `Cancel` is sent.
+   Otherwise we call `Cancel` with the `ConfirmationNumber` (once, never retried automatically) and then
+   `BookingDetail` to record the status (`Cancelled`, `CancellationInProgress`, `CancelPending`,
+   `CxlRequestSentToHotel`, `CancelledAndRefundAwaited`). While the status is intermediate, or if the outcome of the
+   `Cancel` is unknown, we read `BookingDetail` again 2 minutes, 15 minutes, 1 hour, 6 hours and 24 hours later. From
+   the check-in day (hotel local time), cancellations are handled by our support team with TBO, not from the portal.
 
 **4. Error handling**
 
-- We read `Status.Code` from the response body and never rely on `Description`.
-- 201: no availability message.
-- 207 and 315: the rate or session is no longer valid, so we start a new search. The whole Search-to-Book flow is kept under 30 minutes.
-- 300: insufficient balance, no retry; the account holder is notified.
-- 402: agency blocked; we suspend calls with that account for a period and notify the account holder.
-- 401: credentials alert.
-- 400: request defect, fixed on our side.
-- 429: back-off.
-- 405: treated as uncertain; we follow the 120-second `BookingDetail` recovery of step 7.
-- 479: cancellation rejected; we read `BookingDetail` to record the real status and never repeat the `Cancel` automatically.
-- 500: complete RQ/RS logs are sent to TBO support.
-- Timeouts: Search within the 5–23 s range, PreBook 23 s, Book 120 s.
+- We read `Status.Code` from the response body and never rely on `Description`. The HTTP status is used only when the
+  body has no TBO `Status`.
+- 201: no availability (an empty result in `Search`; in `PreBook` and `Book`, the option is no longer available).
+- 207 and 315: the rate or the session is no longer valid; the agent searches again.
+- 300: insufficient balance. No retry. The agent sees a business message; a rejection in `PreBook` or `Book` is also
+  recorded as an event for the holder of the TBO account.
+- 401: credentials rejected. We pause every call with that TBO account for 5 minutes, and the agent is told who
+  manages those credentials. The account is not disabled in our system, and other accounts are not affected.
+- 402: agency blocked. We pause every call with that TBO account for 15 minutes. A rejection in `PreBook` or `Book`
+  is also recorded as an event for the holder of the TBO account. The account is not disabled in our system, and
+  other accounts are not affected.
+- 400: a defect in our request. No retry; our team is alerted.
+- 405: in `Book`, treated as uncertain (§3, step 7).
+- 429: we halve our request rate for that account for 60 seconds. Reads (`Search`, `PreBook`, `BookingDetail`) may
+  be retried with back-off; `Book` and `Cancel` are never retried.
+- 479: cancellation rejected. We read `BookingDetail` to record the real status and never repeat the `Cancel`
+  automatically.
+- 500: reads may be retried; in `Book` it is uncertain (§3, step 7); in `Cancel` the status is checked with
+  `BookingDetail`. The complete request and response are available to send to TBO support.
+- Timeouts: `Search` 13 s (`ResponseTime` 10 s plus 3 s, never above 23 s), `PreBook` 23 s, `Book` 120 s,
+  `BookingDetail` 30 s, `Cancel` 60 s. `Search` and `PreBook` are retried at most once, only after a fast failure and
+  never after a timeout.
+- Rate: per TBO account, at most 5 requests per second and 4 concurrent requests, with capacity reserved for `Book`,
+  `Cancel` and the recovery `BookingDetail`.
+- We can switch off TBO sales without stopping cancellations and reconciliation.
 
 **5. Logging**
 
-- We store the complete JSON request and response of every call, with restricted access, and can provide them to TBO on request.
-- Credentials are never logged.
+- We store the complete JSON request and response of every `PreBook`, `Book`, `BookingDetail`, `Cancel` and
+  `BookingDetailsbasedondate` call, and of every `Search` or static-content call that fails. They are encrypted,
+  with restricted and audited access, kept for 30 days (configurable up to 90), and can be located by booking or by
+  our request id.
+- We can provide them to TBO on request, for example for a `500`. Production logs are shared with guests' personal
+  data masked unless TBO needs it.
+- Credentials and the `Authorization` header are never logged or stored.
 
 **6. Certification samples**
-The attached zip contains cases 1–8 as requested. Each case runs Search > PreBook > Book > BookingDetail > Cancel > BookingDetail. Case 8 is `BookingDetail` of case 4, called both by `ConfirmationNumber` and by `BookingReferenceId`. `README.txt` indexes every file.
 
----
+- The attached zip contains cases 1–8. They were produced by our application's TBO integration code, the same code
+  our portal uses, driven by a test runner against the integration environment. Request files (`_RQ`) are the exact
+  bytes sent and response files (`_RS`) the exact bytes received.
+- Cases 1–7 contain, numbered in call order: `Search`, `PreBook`, `Book`, `BookingDetail`, and the cancellation as our
+  application performs it: `BookingDetail` (`_BeforeCancel`), `Cancel` and `BookingDetail` (`_AfterCancel`). All
+  test bookings are cancelled at the end; please tell us if you prefer some of them to stay active.
+- Case 7 is a booking with supplements, with the occupancy of case 4 (or of case 1 if no case 4 option had
+  supplements); `README.txt` says which. Case 8 is `BookingDetail` of the case 4 booking, by `ConfirmationNumber` and
+  by `BookingReferenceId`, called before its cancellation.
+- The samples start from the listing `Search`. They do not include the single-hotel `Search`
+  (`IsDetailedResponse: true`) or the second `PreBook` that the portal sends immediately before `Book` (§3, steps 2
+  and 5); both will appear during the portal verification.
+- `README.txt` indexes every case and every call (UTC time, HTTP status, `Status.Code`, latency), and
+  `manifest.json` lists the SHA-256 of every file. Discarded attempts (no availability, rate no longer available, no
+  supplements) are not included and can be sent on request.
+- Guest names, email and phone are synthetic test data. `HotelConfirmationNumber` may be empty, because check-in
+  dates are more than 30 days after the booking date (p. 42).
 
-## Anexo B — Test portal access (listo para enviar)
+## Anexo B — Portal walkthrough (listo para enviar)
 
-> Va por un canal distinto del zip. No lleva la contraseña si el canal no es seguro.
+> **Cómo se usa.** Es la guía de U-20 (D-TBO-37 A) y recorre U-01 a U-19 sobre el stack de certificación de PR-7.2.
+> Se envía cuando el portal esté listo (con D-TBO-05 A, después del zip), por un canal distinto del zip. La contraseña
+> del usuario va por un tercer canal, se rota al terminar la verificación de portal y el usuario se suspende tras el
+> sign-off (`CERT_VENDEDOR_STATUS=suspended`, §7.4). Los textos en cursiva son los literales de la web al 2026-09-27:
+> si la web cambia, se actualizan aquí antes de enviar.
 
-**Test portal access — [Company] B2B platform (TBO certification)**
+**Condiciones antes de enviarla.** Hoy (2026-09-27) fallan las dos primeras, y sin ellas TBO no puede recorrer el
+portal:
 
-- URL: [portal URL]
-- User: [username]. The password is sent separately. The account is a **sales agent** of a test agency, has no admin rights and does not require MFA.
-- The portal is connected only to the TBO integration environment. No other supplier is active in this environment.
-- Payments: bookings are charged to the test agency's internal balance and to the TBO `Limit`. No card is requested.
-- Path: _Hoteles_ (Hotels) → search → select a room option (PreBook) → _Huéspedes_ (Guests) → _Confirmar_ (Confirm) → _Reservas_ (Bookings) → _Cancelar_ (Cancel).
-- The interface is in Spanish. Glossary: _Nacionalidad del huésped principal_ = lead guest nationality; _A pagar en el hotel_ = payable at the hotel (AtProperty); _Política de cancelación_ = cancellation policy; _Condiciones del hotel_ = rate conditions/norms; _Reembolsable_ = refundable; _Reservar_ = book; _Reservas_ = bookings.
-- Contact during testing: [name, email, phone, hours in UTC].
+1. **Destinos en el stack.** Las sugerencias de destino salen del proveedor de plataforma (`HotelsService.suggest`
+   en `apps/api/src/hotels/hotels.service.ts`, que usa `despegar-hotels`), y el stack no tiene credenciales de
+   Despegar (RC-07): el vendedor no puede elegir destino. El campo _IDs de hotel_ no sirve de atajo: son IDs de la
+   plataforma y TBO queda fuera con `foreign-hotel-ids` (`catalogPlanOf`, mismo archivo). Sin arreglo, U-02 falla.
+   Está también en `infrastructure/hostinger/README.md` §9.5.
+2. **Contacto operativo de la agencia.** El Book exige el `support_email` y el `support_phone` del tenant o de su
+   consolidador (D-TBO-23 A; `apps/api/src/hotels/hotel-booking-contact.ts`), y `tools/seed-tbo-cert-tenant` no los
+   carga. Sin ellos, _Confirmar reserva_ responde _Falta el contacto de soporte de la agencia._ y el `vendedor` no
+   puede cargarlos (_Mi Agencia_ es de administradores). Van un buzón de rol y un teléfono ficticio, como en el arnés.
+3. Catálogo de TBO sincronizado en `sales_travel_cert` para las ciudades de test (§7.3 punto 6).
+4. `CERT_CURRENCY` igual a la moneda del perfil de la cuenta de test (`check`; [Q-82](./10-preguntas-para-tbo.md#q-82)).
+5. [Q-76](./10-preguntas-para-tbo.md#q-76) respondida (staging = endpoint de integración) o la cuenta del stack
+   apuntando a lo que indique TBO.
+6. PR-6.6 (Playwright U-01 a U-19) en verde contra el stack o, como mínimo, un recorrido manual completo de esta
+   guía con una reserva y su cancelación.
+7. Todos los `[COMPLETAR: …]` llenos, incluido el SHA de la imagen que corre el stack (`deploy-cert`).
 
-## Anexo C — Email del zip (plantilla)
+| U-xx             | Sección de la guía | U-xx       | Sección de la guía |
+| ---------------- | ------------------ | ---------- | ------------------ |
+| U-01             | 1                  | U-12       | 6                  |
+| U-02, U-03, U-04 | 2                  | U-13, U-14 | 7                  |
+| U-05 a U-08      | 3 y 4              | U-15       | 8                  |
+| U-09, U-10, U-11 | 5                  | U-16       | 9                  |
+| U-18             | 3, 5 y 11          | U-17       | 10                 |
+| U-19             | 11                 | U-20       | Toda la guía       |
+
+**[COMPLETAR: company name] B2B portal — Walkthrough for the TBO Website/Portal Verification**
+
+Version 1.0 · [COMPLETAR: date] · Build deployed in the certification environment: [COMPLETAR: git SHA]
+
+**0. Access and environment**
+
+- URL: `https://cert-app.planetour.cloud` [COMPLETAR: confirm before sending]
+- User: [COMPLETAR: tester email]. The password is sent separately, through [COMPLETAR: channel]. The user is a
+  **sales agent** of a test agency: no administration rights and no second authentication factor.
+- The environment is connected only to the TBO integration environment
+  (`http://api.tbotechnology.in/TBOHolidays_HotelAPI`), with our test account [COMPLETAR: TBO test username]. No other
+  supplier is configured. Bookings are real bookings in the TBO test environment and use the test account's `Limit`.
+- Payment: bookings are charged to the test agency's internal balance and to the TBO `Limit`. No card is requested at
+  any point.
+- Currency: [COMPLETAR: currency of the TBO test account]. Prices are for the whole stay.
+- The interface is in Spanish. On-screen labels are quoted in _italics_; the glossary at the end translates them.
+- Please use fictitious guest names. The customers under _Clientes_ are fictitious.
+- Contact during testing: [COMPLETAR: name, email, phone, hours in UTC].
+
+**1. Log in**
+
+Open the URL, enter the user in _Correo electrónico_ and the password in _Contraseña_, and press _Iniciar sesión_.
+No second factor is requested.
+
+**2. Search**
+
+Open _Hoteles_ in the left menu.
+
+- _Destino_: type at least two letters of a city and choose a suggestion.
+- _Entrada_ / _Salida_: check-in and check-out dates.
+- _Habitaciones_: up to 8 rooms. For each room, _Adultos_ and _Niños_, and the age of each child (_Edad niño 1_, …).
+- _Nacionalidad del pasajero principal_ (lead guest nationality): mandatory. It can be prefilled from the customer's
+  record or from the previous search, and it can always be changed. We never send a fixed value.
+- _Solo reembolsables_ (optional): refundable rates only. Leave _IDs de hotel (opcional)_ empty: those are our
+  platform's hotel IDs, not TBO `HotelCodes`.
+- Press _Buscar hoteles_.
+
+What to check:
+
+- Our occupancy selector allows up to 6 children per room, aged 0 to 17, because it serves several suppliers. TBO
+  accepts up to 4 children per room (p. 11): with 5 or 6 children in a room, TBO is not called for that search and
+  the banner _Resultados incompletos_ shows the reason _Admite hasta 4 niños por habitación._ Every occupancy within
+  TBO's limits (1–8 adults, 0–4 children, ages 0–17) is searched.
+
+**3. Results**
+
+- The header reads _N hoteles con disponibilidad · precios de venta por la estadía completa_ (N hotels available,
+  selling prices for the whole stay).
+- Each card shows the hotel name, stars and address, _Con tarifa reembolsable_ or _Solo no reembolsable_, and the
+  lowest selling price (_Desde_, or _Precio_ when there is a single option). Below the price, _neto … + markup …_ shows the net amount and the test agency's
+  markup. The selling price is never below `RecommendedSellingRate`.
+- _Ver N tarifas_ lists every option: room names, meal type, refundability, _Incluye:_ (inclusions) and promotions.
+  `AtProperty` supplements appear in the box _A pagar en el hotel, aparte del total_ (payable at the hotel, not
+  included in the total), each with its own amount and currency. The card shows _Más cargos a pagar en el hotel_ when
+  the cheapest option has them.
+- The hotel image is on the hotel page (section 4), not on the result card.
+- No availability (`Status.Code` 201): _No hay disponibilidad para ese destino y esas fechas._
+- Offer validity: _Tarifas vigentes por mm:ss_ counts down from the search. Offers expire 27 minutes after the
+  search; then the page shows _Las tarifas vencieron._ and _Buscar de nuevo_ (search again).
+
+**4. Hotel page**
+
+Press _Ver hotel_ on a result (it opens in a new tab). The page shows photos, description, facilities, check-in and
+check-out times and a map link (_Ver en el mapa_). Its rates come from a `Search` for that single hotel with
+`IsDetailedResponse: true`: each rate shows its cancellation policy (_Cancelación_), with policies and prices per
+night subject to confirmation. Press _Reservar_ on the rate to book.
+
+**5. Rate and conditions (PreBook)**
+
+The booking page has two steps: _Tarifa y condiciones_ and _Huéspedes y confirmación_.
+
+- _Revalidando la tarifa con el proveedor…_ is the `PreBook` call. Then _Tarifa revalidada_ shows the rate as
+  confirmed by TBO.
+- If the price went up, the currency changed or the conditions changed, a notice shows the old and the new values
+  (for example _El precio subió al revalidar la tarifa._) and the agent must tick the acceptance box (for example
+  _Acepto el precio nuevo de …_) to continue. If the price went down, _El precio bajó al revalidar la tarifa._ is
+  shown and no action is needed.
+- _Política de cancelación_: the `PreBook` policy tiers, each with its dates and _Penalidad estimada_ (estimated
+  penalty), and the note _Fechas y horas en hora local del hotel._ (hotel local time).
+- _Condiciones del hotel_ (rate conditions): expand it to read the full `RateConditions` text, decoded and grouped. A
+  rate that is only sold with a flight shows _Esta tarifa sólo se vende en un paquete con aéreo._ and cannot be booked
+  (_Elegir otra tarifa_: choose another rate).
+- _Tarifa vigente por mm:ss_ shows the time left before the offer expires.
+- Press _Continuar con los huéspedes_.
+
+**6. Guests**
+
+- One block per room (_Habitación 1_, _Habitación 2_, …), in the order of the search. Each guest has a fixed slot
+  (_Adulto 1 (titular)_, _Adulto 2_, _Niño 1 · 7 años_, …) with _Título_ (_Sr. (Mr)_, _Sra. (Mrs)_, _Srta. (Ms)_),
+  _Nombre_ and _Apellido_. Children are named too.
+- Accented names are accepted on screen and sent to TBO in ASCII (José Muñoz → Jose Munoz); the voucher shows both.
+- _Contacto del huésped_ (guest contact: _Email_, _Prefijo_, _Teléfono_) stays in our booking. TBO receives the
+  agency's operations contact in `EmailId` and `PhoneNumber`.
+
+**7. Confirm**
+
+- If the rate has `AtProperty` supplements, they are listed again and the agent must tick _Le mostré al cliente estos
+  cargos, que paga en el hotel._ (I have shown the customer these charges, payable at the hotel).
+- _Se retiene del saldo o crédito de la agencia en Carteras. No se piden datos de tarjeta._ (the amount is held on the
+  agency's balance or credit; no card data is requested).
+- Press _Confirmar reserva_ once. A double click or a reload does not create a second booking.
+- _Confirmando la reserva con el proveedor…_: we call `PreBook` again and then `Book`, which can take up to 120
+  seconds (_El proveedor puede tardar hasta 2 minutos en responder._).
+- If the price went up or the conditions changed at that last `PreBook` (for example _El precio subió al revalidar la
+  tarifa antes de reservar._), no booking is made; after accepting the new values, the agent confirms again. If the
+  price went down, the booking is made at the lower price and the confirmation says so.
+- If the outcome of `Book` is uncertain (timeout, error): _Verificando con el proveedor…_ and _No recibimos la
+  confirmación a tiempo, así que le preguntamos al proveedor si la reserva quedó hecha. La primera consulta sale a los
+  2 minutos del corte. No la repitas._ The booking is never shown as failed at this point: we call `BookingDetail` by
+  `BookingReferenceId` 120 seconds after the failure, and the final status appears in _Mis Reservas_.
+
+**8. Confirmation and voucher**
+
+- _Reserva confirmada_: the booking is confirmed by TBO. _El número de confirmación del hotel llega más tarde_ (the
+  hotel confirmation number arrives later) and _Recordale al huésped lo que paga en el hotel_ (remind the guest of the
+  at-hotel charges).
+- The voucher (_Voucher (PDF)_, in _Mis Reservas_) shows the `ConfirmationNumber`, _Confirmación del hotel_ (HCN, or
+  pending), hotel, dates, rooms and guests, _A pagar en el hotel_, _Política de cancelación_ and _Condiciones del
+  hotel_.
+
+**9. Bookings**
+
+- _Mis Reservas_ (left menu) lists the bookings with their status: _Confirmada_, _Pendiente_, _Cancelada_,
+  _Fallida_.
+- _Ver detalle_ opens a booking: sub-status, status read from TBO, `ConfirmationNumber`, _Confirmación del hotel
+  (HCN)_, and the policy and conditions accepted at booking time.
+- _Actualizar estado_ calls `BookingDetail` and refreshes the booking.
+
+**10. Cancel**
+
+- In the booking detail, press _Cancelar reserva_. The dialog shows the _Penalidad estimada_ according to the
+  `PreBook` policy. Confirm with _Sí, cancelar reserva_ or go back with _No, volver_.
+- We call `BookingDetail`, then `Cancel`, then `BookingDetail`. The result is _Cancelada_, _Cancelada, con reembolso
+  pendiente_ (`CancelledAndRefundAwaited`) or _Cancelación en curso_ (`CancellationInProgress`, `CancelPending`,
+  `CxlRequestSentToHotel`), which updates by itself.
+- A rejected cancellation (479) shows _El proveedor no aceptó la cancelación_ and the booking stays as it was.
+- From the check-in day (hotel local time) the portal does not send cancellations: our support team handles them with
+  TBO.
+
+**11. Expired offers and account errors**
+
+- If the offer is older than 27 minutes, or TBO answers 207 or 315, the booking page shows _La tarifa venció._ or _La
+  tarifa ya no está disponible._ and asks the agent to go back to the hotel and search again (_Volvé al hotel para
+  buscar tarifas actualizadas._). No generic error is shown.
+- TBO account errors are shown as business messages and are not retried: 300 → _La cuenta del proveedor no tiene
+  saldo suficiente._ (the supplier account has insufficient balance); 402 → _La cuenta del proveedor está bloqueada._
+  (the supplier account is blocked). Below the title, a line says who has to act (for example _Avisale a quien
+  administra la cuenta del proveedor._: tell the administrator of the supplier account). To see them, TBO can
+  temporarily reduce the test account's `Limit` or block the account. After a 402, every call with that account is
+  paused for 15 minutes (§4 of our workflow document), so no TBO rates appear during that time.
+- _La agencia no tiene saldo para esta reserva._ is different: the test agency's internal balance in our platform,
+  not TBO's `Limit`.
+
+**Glossary**
+
+| On screen (Spanish)                                            | Meaning                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| _Hoteles_ / _Mis Reservas_                                     | Hotels / My bookings (left menu)                                        |
+| _Destino_, _Entrada_, _Salida_                                 | Destination, check-in, check-out                                        |
+| _Habitaciones_, _Adultos_, _Niños_, _Edad niño N_              | Rooms, adults, children, age of child N                                 |
+| _Nacionalidad del pasajero principal_                          | Lead guest nationality (`GuestNationality`)                             |
+| _Solo reembolsables_                                           | Refundable rates only                                                   |
+| _Buscar hoteles_ / _Buscar de nuevo_                           | Search hotels / Search again                                            |
+| _Resultados incompletos_                                       | Incomplete results: a supplier was not queried or failed (reason shown) |
+| _Desde_ / _Precio_                                             | From / Price (selling price for the whole stay)                         |
+| _neto … + markup …_                                            | Net amount + agency markup                                              |
+| _Reembolsable_ / _No reembolsable_                             | Refundable / Non-refundable                                             |
+| _Incluye_                                                      | Includes (`Inclusion`)                                                  |
+| _A pagar en el hotel, aparte del total_                        | Payable at the hotel, not included in the total (`AtProperty`)          |
+| _Tarifas vigentes por_ / _Las tarifas vencieron_               | Rates valid for / Rates expired                                         |
+| _Ver N tarifas_ / _Ver hotel_ / _Reservar_                     | Show N rates / Open hotel page / Book this rate                         |
+| _Revalidando la tarifa con el proveedor_ / _Tarifa revalidada_ | Revalidating the rate with the supplier (`PreBook`) / Rate revalidated  |
+| _Acepto el precio nuevo de …_                                  | I accept the new price of …                                             |
+| _Política de cancelación_ / _Penalidad estimada_               | Cancellation policy / Estimated penalty                                 |
+| _Condiciones del hotel_                                        | Rate conditions (`RateConditions`)                                      |
+| _Huéspedes_, _Título_, _Nombre_, _Apellido_                    | Guests, title, first name, last name                                    |
+| _Titular_                                                      | Lead guest                                                              |
+| _Confirmar reserva_                                            | Confirm booking (`Book`)                                                |
+| _Confirmando la reserva con el proveedor_                      | Confirming the booking with the supplier                                |
+| _Verificando con el proveedor_                                 | Verifying with the supplier (uncertain `Book` outcome)                  |
+| _Reserva confirmada_                                           | Booking confirmed                                                       |
+| _Confirmación del hotel (HCN)_                                 | Hotel confirmation number                                               |
+| _Actualizar estado_                                            | Refresh status (`BookingDetail`)                                        |
+| _Cancelar reserva_ / _Sí, cancelar reserva_ / _No, volver_     | Cancel booking / Yes, cancel / No, go back                              |
+| _Cancelación en curso_                                         | Cancellation in progress                                                |
+| _Cancelada, con reembolso pendiente_                           | Cancelled, refund pending                                               |
+| _Pendiente_, _Confirmada_, _Cancelada_, _Fallida_              | Pending, confirmed, cancelled, failed                                   |
+| _Carteras_ / _Cartera B2B_                                     | Agency balance in our platform                                          |
+
+**Cover message** (goes with the guide; the password goes through a separate channel):
 
 ```text
-To: apisupport@tbo.com
-Subject: [Company] - Hotel API JSON certification samples (cases 1-8)
+To: [COMPLETAR: TBO contact for the portal verification]
+Subject: [COMPLETAR: company name] - Test portal access for the Website/Portal Verification
 
 Hello TBO API Integration team,
 
-Please find attached:
-1. Our integration workflow (methods used and call sequence).
-2. <zip name>: RQ/RS JSON for certification cases 1-8, indexed in README.txt.
+Our test portal for the Website/Portal Verification is ready:
 
-Account (test): [TBO test username - no password]
-Technical contact: [name, email, phone]
+URL:  https://cert-app.planetour.cloud
+User: [COMPLETAR: tester email]
+The password will reach you separately through [COMPLETAR: channel].
 
-Could you also share, if possible, the JSON checkpoint list you use for verification, and confirm
-the staging endpoint for the portal verification phase?
+The portal is connected only to the TBO integration environment, with our test account
+[COMPLETAR: TBO test username]. The attached guide walks through search, PreBook, booking,
+bookings and cancellation, with a glossary for the Spanish interface.
+
+Contact during testing: [COMPLETAR: name, email, phone, hours in UTC].
 
 Regards,
-[name]
+[COMPLETAR: name]
 ```
+
+## Anexo C — Email del zip (listo para enviar)
+
+> **Cómo se usa.** Va a `apisupport@tbo.com` con copia a `apisupport@tboholidays.com` mientras
+> [Q-11](./10-preguntas-para-tbo.md#q-11) no diga cuál es la vigente ([10](./10-preguntas-para-tbo.md) §11). Adjuntos:
+> el workflow del [Anexo A](#anexo-a--integration-workflow-listo-para-enviar) en PDF y el zip que armó `zip` en
+> `.tbo-cert/<runId>/`, sin renombrar ni volver a comprimir (su `manifest.json` y el SHA-256 que se archiva en
+> [evidence/cert/](./evidence/cert/README.md) tienen que coincidir). Antes de enviar:
+>
+> - `selfcheck.md` de la corrida sin guardas que abortan y con la sección de hallazgos revisada ([tools/tbo](../../tools/tbo/README.md));
+> - la corrida hecha desde un commit limpio (`Application build` sin "with uncommitted changes");
+> - la columna `Cancelled` del `README.txt` en `Cancelled` para los casos 1 a 7; si alguna reserva quedó activa
+>   (`TBO_CANCEL_AFTER=false` o un Cancel sin confirmar), se corrige la frase "All test bookings were cancelled";
+> - si el email de preguntas de [10](./10-preguntas-para-tbo.md) §12 ya salió, se cita su fecha; si no, se quita la
+>   frase;
+> - ninguna contraseña, cabecera `Authorization` ni dato de una persona real. El usuario de test sí puede ir.
+>
+> Después de enviarlo, se archiva según [evidence/cert/README.md](./evidence/cert/README.md).
+
+```text
+To: apisupport@tbo.com
+Cc: apisupport@tboholidays.com
+Subject: [COMPLETAR: company name] - Hotel API JSON certification samples (cases 1-8)
+
+Hello TBO API Integration team,
+
+Please find attached our certification samples for the TBO Holidays Hotel API (JSON V2.1):
+
+1. [COMPLETAR: workflow file name].pdf - our integration workflow: the methods we use, the
+   order in which we call them, and how we handle timeouts and errors.
+2. [COMPLETAR: zip file name] - request and response JSON of certification cases 1-8,
+   produced by our application against the integration environment. README.txt indexes
+   every case and call; manifest.json lists the SHA-256 of each file.
+
+Test account: [COMPLETAR: TBO test username] (no password in this email)
+Application build: [COMPLETAR: git SHA, as printed in README.txt]
+Technical contact: [COMPLETAR: name, email, phone]
+
+Notes on the samples:
+- Each case runs Search > PreBook > Book > BookingDetail, and then our cancellation:
+  BookingDetail, Cancel and BookingDetail. All test bookings were cancelled; please tell us
+  if you prefer some of them to stay active.
+- Case 7 is a booking with supplements. Case 8 is BookingDetail of the case 4 booking, by
+  ConfirmationNumber and by BookingReferenceId.
+- Discarded attempts (no availability, rate no longer available) are not included; we can
+  send them, or the complete logs, on request.
+- PaymentMode is "Limit" everywhere; we never send card data. All guest data is synthetic.
+
+Our test portal for the Website/Portal Verification will be available from
+[COMPLETAR: date]; we will send its access details separately.
+
+Could you also:
+- share the JSON checkpoint list and the portal verification criteria, if possible;
+- confirm whether the Staging environment of the portal verification is the same endpoint
+  (http://api.tbotechnology.in/TBOHolidays_HotelAPI) with the same test credentials?
+
+Our other integration questions were sent on [COMPLETAR: date of the questions email].
+
+Regards,
+[COMPLETAR: name]
+[COMPLETAR: company name]
+```
+
+## Anexo D — Client's Details (borrador)
+
+> **Cómo se usa.** Campos literales del documento de certificación (Cert, Client's Details). Con D-TBO-38 A la
+> empresa es la entidad titular de la cuenta TBO que se hereda en la red, con un contacto técnico nominal interino y
+> un buzón de rol en copia hasta contratar al responsable. No se inventa ningún dato: todo `[COMPLETAR: …]` lo llena
+> el founder. Si el formulario ya se entregó al pedir las credenciales de test, se reenvía solo lo que cambió;
+> _Test Application URL_ y _Application Credentials_ se completan cuando el stack de PR-7.2 esté desplegado. La
+> contraseña del portal nunca va en el formulario.
+
+| Section                                     | Field                                                                           | Value                                                                                                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client's Company Details                    | Company Name                                                                    | [COMPLETAR: legal name of the entity that holds the TBO account]                                                                                                     |
+|                                             | Address                                                                         | [COMPLETAR: registered address]                                                                                                                                      |
+|                                             | City/Country                                                                    | [COMPLETAR: city], [COMPLETAR: country]                                                                                                                              |
+| Client's Technical Contact Person           | Name                                                                            | [COMPLETAR: technical contact, full name]                                                                                                                            |
+|                                             | Email                                                                           | [COMPLETAR: personal work email of the contact]; copy to [COMPLETAR: role mailbox]                                                                                   |
+|                                             | Skype ID                                                                        | Skype was discontinued in May 2025. Microsoft Teams: [COMPLETAR: Teams account]; WhatsApp: [COMPLETAR: number with country code]                                     |
+|                                             | Phone/Mobile Number                                                             | [COMPLETAR: phone with country code]                                                                                                                                 |
+| Client's Application/Infrastructure Details | Client's platform where the TBO API will be integrated (like: B2B, B2C, Mobile) | B2B: web portal for the travel agencies of our consolidator network. No B2C, mobile or WhatsApp channel will use the TBO API; we will notify TBO before enabling one |
+|                                             | Test Application URL                                                            | `https://cert-app.planetour.cloud` (certification environment, connected only to the TBO integration environment) [COMPLETAR: confirm]                               |
+|                                             | Application Credentials                                                         | User: [COMPLETAR: tester email]. The password is sent separately, through [COMPLETAR: channel]                                                                       |
+
+## Anexo E — Datos para el Production Process Form (RC-11)
+
+> **Cómo se usa.** El formulario de Microsoft Forms no se abrió y sus campos no se conocen
+> ([Q-80](./10-preguntas-para-tbo.md#q-80)). Esta lista reúne lo que pide un alta de producción típica y lo que ya
+> sabemos, para que esté listo antes del sign-off (RC-11). Se revisa contra el formulario real en cuanto se abra; lo
+> que el formulario no pida no se envía.
+
+| Dato                                   | Valor o fuente                                                                                                                                                                                                | Estado                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Entidad, dirección y contacto          | Los del [Anexo D](#anexo-d--clients-details-borrador) (D-TBO-38 A)                                                                                                                                            | `[COMPLETAR]` del Anexo D       |
+| Contacto de producción y de incidentes | [COMPLETAR: nombre, email nominal, buzón de rol, teléfono, horario en UTC]                                                                                                                                    | Abierto (equipo por contratar)  |
+| IP de salida hacia TBO (whitelisting)  | La IP pública fija del VPS de Hostinger, que es de donde salen producción y el stack de certificación ([01](./01-autenticacion-conectividad-y-errores.md) §13 H-19; [08](./08-requisitos-maestro.md) §9 C-22) | [COMPLETAR: IP pública del VPS] |
+| Canal y plataforma                     | Portal web B2B; sin B2C, móvil ni WhatsApp (D-TBO-36 A)                                                                                                                                                       | Cerrado                         |
+| URL de producción del portal           | `https://app.planetour.cloud`                                                                                                                                                                                 | Cerrado                         |
+| Cuenta que opera en live               | La del consolidador titular, heredada por su red; BYOC deshabilitado hasta [Q-77](./10-preguntas-para-tbo.md#q-77) (D-TBO-03 A)                                                                               | Cerrado                         |
+| Moneda del perfil live                 | [COMPLETAR: la que se acuerde con TBO] ([Q-82](./10-preguntas-para-tbo.md#q-82))                                                                                                                              | Abierto                         |
+| Volumen esperado                       | [COMPLETAR: búsquedas por día y reservas por mes estimadas]                                                                                                                                                   | Abierto                         |
+| Build certificado                      | El SHA del sign-off ([evidence/cert/README.md](./evidence/cert/README.md))                                                                                                                                    | Al cierre de la Fase 4          |
+
+Al recibir las credenciales live, el pase es **sustituir** la cuenta de test por la live en la bóveda, nunca sumar una
+segunda cuenta `active` al mismo tenant (RC-10, §2.8).
 
 ---
 
