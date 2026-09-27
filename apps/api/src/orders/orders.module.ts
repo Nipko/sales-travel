@@ -12,6 +12,8 @@ import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
+import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
 
 /**
  * La post-venta de las órdenes de hotel (PR-5.2) necesita el registry de hoteles y el breaker, que
@@ -25,6 +27,9 @@ import { OrdersService } from './orders.service.js';
  *
  * La conciliación (PR-5.5, `ReconciliationModule`) cierra órdenes de hotel con lo que confirma una
  * lectura: usa el mismo seguimiento, la misma transición de la cancelación y la misma retención.
+ *
+ * Los claims de cancelación que un proceso dejó en vuelo (HARD-1) los vence `PostSaleModule` con
+ * `StaleCancelClaimService`, que es de todas las verticales.
  */
 @Module({
   imports: [
@@ -44,6 +49,8 @@ import { OrdersService } from './orders.service.js';
     HotelOrderReadsService,
     HotelOrderCancellationStore,
     HotelOrderCancellationService,
+    StaleCancelClaimStore,
+    StaleCancelClaimService,
     BookingHoldLedger,
   ],
   exports: [
@@ -52,6 +59,7 @@ import { OrdersService } from './orders.service.js';
     HotelOrderCancellationService,
     HotelOrderTrackingStore,
     HotelOrderCancellationStore,
+    StaleCancelClaimService,
     BookingHoldLedger,
   ],
 })

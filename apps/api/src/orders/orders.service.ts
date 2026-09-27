@@ -64,6 +64,7 @@ import { ORDER_EVENTS, createdSummary } from './order-events.js';
 import {
   CANCEL_REJECTED_POLICY,
   CANCEL_SUCCESS_POLICY,
+  CANCEL_UNVERIFIED_MESSAGE,
   CANCEL_UNVERIFIED_POLICY,
   classifyCancelThrownFailure,
   persistedCancelRetryPolicy,
@@ -162,7 +163,7 @@ interface CancellationCompletion {
 
 /** El texto durable de un intento que lanzó: dice qué se puede hacer después, nunca el error. */
 function thrownCancelMessage(failure: CancelRetryPolicy): string {
-  if (failure.reconciliationRequired) return 'Cancelación no verificada; requiere conciliación.';
+  if (failure.reconciliationRequired) return CANCEL_UNVERIFIED_MESSAGE;
   return failure.retryable
     ? 'Cancelación fallida antes de enviar el write.'
     : 'Cancelación rechazada antes de completarse.';
@@ -1192,7 +1193,7 @@ export class OrdersService {
       result.success
         ? null
         : operationPolicy.reconciliationRequired
-          ? 'Cancelación no verificada; requiere conciliación.'
+          ? CANCEL_UNVERIFIED_MESSAGE
           : 'Cancelación rechazada por el proveedor.',
       operationPolicy,
       actorUserId,
@@ -1479,6 +1480,7 @@ export class OrdersService {
     pnr: string,
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    const startedAt = Date.now();
     const current = await this.findById(tenantId, id);
     if (!current?.provider_order_id) {
       throw new NotFoundException('La reserva no existe o no tiene localizador.');
@@ -1509,9 +1511,34 @@ export class OrdersService {
         );
       }
     }
-    await this.hotelCancellationsFor(current)?.assertCancellable(tenantId, current);
+    const hotels = this.hotelCancellationsFor(current);
+    await hotels?.assertCancellable(tenantId, current);
     const claim = await this.beginCancellationOperation(tenantId, current, actorUserId);
-    return this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+    const work = this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+    return hotels === undefined
+      ? work
+      : this.hotelCancelWithinBudget(hotels, current, startedAt, work);
+  }
+
+  /**
+   * HARD-1: la petición que cancela una orden de hotel responde dentro de su presupuesto aunque el
+   * proveedor tarde (lecturas con reintentos, un Cancel de 60 s, el cupo de la cuenta). Agotado,
+   * la respuesta es "Cancelación en curso" y la cancelación sigue en el proceso con su mismo claim:
+   * al terminar escribe la operación y agenda `verify-cancellation` como siempre, y si el proceso
+   * muere con ella en vuelo, el barrido vence el claim y la agenda igual
+   * (`StaleCancelClaimService`). Nunca se manda un segundo Cancel.
+   */
+  private async hotelCancelWithinBudget<T extends { result: OrderCancelResult }>(
+    hotels: HotelOrderCancellationService,
+    order: OrderRow,
+    startedAt: number,
+    work: Promise<T>,
+  ): Promise<T | { result: OrderCancelResult }> {
+    const done = await hotels.withinBudget(work, startedAt, {
+      orderId: order.id,
+      provider: order.provider,
+    });
+    return done.settled ? done.value : { result: hotels.stillRunning(order) };
   }
 
   /**
@@ -1785,6 +1812,7 @@ export class OrdersService {
     opId: string,
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult }> {
+    const startedAt = Date.now();
     const op = await this.db.withTenant(tenantId, async (trx) =>
       trx
         .selectFrom('order_operations')
@@ -1823,18 +1851,22 @@ export class OrdersService {
       throw new ConflictException('La reserva ya está cancelada.');
     }
     this.assertGenericCancellationAllowed(order);
-    await this.hotelCancellationsFor(order)?.assertCancellable(tenantId, order);
+    const hotels = this.hotelCancellationsFor(order);
+    await hotels?.assertCancellable(tenantId, order);
     const claim = await this.claimCancelRetry(tenantId, opId, order);
     if (!claim) {
       throw new ConflictException('Otra ejecución ya tomó esta operación de cancelación.');
     }
-    const { result } = await this.attemptCancelAndMaybeQueue(
+    const work = this.attemptCancelAndMaybeQueue(
       tenantId,
       orderId,
       order.provider_order_id,
       claim,
       actorUserId,
     );
+    const { result } = await (hotels === undefined
+      ? work
+      : this.hotelCancelWithinBudget(hotels, order, startedAt, work));
     return { result };
   }
 

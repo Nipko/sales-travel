@@ -3,6 +3,7 @@ import {
   TBO_OPERATIONS,
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboConfigError,
   TboCredentialsMissingError,
   TboDispatchRejectedError,
@@ -174,6 +175,9 @@ function contextOf(path: string, context: ProviderErrorContext): MessageContext 
  * mensajes de cuenta hablan de "la cuenta con la que opera tu agencia" sin suponer de quién es.
  */
 export function humanizeTboError(err: unknown, context: ProviderErrorContext = {}): string {
+  // Antes que la clase madre: el `kind` de un código de otra operación hablaría de reservar o de
+  // volver a buscar, y lo único cierto es que no se sabe si TBO canceló (HARD-1).
+  if (err instanceof TboCancelOutcomeUnknownError) return CANCEL_UNVERIFIED;
   if (err instanceof TboApiError) {
     return MESSAGE_BY_KIND[err.failure.kind](contextOf(err.path, context));
   }
@@ -230,6 +234,7 @@ export const TBO_LOCAL_ERROR_REASONS = [
 export type TboErrorReason = TboFailureKind | (typeof TBO_LOCAL_ERROR_REASONS)[number];
 
 export function tboErrorReason(err: unknown): TboErrorReason {
+  if (err instanceof TboCancelOutcomeUnknownError) return 'CANCEL_UNVERIFIED';
   if (err instanceof TboApiError) return err.failure.kind;
   // El mismo motivo que un 315: la acción del vendedor es idéntica, volver a buscar.
   if (err instanceof TboOfferExpiredError) return 'OFFER_EXPIRED';
@@ -261,6 +266,7 @@ const CONFLICT_KINDS: ReadonlySet<TboFailureKind> = new Set<TboFailureKind>([
  * corregirlo (nacionalidad u ocupación).
  */
 export function tboErrorStatus(err: unknown): number {
+  if (err instanceof TboCancelOutcomeUnknownError) return HttpStatus.BAD_GATEWAY;
   if (err instanceof TboApiError) {
     if (CONFLICT_KINDS.has(err.failure.kind)) return HttpStatus.CONFLICT;
     if (err.failure.kind === 'THROTTLED') return HttpStatus.SERVICE_UNAVAILABLE;

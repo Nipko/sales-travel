@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { HotelBookingView, HotelCancelResult, SearchContext } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { Transaction } from 'kysely';
@@ -28,6 +28,7 @@ import {
 } from '../hotels/hotel-cancellation.js';
 import type { HotelOrderPlan } from '../hotels/hotel-order-state.js';
 import { HotelProviderCapabilityError } from '../hotels/hotel-provider-errors.js';
+import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { withProviderPayloadScope } from '../provider-payloads/provider-payload-scope.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
@@ -66,12 +67,44 @@ import { ORDER_EVENTS, publicProviderStatus } from './order-events.js';
  *    en la dirección segura, con su calendario en Postgres (0046) y un paso por job.
  * 4. **La retención de la cartera** se libera cuando la orden queda `cancelled`, la cierre quien la
  *    cierre (la respuesta o la verificación).
+ * 5. **El presupuesto de la petición** (HARD-1): pasado, se responde "Cancelación en curso" y la
+ *    cancelación sigue en el proceso con su claim.
  *
  * Nada aquí manda un segundo Cancel.
  */
 
 /** Cuánto se espera a que la cola acepte un paso (mismo motivo que en la verificación del Book). */
 export const HOTEL_CANCEL_VERIFY_ENQUEUE_WAIT_MS = 5_000;
+
+/**
+ * Cuánto espera la petición HTTP que cancela antes de responder "Cancelación en curso" (HARD-1).
+ * Cloudflare corta a los 100 s, y la cancelación de TBO puede pasarlos: lectura previa con tres
+ * intentos de 30 s, el Cancel con 60 s y la lectura posterior, más el cupo de la cuenta. 45 s
+ * deja fuera de la petición sólo las cancelaciones lentas, con margen para el claim y la
+ * respuesta.
+ */
+export const HOTEL_CANCEL_SYNC_BUDGET_MS = 45_000;
+
+/**
+ * El aviso de una cancelación que sigue después de responder. `success: true` con
+ * `settlement: 'in-progress'` es "Cancelación en curso": quedó en manos de la plataforma, con su
+ * claim, y el desenlace se lee en la orden. No es un error.
+ */
+export const HOTEL_CANCEL_STILL_RUNNING = 'CANCELLATION_STILL_RUNNING';
+
+/** Token DI opcional de {@link HotelCancelOptions}. En producción no se provee. */
+export const HOTEL_CANCEL_OPTIONS = 'HOTEL_CANCEL_OPTIONS';
+
+export interface HotelCancelOptions {
+  /** Presupuesto de la petición HTTP; por defecto {@link HOTEL_CANCEL_SYNC_BUDGET_MS}. */
+  readonly syncBudgetMs?: number;
+}
+
+/** Lo que salió de esperar la cancelación dentro del presupuesto. */
+export type HotelCancelWithinBudget<T> =
+  | { readonly settled: true; readonly value: T }
+  /** El presupuesto se agotó: la cancelación sigue en vuelo. */
+  | { readonly settled: false };
 
 const OPERATION = 'la cancelación de la reserva';
 
@@ -216,6 +249,7 @@ function trackingOf(
 @Injectable()
 export class HotelOrderCancellationService {
   private readonly logger = new Logger(HotelOrderCancellationService.name);
+  private readonly syncBudgetMs: number;
 
   constructor(
     private readonly registry: HotelProviderRegistry,
@@ -224,7 +258,16 @@ export class HotelOrderCancellationService {
     private readonly audit: AuditService,
     private readonly queue: PostSaleQueueService,
     private readonly holds: BookingHoldLedger,
-  ) {}
+    /** Opcional sólo para los dobles: en la app es global (`LifecycleModule`). */
+    @Optional() private readonly inflight?: InflightWorkRegistry,
+    @Optional() @Inject(HOTEL_CANCEL_OPTIONS) options?: HotelCancelOptions,
+  ) {
+    const budget = options?.syncBudgetMs;
+    this.syncBudgetMs =
+      budget !== undefined && Number.isFinite(budget) && budget >= 0
+        ? budget
+        : HOTEL_CANCEL_SYNC_BUDGET_MS;
+  }
 
   /** `orders.provider` es un proveedor de hoteles: su cancelación pasa por aquí. */
   handles(provider: string): boolean {
@@ -399,10 +442,13 @@ export class HotelOrderCancellationService {
     this.logActions(target, outcome.plan, 'cancel');
   }
 
-  /** Después de un pedido que lanzó: la primera lectura, si se abrió el calendario. */
+  /**
+   * Después de un pedido que lanzó, o de un claim que el barrido dio por vencido: la primera
+   * lectura, si se abrió el calendario.
+   */
   async afterThrow(
     tenantId: string,
-    order: HotelOrderToCancel,
+    order: Pick<HotelOrderToCancel, 'id' | 'provider'>,
     write: HotelCancelTrackingWrite,
     actorUserId: string,
   ): Promise<void> {
@@ -412,6 +458,63 @@ export class HotelOrderCancellationService {
       write,
       actorUserId,
     );
+  }
+
+  // ───────────────────────── El presupuesto de la petición (HARD-1) ─────────────────────────
+
+  /**
+   * Espera `work` hasta `startedAt` + el presupuesto. Si termina antes, devuelve su valor o relanza
+   * su error, como si no hubiera presupuesto. Si no, la deja seguir: queda registrada para el
+   * apagado ordenado y su desenlace, que ya escribe la operación, sólo va al log.
+   */
+  async withinBudget<T>(
+    work: Promise<T>,
+    startedAt: number,
+    target: { readonly orderId: string; readonly provider: string },
+  ): Promise<HotelCancelWithinBudget<T>> {
+    const tracked = this.inflight?.track('hotel-cancel', work) ?? work;
+    const outcome = tracked.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<undefined>((resolve) => {
+      timer = setTimeout(
+        () => resolve(undefined),
+        Math.max(0, startedAt + this.syncBudgetMs - Date.now()),
+      );
+      // La espera no retiene el proceso: la cancelación ya está registrada para el apagado.
+      timer.unref();
+    });
+    try {
+      const first = await Promise.race([outcome, expired]);
+      if (first === undefined) {
+        this.logger.warn(
+          `hotels.cancel.budget_exhausted provider=${target.provider} order=${target.orderId} budgetMs=${this.syncBudgetMs}`,
+        );
+        void outcome.then((late) => {
+          this.logger.log(
+            `hotels.cancel.finished_after_response provider=${target.provider} order=${target.orderId} outcome=${late.ok ? 'answered' : errorName(late.error)}`,
+          );
+        });
+        return { settled: false };
+      }
+      if (!first.ok) throw first.error;
+      return { settled: true, value: first.value };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** "Cancelación en curso": lo que responde la petición cuando se agotó su presupuesto. */
+  stillRunning(order: Pick<HotelOrderToCancel, 'selected_offer'>): HotelCancelResult {
+    const estimate = this.estimate(order);
+    return {
+      success: true,
+      settlement: 'in-progress',
+      warnings: [HOTEL_CANCEL_STILL_RUNNING],
+      ...(estimate.kind === 'estimated' ? { estimatedPenalty: estimate.penalty } : {}),
+    };
   }
 
   // ───────────────────────── verify-cancellation ─────────────────────────

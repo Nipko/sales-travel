@@ -1,7 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
-import { classifyCancelThrownFailure, persistedCancelRetryPolicy } from './cancel-retry-policy.js';
+import {
+  classifyCancelThrownFailure,
+  persistedCancelRetryPolicy,
+  persistedPriorOrderStatus,
+} from './cancel-retry-policy.js';
 
 function typedError(
   name: string,
@@ -74,6 +78,29 @@ describe('classifyCancelThrownFailure', () => {
       reconciliationRequired: false,
       reason: 'pre-write-transient',
     });
+  });
+
+  it('HARD-1: un desenlace que el contrato no define para el write es UNVERIFIED aunque diga NO_RETRY', () => {
+    // Sin el nombre, un código de otra operación con naturaleza NO_RETRY cerraría como fallida una
+    // cancelación que el proveedor pudo aplicar.
+    const fields = {
+      path: '/Cancel',
+      status: 200,
+      retryable: false,
+      failure: { kind: 'BOOKING_FAILED', retry: 'NO_RETRY' },
+    };
+    expect(classifyCancelThrownFailure(typedError('XCancelError', fields))).toMatchObject({
+      outcome: 'FAILED',
+    });
+    expect(classifyCancelThrownFailure(typedError('XCancelOutcomeUnknownError', fields))).toEqual({
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+      reason: 'write-unverified',
+    });
+    expect(
+      classifyCancelThrownFailure(typedError('XCancelBookingOutcomeUnknownError', fields)).outcome,
+    ).toBe('UNVERIFIED');
   });
 
   it('no adivina con un error desconocido: exige conciliación', () => {
@@ -180,6 +207,18 @@ describe('classifyCancelThrownFailure — rechazo local del breaker (PR-0.6)', (
     expect(
       classifyCancelThrownFailure(typedError('ProvApiError', { sentToProvider: 'no' })),
     ).toMatchObject({ outcome: 'UNVERIFIED', reconciliationRequired: true });
+  });
+});
+
+describe('persistedPriorOrderStatus', () => {
+  it('lee el estado previo del claim, como objeto o como texto; si no está, undefined', () => {
+    expect(persistedPriorOrderStatus({ priorOrderStatus: 'confirmed' })).toBe('confirmed');
+    expect(persistedPriorOrderStatus(JSON.stringify({ priorOrderStatus: 'pending' }))).toBe(
+      'pending',
+    );
+    expect(persistedPriorOrderStatus({ priorOrderStatus: 3 })).toBeUndefined();
+    expect(persistedPriorOrderStatus('{no es json')).toBeUndefined();
+    expect(persistedPriorOrderStatus(null)).toBeUndefined();
   });
 });
 

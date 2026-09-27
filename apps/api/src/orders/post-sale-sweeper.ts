@@ -23,6 +23,10 @@ import {
   HotelOrderCancellationService,
   type HotelCancelVerifySweepReport,
 } from './hotel-order-cancellation.service.js';
+import {
+  StaleCancelClaimService,
+  type StaleCancelClaimSweepReport,
+} from './stale-cancel-claim.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -39,8 +43,10 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  *
  * La cola despierta cada paso a su hora, pero no es la fuente de verdad: un job se pierde si Redis
  * no estaba al encolar, si el proceso murió con la reserva en vuelo o si agotó sus reintentos. Cada
- * 15 minutos, este barrido relee Postgres y ejecuta lo vencido. Hoy: la verificación de las reservas
- * de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3), el seguimiento
+ * 15 minutos, este barrido relee Postgres y ejecuta lo vencido. Hoy: los claims de cancelación que un
+ * proceso dejó en vuelo, de cualquier vertical (HARD-1), que pasan a `UNVERIFIED` sin reenviar nada
+ * —van primero, porque en hoteles abren la verificación de la cancelación—; la verificación de las
+ * reservas de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3), el seguimiento
  * del HCN (PR-5.4): sus lecturas perdidas, sus entradas en ventana y las órdenes confirmadas que se
  * quedaron sin plan; y las cuentas propias del tenant que se quedaron sin conciliación del día
  * (PR-5.5), que sin Redis es la única vía por la que se concilian.
@@ -61,6 +67,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   tenants: number;
   /** Tenants cuya consulta falló entera (la base, no una orden). */
   tenantsFailed: number;
+  /** Los claims de cancelación vencidos, de todas las verticales. */
+  staleCancelClaims: StaleCancelClaimSweepReport;
   /** La verificación de cancelaciones de hotel, con su propio vocabulario de desenlaces. */
   cancellations: HotelCancelVerifySweepReport;
   /** El seguimiento del HCN, con el suyo. */
@@ -85,6 +93,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly hotelCancellations: HotelOrderCancellationService,
     private readonly hcn: HcnTrackingService,
     private readonly reconciliation: ReconciliationService,
+    private readonly staleClaims: StaleCancelClaimService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -136,6 +145,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       held: 0,
       unavailable: 0,
       skipped: 0,
+      staleCancelClaims: { examined: 0, expired: 0, skipped: 0, failed: 0 },
       cancellations: {
         examined: 0,
         failed: 0,
@@ -167,6 +177,17 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       // Cada barrido por separado: una verificación que no puede leer el tenant no deja sin mirar
       // a la otra.
       let failed = false;
+      try {
+        const stale = await this.staleClaims.sweepTenant(id, now);
+        for (const key of Object.keys(stale) as (keyof StaleCancelClaimSweepReport)[]) {
+          report.staleCancelClaims[key] += stale[key];
+        }
+      } catch (err) {
+        failed = true;
+        this.logger.warn(
+          `post_sale.sweep.stale_cancel_claims.tenant_failed tenant=${id} error=${errorName(err)}`,
+        );
+      }
       try {
         const hotels = await this.hotelBookings.sweepTenant(id, now);
         for (const key of Object.keys(hotels) as (keyof HotelVerificationSweepReport)[]) {
@@ -213,6 +234,12 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     if (report.examined > 0 || report.tenantsFailed > 0) {
       this.logger.log(
         `post_sale.sweep tenants=${report.tenants} examined=${report.examined} adopted=${report.adopted} consolidated=${report.consolidated} advanced=${report.advanced} notFound=${report['not-found']} held=${report.held} unavailable=${report.unavailable} failed=${report.failed} tenantsFailed=${report.tenantsFailed}`,
+      );
+    }
+    const s = report.staleCancelClaims;
+    if (s.examined > 0) {
+      this.logger.warn(
+        `post_sale.sweep.stale_cancel_claims examined=${s.examined} expired=${s.expired} skipped=${s.skipped} failed=${s.failed}`,
       );
     }
     const c = report.cancellations;

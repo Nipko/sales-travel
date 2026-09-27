@@ -346,6 +346,36 @@ export class TboCancelMappingError extends TboResponseMappingError {
   }
 }
 
+/**
+ * `/Cancel` salió y la respuesta no fue `200` ni `479`: un código de otra operación (`201`, `207`,
+ * `300`, `315`, `405`), uno de la cuenta (`400`, `401`, `402`), un `500`, un `429`, un timeout, la
+ * red o un HTTP de error sin envelope. El contrato sólo define el `200` y el `479` para Cancel
+ * (p. 9, 42), así que ninguno de éstos prueba que TBO NO haya cancelado: si se cerrara como fallida
+ * y TBO sí canceló, la orden volvería a confirmada con la habitación liberada (HARD-1).
+ *
+ * Es un `TboApiError` para que el breaker, el log y el humanizador sigan leyendo el `kind`, el
+ * `status` y el `tboCode` de lo que pasó; lo que cambia es el NOMBRE, que
+ * `cancel-retry-policy.ts` reconoce antes que la naturaleza `NO_RETRY` del `kind` y deja la
+ * cancelación `UNVERIFIED`: se relee la reserva (`verify-cancellation`) y nunca se reenvía.
+ */
+export class TboCancelOutcomeUnknownError extends TboApiError {
+  constructor(init: TboApiErrorInit) {
+    super(init);
+    this.name = 'TboCancelOutcomeUnknownError';
+  }
+
+  static from(error: TboApiError): TboCancelOutcomeUnknownError {
+    return new TboCancelOutcomeUnknownError({
+      status: error.status,
+      ...(error.tboCode === undefined ? {} : { tboCode: error.tboCode }),
+      path: error.path,
+      kind: error.kind,
+      requestId: error.requestId,
+      timedOut: error.timedOut,
+    });
+  }
+}
+
 const ISO_CURRENCY = /^[A-Z]{3}$/;
 
 /**
@@ -409,6 +439,7 @@ export const TBO_ERROR_CLASSES = Object.freeze([
   TboOfferExpiredError,
   TboResponseMappingError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboUnsupportedCurrencyError,
   TboPackageOnlyRateError,
 ] as const);

@@ -1,6 +1,6 @@
 import type { LoggerPort, MetricsPort } from '@sales-travel/core';
 import { isTboConfirmationNumber } from '../booking/booking-reference';
-import { TboApiError, TboCancelMappingError } from '../errors';
+import { TboApiError, TboCancelMappingError, TboCancelOutcomeUnknownError } from '../errors';
 import { TBO_OPERATIONS } from '../http/operations';
 import { TBO_HOTELS_PROVIDER_CODE } from '../provider-code';
 import { pickTboLogMeta } from '../redaction';
@@ -17,8 +17,12 @@ import { TBO_CANCEL_ROOT_KEYS, type TboCancelEnvelope } from './response.schema'
  *   lectura posterior decide si la reserva ya estaba cancelada. El cliente HTTP lo lanza como
  *   `TboApiError` —su naturaleza es `NO_RETRY`, un rechazo— y este mapper lo recibe como
  *   observación.
- * - **Todo lo demás se relanza tal cual**: un timeout, un 5xx o un 429 en `/Cancel` no prueban nada y
- *   la política de cancelaciones los deja `UNVERIFIED` por el path; 401, 402 y 400 son deterministas.
+ * - **Cualquier otro desenlace que pasó por el cable es `TboCancelOutcomeUnknownError`** (HARD-1): el
+ *   contrato de Cancel sólo define `200` y `479`, así que un `405`, un `401`, un `500`, un timeout o
+ *   un HTTP de error no prueban que TBO no haya cancelado. Con su `TboApiError` original, un código
+ *   `NO_RETRY` cerraría la cancelación como fallida sin releer la reserva y la orden volvería a
+ *   confirmada aunque TBO la hubiera liberado. Lo que no salió (el limitador, el body) se relanza
+ *   tal cual: ahí sí se sabe que TBO no recibió nada.
  * - **Una respuesta ilegible es `TboCancelMappingError`**, nunca la clase madre: con el nombre
  *   genérico la política cerraría como fallida una cancelación que TBO pudo aplicar (01 §9.3).
  *
@@ -74,12 +78,12 @@ function safely(run: () => void): void {
   }
 }
 
+function isCancelAnswer(error: unknown): error is TboApiError {
+  return error instanceof TboApiError && error.path.toLowerCase() === CANCEL_PATH.toLowerCase();
+}
+
 function isCancelFail(error: unknown): error is TboApiError {
-  return (
-    error instanceof TboApiError &&
-    error.kind === 'CANCEL_FAILED' &&
-    error.path.toLowerCase() === CANCEL_PATH.toLowerCase()
-  );
+  return isCancelAnswer(error) && error.kind === 'CANCEL_FAILED';
 }
 
 export function mapTboCancelResponse(
@@ -88,7 +92,8 @@ export function mapTboCancelResponse(
   deps: TboCancelMapDeps = {},
 ): TboCancelReply {
   if (observation.kind === 'threw') {
-    if (isCancelFail(observation.error)) {
+    const { error } = observation;
+    if (isCancelFail(error)) {
       return {
         success: false,
         tboCode: 479,
@@ -96,7 +101,10 @@ export function mapTboCancelResponse(
         diagnostics: { unknownKeys: [] },
       };
     }
-    throw observation.error;
+    if (isCancelAnswer(error) && !(error instanceof TboCancelOutcomeUnknownError)) {
+      throw TboCancelOutcomeUnknownError.from(error);
+    }
+    throw error;
   }
 
   const { envelope } = observation;

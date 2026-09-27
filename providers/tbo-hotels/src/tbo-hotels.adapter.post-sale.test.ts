@@ -7,6 +7,7 @@ import { parseTboConfig } from './config';
 import {
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboDispatchRejectedError,
   TboRequestBuildError,
   TboResponseMappingError,
@@ -444,8 +445,9 @@ describe('Cancel: 200 y 479 no lanzan; la lectura posterior decide (C-05)', () =
     });
     expect(report.cancelCode).toBe(200);
     expect(h.cancelCalls()).toBe(1);
-    // La lectura sí se reintenta: es una lectura. El Cancel no.
-    expect(h.detailCalls()).toBe(1 + 3);
+    // HARD-1: la lectura posterior hace UN intento. Lo que no alcance a decir lo lee
+    // `verify-cancellation`; reintentarla aquí sólo alarga la cancelación síncrona.
+    expect(h.detailCalls()).toBe(1 + 1);
     expect(h.logs).toContainEqual(
       expect.objectContaining({
         level: 'warn',
@@ -489,6 +491,7 @@ describe('Cancel: lo que no dice si se aplicó se lanza con path /Cancel, y un s
     const error = await rejection(() =>
       h.adapter.cancelReport({ confirmationNumber: LOCATOR }, CTX),
     );
+    expect(error).toBeInstanceOf(TboCancelOutcomeUnknownError);
     expect(error).toBeInstanceOf(TboApiError);
     expect(error).toMatchObject({ path: '/Cancel', status: 0, timedOut: true, kind: 'TRANSPORT' });
     expect(h.cancelCalls()).toBe(1);
@@ -504,7 +507,11 @@ describe('Cancel: lo que no dice si se aplicó se lanza con path /Cancel, y un s
       expect.objectContaining({
         level: 'error',
         message: 'tbo.cancel.outcome',
-        meta: expect.objectContaining({ outcome: 'THREW', errorClass: 'TboApiError' }) as unknown,
+        meta: expect.objectContaining({
+          outcome: 'THREW',
+          errorClass: 'TboCancelOutcomeUnknownError',
+          kind: 'TRANSPORT',
+        }) as unknown,
       }),
     );
   });
@@ -519,7 +526,7 @@ describe('Cancel: lo que no dice si se aplicó se lanza con path /Cancel, y un s
     const error = await rejection(() =>
       h.adapter.cancelReport({ confirmationNumber: LOCATOR }, CTX),
     );
-    expect(error).toBeInstanceOf(TboApiError);
+    expect(error).toBeInstanceOf(TboCancelOutcomeUnknownError);
     expect(error).toMatchObject({ path: '/Cancel', kind });
     expect(h.cancelCalls()).toBe(1);
     expect((await classify(error)).outcome).toBe('UNVERIFIED');
@@ -559,20 +566,43 @@ describe('Cancel: lo que no dice si se aplicó se lanza con path /Cancel, y un s
   );
 
   it.each([
+    [201, 'NO_AVAILABILITY'],
+    [207, 'RATE_UNAVAILABLE'],
+    [300, 'INSUFFICIENT_BALANCE'],
+    [315, 'OFFER_EXPIRED'],
+    [405, 'BOOKING_FAILED'],
     [401, 'CREDENTIALS_INVALID'],
     [402, 'ACCOUNT_BLOCKED'],
     [400, 'CLIENT_BUG'],
-  ] as const)('%i → determinista, sin conciliar', async (code, kind) => {
-    const h = harness({ cancel: () => status(code) });
+  ] as const)(
+    'HARD-1: %i en /Cancel no prueba que TBO no canceló → UNVERIFIED, sin reenviar',
+    async (code, kind) => {
+      const h = harness({ cancel: () => status(code) });
+      const error = await rejection(() =>
+        h.adapter.cancelReport({ confirmationNumber: LOCATOR }, CTX),
+      );
+      expect(error).toBeInstanceOf(TboCancelOutcomeUnknownError);
+      expect(error).toMatchObject({ path: '/Cancel', kind, tboCode: code });
+      expect(h.cancelCalls()).toBe(1);
+      // La relectura es de `verify-cancellation`, que sólo lee: aquí no hay lectura posterior.
+      expect(h.detailCalls()).toBe(1);
+      expect(await classify(error)).toEqual({
+        outcome: 'UNVERIFIED',
+        retryable: false,
+        reconciliationRequired: true,
+        reason: 'write-unverified',
+      });
+    },
+  );
+
+  it('HARD-1: un HTTP 4xx de transporte en /Cancel tampoco se cierra como fallido', async () => {
+    const h = harness({ cancel: () => new Response('forbidden', { status: 403 }) });
     const error = await rejection(() =>
       h.adapter.cancelReport({ confirmationNumber: LOCATOR }, CTX),
     );
-    expect(error).toMatchObject({ path: '/Cancel', kind, tboCode: code });
-    expect(h.cancelCalls()).toBe(1);
-    expect(await classify(error)).toMatchObject({
-      outcome: 'FAILED',
-      reconciliationRequired: false,
-    });
+    expect(error).toBeInstanceOf(TboCancelOutcomeUnknownError);
+    expect(error).toMatchObject({ path: '/Cancel', status: 403 });
+    expect((await classify(error)).outcome).toBe('UNVERIFIED');
   });
 
   it('un Cancel que el limitador no despachó no salió: FAILED y sin conciliar', async () => {

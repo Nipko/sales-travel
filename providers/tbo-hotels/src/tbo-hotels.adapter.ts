@@ -534,9 +534,12 @@ function bookQueryFromPort(request: HotelBookRequest): TboBookQuery {
  * - `recovery`: verificar un Book (el incierto por referencia, el de cierre por localizador). Va al
  *   cupo de dinero, que no espera detrás de las búsquedas.
  * - `interactive`: el vendedor espera la respuesta (panel). Dos intentos.
- * - `background`: HCN, conciliación, antes y después de un Cancel.
+ * - `background`: HCN, conciliación y la lectura previa a un Cancel.
+ * - `after-cancel`: la lectura posterior a un Cancel. UN intento: la cancelación síncrona tiene que
+ *   responder dentro de su presupuesto (HARD-1), y lo que esta lectura no alcance a decir lo lee
+ *   `verify-cancellation` a los 2 minutos.
  */
-export type TboBookingDetailPurpose = 'recovery' | 'interactive' | 'background';
+export type TboBookingDetailPurpose = 'recovery' | 'interactive' | 'background' | 'after-cancel';
 
 const DETAIL_PURPOSES: Readonly<
   Record<TboBookingDetailPurpose, { readonly lane: TboLane; readonly maxAttempts: number }>
@@ -544,6 +547,7 @@ const DETAIL_PURPOSES: Readonly<
   recovery: { lane: 'money', maxAttempts: 3 },
   interactive: { lane: 'sales', maxAttempts: 2 },
   background: { lane: 'background', maxAttempts: 3 },
+  'after-cancel': { lane: 'background', maxAttempts: 1 },
 });
 
 export type TboBookingDetailQuery = TboBookingLookup & {
@@ -1212,12 +1216,13 @@ export class TboHotelsAdapter
    * - `TboRequestBuildError` (`/Cancel`) si el localizador no tiene forma: no sale nada;
    * - lo que lance la lectura PREVIA (path `/BookingDetail`): nada salió hacia `/Cancel`, así que la
    *   política lo trata como previo al write (RF-25 CA-4);
-   * - lo que lance `/Cancel` salvo el `479`: `TboApiError` con path `/Cancel` (timeout, red, 5xx,
-   *   429 → `UNVERIFIED`; 401, 402, 400 → deterministas), `TboCancelMappingError` si la respuesta o
-   *   su `Status.Code` no se pueden leer, `TboDispatchRejectedError` si el limitador no lo despachó.
+   * - lo que lance `/Cancel` salvo el `479`: `TboCancelOutcomeUnknownError` con path `/Cancel` para
+   *   todo lo que pasó por el cable (cualquier otro `Status.Code`, timeout, red, HTTP de error), que
+   *   la política deja `UNVERIFIED` (HARD-1); `TboCancelMappingError` si la respuesta o su
+   *   `Status.Code` no se pueden leer; `TboDispatchRejectedError` si el limitador no lo despachó.
    *
-   * La lectura posterior nunca lanza: si falla, el resultado lo dice con un aviso y el `200` sigue
-   * siendo un `200` (C-05).
+   * La lectura posterior hace un intento y nunca lanza: si falla, el resultado lo dice con un aviso
+   * y el `200` sigue siendo un `200` (C-05).
    */
   async cancelReport(query: TboCancelQuery, ctx: SearchContext): Promise<TboCancelReport> {
     const started = this.#now();
@@ -1350,24 +1355,23 @@ export class TboHotelsAdapter
   async #readForCancel(
     confirmationNumber: string,
     ctx: SearchContext,
+    purpose: Extract<TboBookingDetailPurpose, 'background' | 'after-cancel'> = 'background',
   ): Promise<Extract<TboCancelReading, { state: 'read' }>> {
-    const report = await this.bookingDetailReport(
-      { confirmationNumber, purpose: 'background' },
-      ctx,
-    );
+    const report = await this.bookingDetailReport({ confirmationNumber, purpose }, ctx);
     return { state: 'read', view: report.view, requestId: report.requestId };
   }
 
   /**
-   * Lectura posterior al Cancel. NUNCA lanza (04 §4.3): una excepción con path `/BookingDetail`
-   * después de un write la política la leería como previa al envío y habilitaría un segundo Cancel.
+   * Lectura posterior al Cancel, con un solo intento. NUNCA lanza (04 §4.3): una excepción con path
+   * `/BookingDetail` después de un write la política la leería como previa al envío y habilitaría un
+   * segundo Cancel.
    */
   async #readAfterCancel(
     confirmationNumber: string,
     ctx: SearchContext,
   ): Promise<TboCancelReading> {
     try {
-      return await this.#readForCancel(confirmationNumber, ctx);
+      return await this.#readForCancel(confirmationNumber, ctx, 'after-cancel');
     } catch (err) {
       const requestId = requestIdOf(err);
       return {

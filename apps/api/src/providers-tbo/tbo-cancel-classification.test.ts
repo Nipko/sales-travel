@@ -2,6 +2,7 @@ import {
   TBO_OPERATIONS,
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboDispatchRejectedError,
   TboRequestBuildError,
   TboResponseMappingError,
@@ -75,6 +76,31 @@ describe('`TboApiError` en /Cancel', () => {
     });
     expect(classifyCancelThrownFailure(err).outcome).toBe('UNVERIFIED');
   });
+});
+
+describe('HARD-1: `TboCancelOutcomeUnknownError`, lo que el ACL deja salir de /Cancel', () => {
+  it.each([
+    [201, 'NO_AVAILABILITY', 200],
+    [207, 'RATE_UNAVAILABLE', 200],
+    [300, 'INSUFFICIENT_BALANCE', 200],
+    [315, 'OFFER_EXPIRED', 200],
+    [405, 'BOOKING_FAILED', 200],
+    [400, 'CLIENT_BUG', 200],
+    [401, 'CREDENTIALS_INVALID', 200],
+    [402, 'ACCOUNT_BLOCKED', 200],
+    [500, 'UPSTREAM', 400],
+  ] as const)(
+    '%i (%s, HTTP %i) → UNVERIFIED aunque su naturaleza sea NO_RETRY o su HTTP un 4xx',
+    (tboCode, kind, status) => {
+      const raw = new TboApiError({ status, tboCode, path: CANCEL, kind, requestId: 'req-x' });
+      expect(classifyCancelThrownFailure(TboCancelOutcomeUnknownError.from(raw))).toEqual({
+        outcome: 'UNVERIFIED',
+        retryable: false,
+        reconciliationRequired: true,
+        reason: 'write-unverified',
+      });
+    },
+  );
 });
 
 describe('lecturas fallidas de la respuesta de /Cancel', () => {

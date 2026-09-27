@@ -196,10 +196,75 @@ describe('lo que decide cada lectura (sólo en la dirección segura: PV-B)', () 
     });
   });
 
-  it('un estado que el proveedor no documenta: a una persona', () => {
+  it('HARD-1: un estado que el proveedor no documenta avisa a una persona y se sigue leyendo', () => {
     expect(
       decideCancellationVerification(hechos({ read: leida('UNKNOWN', 'Frozen') })),
-    ).toMatchObject({ kind: 'settle', plan: { subStatus: 'unknown' } });
+    ).toMatchObject({
+      kind: 'advance',
+      step: 1,
+      at: ANCLA + 15 * MIN,
+      plan: {
+        subStatus: 'unknown',
+        record: { providerStatus: 'Frozen' },
+        events: [{ type: ORDER_EVENTS.escalated, reason: 'provider-status-unknown' }],
+      },
+    });
+    // Lo mismo sobre una cancelación sin verificar: la lectura rara no prueba nada en ningún sentido.
+    expect(
+      decideCancellationVerification(
+        hechos({ order: SIN_VERIFICAR, read: leida('UNKNOWN', 'Frozen') }),
+      ),
+    ).toMatchObject({ kind: 'advance', plan: { subStatus: 'keep' } });
+    expect(
+      decideCancellationVerification(hechos({ read: leida('PENDING', 'Pending') })),
+    ).toMatchObject({ kind: 'advance' });
+  });
+
+  it('HARD-1: el mismo estado raro otra vez no repite el aviso; en el último paso, stuck', () => {
+    const rara: HotelOrderSnapshot = {
+      ...EN_CURSO,
+      subStatus: 'unknown',
+      providerStatus: 'Frozen',
+    };
+
+    expect(
+      decideCancellationVerification(hechos({ order: rara, read: leida('UNKNOWN', 'Frozen') })),
+    ).toMatchObject({ kind: 'advance', plan: { events: [] } });
+    // Otro valor raro sí es novedad.
+    expect(
+      decideCancellationVerification(hechos({ order: rara, read: leida('UNKNOWN', 'Thawed') })),
+    ).toMatchObject({
+      kind: 'advance',
+      plan: { events: [{ type: ORDER_EVENTS.escalated, reason: 'provider-status-unknown' }] },
+    });
+    expect(
+      decideCancellationVerification(
+        hechos({
+          order: rara,
+          read: leida('UNKNOWN', 'Frozen'),
+          step: HOTEL_CANCEL_VERIFY_STEPS - 1,
+        }),
+      ),
+    ).toMatchObject({ kind: 'stuck' });
+    // Y si en el paso siguiente la ve cancelada, se cierra.
+    expect(
+      decideCancellationVerification(
+        hechos({ order: rara, read: leida('CANCELLED', 'Cancelled') }),
+      ),
+    ).toMatchObject({ kind: 'close', plan: { orderStatus: 'cancelled' } });
+  });
+
+  it('una orden que ya no espera una cancelación y lee un estado raro: a una persona', () => {
+    const confirmada: HotelOrderSnapshot = {
+      ...EN_CURSO,
+      status: 'confirmed',
+      providerStatus: 'Confirmed',
+    };
+    expect(
+      decideCancellationVerification(
+        hechos({ order: confirmada, read: leida('UNKNOWN', 'Frozen') }),
+      ),
+    ).toMatchObject({ kind: 'settle', plan: { actions: ['human-review'] } });
   });
 
   it('un rechazo cuya lectura posterior falló sólo necesitaba UNA lectura', () => {

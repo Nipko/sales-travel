@@ -154,6 +154,28 @@ export interface HotelCancelVerifyFacts {
 
 const HUMAN_ACTIONS = new Set(['human-review', 'urgent-human-review']);
 
+/** Los motivos con que la tabla escala una lectura que no dice nada de la cancelación. */
+const INCONCLUSIVE_REASONS: ReadonlySet<string> = new Set([
+  'provider-status-unknown',
+  'verified-status-unexpected',
+]);
+
+function isInconclusive(event: HotelOrderPlan['events'][number]): boolean {
+  return event.type === ORDER_EVENTS.escalated && INCONCLUSIVE_REASONS.has(event.reason);
+}
+
+/**
+ * Una lectura con un estado que no se entiende, sobre una cancelación todavía pedida (HARD-1): no
+ * cierra el calendario, porque el proveedor puede terminar de cancelarla en el paso siguiente y
+ * cerrarlo dejaría la orden `pending` hasta que alguien la mirara. El aviso a la persona sale la
+ * primera vez que se ve ese estado; repetirlo en cada paso con el mismo valor sólo es ruido. Si el
+ * calendario se agota así, escala `cancellation-stuck` como cualquier otra.
+ */
+function keepReadingPlan(order: HotelOrderSnapshot, plan: HotelOrderPlan): HotelOrderPlan {
+  const repeated = plan.record !== undefined && plan.record.providerStatus === order.providerStatus;
+  return repeated ? { ...plan, events: plan.events.filter((e) => !isInconclusive(e)) } : plan;
+}
+
 /**
  * El cierre deja `OrderProviderStatusChanged` aunque la fila no tuviera lectura anterior. La tabla
  * no cuenta la primera lectura como un cambio (y sólo así omite el evento), y el Book no registra
@@ -210,9 +232,16 @@ export function decideCancellationVerification(
   if (plan.orderStatus === 'cancelled') {
     return { kind: 'close', plan: withClosingEvent(facts.order, plan) };
   }
+  const stillRequested = facts.order.status === 'pending';
+  if (stillRequested && plan.events.some(isInconclusive)) {
+    return nextStep(facts, keepReadingPlan(facts.order, plan));
+  }
   if (plan.actions.some((action) => HUMAN_ACTIONS.has(action))) return { kind: 'settle', plan };
-  if (facts.order.status !== 'pending') return { kind: 'settle', plan };
+  if (!stillRequested) return { kind: 'settle', plan };
+  return nextStep(facts, plan);
+}
 
+function nextStep(facts: HotelCancelVerifyFacts, plan: HotelOrderPlan): HotelCancelVerifyDecision {
   const next = facts.step + 1;
   const at = cancellationVerifyAt(facts.anchorAt, next);
   return at === undefined ? { kind: 'stuck', plan } : { kind: 'advance', plan, step: next, at };

@@ -5,6 +5,7 @@ import {
   TBO_OPERATIONS,
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboConfigError,
   TboCredentialsMissingError,
   TboDispatchRejectedError,
@@ -55,6 +56,8 @@ const INSTANCIAS: Readonly<Record<string, () => TboError>> = {
   TboOfferExpiredError: () => new TboOfferExpiredError('2026-11-01T15:27:00.000Z'),
   TboResponseMappingError: () => new TboResponseMappingError(PREBOOK, ['Rooms:invalid_type']),
   TboCancelMappingError: () => new TboCancelMappingError(CANCEL, ['Status:invalid_type']),
+  TboCancelOutcomeUnknownError: () =>
+    TboCancelOutcomeUnknownError.from(apiError('BOOKING_FAILED', CANCEL)),
   TboUnsupportedCurrencyError: () => new TboUnsupportedCurrencyError(['KWD']),
   TboPackageOnlyRateError: () => new TboPackageOnlyRateError(),
 };
@@ -201,6 +204,11 @@ describe('variantes según la operación', () => {
     expect(humanizeTboError(new TboCancelMappingError(CANCEL, []))).toContain(
       'no la canceles de nuevo',
     );
+    // HARD-1: un código de otra operación en /Cancel no habla de reservar ni de volver a buscar.
+    const sinDesenlace = TboCancelOutcomeUnknownError.from(apiError('NO_AVAILABILITY', CANCEL));
+    expect(humanizeTboError(sinDesenlace)).toContain('no la canceles de nuevo');
+    expect(tboErrorReason(sinDesenlace)).toBe('CANCEL_UNVERIFIED');
+    expect(tboErrorStatus(sinDesenlace)).toBe(HttpStatus.BAD_GATEWAY);
     expect(humanizeTboError(new TboResponseMappingError(PREBOOK, []))).toContain(
       'no pudimos interpretar',
     );
@@ -283,12 +291,19 @@ describe('efecto en el breaker (RNF-03 punto 4)', () => {
     expect(tboCircuitEffect(apiError('CREDENTIALS_INVALID'))).toBeUndefined();
   });
 
-  it.each(Object.entries(INSTANCIAS).filter(([nombre]) => nombre !== 'TboApiError'))(
-    '%s no dice que TBO esté caído: no suma',
-    (_nombre, crear) => {
-      expect(tboCircuitEffect(crear())).toBe('IGNORE');
-    },
-  );
+  it('HARD-1: un /Cancel sin desenlace conserva el efecto de lo que pasó (una cuenta rechazada la suspende)', () => {
+    const rechazada = TboCancelOutcomeUnknownError.from(apiError('CREDENTIALS_INVALID', CANCEL));
+    expect(tboCircuitEffect(rechazada)).toBeUndefined();
+    expect(rechazada.failure.circuit).toBe('OPEN_ACCOUNT');
+  });
+
+  it.each(
+    Object.entries(INSTANCIAS).filter(
+      ([nombre]) => nombre !== 'TboApiError' && nombre !== 'TboCancelOutcomeUnknownError',
+    ),
+  )('%s no dice que TBO esté caído: no suma', (_nombre, crear) => {
+    expect(tboCircuitEffect(crear())).toBe('IGNORE');
+  });
 
   it('lo que no es de TBO no opina', () => {
     expect(tboCircuitEffect(new Error('x'))).toBeUndefined();

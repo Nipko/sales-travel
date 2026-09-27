@@ -9,6 +9,7 @@ import {
   TBO_FAILURE_POLICY,
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboConfigError,
   TboCredentialsMissingError,
   TboDispatchRejectedError,
@@ -278,6 +279,13 @@ describe('TBO_ERROR_CLASSES', () => {
       new TboOfferExpiredError('2026-09-25T15:27:00.000Z'),
       new TboResponseMappingError('/Search', []),
       new TboCancelMappingError('/Cancel', []),
+      new TboCancelOutcomeUnknownError({
+        status: 200,
+        tboCode: 405,
+        path: '/Cancel',
+        kind: 'BOOKING_FAILED',
+        requestId: REQUEST_ID,
+      }),
       new TboUnsupportedCurrencyError(['KWD']),
       new TboPackageOnlyRateError(),
     ];
@@ -409,21 +417,28 @@ describe('compatibilidad con el clasificador de cancelaciones de apps/api', () =
     });
   });
 
-  it('401 y 402 en /Cancel son deterministas por NO_RETRY (08 §9 C-04)', async () => {
+  it('HARD-1: un código NO_RETRY de /Cancel sale del ACL con nombre propio y queda UNVERIFIED', async () => {
     for (const [tboCode, kind] of [
       [401, 'CREDENTIALS_INVALID'],
       [402, 'ACCOUNT_BLOCKED'],
+      [405, 'BOOKING_FAILED'],
+      [300, 'INSUFFICIENT_BALANCE'],
     ] as const) {
-      const error = new TboApiError({
+      const raw = new TboApiError({
         status: 200,
         tboCode,
         path: '/Cancel',
         kind,
         requestId: REQUEST_ID,
       });
-      expect(await classify(error)).toMatchObject({
-        outcome: 'FAILED',
-        reconciliationRequired: false,
+      // Con la clase madre el `NO_RETRY` cerraría la cancelación como fallida sin releer: por eso
+      // el mapper de Cancel nunca la deja salir.
+      expect(await classify(raw)).toMatchObject({ outcome: 'FAILED' });
+      expect(await classify(TboCancelOutcomeUnknownError.from(raw))).toEqual({
+        outcome: 'UNVERIFIED',
+        retryable: false,
+        reconciliationRequired: true,
+        reason: 'write-unverified',
       });
     }
   });

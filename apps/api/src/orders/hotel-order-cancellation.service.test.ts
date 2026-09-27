@@ -504,7 +504,7 @@ describe('las piezas de la cancelación', () => {
     const b = banco();
     await b.service.afterThrow(
       TENANT,
-      { id: ORDEN, provider: PROVEEDOR, provider_account_id: CUENTA, selected_offer: {} },
+      { id: ORDEN, provider: PROVEEDOR },
       { at: ANCLA, source: 'cancel', subStatus: null },
       USER,
     );
@@ -518,7 +518,7 @@ describe('las piezas de la cancelación', () => {
       vi.spyOn(b.queue, 'enqueueVerifyCancellation').mockReturnValue(new Promise(() => undefined));
       const listo = b.service.afterThrow(
         TENANT,
-        { id: ORDEN, provider: PROVEEDOR, provider_account_id: CUENTA, selected_offer: {} },
+        { id: ORDEN, provider: PROVEEDOR },
         b.service.thrownTracking(CANCEL_UNVERIFIED_POLICY, Date.now()),
         USER,
       );

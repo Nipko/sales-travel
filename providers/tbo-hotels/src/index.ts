@@ -32,6 +32,7 @@ export {
   TBO_FAILURE_POLICY,
   TboApiError,
   TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
   TboConfigError,
   TboCredentialsMissingError,
   TboDispatchRejectedError,

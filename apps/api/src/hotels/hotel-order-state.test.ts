@@ -684,23 +684,24 @@ describe('lo que la tabla no lista, en la cancelación y en la recuperación (04
   });
 
   it.each([
-    ['cancel-accepted', 'keep'],
-    ['cancel-rejected', 'prior'],
+    ['cancel-accepted', 'keep', ['human-review', 'verify-cancellation']],
+    ['cancel-rejected', 'prior', ['human-review']],
   ] as const)(
     '%s con un estado desconocido o inesperado escala; la orden sigue la suerte del pedido (%s)',
-    (kind, orderStatus) => {
-      // Aceptada, la cancelación sigue pedida y la orden, en el `pending` del claim. Rechazada (o
-      // no mandada), no abrió nada: vuelve a su estado, con la persona mirándola igual.
+    (kind, orderStatus, actions) => {
+      // Aceptada, la cancelación sigue pedida, la orden en el `pending` del claim y se sigue leyendo
+      // (HARD-1). Rechazada (o no mandada), no abrió nada: vuelve a su estado, con la persona
+      // mirándola igual.
       expect(plan(EN_CANCELACION, { kind, read: DESCONOCIDO })).toMatchObject({
         orderStatus,
         subStatus: 'unknown',
-        actions: ['human-review'],
+        actions,
         events: [{ type: ORDER_EVENTS.escalated, reason: 'provider-status-unknown' }],
       });
       expect(plan(EN_CANCELACION, { kind, read: leida('PENDING', 'Pending') })).toMatchObject({
         orderStatus,
         subStatus: null,
-        actions: ['human-review'],
+        actions,
         events: [{ type: ORDER_EVENTS.escalated, reason: 'verified-status-unexpected' }],
       });
     },

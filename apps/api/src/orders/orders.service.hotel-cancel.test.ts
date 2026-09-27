@@ -5,7 +5,11 @@ import type {
   HotelCancelResult,
   SearchContext,
 } from '@sales-travel/domain';
-import { TboApiError, TboCancelMappingError } from '@sales-travel/tbo-hotels';
+import {
+  TboApiError,
+  TboCancelMappingError,
+  TboCancelOutcomeUnknownError,
+} from '@sales-travel/tbo-hotels';
 import { describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
@@ -28,10 +32,17 @@ import {
   bullMqJobIdRejection,
 } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { memoryHotelCancellation, type Row } from './__fixtures__/memory-hotel-cancellation.js';
-import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
+import {
+  HOTEL_CANCEL_STILL_RUNNING,
+  HOTEL_CANCEL_SYNC_BUDGET_MS,
+  HotelOrderCancellationService,
+  type HotelCancelOptions,
+} from './hotel-order-cancellation.service.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService } from './orders.service.js';
+import { STALE_CANCEL_CLAIM_MS, StaleCancelClaimService } from './stale-cancel-claim.service.js';
 
 /**
  * La cancelación de una orden de hotel por la puerta pública de `OrdersService` (docs/tbo/09 PR-5.3;
@@ -117,7 +128,7 @@ function respuesta(parcial: Partial<HotelCancelResult>): HotelCancelResult {
   return { success: true, warnings: [], ...parcial };
 }
 
-function banco(orders: Row[] = [ordenHotel()]) {
+function banco(orders: Row[] = [ordenHotel()], opciones: HotelCancelOptions = {}) {
   const mem = memoryHotelCancellation({ orders });
   const audit = new RecordingAuditService();
   const queue = new RecordingQueueService();
@@ -125,6 +136,7 @@ function banco(orders: Row[] = [ordenHotel()]) {
   const holds = { releaseCancelled } as unknown as BookingHoldLedger;
   const proveedor = new ProveedorDeLaOrden();
   const vuelos = new StubProviderFactory({ code: 'stub-air' });
+  const inflight = new InflightWorkRegistry();
   const cancellations = new HotelOrderCancellationService(
     hotelRegistry([proveedor], hotelFlags(false)),
     mem.store,
@@ -132,6 +144,13 @@ function banco(orders: Row[] = [ordenHotel()]) {
     audit.asService(),
     queue.asService(),
     holds,
+    inflight,
+    opciones,
+  );
+  const staleClaims = new StaleCancelClaimService(
+    mem.staleClaims,
+    audit.asService(),
+    cancellations,
   );
   const service = new OrdersService(
     mem.db,
@@ -152,6 +171,8 @@ function banco(orders: Row[] = [ordenHotel()]) {
     proveedor,
     vuelos,
     cancellations,
+    staleClaims,
+    inflight,
     service,
     cancelBooking,
     getBooking: proveedor.adapter.getBooking,
@@ -576,6 +597,56 @@ describe('un estado que el proveedor no documenta', () => {
     expect(b.audit.dump()).not.toContain('estado raro del hotel');
   });
 
+  it('HARD-1: aceptada con un estado raro agenda la lectura, que la cierra cuando el proveedor termina', async () => {
+    const b = banco();
+    b.cancelBooking.mockResolvedValue(
+      respuesta({ bookingStatus: 'UNKNOWN', providerStatus: 'Frozen' }),
+    );
+
+    await b.cancelar();
+
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+      outcome: 'SUCCEEDED',
+      verifyScheduled: true,
+    });
+    expect(b.mem.tracking(ORDEN)).toMatchObject({
+      sub_status: 'unknown',
+      provider_status: 'Frozen',
+      cancel_verify_step: 0,
+    });
+    expect(b.queue.cancelVerifications).toHaveLength(1);
+    expect(b.audit.ofType(ORDER_EVENTS.escalated).map((e) => e.payload?.['reason'])).toEqual([
+      'provider-status-unknown',
+    ]);
+
+    // El mismo estado raro otra vez: se sigue leyendo sin repetir el aviso.
+    b.getBooking.mockResolvedValueOnce({
+      found: true,
+      providerBookingId: LOCALIZADOR,
+      status: 'UNKNOWN',
+      providerStatus: 'Frozen',
+      warnings: [],
+    });
+    await correrVerificacion(b);
+    expect(b.queue.cancelVerifications.map((j) => j.step)).toEqual([0, 1]);
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toHaveLength(1);
+
+    // El proveedor la termina de cancelar: la lectura cierra la orden y suelta la retención.
+    b.getBooking.mockResolvedValue({
+      found: true,
+      providerBookingId: LOCALIZADOR,
+      status: 'CANCELLED',
+      providerStatus: 'Cancelled',
+      warnings: [],
+    });
+    await correrVerificacion(b);
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+    expect(b.mem.tracking(ORDEN)).toMatchObject({ sub_status: null, cancel_verify_next_at: null });
+    expect(b.releaseCancelled).toHaveBeenCalledWith(TENANT, ORDEN, USER);
+    expect(b.cancelBooking).toHaveBeenCalledOnce();
+  });
+
   it('rechazada sin mandar nada: la orden vuelve a su estado, a revisión', async () => {
     const b = banco();
     b.cancelBooking.mockResolvedValue(
@@ -658,5 +729,441 @@ describe('la lectura que sigue a un 479 sin lectura', () => {
     // El job del calendario anterior ya no ejecuta nada.
     await b.cancellations.runJob(viejo, { final: false });
     expect(b.getBooking).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────── HARD-1 ─────────────────────────
+
+/** Lo que el ACL de TBO lanza hoy por un `/Cancel` que no contestó `200` ni `479`. */
+function desenlaceDesconocido(tboCode: number, kind: TboApiError['kind']): TboApiError {
+  return TboCancelOutcomeUnknownError.from(
+    new TboApiError({ status: 200, tboCode, path: '/Cancel', kind, requestId: `req-${tboCode}` }),
+  );
+}
+
+/** Una promesa que el test resuelve cuando quiere: el proveedor que tarda. */
+function diferida<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (err: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((ok, ko) => {
+    resolve = ok;
+    reject = ko;
+  });
+  return { promise, resolve, reject };
+}
+
+const CANCELADA: HotelBookingView = {
+  found: true,
+  providerBookingId: LOCALIZADOR,
+  status: 'CANCELLED',
+  providerStatus: 'Cancelled',
+  warnings: [],
+};
+
+describe('HARD-1 (1): un código que no es 200 ni 479 nunca cierra la cancelación como fallida', () => {
+  it.each([
+    [201, 'NO_AVAILABILITY'],
+    [207, 'RATE_UNAVAILABLE'],
+    [300, 'INSUFFICIENT_BALANCE'],
+    [315, 'OFFER_EXPIRED'],
+    [405, 'BOOKING_FAILED'],
+    [400, 'CLIENT_BUG'],
+    [401, 'CREDENTIALS_INVALID'],
+    [402, 'ACCOUNT_BLOCKED'],
+  ] as const)(
+    '%i: UNVERIFIED y la lectura agendada; si TBO sí canceló, la orden queda cancelada',
+    async (code, kind) => {
+      const b = banco();
+      b.cancelBooking.mockRejectedValue(desenlaceDesconocido(code, kind));
+
+      await expect(b.cancelar()).rejects.toThrow(/no confirmó si la cancelación se aplicó/);
+
+      // Nunca vuelve a `confirmed` sin una lectura que lo diga.
+      expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+      expect(b.ultimaOperacion()).toMatchObject({ status: 'failed' });
+      expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+        outcome: 'UNVERIFIED',
+        retryable: false,
+        reconciliationRequired: true,
+        verifyScheduled: true,
+      });
+      expect(b.mem.tracking(ORDEN)).toMatchObject({
+        sub_status: 'cancel-unverified',
+        cancel_verify_step: 0,
+      });
+      expect(b.queue.cancelVerifications).toHaveLength(1);
+      expect(b.queue.cancels).toEqual([]);
+
+      b.getBooking.mockResolvedValue(CANCELADA);
+      await correrVerificacion(b);
+
+      expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+      expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+        outcome: 'SUCCEEDED',
+        resolvedBy: 'verify-cancellation',
+      });
+      expect(b.releaseCancelled).toHaveBeenCalledWith(TENANT, ORDEN, USER);
+      expect(b.cancelBooking).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('479 con la reserva vigente sigue siendo un rechazo (success false, estado previo)', async () => {
+    const b = banco();
+    b.cancelBooking.mockResolvedValue(
+      respuesta({ success: false, error: 'TBO_CANCEL_FAIL', bookingStatus: 'CONFIRMED' }),
+    );
+
+    const { result } = await b.cancelar();
+
+    expect(result).toMatchObject({ success: false, error: 'TBO_CANCEL_FAIL' });
+    expect(b.mem.order(ORDEN)?.['status']).toBe('confirmed');
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({ outcome: 'FAILED' });
+  });
+});
+
+describe('HARD-1 (3): la petición responde dentro de su presupuesto', () => {
+  it('agotado, "Cancelación en curso" sin error; la cancelación sigue y se cierra al contestar', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    const tbo = diferida<HotelCancelResult>();
+    b.cancelBooking.mockReturnValue(tbo.promise);
+
+    const { result, order } = await b.cancelar();
+
+    expect(result).toEqual({
+      success: true,
+      settlement: 'in-progress',
+      warnings: [HOTEL_CANCEL_STILL_RUNNING],
+      estimatedPenalty: { amountMinor: 20_000, currency: 'USD' },
+    });
+    expect(order).toBeUndefined();
+    // El claim sigue siendo de esta cancelación, que el apagado ordenado espera.
+    expect(b.ultimaOperacion()).toMatchObject({ status: 'pending' });
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.mem.tracking(ORDEN)?.sub_status).toBe('cancel-requested');
+    expect(b.inflight.countsByKind()).toEqual({ 'hotel-cancel': 1 });
+
+    tbo.resolve(respuesta({ bookingStatus: 'CANCELLED', providerStatus: 'Cancelled' }));
+    await b.inflight.whenIdle();
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+    expect(b.ultimaOperacion()).toMatchObject({ status: 'success' });
+    expect(b.mem.tracking(ORDEN)?.sub_status).toBeNull();
+    expect(b.releaseCancelled).toHaveBeenCalledWith(TENANT, ORDEN, USER);
+    expect(b.cancelBooking).toHaveBeenCalledOnce();
+  });
+
+  it('sin opciones rige HOTEL_CANCEL_SYNC_BUDGET_MS, por debajo de los 60 s', async () => {
+    // Cloudflare corta a los 100 s: el presupuesto por defecto tiene que dejar margen de sobra.
+    expect(HOTEL_CANCEL_SYNC_BUDGET_MS).toBeLessThan(60_000);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const b = banco();
+      b.cancelBooking.mockReturnValue(new Promise(() => undefined));
+      let respondida = false;
+      const peticion = b.cancelar().finally(() => {
+        respondida = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(HOTEL_CANCEL_SYNC_BUDGET_MS - 1);
+      expect(respondida).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(respondida).toBe(true);
+
+      expect((await peticion).result).toMatchObject({
+        success: true,
+        settlement: 'in-progress',
+        warnings: [HOTEL_CANCEL_STILL_RUNNING],
+      });
+      expect(b.ultimaOperacion()).toMatchObject({ status: 'pending' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('si contesta tarde con la cancelación en curso, agenda la lectura igual', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    const tbo = diferida<HotelCancelResult>();
+    b.cancelBooking.mockReturnValue(tbo.promise);
+    await b.cancelar();
+
+    tbo.resolve(respuesta({ bookingStatus: 'CANCELLATION_IN_PROGRESS' }));
+    await b.inflight.whenIdle();
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.mem.tracking(ORDEN)).toMatchObject({ sub_status: null, cancel_verify_step: 0 });
+    expect(b.queue.cancelVerifications).toHaveLength(1);
+  });
+
+  it('si falla tarde sin desenlace, queda UNVERIFIED con la lectura agendada y nada se pierde', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    const tbo = diferida<HotelCancelResult>();
+    b.cancelBooking.mockReturnValue(tbo.promise);
+    const { result } = await b.cancelar();
+    expect(result.settlement).toBe('in-progress');
+
+    tbo.reject(desenlaceDesconocido(500, 'UPSTREAM'));
+    await b.inflight.whenIdle();
+
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({ outcome: 'UNVERIFIED' });
+    expect(b.mem.tracking(ORDEN)).toMatchObject({ sub_status: 'cancel-unverified' });
+    expect(b.queue.cancelVerifications).toHaveLength(1);
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toHaveLength(1);
+  });
+
+  it('dentro del presupuesto, el error sale como siempre', async () => {
+    const b = banco(undefined, { syncBudgetMs: 60_000 });
+    b.cancelBooking.mockRejectedValue(desenlaceDesconocido(405, 'BOOKING_FAILED'));
+
+    await expect(b.cancelar()).rejects.toBeInstanceOf(ConflictException);
+    expect(b.inflight.size).toBe(0);
+  });
+
+  it('el reintento de una cancelación previa al envío tiene el mismo presupuesto', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    b.cancelBooking.mockRejectedValueOnce(
+      new TboApiError({ status: 0, path: '/BookingDetail', kind: 'TRANSPORT', requestId: 'r' }),
+    );
+    await expect(b.cancelar()).rejects.toBeInstanceOf(TboApiError);
+    const op = String(b.ultimaOperacion()?.['id']);
+    const tbo = diferida<HotelCancelResult>();
+    b.cancelBooking.mockReturnValue(tbo.promise);
+
+    const { result } = await b.service.retryOperation(TENANT, ORDEN, op, USER);
+
+    expect(result).toMatchObject({
+      success: true,
+      settlement: 'in-progress',
+      warnings: [HOTEL_CANCEL_STILL_RUNNING],
+    });
+    tbo.resolve(respuesta({ bookingStatus: 'CANCELLED' }));
+    await b.inflight.whenIdle();
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+  });
+
+  it('una orden de vuelos no tiene presupuesto: espera al proveedor como siempre', async () => {
+    const vuelo = ordenHotel({ id: 'f1', provider: 'stub-air', provider_order_id: 'PNR1' });
+    const b = banco([vuelo], { syncBudgetMs: 0 });
+
+    const { result } = await b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER);
+
+    expect(result.success).toBe(true);
+    expect(b.inflight.size).toBe(0);
+  });
+});
+
+describe('HARD-1 (2): el claim que un proceso dejó en vuelo', () => {
+  const despues = (min: number): number => Date.now() + min * MIN;
+  const vencido = (): number => despues(STALE_CANCEL_CLAIM_MS / MIN + 1);
+
+  it('hotel: pasado el umbral queda UNVERIFIED con la lectura agendada, sin reenviar el Cancel', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    // El proceso "muere": el proveedor nunca contesta y nadie cierra el claim.
+    b.cancelBooking.mockReturnValue(new Promise(() => undefined));
+    await b.cancelar();
+
+    // Un claim fresco es de una cancelación viva: no se toca.
+    expect(await b.staleClaims.sweepTenant(TENANT, despues(10))).toEqual({
+      examined: 0,
+      expired: 0,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(b.ultimaOperacion()).toMatchObject({ status: 'pending' });
+
+    const ahora = vencido();
+    expect(await b.staleClaims.sweepTenant(TENANT, ahora)).toEqual({
+      examined: 1,
+      expired: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    expect(b.ultimaOperacion()).toMatchObject({
+      status: 'failed',
+      last_error: 'Cancelación no verificada; requiere conciliación.',
+    });
+    expect(b.mem.result(b.ultimaOperacion())).toEqual({
+      vertical: 'hotels',
+      verifyScheduled: true,
+      staleClaim: true,
+      status: 'failed',
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+      reason: 'write-unverified',
+      priorOrderStatus: 'confirmed',
+    });
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.mem.tracking(ORDEN)).toMatchObject({
+      sub_status: 'cancel-unverified',
+      cancel_verify_anchor_at: ahora,
+      cancel_verify_step: 0,
+      cancel_verify_next_at: ahora + 2 * MIN,
+    });
+    expect(b.queue.cancelVerifications).toMatchObject([{ step: 0, anchorAt: ahora }]);
+    expect(b.audit.ofType(ORDER_EVENTS.cancelled).at(-1)?.payload).toEqual({
+      provider: PROVEEDOR,
+      vertical: 'hotels',
+      verifyScheduled: true,
+      staleClaim: true,
+      success: false,
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+    });
+    expect(b.audit.ofType(ORDER_EVENTS.escalated).at(-1)?.payload).toMatchObject({
+      reason: 'cancellation-unverified',
+      staleClaim: true,
+      retryForbidden: true,
+    });
+
+    // Otra corrida no lo vuelve a tocar, y nada manda un segundo Cancel.
+    expect((await b.staleClaims.sweepTenant(TENANT, ahora)).examined).toBe(0);
+    await expect(b.cancelar()).rejects.toThrow(/quedó sin verificar/);
+    await b.service.runCancelById(TENANT, ORDEN);
+    expect(b.cancelBooking).toHaveBeenCalledOnce();
+
+    // La lectura la cierra en la dirección segura.
+    b.getBooking.mockResolvedValue(CANCELADA);
+    await correrVerificacion(b);
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+      outcome: 'SUCCEEDED',
+      resolvedBy: 'verify-cancellation',
+      priorOrderStatus: 'confirmed',
+    });
+    expect(b.cancelBooking).toHaveBeenCalledOnce();
+  });
+
+  it('si el dueño del claim seguía vivo y contesta después del corte, no escribe nada encima', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    const tbo = diferida<HotelCancelResult>();
+    b.cancelBooking.mockReturnValue(tbo.promise);
+    await b.cancelar();
+    await b.staleClaims.sweepTenant(TENANT, vencido());
+
+    tbo.resolve(
+      respuesta({ success: false, error: 'TBO_CANCEL_FAIL', bookingStatus: 'CONFIRMED' }),
+    );
+    await b.inflight.whenIdle();
+
+    // El 479 tardío no devuelve la orden a confirmada: la cancelación ya es de la verificación.
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+      outcome: 'UNVERIFIED',
+      staleClaim: true,
+    });
+    expect(b.mem.tracking(ORDEN)?.sub_status).toBe('cancel-unverified');
+    expect(b.cancelBooking).toHaveBeenCalledOnce();
+  });
+
+  it('si la escritura del seguimiento falla, el claim sigue en vuelo y la corrida siguiente lo vence', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    b.cancelBooking.mockReturnValue(new Promise(() => undefined));
+    await b.cancelar();
+    const ahora = vencido();
+    const writeOutcome = vi
+      .spyOn(b.mem.store, 'writeOutcome')
+      .mockRejectedValueOnce(new Error('base caída'));
+
+    expect(await b.staleClaims.sweepTenant(TENANT, ahora)).toMatchObject({
+      examined: 1,
+      failed: 1,
+    });
+    // Una transacción: la operación no quedó cerrada sin su seguimiento.
+    expect(b.ultimaOperacion()).toMatchObject({ status: 'pending' });
+    expect(b.mem.tracking(ORDEN)?.sub_status).toBe('cancel-requested');
+    expect(b.queue.cancelVerifications).toEqual([]);
+
+    expect(await b.staleClaims.sweepTenant(TENANT, ahora)).toMatchObject({ expired: 1 });
+    expect(writeOutcome).toHaveBeenCalledTimes(2);
+    expect(b.mem.tracking(ORDEN)?.sub_status).toBe('cancel-unverified');
+  });
+
+  it('un claim que otro camino cerró entre la lectura y el cierre no se toca', async () => {
+    const b = banco(undefined, { syncBudgetMs: 5 });
+    b.cancelBooking.mockReturnValue(new Promise(() => undefined));
+    await b.cancelar();
+    const listStale = b.mem.staleClaims.listStale.bind(b.mem.staleClaims);
+    vi.spyOn(b.mem.staleClaims, 'listStale').mockImplementationOnce(async (tenantId, query) => {
+      const claims = await listStale(tenantId, query);
+      // El dueño termina justo después de la lectura del barrido.
+      const op = b.ultimaOperacion();
+      if (op !== undefined) op['status'] = 'success';
+      return claims;
+    });
+
+    expect(await b.staleClaims.sweepTenant(TENANT, vencido())).toMatchObject({
+      examined: 1,
+      skipped: 1,
+      expired: 0,
+    });
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toEqual([]);
+    expect(b.queue.cancelVerifications).toEqual([]);
+  });
+
+  it('vuelos: la misma limitación y el mismo remedio seguro, sin la lectura de hoteles', async () => {
+    const vuelo = ordenHotel({ id: 'f1', provider: 'stub-air', provider_order_id: 'PNR1' });
+    const b = banco([vuelo]);
+    const cancelOrder = b.vuelos.adapterFor(TENANT).cancelOrder;
+    cancelOrder.mockReturnValue(new Promise(() => undefined));
+    void b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER);
+    await vi.waitFor(() => expect(b.mem.operations('f1')).toHaveLength(1));
+
+    expect(await b.staleClaims.sweepTenant(TENANT, vencido())).toMatchObject({
+      examined: 1,
+      expired: 1,
+    });
+
+    expect(b.mem.operations('f1').at(-1)).toMatchObject({ status: 'failed' });
+    expect(b.mem.result(b.mem.operations('f1').at(-1))).toEqual({
+      staleClaim: true,
+      status: 'failed',
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+      reason: 'write-unverified',
+      priorOrderStatus: 'confirmed',
+    });
+    // Queda `pending` y a conciliar, como un timeout de su write: ni se reenvía ni vuelve atrás.
+    expect(b.mem.order('f1')?.['status']).toBe('pending');
+    expect(b.audit.ofType(ORDER_EVENTS.escalated).at(-1)?.payload).toEqual({
+      provider: 'stub-air',
+      staleClaim: true,
+      reason: 'cancellation-unverified',
+      retryForbidden: true,
+      reconciliationRequired: true,
+    });
+    // Nada de hoteles: ni seguimiento ni lectura.
+    expect(b.mem.calls).toEqual([]);
+    expect(b.queue.cancelVerifications).toEqual([]);
+    await expect(b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER)).rejects.toThrow(
+      /quedó sin verificar/,
+    );
+    await b.service.runCancelById(TENANT, 'f1');
+    expect(cancelOrder).toHaveBeenCalledOnce();
+  });
+
+  it('un claim que falla no frena a los demás', async () => {
+    const otra = ordenHotel({ id: 'h2', provider_order_id: 'YOSUR8' });
+    const b = banco([ordenHotel(), otra], { syncBudgetMs: 5 });
+    b.cancelBooking.mockReturnValue(new Promise(() => undefined));
+    await b.cancelar();
+    await b.service.cancelOrder(TENANT, 'h2', 'YOSUR8', USER);
+    const expire = b.mem.staleClaims.expire.bind(b.mem.staleClaims);
+    vi.spyOn(b.mem.staleClaims, 'expire')
+      .mockRejectedValueOnce('boom')
+      .mockImplementation((...args) => expire(...args));
+
+    expect(await b.staleClaims.sweepTenant(TENANT, vencido())).toEqual({
+      examined: 2,
+      expired: 1,
+      skipped: 0,
+      failed: 1,
+    });
   });
 });

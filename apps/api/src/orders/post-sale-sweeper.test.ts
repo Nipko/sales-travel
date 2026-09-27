@@ -20,6 +20,10 @@ import {
   POST_SALE_SWEEP_SCHEDULE_WAIT_MS,
   PostSaleSweeper,
 } from './post-sale-sweeper.js';
+import type {
+  StaleCancelClaimService,
+  StaleCancelClaimSweepReport,
+} from './stale-cancel-claim.service.js';
 
 /**
  * El barrido de post-venta (docs/tbo/09 PR-4.7; 08 RNF-10): recorre los tenants uno por uno —la API
@@ -66,6 +70,12 @@ function informeDeCancelaciones(
     skipped: 0,
     ...parcial,
   };
+}
+
+function informeDeClaims(
+  parcial: Partial<StaleCancelClaimSweepReport> = {},
+): StaleCancelClaimSweepReport {
+  return { examined: 0, expired: 0, skipped: 0, failed: 0, ...parcial };
 }
 
 function informeHcn(parcial: Partial<HcnSweepReport> = {}): HcnSweepReport {
@@ -121,6 +131,9 @@ function banco(tenants: string[], redis = true) {
   const sweepReconciliation = vi.fn<ReconciliationService['sweepTenant']>(() =>
     Promise.resolve(informeConciliacion()),
   );
+  const sweepStaleClaims = vi.fn<StaleCancelClaimService['sweepTenant']>(() =>
+    Promise.resolve(informeDeClaims()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -131,6 +144,7 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant: sweepCancellations } as unknown as HotelOrderCancellationService,
     { sweepTenant: sweepHcn } as unknown as HcnTrackingService,
     { sweepTenant: sweepReconciliation } as unknown as ReconciliationService,
+    { sweepTenant: sweepStaleClaims } as unknown as StaleCancelClaimService,
   );
   return {
     sweeper,
@@ -138,6 +152,7 @@ function banco(tenants: string[], redis = true) {
     sweepCancellations,
     sweepHcn,
     sweepReconciliation,
+    sweepStaleClaims,
     queue,
     consulta,
     work,
@@ -289,6 +304,7 @@ describe('PostSaleSweeper — la corrida', () => {
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
+      staleCancelClaims: informeDeClaims(),
       cancellations: informeDeCancelaciones(),
       hcn: informeHcn(),
       reconciliation: informeConciliacion(),
@@ -316,6 +332,53 @@ describe('PostSaleSweeper — la corrida', () => {
     );
     // Los desenlaces de la verificación del Book no se mezclan con los de la cancelación.
     expect(report.examined).toBe(0);
+  });
+
+  it('HARD-1: vence los claims de cancelación perdidos, tenant por tenant y antes que la verificación', async () => {
+    const b = banco([A, B]);
+    const orden: string[] = [];
+    b.sweepStaleClaims.mockImplementation((tenantId) => {
+      orden.push(`claims:${tenantId}`);
+      return Promise.resolve(
+        tenantId === A
+          ? informeDeClaims({ examined: 2, expired: 1, skipped: 1 })
+          : informeDeClaims({ examined: 1, failed: 1 }),
+      );
+    });
+    b.sweepCancellations.mockImplementation((tenantId) => {
+      orden.push(`verificación:${tenantId}`);
+      return Promise.resolve(informeDeCancelaciones());
+    });
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepStaleClaims.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    // En hoteles el vencimiento abre la verificación: va primero en cada tenant.
+    expect(orden).toEqual(['claims:' + A, 'verificación:' + A, 'claims:' + B, 'verificación:' + B]);
+    expect(report.staleCancelClaims).toEqual(
+      informeDeClaims({ examined: 3, expired: 1, skipped: 1, failed: 1 }),
+    );
+    expect(report.examined).toBe(0);
+    expect(report.cancellations.examined).toBe(0);
+  });
+
+  it('HARD-1: un vencimiento de claims que falla en un tenant no frena al resto del barrido', async () => {
+    const b = banco([A, B]);
+    b.sweepStaleClaims.mockImplementation((tenantId) =>
+      tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(informeDeClaims({ examined: 1, expired: 1 })),
+    );
+    b.sweepCancellations.mockResolvedValue(informeDeCancelaciones({ examined: 1, closed: 1 }));
+
+    const report = await b.sweeper.run();
+
+    expect(report.tenantsFailed).toBe(1);
+    expect(report.staleCancelClaims).toEqual(informeDeClaims({ examined: 1, expired: 1 }));
+    expect(report.cancellations).toMatchObject({ examined: 2, closed: 2 });
   });
 
   it('también sigue el HCN, tenant por tenant, con su propio informe (PR-5.4)', async () => {
@@ -434,6 +497,7 @@ describe('PostSaleSweeper — la corrida', () => {
       tenants: 1,
       tenantsFailed: 0,
       ...informe(),
+      staleCancelClaims: informeDeClaims(),
       cancellations: informeDeCancelaciones(),
       hcn: informeHcn(),
       reconciliation: informeConciliacion(),

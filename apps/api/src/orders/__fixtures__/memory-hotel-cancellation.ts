@@ -6,6 +6,11 @@ import type {
   HotelCancelVerifyAdvance,
   HotelOrderCancellationStore,
 } from '../hotel-order-cancellation.store.js';
+import type {
+  StaleCancelClaim,
+  StaleCancelClaimExpiry,
+  StaleCancelClaimStore,
+} from '../stale-cancel-claim.store.js';
 
 /**
  * Dobles de Postgres para la cancelación de una orden de hotel (docs/tbo/09 PR-5.3), compartidos por
@@ -175,7 +180,15 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
         }
         sequence += 1;
         clock += 1;
-        const row = { id: `op-${sequence}`, attempts: 1, created_at: clock, ...values };
+        const row = {
+          id: `op-${sequence}`,
+          attempts: 1,
+          created_at: clock,
+          // `updated_at` sigue el reloj real, como el `now()` del trigger de 0021: el barrido de
+          // claims vencidos lo compara con el instante que recibe.
+          updated_at: Date.now(),
+          ...values,
+        };
         state.operations.push(row);
         return { ...row };
       };
@@ -196,7 +209,11 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
       const apply = (): Row | undefined => {
         const target = visible(table).find((r) => filters.every(([f, v]) => r[f] === v));
         if (target === undefined) return undefined;
-        Object.assign(target, values);
+        Object.assign(
+          target,
+          values,
+          table === 'order_operations' ? { updated_at: Date.now() } : {},
+        );
         return { ...target };
       };
       const q = {
@@ -379,10 +396,70 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
       }),
   };
 
+  /** `StaleCancelClaimStore`: los claims en vuelo desde antes del corte, y su CAS de vencimiento. */
+  const staleClaims = {
+    listStale: (tenantId: string, query: { claimedBefore: number; limit: number }) =>
+      withTenant(tenantId, () =>
+        Promise.resolve(
+          state.operations
+            .filter(
+              (op) =>
+                op['tenant_id'] === tenantId &&
+                op['type'] === 'cancel' &&
+                op['status'] === 'pending' &&
+                Number(op['updated_at']) <= query.claimedBefore,
+            )
+            .sort((a, b) => Number(a['updated_at']) - Number(b['updated_at']))
+            .slice(0, query.limit)
+            .flatMap((op): StaleCancelClaim[] => {
+              const order = orderOf(tenantId, String(op['order_id']));
+              if (order === undefined) return [];
+              const prior = parse(op['result'])['priorOrderStatus'];
+              return [
+                {
+                  operationId: String(op['id']),
+                  orderId: String(op['order_id']),
+                  provider: String(order['provider']),
+                  userId: String(order['user_id']),
+                  actorUserId: (op['actor_user_id'] as string | null | undefined) ?? null,
+                  priorStatus: typeof prior === 'string' ? prior : undefined,
+                },
+              ];
+            }),
+        ),
+      ),
+    expire: (
+      tenantId: string,
+      claim: Pick<StaleCancelClaim, 'operationId'>,
+      expiry: StaleCancelClaimExpiry,
+      inTransaction?: (trx: never) => Promise<void>,
+    ) =>
+      withTenant(tenantId, async (trx) => {
+        const op = state.operations.find(
+          (o) =>
+            o['id'] === claim.operationId &&
+            o['tenant_id'] === tenantId &&
+            o['type'] === 'cancel' &&
+            o['status'] === 'pending' &&
+            Number(o['updated_at']) <= expiry.claimedBefore,
+        );
+        if (op === undefined) return false;
+        Object.assign(op, {
+          status: 'failed',
+          last_error: expiry.lastError,
+          result: JSON.stringify(expiry.result),
+          updated_at: Date.now(),
+        });
+        await inTransaction?.(trx as never);
+        return true;
+      }),
+  };
+
   return {
     state,
     db,
     store: store as unknown as HotelOrderCancellationStore,
+    staleClaims: staleClaims as unknown as StaleCancelClaimStore,
     calls,
     tracking: (orderId: string) => state.tracking.get(orderId),
     order: (orderId: string) => state.orders.find((o) => o['id'] === orderId),

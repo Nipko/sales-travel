@@ -81,8 +81,9 @@ export type OrderForModification =
  *
  * - `final`: la reserva ya figura cancelada en el proveedor.
  * - `in-progress`: el proveedor aceptó el pedido y todavía lo procesa (p. ej. lo mandó al hotel),
- *   o la lectura que lo diría no se pudo hacer. La orden queda pendiente hasta que una lectura la
- *   cierre; mostrarla como cancelada sería prometer una habitación liberada que sigue cobrable.
+ *   o la lectura que lo diría no se pudo hacer, o su respuesta no llegó dentro del tiempo de la
+ *   petición y la cancelación sigue en la plataforma. La orden queda pendiente hasta que una lectura
+ *   la cierre; mostrarla como cancelada sería prometer una habitación liberada que sigue cobrable.
  */
 export type OrderCancelSettlement = 'final' | 'in-progress';
 

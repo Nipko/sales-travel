@@ -39,7 +39,13 @@ interface ErrorShape {
 }
 
 const CANCEL_WRITE_PATH = /(?:^|\/)(?:cancel(?:booking)?|cancel\/bnpl)(?:$|[/?])/i;
-const CANCEL_RESPONSE_MAPPING_ERROR = /Cancel(?:Booking)?MappingError$/;
+/**
+ * El write salió y su desenlace no se pudo leer (`…CancelMappingError`) o no es uno de los que el
+ * contrato del proveedor define para una cancelación (`…CancelOutcomeUnknownError`, p. ej. un código
+ * de otra operación en TBO). Va antes que la regla de los deterministas porque esos errores pueden
+ * traer una naturaleza `NO_RETRY`, y "no reintentar" no es "no se canceló".
+ */
+const CANCEL_OUTCOME_UNKNOWN_ERROR = /Cancel(?:Booking)?(?:Mapping|OutcomeUnknown)Error$/;
 const DETERMINISTIC_ERROR =
   /(?:Build|Input|Config|Validation|Mapping|CredentialsMissing|NotSupported|Rejected)Error$/;
 
@@ -103,7 +109,7 @@ export function classifyCancelThrownFailure(error: unknown): CancelRetryPolicy {
     };
   }
 
-  if (CANCEL_RESPONSE_MAPPING_ERROR.test(name)) {
+  if (CANCEL_OUTCOME_UNKNOWN_ERROR.test(name)) {
     return {
       outcome: 'UNVERIFIED',
       retryable: false,
@@ -218,3 +224,12 @@ export const CANCEL_UNVERIFIED_POLICY: CancelRetryPolicy = {
   reconciliationRequired: true,
   reason: 'write-unverified',
 };
+
+/** El `last_error` durable de una cancelación `UNVERIFIED`: qué se puede hacer, nunca el error. */
+export const CANCEL_UNVERIFIED_MESSAGE = 'Cancelación no verificada; requiere conciliación.';
+
+/** El estado que tenía la orden antes del claim, tal como lo guardó el resultado durable. */
+export function persistedPriorOrderStatus(result: unknown): string | undefined {
+  const prior = jsonObject(result)?.['priorOrderStatus'];
+  return typeof prior === 'string' ? prior : undefined;
+}
