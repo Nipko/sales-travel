@@ -422,3 +422,66 @@ describe('HcnTrackingStore: escrituras', () => {
     expect(b.consultas.filter((q) => q.sql.includes('set_config'))).toHaveLength(1);
   });
 });
+
+describe('HcnTrackingStore: el HCN cierra la tarea abierta (HARD-3)', () => {
+  it('advance que registra el HCN cierra, en la misma transacción, las tareas hcn-ticket pendientes con su motivo', async () => {
+    const b = banco(() => ({ numAffectedRows: 1n }));
+
+    await b.store.advance(
+      TENANT,
+      ORDEN,
+      { state: 'scheduled', attempts: 1 },
+      { state: 'received', attempts: 2, nextAt: null, read: { at: T, hcn: 'HCN-4711' } },
+    );
+
+    const [plan, cierre] = b.negocio();
+    expect(plan?.sql).toContain('update "hotel_order_tracking"');
+    expect(cierre?.sql).toBe(
+      'update "order_operations" set "status" = $1, "result" = order_operations.result || $2::jsonb where "tenant_id" = $3 and "order_id" = $4 and "type" = $5 and "status" = $6',
+    );
+    expect(cierre?.parameters).toEqual([
+      'success',
+      JSON.stringify({
+        resolution: {
+          by: 'system',
+          reason: 'hcn-received',
+          source: 'hcn',
+          at: new Date(T).toISOString(),
+        },
+      }),
+      TENANT,
+      ORDEN,
+      'hcn-ticket',
+      'pending',
+    ]);
+    // El número queda en la fila de seguimiento; la tarea sólo guarda por qué se cerró.
+    expect(JSON.stringify(cierre?.parameters)).not.toContain('HCN-4711');
+    expect(b.consultas.filter((q) => q.sql.includes('set_config'))).toHaveLength(1);
+  });
+
+  it('sin HCN en la lectura, o si pierde el CAS, no toca las tareas', async () => {
+    const sinHcn = banco(() => ({ numAffectedRows: 1n }));
+    await sinHcn.store.advance(
+      TENANT,
+      ORDEN,
+      { state: 'scheduled', attempts: 1 },
+      {
+        state: 'scheduled',
+        attempts: 2,
+        nextAt: T,
+        read: { at: T, record: { providerStatus: 'Confirmed', refundAwaited: false } },
+      },
+    );
+    const pierde = banco(() => ({ numAffectedRows: 0n }));
+    await pierde.store.advance(
+      TENANT,
+      ORDEN,
+      { state: 'scheduled', attempts: 1 },
+      { state: 'received', attempts: 2, nextAt: null, read: { at: T, hcn: 'HCN-4711' } },
+    );
+
+    for (const b of [sinHcn, pierde]) {
+      expect(b.negocio().filter((q) => q.sql.includes('order_operations'))).toEqual([]);
+    }
+  });
+});

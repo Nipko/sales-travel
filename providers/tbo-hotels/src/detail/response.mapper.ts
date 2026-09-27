@@ -14,6 +14,7 @@ import { pickTboLogMeta } from '../redaction';
 import { tboDecimalText } from '../roompack/roompack.mapper';
 import { normalizeTboStars } from '../static/normalize';
 import { readTboBookingStatus } from './booking-status';
+import { isTboHcnPlaceholder } from './hotel-confirmation-number';
 import {
   TBO_BOOKED_HOTEL_KEYS,
   TBO_BOOKED_ROOM_KEYS,
@@ -37,6 +38,8 @@ import {
  * - **La reserva tiene que ser la pedida.** Leída por localizador, un `ConfirmationNumber` distinto
  *   es otra reserva y la respuesta es ilegible; leída por nuestra referencia, el localizador que
  *   vuelve es el que la orden adopta, así que tiene que tener forma de uno.
+ * - **Un HCN de relleno no es un HCN** (`NA`, `Pending`, `0`…; `./hotel-confirmation-number`;
+ *   Q-47): sale como ausente, igual que el vacío, y se cuenta.
  * - **Nada de los huéspedes sale de aquí** (RF-24 CA-3): el esquema no declara `CustomerDetails` y
  *   Zod los descarta; este archivo ni siquiera nombra sus campos.
  * - **Montos como literal decimal** (`TotalFare` de p. 49 llega como `107.14000000000000`), y el
@@ -147,6 +150,8 @@ export interface TboBookingDetailDiagnostics {
   readonly bookingStatusUnknown: boolean;
   readonly bookingStatusCasingVariant: boolean;
   readonly bookingDateMalformed: boolean;
+  /** `HotelConfirmationNumber` trajo un relleno (`NA`, `Pending`, `0`…): se leyó como sin HCN. */
+  readonly hcnPlaceholder: boolean;
   readonly amountsWithPrecisionLoss: number;
   /** Por qué no hay `total`, si no lo hay. */
   readonly totalUnavailable?:
@@ -421,7 +426,10 @@ export function mapTboBookingDetailResponse(
   if (bookingDateMalformed) count('tbo.booking_detail.booking_date_malformed');
   for (const warning of warnings) count('tbo.booking_detail.warning', { warning });
 
-  const hcn = clip(detail.HotelConfirmationNumber, HCN_MAX);
+  const rawHcn = detail.HotelConfirmationNumber;
+  const hcnPlaceholder = rawHcn !== undefined && isTboHcnPlaceholder(rawHcn);
+  if (hcnPlaceholder) count('tbo.booking_detail.hcn_placeholder');
+  const hcn = hcnPlaceholder ? undefined : clip(rawHcn, HCN_MAX);
   const { hotel } = parts;
   const rating = hotel.Rating === undefined ? undefined : normalizeTboStars(hotel.Rating);
   const stars = rating?.stars ?? null;
@@ -477,6 +485,7 @@ export function mapTboBookingDetailResponse(
       bookingStatusUnknown: status.unknown,
       bookingStatusCasingVariant: status.casingVariant,
       bookingDateMalformed,
+      hcnPlaceholder,
       amountsWithPrecisionLoss: total.ok ? total.precisionLoss : 0,
       ...(total.ok ? {} : { totalUnavailable: total.reason }),
       emptyRateConditions: conditions.emptyItems,

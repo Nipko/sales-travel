@@ -16,9 +16,9 @@ import type {
 
 /**
  * Doble de Postgres del seguimiento del HCN (docs/tbo/09 PR-5.4) con lo que decide estos casos: RLS
- * por tenant, el CAS del plan, la tarea de operaciones en la misma "transacción" y los filtros del
- * barrido. El SQL real lo prueban `hcn-tracking.store.test.ts` (compilado) y
- * `hcn-tracking.integration.test.ts` (contra Postgres).
+ * por tenant, el CAS del plan, la tarea de operaciones en la misma "transacción" (y su cierre
+ * cuando una lectura trae el HCN) y los filtros del barrido. El SQL real lo prueban
+ * `hcn-tracking.store.test.ts` (compilado) y `hcn-tracking.integration.test.ts` (contra Postgres).
  */
 
 export interface MemoryHcnOrder {
@@ -205,6 +205,28 @@ export class MemoryHcnTracking {
       row.hcn_next_check_at = write.nextAt;
       if (write.priority !== undefined) row.hcn_priority = write.priority;
       assertChecks(row);
+      if (read?.hcn !== undefined) {
+        for (const op of this.operations) {
+          if (
+            op.tenant_id !== tenantId ||
+            op.order_id !== orderId ||
+            op.type !== 'hcn-ticket' ||
+            op.status !== 'pending'
+          ) {
+            continue;
+          }
+          op.status = 'success';
+          op.result = JSON.stringify({
+            ...(JSON.parse(op.result) as Record<string, unknown>),
+            resolution: {
+              by: 'system',
+              reason: 'hcn-received',
+              source: 'hcn',
+              at: new Date(read.at).toISOString(),
+            },
+          });
+        }
+      }
       if (write.ticket !== undefined) {
         this.operations.push({
           tenant_id: tenantId,

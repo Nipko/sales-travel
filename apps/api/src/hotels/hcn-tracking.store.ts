@@ -8,6 +8,7 @@ import type {
   HotelOrderSubStatus,
   OrderStatus,
 } from '../database/database.types.js';
+import { resolvePendingHcnTickets } from './hcn-ticket.js';
 import type { HotelOrderReadRecord, HotelOrderSnapshot } from './hotel-order-state.js';
 
 /**
@@ -25,7 +26,9 @@ import type { HotelOrderReadRecord, HotelOrderSnapshot } from './hotel-order-sta
  * Cada escritura del plan es un CAS sobre el estado y las lecturas hechas: el job y el barrido
  * pueden llegar a la misma lectura, y sólo el que la registra emite y encola la siguiente. La tarea
  * de operaciones (`order_operations.type = 'hcn-ticket'`) se inserta en la MISMA transacción que
- * marca el HCN como perdido: sin el CAS habría dos tareas, y sin la transacción, ninguna.
+ * marca el HCN como perdido: sin el CAS habría dos tareas, y sin la transacción, ninguna. Y una
+ * lectura que trae el HCN cierra, en su transacción, la tarea que haya quedado abierta
+ * (`hcn-ticket.ts`).
  */
 
 /** El plan tal como lo guarda la fila. */
@@ -325,6 +328,14 @@ export class HcnTrackingStore {
       const result = await update.executeTakeFirstOrThrow();
       if (result.numUpdatedRows === 0n) return false;
 
+      // Antes de abrir una tarea nueva: la que se abre en esta escritura no puede cerrarse sola.
+      if (write.read?.hcn !== undefined) {
+        await resolvePendingHcnTickets(trx, tenantId, orderId, {
+          reason: 'hcn-received',
+          source: 'hcn',
+          at: write.read.at,
+        });
+      }
       if (write.ticket !== undefined) {
         await trx
           .insertInto('order_operations')
@@ -332,7 +343,8 @@ export class HcnTrackingStore {
             tenant_id: tenantId,
             order_id: orderId,
             type: 'hcn-ticket',
-            // Una tarea abierta: la cierra una persona cuando consigue el HCN por el canal comercial.
+            // Una tarea abierta: la cierra una persona cuando consigue el HCN por el canal
+            // comercial, o sola, si una lectura posterior lo trae (`resolvePendingHcnTickets`).
             status: 'pending',
             result: JSON.stringify(write.ticket),
             // La abre el sistema, no un usuario.

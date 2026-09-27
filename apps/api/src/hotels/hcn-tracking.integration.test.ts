@@ -6,6 +6,8 @@ import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.ser
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { StubHotelProviderFactory } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
+import { HotelOrderReadsService } from '../orders/hotel-order-reads.service.js';
+import { HotelOrderTrackingStore } from '../orders/hotel-order-tracking.store.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
@@ -446,5 +448,106 @@ d('seguimiento del HCN contra Postgres', () => {
       expect(audit.dump()).not.toContain(dato);
     }
     expect(audit.types()).toContain('HotelConfirmationNumberMissing');
+  });
+
+  describe('HARD-3: el HCN que llega con la tarea abierta la cierra', () => {
+    const tarea = { vertical: 'hotels', reason: 'sla-exhausted', priority: 'P2' };
+
+    /** Un plan agotado con su tarea, como lo deja la cuarta lectura sin HCN. */
+    async function agotada(): Promise<string> {
+      const id = await orden();
+      await store.open(agenciaA, id, { state: 'scheduled', priority: 'P2', nextAt: Date.now() });
+      await store.advance(
+        agenciaA,
+        id,
+        { state: 'scheduled', attempts: 0 },
+        { state: 'missing', attempts: HCN_READS, nextAt: null, ticket: tarea },
+      );
+      return id;
+    }
+
+    async function tareas(ids: readonly string[]) {
+      const { rows } = await pool.query<{ order_id: string; status: string; result: unknown }>(
+        `SELECT order_id, status, result FROM order_operations
+          WHERE order_id = ANY($1::uuid[]) AND type = 'hcn-ticket'`,
+        [ids],
+      );
+      return new Map(rows.map((r) => [r.order_id, r]));
+    }
+
+    it('por la consulta manual: la tarea pasa a success con motivo y fuente; la de otra orden, no', async () => {
+      const id = await agotada();
+      const otra = await agotada();
+      const proveedor = new StubHotelProviderFactory({ code: PROVEEDOR });
+      proveedor.adapterFor(agenciaA).getBooking.mockImplementation((locator: string) =>
+        Promise.resolve({
+          found: true,
+          providerBookingId: locator,
+          status: 'CONFIRMED',
+          providerStatus: 'Confirmed',
+          hotelConfirmationNumber: 'HCN-4711',
+          warnings: [],
+        }),
+      );
+      const reads = new HotelOrderReadsService(
+        hotelRegistry([proveedor], hotelFlags(true)),
+        new HotelOrderTrackingStore(database),
+        new CircuitBreakerService(),
+        new RecordingAuditService().asService(),
+      );
+
+      const leida = await reads.retrieve(agenciaA, id);
+
+      expect(leida.tracking).toMatchObject({
+        hotelConfirmationNumber: 'HCN-4711',
+        hcnState: 'received',
+      });
+      const porOrden = await tareas([id, otra]);
+      expect(porOrden.get(id)).toMatchObject({
+        status: 'success',
+        result: {
+          ...tarea,
+          resolution: { by: 'system', reason: 'hcn-received', source: 'retrieve' },
+        },
+      });
+      const { resolution } = porOrden.get(id)!.result as { resolution: { at: string } };
+      expect(Number.isNaN(Date.parse(resolution.at))).toBe(false);
+      expect(JSON.stringify(porOrden.get(id)!.result)).not.toContain('HCN-4711');
+      expect(porOrden.get(otra)).toMatchObject({ status: 'pending', result: tarea });
+    });
+
+    it('por una lectura del plan: se cierra en la misma escritura que guarda el HCN, con RLS', async () => {
+      const id = await orden();
+      await store.open(agenciaA, id, { state: 'scheduled', priority: 'P2', nextAt: Date.now() });
+      // Una tarea que quedó abierta de antes: la siembra el superusuario.
+      await pool.query(
+        `INSERT INTO order_operations (tenant_id, order_id, type, status, result)
+         VALUES ($1, $2, 'hcn-ticket', 'pending', $3::jsonb)`,
+        [agenciaA, id, JSON.stringify(tarea)],
+      );
+
+      const deOtroTenant = await store.advance(
+        agenciaB,
+        id,
+        { state: 'scheduled', attempts: 0 },
+        { state: 'received', attempts: 1, nextAt: null, read: { at: Date.now(), hcn: 'HCN-1' } },
+      );
+      expect(deOtroTenant).toBe(false);
+      expect((await tareas([id])).get(id)?.status).toBe('pending');
+
+      const recibido = await store.advance(
+        agenciaA,
+        id,
+        { state: 'scheduled', attempts: 0 },
+        { state: 'received', attempts: 1, nextAt: null, read: { at: Date.now(), hcn: 'HCN-1' } },
+      );
+
+      expect(recibido).toBe(true);
+      expect((await tareas([id])).get(id)).toMatchObject({
+        status: 'success',
+        result: { resolution: { reason: 'hcn-received', source: 'hcn' } },
+      });
+      expect(await seguimiento(id)).toMatchObject({ hcn: 'HCN-1', hcn_state: 'received' });
+    });
   });
 });

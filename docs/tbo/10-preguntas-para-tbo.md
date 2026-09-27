@@ -853,11 +853,11 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 **Pregunta (EN).**
 
-> (a) Before the hotel confirmation number exists, is `HotelConfirmationNumber` absent, `null` or `""`? Can it change after it has been delivered, and is there one per booking or one per room (p. 45)? (b) `VoucherStatus` is declared Boolean but described as "Possible Value; Confirm, Voucher" (p. 45). What does `false` mean, given that `BookingType` only allows `Voucher` (p. 33)? (c) What is the real format of `CheckIn`, `CheckOut` and `BookingDate`? The table says `YYYY-MM-DD`, but the example shows `"2021-10-16T00:00:00"` and `"2021-07-1317T00:00:00"` (p. 49). In which time zone is `BookingDate`?
+> (a) Before the hotel confirmation number exists, is `HotelConfirmationNumber` absent, `null`, `""` or a placeholder such as `"NA"`, `"Pending"` or `"0"`? Can it change after it has been delivered, and is there one per booking or one per room (p. 45)? (b) `VoucherStatus` is declared Boolean but described as "Possible Value; Confirm, Voucher" (p. 45). What does `false` mean, given that `BookingType` only allows `Voucher` (p. 33)? (c) What is the real format of `CheckIn`, `CheckOut` and `BookingDate`? The table says `YYYY-MM-DD`, but the example shows `"2021-10-16T00:00:00"` and `"2021-07-1317T00:00:00"` (p. 49). In which time zone is `BookingDate`?
 
 **Por qué la necesitamos.** Parser tolerante de BookingDetail y seguimiento del HCN ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §3.7, §8).
 
-**Postura si no responden.** HCN `nullish`, vacío = sin HCN, y si cambia se guarda el nuevo con evento; `VoucherStatus` boolean o string, y `false` junto a `Confirmed` = confirmada con alerta; se toman los 10 primeros caracteres de las fechas y la fecha de reserva sale de nuestro intent ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §3.6, §8.2).
+**Postura si no responden.** HCN `nullish`; vacío o de relleno (`NA`, `N/A`, `Pending`, `TBA`, `0`, `-`…, lista en `providers/tbo-hotels/src/detail/hotel-confirmation-number.ts`, cada uno medido) = sin HCN, y si cambia se guarda el nuevo con evento; `VoucherStatus` boolean o string, y `false` junto a `Confirmed` = confirmada con alerta; se toman los 10 primeros caracteres de las fechas y la fecha de reserva sale de nuestro intent ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §3.6, §8.2).
 
 ### Q-48
 
@@ -1766,7 +1766,7 @@ Q-46.
 The BookingDetail response table is flat (pp. 44–49) and the only example has one room (pp. 49–51). (a) In a multi-room booking, does BookingDetail.Rooms contain one element per room, or a single element whose Name array has one entry per room? (b) Where exactly are Supplements, CreditCardOptions and HotelConfirmationNumber located: at BookingDetail level or inside Rooms[]? Could you share a complete two-room example?
 
 Q-47.
-(a) Before the hotel confirmation number exists, is HotelConfirmationNumber absent, null or ""? Can it change after it has been delivered, and is there one per booking or one per room (p. 45)? (b) VoucherStatus is declared Boolean but described as "Possible Value; Confirm, Voucher" (p. 45). What does false mean, given that BookingType only allows Voucher (p. 33)? (c) What is the real format of CheckIn, CheckOut and BookingDate? The table says YYYY-MM-DD, but the example shows "2021-10-16T00:00:00" and "2021-07-1317T00:00:00" (p. 49). In which time zone is BookingDate?
+(a) Before the hotel confirmation number exists, is HotelConfirmationNumber absent, null, "" or a placeholder such as "NA", "Pending" or "0"? Can it change after it has been delivered, and is there one per booking or one per room (p. 45)? (b) VoucherStatus is declared Boolean but described as "Possible Value; Confirm, Voucher" (p. 45). What does false mean, given that BookingType only allows Voucher (p. 33)? (c) What is the real format of CheckIn, CheckOut and BookingDate? The table says YYYY-MM-DD, but the example shows "2021-10-16T00:00:00" and "2021-07-1317T00:00:00" (p. 49). In which time zone is BookingDate?
 
 Q-48.
 The Booking Status enumeration (Enumeration section, pp. 70–71) lists six values, but the BookingDetailsbasedondate example (p. 64) returns "Vouchered", which is not in that list. (a) What is the complete list of BookingStatus values? (b) Are there failed, pending-confirmation or on-request states? (c) Do BookingDetail and BookingDetailsbasedondate use the same vocabulary?

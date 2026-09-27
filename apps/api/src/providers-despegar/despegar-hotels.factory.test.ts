@@ -84,6 +84,8 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
       cancel: true,
       retrieveByClientReference: false,
       reconcileByDate: false,
+      // Lee reservas, pero sin un HCN con SLA que seguir: no entra al seguimiento.
+      hcn: false,
     });
   });
 

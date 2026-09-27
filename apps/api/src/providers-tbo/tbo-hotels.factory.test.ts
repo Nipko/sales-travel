@@ -228,12 +228,13 @@ describe('TboHotelsProviderFactory — contrato del registry de hoteles', () => 
     expect(factory.searchProfile.contentFromCatalog).toBe(true);
   });
 
-  it('anuncia la lectura de reservas (PR-4.2), la cancelación (PR-5.1) y las reservas por fecha (PR-5.5)', () => {
+  it('anuncia la lectura de reservas (PR-4.2), la cancelación (PR-5.1), las reservas por fecha (PR-5.5) y el HCN (PR-5.4)', () => {
     expect(factory.capabilities).toEqual({
       retrieve: true,
       cancel: true,
       retrieveByClientReference: true,
       reconcileByDate: true,
+      hcn: true,
     });
   });
 });

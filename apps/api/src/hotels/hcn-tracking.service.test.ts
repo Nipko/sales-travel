@@ -17,10 +17,15 @@ import {
 } from '../providers/provider.types.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
-import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
+import {
+  fakeDespegarFactory,
+  hotelFlags,
+  hotelRegistry,
+} from './__fixtures__/fake-despegar-hotels.adapter.js';
 import {
   MemoryHcnTracking,
   emptyHcnRow,
+  type MemoryHcnOperation,
   type MemoryHcnOrder,
   type MemoryHcnRow,
 } from './__fixtures__/memory-hcn-tracking.js';
@@ -1014,5 +1019,126 @@ describe('sweepTenant: lo que la cola perdió, tenant por tenant', () => {
       { tenantId: OTRO_TENANT, requestId: 'h2' },
       { purpose: 'background' },
     );
+  });
+});
+
+// ───────────────────────── HARD-3 ─────────────────────────
+
+describe('HARD-3: sólo se sigue el HCN de quien lo declara', () => {
+  it('despegar-hotels lee reservas pero no declara el HCN: sus órdenes no abren plan ni se adoptan', async () => {
+    const despegar = fakeDespegarFactory().factory;
+    expect(despegar.capabilities).toMatchObject({ retrieve: true, hcn: false });
+    const mem = new MemoryHcnTracking([orden(), orden({ id: 'd1', provider: despegar.code })]);
+    const queue = new RecordingQueueService(true);
+    const service = new HcnTrackingService(
+      hotelRegistry([new Proveedor(), despegar], hotelFlags(false)),
+      mem.asStore(),
+      new CircuitBreakerService(),
+      new RecordingAuditService().asService(),
+      queue.asService(),
+    );
+
+    expect(await service.schedule({ tenantId: TENANT, orderId: 'd1' })).toEqual({
+      opened: false,
+      queued: false,
+    });
+    expect(await service.sweepTenant(TENANT, RESERVA + HOUR)).toMatchObject({
+      examined: 1,
+      adopted: 1,
+    });
+
+    expect(mem.row('d1')).toBeUndefined();
+    expect(queue.hcnChecks.map((j) => j.orderId)).toEqual([ORDEN]);
+  });
+
+  it('un proveedor que lee reservas sin declarar el HCN no tiene plan', async () => {
+    const b = banco({ capabilities: { hcn: false } });
+
+    expect(await b.service.schedule({ tenantId: TENANT, orderId: ORDEN })).toEqual({
+      opened: false,
+      queued: false,
+    });
+    expect((await b.service.sweepTenant(TENANT, RESERVA)).adopted).toBe(0);
+    expect(b.mem.row(ORDEN)).toBeUndefined();
+  });
+
+  it('un plan abierto de un proveedor que dejó de declarar el HCN se corta sin leer, sin tarea ni evento', async () => {
+    const b = banco({ tracking: [[ORDEN, programada(HCN_READS - 1)]] });
+    Object.assign(b.proveedor, { capabilities: { ...b.proveedor.capabilities, hcn: false } });
+    vi.setSystemTime(PRIMERA + 3 * HOUR);
+
+    await b.service.runJob(job(HCN_READS - 1), { final: false });
+
+    expect(b.leer).not.toHaveBeenCalled();
+    expect(b.mem.row(ORDEN)).toMatchObject({
+      hcn_state: 'stopped',
+      hcn_attempts: HCN_READS - 1,
+      hcn_next_check_at: null,
+    });
+    expect(b.mem.operations).toEqual([]);
+    expect(b.audit.events).toEqual([]);
+    expect(b.queue.hcnChecks).toEqual([]);
+  });
+});
+
+describe('HARD-3: el HCN que llega con la tarea abierta la cierra', () => {
+  function tarea(extra: Partial<MemoryHcnOperation> = {}): MemoryHcnOperation {
+    return {
+      tenant_id: TENANT,
+      order_id: ORDEN,
+      type: 'hcn-ticket',
+      status: 'pending',
+      result: JSON.stringify({ vertical: 'hotels', reason: 'sla-exhausted', priority: 'P2' }),
+      actor_user_id: null,
+      ...extra,
+    };
+  }
+
+  it('la lectura del job que trae el HCN cierra la tarea con su motivo y deja lo que la abrió', async () => {
+    const b = banco({ tracking: [[ORDEN, programada(1)]] });
+    b.mem.operations.push(
+      tarea(),
+      tarea({ order_id: 'otra-orden' }),
+      tarea({ tenant_id: OTRO_TENANT }),
+      tarea({ type: 'cancel' }),
+    );
+    b.leer.mockResolvedValue(vista({ hotelConfirmationNumber: 'HCN-4711' }));
+    const ahora = PRIMERA + HOUR;
+    vi.setSystemTime(ahora);
+
+    await b.service.runJob(job(1), { final: false });
+
+    const [propia, otraOrden, otroTenant, otroTipo] = b.mem.operations;
+    expect(propia?.status).toBe('success');
+    expect(JSON.parse(propia!.result)).toEqual({
+      vertical: 'hotels',
+      reason: 'sla-exhausted',
+      priority: 'P2',
+      resolution: {
+        by: 'system',
+        reason: 'hcn-received',
+        source: 'hcn',
+        at: new Date(ahora).toISOString(),
+      },
+    });
+    // El número vive en la fila de seguimiento, no en la tarea.
+    expect(propia?.result).not.toContain('HCN-4711');
+    expect([otraOrden?.status, otroTenant?.status, otroTipo?.status]).toEqual([
+      'pending',
+      'pending',
+      'pending',
+    ]);
+    expect(b.mem.row(ORDEN)).toMatchObject({ hcn: 'HCN-4711', hcn_state: 'received' });
+  });
+
+  it('una lectura sin HCN, o de relleno que el ACL ya descartó, no cierra nada', async () => {
+    const b = banco({ tracking: [[ORDEN, programada(1)]] });
+    b.mem.operations.push(tarea());
+    vi.setSystemTime(PRIMERA + HOUR);
+
+    await b.service.runJob(job(1), { final: false });
+
+    expect(b.mem.operations[0]?.status).toBe('pending');
+    expect(b.mem.row(ORDEN)).toMatchObject({ hcn: null, hcn_state: 'scheduled' });
   });
 });

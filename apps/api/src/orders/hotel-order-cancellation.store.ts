@@ -8,6 +8,7 @@ import type {
   OrderStatus,
   ProviderStatusSource,
 } from '../database/database.types.js';
+import { resolvePendingHcnTickets } from '../hotels/hcn-ticket.js';
 import type { HotelCancelVerifyCalendar } from '../hotels/hotel-cancellation-verification.js';
 import type {
   HotelOrderHcnRecord,
@@ -172,6 +173,21 @@ function columnsOf(write: HotelCancelTrackingWrite) {
   return { insert: common, update: { ...common, ...stop } };
 }
 
+/** Una escritura que trae el HCN cierra, en su transacción, la tarea `hcn-ticket` abierta. */
+async function resolveHcnTicketsOf(
+  trx: Transaction<DB>,
+  tenantId: string,
+  orderId: string,
+  write: Pick<HotelCancelTrackingWrite, 'hcn' | 'source' | 'at'>,
+): Promise<void> {
+  if (write.hcn === undefined) return;
+  await resolvePendingHcnTickets(trx, tenantId, orderId, {
+    reason: 'hcn-received',
+    source: write.source,
+    at: write.at,
+  });
+}
+
 @Injectable()
 export class HotelOrderCancellationStore {
   constructor(private readonly db: DatabaseService) {}
@@ -241,6 +257,7 @@ export class HotelOrderCancellationStore {
       .values({ order_id: orderId, tenant_id: tenantId, ...insert })
       .onConflict((oc) => oc.column('order_id').doUpdateSet(update))
       .execute();
+    await resolveHcnTicketsOf(trx, tenantId, orderId, write);
   }
 
   /**
@@ -385,6 +402,7 @@ export class HotelOrderCancellationStore {
         // La orden ya cambió dentro de esta transacción: se deshace entera.
         if (row === undefined) throw new ReadingSuperseded();
 
+        await resolveHcnTicketsOf(trx, tenantId, orderId, change.write);
         if (change.to === 'cancelled') await this.resolveUnverifiedCancel(trx, orderId);
         return true;
       });
@@ -414,7 +432,9 @@ export class HotelOrderCancellationStore {
       .where('cancel_verify_step', '=', fromStep)
       .where('cancel_verify_next_at', 'is not', null)
       .executeTakeFirstOrThrow();
-    return result.numUpdatedRows > 0n;
+    if (result.numUpdatedRows === 0n) return false;
+    if (next.write !== undefined) await resolveHcnTicketsOf(trx, tenantId, orderId, next.write);
+    return true;
   }
 
   /**

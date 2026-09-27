@@ -111,12 +111,16 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
    * `reconcileByDate`: el envoltorio expone `HotelBookingsByDatePort` sobre el reporte de una
    * ventana del ACL (`BookingDetailsbasedondate`), y este factory resuelve por cuenta
    * (`resolveForAccount`) para la conciliación diaria (PR-5.5).
+   *
+   * `hcn`: BookingDetail trae `HotelConfirmationNumber` y TBO publica el SLA con que lo entrega
+   * (p. 42-43): sus reservas entran al seguimiento del HCN (PR-5.4).
    */
   readonly capabilities: HotelProviderCapabilities = {
     retrieve: true,
     cancel: true,
     retrieveByClientReference: true,
     reconcileByDate: true,
+    hcn: true,
   };
 
   /**

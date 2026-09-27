@@ -71,6 +71,14 @@ export interface HotelProviderCapabilities {
   readonly retrieveByClientReference: boolean;
   /** Lista las reservas de la cuenta por fecha, para la conciliación diaria. */
   readonly reconcileByDate: boolean;
+  /**
+   * El proveedor entrega el número de confirmación del hotel (HCN) en la lectura de la reserva, con
+   * un SLA que la plataforma sigue (docs/tbo/04 §8; RF-27). No alcanza con `retrieve`: leer una
+   * reserva no dice que alguna vez traiga el HCN, y seguir a un proveedor que no lo da sólo gasta
+   * lecturas y termina en una tarea de operaciones por un número que nunca iba a llegar. Sin
+   * `retrieve` tampoco hay seguimiento: no hay con qué leerlo.
+   */
+  readonly hcn: boolean;
 }
 
 export type HotelProviderCapability = keyof HotelProviderCapabilities;

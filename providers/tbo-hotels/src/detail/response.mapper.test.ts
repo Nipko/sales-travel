@@ -244,9 +244,40 @@ describe('HCN (PV-05)', () => {
   });
 
   it('cuando llega, sale recortado en la vista y en el resumen', () => {
-    const { view, detail } = read(withDetail({ HotelConfirmationNumber: '  HCN-778899 ' }));
+    const { view, detail, diagnostics } = read(
+      withDetail({ HotelConfirmationNumber: '  HCN-778899 ' }),
+    );
     expect(view.hotelConfirmationNumber).toBe('HCN-778899');
     expect(detail.hotelConfirmationNumber).toBe('HCN-778899');
+    expect(diagnostics.hcnPlaceholder).toBe(false);
+  });
+
+  it('un relleno (NA, Pending, 0, -) es "todavía sin HCN": no sale, se cuenta y no se loguea (Q-47)', () => {
+    for (const value of ['NA', 'n/a', 'Pending', 'TBA', '0', '-']) {
+      const { logger, metrics, logs, counters } = spies();
+      const { view, detail, diagnostics } = read(
+        withDetail({ HotelConfirmationNumber: value }),
+        BY_CN,
+        { logger, metrics },
+      );
+      expect(view).not.toHaveProperty('hotelConfirmationNumber');
+      expect(detail).not.toHaveProperty('hotelConfirmationNumber');
+      expect(diagnostics.hcnPlaceholder).toBe(true);
+      expect(counters).toContainEqual({
+        name: 'tbo.booking_detail.hcn_placeholder',
+        tags: { op: 'bookingDetail' },
+      });
+      // El estado de la reserva se lee igual: sólo falta el HCN.
+      expect(view.status).toBe('CONFIRMED');
+      expect(JSON.stringify(logs)).not.toContain(`"${value}"`);
+    }
+  });
+
+  it('sin HCN o vacío no cuenta como relleno', () => {
+    const { metrics, counters } = spies();
+    const { diagnostics } = read(withDetail({ HotelConfirmationNumber: '' }), BY_CN, { metrics });
+    expect(diagnostics.hcnPlaceholder).toBe(false);
+    expect(counters.map((c) => c.name)).not.toContain('tbo.booking_detail.hcn_placeholder');
   });
 });
 

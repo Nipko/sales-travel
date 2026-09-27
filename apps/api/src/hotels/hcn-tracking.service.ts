@@ -24,6 +24,7 @@ import {
   hcnSweepRetryAt,
   openHcnTracking,
   type HcnCheckIn,
+  type HcnGate,
   type HcnMissingReason,
   type HcnReadDecision,
 } from './hcn-plan.js';
@@ -62,7 +63,12 @@ import {
  * El seguimiento se corta cuando la reserva se cancela (lo corta la cancelación, y aquí si se la
  * encuentra cancelada), cuando termina el día de entrada o cuando llega el HCN. Agotado el plan se
  * emite `HotelConfirmationNumberMissing` y se crea la tarea de operaciones `hcn-ticket`, sin PII:
- * una persona escala a TBO por el canal comercial (D-TBO-27 A). Nunca cambia `orders.status`.
+ * una persona escala a TBO por el canal comercial (D-TBO-27 A). Si el HCN llega después por otra
+ * lectura (la consulta manual, la conciliación), la tarea se cierra sola en la transacción que lo
+ * guarda (`hcn-ticket.ts`). Nunca cambia `orders.status`.
+ *
+ * Sólo se sigue el HCN de los proveedores que declaran la capacidad `hcn`: saber leer una reserva
+ * no alcanza (`despegar-hotels` lee y no promete un HCN con SLA).
  */
 
 /** Cuánto se espera a que la cola acepte una lectura (el mismo motivo que en la verificación). */
@@ -261,7 +267,7 @@ export class HcnTrackingService {
     const report = emptyReport();
 
     const unplanned = await this.store.listUnplanned(tenantId, {
-      providers: this.readableProviders(),
+      providers: this.trackedProviders(),
       checkinFrom: dayBefore(now),
       limit: HCN_SWEEP_LIMIT,
     });
@@ -348,7 +354,7 @@ export class HcnTrackingService {
       target.status !== 'confirmed' ||
       target.providerOrderId === null ||
       target.tracking.state !== null ||
-      !this.readableProviders().includes(target.provider)
+      !this.trackedProviders().includes(target.provider)
     ) {
       return { opened: false, queued: false };
     }
@@ -374,16 +380,13 @@ export class HcnTrackingService {
     const from: HcnExpectation = { state: 'scheduled', attempts };
     const checkIn = checkInOf(target);
 
-    const gate = hcnGate({ status: target.status, now: Date.now(), endsAt: checkIn?.endsAt });
-    if (gate.kind === 'stop') {
-      const won = await this.store.advance(tenantId, target.orderId, from, {
-        state: 'stopped',
-        attempts,
-        nextAt: null,
-      });
-      if (won) this.logger.log(`hcn.stopped order=${target.orderId} reason=${gate.reason}`);
-      return won ? 'stopped' : 'skipped';
+    // Un plan de un proveedor que ya no declara el HCN (o que nunca debió tenerlo) se corta sin
+    // leer: no hay número que esperar, y agotarlo abriría una tarea de operaciones por nada.
+    if (this.registry.capabilitiesOf(target.provider)?.hcn !== true) {
+      return this.stop(run, 'provider-without-hcn');
     }
+    const gate = hcnGate({ status: target.status, now: Date.now(), endsAt: checkIn?.endsAt });
+    if (gate.kind === 'stop') return this.stop(run, gate.reason);
     if (gate.kind === 'pause') {
       // Sin job: el de esta lectura ya corrió y su `jobId` sigue tomado. La retoma el barrido.
       const won = await this.store.advance(tenantId, target.orderId, from, {
@@ -420,6 +423,23 @@ export class HcnTrackingService {
       case 'missing':
         return this.missing(run, decision, view);
     }
+  }
+
+  /** Se corta sin leer ni gastar un intento (CAS sobre el plan). */
+  private async stop(
+    run: Run,
+    reason: Extract<HcnGate, { kind: 'stop' }>['reason'] | 'provider-without-hcn',
+  ): Promise<HcnOutcome> {
+    const { target } = run;
+    const { attempts } = target.tracking;
+    const won = await this.store.advance(
+      run.tenantId,
+      target.orderId,
+      { state: 'scheduled', attempts },
+      { state: 'stopped', attempts, nextAt: null },
+    );
+    if (won) this.logger.log(`hcn.stopped order=${target.orderId} reason=${reason}`);
+    return won ? 'stopped' : 'skipped';
   }
 
   /** Una lectura que dice algo del HCN: se registra con CAS, se emite y, si toca, se sigue. */
@@ -540,12 +560,18 @@ export class HcnTrackingService {
 
   // ───────────────────────── Piezas ─────────────────────────
 
-  /** Proveedores de hoteles cuyas reservas se pueden leer: los únicos con HCN que seguir. */
-  private readableProviders(): string[] {
+  /**
+   * Los proveedores de hoteles cuyo HCN se sigue: los que lo declaran y saben leer la reserva. Leer
+   * no alcanza (`despegar-hotels` lee y no promete un HCN con SLA).
+   */
+  private trackedProviders(): string[] {
     return this.registry
       .registered()
       .map((r) => r.code)
-      .filter((code) => this.registry.capabilitiesOf(code)?.retrieve === true);
+      .filter((code) => {
+        const capabilities = this.registry.capabilitiesOf(code);
+        return capabilities?.hcn === true && capabilities.retrieve;
+      });
   }
 
   /** El CAS de una escritura con lectura: el plan y lo que la fila decía de la reserva. */

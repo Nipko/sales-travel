@@ -33,6 +33,7 @@ const CAPACIDADES_PLENAS: HotelProviderCapabilities = {
   cancel: true,
   retrieveByClientReference: true,
   reconcileByDate: true,
+  hcn: true,
 };
 
 /** Busca en el espacio de ids de la plataforma, con otro límite que Despegar para distinguirlos. */

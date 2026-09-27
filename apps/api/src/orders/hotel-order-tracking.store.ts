@@ -6,6 +6,7 @@ import type {
   OrderStatus,
   ProviderStatusSource,
 } from '../database/database.types.js';
+import { resolvePendingHcnTickets } from '../hotels/hcn-ticket.js';
 import type {
   HotelOrderHcnRecord,
   HotelOrderReadRecord,
@@ -155,6 +156,9 @@ export class HotelOrderTrackingStore {
    * CAS sobre `write.expected`: si la fila cambió desde que se leyó la orden, la lectura llegó tarde
    * y no pisa lo nuevo (un `Confirmed` viejo sobre el `Cancelled` de la cancelación, o un subestado
    * `null` sobre el claim). `false` = perdió, y quien llama no emite lo que decidió con la foto vieja.
+   *
+   * Si la lectura trae el HCN, en la misma transacción se cierra la tarea `hcn-ticket` que haya
+   * quedado abierta: el número que buscaba ya llegó.
    */
   async recordRead(
     tenantId: string,
@@ -207,7 +211,15 @@ export class HotelOrderTrackingStore {
         )
         .returning('order_id')
         .executeTakeFirst();
-      return row !== undefined;
+      if (row === undefined) return false;
+      if (write.hcn !== undefined) {
+        await resolvePendingHcnTickets(trx, tenantId, orderId, {
+          reason: 'hcn-received',
+          source: write.source,
+          at: write.at,
+        });
+      }
+      return true;
     });
   }
 

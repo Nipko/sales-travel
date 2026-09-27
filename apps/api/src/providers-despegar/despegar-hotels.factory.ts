@@ -65,6 +65,9 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     // respuesta grabada lo respalda. Declararlo haría que una verificación confiara en eso.
     retrieveByClientReference: false,
     reconcileByDate: false,
+    // Sabe leer una reserva, pero no hay contrato de un HCN con SLA que seguir: seguirlo terminaría
+    // en tareas de operaciones por un número que Despegar no promete.
+    hcn: false,
   };
 
   /**

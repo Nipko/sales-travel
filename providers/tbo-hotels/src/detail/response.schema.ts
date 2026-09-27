@@ -16,7 +16,8 @@ import { TboDecimalSchema } from '../search/response.schema';
  *   (p. 64). Lo normaliza `./booking-status`.
  * - **`ConfirmationNumber` es obligatorio**: sin localizador no hay reserva que leer.
  * - **`VoucherStatus` booleano o string** (Boolean en la tabla, "Confirm, Voucher" en la descripción,
- *   p. 45; PV-02). **`HotelConfirmationNumber` nullish**: `""` es "todavía sin HCN" (PV-05).
+ *   p. 45; PV-02). **`HotelConfirmationNumber` nullish**: `""` es "todavía sin HCN" (PV-05); un
+ *   relleno como `NA` también, pero eso lo decide el mapper, que lo cuenta.
  * - **Fechas como texto**: el mapper toma la fecha sólo si tiene forma (PV-03). `BookingDate` es
  *   informativo y uno roto no rompe nada.
  * - **`Rooms` en sus dos formas** (PV-07): un elemento por habitación o uno con `Name[]` de N

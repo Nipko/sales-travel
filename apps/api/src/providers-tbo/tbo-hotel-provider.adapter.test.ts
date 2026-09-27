@@ -570,6 +570,8 @@ describe('las capacidades se encienden a medida que el ACL implementa cada puert
     cancel: 'cancelBooking',
     retrieveByClientReference: 'getBookingByClientReference',
     reconcileByDate: 'listBookingsByDateReport',
+    // El HCN llega en BookingDetail (p. 45): sin esa lectura no hay nada que seguir.
+    hcn: 'getBooking',
   };
 
   const factory = new TboHotelsProviderFactory({} as ProviderCredentialsService);

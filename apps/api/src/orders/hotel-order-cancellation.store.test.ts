@@ -477,3 +477,84 @@ describe('HotelOrderCancellationStore — la conciliación que confirmó una can
     expect(b.negocio().some((q) => q.sql.includes('order_operations'))).toBe(false);
   });
 });
+
+describe('HotelOrderCancellationStore — el HCN cierra la tarea abierta (HARD-3)', () => {
+  const CIERRE =
+    'update "order_operations" set "status" = $1, "result" = order_operations.result || $2::jsonb where "tenant_id" = $3 and "order_id" = $4 and "type" = $5 and "status" = $6';
+  const HCN = { hcn: 'HCN-4711', markReceived: true };
+
+  function cierres(b: ReturnType<typeof banco>): CompiledQuery[] {
+    return b.negocio().filter((q) => q.sql === CIERRE);
+  }
+
+  function fuente(q: CompiledQuery | undefined): unknown {
+    const patch = JSON.parse(String(q?.parameters[1])) as { resolution: { source: string } };
+    return patch.resolution.source;
+  }
+
+  it('writeOutcome con el HCN (un rechazo que lo trae) cierra la tarea en la transacción de la cancelación', async () => {
+    const b = banco();
+
+    await b.db.transaction().execute((trx) =>
+      b.store.writeOutcome(trx, TENANT, ORDEN, {
+        at: T,
+        source: 'cancel',
+        record: { providerStatus: 'Confirmed', refundAwaited: false },
+        hcn: HCN,
+      }),
+    );
+
+    const [cierre] = cierres(b);
+    expect(cierre?.parameters.slice(2)).toEqual([TENANT, ORDEN, 'hcn-ticket', 'pending']);
+    expect(fuente(cierre)).toBe('cancel');
+  });
+
+  it('advance con el HCN lo cierra sólo si gana el CAS del paso', async () => {
+    const gana = banco(() => ({ numAffectedRows: 1n }));
+    await gana.store.advance(TENANT, ORDEN, 1, {
+      step: 2,
+      nextAt: T,
+      write: { at: T, source: 'verify', hcn: HCN },
+    });
+    const pierde = banco(() => ({ numAffectedRows: 0n }));
+    await pierde.store.advance(TENANT, ORDEN, 1, {
+      step: 2,
+      nextAt: T,
+      write: { at: T, source: 'verify', hcn: HCN },
+    });
+    const sinHcn = banco(() => ({ numAffectedRows: 1n }));
+    await sinHcn.store.advance(TENANT, ORDEN, 1, {
+      step: 2,
+      nextAt: T,
+      write: { at: T, source: 'verify', subStatus: 'unknown' },
+    });
+
+    expect(cierres(gana).map(fuente)).toEqual(['verify']);
+    expect(cierres(pierde)).toEqual([]);
+    expect(cierres(sinHcn)).toEqual([]);
+  });
+
+  it('transitionByReading con el HCN lo cierra después de ganar los dos CAS; si pierde, no', async () => {
+    const respuesta = (tracking: boolean) => (q: CompiledQuery) => {
+      if (q.sql.startsWith('update "orders"')) return { rows: [{ id: ORDEN }] };
+      if (q.sql.startsWith('insert into "hotel_order_tracking"')) {
+        return { rows: tracking ? [{ order_id: ORDEN }] : [] };
+      }
+      return {};
+    };
+    const cambio = {
+      from: 'pending' as const,
+      to: 'confirmed' as const,
+      expected: { subStatus: null, providerStatus: null, hcn: null, hcnState: 'missing' as const },
+      write: { at: T, source: 'reconciliation' as const, subStatus: null, hcn: HCN },
+    };
+
+    const gana = banco(respuesta(true));
+    await expect(gana.store.transitionByReading(TENANT, ORDEN, cambio)).resolves.toBe(true);
+    const pierde = banco(respuesta(false));
+    await expect(pierde.store.transitionByReading(TENANT, ORDEN, cambio)).resolves.toBe(false);
+
+    expect(cierres(gana).map(fuente)).toEqual(['reconciliation']);
+    expect(cierres(pierde)).toEqual([]);
+  });
+});

@@ -479,6 +479,7 @@ describe('lo que el controlador de órdenes expone de una orden de hotel', () =>
         cancel: true,
         retrieveByClientReference: true,
         reconcileByDate: false,
+        hcn: true,
       }),
     ).toEqual({ retrieve: true, cancel: true, pay: false, services: false, reshop: false });
     expect(
@@ -487,6 +488,7 @@ describe('lo que el controlador de órdenes expone de una orden de hotel', () =>
         cancel: false,
         retrieveByClientReference: false,
         reconcileByDate: false,
+        hcn: false,
       }),
     ).toEqual({ retrieve: false, cancel: false, pay: false, services: false, reshop: false });
   });
