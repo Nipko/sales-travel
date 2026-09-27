@@ -52,6 +52,7 @@ import {
   type ProviderForm,
   type ProviderSection,
 } from '../../../lib/provider-forms';
+import { providerAccountSaveError } from '../../../lib/provider-account-errors';
 
 interface NetworkTenant {
   id: string;
@@ -670,6 +671,8 @@ function CredentialsModal({
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  /** El 409 de una cuenta con reservas vivas: un aviso, no un error del formulario. */
+  const [inUse, setInUse] = useState<Notice | null>(null);
 
   const [providerCode, setProviderCode] = useState('latam-ndc');
   const [label, setLabel] = useState('default');
@@ -797,6 +800,7 @@ function CredentialsModal({
     setConfig({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
   }
 
   /** Alta: arranca siempre limpio, incluso viniendo de cerrar una edición. */
@@ -809,6 +813,7 @@ function CredentialsModal({
     setConfig({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
     setEditor({ kind: 'create' });
   }
 
@@ -835,11 +840,13 @@ function CredentialsModal({
     setCredentials({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
     setEditor({ kind: 'edit', account, droppedConfigKeys: prefill.droppedConfigKeys });
   }
 
   async function save() {
     setError('');
+    setInUse(null);
     setFieldErrors({});
     if (!provider || !submission) {
       setError(
@@ -871,9 +878,11 @@ function CredentialsModal({
           status,
         }),
       });
-      const data = (await res.json()) as { message?: string | string[]; error?: string };
+      const data = (await res.json()) as unknown;
       if (!res.ok) {
-        setError(apiError(data, 'Error al guardar credenciales'));
+        const failure = providerAccountSaveError(res.status, data, 'Error al guardar credenciales');
+        if (failure.kind === 'in-use') setInUse(failure.notice);
+        else setError(failure.message);
         return;
       }
       setEditor(null);
@@ -1224,6 +1233,12 @@ function CredentialsModal({
             </ErrorBox>
           )}
           {error && <ErrorBox>{error}</ErrorBox>}
+          {/* La cuenta quedó como estaba y el motivo dice qué sí se puede cambiar: aviso, no error. */}
+          {inUse && (
+            <div role="alert">
+              <NoticeBox notice={inUse} />
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setEditor(null)}>
               Cancelar

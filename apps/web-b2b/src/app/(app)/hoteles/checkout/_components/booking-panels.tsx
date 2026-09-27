@@ -4,6 +4,7 @@ import {
   Ban,
   CircleCheck,
   CircleHelp,
+  FileText,
   Loader2,
   Receipt,
   RefreshCw,
@@ -35,6 +36,11 @@ import { PriceChangeNotice } from './price-change-notice';
  */
 
 const RESERVAS = '/reservas';
+
+/** La reserva abierta en Mis Reservas, o la lista si no se sabe cuál es. */
+function reservaLink(orderId: string | undefined) {
+  return orderId === undefined ? RESERVAS : { pathname: RESERVAS, query: { orden: orderId } };
+}
 
 type Heading = RefObject<HTMLHeadingElement | null>;
 
@@ -222,9 +228,22 @@ export function ConfirmedPanel({
         <p>El número de confirmación del hotel llega más tarde: lo vas a ver en Mis Reservas.</p>
       </div>
       <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] px-4 py-3">
-        <Link href={RESERVAS} className={PRIMARY_ACTION}>
+        <Link href={reservaLink(view.orderId)} className={PRIMARY_ACTION}>
           Ver en Mis Reservas
         </Link>
+        {view.orderId ? (
+          // Un documento, no una pantalla: se abre aparte y el checkout queda donde estaba.
+          <a
+            href={`/api/orders/${encodeURIComponent(view.orderId)}/voucher`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={SECONDARY_ACTION}
+          >
+            <FileText aria-hidden="true" className="size-3.5" />
+            Voucher (PDF)
+            <span className="sr-only"> (se abre en otra pestaña)</span>
+          </a>
+        ) : null}
         <Link href="/hoteles" className={SECONDARY_ACTION}>
           <Search aria-hidden="true" className="size-3.5" />
           Buscar otro hotel

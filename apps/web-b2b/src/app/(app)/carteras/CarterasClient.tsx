@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { useConfirm } from '../../../components/ui/dialog';
+import { orderProviderLabel } from '../../../lib/order-vertical';
 import { PORTFOLIO_ISSUANCE, PORTFOLIO_REJECTION } from '../../../lib/portfolio-workflow';
 import { toast } from 'sonner';
 import {
@@ -49,6 +50,8 @@ interface Order {
   totalAmount: number;
   currency: string;
   provider: string;
+  /** Lleva `vertical` desde el intent de cada vertical: de ahí sale "Hoteles", "Autos"… */
+  searchCriteria?: unknown;
   passengers: any;
   contactInfo: any;
   createdAt: string;
@@ -518,7 +521,7 @@ export function CarterasClient({
                             Vertical / Proveedor:
                           </span>
                           <span className="font-semibold text-[var(--color-fg)] uppercase">
-                            {o.provider === 'latam-ndc' ? 'Vuelos (LATAM NDC)' : o.provider}
+                            {orderProviderLabel(o)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center bg-[var(--color-surface-muted)] p-2.5 rounded-xl border border-[var(--color-border)] mt-2">

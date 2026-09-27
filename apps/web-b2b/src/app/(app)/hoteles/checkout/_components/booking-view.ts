@@ -595,6 +595,8 @@ export function bookingWarningsText(summary: Pick<HotelBookingSummary, 'warnings
 // ───────────────────────── Reserva confirmada ─────────────────────────
 
 export interface ConfirmedView {
+  /** Con esto se abre la reserva en Mis Reservas y se pide su voucher (U-15). */
+  readonly orderId?: string;
   readonly orderNumber?: number;
   /** Localizador del proveedor (`ConfirmationNumber` en TBO). */
   readonly providerBookingId?: string;
@@ -607,12 +609,15 @@ export interface ConfirmedView {
 
 /**
  * La reserva confirmada con lo que se sepa de ella: la respuesta del Book y, si se llegó
- * consultando, la orden, que manda en número, localizador e importe.
+ * consultando, la orden, que manda en número, localizador e importe. `orderId` es el de la orden
+ * que se consultó, para cuando no hubo respuesta del Book (un envío repetido).
  */
 export function confirmedViewOf(
   summary: HotelBookingSummary | undefined,
   order?: HotelOrderStatusView,
+  orderId?: string,
 ): ConfirmedView {
+  const id = orderId ?? summary?.orderId;
   const orderNumber = order?.orderNumber ?? summary?.orderNumber;
   const providerBookingId = order?.providerBookingId ?? summary?.providerBookingId;
   const total = order?.total ?? summary?.total;
@@ -621,6 +626,7 @@ export function confirmedViewOf(
     summary?.status === 'confirmed' || summary?.status === 'ticketed' ? summary.message : undefined;
   const priceNote = summary ? bookingWarningsText(summary) : undefined;
   return {
+    ...(id === undefined ? {} : { orderId: id }),
     ...(orderNumber === undefined ? {} : { orderNumber }),
     ...(providerBookingId === undefined ? {} : { providerBookingId }),
     ...(summary?.bookingReference ? { bookingReference: summary.bookingReference } : {}),
@@ -712,7 +718,7 @@ export function afterPoll(state: TrackingState, read: OrderStatusRead): Tracking
   const result = trackingResultOf(order, state.trackPhase);
   switch (result.kind) {
     case 'confirmed':
-      return { kind: 'confirmed', view: confirmedViewOf(state.summary, order) };
+      return { kind: 'confirmed', view: confirmedViewOf(state.summary, order, state.orderId) };
     case 'failed':
       return {
         kind: 'failed',

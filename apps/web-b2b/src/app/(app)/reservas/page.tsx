@@ -6,6 +6,8 @@ import {
   Clock,
   CreditCard,
   Eye,
+  FileText,
+  Hotel,
   Mail,
   Package,
   Plane,
@@ -15,9 +17,10 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
+import { isCarOrder, isHotelOrder, orderVerticalOf } from '../../../lib/order-vertical';
 import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
@@ -28,11 +31,22 @@ import {
   type OrderOperationView,
 } from './cancel-retry-policy';
 import {
+  hotelOrderRowOf,
+  hotelOrderStateOf,
+  hotelVoucherAvailable,
+  parseHotelTracking,
+  type HotelOrderTracking,
+} from './hotel-order-view';
+import {
   supportsOrderCancellation,
   supportsOrderCapability,
   type OrderCapabilities,
 } from './order-capabilities';
+import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
+import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
+import { HotelOrderDetail } from './_components/hotel-order-detail';
+import { HotelOrderStatusChip } from './_components/hotel-order-status';
 
 interface Segment {
   carrier: string;
@@ -60,7 +74,8 @@ interface Order {
   provider?: string;
   capabilities?: Partial<OrderCapabilities>;
   // searchCriteria es polimórfico por vertical: vuelos traen origin/destination/departureDate,
-  // autos traen vertical:'cars' + campos de pickup/dropoff. Todo opcional para no romper render.
+  // autos traen vertical:'cars' + campos de pickup/dropoff, hoteles vertical:'hotels' + la estadía.
+  // Todo opcional para no romper render.
   searchCriteria: {
     // vuelos
     origin?: string;
@@ -92,12 +107,9 @@ interface Order {
   totalAmount: number;
   currency: string;
   errorMessage?: string | null;
+  /** Sólo en hoteles: subestado, estado del proveedor y HCN, sin PII (RF-26). */
+  providerTracking?: unknown;
   createdAt: string;
-}
-
-/** Una orden es de autos si la persistió el adapter AgentCars o el criterio marca la vertical. */
-function isCarOrder(order: Order): boolean {
-  return order.provider === 'agent-cars' || order.searchCriteria?.vertical === 'cars';
 }
 
 interface ServiceItem {
@@ -109,13 +121,6 @@ interface ServiceItem {
   price: { amount: number; currency: string };
   cancellable: boolean;
 }
-
-const OP_TYPE_LABEL: Record<string, string> = {
-  cancel: 'Cancelación',
-  pay: 'Pago / Emisión',
-  reshop: 'Reemisión',
-  retrieve: 'Consulta de estado',
-};
 
 function formatMoney(amountMinor: number, currency: string): string {
   return new Intl.NumberFormat('es-CO', {
@@ -187,24 +192,31 @@ export default function ReservasPage() {
   const [servicesLoading, setServicesLoading] = useState(false);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<Order | null>(null);
+  /**
+   * La cancelación de hotel, con su penalidad estimada (U-17). `retryOperationId`: se reintenta ese
+   * intento fallido del historial, con la misma confirmación.
+   */
+  const [hotelCancel, setHotelCancel] = useState<{
+    order: Order;
+    retryOperationId?: string;
+  } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
-  const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'cars'>('all');
+  const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'hotels' | 'cars'>('all');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
-      const car = isCarOrder(o);
-      if (verticalF === 'cars' && !car) return false;
-      if (verticalF === 'flights' && car) return false;
+      if (verticalF !== 'all' && orderVerticalOf(o) !== verticalF) return false;
       if (statusF === 'confirmed' && !(o.status === 'confirmed' || o.status === 'ticketed'))
         return false;
       if (statusF === 'pending' && o.status !== 'pending') return false;
       if (statusF === 'cancelled' && !(o.status === 'cancelled' || o.status === 'failed'))
         return false;
       if (!q) return true;
+      if (isHotelOrder(o)) return hotelOrderRowOf(o).searchText.includes(q);
       const sc = o.searchCriteria ?? {};
       const pax = (o.passengers ?? [])
         .map((p) => `${p?.givenName ?? ''} ${p?.surname ?? ''}`)
@@ -224,24 +236,52 @@ export default function ReservasPage() {
     });
   }, [orders, query, statusF, verticalF]);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch('/api/orders');
-        const data = (await res.json()) as { orders?: Order[]; error?: string };
-        if (!res.ok) {
+  /**
+   * Relee la lista. Después de una cancelación de hotel el estado lo decide el servidor (puede ser
+   * "Cancelación en curso"), así que no se supone: se lee. Una relectura que falla no borra lo que
+   * ya se veía.
+   */
+  const loadOrders = useCallback(async (initial: boolean): Promise<Order[] | null> => {
+    try {
+      const res = await fetch('/api/orders');
+      const data = (await res.json()) as { orders?: Order[]; error?: string };
+      if (!res.ok) {
+        if (initial) {
           setLoadError(data.error ?? 'No se pudieron cargar las reservas.');
           setOrders([]);
-        } else {
-          setOrders(data.orders ?? []);
         }
-      } catch {
+        return null;
+      }
+      const fresh = data.orders ?? [];
+      setOrders(fresh);
+      setLoadError(null);
+      setDetailOrder((prev) => (prev ? (fresh.find((o) => o.id === prev.id) ?? prev) : prev));
+      return fresh;
+    } catch {
+      if (initial) {
         setLoadError('Error de conexión al cargar las reservas.');
         setOrders([]);
-      } finally {
-        setLoading(false);
       }
-    })();
+      return null;
+    } finally {
+      if (initial) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOrders(true).then((fresh) => {
+      // `?orden=<id>`: la confirmación del checkout abre la reserva recién hecha (U-15).
+      const wanted = new URLSearchParams(window.location.search).get('orden');
+      const found = wanted ? fresh?.find((o) => o.id === wanted) : undefined;
+      if (found) setDetailOrder(found);
+    });
+  }, [loadOrders]);
+
+  /** "Actualizar estado" de hotel: el seguimiento nuevo, sin releer toda la lista. */
+  const applyTracking = useCallback((orderId: string, tracking: HotelOrderTracking) => {
+    const patch = (o: Order) => (o.id === orderId ? { ...o, providerTracking: tracking } : o);
+    setOrders((prev) => prev.map(patch));
+    setDetailOrder((prev) => (prev ? patch(prev) : prev));
   }, []);
 
   async function handleRetrieve(order: Order) {
@@ -535,6 +575,9 @@ export default function ReservasPage() {
             <FilterChip active={verticalF === 'flights'} onClick={() => setVerticalF('flights')}>
               <Plane className="size-3" /> Vuelos
             </FilterChip>
+            <FilterChip active={verticalF === 'hotels'} onClick={() => setVerticalF('hotels')}>
+              <Hotel className="size-3" /> Hoteles
+            </FilterChip>
             <FilterChip active={verticalF === 'cars'} onClick={() => setVerticalF('cars')}>
               <Car className="size-3" /> Autos
             </FilterChip>
@@ -584,7 +627,7 @@ export default function ReservasPage() {
           <Plane className="mx-auto mb-3 size-8 text-[var(--color-fg-subtle)]" />
           <p className="text-sm font-medium text-[var(--color-fg)]">No hay reservas aún</p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-            Las reservas aparecerán aquí cuando crees una reserva de vuelo o auto.
+            Las reservas aparecerán aquí cuando crees una reserva de vuelo, hotel o auto.
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -600,15 +643,27 @@ export default function ReservasPage() {
           {filtered.map((order) => {
             const statusInfo = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
             const isCar = isCarOrder(order);
-            const paxNames = order.passengers
-              ?.map((p) => `${p?.givenName ?? ''} ${p?.surname ?? ''}`.trim())
-              .filter(Boolean)
-              .join(', ');
+            const isHotel = isHotelOrder(order);
+            const hotelRow = isHotel ? hotelOrderRowOf(order) : undefined;
+            const hotelState = isHotel ? hotelOrderStateOf(order) : undefined;
+            const paxNames = isHotel
+              ? undefined
+              : order.passengers
+                  ?.map((p) => `${p?.givenName ?? ''} ${p?.surname ?? ''}`.trim())
+                  .filter(Boolean)
+                  .join(', ');
             const sc = order.searchCriteria;
-            const routeLabel = isCar
-              ? `${sc?.pickUpLocation ?? '—'} → ${sc?.dropOffLocation ?? '—'}`
-              : `${sc?.origin ?? '—'} → ${sc?.destination ?? '—'}`;
-            const dateLabel = isCar ? sc?.pickUpDate : sc?.departureDate;
+            const routeLabel = hotelRow
+              ? hotelRow.title
+              : isCar
+                ? `${sc?.pickUpLocation ?? '—'} → ${sc?.dropOffLocation ?? '—'}`
+                : `${sc?.origin ?? '—'} → ${sc?.destination ?? '—'}`;
+            const dateLabel = hotelRow
+              ? hotelRow.detail
+              : isCar
+                ? sc?.pickUpDate
+                : sc?.departureDate;
+            const VerticalIcon = isHotel ? Hotel : isCar ? Car : Plane;
 
             return (
               <div
@@ -617,11 +672,11 @@ export default function ReservasPage() {
               >
                 <div className="flex items-center gap-4">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
-                    {isCar ? <Car className="size-4" /> : <Plane className="size-4" />}
+                    <VerticalIcon aria-hidden="true" className="size-4" />
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <p className="text-sm font-medium text-[var(--color-fg)]">
                         #{order.orderNumber} · {routeLabel}
                       </p>
@@ -635,6 +690,10 @@ export default function ReservasPage() {
                       {dateLabel && <span>{dateLabel}</span>}
                       {paxNames && <span className="truncate">· {paxNames}</span>}
                     </div>
+                    {/* En el teléfono, "Cancelación en curso" al costado aplasta la fila: va abajo. */}
+                    {hotelState ? (
+                      <HotelOrderStatusChip state={hotelState} className="mt-1.5 sm:hidden" />
+                    ) : null}
                   </div>
 
                   <div className="hidden text-right sm:block">
@@ -647,14 +706,18 @@ export default function ReservasPage() {
                     </div>
                   </div>
 
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium',
-                      statusInfo.className,
-                    )}
-                  >
-                    {statusInfo.label}
-                  </span>
+                  {hotelState ? (
+                    <HotelOrderStatusChip state={hotelState} className="hidden sm:inline-flex" />
+                  ) : (
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium',
+                        statusInfo.className,
+                      )}
+                    >
+                      {statusInfo.label}
+                    </span>
+                  )}
                 </div>
 
                 {/* Actions */}
@@ -667,7 +730,42 @@ export default function ReservasPage() {
                   >
                     <Eye className="size-3.5" /> Ver detalle
                   </Button>
-                  {order.pnr &&
+                  {isHotel ? (
+                    <>
+                      {hotelVoucherAvailable(order) && (
+                        <Button asChild variant="secondary" size="sm" className="gap-1.5 text-xs">
+                          <a
+                            href={`/api/orders/${encodeURIComponent(order.id)}/voucher`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileText aria-hidden="true" className="size-3.5" /> Voucher
+                            <span className="sr-only"> (PDF, se abre en otra pestaña)</span>
+                          </a>
+                        </Button>
+                      )}
+                      {/* Hoteles: sin Pagar/Emitir, Servicios ni Repricing. La cancelación
+                          muestra antes la penalidad estimada y no se ofrece con otra en curso. */}
+                      {order.pnr &&
+                        order.status !== 'cancelled' &&
+                        order.status !== 'failed' &&
+                        supportsOrderCancellation(
+                          order.capabilities,
+                          order.status,
+                          parseHotelTracking(order.providerTracking),
+                        ) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setHotelCancel({ order })}
+                            className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                          >
+                            <XCircle className="size-3.5" /> Cancelar
+                          </Button>
+                        )}
+                    </>
+                  ) : (
+                    order.pnr &&
                     order.status !== 'cancelled' &&
                     order.status !== 'failed' &&
                     (isCar ? (
@@ -749,7 +847,8 @@ export default function ReservasPage() {
                           </Button>
                         )}
                       </>
-                    ))}
+                    ))
+                  )}
                 </div>
 
                 {/* Action result */}
@@ -914,15 +1013,46 @@ export default function ReservasPage() {
       )}
 
       {/* Detalle de la reserva */}
-      {detailOrder && (
-        <OrderDetailModal
-          order={detailOrder}
-          onClose={() => setDetailOrder(null)}
-          onCancelRequest={() => setConfirmCancel(detailOrder)}
-          onPayRequest={() => {
-            setPayingOrder(detailOrder);
-            setPaymentData(null);
-            setDetailOrder(null);
+      {detailOrder &&
+        (isHotelOrder(detailOrder) ? (
+          <HotelOrderDetail
+            key={detailOrder.id}
+            order={detailOrder}
+            suspended={hotelCancel !== null}
+            onClose={() => setDetailOrder(null)}
+            onCancelRequest={(retryOperationId) =>
+              setHotelCancel(
+                retryOperationId === undefined
+                  ? { order: detailOrder }
+                  : { order: detailOrder, retryOperationId },
+              )
+            }
+            onTrackingChange={(tracking) => applyTracking(detailOrder.id, tracking)}
+          />
+        ) : (
+          <OrderDetailModal
+            order={detailOrder}
+            onClose={() => setDetailOrder(null)}
+            onCancelRequest={() => setConfirmCancel(detailOrder)}
+            onPayRequest={() => {
+              setPayingOrder(detailOrder);
+              setPaymentData(null);
+              setDetailOrder(null);
+            }}
+          />
+        ))}
+
+      {/* Cancelación de hotel: penalidad estimada, confirmación explícita y el desenlace. */}
+      {hotelCancel && (
+        <HotelCancelDialog
+          key={`${hotelCancel.order.id}:${hotelCancel.retryOperationId ?? 'new'}`}
+          order={hotelCancel.order}
+          {...(hotelCancel.retryOperationId === undefined
+            ? {}
+            : { retryOperationId: hotelCancel.retryOperationId })}
+          onClose={(attempted) => {
+            setHotelCancel(null);
+            if (attempted) void loadOrders(false);
           }}
         />
       )}
@@ -1351,7 +1481,7 @@ function OrderDetailModal({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-[var(--color-fg)]">
-                            {OP_TYPE_LABEL[op.type] ?? op.type}
+                            {operationTypeLabel(op.type)}
                           </span>
                           <span
                             className={cn(
@@ -1363,11 +1493,7 @@ function OrderDetailModal({
                                   : 'bg-amber-50 text-amber-700',
                             )}
                           >
-                            {op.status === 'success'
-                              ? 'OK'
-                              : op.status === 'failed'
-                                ? 'Falló'
-                                : 'Pendiente'}
+                            {operationStatusView(op).label}
                           </span>
                         </div>
                         {op.last_error && (

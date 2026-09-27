@@ -67,12 +67,19 @@ export function RateSignalsNotice({
   );
 }
 
-export function RateConditions({ conditions }: { conditions: readonly HotelPrebookCondition[] }) {
+export function RateConditions({
+  conditions,
+  defaultOpen = true,
+}: {
+  conditions: readonly HotelPrebookCondition[];
+  /** En una reserva ya hecha van plegadas: se consultan, no se aceptan. */
+  defaultOpen?: boolean;
+}) {
   const groups = conditionGroups(conditions);
   const count = groups.reduce((n, g) => n + g.items.length, 0);
   // Abierto de entrada: son finales para la reserva (TBO, KP-3) y el vendedor las tiene que poder
   // leer completas antes de seguir; el que ya las leyó las pliega.
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
 
   return (

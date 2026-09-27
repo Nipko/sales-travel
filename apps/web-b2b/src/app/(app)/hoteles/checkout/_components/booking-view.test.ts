@@ -426,6 +426,7 @@ describe('seguimiento de la orden (U-13, U-14)', () => {
     expect(next).toEqual({
       kind: 'confirmed',
       view: {
+        orderId: ORDER_ID,
         orderNumber: 42,
         providerBookingId: 'FL1IMA',
         bookingReference: 'STP7K2M9QX4D8R1VZ6AB',
