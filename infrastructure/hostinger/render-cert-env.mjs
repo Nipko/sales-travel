@@ -98,6 +98,10 @@ export const SEED_ENV = Object.freeze([
   { name: 'CERT_TENANT_NAME', from: 'CERT_TENANT_NAME', kind: 'text', optional: true },
   { name: 'CERT_COUNTRY', from: 'CERT_COUNTRY', kind: 'text', optional: true },
   { name: 'CERT_CURRENCY', from: 'CERT_CURRENCY', kind: 'text', optional: true },
+  // Contacto operativo del tenant, que el Book exige y manda a TBO. Vacías, el seed pone un buzón
+  // de rol y un teléfono ficticio (tools/seed-tbo-cert-tenant, `SEED_DEFAULTS`).
+  { name: 'CERT_SUPPORT_EMAIL', from: 'CERT_SUPPORT_EMAIL', kind: 'text', optional: true },
+  { name: 'CERT_SUPPORT_PHONE', from: 'CERT_SUPPORT_PHONE', kind: 'text', optional: true },
   { name: 'CERT_WALLET_BALANCE', from: 'CERT_WALLET_BALANCE', kind: 'text', optional: true },
   {
     name: 'CERT_HOTEL_MARKUP_PERCENT',

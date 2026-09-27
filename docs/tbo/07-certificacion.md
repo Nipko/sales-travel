@@ -620,6 +620,7 @@ Postura: (A). Es la decisión DC-1 (§11). Con (B), los pasos de §7.3 se mantie
 5. **Reglas de markup** de la vertical `hotels` con un margen visible, para que TBO vea precio de venta distinto del neto, y una regla que, sin el piso, quedaría por debajo de `RecommendedSellingRate`, para demostrar CK-09. Con D-TBO-16 (A) el piso aplica también en el portal B2B que se declara (DC-2 A).
 6. **Contenido estático** sincronizado para al menos las ciudades de los `HotelCodes` de test: nombre, estrellas, dirección e imágenes ([05](./05-contenido-estatico-e-inventario.md)). Sin eso, los resultados muestran códigos en vez de hoteles.
 7. **Clientes del CRM** ficticios. Ningún dato de persona real.
+8. **Contacto de soporte** del tenant (`support_email` y `support_phone`). El Book lo exige y lo manda a TBO en `EmailId` y `PhoneNumber` (D-TBO-23 A; `apps/api/src/hotels/hotel-booking-contact.ts`); sin él, _Confirmar reserva_ responde _Falta el contacto de soporte de la agencia._ Un tenant raíz no lo hereda de nadie y el `vendedor` no lo puede cargar (_Mi Agencia_ es de administradores), así que lo carga el seed desde `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE` (`infrastructure/hostinger/README.md` §9.2). Por defecto, un buzón de rol del dominio propio (`reservas.cert@planetour.cloud`) y un teléfono de la franja que NANPA reserva para ficción (`+1 202 555 0100`). El teléfono va con `+` y prefijo de país, no en dígitos sueltos como el `TBO_CERT_PHONE` del arnés (§6.2). Nunca datos de una persona.
 
 ### 7.4 Usuario para TBO
 
@@ -1016,8 +1017,8 @@ Reference document: "TBOH_Hotel_API_Specifications(V2.1).pdf", SHA-256
 > sign-off (`CERT_VENDEDOR_STATUS=suspended`, §7.4). Los textos en cursiva son los literales de la web al 2026-09-27:
 > si la web cambia, se actualizan aquí antes de enviar.
 
-**Condiciones antes de enviarla.** Hoy (2026-09-27) la primera está resuelta en código, pendiente de desplegarse en
-el stack, y la segunda falla. Sin ellas TBO no puede recorrer el portal:
+**Condiciones antes de enviarla.** Hoy (2026-09-27) las dos primeras están resueltas en código, pendientes de
+desplegarse en el stack. Sin ellas TBO no puede recorrer el portal:
 
 1. **Destinos en el stack.** Las sugerencias de destino salían sólo del proveedor de plataforma
    (`HotelsService.suggest` en `apps/api/src/hotels/hotels.service.ts`, que usa `despegar-hotels`), y el stack no
@@ -1029,8 +1030,9 @@ el stack, y la segunda falla. Sin ellas TBO no puede recorrer el portal:
    queda fuera con `foreign-hotel-ids` (`catalogPlanOf`, mismo archivo).
 2. **Contacto operativo de la agencia.** El Book exige el `support_email` y el `support_phone` del tenant o de su
    consolidador (D-TBO-23 A; `apps/api/src/hotels/hotel-booking-contact.ts`), y `tools/seed-tbo-cert-tenant` no los
-   carga. Sin ellos, _Confirmar reserva_ responde _Falta el contacto de soporte de la agencia._ y el `vendedor` no
-   puede cargarlos (_Mi Agencia_ es de administradores). Van un buzón de rol y un teléfono ficticio, como en el arnés.
+   cargaba: _Confirmar reserva_ respondía _Falta el contacto de soporte de la agencia._ y el `vendedor` no podía
+   cargarlos (_Mi Agencia_ es de administradores). Resuelto el 2026-09-27: el seed los carga desde
+   `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE`, con un buzón de rol y un teléfono ficticio por defecto (§7.3 punto 8).
 3. Catálogo de TBO sincronizado en `sales_travel_cert` para las ciudades de test (§7.3 punto 6).
 4. `CERT_CURRENCY` igual a la moneda del perfil de la cuenta de test (`check`; [Q-82](./10-preguntas-para-tbo.md#q-82)).
 5. [Q-76](./10-preguntas-para-tbo.md#q-76) respondida (staging = endpoint de integración) o la cuenta del stack

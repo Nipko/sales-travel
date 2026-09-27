@@ -46,6 +46,8 @@ describe('resolveSeedEnv', () => {
       name: SEED_DEFAULTS.tenantName,
       countryCode: SEED_DEFAULTS.country,
       currency: SEED_DEFAULTS.currency,
+      supportEmail: SEED_DEFAULTS.supportEmail,
+      supportPhone: SEED_DEFAULTS.supportPhone,
     });
     expect(s.vendedor.email).toBe(SEED_DEFAULTS.vendedorEmail);
     expect(s.vendedor.status).toBe('active');
@@ -62,11 +64,19 @@ describe('resolveSeedEnv', () => {
 
   it('vacío es "no configurado": el render deja fuera las opcionales, GitHub las manda vacías', () => {
     const s = resolveSeedEnv(
-      env({ CERT_CURRENCY: '', CERT_VENDEDOR_EMAIL: '', CERT_HOTEL_MARKUP_PERCENT: '' }),
+      env({
+        CERT_CURRENCY: '',
+        CERT_VENDEDOR_EMAIL: '',
+        CERT_HOTEL_MARKUP_PERCENT: '',
+        CERT_SUPPORT_EMAIL: '',
+        CERT_SUPPORT_PHONE: '',
+      }),
     );
     expect(s.tenant.currency).toBe('USD');
     expect(s.vendedor.email).toBe(SEED_DEFAULTS.vendedorEmail);
     expect(s.hotelMarkupBasisPoints).toBe(500);
+    expect(s.tenant.supportEmail).toBe(SEED_DEFAULTS.supportEmail);
+    expect(s.tenant.supportPhone).toBe(SEED_DEFAULTS.supportPhone);
   });
 
   it('lee cada opcional', () => {
@@ -78,6 +88,8 @@ describe('resolveSeedEnv', () => {
         CERT_TENANT_NAME: 'Portal de certificación',
         CERT_COUNTRY: 'PE',
         CERT_CURRENCY: 'EUR',
+        CERT_SUPPORT_EMAIL: ' Reservas.QA@Example.com ',
+        CERT_SUPPORT_PHONE: ' +51 (1) 000-0000 ',
         CERT_WALLET_BALANCE: '12345',
         CERT_HOTEL_MARKUP_PERCENT: '2.5',
         CERT_TBO_BASE_URL: 'https://api.tbotechnology.in/TBOHolidays_HotelAPI/',
@@ -90,6 +102,9 @@ describe('resolveSeedEnv', () => {
       name: 'Portal de certificación',
       countryCode: 'PE',
       currency: 'EUR',
+      supportEmail: 'reservas.qa@example.com',
+      // Tal cual, sin los espacios de los extremos: el api limpia los separadores al reservar.
+      supportPhone: '+51 (1) 000-0000',
     });
     expect(s.wallet.balanceMinor).toBe(1_234_500);
     expect(s.hotelMarkupBasisPoints).toBe(250);
@@ -143,6 +158,15 @@ describe('resolveSeedEnv', () => {
     ['CERT_CURRENCY', 'usd', 'CERT_CURRENCY:invalid_string'],
     ['CERT_CURRENCY', 'CLP', 'CERT_CURRENCY:not_two_decimals'],
     ['CERT_COUNTRY', 'COL', 'CERT_COUNTRY:invalid_string'],
+    ['CERT_SUPPORT_EMAIL', 'reservas', 'CERT_SUPPORT_EMAIL:invalid_string'],
+    ['CERT_SUPPORT_EMAIL', `${'r'.repeat(150)}@planetour.cloud`, 'CERT_SUPPORT_EMAIL:too_big'],
+    // Sin `+` el api no sabe de qué país es: el formato del arnés (`TBO_CERT_PHONE`) no vale aquí.
+    ['CERT_SUPPORT_PHONE', '573000000000', 'CERT_SUPPORT_PHONE:not_international'],
+    ['CERT_SUPPORT_PHONE', '+57 300', 'CERT_SUPPORT_PHONE:not_international'],
+    ['CERT_SUPPORT_PHONE', '+57 300 000 0000 ext 1', 'CERT_SUPPORT_PHONE:not_international'],
+    ['CERT_SUPPORT_PHONE', '   ', 'CERT_SUPPORT_PHONE:not_international'],
+    // Válido para el Book, pero _Mi Agencia_ no guardaría más de 40 caracteres.
+    ['CERT_SUPPORT_PHONE', `+57${' '.repeat(30)}3000000000`, 'CERT_SUPPORT_PHONE:too_big'],
     ['CERT_WALLET_BALANCE', '0', 'CERT_WALLET_BALANCE:invalid_string'],
     ['CERT_WALLET_BALANCE', '100.50', 'CERT_WALLET_BALANCE:invalid_string'],
     ['CERT_HOTEL_MARKUP_PERCENT', '0', 'CERT_HOTEL_MARKUP_PERCENT:out_of_range'],

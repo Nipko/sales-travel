@@ -280,19 +280,27 @@ del `.env` del stack van sin comillas, así que el render sólo acepta `A-Z a-z 
 | `CERT_TBO_PASSWORD`             | Su contraseña. Llega literal al seed: `$`, `#`, comillas y espacios valen; un salto de línea no  |
 | `CERT_VENDEDOR_PASSWORD`        | La del usuario de los testers (12 caracteres o más). Se entrega por un canal distinto del zip    |
 
-| Variable                                | Por defecto                  | Uso                                                                                  |
-| --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
-| `CERT_CURRENCY`                         | `USD`                        | Moneda del tenant y de la cartera: la de perfil de la cuenta de test (`check`)       |
-| `CERT_VENDEDOR_EMAIL`                   | `tbo.tester@planetour.cloud` | Usuario de login de los testers                                                      |
-| `CERT_VENDEDOR_NAME`                    | `TBO Tester`                 | Nombre visible del usuario                                                           |
-| `CERT_VENDEDOR_STATUS`                  | `active`                     | `suspended` tras el sign-off: cierra sus sesiones y no vuelve a entrar               |
-| `CERT_TENANT_NAME`                      | `Sales-Travel Certification` | Nombre neutro del tenant (07 §7.3.1)                                                 |
-| `CERT_COUNTRY`                          | `CO`                         | País del tenant                                                                      |
-| `CERT_WALLET_BALANCE`                   | `50000`                      | Saldo ficticio, en unidades mayores, al que se recarga la cartera en cada despliegue |
-| `CERT_HOTEL_MARKUP_PERCENT`             | `5`                          | Markup de hoteles del tenant                                                         |
-| `CERT_TBO_BASE_URL`                     | la de test del ACL           | Sólo el host de test de TBO; cualquier otro se rechaza                               |
-| `CERT_PROVIDERS_DISABLED`               | vacío                        | Kill-switch del stack: `tbo-hotels` o `tbo-hotels:ventas`                            |
-| `CERT_PROVIDER_PAYLOADS_RETENTION_DAYS` | `30`                         | Retención de la bóveda de RQ/RS                                                      |
+| Variable                                | Por defecto                     | Uso                                                                                  |
+| --------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------ |
+| `CERT_CURRENCY`                         | `USD`                           | Moneda del tenant y de la cartera: la de perfil de la cuenta de test (`check`)       |
+| `CERT_VENDEDOR_EMAIL`                   | `tbo.tester@planetour.cloud`    | Usuario de login de los testers                                                      |
+| `CERT_VENDEDOR_NAME`                    | `TBO Tester`                    | Nombre visible del usuario                                                           |
+| `CERT_VENDEDOR_STATUS`                  | `active`                        | `suspended` tras el sign-off: cierra sus sesiones y no vuelve a entrar               |
+| `CERT_TENANT_NAME`                      | `Sales-Travel Certification`    | Nombre neutro del tenant (07 §7.3.1)                                                 |
+| `CERT_COUNTRY`                          | `CO`                            | País del tenant                                                                      |
+| `CERT_SUPPORT_EMAIL`                    | `reservas.cert@planetour.cloud` | Contacto que el Book manda a TBO (`EmailId`): buzón de rol, nunca personal           |
+| `CERT_SUPPORT_PHONE`                    | `+1 202 555 0100`               | Teléfono del Book (`PhoneNumber`), con `+` y prefijo. Ficticio: 555-01xx de NANPA    |
+| `CERT_WALLET_BALANCE`                   | `50000`                         | Saldo ficticio, en unidades mayores, al que se recarga la cartera en cada despliegue |
+| `CERT_HOTEL_MARKUP_PERCENT`             | `5`                             | Markup de hoteles del tenant                                                         |
+| `CERT_TBO_BASE_URL`                     | la de test del ACL              | Sólo el host de test de TBO; cualquier otro se rechaza                               |
+| `CERT_PROVIDERS_DISABLED`               | vacío                           | Kill-switch del stack: `tbo-hotels` o `tbo-hotels:ventas`                            |
+| `CERT_PROVIDER_PAYLOADS_RETENTION_DAYS` | `30`                            | Retención de la bóveda de RQ/RS                                                      |
+
+Sin `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE` el seed carga los de por defecto, porque el Book no reserva sin un
+contacto de la agencia (D-TBO-23 A) y el `vendedor` no puede cargarlo: _Mi Agencia_ es de administradores. El teléfono
+va con `+` y el prefijo de país, no en dígitos sueltos como el `TBO_CERT_PHONE` del arnés, y puede quedarse ficticio.
+Si alguien tiene que leer lo que TBO mande al buzón, se crea ese alias en el dominio o se pone un buzón de rol que ya
+exista, como el `TBO_CERT_EMAIL` del arnés; nunca uno personal.
 
 Del lado de producción sólo usa el acceso SSH (`HOSTINGER_HOST`, `HOSTINGER_USER`, `HOSTINGER_SSH_KEY`,
 `HOSTINGER_SSH_PORT`).

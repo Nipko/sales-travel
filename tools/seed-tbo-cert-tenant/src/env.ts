@@ -36,6 +36,8 @@ export const SEED_ENV_VARIABLES: readonly string[] = Object.freeze([
   'CERT_TENANT_NAME',
   'CERT_COUNTRY',
   'CERT_CURRENCY',
+  'CERT_SUPPORT_EMAIL',
+  'CERT_SUPPORT_PHONE',
   'CERT_WALLET_BALANCE',
   'CERT_HOTEL_MARKUP_PERCENT',
 ]);
@@ -54,6 +56,11 @@ export const SEED_DEFAULTS = Object.freeze({
   // Nombre neutro (07 §7.3.1): el white-label no imita a ninguna agencia real.
   tenantName: 'Sales-Travel Certification',
   country: 'CO',
+  // Contacto operativo de la agencia: sin él el Book se rechaza (D-TBO-23 A), y viaja a TBO en
+  // `EmailId` y `PhoneNumber`. Buzón de rol del dominio propio, nunca el de una persona. El
+  // teléfono es de la franja 555-0100 a 555-0199, que NANPA reserva para ficción: no es de nadie.
+  supportEmail: 'reservas.cert@planetour.cloud',
+  supportPhone: '+1 202 555 0100',
   // La moneda de perfil de la cuenta de test de TBO no se conoce hasta correr `check` (Q-82).
   // La cartera tiene que estar en la moneda de la reserva o la retención la rechaza.
   currency: 'USD',
@@ -93,6 +100,21 @@ const NOT_TWO_DECIMALS = new Set([
   'XOF',
   'XPF',
 ]);
+
+/** Lo que un teléfono escrito a mano puede traer además de dígitos, como lo limpia el api. */
+const PHONE_SEPARATORS = /[\s().-]/g;
+
+/**
+ * La regla del contacto del Book (`parseInternationalPhone`, apps/api/src/hotels/
+ * hotel-booking-contact.ts): `+`, prefijo de país y de 7 a 15 dígitos en total. Sin `+` el api no
+ * sabe de qué país es y rechaza la reserva. `support-contact.contract.test.ts` la compara con la
+ * del api.
+ */
+export function isInternationalPhone(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('+')) return false;
+  return /^[1-9]\d{6,14}$/.test(trimmed.slice(1).replace(PHONE_SEPARATORS, ''));
+}
 
 /** bcrypt ignora lo que pasa de 72 bytes: una contraseña más larga valdría igual que su prefijo. */
 const BCRYPT_MAX_BYTES = 72;
@@ -142,6 +164,12 @@ export interface SeedSettings {
     readonly name: string;
     readonly countryCode: string;
     readonly currency: string;
+    /**
+     * `tenants.support_email` y `support_phone`: el contacto operativo que el Book exige y manda
+     * a TBO (docs/tbo/03 §3.5; D-TBO-23 A). El `vendedor` no los puede cargar desde el panel.
+     */
+    readonly supportEmail: string;
+    readonly supportPhone: string;
   };
   readonly vendedor: {
     readonly email: string;
@@ -195,6 +223,16 @@ const SeedEnvSchema = z.object({
       .string()
       .regex(/^[A-Z]{3}$/)
       .refine((code) => !NOT_TWO_DECIMALS.has(code), { params: { reason: 'not_two_decimals' } }),
+  ),
+  // Los topes son los de _Mi Agencia_ (apps/api/src/tenants/branding.schemas.ts): un administrador
+  // del stack puede guardar la marca del tenant sin tener que corregir lo que dejó el seed.
+  CERT_SUPPORT_EMAIL: optional(z.string().trim().toLowerCase().email().max(160)),
+  CERT_SUPPORT_PHONE: optional(
+    z
+      .string()
+      .trim()
+      .max(40)
+      .refine(isInternationalPhone, { params: { reason: 'not_international' } }),
   ),
   // Unidades mayores, entero: el saldo es ficticio y no necesita centavos.
   CERT_WALLET_BALANCE: optional(z.string().regex(/^[1-9]\d{0,8}$/)),
@@ -316,6 +354,8 @@ export function resolveSeedEnv(env: SeedEnv): SeedSettings {
       name: e.CERT_TENANT_NAME ?? SEED_DEFAULTS.tenantName,
       countryCode: e.CERT_COUNTRY ?? SEED_DEFAULTS.country,
       currency: e.CERT_CURRENCY ?? SEED_DEFAULTS.currency,
+      supportEmail: e.CERT_SUPPORT_EMAIL ?? SEED_DEFAULTS.supportEmail,
+      supportPhone: e.CERT_SUPPORT_PHONE ?? SEED_DEFAULTS.supportPhone,
     },
     vendedor: {
       email: e.CERT_VENDEDOR_EMAIL ?? SEED_DEFAULTS.vendedorEmail,

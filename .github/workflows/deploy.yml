@@ -316,6 +316,8 @@ jobs:
           CERT_TENANT_NAME: ${{ vars.CERT_TENANT_NAME }}
           CERT_COUNTRY: ${{ vars.CERT_COUNTRY }}
           CERT_CURRENCY: ${{ vars.CERT_CURRENCY }}
+          CERT_SUPPORT_EMAIL: ${{ vars.CERT_SUPPORT_EMAIL }}
+          CERT_SUPPORT_PHONE: ${{ vars.CERT_SUPPORT_PHONE }}
           CERT_WALLET_BALANCE: ${{ vars.CERT_WALLET_BALANCE }}
           CERT_HOTEL_MARKUP_PERCENT: ${{ vars.CERT_HOTEL_MARKUP_PERCENT }}
         # Fuera del checkout: seed.env lleva credenciales en claro y no puede acabar en el árbol.

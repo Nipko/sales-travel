@@ -4,7 +4,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { blindIndex, derivePiiKeys, open } from './crypto.js';
 import { FICTITIOUS_CUSTOMERS } from './customers.js';
-import { resolveSeedEnv, SeedSecret, type SeedSettings } from './env.js';
+import { resolveSeedEnv, SEED_DEFAULTS, SeedSecret, type SeedSettings } from './env.js';
 import { SeedRefusedError } from './errors.js';
 import { runSeed, SEED_ACTOR_ID, TBO_PROVIDER_CODE, type PasswordHasher } from './seed.js';
 
@@ -42,6 +42,8 @@ function settings(
     tboUsername?: string;
     tboPassword?: string;
     currency?: string;
+    supportEmail?: string;
+    supportPhone?: string;
     dedicated?: boolean;
     expectedName?: string;
   } = {},
@@ -57,6 +59,8 @@ function settings(
     CERT_VENDEDOR_PASSWORD: overrides.vendedorPassword ?? 'vendedor-password-1',
     CERT_VENDEDOR_STATUS: overrides.status ?? 'active',
     CERT_CURRENCY: overrides.currency ?? 'USD',
+    CERT_SUPPORT_EMAIL: overrides.supportEmail ?? '',
+    CERT_SUPPORT_PHONE: overrides.supportPhone ?? '',
     CERT_WALLET_BALANCE: '1000',
     CERT_HOTEL_MARKUP_PERCENT: '4.5',
   });
@@ -132,6 +136,17 @@ d('runSeed contra Postgres', () => {
       tenant_type: 'consolidator',
       parent_tenant_id: null,
       default_currency: 'USD',
+    });
+
+    // El contacto que el Book lee (BrandingService.resolveSupportContact): sin él, la reserva se
+    // rechaza con "Falta el contacto de soporte de la agencia."
+    const [support] = await q<{ support_email: string | null; support_phone: string | null }>(
+      'SELECT support_email, support_phone FROM resolve_tenant_branding($1::uuid)',
+      [report.tenantId],
+    );
+    expect(support).toEqual({
+      support_email: SEED_DEFAULTS.supportEmail,
+      support_phone: SEED_DEFAULTS.supportPhone,
     });
 
     const [member] = await q<{
@@ -250,6 +265,24 @@ d('runSeed contra Postgres', () => {
     const report = await runSeed(client, s, fakeHasher);
     expect(report.walletToppedUpMinor).toBe(30_000);
     expect(report.walletBalanceMinor).toBe(100_000);
+  });
+
+  it('cambia el contacto de soporte con sus variables, y no lo reescribe si no cambió', async () => {
+    const s = settings({
+      supportEmail: `reservas-${SUFFIX}@example.com`,
+      supportPhone: '+57 (601) 000-0000',
+    });
+    expect((await runSeed(client, s, fakeHasher)).tenant).toBe('updated');
+    const again = await runSeed(client, s, fakeHasher);
+    expect(again.tenant).toBe('unchanged');
+    const [support] = await q<{ support_email: string | null; support_phone: string | null }>(
+      'SELECT support_email, support_phone FROM resolve_tenant_branding($1::uuid)',
+      [again.tenantId],
+    );
+    expect(support).toEqual({
+      support_email: `reservas-${SUFFIX}@example.com`,
+      support_phone: '+57 (601) 000-0000',
+    });
   });
 
   it('rota la contraseña y la cuenta de TBO cuando cambian, e invalida las sesiones', async () => {

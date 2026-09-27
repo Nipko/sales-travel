@@ -1,7 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { load } from 'js-yaml';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CERT_DATABASE, SEED_ENV_VARIABLES, SEED_SECRET_VARIABLES } from './env.js';
+import {
+  CERT_DATABASE,
+  SEED_DEFAULTS,
+  SEED_ENV_VARIABLES,
+  SEED_SECRET_VARIABLES,
+  resolveSeedEnv,
+} from './env.js';
 
 /**
  * Contrato del stack de certificación de TBO (docs/tbo/07 §7.2 A; D-TBO-35 A; 08 RC-07; 09 PR-7.2)
@@ -267,6 +273,31 @@ describe('render del .env del stack (RC-07)', () => {
     expect(stack.get('PROVIDER_PAYLOADS_RETENTION_DAYS')).toBe('14');
     expect(seed.has('CERT_CURRENCY')).toBe(false);
     expect(seed.get('CERT_VENDEDOR_EMAIL')).toBe('qa@example.com');
+  });
+
+  it('el contacto de soporte llega al seed tal cual, con los espacios del teléfono', () => {
+    const seedOf = (source: Readonly<Record<string, string>>): Record<string, string> =>
+      Object.fromEntries(entriesOf(render.renderCertEnv(source).seed));
+
+    const configured = seedOf({
+      ...VALID,
+      CERT_SUPPORT_EMAIL: 'reservas@example.com',
+      CERT_SUPPORT_PHONE: '+57 (601) 000-0000',
+    });
+    expect(resolveSeedEnv(configured).tenant).toMatchObject({
+      supportEmail: 'reservas@example.com',
+      supportPhone: '+57 (601) 000-0000',
+    });
+
+    // Sin las variables, el seed pone el buzón de rol y el teléfono ficticio: el Book nunca queda
+    // sin contacto.
+    const unset = seedOf({ ...VALID, CERT_SUPPORT_EMAIL: '', CERT_SUPPORT_PHONE: '' });
+    expect(unset['CERT_SUPPORT_EMAIL']).toBeUndefined();
+    expect(unset['CERT_SUPPORT_PHONE']).toBeUndefined();
+    expect(resolveSeedEnv(unset).tenant).toMatchObject({
+      supportEmail: SEED_DEFAULTS.supportEmail,
+      supportPhone: SEED_DEFAULTS.supportPhone,
+    });
   });
 
   it('el .env del stack lleva las claves PROPIAS y el seed la misma de credenciales que el api', () => {

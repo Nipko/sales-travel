@@ -116,6 +116,8 @@ interface TenantRow {
   name: string;
   country_code: string;
   default_currency: string;
+  support_email: string | null;
+  support_phone: string | null;
   tenant_type: string;
   parent_tenant_id: string | null;
   status: string;
@@ -125,6 +127,11 @@ interface TenantRow {
  * Consolidador raíz y sin hijos: el factory de TBO sólo opera cuentas de plataforma o de
  * consolidador (D-TBO-03 A; apps/api/src/providers-tbo/tbo-hotels.factory.ts), y sin hijos nadie
  * más hereda la cuenta de test.
+ *
+ * Con su contacto de soporte (07 §7.3.8): el Book lo toma de `resolve_tenant_branding` y, sin
+ * email o sin teléfono internacional, rechaza la reserva antes de abrir la orden (D-TBO-23 A;
+ * apps/api/src/hotels/hotel-booking-contact.ts). Un tenant raíz no tiene de quién heredarlo, y el
+ * `vendedor` no puede cargarlo porque _Mi Agencia_ es de administradores.
  */
 async function upsertTenant(
   db: Queryable,
@@ -132,17 +139,27 @@ async function upsertTenant(
 ): Promise<{ id: string; change: Change }> {
   const row = await one<TenantRow>(
     db,
-    `SELECT id, name, country_code, default_currency, tenant_type, parent_tenant_id, status
+    `SELECT id, name, country_code, default_currency, support_email, support_phone, tenant_type,
+            parent_tenant_id, status
        FROM tenants WHERE slug = $1 FOR UPDATE`,
     [tenant.slug],
   );
   if (row === undefined) {
     const created = await one<{ id: string }>(
       db,
-      `INSERT INTO tenants (slug, name, country_code, default_currency, default_language, tenant_type)
-       VALUES ($1, $2, $3, $4, 'es', 'consolidator')
+      `INSERT INTO tenants
+         (slug, name, country_code, default_currency, default_language, tenant_type, support_email,
+          support_phone)
+       VALUES ($1, $2, $3, $4, 'es', 'consolidator', $5, $6)
        RETURNING id`,
-      [tenant.slug, tenant.name, tenant.countryCode, tenant.currency],
+      [
+        tenant.slug,
+        tenant.name,
+        tenant.countryCode,
+        tenant.currency,
+        tenant.supportEmail,
+        tenant.supportPhone,
+      ],
     );
     return { id: created!.id, change: 'created' };
   }
@@ -169,12 +186,23 @@ async function upsertTenant(
     row.name === tenant.name &&
     row.country_code === tenant.countryCode &&
     row.default_currency === tenant.currency &&
+    row.support_email === tenant.supportEmail &&
+    row.support_phone === tenant.supportPhone &&
     row.status === 'active';
   if (same) return { id: row.id, change: 'unchanged' };
   await db.query(
-    `UPDATE tenants SET name = $2, country_code = $3, default_currency = $4, status = 'active'
+    `UPDATE tenants
+        SET name = $2, country_code = $3, default_currency = $4, support_email = $5,
+            support_phone = $6, status = 'active'
       WHERE id = $1`,
-    [row.id, tenant.name, tenant.countryCode, tenant.currency],
+    [
+      row.id,
+      tenant.name,
+      tenant.countryCode,
+      tenant.currency,
+      tenant.supportEmail,
+      tenant.supportPhone,
+    ],
   );
   return { id: row.id, change: 'updated' };
 }

@@ -10,6 +10,7 @@ PR-7.2). El stack, el despliegue y los registros DNS están en
 | Qué                 | Cómo                                                                                                                                                                                                        |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tenant `tbo-cert`   | Consolidador raíz, sin hijos, nombre neutro. El factory de TBO sólo opera cuentas de plataforma o de consolidador (D-TBO-03 A).                                                                             |
+| Contacto de soporte | `support_email` y `support_phone` del tenant: el Book no reserva sin ellos (D-TBO-23 A) y los manda a TBO. Buzón de rol y teléfono ficticio por defecto.                                                    |
 | Usuario `vendedor`  | Rol `vendedor`: busca, reserva y cancela **sin MFA** (07 §7.4). Correo verificado; el stack no envía correo.                                                                                                |
 | Cuenta `tbo-hotels` | `active`, no heredable, `environment: test`. Usuario y contraseña cifrados con la clave del stack, leídos del entorno del contenedor. Sólo acepta el host de test de TBO: este stack nunca guarda una live. |
 | Cartera             | En `CERT_CURRENCY`, recargada hasta `CERT_WALLET_BALANCE` con un `DEPOSIT_PAYMENT` del seed (nunca PAN, D1).                                                                                                |
@@ -38,25 +39,33 @@ Sale con `1` y una línea JSON con el motivo. Nunca imprime un valor de credenci
 Las escribe `infrastructure/hostinger/render-cert-env.mjs` en `seed.env`; el job `deploy-cert` las toma de los secrets y
 variables `CERT_*` de GitHub del mismo nombre.
 
-| Variable                                 | Obligatoria | Por defecto                             |
-| ---------------------------------------- | ----------- | --------------------------------------- |
-| `PGHOST`, `PGUSER`, `PGPASSWORD`         | Sí          | Las del stack (`postgres`)              |
-| `PGPORT`, `PGDATABASE`                   | No          | `5432`, `sales_travel_cert`             |
-| `PROVIDER_CREDENTIALS_KEY`               | Sí          | La del api del stack                    |
-| `CERT_TBO_USERNAME`, `CERT_TBO_PASSWORD` | Sí          | —                                       |
-| `CERT_TBO_BASE_URL`                      | No          | La de test del ACL                      |
-| `CERT_VENDEDOR_PASSWORD`                 | Sí          | — (12 caracteres, 72 bytes)             |
-| `CERT_VENDEDOR_EMAIL`                    | No          | `tbo.tester@planetour.cloud`            |
-| `CERT_VENDEDOR_NAME`                     | No          | `TBO Tester`                            |
-| `CERT_VENDEDOR_STATUS`                   | No          | `active` (`suspended` tras el sign-off) |
-| `CERT_TENANT_NAME`                       | No          | `Sales-Travel Certification`            |
-| `CERT_COUNTRY`                           | No          | `CO`                                    |
-| `CERT_CURRENCY`                          | No          | `USD`                                   |
-| `CERT_WALLET_BALANCE`                    | No          | `50000` (unidades mayores)              |
-| `CERT_HOTEL_MARKUP_PERCENT`              | No          | `5`                                     |
+| Variable                                 | Obligatoria | Por defecto                                     |
+| ---------------------------------------- | ----------- | ----------------------------------------------- |
+| `PGHOST`, `PGUSER`, `PGPASSWORD`         | Sí          | Las del stack (`postgres`)                      |
+| `PGPORT`, `PGDATABASE`                   | No          | `5432`, `sales_travel_cert`                     |
+| `PROVIDER_CREDENTIALS_KEY`               | Sí          | La del api del stack                            |
+| `CERT_TBO_USERNAME`, `CERT_TBO_PASSWORD` | Sí          | —                                               |
+| `CERT_TBO_BASE_URL`                      | No          | La de test del ACL                              |
+| `CERT_VENDEDOR_PASSWORD`                 | Sí          | — (12 caracteres, 72 bytes)                     |
+| `CERT_VENDEDOR_EMAIL`                    | No          | `tbo.tester@planetour.cloud`                    |
+| `CERT_VENDEDOR_NAME`                     | No          | `TBO Tester`                                    |
+| `CERT_VENDEDOR_STATUS`                   | No          | `active` (`suspended` tras el sign-off)         |
+| `CERT_TENANT_NAME`                       | No          | `Sales-Travel Certification`                    |
+| `CERT_COUNTRY`                           | No          | `CO`                                            |
+| `CERT_CURRENCY`                          | No          | `USD`                                           |
+| `CERT_SUPPORT_EMAIL`                     | No          | `reservas.cert@planetour.cloud` (buzón de rol)  |
+| `CERT_SUPPORT_PHONE`                     | No          | `+1 202 555 0100` (ficticio, con `+` y prefijo) |
+| `CERT_WALLET_BALANCE`                    | No          | `50000` (unidades mayores)                      |
+| `CERT_HOTEL_MARKUP_PERCENT`              | No          | `5`                                             |
 
 `CERT_CURRENCY` tiene que ser la moneda de perfil de la cuenta de test de TBO, la que imprime `tools/tbo` `check`
 ([Q-82](../../docs/tbo/10-preguntas-para-tbo.md#q-82)): la retención de la cartera rechaza una reserva en otra moneda.
+
+`CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE` pasan por la regla del Book (`hotel-booking-contact.ts` del api): correo
+válido y teléfono con `+`, prefijo de país y de 7 a 15 dígitos, que puede traer espacios, puntos, guiones y paréntesis.
+El formato del arnés (`TBO_CERT_PHONE=573000000000`, sin `+`) no vale aquí. El teléfono por defecto es de la franja
+555-0100 a 555-0199, que NANPA reserva para ficción; el correo, un buzón de rol del dominio propio. Nunca datos de una
+persona: los dos viajan a TBO en cada Book (`EmailId`, `PhoneNumber`).
 
 ## Correrlo a mano
 
@@ -74,5 +83,6 @@ rm -f seed.env
 
 `pnpm --filter @sales-travel/seed-tbo-cert-tenant test`. `seed.integration.test.ts` corre contra Postgres cuando hay
 `PGHOST`/`PGUSER`/`PGPASSWORD` (el CI) y se salta sin ellas. `crypto.contract.test.ts` cifra con este paquete y descifra
-con los módulos de `apps/api`. `stack-contract.test.ts` es la prueba de RC-07 sobre el render del `.env`, el compose, el
-Caddyfile y el job.
+con los módulos de `apps/api`, y `support-contact.contract.test.ts` pasa el contacto de soporte por la regla del Book y
+el esquema de _Mi Agencia_ del api. `stack-contract.test.ts` es la prueba de RC-07 sobre el render del `.env`, el
+compose, el Caddyfile y el job.
