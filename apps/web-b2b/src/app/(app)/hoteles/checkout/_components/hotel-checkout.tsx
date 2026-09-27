@@ -11,7 +11,6 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Button } from '../../../../../components/ui/button';
 import { Card } from '../../../../../components/ui/card';
 import { cn } from '../../../../../lib/cn';
 import { formatMoney } from '../../_components/hotel-format';
@@ -24,8 +23,11 @@ import {
 import { countryNamer } from '../../_components/nationality-field';
 import { stayNights, staySummary } from '../../[hotelKey]/_components/hotel-detail-view';
 import { prebookRateAction, type PrebookActionResult } from '../actions';
+import { SECONDARY_ACTION } from './action-styles';
+import { BookingStep } from './booking-step';
 import { CancelPolicy } from './cancel-policy';
 import { CheckoutExpiry } from './checkout-expiry';
+import { draftFitsRooms, emptyGuestDraft, type GuestDraft } from './guest-form-view';
 import { PriceChangeNotice } from './price-change-notice';
 import { PrebookSummary, PrebookTotal } from './prebook-summary';
 import {
@@ -42,7 +44,9 @@ import { RateConditions, RateSignalsNotice } from './rate-conditions';
  * el proveedor (PreBook) y se muestra lo que queda firme para la reserva —precio de venta, el
  * aviso si cambió, la política de cancelación y las condiciones del hotel—; si subió o cambiaron
  * las condiciones, el vendedor lo acepta antes de seguir (D-TBO-20 A). Una tarifa "sólo con
- * aéreo" no sigue (D-TBO-22 A). El paso 2, huéspedes y reserva, recibe la tarifa aceptada.
+ * aéreo" no sigue (D-TBO-22 A). El paso 2 (U-12 a U-14), huéspedes y reserva, recibe la tarifa
+ * aceptada; los huéspedes cargados se conservan si el vendedor vuelve al paso 1 o hay que
+ * revalidar la tarifa, porque es la misma estadía.
  */
 
 type PrebookState =
@@ -55,9 +59,6 @@ const UNREACHABLE: PrebookActionResult = {
   retryable: true,
 };
 
-const SECONDARY_ACTION =
-  'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-60';
-
 export function HotelCheckout({ rateToken }: { rateToken: string | undefined }) {
   // `undefined` mientras no se leyó el almacenamiento; `null` si no hay tarifa elegida.
   const [selection, setSelection] = useState<RateSelection | null | undefined>(undefined);
@@ -66,6 +67,7 @@ export function HotelCheckout({ rateToken }: { rateToken: string | undefined }) 
   const [accepted, setAccepted] = useState(false);
   const [expired, setExpired] = useState(false);
   const [confirmed, setConfirmed] = useState<AcceptedPrebook | undefined>(undefined);
+  const [guestDraft, setGuestDraft] = useState<GuestDraft | undefined>(undefined);
   const requestRef = useRef(0);
   const startedRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -105,6 +107,14 @@ export function HotelCheckout({ rateToken }: { rateToken: string | undefined }) 
   }, [confirmed]);
   const goToStep = (next: AcceptedPrebook | undefined) => {
     moveFocusRef.current = true;
+    if (next !== undefined) {
+      const { rooms, guestNationality } = next.selection.stay;
+      setGuestDraft((draft) =>
+        draft !== undefined && draftFitsRooms(draft, rooms)
+          ? draft
+          : emptyGuestDraft(rooms, guestNationality),
+      );
+    }
     setConfirmed(next);
   };
 
@@ -162,7 +172,18 @@ export function HotelCheckout({ rateToken }: { rateToken: string | undefined }) 
         {announcement}
       </p>
       {confirmed ? (
-        <GuestsStepPending accepted={confirmed} onBack={() => goToStep(undefined)} />
+        <BookingStep
+          accepted={confirmed}
+          draft={
+            guestDraft ?? emptyGuestDraft(selection.stay.rooms, selection.stay.guestNationality)
+          }
+          onDraftChange={setGuestDraft}
+          onBack={() => goToStep(undefined)}
+          onRevalidate={() => {
+            goToStep(undefined);
+            runPrebook(selection);
+          }}
+        />
       ) : state.kind === 'loading' ? (
         <LoadingPrebook />
       ) : state.result.ok ? (
@@ -443,42 +464,5 @@ function MissingSelection() {
         Buscar hoteles
       </Link>
     </div>
-  );
-}
-
-/**
- * El paso 2 todavía no está en el panel: la carga de huéspedes y el Book llegan con el checkout
- * `Limit` (PR-6.4), que recibe `accepted` tal cual.
- */
-function GuestsStepPending({
-  accepted,
-  onBack,
-}: {
-  accepted: AcceptedPrebook;
-  onBack: () => void;
-}) {
-  return (
-    <Card className="space-y-3 p-4">
-      <div>
-        <h2 className="text-sm font-semibold tracking-tight text-[var(--color-fg)]">
-          Huéspedes y confirmación
-        </h2>
-        <p className="text-xs text-[var(--color-fg-muted)]">
-          Tarifa aceptada por{' '}
-          <span className="font-medium tabular-nums text-[var(--color-fg)]">
-            {formatMoney(accepted.acceptedTotal)}
-          </span>
-          .
-        </p>
-      </div>
-      <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg)]">
-        La carga de huéspedes y la confirmación de reservas de hotel todavía no están habilitadas en
-        el panel.
-      </p>
-      <Button type="button" variant="secondary" size="sm" onClick={onBack}>
-        <ArrowLeft aria-hidden="true" />
-        Volver a la tarifa
-      </Button>
-    </Card>
   );
 }

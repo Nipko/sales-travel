@@ -2,6 +2,7 @@
 
 import { api } from '../../../../lib/api';
 import { parseOfferReference } from '../_components/hotel-rate-selection';
+import { parseOrderStatus, type OrderStatusRead } from './_components/booking-view';
 import {
   isRetryablePrebookStatus,
   parsePrebook,
@@ -60,4 +61,26 @@ export async function prebookRateAction(reference: unknown): Promise<PrebookActi
     return { ok: false, error: INCOMPLETE, retryable: true };
   }
   return { ok: true, prebook, receivedAt: Date.now() };
+}
+
+/*
+ * El estado de la orden de una reserva que quedó en curso (RF-22, U-13, U-14): `202` del Book, o un
+ * doble envío que el servidor reconoció. Sólo sale lo que la espera necesita: nada de huéspedes ni
+ * del contacto, que la respuesta completa de la orden sí trae.
+ */
+
+const ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const ORDER_NOT_FOUND =
+  'No encontramos la reserva para consultar su estado. Buscala en Mis Reservas antes de volver a intentar.';
+
+export async function hotelOrderStatusAction(orderId: unknown): Promise<OrderStatusRead> {
+  if (typeof orderId !== 'string' || !ORDER_ID_RE.test(orderId)) {
+    return { ok: false, error: ORDER_NOT_FOUND, notFound: true };
+  }
+  const res = await api<{ order?: unknown }>(`/orders/${encodeURIComponent(orderId)}`);
+  if (!res.ok) return { ok: false, error: res.error.message, notFound: res.error.status === 404 };
+  const order = parseOrderStatus(res.data.order);
+  if (order === undefined) return { ok: false, error: ORDER_NOT_FOUND, notFound: true };
+  return { ok: true, order };
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../lib/api', () => ({ api: apiMock }));
 
-import { prebookRateAction } from './actions';
+import { hotelOrderStatusAction, prebookRateAction } from './actions';
 
 const REFERENCE = {
   providerCode: 'tbo-hotels',
@@ -109,5 +109,59 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
     expect(await prebookRateAction(REFERENCE)).toMatchObject({ ok: false, retryable: true });
     apiMock.mockResolvedValue({ ok: true, data: { ...PREBOOK, providerCode: 'despegar-hotels' } });
     expect(await prebookRateAction(REFERENCE)).toMatchObject({ ok: false, retryable: true });
+  });
+});
+
+describe('hotelOrderStatusAction — la orden de una reserva en curso (U-13, U-14)', () => {
+  const ORDER_ID = '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+
+  it('lee GET /orders/:id y devuelve sólo el estado, sin huéspedes ni contacto', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: {
+        order: {
+          id: ORDER_ID,
+          status: 'confirmed',
+          pnr: 'FL1IMA',
+          orderNumber: 42,
+          totalAmount: 32134,
+          currency: 'USD',
+          passengers: [{ firstName: 'Juan', lastName: 'Perez' }],
+          contactInfo: { email: 'juan@correo.com' },
+          providerTracking: { subStatus: null },
+        },
+      },
+    });
+    const res = await hotelOrderStatusAction(ORDER_ID);
+    expect(apiMock).toHaveBeenCalledWith(`/orders/${ORDER_ID}`);
+    expect(res).toEqual({
+      ok: true,
+      order: {
+        status: 'confirmed',
+        orderNumber: 42,
+        providerBookingId: 'FL1IMA',
+        total: { amountMinor: 32134, currency: 'USD' },
+      },
+    });
+    expect(JSON.stringify(res)).not.toMatch(/Juan|correo/);
+  });
+
+  it('un id que no es UUID no llega al API', async () => {
+    expect(await hotelOrderStatusAction('../admin')).toMatchObject({ ok: false, notFound: true });
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('una orden que no existe para esta agencia se dice como tal', async () => {
+    apiMock.mockResolvedValue({ ok: true, data: { order: null } });
+    expect(await hotelOrderStatusAction(ORDER_ID)).toMatchObject({ ok: false, notFound: true });
+  });
+
+  it('un fallo al consultar no es "no existe": la espera sigue', async () => {
+    apiMock.mockResolvedValue({ ok: false, error: { status: 503, message: 'Sin conexión.' } });
+    expect(await hotelOrderStatusAction(ORDER_ID)).toEqual({
+      ok: false,
+      error: 'Sin conexión.',
+      notFound: false,
+    });
   });
 });

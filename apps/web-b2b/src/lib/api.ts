@@ -1,3 +1,4 @@
+import { describeNonJson } from './read-json';
 import { getActiveTenant, getSession } from './session';
 
 const BASE = process.env.INTERNAL_API_URL ?? 'http://api:3000';
@@ -75,4 +76,72 @@ export async function api<T>(
       },
     };
   }
+}
+
+/**
+ * Lo que respondió el API, con su estado y su cuerpo tal cual.
+ *
+ * `api()` no alcanza para una reserva de hotel (docs/tbo/03 §4.5 punto 6; 08 RF-22): en éxito
+ * devuelve sólo el cuerpo, así que un `202` ("sigue en curso, consultá la orden") llegaba al
+ * navegador igual que un `201`; y en error conserva sólo `message`, así que se perdían el precio
+ * nuevo de un `409`, la orden existente de un doble envío y las marcas `retryForbidden` y
+ * `reconciliationRequired`, que son las que dicen que NO hay que repetir la reserva.
+ */
+export type ApiResponse =
+  /** El API respondió con JSON: `body` es su cuerpo completo, de éxito o de error. */
+  | { readonly kind: 'json'; readonly status: number; readonly body: unknown }
+  /** Respondió algo que no es JSON (la página de error de un proxy): sólo queda el estado. */
+  | { readonly kind: 'not-json'; readonly status: number; readonly message: string }
+  /**
+   * No hubo respuesta. Para una escritura NO prueba que no llegó: la conexión pudo cortarse
+   * después de enviar el pedido.
+   */
+  | { readonly kind: 'unreachable'; readonly status: number; readonly message: string };
+
+/** Lee el cuerpo UNA vez; el estado sale siempre dentro de 200-599 ({@link estadoHttpValido}). */
+export async function readApiResponse(res: Response): Promise<ApiResponse> {
+  const status = estadoHttpValido(res.status);
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    return { kind: 'not-json', status, message: describeNonJson(res.status, '') };
+  }
+  try {
+    return { kind: 'json', status, body: JSON.parse(text) as unknown };
+  } catch {
+    return { kind: 'not-json', status, message: describeNonJson(res.status, text) };
+  }
+}
+
+/**
+ * Como {@link api}, pero devuelve el estado y el cuerpo completo en éxito y en error. Nunca
+ * registra cuerpos: los de una reserva llevan nombres de huéspedes.
+ */
+export async function apiWithStatus(path: string, init: RequestInit = {}): Promise<ApiResponse> {
+  const token = await getSession();
+  const tenantId = await getActiveTenant();
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/json');
+  if (token) headers.set('authorization', `Bearer ${token}`);
+  if (tenantId) headers.set('x-tenant-id', tenantId);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, { ...init, headers, cache: 'no-store' });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'UnknownError';
+    console.error(`[API FETCH CONNECTION ERROR] PATH: ${path}, ERROR: ${name}`);
+    return {
+      kind: 'unreachable',
+      status: SERVICIO_NO_DISPONIBLE,
+      message: 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.',
+    };
+  }
+
+  const read = await readApiResponse(res);
+  if (read.kind === 'not-json') {
+    console.error(`[API FETCH ERROR] PATH: ${path}, STATUS: ${res.status}, BODY: no JSON`);
+  }
+  return read;
 }
