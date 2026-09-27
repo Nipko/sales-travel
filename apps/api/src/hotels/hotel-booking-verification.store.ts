@@ -53,6 +53,12 @@ export interface HotelVerificationAdvance {
   readonly providerStatus?: { readonly value: string; readonly at: number };
 }
 
+/** El paso de un calendario, tal como está en la fila: contra esto se hace el CAS. */
+export interface HotelVerificationPosition {
+  readonly anchorAt: number;
+  readonly step: number;
+}
+
 export interface HotelVerificationDueQuery {
   /** Pasos programados hasta este instante: vencidos más allá del margen de la cola. */
   readonly dueBefore: number;
@@ -123,6 +129,9 @@ export class HotelBookingVerificationStore {
    * Lo que el barrido tiene que ejecutar en un tenant: los pasos vencidos y las órdenes abiertas
    * que quedaron sin calendario (el proceso murió con la reserva en vuelo, o no pudo escribirlo).
    * Sólo órdenes de hotel con referencia, abiertas: una consolidada ya no se lee por aquí.
+   *
+   * Por la hora que tienen programada, la más atrasada primero: una orden cuya lectura falló queda
+   * reprogramada más adelante y deja pasar al resto del tenant (HARD-2).
    */
   async listDue(
     tenantId: string,
@@ -150,7 +159,8 @@ export class HotelBookingVerificationStore {
             ]),
           ]),
         )
-        .orderBy('o.updated_at')
+        // Una huérfana no tiene hora programada: cuenta desde su última escritura.
+        .orderBy(sql`coalesce(t.verify_next_at, o.updated_at)`)
         .limit(query.limit)
         .execute();
       return rows.flatMap((row) => {
@@ -220,6 +230,30 @@ export class HotelBookingVerificationStore {
         .where('order_id', '=', orderId)
         .where('tenant_id', '=', tenantId)
         .where('verify_step', '=', fromStep)
+        .executeTakeFirstOrThrow();
+      return result.numUpdatedRows > 0n;
+    });
+  }
+
+  /**
+   * Corre la próxima lectura del paso guardado a `nextAt`, sin avanzarlo: la del barrido falló y no
+   * dijo nada. CAS sobre el ancla y el paso: si otro camino lo avanzó o lo detuvo, no se toca.
+   */
+  async postpone(
+    tenantId: string,
+    orderId: string,
+    from: HotelVerificationPosition,
+    nextAt: number,
+  ): Promise<boolean> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const result = await trx
+        .updateTable('hotel_order_tracking')
+        .set({ verify_next_at: new Date(nextAt) })
+        .where('order_id', '=', orderId)
+        .where('tenant_id', '=', tenantId)
+        .where('verify_anchor_at', '=', new Date(from.anchorAt))
+        .where('verify_step', '=', from.step)
+        .where('verify_next_at', 'is not', null)
         .executeTakeFirstOrThrow();
       return result.numUpdatedRows > 0n;
     });

@@ -313,7 +313,11 @@ describe('RF-25 CA-2: 200 con la cancelación en curso (D-TBO-25 A)', () => {
 
     await correrVerificacion(b);
 
-    expect(b.getBooking).toHaveBeenCalledWith(LOCALIZADOR, { tenantId: TENANT, requestId: ORDEN });
+    expect(b.getBooking).toHaveBeenCalledWith(
+      LOCALIZADOR,
+      { tenantId: TENANT, requestId: ORDEN },
+      { purpose: 'background' },
+    );
     expect(b.cancelBooking).toHaveBeenCalledOnce();
     expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
     expect(b.mem.tracking(ORDEN)).toMatchObject({

@@ -98,9 +98,17 @@ describe('TBO_OPERATIONS: la tabla de 01 §3.1 y 08 RNF-01', () => {
     ]);
   });
 
-  it('la recuperación tras un Book incierto puede pedir el cupo de dinero', () => {
+  it('la recuperación tras un Book incierto puede pedir el cupo de dinero o el de verificación', () => {
     expect(TBO_OPERATIONS.bookingDetail.lanes).toContain('money');
+    expect(TBO_OPERATIONS.bookingDetail.lanes).toContain('verification');
     expect(TBO_OPERATIONS.bookingDetail.lanes[0]).toBe('background');
+  });
+
+  it('sólo BookingDetail admite el cupo de verificación', () => {
+    for (const name of NAMES) {
+      if (name === 'bookingDetail') continue;
+      expect(TBO_OPERATIONS[name].lanes, name).not.toContain('verification');
+    }
   });
 
   it('está congelada, filas y cupos incluidos', () => {

@@ -187,7 +187,10 @@ export class HotelOrderCancellationStore {
     });
   }
 
-  /** Los pasos vencidos de un tenant, el más atrasado primero. */
+  /**
+   * Los pasos vencidos de un tenant, el más atrasado primero: una orden cuya lectura falló queda
+   * reprogramada más adelante y deja pasar al resto (HARD-2).
+   */
   async listDue(
     tenantId: string,
     query: { readonly dueBefore: number; readonly limit: number },
@@ -253,6 +256,31 @@ export class HotelOrderCancellationStore {
     return this.db.withTenant(tenantId, (trx) =>
       this.advanceIn(trx, tenantId, orderId, fromStep, next),
     );
+  }
+
+  /**
+   * Corre la próxima lectura del paso guardado a `nextAt`, sin avanzarlo: la del barrido falló y no
+   * dijo nada. CAS sobre el ancla y el paso: si otro camino lo avanzó, lo cerró o abrió el calendario
+   * de una cancelación nueva, no se toca.
+   */
+  async postpone(
+    tenantId: string,
+    orderId: string,
+    from: { readonly anchorAt: number; readonly step: number },
+    nextAt: number,
+  ): Promise<boolean> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const result = await trx
+        .updateTable('hotel_order_tracking')
+        .set({ cancel_verify_next_at: new Date(nextAt) })
+        .where('order_id', '=', orderId)
+        .where('tenant_id', '=', tenantId)
+        .where('cancel_verify_anchor_at', '=', new Date(from.anchorAt))
+        .where('cancel_verify_step', '=', from.step)
+        .where('cancel_verify_next_at', 'is not', null)
+        .executeTakeFirstOrThrow();
+      return result.numUpdatedRows > 0n;
+    });
   }
 
   /**

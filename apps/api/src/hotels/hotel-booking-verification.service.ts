@@ -8,9 +8,9 @@ import { withProviderPayloadScope } from '../provider-payloads/provider-payload-
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   supportsHotelBookingByClientReference,
-  type HotelProviderAccountFingerprint,
   type ResolvedHotelProvider,
 } from '../providers/hotel-provider.types.js';
+import { ProviderOrderAccountUnavailableError } from '../providers/provider.types.js';
 import {
   PostSaleQueueService,
   type VerifyHotelBookingJob,
@@ -26,6 +26,7 @@ import {
   decideVerification,
   stepIsCurrent,
   sweepStep,
+  verificationStepAt,
   type HotelVerificationDecision,
   type HotelVerificationEscalation,
   type HotelVerificationRead,
@@ -36,6 +37,7 @@ import {
 } from './hotel-booking-verification.store.js';
 import { hotelBookProviderRaw, planBookVerification } from './hotel-booking.saga.js';
 import { HcnTrackingService } from './hcn-tracking.service.js';
+import { sweepRetryAt } from './sweep-retry.js';
 
 /**
  * Verificación de una reserva de hotel cuya respuesta no llegó (docs/tbo/09 PR-4.7; 08 RF-21,
@@ -51,10 +53,13 @@ import { HcnTrackingService } from './hcn-tracking.service.js';
  *    consolida, avanza, deja de preguntar o escala. Un fallo de transporte se relanza para que la
  *    cola repita la lectura; en el último intento se escala y el paso queda vencido para el barrido.
  * 3. **El barrido**, tenant por tenant: los pasos vencidos que la cola perdió y las órdenes abiertas
- *    que quedaron sin calendario.
+ *    que quedaron sin calendario. Una lectura que falla reprograma la orden con backoff (HARD-2):
+ *    con la hora vieja, las mismas órdenes atascadas ocuparían cada corrida.
  *
- * Nada aquí reserva. La lectura va con el alcance de post-venta del breaker: frenar las ventas de
- * un proveedor no puede impedir averiguar si una reserva ya existe.
+ * Nada aquí reserva. La lectura sale con la cuenta que hizo la reserva (RF-29; D-TBO-28 A), con el
+ * alcance de post-venta del breaker —frenar las ventas de un proveedor no puede impedir averiguar si
+ * una reserva ya existe— y por el cupo de verificación del proveedor, que no le quita al vendedor
+ * más que su techo (04 §9.5 punto 5, PV-41).
  */
 
 /**
@@ -155,11 +160,6 @@ function errorName(err: unknown): string {
   return err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
 }
 
-/** La cuenta con la que lee hoy el adapter, si la expone. */
-function accountOf(adapter: object): string | undefined {
-  return (adapter as { searchAccount?: HotelProviderAccountFingerprint }).searchAccount?.accountId;
-}
-
 function emptyReport(): HotelVerificationSweepReport {
   return {
     examined: 0,
@@ -256,8 +256,8 @@ export class HotelBookingVerificationService {
   // ───────────────────────── 3. El barrido ─────────────────────────
 
   /**
-   * Lo vencido de un tenant. Una orden que falla no frena a las demás: queda vencida y la retoma la
-   * corrida siguiente.
+   * Lo vencido de un tenant. Una orden que falla no frena a las demás: si falló la lectura, se
+   * reprograma con backoff; si falló la base, queda vencida y la retoma la corrida siguiente.
    */
   async sweepTenant(
     tenantId: string,
@@ -313,16 +313,50 @@ export class HotelBookingVerificationService {
       anchorAt = target.anchorAt;
       fromStep = target.step;
     }
-    return this.runStep({
+    const step = sweepStep(fromStep, anchorAt, now);
+    const outcome = await this.runStep({
       tenantId,
       target,
       fromStep,
-      step: sweepStep(fromStep, anchorAt, now),
+      step,
       anchorAt,
       runner: 'sweep',
       finalAttempt: true,
       actorUserId: target.userId,
     });
+    if (outcome === 'unavailable') {
+      await this.postpone(tenantId, target, { anchorAt, fromStep, step }, now);
+    }
+    return outcome;
+  }
+
+  /**
+   * La lectura del barrido no se hizo: la próxima, con backoff y nunca después del paso siguiente
+   * del calendario. El paso guardado no cambia: la lectura que falló no dijo nada.
+   */
+  private async postpone(
+    tenantId: string,
+    target: HotelVerificationTarget,
+    run: { readonly anchorAt: number; readonly fromStep: number; readonly step: number },
+    now: number,
+  ): Promise<void> {
+    const deadline = verificationStepAt(run.anchorAt, run.step + 1);
+    const at = sweepRetryAt({
+      now,
+      dueAt: verificationStepAt(run.anchorAt, run.step) ?? now,
+      ...(deadline === undefined ? {} : { deadline }),
+    });
+    const moved = await this.store.postpone(
+      tenantId,
+      target.orderId,
+      { anchorAt: run.anchorAt, step: run.fromStep },
+      at,
+    );
+    if (moved) {
+      this.logger.log(
+        `hotels.verify.sweep_postponed order=${target.orderId} step=${run.step} retryAt=${new Date(at).toISOString()}`,
+      );
+    }
   }
 
   // ───────────────────────── El paso ─────────────────────────
@@ -363,8 +397,17 @@ export class HotelBookingVerificationService {
   private async read(tenantId: string, target: HotelVerificationTarget): Promise<ReadResult> {
     let provider: ResolvedHotelProvider;
     try {
-      provider = await this.registry.byCode(tenantId, target.provider);
+      // La cuenta de la ORDEN, y sólo si sigue en la red del tenant: la vigente del tenant puede ser
+      // otra, y leer con ésa diría "no está" de una reserva que existe (04 §9.2, PV-15).
+      provider = await this.registry.forOrder(tenantId, {
+        orderId: target.orderId,
+        provider: target.provider,
+        providerAccountId: target.providerAccountId,
+      });
     } catch (err) {
+      if (err instanceof ProviderOrderAccountUnavailableError) {
+        return { read: { kind: 'account-changed' }, error: err };
+      }
       return { read: { kind: 'failed', error: classifyVerificationReadError(err) }, error: err };
     }
     const { adapter } = provider;
@@ -375,21 +418,16 @@ export class HotelBookingVerificationService {
       // Un proveedor que no lee por nuestra referencia nunca va a poder verificar esta reserva.
       return { read: { kind: 'failed', error: 'permanent' } };
     }
-    const account = accountOf(adapter);
-    if (
-      target.providerAccountId !== null &&
-      account !== undefined &&
-      account !== target.providerAccountId
-    ) {
-      return { read: { kind: 'account-changed' } };
-    }
     const ctx: SearchContext = { tenantId, requestId: target.orderId };
     try {
       // Cada RQ/RS de la lectura queda atado a su orden en la bóveda de payloads.
       const view = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
         this.breaker.execute(
           provider.code,
-          () => adapter.getBookingByClientReference(target.bookingReference, ctx),
+          () =>
+            adapter.getBookingByClientReference(target.bookingReference, ctx, {
+              purpose: 'verification',
+            }),
           { ...provider.circuit, scope: 'post-sale' },
         ),
       );

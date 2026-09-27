@@ -70,11 +70,12 @@ afterEach(() => {
 });
 
 describe('valores por defecto (D-TBO-17 A)', () => {
-  it('5 QPS, 4 en vuelo, reserva de 1 para dinero, fondo de 1, mitad durante 60 s tras un 429', () => {
+  it('5 QPS, 4 en vuelo, reserva de 1 para dinero, verificación y fondo de 1, mitad durante 60 s tras un 429', () => {
     expect(TBO_LIMITER_DEFAULTS).toEqual({
       maxQps: 5,
       maxConcurrent: 4,
       moneyReserve: { qps: 1, concurrent: 1 },
+      verification: { qps: 1, concurrent: 1 },
       background: { qps: 1, concurrent: 1 },
       throttleFactor: 0.5,
       throttleMs: 60_000,
@@ -157,6 +158,70 @@ describe('concurrencia', () => {
     expect(second.grant?.granted).toBe(true);
   });
 
+  it('una ráfaga de verificaciones no pasa de su techo: el vendedor conserva el resto (PV-41)', async () => {
+    const subject = limiter({ maxQps: 1_000 });
+    const burst = Array.from({ length: 6 }, () => acquire(subject, 'verification'));
+    const sales = [acquire(subject, 'sales'), acquire(subject, 'sales')];
+    await flush();
+    expect(burst.filter((item) => item.grant?.granted === true)).toHaveLength(1);
+    expect(sales.every((item) => item.grant?.granted === true)).toBe(true);
+    // Y la reserva de dinero sigue intacta para un Book.
+    const book = acquire(subject, 'money');
+    await flush();
+    expect(book.grant?.granted).toBe(true);
+    expect(subject.inFlight(ACCOUNT)).toBe(4);
+  });
+
+  it('una verificación que espera su techo no frena a las búsquedas que llegan después', async () => {
+    // QPS de la verificación holgado para aislar su techo de concurrencia.
+    const subject = limiter({ maxQps: 1_000, verification: { qps: 1_000, concurrent: 1 } });
+    const first = acquire(subject, 'verification');
+    const second = acquire(subject, 'verification');
+    await flush();
+    expect(first.grant?.granted).toBe(true);
+    expect(second.grant).toBeUndefined();
+
+    const search = acquire(subject, 'sales');
+    await flush();
+    expect(search.grant?.granted).toBe(true);
+    permitOf(first).release();
+    await flush();
+    expect(second.grant?.granted).toBe(true);
+  });
+
+  it('la verificación pasa antes que las búsquedas que esperaban desde antes', async () => {
+    const subject = limiter({ maxQps: 1_000 });
+    const holders = Array.from({ length: 3 }, () => acquire(subject, 'sales'));
+    const search = acquire(subject, 'sales');
+    const verification = acquire(subject, 'verification');
+    await flush();
+    expect(search.grant).toBeUndefined();
+    expect(verification.grant).toBeUndefined();
+    permitOf(holders[0] as Tracked).release();
+    await flush();
+    expect(verification.grant?.granted).toBe(true);
+    expect(search.grant).toBeUndefined();
+  });
+
+  it('la verificación no toca la reserva de dinero', async () => {
+    const subject = limiter({ maxQps: 1_000, verification: { qps: 1_000, concurrent: 10 } });
+    const verifications = Array.from({ length: 5 }, () => acquire(subject, 'verification'));
+    await flush();
+    expect(verifications.filter((item) => item.grant?.granted === true)).toHaveLength(3);
+    const book = acquire(subject, 'money');
+    await flush();
+    expect(book.grant?.granted).toBe(true);
+  });
+
+  it('verificación y fondo tienen techos separados', async () => {
+    const subject = limiter({ maxQps: 1_000 });
+    const background = [acquire(subject, 'background'), acquire(subject, 'background')];
+    const verification = acquire(subject, 'verification');
+    await flush();
+    expect(background.map((item) => item.grant?.granted)).toEqual([true, undefined]);
+    expect(verification.grant?.granted).toBe(true);
+  });
+
   it('dentro de un cupo se respeta el orden de llegada', async () => {
     const subject = limiter({ maxQps: 1_000 });
     const holders = Array.from({ length: 3 }, () => acquire(subject, 'sales'));
@@ -195,6 +260,18 @@ describe('QPS', () => {
     await flush();
     permitOf(first).release();
     const second = acquire(subject, 'background');
+    await flush();
+    expect(second.grant).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1_001);
+    expect(second.grant?.granted).toBe(true);
+  });
+
+  it('la verificación despacha 1 por segundo aunque tenga concurrencia libre', async () => {
+    const subject = limiter({ maxConcurrent: 100 });
+    const first = acquire(subject, 'verification');
+    await flush();
+    permitOf(first).release();
+    const second = acquire(subject, 'verification');
     await flush();
     expect(second.grant).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1_001);

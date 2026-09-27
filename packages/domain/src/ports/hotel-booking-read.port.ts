@@ -40,8 +40,30 @@ export interface HotelBookingView {
   warnings: string[];
 }
 
+/**
+ * Para qué se lee una reserva. Un proveedor con cupo de llamadas por cuenta elige con esto el cupo y
+ * los reintentos, para que un job no le quite capacidad al vendedor ni al revés; uno sin cupos lo
+ * ignora. Sin propósito, el adapter decide como siempre.
+ *
+ * - `interactive`: una persona espera la respuesta en el panel.
+ * - `booking`: la lectura que cierra una reserva recién hecha, dentro de la misma venta.
+ * - `verification`: un job que busca una reserva cuyo Book no respondió. No espera detrás de las
+ *   búsquedas, y una ráfaga de verificaciones no les quita más que su propio techo.
+ * - `background`: el resto de los jobs (HCN, verificación de una cancelación, conciliación). Cede
+ *   ante las ventas.
+ */
+export type HotelBookingReadPurpose = 'interactive' | 'booking' | 'verification' | 'background';
+
+export interface HotelBookingReadOptions {
+  readonly purpose?: HotelBookingReadPurpose;
+}
+
 export interface HotelBookingReadPort {
-  getBooking(providerBookingId: string, ctx: SearchContext): Promise<HotelBookingView>;
+  getBooking(
+    providerBookingId: string,
+    ctx: SearchContext,
+    options?: HotelBookingReadOptions,
+  ): Promise<HotelBookingView>;
 }
 
 export const HOTEL_BOOKING_READ_PORT = 'HOTEL_BOOKING_READ_PORT';

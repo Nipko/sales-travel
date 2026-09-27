@@ -16,6 +16,7 @@ import {
   hcnGate,
   hcnPlan,
   hcnPlanAtWindowEntry,
+  hcnSweepRetryAt,
   openHcnTracking,
   type HcnCheckIn,
   type HcnReadFacts,
@@ -457,5 +458,55 @@ describe('decideHcnRead: qué hace el seguimiento con cada lectura', () => {
     expect(decideHcnRead(hechos({ read: cuenta, runner: 'sweep' }))).toMatchObject({
       escalate: false,
     });
+  });
+});
+
+describe('hcnSweepRetryAt: una lectura del barrido que falló (HARD-2)', () => {
+  // Check-in a 62 h de la reserva: P2, SLA de 6 h.
+  const entrada = checkIn('2026-10-04');
+  const sla = RESERVA + 6 * HOUR;
+
+  it('se mide desde la hora que el plan le daba a esa lectura: la espera crece con la demora', () => {
+    const hechos = { bookedAt: RESERVA, checkIn: entrada, attempt: 0, nextAt: sla };
+    expect(hcnSweepRetryAt({ ...hechos, now: sla + 15 * MIN })).toBe(sla + 30 * MIN);
+    expect(hcnSweepRetryAt({ ...hechos, nextAt: sla + 30 * MIN, now: sla + 45 * MIN })).toBe(
+      sla + 90 * MIN,
+    );
+  });
+
+  it('nunca espera más de una hora, la cadencia del plan', () => {
+    // La lectura 2 tocaba a SLA + 2 h; tres horas tarde, la espera se queda en una.
+    const now = sla + 5 * HOUR;
+    expect(
+      hcnSweepRetryAt({ bookedAt: RESERVA, checkIn: entrada, attempt: 2, nextAt: now, now }),
+    ).toBe(now + HCN_RETRY_EVERY_MS);
+  });
+
+  it('nunca después del fin del día de entrada, cuando el seguimiento se corta', () => {
+    const now = entrada.endsAt - 20 * MIN;
+    expect(
+      hcnSweepRetryAt({ bookedAt: RESERVA, checkIn: entrada, attempt: 3, nextAt: now, now }),
+    ).toBe(entrada.endsAt);
+  });
+
+  it('un plan nacido fuera de ventana cuenta desde la entrada en ventana (PV-38)', () => {
+    const lejana = checkIn('2026-12-15');
+    const plan = hcnPlan(RESERVA, lejana.checkInAt);
+    if (plan.kind !== 'out-of-window') throw new Error('se esperaba fuera de ventana');
+    const primera = hcnPlanAtWindowEntry(plan.windowEntryAt).firstCheckAt;
+    const now = primera + 20 * MIN;
+    expect(
+      hcnSweepRetryAt({ bookedAt: RESERVA, checkIn: lejana, attempt: 0, nextAt: primera, now }),
+    ).toBe(now + 20 * MIN);
+  });
+
+  it('sin fecha de entrada legible, desde la hora programada y sin plazo', () => {
+    const now = sla + 25 * MIN;
+    expect(
+      hcnSweepRetryAt({ bookedAt: RESERVA, checkIn: undefined, attempt: 1, nextAt: sla, now }),
+    ).toBe(now + 25 * MIN);
+    expect(
+      hcnSweepRetryAt({ bookedAt: RESERVA, checkIn: undefined, attempt: 1, nextAt: null, now }),
+    ).toBe(now + 15 * MIN);
   });
 });

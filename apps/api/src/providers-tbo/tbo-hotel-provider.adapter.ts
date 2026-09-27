@@ -9,6 +9,7 @@ import type {
   HotelBookResult,
   HotelBookingByClientReferencePort,
   HotelBookingDateRange,
+  HotelBookingReadOptions,
   HotelBookingRoomGuests,
   HotelBookingSummary,
   HotelBookingView,
@@ -446,9 +447,16 @@ export class TboHotelProviderAdapter
     };
   }
 
-  /** BookingDetail por el localizador de TBO (PR-4.2). */
-  getBooking(providerBookingId: string, ctx: SearchContext): Promise<HotelBookingView> {
-    return this.#acl.getBooking(providerBookingId, ctx);
+  /**
+   * BookingDetail por el localizador de TBO (PR-4.2). El propósito elige el cupo del limitador de
+   * la cuenta: un job no le quita capacidad al vendedor (04 §9.5 punto 5, PV-41).
+   */
+  getBooking(
+    providerBookingId: string,
+    ctx: SearchContext,
+    options?: HotelBookingReadOptions,
+  ): Promise<HotelBookingView> {
+    return this.#acl.getBooking(providerBookingId, ctx, options);
   }
 
   /**
@@ -458,8 +466,9 @@ export class TboHotelProviderAdapter
   getBookingByClientReference(
     bookingReference: string,
     ctx: SearchContext,
+    options?: HotelBookingReadOptions,
   ): Promise<HotelBookingView> {
-    return this.#acl.getBookingByClientReference(bookingReference, ctx);
+    return this.#acl.getBookingByClientReference(bookingReference, ctx, options);
   }
 
   /**

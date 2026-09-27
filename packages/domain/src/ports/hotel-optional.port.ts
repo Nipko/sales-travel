@@ -6,7 +6,11 @@ import type {
   ProviderRawValue,
 } from '@sales-travel/canonical';
 import type { SearchContext } from './flight-search.port';
-import type { HotelBookingStatus, HotelBookingView } from './hotel-booking-read.port';
+import type {
+  HotelBookingReadOptions,
+  HotelBookingStatus,
+  HotelBookingView,
+} from './hotel-booking-read.port';
 import type { HotelProviderOptions } from './hotel-search.port';
 
 /*
@@ -26,6 +30,7 @@ export interface HotelBookingByClientReferencePort {
   getBookingByClientReference(
     bookingReference: string,
     ctx: SearchContext,
+    options?: HotelBookingReadOptions,
   ): Promise<HotelBookingView>;
 }
 

@@ -1,15 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { NotFoundException } from '@nestjs/common';
-import type { HotelBookingView, SearchContext } from '@sales-travel/domain';
+import type {
+  HotelBookingReadOptions,
+  HotelBookingView,
+  SearchContext,
+} from '@sales-travel/domain';
 import { TboDispatchRejectedError } from '@sales-travel/tbo-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
-import type { HotelProviderCapabilities } from '../providers/hotel-provider.types.js';
+import type {
+  HotelProviderAdapter,
+  HotelProviderCapabilities,
+} from '../providers/hotel-provider.types.js';
+import type { TenantAdapter } from '../providers/provider.types.js';
 import { memoryDb, type Row } from '../orders/__fixtures__/memory-orders-db.js';
 import { ExternalOrderIntentService } from '../orders/external-order-intent.service.js';
 import { CREATE_PENDING_RECONCILIATION_MARKER } from '../orders/order-create-intent.store.js';
 import { ORDER_EVENTS } from '../orders/order-events.js';
-import { StubHotelProviderFactory } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
+import {
+  StubHotelAdapter,
+  StubHotelProviderFactory,
+} from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
@@ -21,6 +32,8 @@ import {
   HotelVerificationJobInvalidError,
   type HotelVerificationSweepReport,
 } from './hotel-booking-verification.service.js';
+import { HOTEL_BOOK_VERIFY_SWEEP_LIMIT } from './hotel-booking-verification.js';
+import { SWEEP_RETRY_MAX_MS } from './sweep-retry.js';
 
 /**
  * La verificación de una reserva de hotel sin respuesta (docs/tbo/09 PR-4.7; 08 RF-21 CA 1 a 4,
@@ -34,37 +47,60 @@ const AGENCIA = '11111111-1111-4111-8111-111111111111';
 const OTRA_AGENCIA = '22222222-2222-4222-8222-222222222222';
 const USUARIO = '55555555-5555-4555-8555-555555555555';
 const CUENTA = '66666666-6666-4666-8666-666666666666';
-const OTRA_CUENTA = '77777777-7777-4777-8777-777777777777';
 const STUB = 'stub-hotels';
 const REF = 'STT7K2M9QX4D8R1VZ6AB';
 const MIN = 60_000;
 const TF = Date.parse('2026-09-25T15:02:00Z');
 
-type Leer = Mock<(ref: string, ctx: SearchContext) => Promise<HotelBookingView>>;
+type Leer = Mock<
+  (ref: string, ctx: SearchContext, options?: HotelBookingReadOptions) => Promise<HotelBookingView>
+>;
+
+function lector(): Leer {
+  return vi.fn(() => Promise.resolve<HotelBookingView>({ found: false, warnings: [] }));
+}
+
+/**
+ * El stub con la post-venta por la cuenta de la ORDEN (RF-29; D-TBO-28 A), como el registry la
+ * resuelve para TBO. Por defecto la cuenta de la orden es la misma con que lee hoy el tenant.
+ */
+class StubConCuentaDeLaOrden extends StubHotelProviderFactory {
+  /** El adapter de la cuenta que hizo la reserva, cuando ya no es la vigente del tenant. */
+  cuentaDeLaOrden: StubHotelAdapter | undefined;
+  /** La bóveda no la resuelve: `NotFoundException` = ya no está en la red del tenant. */
+  fallaDeLaOrden: Error | undefined;
+  /** La huella de la cuenta de cada orden, que es la clave de su circuito. */
+  huellaDe: (orderId: string) => string = () => 'huella-de-la-cuenta';
+  readonly pedidos: { readonly tenantId: string; readonly orderId: string }[] = [];
+
+  resolveForOrder(tenantId: string, orderId: string): Promise<TenantAdapter<HotelProviderAdapter>> {
+    this.pedidos.push({ tenantId, orderId });
+    if (this.fallaDeLaOrden !== undefined) return Promise.reject(this.fallaDeLaOrden);
+    return Promise.resolve({
+      adapter: this.cuentaDeLaOrden ?? this.adapterFor(tenantId),
+      credentialSource: 'own',
+      circuit: { accountRef: this.huellaDe(orderId) },
+    });
+  }
+}
 
 interface Opciones {
   capabilities?: Partial<HotelProviderCapabilities>;
   redis?: boolean;
-  /** La cuenta con la que lee hoy el adapter del tenant. */
-  cuenta?: string;
   failResolveWith?: Error;
 }
 
 function banco(opts: Opciones = {}) {
-  const stub = new StubHotelProviderFactory({
+  const stub = new StubConCuentaDeLaOrden({
     code: STUB,
     ...(opts.capabilities === undefined ? {} : { capabilities: opts.capabilities }),
     ...(opts.failResolveWith === undefined ? {} : { failResolveWith: opts.failResolveWith }),
     circuit: { accountRef: 'huella-de-la-cuenta' },
   });
   const adapter = stub.adapterFor(AGENCIA);
-  const leer: Leer = vi.fn(() => Promise.resolve<HotelBookingView>({ found: false, warnings: [] }));
+  const leer = lector();
   const bookWithContext = vi.fn();
-  Object.assign(adapter, {
-    getBookingByClientReference: leer,
-    bookWithContext,
-    searchAccount: { accountId: opts.cuenta ?? CUENTA, updatedAt: '2026-09-01T00:00:00.000Z' },
-  });
+  Object.assign(adapter, { getBookingByClientReference: leer, bookWithContext });
   const memory = memoryDb();
   const intents = new ExternalOrderIntentService(memory.db);
   const tracking = new MemoryVerificationStore(() => memory.rows());
@@ -84,6 +120,7 @@ function banco(opts: Opciones = {}) {
   );
   return {
     service,
+    stub,
     adapter,
     leer,
     bookWithContext,
@@ -149,6 +186,17 @@ function escalados(b: Banco): Record<string, unknown>[] {
 function job(orderId: string, step: number) {
   return { tenantId: AGENCIA, orderId, step, actorUserId: USUARIO };
 }
+
+/** La cuenta no puede leer: su circuito se suspende y las demás cuentas siguen saliendo. */
+const BLOQUEADA = Object.assign(new Error('cuenta bloqueada'), {
+  name: 'TboApiError',
+  failure: {
+    kind: 'ACCOUNT_BLOCKED',
+    retry: 'NO_RETRY',
+    circuit: 'OPEN_ACCOUNT',
+    notifyAccountOwner: true,
+  },
+});
 
 const CONFIRMADA: HotelBookingView = {
   found: true,
@@ -342,7 +390,12 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
 
       await b.service.runJob(job(id, 0), { final: false });
 
-      expect(b.leer).toHaveBeenCalledWith(REF, { tenantId: AGENCIA, requestId: id });
+      expect(b.leer).toHaveBeenCalledWith(
+        REF,
+        { tenantId: AGENCIA, requestId: id },
+        // El cupo de verificación del proveedor: una ráfaga no le quita el suyo al vendedor (PV-41).
+        { purpose: 'verification' },
+      );
       const row = b.memory.rows()[0];
       expect(row).toMatchObject({
         status: 'confirmed',
@@ -701,10 +754,12 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
   });
 
   describe('lo que se sabe antes de leer', () => {
-    it('el proveedor ya no está habilitado para el tenant → detenida, sin leer', async () => {
+    it('una orden sin cuenta guardada y el proveedor ya no habilitado para el tenant → detenida, sin leer', async () => {
       // Sin cuenta resoluble, el registry responde `ProviderNotAvailableError` (400).
       const b = banco({ failResolveWith: new NotFoundException('sin cuenta') });
-      const id = await incierta(b);
+      const row = await orden(b, { cuenta: null });
+      const id = String(row['id']);
+      await b.service.scheduleAfterUncertainBook({ tenantId: AGENCIA, orderId: id, failedAt: TF });
 
       await b.service.runJob(job(id, 0), { final: false });
 
@@ -720,7 +775,8 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
 
     it('la bóveda caída no detiene nada: es transitorio y la cola repite', async () => {
       const caida = new Error('bóveda no disponible');
-      const b = banco({ failResolveWith: caida });
+      const b = banco();
+      b.stub.fallaDeLaOrden = caida;
       const id = await incierta(b);
 
       await expect(b.service.runJob(job(id, 0), { final: false })).rejects.toBe(caida);
@@ -752,8 +808,33 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
       ]);
     });
 
-    it('la agencia ya lee con otra cuenta: no se lee con ésa (diría "no está")', async () => {
-      const b = banco({ cuenta: OTRA_CUENTA });
+    it('RF-29: la agencia ya lee con otra cuenta, y la reserva se lee con la de la ORDEN', async () => {
+      const b = banco();
+      const deLaOrden = new StubHotelAdapter(STUB);
+      const leerConLaDeLaOrden = lector();
+      leerConLaDeLaOrden.mockResolvedValue(CONFIRMADA);
+      Object.assign(deLaOrden, { getBookingByClientReference: leerConLaDeLaOrden });
+      b.stub.cuentaDeLaOrden = deLaOrden;
+      const id = await incierta(b);
+
+      await b.service.runJob(job(id, 0), { final: false });
+
+      expect(b.stub.pedidos).toEqual([{ tenantId: AGENCIA, orderId: id }]);
+      expect(b.leer).not.toHaveBeenCalled();
+      expect(leerConLaDeLaOrden).toHaveBeenCalledWith(
+        REF,
+        { tenantId: AGENCIA, requestId: id },
+        { purpose: 'verification' },
+      );
+      expect(b.memory.rows()[0]).toMatchObject({
+        status: 'confirmed',
+        provider_order_id: 'CONF-1',
+      });
+    });
+
+    it('la cuenta de la orden ya no está en la red del tenant: no se lee con otra (diría "no está")', async () => {
+      const b = banco();
+      b.stub.fallaDeLaOrden = new NotFoundException('fuera de la red');
       const id = await incierta(b);
 
       await b.service.runJob(job(id, 0), { final: false });
@@ -764,24 +845,23 @@ describe('el job `verify-hotel-booking`: un paso, sólo si sigue vigente', () =>
         subStatus: 'create-uncertain',
       });
       expect(escalados(b)).toEqual([
-        expect.objectContaining({ reason: 'provider-account-changed' }),
+        expect.objectContaining({
+          reason: 'provider-account-changed',
+          errorName: 'ProviderOrderAccountUnavailableError',
+        }),
       ]);
     });
 
-    it('una orden sin cuenta guardada, o un adapter que no la expone, se lee igual', async () => {
-      const b = banco({ cuenta: OTRA_CUENTA });
+    it('una orden sin cuenta guardada se lee con la vigente del tenant', async () => {
+      const b = banco();
       const row = await orden(b, { cuenta: null });
       const id = String(row['id']);
       await b.service.scheduleAfterUncertainBook({ tenantId: AGENCIA, orderId: id, failedAt: TF });
+
       await b.service.runJob(job(id, 0), { final: false });
 
-      const c = banco();
-      delete (c.adapter as unknown as Record<string, unknown>)['searchAccount'];
-      const id2 = await incierta(c);
-      await c.service.runJob(job(id2, 0), { final: false });
-
+      expect(b.stub.pedidos).toEqual([]);
       expect(b.leer).toHaveBeenCalledOnce();
-      expect(c.leer).toHaveBeenCalledOnce();
     });
   });
 
@@ -905,15 +985,116 @@ describe('el barrido: lo que la cola perdió, tenant por tenant (RNF-10; RF-21 C
     expect(b.emit).not.toHaveBeenCalled();
   });
 
-  it('un fallo de transporte en el barrido no avanza ni repite el aviso: la próxima corrida reintenta', async () => {
+  it('un fallo de transporte en el barrido no avanza ni repite el aviso: reprograma sin pasar el paso siguiente', async () => {
     const b = banco();
     const id = await incierta(b);
     b.leer.mockRejectedValue(Object.assign(new Error('red'), { status: 0 }));
 
     const report = await b.service.sweepTenant(AGENCIA, TF + 10 * MIN);
 
-    expect(report).toMatchObject({ examined: 1, unavailable: 1 });
+    expect(report).toMatchObject({ examined: 1, unavailable: 1, failed: 0 });
     expect(b.emit).not.toHaveBeenCalled();
+    // Leyó como el paso 1 (vencido a +5 min): la espera mínima llevaría a +25 min, pero el paso 2
+    // toca a +15 min y el reintento no lo pasa. El paso guardado no cambia.
+    expect(b.tracking.tracking.get(id)).toMatchObject({ step: 0, nextAt: TF + 15 * MIN });
+
+    // La corrida siguiente todavía no la ve; la de después, sí, y ya como el paso 2.
+    expect((await b.service.sweepTenant(AGENCIA, TF + 19 * MIN)).examined).toBe(0);
+    b.leer.mockResolvedValue({ found: false, warnings: [] });
+    const luego = await b.service.sweepTenant(AGENCIA, TF + 20 * MIN);
+    expect(luego).toMatchObject({ examined: 1, advanced: 1 });
+    expect(b.tracking.tracking.get(id)).toMatchObject({ step: 3, nextAt: TF + 60 * MIN });
+  });
+
+  it('en el último paso la espera crece con cada corrida fallida, hasta su techo', async () => {
+    const b = banco();
+    const id = await incierta(b);
+
+    const esperas: number[] = [];
+    b.leer.mockRejectedValue(BLOQUEADA);
+    let now = TF + 70 * MIN;
+    for (let corrida = 0; corrida < 8; corrida++) {
+      const report = await b.service.sweepTenant(AGENCIA, now);
+      expect(report).toMatchObject({ examined: 1, unavailable: 1 });
+      const nextAt = b.tracking.tracking.get(id)?.nextAt ?? 0;
+      esperas.push((nextAt - now) / MIN);
+      // Pasado el margen del barrido, la próxima corrida la vuelve a tomar.
+      now = nextAt + 5 * MIN;
+    }
+
+    // Se mide desde el paso 3 (+60 min): 10 → 15, 30 → 30, 65 → 65, … hasta 6 h.
+    expect(esperas).toEqual([15, 30, 65, 135, 275, 360, 360, 360]);
+    expect(Math.max(...esperas) * MIN).toBe(SWEEP_RETRY_MAX_MS);
+    // El aviso lo da el job; el barrido no lo repite en cada corrida.
+    expect(b.emit).not.toHaveBeenCalled();
+    expect(b.tracking.tracking.get(id)).toMatchObject({ step: 0 });
+  });
+
+  it('HARD-2: 25+ órdenes que fallan siempre no tapan al resto del tenant', async () => {
+    // Las atascadas son de una cuenta bloqueada, con su propio circuito; la sana, de otra.
+    const b = banco();
+    b.stub.huellaDe = (orderId) => (orderId === sanaId ? 'cuenta-sana' : 'cuenta-bloqueada');
+    let sanaId = '';
+    const atascadas: string[] = [];
+    for (let i = 0; i <= HOTEL_BOOK_VERIFY_SWEEP_LIMIT; i++) {
+      const row = await orden(b, { ref: `STTATASCADA${String(i).padStart(9, '0')}` });
+      const id = String(row['id']);
+      await b.service.scheduleAfterUncertainBook({ tenantId: AGENCIA, orderId: id, failedAt: TF });
+      atascadas.push(id);
+    }
+    const sana = await orden(b, { ref: 'STTSANA00000000000001' });
+    sanaId = String(sana['id']);
+    await b.service.scheduleAfterUncertainBook({
+      tenantId: AGENCIA,
+      orderId: sanaId,
+      failedAt: TF + MIN,
+    });
+    b.leer.mockImplementation((ref) =>
+      ref === 'STTSANA00000000000001' ? Promise.resolve(CONFIRMADA) : Promise.reject(BLOQUEADA),
+    );
+
+    const primera = await b.service.sweepTenant(AGENCIA, TF + 10 * MIN);
+    expect(primera).toMatchObject({ examined: HOTEL_BOOK_VERIFY_SWEEP_LIMIT, unavailable: 25 });
+    expect(b.leer).not.toHaveBeenCalledWith(
+      'STTSANA00000000000001',
+      expect.anything(),
+      expect.anything(),
+    );
+
+    // Sin el backoff, las mismas 25 volverían a ocupar la corrida.
+    const segunda = await b.service.sweepTenant(AGENCIA, TF + 11 * MIN);
+    expect(segunda).toMatchObject({ examined: 2, unavailable: 1, consolidated: 1 });
+    expect(b.memory.rows().find((r) => r['id'] === sanaId)).toMatchObject({
+      status: 'confirmed',
+    });
+    expect(atascadas.every((id) => b.tracking.tracking.get(id)?.nextAt === TF + 15 * MIN)).toBe(
+      true,
+    );
+  });
+
+  it('si otro camino avanzó el paso mientras leía, no lo reprograma', async () => {
+    const b = banco();
+    const id = await incierta(b);
+    b.leer.mockImplementation(() => {
+      const fila = b.tracking.tracking.get(id);
+      if (fila) Object.assign(fila, { step: 2, nextAt: TF + 60 * MIN });
+      return Promise.reject(Object.assign(new Error('red'), { status: 0 }));
+    });
+
+    await b.service.sweepTenant(AGENCIA, TF + 10 * MIN);
+
+    expect(b.tracking.tracking.get(id)).toMatchObject({ step: 2, nextAt: TF + 60 * MIN });
+  });
+
+  it('si la base no deja reprogramar, la orden cuenta como fallida y sigue vencida', async () => {
+    const b = banco();
+    const id = await incierta(b);
+    b.leer.mockRejectedValue(Object.assign(new Error('red'), { status: 0 }));
+    b.tracking.fallas.postpone = new Error('base caída');
+
+    const report = await b.service.sweepTenant(AGENCIA, TF + 10 * MIN);
+
+    expect(report).toMatchObject({ examined: 1, unavailable: 0, failed: 1 });
     expect(b.tracking.tracking.get(id)).toMatchObject({ step: 0, nextAt: TF + 120_000 });
   });
 

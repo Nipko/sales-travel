@@ -262,6 +262,59 @@ d('calendario de verificación de hoteles (0044) contra Postgres', () => {
     expect(await store.findTarget(agenciaB, vencida)).toBeUndefined();
   });
 
+  it('HARD-2: postergar sólo mueve la hora del paso guardado, y el barrido ordena por esa hora', async () => {
+    const ahora = Date.now();
+    const atascada = await orden({ escritaHace: 60 * MIN });
+    await store.startCalendar(agenciaA, atascada, {
+      anchorAt: ahora - 20 * MIN,
+      step: 1,
+      nextAt: ahora - 15 * MIN,
+    });
+    const otra = await orden();
+    await store.startCalendar(agenciaA, otra, {
+      anchorAt: ahora - 10 * MIN,
+      step: 0,
+      nextAt: ahora - 8 * MIN,
+    });
+    const query = { dueBefore: ahora - 5 * MIN, orphanBefore: ahora - 7.5 * MIN, limit: 50 };
+    const nuestras = async () =>
+      (await store.listDue(agenciaA, query))
+        .map((t) => t.orderId)
+        .filter((id) => id === atascada || id === otra);
+    expect(await nuestras()).toEqual([atascada, otra]);
+
+    const desdeOtroPaso = await store.postpone(
+      agenciaA,
+      atascada,
+      { anchorAt: ahora - 20 * MIN, step: 0 },
+      ahora - 6 * MIN,
+    );
+    const desdeOtroTenant = await store.postpone(
+      agenciaB,
+      atascada,
+      { anchorAt: ahora - 20 * MIN, step: 1 },
+      ahora - 6 * MIN,
+    );
+    const movida = await store.postpone(
+      agenciaA,
+      atascada,
+      { anchorAt: ahora - 20 * MIN, step: 1 },
+      ahora - 6 * MIN,
+    );
+
+    expect({ desdeOtroPaso, desdeOtroTenant, movida }).toEqual({
+      desdeOtroPaso: false,
+      desdeOtroTenant: false,
+      movida: true,
+    });
+    expect(await store.findTarget(agenciaA, atascada)).toMatchObject({
+      step: 1,
+      nextAt: ahora - 6 * MIN,
+    });
+    // Reprogramada, deja pasar primero a la que vencía antes.
+    expect(await nuestras()).toEqual([otra, atascada]);
+  });
+
   it('una agencia no puede colgarle un calendario a la orden de otra', async () => {
     const deA = await orden();
 

@@ -168,11 +168,14 @@ export class HotelOrderReadsService {
     }
 
     const ctx: SearchContext = { tenantId, requestId: target.orderId };
+    // Una persona espera la respuesta: sin propósito saldría por el cupo de fondo, detrás de los
+    // jobs (04 §9.5 punto 5, PV-41).
     const view = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
-      this.breaker.execute(provider.code, () => provider.adapter.getBooking(locator, ctx), {
-        ...provider.circuit,
-        scope: 'post-sale',
-      }),
+      this.breaker.execute(
+        provider.code,
+        () => provider.adapter.getBooking(locator, ctx, { purpose: 'interactive' }),
+        { ...provider.circuit, scope: 'post-sale' },
+      ),
     );
 
     const plan = planHotelOrderObservation(target.snapshot, {

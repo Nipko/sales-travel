@@ -9,10 +9,13 @@ import type { TboLane } from './operations';
  * - La clave es la CUENTA resuelta (`accountRef`, digest de dueño + usuario), no el tenant: las
  *   sub-agencias que heredan la cuenta del consolidador comparten el cupo que TBO les ve (INFERIDO).
  * - 5 QPS y 4 llamadas en vuelo por cuenta, configurables (INFERIDO, sin evidencia de TBO).
- * - Cupos separados. El dinero (Book, Cancel y el BookingDetail de recuperación) puede usar toda la
+ * - Cupos separados. El dinero (Book, Cancel y la lectura de cierre de un Book) puede usar toda la
  *   capacidad y tiene una reserva que nadie más toca: una campaña de búsquedas no puede dejar sin
  *   conciliar una reserva. El fondo (HCN, conciliación) tiene un techo propio para no quitarle
- *   cupo al vendedor.
+ *   cupo al vendedor. La verificación de un Book incierto desde un job también tiene techo propio
+ *   —sin él, una ráfaga de jobs tras una caída de TBO ocupaba toda la cuenta—, pero pasa antes que
+ *   las búsquedas: una campaña de ventas no puede impedir averiguar si una reserva existe (04 §9.5
+ *   punto 5, PV-41).
  * - Ante un 429 el ritmo de la cuenta baja a la mitad durante 60 s (INFERIDO).
  *
  * Estado en memoria mientras haya un solo contenedor de API, como el breaker
@@ -62,6 +65,8 @@ export interface TboLimiterOptions {
   readonly maxConcurrent: number;
   /** Capacidad que sólo puede usar el cupo `money`. */
   readonly moneyReserve: TboLaneQuota;
+  /** Techo del cupo `verification`, además de la reserva de dinero. */
+  readonly verification: TboLaneQuota;
   /** Techo del cupo `background`, además de la reserva de dinero. */
   readonly background: TboLaneQuota;
   /** Factor del ritmo tras un 429. */
@@ -75,6 +80,7 @@ export const TBO_LIMITER_DEFAULTS: Readonly<Omit<TboLimiterOptions, 'now'>> = Ob
   maxQps: 5,
   maxConcurrent: 4,
   moneyReserve: Object.freeze({ qps: 1, concurrent: 1 }),
+  verification: Object.freeze({ qps: 1, concurrent: 1 }),
   background: Object.freeze({ qps: 1, concurrent: 1 }),
   throttleFactor: 0.5,
   throttleMs: 60_000,
@@ -86,7 +92,7 @@ const WINDOW_MS = 1_000;
 const MAX_TIMER_MS = 2_147_483_647;
 
 /** Orden de despacho cuando se libera capacidad: el dinero primero, siempre. */
-const LANE_PRIORITY: readonly TboLane[] = ['money', 'sales', 'background'];
+const LANE_PRIORITY: readonly TboLane[] = ['money', 'verification', 'sales', 'background'];
 
 interface Waiter {
   readonly lane: TboLane;
@@ -119,6 +125,7 @@ export class TboInMemoryRateLimiter implements TboRateLimiter {
       maxQps: positiveInteger(merged.maxQps, TBO_LIMITER_DEFAULTS.maxQps),
       maxConcurrent: positiveInteger(merged.maxConcurrent, TBO_LIMITER_DEFAULTS.maxConcurrent),
       moneyReserve: merged.moneyReserve,
+      verification: merged.verification,
       background: merged.background,
       throttleFactor: merged.throttleFactor,
       throttleMs: merged.throttleMs,
@@ -201,11 +208,17 @@ export class TboInMemoryRateLimiter implements TboRateLimiter {
     if (state.inFlight >= account.concurrent || state.dispatches.length >= account.qps) {
       return false;
     }
-    if (lane !== 'background') return true;
-    // El fondo, además, se mide contra su propio techo: no ocupa el cupo del vendedor.
-    const own = this.#options.background;
+    const own = this.#ceilingOf(lane);
+    if (own === undefined) return true;
+    // Los jobs, además, se miden contra su propio techo: no ocupan el cupo del vendedor.
     const laneDispatches = state.dispatches.filter((entry) => entry.lane === lane).length;
     return (state.inFlightByLane.get(lane) ?? 0) < own.concurrent && laneDispatches < own.qps;
+  }
+
+  #ceilingOf(lane: TboLane): TboLaneQuota | undefined {
+    if (lane === 'background') return this.#options.background;
+    if (lane === 'verification') return this.#options.verification;
+    return undefined;
   }
 
   #dispatch(accountRef: string, state: AccountState, lane: TboLane): TboLimiterPermit {
@@ -254,7 +267,9 @@ export class TboInMemoryRateLimiter implements TboRateLimiter {
       }
       request.signal?.addEventListener('abort', onAbort, { once: true });
       state.waiters.push(waiter);
-      this.#scheduleWake(request.accountRef, state);
+      // Un cupo más prioritario puede estar esperando sólo su propio techo (una ráfaga de
+      // verificaciones): eso no frena a éste, que sale ya si su cupo tiene lugar.
+      this.#pump(request.accountRef, state);
     }).finally(() => {
       // Quien se va de la cola por timeout o por abort puede estar tapando a otros del mismo cupo.
       const current = this.#accounts.get(request.accountRef);

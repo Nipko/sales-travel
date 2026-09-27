@@ -381,6 +381,12 @@ Todos los valores viven en la tabla `TBO_OPERATIONS` (§10.2). La configuración
    (**INFERIDO**, sin evidencia de TBO), hasta que TBO publique el valor real. Es una decisión del founder (§14).
 3. **Capacidad reservada para dinero:** Book, Cancel y el BookingDetail de recuperación tienen un cupo propio y no
    esperan detrás del tráfico de búsqueda. Una campaña de ventas no puede impedir la conciliación de una reserva.
+   Los jobs no usan esa reserva (HARD-2, [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §9.5 punto 5):
+   la verificación de un Book incierto sale por un cupo `verification`, que pasa antes que las búsquedas pero con
+   techo propio (1 QPS y 1 en vuelo por cuenta), y el HCN, la verificación de una cancelación y la conciliación
+   salen por el cupo de fondo, que cede ante las ventas. Una ráfaga de jobs no le quita al vendedor más que esos techos.
+   Lo que espera una persona no va por el cupo de fondo: la lectura de cierre de un Book (el BookingDetail por
+   localizador dentro de la venta) sale por el de dinero, y la consulta manual del panel, por el de ventas.
 4. **Ante un 429:** se reduce a la mitad el ritmo de esa cuenta durante 60 s (**INFERIDO**) y se emite una
    métrica. Las lecturas se reintentan según §10.4. Book y Cancel, nunca.
 5. **Saturación local en Search:** si el limitador no puede despachar un lote dentro del presupuesto de la

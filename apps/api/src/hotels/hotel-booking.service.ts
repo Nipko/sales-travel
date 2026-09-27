@@ -1018,10 +1018,12 @@ export class HotelBookingService {
   ): Promise<HotelBookingView | null> {
     if (!run.provider.capabilities.retrieve) return null;
     try {
-      // Post-venta: frenar las ventas de un proveedor no puede impedir leer lo que ya se vendió.
+      // Post-venta: frenar las ventas de un proveedor no puede impedir leer lo que ya se vendió. Y
+      // el vendedor espera esta lectura: sin propósito saldría por el cupo de fondo, detrás de una
+      // ráfaga de HCN o de conciliación (04 §9.5 punto 5, PV-41).
       return await this.breaker.execute(
         run.provider.code,
-        () => run.adapter.getBooking(providerBookingId, ctx),
+        () => run.adapter.getBooking(providerBookingId, ctx, { purpose: 'booking' }),
         { ...run.provider.circuit, scope: 'post-sale' },
       );
     } catch {

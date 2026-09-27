@@ -127,6 +127,7 @@ function harness(
   const inner = new TboInMemoryRateLimiter({
     maxQps: 1_000,
     maxConcurrent: 100,
+    verification: { qps: 1_000, concurrent: 100 },
     background: { qps: 1_000, concurrent: 100 },
   });
   const timeouts: number[] = [];
@@ -501,6 +502,27 @@ describe('BookingDetail por ConfirmationNumber', () => {
     expect(interactive.calls).toHaveLength(2);
   });
 
+  it.each([
+    ['background', 'background', 3],
+    ['interactive', 'sales', 2],
+    ['booking', 'money', 3],
+  ] as const)(
+    'el propósito neutral `%s` sale por el cupo `%s` con %i intentos',
+    async (purpose, lane, attempts) => {
+      const h = harness(() => status(500));
+      const port: HotelBookingReadPort = h.adapter;
+      await expect(port.getBooking('YOSUR8', CTX, { purpose })).rejects.toBeInstanceOf(TboApiError);
+      expect(h.lanes).toEqual(Array.from({ length: attempts }, () => lane));
+    },
+  );
+
+  it('un propósito fuera del contrato no cambia el cupo por defecto', async () => {
+    const h = harness(() => json(DETAIL_1021));
+    const purpose = 'toString' as unknown as 'background';
+    await h.adapter.getBooking('YOSUR8', CTX, { purpose });
+    expect(h.lanes).toEqual(['background']);
+  });
+
   it('un 500 y después la reserva: el reintento la encuentra', async () => {
     const h = harness((_call, index) => (index === 0 ? status(500) : json(DETAIL_1021)));
     const view = await h.adapter.getBooking('YOSUR8', CTX);
@@ -525,6 +547,19 @@ describe('BookingDetail por nuestra referencia (recuperación, p. 42)', () => {
       status: 'CONFIRMED',
     });
     expect(h.lanes).toEqual(['money']);
+  });
+
+  it('el job que verifica pide su propio cupo, con techo, y los mismos 3 intentos (PV-41)', async () => {
+    const h = harness(() => status(500));
+    const port: HotelBookingByClientReferencePort = h.adapter;
+    await expect(
+      port.getBookingByClientReference(REFERENCE, CTX, { purpose: 'verification' }),
+    ).rejects.toBeInstanceOf(TboApiError);
+    expect(h.lanes).toEqual(['verification', 'verification', 'verification']);
+    expect(JSON.parse(h.calls[0]?.body ?? '{}')).toEqual({
+      BookingReferenceId: REFERENCE,
+      PaymentMode: 'Limit',
+    });
   });
 
   it.each([

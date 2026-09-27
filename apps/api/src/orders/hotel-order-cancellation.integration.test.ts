@@ -382,6 +382,45 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
     expect(s.proveedor.adapter.cancelBooking).toHaveBeenCalledOnce();
   });
 
+  it('HARD-2: una lectura del barrido que falla reprograma el paso con backoff, sin avanzarlo', async () => {
+    const s = servicios();
+    const id = await orden();
+    s.proveedor.adapter.cancelBooking.mockRejectedValue(
+      new TboApiError({
+        status: 0,
+        path: '/Cancel',
+        kind: 'TRANSPORT',
+        requestId: 'r',
+        timedOut: true,
+      }),
+    );
+    await expect(s.orders.cancelOrder(agenciaA, id, 'X', usuario)).rejects.toThrow();
+    const anchor = Number((await fila(id)).anchor);
+
+    s.proveedor.adapter.getBooking.mockRejectedValue(
+      new TboApiError({ status: 503, path: '/BookingDetail', kind: 'UPSTREAM', requestId: 'r' }),
+    );
+    const report = await s.cancellations.sweepTenant(agenciaA, anchor + 20 * MIN);
+
+    expect(report).toMatchObject({ examined: 1, unavailable: 1, failed: 0 });
+    // Leyó como el paso 1 (+15 min), vencido hace 5: la próxima, una corrida del barrido después.
+    expect(await fila(id)).toMatchObject({
+      status: 'pending',
+      sub_status: 'cancel-unverified',
+      cancel_verify_step: 0,
+      anchor: String(anchor),
+      next: String(anchor + 35 * MIN),
+    });
+    // El CAS sobre el ancla: un calendario de otra cancelación no se toca.
+    await expect(
+      s.store.postpone(agenciaA, id, { anchorAt: anchor - 1, step: 0 }, anchor + 60 * MIN),
+    ).resolves.toBe(false);
+    await expect(
+      s.store.postpone(agenciaB, id, { anchorAt: anchor, step: 0 }, anchor + 60 * MIN),
+    ).resolves.toBe(false);
+    expect((await fila(id)).next).toBe(String(anchor + 35 * MIN));
+  });
+
   it('el cierre es atómico: si la orden ya no está pendiente, tampoco avanza el paso', async () => {
     const s = servicios();
     const id = await orden();

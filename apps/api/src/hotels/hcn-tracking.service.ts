@@ -21,6 +21,7 @@ import {
   hcnCheckIsCurrent,
   hcnGate,
   hcnPlanAtWindowEntry,
+  hcnSweepRetryAt,
   openHcnTracking,
   type HcnCheckIn,
   type HcnMissingReason,
@@ -52,7 +53,11 @@ import {
  *    Un fallo de transporte sí se relanza para que la cola repita ESA lectura, que no cuenta.
  * 3. **El barrido**, tenant por tenant: abre el plan de las órdenes confirmadas que se quedaron sin
  *    él, hace entrar en ventana las reservas lejanas (PV-38) y ejecuta las lecturas que la cola
- *    perdió.
+ *    perdió. Una lectura que falla reprograma la orden con backoff (HARD-2): con la hora vieja, las
+ *    mismas órdenes atascadas ocuparían cada corrida.
+ *
+ * Cada lectura sale por el cupo de fondo del proveedor, que cede ante las ventas (04 §9.5 punto 5,
+ * PV-41).
  *
  * El seguimiento se corta cuando la reserva se cancela (lo corta la cancelación, y aquí si se la
  * encuentra cancelada), cuando termina el día de entrada o cuando llega el HCN. Agotado el plan se
@@ -249,8 +254,8 @@ export class HcnTrackingService {
   // ───────────────────────── 3. El barrido ─────────────────────────
 
   /**
-   * Lo pendiente de un tenant. Una orden que falla no frena a las demás: queda como estaba y la
-   * retoma la corrida siguiente.
+   * Lo pendiente de un tenant. Una orden que falla no frena a las demás: si falló la lectura, se
+   * reprograma con backoff; si falló la base, queda como estaba y la retoma la corrida siguiente.
    */
   async sweepTenant(tenantId: string, now: number = Date.now()): Promise<HcnSweepReport> {
     const report = emptyReport();
@@ -280,7 +285,7 @@ export class HcnTrackingService {
     for (const target of due) {
       report.examined += 1;
       try {
-        report[await this.sweepOne(tenantId, target)] += 1;
+        report[await this.sweepOne(tenantId, target, now)] += 1;
       } catch (err) {
         report.failed += 1;
         this.logger.warn(`hcn.sweep_failed order=${target.orderId} error=${errorName(err)}`);
@@ -289,9 +294,11 @@ export class HcnTrackingService {
     return report;
   }
 
-  private async sweepOne(tenantId: string, target: HcnTarget): Promise<HcnOutcome> {
+  private async sweepOne(tenantId: string, target: HcnTarget, now: number): Promise<HcnOutcome> {
     if (target.tracking.state !== 'out-of-window') {
-      return this.runStep({ tenantId, target, runner: 'sweep', finalAttempt: true });
+      const outcome = await this.runStep({ tenantId, target, runner: 'sweep', finalAttempt: true });
+      if (outcome === 'unavailable') await this.postpone(tenantId, target, now);
+      return outcome;
     }
     const entryAt = target.tracking.nextAt;
     // El CHECK de 0042 no deja una entrada en ventana sin hora; si faltara, no hay desde dónde contar.
@@ -306,6 +313,32 @@ export class HcnTrackingService {
     if (!won) return 'skipped';
     await this.enqueue({ tenantId, orderId: target.orderId, attempt: 0 }, entered.firstCheckAt);
     return 'window-entered';
+  }
+
+  /**
+   * La lectura del barrido no se hizo y no cuenta como intento: la próxima, con backoff (CAS sobre
+   * el estado y las lecturas hechas, como una pausa).
+   */
+  private async postpone(tenantId: string, target: HcnTarget, now: number): Promise<void> {
+    const { attempts } = target.tracking;
+    const at = hcnSweepRetryAt({
+      bookedAt: target.createdAt,
+      checkIn: checkInOf(target),
+      attempt: attempts,
+      nextAt: target.tracking.nextAt,
+      now,
+    });
+    const moved = await this.store.advance(
+      tenantId,
+      target.orderId,
+      { state: 'scheduled', attempts },
+      { state: 'scheduled', attempts, nextAt: at },
+    );
+    if (moved) {
+      this.logger.log(
+        `hcn.sweep_postponed order=${target.orderId} attempt=${attempts} retryAt=${new Date(at).toISOString()}`,
+      );
+    }
   }
 
   // ───────────────────────── El plan ─────────────────────────
@@ -493,10 +526,11 @@ export class HcnTrackingService {
     try {
       // Post-venta: frenar las ventas de un proveedor no puede impedir leer lo que ya se vendió.
       const view = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
-        this.breaker.execute(provider.code, () => provider.adapter.getBooking(locator, ctx), {
-          ...provider.circuit,
-          scope: 'post-sale',
-        }),
+        this.breaker.execute(
+          provider.code,
+          () => provider.adapter.getBooking(locator, ctx, { purpose: 'background' }),
+          { ...provider.circuit, scope: 'post-sale' },
+        ),
       );
       return { read: { kind: 'read', view } };
     } catch (err) {

@@ -24,7 +24,7 @@ import {
   type MemoryHcnOrder,
   type MemoryHcnRow,
 } from './__fixtures__/memory-hcn-tracking.js';
-import { HCN_CHECK_GRACE_MS, HCN_READS } from './hcn-plan.js';
+import { HCN_CHECK_GRACE_MS, HCN_READS, HCN_SWEEP_LIMIT } from './hcn-plan.js';
 import {
   HCN_ENQUEUE_WAIT_MS,
   HcnCheckJobInvalidError,
@@ -352,7 +352,12 @@ describe('el job hcn-check: sólo la lectura vigente', () => {
 
     await b.service.runJob(job(0), { final: false });
 
-    expect(b.leer).toHaveBeenCalledWith('FL1IMA', { tenantId: TENANT, requestId: ORDEN });
+    // Por el cupo de fondo del proveedor, que cede ante las ventas (PV-41).
+    expect(b.leer).toHaveBeenCalledWith(
+      'FL1IMA',
+      { tenantId: TENANT, requestId: ORDEN },
+      { purpose: 'background' },
+    );
     expect(b.mem.row(ORDEN)).toMatchObject({
       hcn_state: 'scheduled',
       hcn_attempts: 1,
@@ -839,7 +844,7 @@ describe('sweepTenant: lo que la cola perdió, tenant por tenant', () => {
     expect(b.mem.row(ORDEN)?.hcn_attempts).toBe(1);
   });
 
-  it('en el barrido un fallo de transporte no lanza: queda vencida para la corrida siguiente', async () => {
+  it('en el barrido un fallo de transporte no lanza ni cuenta como lectura: se reprograma con backoff', async () => {
     const b = banco({ tracking: [[ORDEN, programada(0)]] });
     b.leer.mockRejectedValue(new TransporteError('socket hang up'));
     const ahora = PRIMERA + HCN_CHECK_GRACE_MS;
@@ -848,8 +853,82 @@ describe('sweepTenant: lo que la cola perdió, tenant por tenant', () => {
     expect(await b.service.sweepTenant(TENANT, ahora)).toMatchObject({
       examined: 1,
       unavailable: 1,
+      failed: 0,
     });
-    expect(b.mem.row(ORDEN)?.hcn_next_check_at).toBe(PRIMERA);
+    // Vencida hace 15 min desde el SLA: espera otros 15 y no gasta un intento del plan.
+    expect(b.mem.row(ORDEN)).toMatchObject({
+      hcn_state: 'scheduled',
+      hcn_attempts: 0,
+      hcn_next_check_at: PRIMERA + 30 * MIN,
+    });
+    expect(b.audit.events).toEqual([]);
+
+    // La corrida siguiente no la ve: le toca a otras.
+    vi.setSystemTime(ahora + 15 * MIN);
+    expect((await b.service.sweepTenant(TENANT, ahora + 15 * MIN)).examined).toBe(0);
+  });
+
+  it('la espera no pasa de una hora, la cadencia del plan, ni del fin del día de entrada', async () => {
+    const b = banco({ tracking: [[ORDEN, programada(2)]] });
+    b.leer.mockRejectedValue(new TransporteError('socket hang up'));
+    // La lectura 2 tocaba a SLA + 2 h: tres horas tarde, la espera se queda en una.
+    const ahora = PRIMERA + 5 * HOUR;
+    vi.setSystemTime(ahora);
+    await b.service.sweepTenant(TENANT, ahora);
+    expect(b.mem.row(ORDEN)?.hcn_next_check_at).toBe(ahora + HOUR);
+
+    // Check-in el 2026-10-04 sin zona del hotel: el día de entrada termina el 5 a las 12:00 UTC.
+    const finDelDia = Date.parse('2026-10-05T12:00:00Z');
+    const casi = finDelDia - 20 * MIN;
+    vi.setSystemTime(casi);
+    await b.service.sweepTenant(TENANT, casi);
+    expect(b.mem.row(ORDEN)?.hcn_next_check_at).toBe(finDelDia);
+
+    // Llegado ese momento, el plan corta el seguimiento sin leer.
+    b.leer.mockClear();
+    const despues = finDelDia + HCN_CHECK_GRACE_MS;
+    vi.setSystemTime(despues);
+    expect(await b.service.sweepTenant(TENANT, despues)).toMatchObject({ stopped: 1 });
+    expect(b.leer).not.toHaveBeenCalled();
+  });
+
+  it('HARD-2: 25+ lecturas que fallan siempre no tapan al resto del tenant', async () => {
+    const atascadas = Array.from({ length: HCN_SWEEP_LIMIT + 1 }, (_, i) => `a${i}`);
+    const b = banco({
+      orders: [
+        ...atascadas.map((id) => orden({ id, provider_order_id: `LOC${id}` })),
+        orden({ id: 'sana' }),
+      ],
+      tracking: [
+        ...atascadas.map((id): [string, MemoryHcnRow] => [id, programada(0)]),
+        ['sana', programada(0, { hcn_next_check_at: PRIMERA + MIN })],
+      ],
+    });
+    // 429 de la cuenta: el breaker no lo cuenta, así que el proveedor sigue respondiendo a las demás.
+    const limitada = Object.assign(new TransporteError('429'), {
+      failure: { kind: 'THROTTLED', circuit: 'IGNORE', retry: 'RETRY_BACKOFF' },
+    });
+    b.leer.mockImplementation((locator) =>
+      locator === 'FL1IMA' ? Promise.resolve(vista()) : Promise.reject(limitada),
+    );
+
+    const primera = PRIMERA + HCN_CHECK_GRACE_MS + MIN;
+    vi.setSystemTime(primera);
+    expect(await b.service.sweepTenant(TENANT, primera)).toMatchObject({
+      examined: HCN_SWEEP_LIMIT,
+      unavailable: HCN_SWEEP_LIMIT,
+    });
+    expect(b.mem.row('sana')?.hcn_attempts).toBe(0);
+
+    // Sin el backoff, las mismas 25 volverían a ocupar la corrida.
+    const segunda = primera + MIN;
+    vi.setSystemTime(segunda);
+    expect(await b.service.sweepTenant(TENANT, segunda)).toMatchObject({
+      examined: 2,
+      unavailable: 1,
+      advanced: 1,
+    });
+    expect(b.mem.row('sana')?.hcn_attempts).toBe(1);
   });
 
   it('entrada en ventana (PV-38): P5 desde la entrada, sin margen porque no hay job que esperar', async () => {
@@ -930,6 +1009,10 @@ describe('sweepTenant: lo que la cola perdió, tenant por tenant', () => {
 
     expect(b.mem.row('h2')?.hcn_attempts).toBe(1);
     expect(b.mem.row(ORDEN)?.hcn_attempts).toBe(0);
-    expect(b.leer).toHaveBeenCalledWith('FL1IMA', { tenantId: OTRO_TENANT, requestId: 'h2' });
+    expect(b.leer).toHaveBeenCalledWith(
+      'FL1IMA',
+      { tenantId: OTRO_TENANT, requestId: 'h2' },
+      { purpose: 'background' },
+    );
   });
 });

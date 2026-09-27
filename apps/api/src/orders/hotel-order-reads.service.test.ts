@@ -235,10 +235,12 @@ describe('consulta manual de una orden de hotel', () => {
     expect(b.factory.ordenesResueltas).toEqual([[AGENCIA_A, ORDEN_A]]);
     expect(b.factory.resolveCalls).toEqual([]);
     expect(b.factory.vigente.getBooking).not.toHaveBeenCalled();
-    expect(b.factory.deLaOrden.getBooking).toHaveBeenCalledWith('LOC-1', {
-      tenantId: AGENCIA_A,
-      requestId: ORDEN_A,
-    });
+    expect(b.factory.deLaOrden.getBooking).toHaveBeenCalledWith(
+      'LOC-1',
+      { tenantId: AGENCIA_A, requestId: ORDEN_A },
+      // Una persona espera: por el cupo del vendedor, no detrás de los jobs de fondo (PV-41).
+      { purpose: 'interactive' },
+    );
     expect(result).toMatchObject({ vertical: 'hotels', orderId: ORDEN_A, found: true });
   });
 

@@ -78,7 +78,8 @@ import {
  *    orden (R2) y los montos del proveedor (R6), sólo al dueño de la cuenta.
  *
  * Nada aquí crea ni cancela en el proveedor. Las lecturas van con el alcance de post-venta del
- * breaker: frenar las ventas de un proveedor no impide saber qué reservas tiene.
+ * breaker —frenar las ventas de un proveedor no impide saber qué reservas tiene— y por el cupo de
+ * fondo del proveedor, que cede ante las ventas (04 §9.5 punto 5, PV-41).
  *
  * Tres disparos: el planificador diario de BullMQ (04:30 UTC), el barrido de post-venta que recupera
  * las cuentas que se quedaron sin corrida (y la única vía sin Redis) y el botón de operaciones.
@@ -1223,11 +1224,13 @@ export class ReconciliationService implements OnApplicationBootstrap {
       }
       const { tenantId } = target;
       const ctx: SearchContext = { tenantId, requestId: target.orderId };
+      // Un job: por el cupo de fondo del proveedor, que cede ante las ventas (PV-41).
       const view = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
-        this.breaker.execute(provider.code, () => provider.adapter.getBooking(locator, ctx), {
-          ...provider.circuit,
-          scope: 'post-sale',
-        }),
+        this.breaker.execute(
+          provider.code,
+          () => provider.adapter.getBooking(locator, ctx, { purpose: 'background' }),
+          { ...provider.circuit, scope: 'post-sale' },
+        ),
       );
       return { kind: 'read', view };
     } catch (err) {

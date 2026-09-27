@@ -233,6 +233,26 @@ describe('HotelOrderCancellationStore — la verificación', () => {
     await expect(b.store.advance(TENANT, ORDEN, 1, { step: 2, nextAt: null })).resolves.toBe(false);
   });
 
+  it('postpone: corre la próxima lectura sin avanzar el paso, con CAS sobre ancla y paso', async () => {
+    const b = banco(() => ({ numAffectedRows: 1n }));
+
+    await expect(
+      b.store.postpone(TENANT, ORDEN, { anchorAt: T, step: 1 }, T + 15 * 60_000),
+    ).resolves.toBe(true);
+
+    const [q] = b.negocio();
+    expect(q?.sql).toBe(
+      'update "hotel_order_tracking" set "cancel_verify_next_at" = $1 where "order_id" = $2 and "tenant_id" = $3 and "cancel_verify_anchor_at" = $4 and "cancel_verify_step" = $5 and "cancel_verify_next_at" is not null',
+    );
+    expect(q?.parameters).toEqual([new Date(T + 15 * 60_000), ORDEN, TENANT, new Date(T), 1]);
+
+    // Otro camino lo avanzó, lo cerró o abrió el calendario de una cancelación nueva.
+    const perdio = banco(() => ({ numAffectedRows: 0n }));
+    await expect(perdio.store.postpone(TENANT, ORDEN, { anchorAt: T, step: 1 }, T)).resolves.toBe(
+      false,
+    );
+  });
+
   it('close: paso, orden y operación sin verificar en UNA transacción', async () => {
     const b = banco((q) => {
       if (q.sql.startsWith('update "hotel_order_tracking"')) return { numAffectedRows: 1n };

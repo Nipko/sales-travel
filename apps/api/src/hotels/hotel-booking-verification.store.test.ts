@@ -172,7 +172,8 @@ describe('HotelBookingVerificationStore', () => {
     expect(q?.sql).toContain(`o.search_criteria ->> 'vertical'`);
     expect(q?.sql).toContain('"t"."verify_next_at" is not null and "t"."verify_next_at" <= $');
     expect(q?.sql).toContain('"t"."verify_anchor_at" is null and o.updated_at <= $');
-    expect(q?.sql).toContain('order by "o"."updated_at" limit $');
+    // Por su hora programada: una orden reprogramada tras un fallo deja pasar al resto (HARD-2).
+    expect(q?.sql).toContain('order by coalesce(t.verify_next_at, o.updated_at) limit $');
     expect(q?.parameters).toEqual([
       TENANT,
       'pending',
@@ -229,6 +230,21 @@ describe('HotelBookingVerificationStore', () => {
 
     const perdio = banco(() => ({ numAffectedRows: 0n }));
     expect(await perdio.store.advance(TENANT, ORDEN, 1, { step: 2, nextAt: null })).toBe(false);
+  });
+
+  it('postpone: corre la próxima lectura sin avanzar el paso, con CAS sobre ancla y paso', async () => {
+    const b = banco(() => ({ numAffectedRows: 1n }));
+    const movida = await b.store.postpone(TENANT, ORDEN, { anchorAt: T, step: 1 }, T + 15 * 60_000);
+
+    expect(movida).toBe(true);
+    const [q] = b.negocio();
+    expect(q?.sql).toBe(
+      'update "hotel_order_tracking" set "verify_next_at" = $1 where "order_id" = $2 and "tenant_id" = $3 and "verify_anchor_at" = $4 and "verify_step" = $5 and "verify_next_at" is not null',
+    );
+    expect(q?.parameters).toEqual([new Date(T + 15 * 60_000), ORDEN, TENANT, new Date(T), 1]);
+
+    const otro = banco(() => ({ numAffectedRows: 0n }));
+    expect(await otro.store.postpone(TENANT, ORDEN, { anchorAt: T, step: 1 }, T)).toBe(false);
   });
 
   it('advance: detiene el calendario con subestado y el estado crudo leído, fuente `verify`', async () => {

@@ -831,10 +831,12 @@ describe('RF-20: la orden existe antes del Book, y el Book sale con lo que reval
       },
     });
     expect(b.adapter.getBooking).toHaveBeenCalledTimes(1);
-    expect(b.adapter.getBooking).toHaveBeenCalledWith(CONF, {
-      tenantId: AGENCIA,
-      requestId: fila(b)['id'],
-    });
+    expect(b.adapter.getBooking).toHaveBeenCalledWith(
+      CONF,
+      { tenantId: AGENCIA, requestId: fila(b)['id'] },
+      // La lectura de cierre va por el cupo de dinero: una ráfaga de jobs no la hace esperar (PV-41).
+      { purpose: 'booking' },
+    );
     // Confirmada: abre el plan del HCN (04 §6.3 fila 2; PR-5.4).
     expect(b.hcn.schedule.mock.calls).toEqual([[{ tenantId: AGENCIA, orderId: fila(b)['id'] }]]);
   });
@@ -2451,9 +2453,12 @@ function boveda(): ProviderCredentialsService {
       updatedAt: new Date(CUENTA.updatedAt),
     });
   };
+  // La cuenta con que se hizo la orden, que sigue en la red del tenant: la misma del consolidador.
+  const resolveForOrder = (tenantId: string): Promise<ResolvedProviderAccount> =>
+    resolve(tenantId, 'tbo-hotels');
   const ownerTenantType = (id: string): Promise<TenantType | undefined> =>
     Promise.resolve(id === CONSOLIDADOR ? 'consolidator' : 'agency');
-  return { resolve, ownerTenantType } as unknown as ProviderCredentialsService;
+  return { resolve, resolveForOrder, ownerTenantType } as unknown as ProviderCredentialsService;
 }
 
 /** El cliente del ACL siempre manda texto. */

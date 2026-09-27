@@ -5,6 +5,7 @@ import type {
   HotelVerificationAdvance,
   HotelVerificationCalendar,
   HotelVerificationDueQuery,
+  HotelVerificationPosition,
   HotelVerificationTarget,
 } from '../hotel-booking-verification.store.js';
 
@@ -13,8 +14,9 @@ import type {
  * (`orders/__fixtures__/memory-orders-db.ts`) y un mapa como `hotel_order_tracking`.
  *
  * Reproduce lo que decide los casos: el alcance por tenant, qué orden está abierta (`pending` y
- * `provider_raw` nulo), el filtro del barrido (vencidos y huérfanas, sólo hoteles con referencia)
- * y los dos CAS —abrir el calendario sólo si no hay uno y avanzar sólo desde el paso guardado—.
+ * `provider_raw` nulo), el filtro y el orden del barrido (vencidos y huérfanas, sólo hoteles con
+ * referencia, por su hora programada) y los CAS —abrir el calendario sólo si no hay uno, y avanzar
+ * o postergar sólo desde el paso guardado—.
  * El SQL real se prueba en `hotel-booking-verification.store.test.ts` y contra Postgres.
  */
 
@@ -28,7 +30,7 @@ export interface TrackingFila {
   providerStatusAt: number | null;
 }
 
-type Metodo = 'findTarget' | 'listDue' | 'startCalendar' | 'advance';
+type Metodo = 'findTarget' | 'listDue' | 'startCalendar' | 'advance' | 'postpone';
 
 function epoch(value: unknown): number {
   return value instanceof Date ? value.getTime() : Date.parse(String(value));
@@ -77,7 +79,7 @@ export class MemoryVerificationStore implements Pick<HotelBookingVerificationSto
             (t.nextAt !== null && t.nextAt <= query.dueBefore) ||
             (t.anchorAt === null && t.updatedAt <= query.orphanBefore),
         )
-        .sort((a, b) => a.updatedAt - b.updatedAt)
+        .sort((a, b) => (a.nextAt ?? a.updatedAt) - (b.nextAt ?? b.updatedAt))
         .slice(0, query.limit),
     );
   }
@@ -124,6 +126,28 @@ export class MemoryVerificationStore implements Pick<HotelBookingVerificationSto
         actual.providerStatus = next.providerStatus.value;
         actual.providerStatusAt = next.providerStatus.at;
       }
+      return true;
+    });
+  }
+
+  postpone(
+    tenantId: string,
+    orderId: string,
+    from: HotelVerificationPosition,
+    nextAt: number,
+  ): Promise<boolean> {
+    return this.run('postpone', () => {
+      const actual = this.tracking.get(orderId);
+      if (
+        actual === undefined ||
+        actual.tenantId !== tenantId ||
+        actual.anchorAt !== from.anchorAt ||
+        actual.step !== from.step ||
+        actual.nextAt === null
+      ) {
+        return false;
+      }
+      actual.nextAt = nextAt;
       return true;
     });
   }

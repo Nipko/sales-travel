@@ -19,7 +19,7 @@ import type {
  * Un solo estado para `orders`, `order_operations` y `hotel_order_tracking`, con lo que decide estos
  * casos: RLS por tenant, transacciones que se deshacen ENTERAS si fallan (el seguimiento incluido,
  * porque se escribe dentro de la transacción de la operación), el índice de la cancelación
- * pendiente (0037) y los CAS del calendario de verificación (0046). El SQL real lo prueba
+ * pendiente (0037), el orden del barrido y los CAS del calendario de verificación (0046). El SQL real lo prueba
  * `hotel-order-cancellation.integration.test.ts` contra Postgres.
  */
 
@@ -326,12 +326,13 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
       Promise.resolve(
         state.orders
           .filter((o) => o['tenant_id'] === tenantId)
-          .filter((o) => {
+          .flatMap((o) => {
             const next = state.tracking.get(String(o['id']))?.cancel_verify_next_at ?? null;
-            return next !== null && next <= query.dueBefore;
+            return next !== null && next <= query.dueBefore ? [{ o, next }] : [];
           })
+          .sort((a, b) => a.next - b.next)
           .slice(0, query.limit)
-          .map(targetOf),
+          .map(({ o }) => targetOf(o)),
       ),
     markRequested: (_trx: unknown, _tenantId: string, orderId: string) => {
       calls.push({ method: 'markRequested', orderId });
@@ -359,6 +360,27 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
       withTenant(tenantId, () => {
         calls.push({ method: 'advance', orderId, write: next });
         return Promise.resolve(advanceIn(orderId, fromStep, next));
+      }),
+    postpone: (
+      tenantId: string,
+      orderId: string,
+      from: { anchorAt: number; step: number },
+      nextAt: number,
+    ) =>
+      withTenant(tenantId, () => {
+        calls.push({ method: 'postpone', orderId, write: { from, nextAt } });
+        const row = state.tracking.get(orderId);
+        if (
+          orderOf(tenantId, orderId) === undefined ||
+          row === undefined ||
+          row.cancel_verify_anchor_at !== from.anchorAt ||
+          row.cancel_verify_step !== from.step ||
+          row.cancel_verify_next_at === null
+        ) {
+          return Promise.resolve(false);
+        }
+        row.cancel_verify_next_at = nextAt;
+        return Promise.resolve(true);
       }),
     close: (
       tenantId: string,

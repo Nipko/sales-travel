@@ -18,8 +18,11 @@ export type TboHttpMethod = 'GET' | 'POST';
 /**
  * Cupos del limitador de una cuenta (RNF-02 punto 3). El dinero —Book, Cancel y el BookingDetail
  * de recuperación— tiene capacidad reservada y nunca espera detrás de una campaña de búsquedas.
+ * `verification` es el BookingDetail con que un job busca un Book que no respondió: pasa antes que
+ * las búsquedas, pero con un techo propio, porque una ráfaga de jobs no puede quitarle al vendedor
+ * más que eso (04 §9.5 punto 5, PV-41).
  */
-export type TboLane = 'sales' | 'money' | 'background';
+export type TboLane = 'sales' | 'money' | 'verification' | 'background';
 
 export interface TboOperationSpec {
   /** Casing del PDF, con `/` inicial y sin query. Se concatena a la `baseUrl` de la cuenta. */
@@ -143,7 +146,8 @@ export const TBO_OPERATIONS = Object.freeze({
   }),
   /**
    * p. 42. 30 s (INFERIDO, Q-09). 3 intentos en jobs; la lectura interactiva pide 2. El cupo por
-   * defecto es el de fondo (HCN, conciliación); la recuperación tras un Book incierto pide `money`.
+   * defecto es el de fondo (HCN, conciliación); la lectura de cierre de un Book pide `money`, y la
+   * verificación de un Book incierto desde un job, `verification`.
    */
   bookingDetail: spec({
     path: '/BookingDetail',
@@ -153,7 +157,7 @@ export const TBO_OPERATIONS = Object.freeze({
     maxAttempts: 3,
     money: false,
     sharedDeadline: false,
-    lanes: ['background', 'money', 'sales'],
+    lanes: ['background', 'money', 'verification', 'sales'],
     envelope: 'required',
     emptyOnNoAvailability: false,
     logDescription: false,

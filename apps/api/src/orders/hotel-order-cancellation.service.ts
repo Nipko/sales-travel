@@ -14,6 +14,7 @@ import {
   HOTEL_CANCEL_VERIFY_STEPS,
   HOTEL_CANCEL_VERIFY_SWEEP_LIMIT,
   cancellationStepIsCurrent,
+  cancellationVerifyAt,
   decideCancellationVerification,
   sweepCancellationStep,
   type HotelCancelVerifyEscalation,
@@ -28,6 +29,7 @@ import {
 } from '../hotels/hotel-cancellation.js';
 import type { HotelOrderPlan } from '../hotels/hotel-order-state.js';
 import { HotelProviderCapabilityError } from '../hotels/hotel-provider-errors.js';
+import { sweepRetryAt } from '../hotels/sweep-retry.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { withProviderPayloadScope } from '../provider-payloads/provider-payload-scope.js';
@@ -551,8 +553,9 @@ export class HotelOrderCancellationService {
   }
 
   /**
-   * Los pasos vencidos de un tenant que la cola perdió. Una orden que falla no frena a las demás:
-   * queda vencida y la retoma la corrida siguiente.
+   * Los pasos vencidos de un tenant que la cola perdió. Una orden que falla no frena a las demás: si
+   * falló la lectura, se reprograma con backoff (HARD-2) —con la hora vieja, las mismas órdenes
+   * atascadas ocuparían cada corrida—; si falló la base, queda vencida para la corrida siguiente.
    */
   async sweepTenant(
     tenantId: string,
@@ -572,16 +575,20 @@ export class HotelOrderCancellationService {
         continue;
       }
       try {
+        const running = sweepCancellationStep(step, anchorAt, now);
         const outcome = await this.runStep({
           tenantId,
           target,
           fromStep: step,
-          step: sweepCancellationStep(step, anchorAt, now),
+          step: running,
           anchorAt,
           runner: 'sweep',
           finalAttempt: true,
           actorUserId: target.userId,
         });
+        if (outcome === 'unavailable') {
+          await this.postpone(tenantId, target, { anchorAt, fromStep: step, step: running }, now);
+        }
         report[outcome] += 1;
       } catch (err) {
         report.failed += 1;
@@ -591,6 +598,35 @@ export class HotelOrderCancellationService {
       }
     }
     return report;
+  }
+
+  /**
+   * La lectura del barrido no se hizo: la próxima, con backoff y nunca después del paso siguiente
+   * del calendario. El paso guardado no cambia: la lectura que falló no dijo nada.
+   */
+  private async postpone(
+    tenantId: string,
+    target: HotelCancelTarget,
+    run: { readonly anchorAt: number; readonly fromStep: number; readonly step: number },
+    now: number,
+  ): Promise<void> {
+    const deadline = cancellationVerifyAt(run.anchorAt, run.step + 1);
+    const at = sweepRetryAt({
+      now,
+      dueAt: cancellationVerifyAt(run.anchorAt, run.step) ?? now,
+      ...(deadline === undefined ? {} : { deadline }),
+    });
+    const moved = await this.store.postpone(
+      tenantId,
+      target.orderId,
+      { anchorAt: run.anchorAt, step: run.fromStep },
+      at,
+    );
+    if (moved) {
+      this.logger.log(
+        `hotels.cancel_verify.sweep_postponed provider=${target.provider} order=${target.orderId} step=${run.step} retryAt=${new Date(at).toISOString()}`,
+      );
+    }
   }
 
   private async runStep(run: VerifyRun): Promise<HotelCancelVerifyOutcome> {
@@ -727,11 +763,13 @@ export class HotelOrderCancellationService {
     if (!provider.capabilities.retrieve) return { read: { kind: 'failed', error: 'permanent' } };
     const ctx: SearchContext = { tenantId, requestId: target.orderId };
     try {
+      // Un job: por el cupo de fondo del proveedor, que cede ante las ventas (PV-41).
       const view = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
-        this.breaker.execute(provider.code, () => provider.adapter.getBooking(locator, ctx), {
-          ...provider.circuit,
-          scope: 'post-sale',
-        }),
+        this.breaker.execute(
+          provider.code,
+          () => provider.adapter.getBooking(locator, ctx, { purpose: 'background' }),
+          { ...provider.circuit, scope: 'post-sale' },
+        ),
       );
       return { read: { kind: 'read', view } };
     } catch (err) {

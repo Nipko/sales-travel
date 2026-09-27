@@ -356,9 +356,28 @@ describe('TboHotelProviderAdapter', () => {
     await expect(adapter.getBookingByClientReference('STT0123456789ABCDEFGH', CTX)).resolves.toBe(
       RESERVA,
     );
-    expect(a.getBooking).toHaveBeenCalledWith('7584263', CTX);
-    expect(a.getBookingByClientReference).toHaveBeenCalledWith('STT0123456789ABCDEFGH', CTX);
+    expect(a.getBooking).toHaveBeenCalledWith('7584263', CTX, undefined);
+    expect(a.getBookingByClientReference).toHaveBeenCalledWith(
+      'STT0123456789ABCDEFGH',
+      CTX,
+      undefined,
+    );
     expect(supportsHotelBookingByClientReference(adapter)).toBe(true);
+  });
+
+  it('PV-41: el propósito de la lectura llega al ACL, que elige con él el cupo de la cuenta', async () => {
+    const a = acl();
+    const adapter = new TboHotelProviderAdapter(a, CUENTA, 'test');
+
+    await adapter.getBooking('7584263', CTX, { purpose: 'background' });
+    await adapter.getBookingByClientReference('STT0123456789ABCDEFGH', CTX, {
+      purpose: 'verification',
+    });
+
+    expect(a.getBooking).toHaveBeenCalledWith('7584263', CTX, { purpose: 'background' });
+    expect(a.getBookingByClientReference).toHaveBeenCalledWith('STT0123456789ABCDEFGH', CTX, {
+      purpose: 'verification',
+    });
   });
 
   it('PR-4.6: el Book sale sólo con la saga de órdenes, por el puerto con contexto', () => {

@@ -691,6 +691,12 @@ describe('R3, R4 y R7 se confirman leyendo la reserva antes de tocar nada (PV-33
     expect(b.mem.order(o.id).status).toBe('confirmed');
     expect(b.mem.items).toEqual([]);
     expect(b.audit.events).toEqual([]);
+    // La lectura de confirmación sale por el cupo de fondo del proveedor (PV-41).
+    expect(b.adapter.getBooking).toHaveBeenCalledWith(
+      'LOCA03',
+      { tenantId: AGENCIA_A, requestId: o.id },
+      { purpose: 'background' },
+    );
   });
 
   it('R4: nunca reenvía un Cancel; revisión urgente y un solo aviso aunque la ventana se repita', async () => {

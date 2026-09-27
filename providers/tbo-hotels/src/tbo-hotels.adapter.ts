@@ -12,7 +12,9 @@ import type {
   HotelBookResult,
   HotelBookingByClientReferencePort,
   HotelBookingContact,
+  HotelBookingReadOptions,
   HotelBookingReadPort,
+  HotelBookingReadPurpose,
   HotelBookingRoomGuests,
   HotelBookingView,
   HotelCancelPort,
@@ -531,24 +533,54 @@ function bookQueryFromPort(request: HotelBookRequest): TboBookQuery {
 /**
  * Para qué se lee: decide el cupo del limitador y cuántos intentos (01 §7.2; tabla de operaciones).
  *
- * - `recovery`: verificar un Book (el incierto por referencia, el de cierre por localizador). Va al
- *   cupo de dinero, que no espera detrás de las búsquedas.
+ * - `recovery`: verificar un Book dentro de la misma venta (el de cierre por localizador, o uno por
+ *   referencia que no pide otro propósito). Va al cupo de dinero, que no espera detrás de las
+ *   búsquedas.
+ * - `verification`: un job que busca, por nuestra referencia, un Book que no respondió. Pasa antes
+ *   que las búsquedas pero con techo propio: una ráfaga de jobs no le quita al vendedor más que eso.
  * - `interactive`: el vendedor espera la respuesta (panel). Dos intentos.
- * - `background`: HCN, conciliación y la lectura previa a un Cancel.
+ * - `background`: HCN, conciliación, verificación de una cancelación y la lectura previa a un Cancel.
  * - `after-cancel`: la lectura posterior a un Cancel. UN intento: la cancelación síncrona tiene que
  *   responder dentro de su presupuesto (HARD-1), y lo que esta lectura no alcance a decir lo lee
  *   `verify-cancellation` a los 2 minutos.
  */
-export type TboBookingDetailPurpose = 'recovery' | 'interactive' | 'background' | 'after-cancel';
+export type TboBookingDetailPurpose =
+  | 'recovery'
+  | 'verification'
+  | 'interactive'
+  | 'background'
+  | 'after-cancel';
 
 const DETAIL_PURPOSES: Readonly<
   Record<TboBookingDetailPurpose, { readonly lane: TboLane; readonly maxAttempts: number }>
 > = Object.freeze({
   recovery: { lane: 'money', maxAttempts: 3 },
+  verification: { lane: 'verification', maxAttempts: 3 },
   interactive: { lane: 'sales', maxAttempts: 2 },
   background: { lane: 'background', maxAttempts: 3 },
   'after-cancel': { lane: 'background', maxAttempts: 1 },
 });
+
+/** El propósito neutral de una lectura, en el vocabulario de este ACL. */
+const READ_PURPOSES: Readonly<Record<HotelBookingReadPurpose, TboBookingDetailPurpose>> =
+  Object.freeze({
+    interactive: 'interactive',
+    booking: 'recovery',
+    verification: 'verification',
+    background: 'background',
+  });
+
+/** Sin propósito, o con uno que no está en el contrato, decide la forma de la lectura. */
+function detailPurposeOf(
+  options: HotelBookingReadOptions | undefined,
+): { readonly purpose: TboBookingDetailPurpose } | Record<string, never> {
+  const neutral = options?.purpose;
+  const purpose =
+    neutral !== undefined && Object.hasOwn(READ_PURPOSES, neutral)
+      ? READ_PURPOSES[neutral]
+      : undefined;
+  return purpose === undefined ? {} : { purpose };
+}
 
 export type TboBookingDetailQuery = TboBookingLookup & {
   /** Por defecto `recovery` si se lee por referencia y `background` si por localizador. */
@@ -1095,20 +1127,39 @@ export class TboHotelsAdapter
     };
   }
 
-  /** `HotelBookingReadPort`: BookingDetail por el localizador de TBO. */
-  async getBooking(providerBookingId: string, ctx: SearchContext): Promise<HotelBookingView> {
-    return (await this.bookingDetailReport({ confirmationNumber: providerBookingId }, ctx)).view;
+  /**
+   * `HotelBookingReadPort`: BookingDetail por el localizador de TBO. Sin propósito, por el cupo de
+   * fondo.
+   */
+  async getBooking(
+    providerBookingId: string,
+    ctx: SearchContext,
+    options?: HotelBookingReadOptions,
+  ): Promise<HotelBookingView> {
+    return (
+      await this.bookingDetailReport(
+        { confirmationNumber: providerBookingId, ...detailPurposeOf(options) },
+        ctx,
+      )
+    ).view;
   }
 
   /**
    * `HotelBookingByClientReferencePort`: BookingDetail por NUESTRA referencia, la única forma de
-   * verificar un Book cuya respuesta no llegó (p. 42; RF-21). Va al cupo de dinero.
+   * verificar un Book cuya respuesta no llegó (p. 42; RF-21). Sin propósito, por el cupo de dinero;
+   * el job que verifica pide `verification`.
    */
   async getBookingByClientReference(
     bookingReference: string,
     ctx: SearchContext,
+    options?: HotelBookingReadOptions,
   ): Promise<HotelBookingView> {
-    return (await this.bookingDetailReport({ bookingReferenceId: bookingReference }, ctx)).view;
+    return (
+      await this.bookingDetailReport(
+        { bookingReferenceId: bookingReference, ...detailPurposeOf(options) },
+        ctx,
+      )
+    ).view;
   }
 
   /**

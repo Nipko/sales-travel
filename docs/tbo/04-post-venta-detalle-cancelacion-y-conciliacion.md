@@ -1012,7 +1012,9 @@ Todo el algoritmo es INFERIDO; las reglas del contrato que usa están citadas.
 4. **Deduplicación de eventos.** Repetir una ventana no duplica eventos: se deduplica por
    `(accountId, ConfirmationNo, kind, valor observado)`.
 5. **Presupuesto de QPS propio** para los jobs de fondo, con backoff ante 429 (VERIFICADO-PDF p. 9; QPS no
-   publicado).
+   publicado). Implementado en el limitador por cuenta del ACL: cupos `verification` y `background` con techo
+   propio ([01](./01-autenticacion-conectividad-y-errores.md) §7.2 punto 3). Una lectura del barrido que falla se
+   reprograma con backoff, sin pasar el plazo siguiente del plan, para que las órdenes atascadas no tapen al resto.
 6. **Datos que se descartan.** `TripName` no se guarda (INFERIDO: contiene el apellido del huésped).
    `AgencyName` y los montos son datos comerciales y quedan con RLS del dueño de la cuenta.
 

@@ -5,6 +5,7 @@ import {
   type HotelOrderPlan,
   type HotelOrderSnapshot,
 } from './hotel-order-state.js';
+import { sweepRetryAt } from './sweep-retry.js';
 
 /**
  * El seguimiento del número de confirmación del hotel (HCN): **las decisiones, sin I/O**
@@ -142,6 +143,38 @@ export function hcnPlan(bookedAt: number, checkInAt: number): HcnPlan {
  */
 export function hcnPlanAtWindowEntry(windowEntryAt: number): HcnInWindowPlan {
   return inWindow(P5, windowEntryAt);
+}
+
+/**
+ * Cuándo vuelve a intentar el barrido una lectura del plan que no se pudo hacer (HARD-2). La espera
+ * se mide desde la hora que el plan le daba a esa lectura —la del SLA más una hora por reintento—,
+ * nunca pasa de una hora, que es la cadencia del propio plan, y nunca después del fin del día de
+ * entrada, cuando el seguimiento se corta. Sin fecha de entrada legible, desde la hora programada.
+ */
+export function hcnSweepRetryAt(facts: {
+  readonly bookedAt: number;
+  readonly checkIn: HcnCheckIn | undefined;
+  /** Lecturas hechas: la que falló es la siguiente. */
+  readonly attempt: number;
+  readonly nextAt: number | null;
+  readonly now: number;
+}): number {
+  const { checkIn, now } = facts;
+  let dueAt = facts.nextAt ?? now;
+  if (checkIn !== undefined) {
+    const plan = hcnPlan(facts.bookedAt, checkIn.checkInAt);
+    const first =
+      plan.kind === 'in-window'
+        ? plan.firstCheckAt
+        : hcnPlanAtWindowEntry(plan.windowEntryAt).firstCheckAt;
+    dueAt = first + facts.attempt * HCN_RETRY_EVERY_MS;
+  }
+  return sweepRetryAt({
+    now,
+    dueAt,
+    maxWaitMs: HCN_RETRY_EVERY_MS,
+    ...(checkIn === undefined ? {} : { deadline: checkIn.endsAt }),
+  });
 }
 
 // ───────────────────────── El check-in (PV-36) ─────────────────────────

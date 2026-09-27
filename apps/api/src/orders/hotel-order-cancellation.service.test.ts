@@ -4,7 +4,10 @@ import { TboApiError } from '@sales-travel/tbo-hotels';
 import { describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
-import { HOTEL_CANCEL_VERIFY_STEPS } from '../hotels/hotel-cancellation-verification.js';
+import {
+  HOTEL_CANCEL_VERIFY_STEPS,
+  HOTEL_CANCEL_VERIFY_SWEEP_LIMIT,
+} from '../hotels/hotel-cancellation-verification.js';
 import { HotelProviderCapabilityError } from '../hotels/hotel-provider-errors.js';
 import type { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import {
@@ -168,10 +171,12 @@ describe('el job verify-cancellation: sólo el paso vigente', () => {
 
     await b.service.runJob(job(0, { actorUserId: 'actor-1' }), { final: false });
 
-    expect(b.proveedor.adapter.getBooking).toHaveBeenCalledWith('FL1IMA', {
-      tenantId: TENANT,
-      requestId: ORDEN,
-    });
+    // Un job: por el cupo de fondo del proveedor, que cede ante las ventas (PV-41).
+    expect(b.proveedor.adapter.getBooking).toHaveBeenCalledWith(
+      'FL1IMA',
+      { tenantId: TENANT, requestId: ORDEN },
+      { purpose: 'background' },
+    );
     expect(b.mem.tracking(ORDEN)).toMatchObject({
       cancel_verify_step: 1,
       cancel_verify_next_at: ANCLA + 15 * MIN,
@@ -378,14 +383,93 @@ describe('el barrido de cancelaciones, tenant por tenant', () => {
     expect((await b.service.sweepTenant(OTRO_TENANT, ANCLA + 60 * MIN)).examined).toBe(0);
   });
 
-  it('un fallo de transporte en el barrido no relanza: queda vencido y sin avisar cada 15 minutos', async () => {
+  it('un fallo de transporte en el barrido no relanza ni avisa: reprograma con backoff, sin avanzar', async () => {
     const b = banco({ tracking: enCurso(0) });
     b.proveedor.adapter.getBooking.mockRejectedValue(
       new TboApiError({ status: 503, path: '/BookingDetail', kind: 'UPSTREAM', requestId: 'r' }),
     );
 
-    expect(await b.service.sweepTenant(TENANT, ANCLA + 20 * MIN)).toMatchObject({ unavailable: 1 });
+    expect(await b.service.sweepTenant(TENANT, ANCLA + 20 * MIN)).toMatchObject({
+      unavailable: 1,
+      failed: 0,
+    });
     expect(b.audit.ofType(ORDER_EVENTS.escalated)).toEqual([]);
+    // Leyó como el paso 1 (+15 min), vencido hace 5: la espera mínima, una corrida del barrido.
+    expect(b.mem.tracking(ORDEN)).toMatchObject({
+      cancel_verify_step: 0,
+      cancel_verify_next_at: ANCLA + 35 * MIN,
+    });
+    expect((await b.service.sweepTenant(TENANT, ANCLA + 39 * MIN)).examined).toBe(0);
+  });
+
+  it('la espera crece con la demora, pero nunca pasa el paso siguiente del calendario', async () => {
+    const b = banco({ tracking: enCurso(2, { cancel_verify_next_at: ANCLA + 60 * MIN }) });
+    b.proveedor.adapter.getBooking.mockRejectedValue(
+      new TboApiError({ status: 503, path: '/BookingDetail', kind: 'UPSTREAM', requestId: 'r' }),
+    );
+
+    // El paso 2 (+1 h) vencido hace casi 5 h: esperaría otro tanto, pero el paso 3 toca a +6 h.
+    await b.service.sweepTenant(TENANT, ANCLA + 350 * MIN);
+
+    expect(b.mem.tracking(ORDEN)).toMatchObject({
+      cancel_verify_step: 2,
+      cancel_verify_next_at: ANCLA + 360 * MIN,
+    });
+  });
+
+  it('HARD-2: 25+ lecturas que fallan siempre no tapan al resto del tenant', async () => {
+    const atascadas = Array.from(
+      { length: HOTEL_CANCEL_VERIFY_SWEEP_LIMIT + 1 },
+      (_, i) => `a${i}`,
+    );
+    const b = banco({
+      orders: [
+        ...atascadas.map((id) => orden({ id, provider_order_id: `LOC${id}` })),
+        orden({ id: 'sana' }),
+      ],
+    });
+    for (const id of atascadas) b.mem.state.tracking.set(id, enCurso(0));
+    b.mem.state.tracking.set('sana', enCurso(0, { cancel_verify_next_at: ANCLA + 3 * MIN }));
+    // 429 de la cuenta: el breaker no lo cuenta, así que el proveedor sigue respondiendo a las demás.
+    const limitada = Object.assign(new Error('429'), {
+      name: 'TboApiError',
+      retryable: true,
+      failure: { kind: 'THROTTLED', circuit: 'IGNORE', retry: 'RETRY_BACKOFF' },
+    });
+    b.proveedor.adapter.getBooking.mockImplementation((locator) =>
+      locator === 'FL1IMA'
+        ? Promise.resolve(vista({ status: 'CANCELLATION_IN_PROGRESS' }))
+        : Promise.reject(limitada),
+    );
+
+    expect(await b.service.sweepTenant(TENANT, ANCLA + 10 * MIN)).toMatchObject({
+      examined: HOTEL_CANCEL_VERIFY_SWEEP_LIMIT,
+      unavailable: HOTEL_CANCEL_VERIFY_SWEEP_LIMIT,
+    });
+    expect(b.mem.tracking('sana')?.cancel_verify_step).toBe(0);
+
+    // Sin el backoff, las mismas 25 volverían a ocupar la corrida.
+    expect(await b.service.sweepTenant(TENANT, ANCLA + 11 * MIN)).toMatchObject({
+      examined: 2,
+      unavailable: 1,
+      advanced: 1,
+    });
+    expect(b.mem.tracking('sana')?.cancel_verify_step).toBe(1);
+  });
+
+  it('si la base no deja reprogramar, la orden cuenta como fallida y sigue vencida', async () => {
+    const b = banco({ tracking: enCurso(0) });
+    b.proveedor.adapter.getBooking.mockRejectedValue(
+      new TboApiError({ status: 503, path: '/BookingDetail', kind: 'UPSTREAM', requestId: 'r' }),
+    );
+    vi.spyOn(b.mem.store, 'postpone').mockRejectedValue(new Error('base caída'));
+
+    expect(await b.service.sweepTenant(TENANT, ANCLA + 20 * MIN)).toMatchObject({
+      examined: 1,
+      unavailable: 0,
+      failed: 1,
+    });
+    expect(b.mem.tracking(ORDEN)?.cancel_verify_next_at).toBe(ANCLA + 2 * MIN);
   });
 
   it('una orden que falla por otra cosa se cuenta y no frena a las demás', async () => {
