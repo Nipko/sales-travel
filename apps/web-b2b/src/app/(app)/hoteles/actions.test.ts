@@ -61,6 +61,32 @@ describe('searchHotelsAction — nacionalidad del pasajero principal (RF-06, U-0
   });
 });
 
+describe('searchHotelsAction — destino del autocompletado (docs/tbo/05 §8.5)', () => {
+  function destinoEnviado(): unknown {
+    const [, init] = apiMock.mock.calls[0] as [string, { body: string }];
+    return (JSON.parse(init.body) as { destinationId?: unknown }).destinationId;
+  }
+
+  it('el de la plataforma viaja como número, como siempre', async () => {
+    await searchHotelsAction(INITIAL, form({ destinationId: '982' }));
+    expect(destinoEnviado()).toBe(982);
+  });
+
+  it('una ciudad del catálogo local de un proveedor viaja tal cual', async () => {
+    await searchHotelsAction(INITIAL, form({ destinationId: 'tbo-hotels:150184' }));
+    expect(destinoEnviado()).toBe('tbo-hotels:150184');
+  });
+
+  it.each(['TBO:150184', 'tbo-hotels:', 'bogota', 'tbo-hotels:1 2'])(
+    '%s no es un destino: no se busca',
+    async (destinationId) => {
+      const res = await searchHotelsAction(INITIAL, form({ destinationId }));
+      expect(res.error).toBe('Elegí un destino del autocompletado o indicá IDs de hotel.');
+      expect(apiMock).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('searchHotelsAction — el sobre de la respuesta', () => {
   it('RF-40 CA 6: sin el booleano, el proveedor queda oculto', async () => {
     const res = await searchHotelsAction(INITIAL, form({}));

@@ -91,8 +91,10 @@ export type HotelProviderCapability = keyof HotelProviderCapabilities;
  * - `platform`: los del autocompletado de destinos y los `hotelIds` que escribe el vendedor. Sus
  *   hoteles se buscan en `hotel_inventory.city_id` con el destino tal cual.
  * - `provider`: un espacio propio (`hotel_inventory.provider_city_code`). El destino se traduce
- *   con `hotel_destination_map` y un id que escribió el vendedor no le sirve: mandárselo podría
- *   traer OTRO hotel con el mismo número.
+ *   con `hotel_destination_map`, o llega ya como una de sus ciudades cuando el tenant no tiene
+ *   autocompletado de la plataforma y las sugerencias salen de su catálogo local
+ *   (`<código>:<ciudad>`, docs/tbo/05 §8.5). Un id que escribió el vendedor no le sirve:
+ *   mandárselo podría traer OTRO hotel con el mismo número.
  */
 export type HotelIdSpace = 'platform' | 'provider';
 

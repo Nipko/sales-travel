@@ -1,4 +1,6 @@
+import { z } from '@sales-travel/validation';
 import { describe, expect, it } from 'vitest';
+import { PROVIDER_DESTINATION_INVALID } from './hotel-destination.js';
 import {
   BookSchema,
   CancelBodySchema,
@@ -150,6 +152,43 @@ describe('HotelAvailabilityInputSchema', () => {
       false,
     );
   });
+
+  it.each([0, -5, 1.5, 'abc', null, ''])(
+    'destino %s: el mismo error que antes de aceptar ciudades de proveedor',
+    (destinationId) => {
+      const antes = z
+        .object({ destinationId: z.coerce.number().int().positive().optional() })
+        .safeParse({ destinationId });
+      const ahora = HotelAvailabilityInputSchema.safeParse({ ...busqueda, destinationId });
+
+      const deDestino = (issues: readonly z.ZodIssue[] | undefined) =>
+        (issues ?? []).filter((i) => i.path[0] === 'destinationId');
+      expect(deDestino(ahora.error?.issues)).toEqual(deDestino(antes.error?.issues));
+      expect(deDestino(ahora.error?.issues)).not.toEqual([]);
+    },
+  );
+
+  it('una ciudad del catálogo local de un proveedor pasa tal cual (docs/tbo/05 §8.5)', () => {
+    expect(
+      HotelAvailabilityInputSchema.parse({ ...busqueda, destinationId: 'tbo-hotels:150184' })
+        .destinationId,
+    ).toBe('tbo-hotels:150184');
+    expect(
+      HotelAvailabilityInputSchema.parse({ ...busqueda, destinationId: ' tbo-hotels:150184 ' })
+        .destinationId,
+    ).toBe('tbo-hotels:150184');
+  });
+
+  it.each(['TBO:150184', 'tbo-hotels:', 'tbo-hotels:15 01', 'tbo-hotels:1:2', ':150184'])(
+    'destino de proveedor %s no pasa, con un mensaje que lo dice',
+    (destinationId) => {
+      const r = HotelAvailabilityInputSchema.safeParse({ ...busqueda, destinationId });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues).toEqual([
+        expect.objectContaining({ path: ['destinationId'], message: PROVIDER_DESTINATION_INVALID }),
+      ]);
+    },
+  );
 
   it.each(['2026-1-10', '10/11/2026', '2026-11-10T00:00:00Z'])(
     'fecha %s no pasa: se exige YYYY-MM-DD',

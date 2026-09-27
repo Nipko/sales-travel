@@ -62,6 +62,16 @@ import {
   type HotelSearchResponse,
   type ProviderOffers,
 } from './hotel-search.aggregate.js';
+import {
+  CATALOG_SUGGESTION_LIMIT,
+  CATALOG_SUGGESTION_MIN_SIMILARITY,
+  catalogSuggestionOf,
+  destinationCriteria,
+  destinationOf,
+  normalizeCityName,
+  suggestionLanguageOf,
+  type HotelDestination,
+} from './hotel-destination.js';
 import { priceRoompack } from './hotel-pricing.js';
 import {
   HotelSearchContextStore,
@@ -152,6 +162,22 @@ function capable<TPort>(
   return { code: p.code, adapter, circuit: p.circuit, searchProfile: p.searchProfile };
 }
 
+/**
+ * El primer proveedor ACTIVO del espacio de ids de la plataforma que sabe hacer la operación, en
+ * el orden estable del registry. Uno apagado por `opt-in` no está en `active`.
+ */
+function firstPlatformProviderWith<TPort>(
+  active: readonly ResolvedHotelProvider[],
+  supports: (adapter: HotelProviderAdapter) => adapter is HotelProviderAdapter & TPort,
+): CapableProvider<TPort> | undefined {
+  for (const p of active) {
+    if (p.searchProfile.idSpace === 'platform' && supports(p.adapter)) {
+      return capable(p, p.adapter);
+    }
+  }
+  return undefined;
+}
+
 /** Clave de un hotel de un proveedor. El separador no puede aparecer en un código de proveedor. */
 function hotelKey(providerCode: string, hotelId: string): string {
   return `${providerCode} ${hotelId}`;
@@ -197,9 +223,10 @@ function withPricing(
  * se leen de ahí al reservar, nunca del navegador.
  *
  * Un proveedor con ids propios (TBO) recibe el destino traducido a SUS ciudades por el mapa de
- * destinos (RF-33), y lo que su disponibilidad no trae —nombre, estrellas, dirección, ubicación—
- * sale de su catálogo. El mismo hotel en dos proveedores es una sola tarjeta con las tarifas de
- * ambos, cada una con su proveedor (RF-34, RF-40).
+ * destinos (RF-33) —o, en un tenant sin autocompletado de la plataforma, una ciudad de su catálogo
+ * local tal cual (docs/tbo/05 §8.5)—, y lo que su disponibilidad no trae —nombre, estrellas,
+ * dirección, ubicación— sale de su catálogo. El mismo hotel en dos proveedores es una sola tarjeta
+ * con las tarifas de ambos, cada una con su proveedor (RF-34, RF-40).
  *
  * Las rutas de reserva que todavía hablan los DTOs de Despegar viven en
  * `DespegarHotelReservationsService`: son el flujo actual de Despegar hasta que la reserva pase a
@@ -221,24 +248,96 @@ export class HotelsService {
   // ───────────────────────── Búsqueda ─────────────────────────
 
   /**
-   * Autocompletado de destinos. Lo sirve un proveedor del espacio de ids de la plataforma,
-   * porque sus ids son los que después resuelven el catálogo de cada proveedor.
+   * Autocompletado de destinos (docs/tbo/05 §8.5).
+   *
+   * - Si el tenant tiene un proveedor ACTIVO del espacio de ids de la plataforma que sugiere, lo
+   *   sirve él, como siempre: sus ids son los que después resuelven el catálogo de cada proveedor,
+   *   también el de los que tienen ids propios, por el mapa de destinos. Si ese proveedor falla,
+   *   la sugerencia falla con él: cambiar de espacio de ids según la salud del momento dejaría al
+   *   vendedor con destinos que, repuesto el proveedor, ya no lo consultan.
+   * - Si no lo tiene (un tenant sólo de TBO, como el de certificación), lo sirve el catálogo local
+   *   de sus proveedores ACTIVOS con ids propios, sin llamar a nadie: cada ciudad sale con un id
+   *   del proveedor (`tbo-hotels:150184`) que la búsqueda resuelve directo a su código de ciudad.
+   * - Sin ninguno de los dos, 503 que lo dice.
    */
   async suggest(
     tenantId: string,
     q: string,
     locale?: string,
   ): Promise<HotelDestinationSuggestion[]> {
-    const { code, adapter, circuit } = await this.platformProviderWith<HotelSuggestPort>(
-      tenantId,
-      supportsHotelSuggest,
-      'sugerencias de destino',
-    );
-    return this.breaker.execute(
-      code,
-      () => adapter.suggestDestinations(q, { tenantId }, locale),
-      circuit,
-    );
+    const { active } = await this.registry.forTenant(tenantId);
+    const platform = firstPlatformProviderWith<HotelSuggestPort>(active, supportsHotelSuggest);
+    if (platform !== undefined) {
+      const { code, adapter, circuit } = platform;
+      return this.breaker.execute(
+        code,
+        () => adapter.suggestDestinations(q, { tenantId }, locale),
+        circuit,
+      );
+    }
+
+    const catalogProviders = active
+      .filter((p) => p.searchProfile.idSpace === 'provider')
+      .map((p) => p.code);
+    if (catalogProviders.length === 0) {
+      throw new HotelOperationUnavailableError('sugerencias de destino');
+    }
+    return this.suggestFromCatalog(catalogProviders, q, locale);
+  }
+
+  /**
+   * Ciudades de `hotel_provider_city` de esos proveedores cuyo nombre contiene lo escrito o se le
+   * parece, sólo las que tienen hoteles activos: una ciudad que el sync todavía no bajó terminaría
+   * en el 503 de catálogo vacío.
+   *
+   * Se compara contra `name_norm`, que el sync guarda sin acentos, con lo escrito normalizado con
+   * el mismo algoritmo: "Bogotá", "BOGOTA" y "bogota" encuentran lo mismo. Primero la ciudad que
+   * se llama exactamente así, después las que empiezan así, las que tienen una palabra que empieza
+   * así, las que lo contienen y al final las parecidas; dentro de cada grupo, la más parecida y la
+   * de más hoteles. El resto del orden es sólo para que dos consultas iguales devuelvan lo mismo.
+   *
+   * La tabla es chica —las ciudades de los países que se sincronizan, y sólo las que tienen
+   * hoteles— y el `OR` con la similitud la recorre entera; el índice trigram de 0041 sirve cuando
+   * crezca y se quiera partir la consulta.
+   */
+  private async suggestFromCatalog(
+    providerCodes: readonly string[],
+    q: string,
+    locale: string | undefined,
+  ): Promise<HotelDestinationSuggestion[]> {
+    const needle = normalizeCityName(q);
+    if (needle === '') return [];
+    const contains = `%${needle}%`;
+    const similarity = sql<number>`similarity(name_norm, ${needle})`;
+
+    const rows = await this.db.db
+      .selectFrom('hotel_provider_city')
+      .select(['provider_code', 'provider_city_code', 'name', 'country_code'])
+      .where('provider_code', 'in', [...providerCodes])
+      .where('hotel_count', '>', 0)
+      .where((eb) =>
+        eb.or([
+          eb('name_norm', 'like', contains),
+          eb(similarity, '>=', CATALOG_SUGGESTION_MIN_SIMILARITY),
+        ]),
+      )
+      .orderBy(
+        sql`case when name_norm = ${needle} then 0
+                 when name_norm like ${`${needle}%`} then 1
+                 when name_norm like ${`% ${needle}%`} then 2
+                 when name_norm like ${contains} then 3
+                 else 4 end`,
+      )
+      .orderBy(similarity, 'desc')
+      .orderBy('hotel_count', 'desc')
+      .orderBy('name')
+      .orderBy('provider_code')
+      .orderBy('provider_city_code')
+      .limit(CATALOG_SUGGESTION_LIMIT)
+      .execute();
+
+    const language = suggestionLanguageOf(locale);
+    return rows.map((row) => catalogSuggestionOf(row, language));
   }
 
   async searchAvailability(
@@ -247,7 +346,8 @@ export class HotelsService {
   ): Promise<HotelSearchResponse> {
     // Qué hoteles se le piden a cada proveedor. Va ANTES de la cuota y de las credenciales: si
     // ningún catálogo tiene el destino, no hay a quién preguntar y no se gasta nada.
-    const plans = await this.catalogPlans(input);
+    const destination = destinationOf(input.destinationId);
+    const plans = await this.catalogPlans(input, destination);
     if (![...plans.values()].some((p) => 'hotelIds' in p)) {
       // Lista vacía = el catálogo no está sincronizado, NO que no haya hoteles. Devolver [] en
       // silencio hacía que el vendedor concluyera lo segundo.
@@ -301,7 +401,7 @@ export class HotelsService {
         criteria: {
           checkinDate: input.checkinDate,
           checkoutDate: input.checkoutDate,
-          destinationId: input.destinationId,
+          ...destinationCriteria(destination),
           hotelCount: callable.reduce((n, c) => n + c.criteria.hotelIds.length, 0),
         },
       },
@@ -772,19 +872,27 @@ export class HotelsService {
    * - IDs escritos por el vendedor: son del espacio de la plataforma. Van tal cual a los
    *   proveedores de ese espacio, sin pasar por el catálogo (el catálogo de ese destino puede no
    *   estar sincronizado), y a ningún otro: el mismo número puede ser otro hotel.
-   * - Destino: cada proveedor de la plataforma resuelve SU catálogo por `city_id`; uno con
-   *   ciudades propias, por las ciudades que el mapa de destinos acepta para ese destino (RF-33).
-   *   Sin mapeo aceptado no se le pregunta y queda `skipped` con motivo: no es un fallo suyo, así
-   *   que no pasa por el breaker ni cuenta en su tasa de error (docs/tbo/05 §8.4).
+   * - Destino de la plataforma: cada proveedor de la plataforma resuelve SU catálogo por
+   *   `city_id`; uno con ciudades propias, por las ciudades que el mapa de destinos acepta para
+   *   ese destino (RF-33). Sin mapeo aceptado no se le pregunta y queda `skipped` con motivo: no es
+   *   un fallo suyo, así que no pasa por el breaker ni cuenta en su tasa de error (docs/tbo/05
+   *   §8.4).
+   * - Ciudad del catálogo local de un proveedor (`tbo-hotels:150184`, docs/tbo/05 §8.5): ese
+   *   proveedor resuelve SU catálogo por esa ciudad, sin mapa. Los demás no tienen cómo traducirla
+   *   —el mapa va del destino de la plataforma a las ciudades de cada uno, no al revés— y quedan
+   *   `skipped` por lo mismo que un destino sin mapeo.
    */
-  private async catalogPlans(input: HotelAvailabilityInput): Promise<Map<string, CatalogPlan>> {
+  private async catalogPlans(
+    input: HotelAvailabilityInput,
+    destination: HotelDestination | undefined,
+  ): Promise<Map<string, CatalogPlan>> {
     const explicit = input.hotelIds ?? [];
     const registered = this.registry.registered();
     const plans = await Promise.all(
       registered.map(
         async (p): Promise<[string, CatalogPlan]> => [
           p.code,
-          await this.catalogPlanOf(p, explicit, input.destinationId),
+          await this.catalogPlanOf(p, explicit, destination),
         ],
       ),
     );
@@ -794,18 +902,28 @@ export class HotelsService {
   private async catalogPlanOf(
     { code, searchProfile }: HotelProviderRegistration,
     explicit: readonly string[],
-    destinationId: number | undefined,
+    destination: HotelDestination | undefined,
   ): Promise<CatalogPlan> {
     if (explicit.length > 0) {
       return searchProfile.idSpace === 'platform'
         ? { hotelIds: explicit }
         : { skip: 'foreign-hotel-ids' };
     }
-    if (destinationId === undefined) return { skip: 'catalog-empty' };
+    if (destination === undefined) return { skip: 'catalog-empty' };
 
     let hotelIds: string[];
-    if (searchProfile.idSpace === 'provider') {
-      const cityCodes = await this.resolveDestinationCityCodes(code, destinationId);
+    if (destination.space === 'provider') {
+      if (destination.providerCode !== code || searchProfile.idSpace !== 'provider') {
+        return { skip: 'no-destination-map' };
+      }
+      hotelIds = await this.resolveProviderCityHotelIds(
+        code,
+        [destination.cityCode],
+        searchProfile.maxHotelsPerSearch,
+        searchProfile.catalogOrder,
+      );
+    } else if (searchProfile.idSpace === 'provider') {
+      const cityCodes = await this.resolveDestinationCityCodes(code, destination.cityId);
       if (cityCodes.length === 0) return { skip: 'no-destination-map' };
       hotelIds = await this.resolveProviderCityHotelIds(
         code,
@@ -816,7 +934,7 @@ export class HotelsService {
     } else {
       hotelIds = await this.resolveCityHotelIds(
         code,
-        destinationId,
+        destination.cityId,
         searchProfile.maxHotelsPerSearch,
         searchProfile.catalogOrder,
       );
@@ -860,22 +978,16 @@ export class HotelsService {
 
   // ───────────────────────── Proveedores por capacidad ─────────────────────────
 
-  /**
-   * El primer proveedor ACTIVO del espacio de ids de la plataforma que sabe hacer la operación,
-   * en el orden estable del registry. Uno apagado por `opt-in` no cuenta.
-   */
+  /** {@link firstPlatformProviderWith} para el tenant, o 503 que nombra la operación. */
   private async platformProviderWith<TPort>(
     tenantId: string,
     supports: (adapter: HotelProviderAdapter) => adapter is HotelProviderAdapter & TPort,
     operation: string,
   ): Promise<CapableProvider<TPort>> {
     const { active } = await this.registry.forTenant(tenantId);
-    for (const p of active) {
-      if (p.searchProfile.idSpace === 'platform' && supports(p.adapter)) {
-        return capable(p, p.adapter);
-      }
-    }
-    throw new HotelOperationUnavailableError(operation);
+    const provider = firstPlatformProviderWith(active, supports);
+    if (provider === undefined) throw new HotelOperationUnavailableError(operation);
+    return provider;
   }
 
   /**

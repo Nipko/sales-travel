@@ -1334,9 +1334,10 @@ revisados contra el código de la rama `feat/tbo-hotels`, y el archivo en
 
 - `docs/tbo/evidence/cert/<fecha>/` no existe todavía: se crea al enviar el zip, y el README dice cómo.
 - [10](./10-preguntas-para-tbo.md) no cambia: ninguna sonda corrió contra TBO, así que ninguna pregunta se cerró.
-- El Anexo B no se puede enviar todavía: en el stack de PR-7.2 el vendedor no puede elegir un destino de TBO (las
-  sugerencias salen de `despegar-hotels`, que el stack no tiene) y el seed no carga el contacto operativo de la
-  agencia que exige el Book. El detalle está en las condiciones del Anexo B.
+- El Anexo B no se puede enviar todavía: en el stack de PR-7.2 el vendedor no podía elegir un destino de TBO (las
+  sugerencias salían sólo de `despegar-hotels`, que el stack no tiene; resuelto en código el 2026-09-27 con el
+  catálogo local, [05](./05-contenido-estatico-e-inventario.md) §8.5, pendiente de desplegar) y el seed no carga el
+  contacto operativo de la agencia que exige el Book. El detalle está en las condiciones del Anexo B.
 
 El Anexo A registra además dos puntos en que el código se aparta de una decisión firmada, y describe el código: un
 Book incierto no se cierra como fallido antes de 24 h aunque se use el botón de conciliación (D-TBO-24 A), y un `401`

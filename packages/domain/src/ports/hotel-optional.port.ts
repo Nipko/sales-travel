@@ -95,15 +95,29 @@ export interface HotelBookingsByDatePort {
 // ───────────────────────── Sugerencias de destino ─────────────────────────
 
 /**
- * Un destino del autocompletado. Los ids son los del espacio de destinos de la plataforma, que
- * hoy es el del proveedor de sugerencias: el resto de los proveedores se enlaza a él por tabla,
- * no con un autocompletado propio.
+ * Una ciudad del catálogo local de UN proveedor con ids propios, como `destinationId` de la
+ * búsqueda: `<código de proveedor>:<código de ciudad del proveedor>` (`tbo-hotels:150184`). La
+ * búsqueda la resuelve directo a esa ciudad y sólo le pregunta a ese proveedor, sin pasar por el
+ * mapa de destinos.
+ */
+export type ProviderDestinationId = `${string}:${string}`;
+
+/**
+ * Un destino del autocompletado. `id` es lo que la búsqueda recibe como `destinationId`:
+ *
+ * - Un número: un destino del espacio de la plataforma, que hoy es el del proveedor de
+ *   sugerencias. El resto de los proveedores se enlaza a él por tabla.
+ * - Un {@link ProviderDestinationId}: una ciudad del catálogo local, para el tenant que no tiene
+ *   proveedor de sugerencias (docs/tbo/05 §8.5).
  */
 export interface HotelDestinationSuggestion {
-  id: number;
-  /** Id geográfico con el que se resuelven los hoteles del destino. */
+  id: number | ProviderDestinationId;
+  /** Id geográfico con el que se resuelven los hoteles del destino. Único en la lista. */
   gid: string;
-  /** Tipo de lugar (ciudad, hotel, …) según el proveedor de sugerencias, sin interpretar. */
+  /**
+   * Tipo de lugar (ciudad, hotel, …) según el proveedor de sugerencias, sin interpretar. Las del
+   * catálogo local son siempre ciudades y llevan 0.
+   */
   type: number;
   display: string;
   city?: string;

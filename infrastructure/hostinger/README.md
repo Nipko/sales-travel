@@ -326,9 +326,10 @@ Para apagar TBO en el stack sin tocar la imagen: variable `CERT_PROVIDERS_DISABL
 
 ### 9.5 Lo que falta para que el tester busque
 
-- **Destinos.** Las sugerencias de destino (`GET /hotels/suggestions`) salen hoy del proveedor de plataforma
-  (`despegar-hotels`), y el mapa de destinos de TBO (`hotel_destination_map`) usa como origen los ids de destino de
-  Despegar. En este stack no hay credenciales de Despegar (RC-07): el vendedor no puede elegir destino hasta que el api
-  sugiera destinos desde el catálogo local cuando no hay proveedor de plataforma.
+- **Destinos.** Las sugerencias de destino (`GET /hotels/suggestions`) salen del proveedor de plataforma
+  (`despegar-hotels`) cuando la agencia lo tiene; en este stack no lo tiene (RC-07), así que salen del catálogo local
+  de TBO (`hotel_provider_city`, sólo ciudades con hoteles activos) con ids `tbo-hotels:<CityCode>` que la búsqueda
+  resuelve sin el mapa de destinos ([`docs/tbo/05`](../../docs/tbo/05-contenido-estatico-e-inventario.md) §8.5).
+  Requiere la imagen con ese cambio y el catálogo del punto siguiente: sin ciudades sincronizadas no hay qué sugerir.
 - **Catálogo.** La base del stack empieza sin el catálogo de TBO (07 §7.3.6): hay que correr `sync-tbo-hotel-inventory`
   contra `sales_travel_cert`, al menos para las ciudades de los `HotelCodes` de test.

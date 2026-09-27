@@ -1016,14 +1016,17 @@ Reference document: "TBOH_Hotel_API_Specifications(V2.1).pdf", SHA-256
 > sign-off (`CERT_VENDEDOR_STATUS=suspended`, §7.4). Los textos en cursiva son los literales de la web al 2026-09-27:
 > si la web cambia, se actualizan aquí antes de enviar.
 
-**Condiciones antes de enviarla.** Hoy (2026-09-27) fallan las dos primeras, y sin ellas TBO no puede recorrer el
-portal:
+**Condiciones antes de enviarla.** Hoy (2026-09-27) la primera está resuelta en código, pendiente de desplegarse en
+el stack, y la segunda falla. Sin ellas TBO no puede recorrer el portal:
 
-1. **Destinos en el stack.** Las sugerencias de destino salen del proveedor de plataforma (`HotelsService.suggest`
-   en `apps/api/src/hotels/hotels.service.ts`, que usa `despegar-hotels`), y el stack no tiene credenciales de
-   Despegar (RC-07): el vendedor no puede elegir destino. El campo _IDs de hotel_ no sirve de atajo: son IDs de la
-   plataforma y TBO queda fuera con `foreign-hotel-ids` (`catalogPlanOf`, mismo archivo). Sin arreglo, U-02 falla.
-   Está también en `infrastructure/hostinger/README.md` §9.5.
+1. **Destinos en el stack.** Las sugerencias de destino salían sólo del proveedor de plataforma
+   (`HotelsService.suggest` en `apps/api/src/hotels/hotels.service.ts`, que usa `despegar-hotels`), y el stack no
+   tiene credenciales de Despegar (RC-07): el vendedor no podía elegir destino y U-02 fallaba. Resuelto el
+   2026-09-27: sin proveedor de plataforma, las sugerencias salen del catálogo local de TBO (`hotel_provider_city`)
+   con ids `tbo-hotels:<CityCode>`, y la búsqueda los resuelve directo a esa ciudad, sin el mapa de destinos
+   ([05](./05-contenido-estatico-e-inventario.md) §8.5). Sólo se sugieren ciudades con hoteles activos, así que
+   depende de la condición 3. El campo _IDs de hotel_ sigue sin servir de atajo: son IDs de la plataforma y TBO
+   queda fuera con `foreign-hotel-ids` (`catalogPlanOf`, mismo archivo).
 2. **Contacto operativo de la agencia.** El Book exige el `support_email` y el `support_phone` del tenant o de su
    consolidador (D-TBO-23 A; `apps/api/src/hotels/hotel-booking-contact.ts`), y `tools/seed-tbo-cert-tenant` no los
    carga. Sin ellos, _Confirmar reserva_ responde _Falta el contacto de soporte de la agencia._ y el `vendedor` no

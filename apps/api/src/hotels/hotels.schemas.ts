@@ -1,10 +1,12 @@
 import { HotelProviderCodeSchema, MoneySchema } from '@sales-travel/canonical';
+import type { ProviderDestinationId } from '@sales-travel/domain';
 import {
   CurrencyCodeSchema,
   LanguageCodeSchema,
   toIsoCountryAlpha2,
   z,
 } from '@sales-travel/validation';
+import { PROVIDER_DESTINATION_INVALID, isProviderDestinationId } from './hotel-destination.js';
 import {
   HotelOfferReferenceSchema,
   type HotelOfferReference,
@@ -77,6 +79,30 @@ const guestNationality = z.preprocess(
 
 // ───────────────────────── Búsqueda ─────────────────────────
 
+/** `city_id` del autocompletado de la plataforma, como siempre: un entero positivo, o su texto. */
+const PlatformDestinationIdSchema = z.coerce.number().int().positive();
+
+/**
+ * Destino de la búsqueda (docs/tbo/05 §8.5): el `city_id` de la plataforma o, si trae `:`, una
+ * ciudad del catálogo local de un proveedor (`tbo-hotels:150184`), que se valida con su forma.
+ *
+ * Se elige el esquema por la forma y no con `z.union`: cuando fallan las dos ramas, la unión
+ * responde un único `Invalid input`, y un destino numérico inválido tiene que seguir respondiendo
+ * lo que respondía.
+ */
+const DestinationIdSchema = z.unknown().transform((value, ctx): number | ProviderDestinationId => {
+  if (typeof value === 'string' && value.includes(':')) {
+    const trimmed = value.trim();
+    if (isProviderDestinationId(trimmed)) return trimmed;
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: PROVIDER_DESTINATION_INVALID });
+    return z.NEVER;
+  }
+  const parsed = PlatformDestinationIdSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  for (const issue of parsed.error.issues) ctx.addIssue(issue);
+  return z.NEVER;
+});
+
 export const HotelSuggestQuerySchema = z.object({
   q: z.string().min(1).max(120),
   locale: z.string().min(2).max(12).optional(),
@@ -87,10 +113,10 @@ export const HotelAvailabilityInputSchema = z
     checkinDate: isoDate,
     checkoutDate: isoDate,
     currency: saleCurrency.optional(),
-    // Uno de los dos: lista explícita de hoteles, o destino (city_id) que el API resuelve
-    // a IDs vía el catálogo de inventario de cada proveedor.
+    // Uno de los dos: lista explícita de hoteles, o destino (city_id de la plataforma, o ciudad
+    // del catálogo local de un proveedor) que el API resuelve a IDs vía el catálogo de inventario.
     hotelIds: z.array(z.string().min(1)).max(100).optional(),
-    destinationId: z.coerce.number().int().positive().optional(),
+    destinationId: DestinationIdSchema.optional(),
     rooms,
     guestNationality,
     countryCode: z.string().length(2).optional(),

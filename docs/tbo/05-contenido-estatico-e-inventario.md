@@ -46,8 +46,10 @@ estado: borrador
    por habitación, mapa de destinos y equivalencias de hotel (§7).
 7. **Destino.** Hoy `destinationId` es el id geográfico de Despegar de punta a punta. En fase 1 se traduce a
    `CityCode` de TBO con una tabla de mapeo calculada fuera de línea (solapamiento de hoteles equivalentes +
-   centroide, reforzado con país ISO2 y nombre normalizado). Un destino sin mapeo aceptado **no consulta TBO**. El
-   autocomplete propio y GIATA quedan para después (§8).
+   centroide, reforzado con país ISO2 y nombre normalizado). Un destino sin mapeo aceptado **no consulta TBO**. Un
+   tenant sin autocomplete de la plataforma (solo TBO, como el de certificación) recibe sugerencias del catálogo
+   local con ids `tbo-hotels:<CityCode>` que la búsqueda resuelve directo, sin mapa (§8.5). El autocomplete propio
+   con destinos canónicos y GIATA quedan para después (§8).
 8. **¿Catálogo global o por cuenta?** El contrato no lo dice. Postura: global, sincronizado con una cuenta TBO de
    plataforma separada de la de ventas; se verifica con una sonda comparativa durante la certificación
    → [Q-60](./10-preguntas-para-tbo.md#q-60) (§11).
@@ -903,7 +905,49 @@ habiliten (INFERIDO).
 - Si **ningún** proveedor resuelve el destino, se mantiene el 503 actual de "catálogo no sincronizado"
   (`apps/api/src/hotels/hotels.service.ts:80-86`).
 - Dependencia a vigilar: sin clave Despegar de plataforma ni BYOC Despegar, no hay autocomplete y por lo tanto no
-  hay búsqueda TBO por destino. Es la razón de fondo de la opción C.
+  hay búsqueda TBO por destino. Es la razón de fondo de la opción C. §8.5 la cubre para esos tenants con el
+  catálogo local, sin destinos canónicos.
+
+### 8.5 Sugerencias desde el catálogo local (APLICADO, 2026-09-27)
+
+Motivo: el stack de certificación no tiene credenciales de Despegar ([07](./07-certificacion.md) §7.3 punto 3), así
+que `GET /hotels/suggestions` respondía 503, el vendedor no podía elegir destino y U-02 fallaba. Es la
+"dependencia a vigilar" de §8.4. Se resuelve sin tocar el flujo de Despegar (VERIFICADO-CODIGO,
+`apps/api/src/hotels/hotels.service.ts` `suggest` y `catalogPlanOf`; `apps/api/src/hotels/hotel-destination.ts`).
+
+- **Quién sugiere.** Si el tenant tiene un proveedor **activo** del espacio de ids de la plataforma que sugiere
+  (hoy Despegar), sugiere él, igual que antes, con sus ids numéricos. Si no lo tiene, sugiere el catálogo local de
+  sus proveedores activos con ids propios. Si no tiene ninguno de los dos, sigue el 503 "sugerencias de destino".
+  Las dos fuentes **no se mezclan**: la misma ciudad saldría dos veces, y la de TBO no consultaría a Despegar.
+- **Si Despegar está activo pero falla** (kill-switch, circuito abierto, error), la sugerencia falla con él y no
+  pasa al catálogo local. Cambiar de espacio de ids según la salud del momento dejaría al vendedor con destinos que,
+  una vez repuesto Despegar, ya no lo consultan. Alternativa descartada por ahora: caer al catálogo con un aviso. Al
+  revés, el kill-switch de TBO no oculta sus ciudades, porque sugerir no lo llama: la búsqueda lo informa con su
+  motivo.
+- **Qué se sugiere.** Filas de `hotel_provider_city` de esos proveedores con `hotel_count > 0` (una ciudad que el
+  sync todavía no bajó terminaría en el 503 de catálogo vacío). Lo escrito se normaliza con el mismo algoritmo que
+  `name_norm` (`normalizeName` del sync: minúsculas, sin acentos ni puntuación), así que "Bogotá", "BOGOTA" y
+  "bogota" dan lo mismo. Coinciden las que contienen lo escrito y, para tolerar un error de tipeo, las de similitud
+  trigram ≥ 0,4 (`pg_trgm`). Orden: nombre exacto, empieza así, alguna palabra empieza así, lo contiene, parecida;
+  dentro de cada grupo, la más parecida y la de más hoteles. Hasta 10.
+- **Qué ve el vendedor.** El nombre de la ciudad tal como lo da `CityList` (un solo idioma, p. 53-54) y debajo el
+  país en su idioma (ES por defecto; PT o EN según el `locale`), sin nombrar al proveedor: la divulgación es un
+  ajuste de la agencia (RF-40). Dos ciudades homónimas del mismo país se ven iguales y sale primero la de más
+  hoteles; CityList no trae región para distinguirlas.
+- **El id.** `<código de proveedor>:<CityCode>`, por ejemplo `tbo-hotels:150184`. El combobox lo guarda como
+  guardaba el número; la action de la web lo deja pasar si tiene esa forma y el API lo valida
+  (`hotels.schemas.ts`, `DestinationIdSchema`). Un número sigue siendo el `city_id` de la plataforma, con los mismos
+  errores de validación que antes.
+- **La búsqueda.** Con un id de proveedor, ese proveedor busca en SU catálogo por esa ciudad (activos, su orden y su
+  tope), **sin** `hotel_destination_map`. Los demás quedan `skipped` con `no-destination-map`: el mapa va del destino
+  de la plataforma a las ciudades de cada proveedor, no al revés. Si la ciudad no tiene hoteles activos, 503 de
+  catálogo sin sincronizar. Un id de un proveedor de la plataforma (`despegar-hotels:2345`) no se busca en nadie.
+- **Telemetría.** `search_logs.criteria` guarda `destinationProvider` y `destinationCityCode`, nunca `destinationId`:
+  con el id ahí, el sync lo listaría como un destino de Despegar sin mapear (`listUnmappedDestinations`). La demanda
+  por ciudad del sync (`demandByCitySql`) todavía no cuenta estas búsquedas: queda como mejora del sync.
+- **Límites.** Es un autocomplete de ciudades de proveedor, no de destinos canónicos (opción C de §8.2): con dos
+  proveedores de ids propios activos y sin Despegar, la misma ciudad saldría una vez por proveedor y cada una busca
+  sólo en el suyo. Con el tercer bedbank o con tenants solo-TBO en producción, la opción C sigue siendo el camino.
 
 ---
 

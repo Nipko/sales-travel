@@ -14,8 +14,13 @@ export interface Money {
   currency: string;
 }
 
+/**
+ * Un destino del autocompletado. `id` es lo que la búsqueda recibe como `destinationId`: un número
+ * del autocompletado de la plataforma o, en una agencia sin él, una ciudad del catálogo local de un
+ * proveedor (`tbo-hotels:150184`). El API lo resuelve; aquí sólo viaja.
+ */
 export interface GeoSuggestion {
-  id: number;
+  id: number | string;
   gid: string;
   type: number;
   display: string;
@@ -248,6 +253,8 @@ function todayISO(): string {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** `destinationId` de una ciudad del catálogo local de un proveedor. El API revalida la forma. */
+const PROVIDER_DESTINATION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*:[A-Za-z0-9._-]{1,64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function nightsBetween(checkinDate: string, checkoutDate: string): number {
@@ -316,6 +323,12 @@ function parseRooms(raw: string): RoomDistribution[] {
   }
 }
 
+/** El destino del combobox: el número de la plataforma, o la ciudad de un proveedor tal cual. */
+function parseDestinationId(raw: string): number | string | undefined {
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return PROVIDER_DESTINATION_RE.test(raw) ? raw : undefined;
+}
+
 function parseHotelIds(raw: string): string[] {
   return raw
     .split(/[\s,;]+/)
@@ -332,8 +345,7 @@ export async function searchHotelsAction(
   const checkoutDate = asString(formData.get('checkoutDate'));
   const rooms = parseRooms(asString(formData.get('rooms')));
   const hotelIds = parseHotelIds(asString(formData.get('hotelIds')));
-  const destinationRaw = asString(formData.get('destinationId'));
-  const destinationId = /^\d+$/.test(destinationRaw) ? Number(destinationRaw) : undefined;
+  const destinationId = parseDestinationId(asString(formData.get('destinationId')));
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
   const nationalityRaw = asString(formData.get('guestNationality'));
   const guestNationality = toCountryAlpha2(nationalityRaw);

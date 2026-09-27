@@ -66,12 +66,21 @@ export interface FilaEquivalencia {
   hotel_id: string;
 }
 
+/** Una fila de `hotel_provider_city` tal como la lee la sugerencia de destinos. */
+export interface FilaCiudad {
+  provider_code: string;
+  provider_city_code: string;
+  name: string;
+  country_code: string;
+}
+
 type Tabla =
   | 'hotel_inventory'
   | 'tenants'
   | 'hotel_destination_map'
   | 'hotel_match'
-  | 'hotel_content';
+  | 'hotel_content'
+  | 'hotel_provider_city';
 
 export interface FakeHotelsDbOptions {
   /**
@@ -100,6 +109,11 @@ export interface FakeHotelsDbOptions {
    * idiomas que pide (sus parámetros), como lo haría Postgres.
    */
   contenidos?: Readonly<Record<string, Readonly<Record<string, readonly FilaContenido[]>>>>;
+  /**
+   * Filas de `hotel_provider_city` que devuelve la sugerencia de destinos, tal cual: el doble no
+   * filtra por nombre ni ordena. Eso lo hace el SQL, y el test lo lee del SQL.
+   */
+  ciudades?: readonly FilaCiudad[];
 }
 
 export interface FakeHotelsDb {
@@ -220,6 +234,8 @@ export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
         return tenant ? [tenant] : [];
       case 'hotel_content':
         return contenidosDe(opts, q);
+      case 'hotel_provider_city':
+        return [...(opts.ciudades ?? [])];
       default:
         throw new Error(`consulta no prevista por el doble de hoteles: ${q.sql}`);
     }
