@@ -244,23 +244,30 @@ un código desconocido es `UNKNOWN_CODE`; un 2xx vacío, no JSON o sin `Status` 
 `TboApiError` con `status` (HTTP; `0` sin respuesta) **separado** de `tboCode` (`Status.Code`), `path`, `requestId`,
 `timedOut` y `failure` (`kind` cerrado de 14 valores, `retry`, `circuit`, `notifyAccountOwner`, `operatorAlert`); más
 `TboConfigError`, `TboCredentialsMissingError`, `TboRequestBuildError`, `TboOfferExpiredError` y
-`TboResponseMappingError`. En `/Cancel`, un fallo de esquema se lanza como `TboCancelMappingError`. El `message` no
+`TboResponseMappingError`. En `/Cancel`, un fallo de esquema o un `Status.Code` desconocido se lanza como
+`TboCancelMappingError`, y todo otro desenlace que no sea `200` ni `479`, como `TboCancelOutcomeUnknownError` (§9
+C-04); una llamada que el limitador de la cuenta no
+despachó es `TboDispatchRejectedError`, con `sentToProvider: false`. El `message` no
 lleva cuerpo ni `Description`. El humanizador es un `Record<TboFailureKind, …>` completo, con variantes según la
 credencial sea propia, heredada o de plataforma, y el error al front lleva un campo máquina `reason`.
 
 **Fuente.** [01](./01-autenticacion-conectividad-y-errores.md) §9; [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md)
-§4.3; `apps/api/src/orders/cancel-retry-policy.ts:36-39`, `:66`, `:74` (VERIFICADO-CODIGO: un `status` 4xx o
-`failure.retry === 'NO_RETRY'` se clasifican deterministas).
+§4.3; `apps/api/src/orders/cancel-retry-policy.ts:41-50`, `:77`, `:85` (VERIFICADO-CODIGO al 2026-09-27: un `status`
+4xx o `failure.retry === 'NO_RETRY'` se clasifican deterministas, salvo que antes decida `sentToProvider: false` o un
+nombre `…Cancel(Mapping|OutcomeUnknown)Error`).
 
 **CA.**
 
-1. `TboApiError` con `status: 200` y `tboCode: 479` no cae en la regla "HTTP 4xx determinista" (`:74`).
-2. Timeout en `/Cancel` → `UNVERIFIED` (el path casa `CANCEL_WRITE_PATH`, `:36`); fallo de esquema en la respuesta
-   de `/Cancel` → `TboCancelMappingError` → `UNVERIFIED` (`:37`).
+1. `TboApiError` con `status: 200` y `tboCode: 479` no cae en la regla "HTTP 4xx determinista" (`:85`).
+2. Timeout, red, `401`, `402`, `400` o cualquier otro código de la tabla de TBO que no sea `200` ni `479` en
+   `/Cancel` → `TboCancelOutcomeUnknownError` → `UNVERIFIED`; fallo de esquema o `Status.Code` desconocido en la
+   respuesta de `/Cancel` → `TboCancelMappingError` → `UNVERIFIED` (los dos por el nombre,
+   `CANCEL_OUTCOME_UNKNOWN_ERROR`, `:48`).
 3. Agregar un `kind` sin mensaje rompe la compilación del humanizador.
 4. Ningún mensaje al vendedor cita texto del proveedor.
-5. El rechazo local del breaker o del kill-switch en una escritura se clasifica como previo al envío, no como
-   `UNVERIFIED` ([01](./01-autenticacion-conectividad-y-errores.md) §9.3, última fila).
+5. El rechazo local del breaker, del kill-switch o del limitador de la cuenta, en la lectura previa o en el write, se
+   clasifica como previo al envío y reintentable (`sentToProvider: false`), no como `UNVERIFIED` ni como determinista
+   ([01](./01-autenticacion-conectividad-y-errores.md) §9.3, última fila).
 
 **Depende de.** RF-03.
 
@@ -697,7 +704,10 @@ existente; lectura previa (ya cancelada → éxito idempotente; en curso → no 
 `ConfirmationNumber`, 60 s, sin reintento; lectura posterior. Un `200` significa **cancelación aceptada** y el estado
 final lo fija la lectura. Un `479` vuelve como `{ success: false }` sin lanzar, y la lectura posterior decide (§9
 C-05). Si esa lectura falla, se agenda `verify-cancellation`, de solo lectura, y **nunca** se reenvía el Cancel.
-Timeout, 5xx, `429` o cuerpo ilegible en `/Cancel` → `UNVERIFIED` con `verify-cancellation`. Antes de confirmar se
+Todo otro desenlace de `/Cancel` (timeout, 5xx, `429`, `401`, `402`, `400`, códigos de otras operaciones o cuerpo
+ilegible) → `UNVERIFIED` con `verify-cancellation` (§9 C-04). Si el limitador de la cuenta no despacha la lectura
+previa o el Cancel, no salió nada y la cancelación se reintenta. La petición espera hasta 45 s; después responde
+"Cancelación en curso" y la cancelación sigue con su claim. Antes de confirmar se
 muestra la penalidad estimada con el snapshot de PreBook. `refundAmount` queda vacío para TBO. La UI no ofrece
 cancelar una habitación suelta ni cancelar desde el día de check-in.
 
@@ -943,7 +953,8 @@ resultante se ignora y el reintento nunca se encola ([04](./04-post-venta-detall
 #### RF-39 — Portal de venta de hotel
 
 **Enunciado.** `apps/web-b2b` cubre los puntos U-01 a U-20 de [07](./07-certificacion.md) §8: nacionalidad,
-habitaciones con los límites de cada proveedor, precio de venta y no neto, suplementos `AtProperty`, PreBook con
+habitaciones con los topes de la plataforma y cada proveedor fuera, con motivo, de la búsqueda que excede los suyos
+(U-04, desviación aceptada), precio de venta y no neto, suplementos `AtProperty`, PreBook con
 aviso de cambio, políticas con "hora local del hotel", `RateConditions` saneadas, huéspedes por habitación,
 confirmación con un solo envío y espera de hasta 120 s, estado "verificando", confirmación y voucher, reservas de
 hotel, cancelación con penalidad estimada, vencimiento a los 30 minutos, errores `300` y `402` con mensaje de
@@ -953,7 +964,8 @@ negocio, y guía en inglés.
 (U-01) cumple; la web de hoteles hace dos llamadas a la API, sugerencias y disponibilidad
 (`apps/web-b2b/src/app/(app)/hoteles/actions.ts:101`, `:174`, VERIFICADO-CODIGO según [07](./07-certificacion.md) §1).
 
-**CA.** Cada punto U-xx es un test E2E de Playwright contra el entorno de certificación.
+**CA.** Cada punto U-xx es un test E2E de Playwright contra el entorno de certificación. U-04 y U-05 se prueban en la
+forma que el founder aceptó el 2026-09-27 ([desviaciones aceptadas](#desviaciones-aceptadas-del-checklist-de-ui)).
 
 **Depende de.** RF-06 a RF-27, D-TBO-35, D-TBO-37.
 
@@ -1242,7 +1254,7 @@ fijan como requisitos.
 | **RC-03** | Las guardas G-1 a G-13 pasan antes de escribir el zip                                                                                                                     | [07](./07-certificacion.md) §6.7                                                                                                           | `verify` y `zip` abortan ante credenciales, claves de tarjeta, `PaymentMode` distinto de `Limit` o nombres fuera de la lista sintética |
 | **RC-04** | Las sondas PR-01 a PR-11 corren antes de la primera corrida de casos y nunca entran al zip                                                                                | [07](./07-certificacion.md) §6.8                                                                                                           | Cada sonda que responde una pregunta la marca como cerrada en [10](./10-preguntas-para-tbo.md)                                         |
 | **RC-05** | Cada checkpoint reconstruido (CK-01 a CK-18) está cubierto por un requisito de este documento                                                                             | [07](./07-certificacion.md) §3 (INFERIDO: TBO no publica su lista)                                                                         | Tabla de abajo                                                                                                                         |
-| **RC-06** | El portal cumple el checklist U-01 a U-20                                                                                                                                 | [07](./07-certificacion.md) §8                                                                                                             | RF-39                                                                                                                                  |
+| **RC-06** | El portal cumple el checklist U-01 a U-20; U-04 y U-05, en la forma que el founder aceptó el 2026-09-27 (§7)                                                              | [07](./07-certificacion.md) §8                                                                                                             | RF-39                                                                                                                                  |
 | **RC-07** | El portal de pruebas no expone ninguna credencial real de ningún proveedor                                                                                                | [07](./07-certificacion.md) §7; D-TBO-35                                                                                                   | Con la opción recomendada, el entorno de certificación no tiene variables de otros proveedores                                         |
 | **RC-08** | `.env.tbo` y `.tbo-cert/` están en `.gitignore` **antes** de crear el primero                                                                                             | `.gitignore:32` ignora solo `.env` y `:105` solo `.env.sabre`; `git check-ignore .env.tbo` no devuelve nada (VERIFICADO-CODIGO)            | `git check-ignore .env.tbo .tbo-cert/x` devuelve las dos rutas                                                                         |
 | **RC-09** | El workflow enviado a TBO (Anexo A de [07](./07-certificacion.md)) refleja las decisiones tomadas                                                                         | [07](./07-certificacion.md) Anexo A; §9 C-07, C-20                                                                                         | El paso 7 y la línea de `402` del Anexo A coinciden con D-TBO-24 y D-TBO-32                                                            |
@@ -1345,6 +1357,21 @@ línea "Bloquea"; las fechas hasta las que se puede cambiar sin retrabajo están
 degradado nombra al proveedor aunque la divulgación esté en oculto, en vuelos hoy y en hoteles por copia (RF-40
 CA 8). Si el founder quiere que ese aviso también respete el ajuste, se cambia en la política común de las dos
 verticales.
+
+#### Desviaciones aceptadas del checklist de UI
+
+No son decisiones D-TBO: son dos puntos del checklist de [07](./07-certificacion.md) §8 que la web cumple de otra
+forma. Salieron del cierre de la Fase 6 ([09](./09-plan-implementacion.md) §13) y el founder los aceptó el 2026-09-27
+("acepto U-04 y U-05"). La razón es la que dejaron ese cierre y los comentarios de PR-6.1 en
+`apps/web-b2b/src/app/(app)/hoteles/_components/rooms-picker.tsx` y `apps/api/src/hotels/hotels.schemas.ts`. RF-39 y
+RC-06 los dan por cumplidos así.
+
+| Punto | Qué pide 07 §8                                                                                    | Qué hace la web                                                                                                                                                                                                                                                      | Razón                                                                                                                                                                                                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U-04  | Habitaciones dentro de los límites de TBO: hasta 4 niños por habitación, edades de 0 a 18 (CK-03) | Topes de la plataforma: 8 habitaciones, 8 adultos y 6 niños por habitación, edades de 0 a 17. Con 5 o 6 niños en una habitación, TBO queda fuera de esa búsqueda con el motivo visible ("Admite hasta 4 niños por habitación.") y los demás proveedores buscan igual | Achicar los topes al proveedor más estrecho le quitaría a todos lo que solo uno no admite; RF-05 CA 2 ya pide dejar a TBO fuera con motivo en vez de truncar la ocupación. Ninguno de los 8 casos de certificación cae fuera. Queda afuera un niño de 18 años → [Q-14](./10-preguntas-para-tbo.md#q-14) |
+| U-05  | Imagen del hotel en los resultados, entre otros datos del contenido estático                      | La imagen está en el detalle del hotel (`/hoteles/[hotelKey]`), no en la tarjeta de resultados                                                                                                                                                                       | La oferta neutral de disponibilidad no trae imagen: llevarla a la tarjeta exige sumar una miniatura del catálogo a `POST /hotels/availability`. U-05 no tiene CK asociado                                                                                                                               |
+
+Si TBO objeta alguna en la verificación de portal, el cambio es el que describe [07](./07-certificacion.md) §8.
 
 ### 7.0 Índice
 
@@ -2185,7 +2212,7 @@ dice qué cambia con la otra.
 | **C-01** | `ResponseTime` por defecto: 10 s con timeout de 13 s y techo de 23 s ([01](./01-autenticacion-conectividad-y-errores.md) §5.3); 20 s con techo de 26 s ([02](./02-search-y-oferta-canonica.md) §6.1); 23 en el ejemplo del caso 1 ([07](./07-certificacion.md) §4.3)                                                                                                                                                                         | Rango 5-20 s; timeout = `ResponseTime` + 3 s, nunca más de 23 s (dentro de "5-23 Seconds", p. 8). El valor por defecto lo fija D-TBO-17 (recomendado: 10 s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 02 §6.1; el ejemplo de 07 §4.3 debe mostrar el valor del builder                            |
 | **C-02** | Concurrencia: 5 QPS y 4 concurrentes por cuenta ([01](./01-autenticacion-conectividad-y-errores.md) §7.2) frente a "concurrencia 1 por credencial" ([02](./02-search-y-oferta-canonica.md) C-08)                                                                                                                                                                                                                                             | Son dos perillas: el limitador por cuenta (RNF-02) y los lotes en paralelo dentro de una búsqueda (`searchConcurrency`, 1 por defecto; con D-TBO-17 A hay un solo lote)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 02 C-08                                                                                     |
 | **C-03** | Casing de paths: el del PDF en todas las operaciones ([01](./01-autenticacion-conectividad-y-errores.md) §3.1; Anexo A de [07](./07-certificacion.md)) frente al de Postman para `BookingDetailsBasedOnDate` ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §2, §5.2) y `Hoteldetails` ([05](./05-contenido-estatico-e-inventario.md) CE-04, §6.3 E4)                                                                          | Una sola constante `TBO_OPERATIONS` con el casing del PDF; la sonda PR-04 prueba las dos grafías de cada path en certificación y la que funcione queda en la constante                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 04 §2 y §5.2; 05 CE-04 y §6.3; 07 §6.8 (PR-04 hoy prueba solo `/search` frente a `/Search`) |
-| **C-04** | Modelo de errores: una clase `TboApiError` con `kind` ([01](./01-autenticacion-conectividad-y-errores.md) §9; [03](./03-prebook-y-book.md) §6) frente a `TboApiError` + `TboStatusError` + `TboResponseValidationError` + `TboPaymentModeNotSupportedError` ([06](./06-seams-integracion-repo.md) §4.2, §4.3) y `TboCancelRejectedError` para `401`/`402`/`400` en Cancel ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.3) | El de 01 (RF-04). Un `PaymentMode` no permitido es `TboRequestBuildError`; un esquema de respuesta que falla es `TboResponseMappingError`, y en `/Cancel`, `TboCancelMappingError`. `401`, `402` y `400` en Cancel son `TboApiError` con `kind` `CREDENTIALS_INVALID`, `ACCOUNT_BLOCKED` o `CLIENT_BUG` y `retry: NO_RETRY`, que la política ya trata como deterministas (`apps/api/src/orders/cancel-retry-policy.ts:41-48`, `:66`, VERIFICADO-CODIGO; `ACCOUNT_BLOCKED` no está en ese conjunto y es determinista solo por `NO_RETRY`). Un nombre terminado en `ValidationError` sería determinista en `/Cancel` y cerraría como fallida una cancelación que pudo aplicarse | 04 §4.3; 06 §4.2, §4.3 reglas 2 y 3, §5.2 (`@Catch`)                                        |
+| **C-04** | Modelo de errores: una clase `TboApiError` con `kind` ([01](./01-autenticacion-conectividad-y-errores.md) §9; [03](./03-prebook-y-book.md) §6) frente a `TboApiError` + `TboStatusError` + `TboResponseValidationError` + `TboPaymentModeNotSupportedError` ([06](./06-seams-integracion-repo.md) §4.2, §4.3) y `TboCancelRejectedError` para `401`/`402`/`400` en Cancel ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.3) | El de 01 (RF-04), enmendado abajo. Un `PaymentMode` no permitido es `TboRequestBuildError`; un esquema de respuesta que falla es `TboResponseMappingError`, y en `/Cancel`, `TboCancelMappingError`. En `/Cancel` solo `200` y `479` son desenlaces conocidos: lo demás que pasó por el cable (`401`, `402`, `400`, `201`, `405`…, `500`, `429`, timeout, red) es `TboCancelOutcomeUnknownError` → `UNVERIFIED`; lo que el limitador no despachó es `TboDispatchRejectedError` (`sentToProvider: false`), previo al write y reintentable. Un nombre terminado en `ValidationError` sería determinista en `/Cancel` y cerraría como fallida una cancelación que pudo aplicarse | 04 §4.3; 06 §4.2, §4.3 reglas 2, 3 y 9, §5.2 (`@Catch`); 01 §9.3                            |
 | **C-05** | `479` en Cancel: `TboApiError` `NO_RETRY` → `FAILED` y lectura aparte ([01](./01-autenticacion-conectividad-y-errores.md) §9.3); `{ success: false }` sin lanzar y lectura posterior ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.3); `UNVERIFIED` y relectura ([06](./06-seams-integracion-repo.md) §5.5 punto 5)                                                                                                        | El de 04 (RF-25): sin lanzar; la lectura posterior decide; si la lectura falla, `verify-cancellation` de solo lectura, nunca un segundo Cancel. Las otras dos reglas de 06 §5.5 punto 5 (`status` solo HTTP; nombre del error de mapeo) siguen vigentes                                                                                                                                                                                                                                                                                                                                                                                                                       | 01 §9.3 (fila `479`); 06 §5.5 punto 5                                                       |
 | **C-06** | Job de recuperación: `verify-hotel-booking` con calendario 120 s, 5, 15 y 60 min ([03](./03-prebook-y-book.md) §4.2, §4.6; [06](./06-seams-integracion-repo.md) TP-38) frente a extender `verify-creation` con 120 s, 10 y 60 min ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §7.3, §10)                                                                                                                                    | `verify-hotel-booking` con el calendario de 03 (RF-21). `verify-creation` sigue siendo de vuelos: exige `provider_order_id` y resuelve por el registry de vuelos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 04 §3.2, §6.3, §7.2, §7.3, §10, §12                                                         |
 | **C-07** | Qué pasa si la verificación no encuentra la reserva: `failed` y el vendedor puede volver a reservar ([03](./03-prebook-y-book.md) §4.2 punto 7, D-03-F); `pending` hasta la conciliación ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §7.3, PV-C); "marked failed and sent to manual review" (Anexo A de [07](./07-certificacion.md), paso 7)                                                                                | Lo decide D-TBO-24 (recomendada: bloqueada hasta evidencia fuerte, como PV-C)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 03 §4.2 y §12; Anexo A de 07                                                                |
@@ -2212,12 +2239,25 @@ dice qué cambia con la otra.
 | **C-28** | Nombres de los builders de salida: `search/request.builder.ts`, `prebook/request.builder.ts`, `detail/request.builder.ts` ([06](./06-seams-integracion-repo.md) §4.2) frente a `booking/booking-detail.request.builder.ts` ([03](./03-prebook-y-book.md) §7.2) y a los de [09](./09-plan-implementacion.md) PR-1.4, PR-4.1, PR-4.2 y PR-5.1                                                                                                  | Los de 09: `search/search.request.builder.ts`, `prebook/prebook.request.builder.ts`, `booking/book.request.builder.ts`, `detail/booking-detail.request.builder.ts`, `cancel/cancel.request.builder.ts`; todos caen bajo el glob de la regla D1 (`eslint.config.mjs:51`)                                                                                                                                                                                                                                                                                                                                                                                                       | 03 §7.2; 06 §4.2                                                                            |
 | **C-29** | Quién ve el proveedor de una tarifa de hotel: "proveedor visible para el rol del vendedor" ([05](./05-contenido-estatico-e-inventario.md) §14 punto 6) frente a "según el flag de divulgación, extendido a hoteles" (D-TBO-13 A)                                                                                                                                                                                                             | La política de divulgación que ya existe para vuelos, sin variantes (RF-40): por defecto oculto, ocultar gana en la cadena y el consolidador lo activa en el panel de proveedores. Lo fijó el founder al firmar D-TBO-06 (A) el 2026-09-25 ("me tiene que mostrar de dónde es")                                                                                                                                                                                                                                                                                                                                                                                               | 05 §9.2 y §14 punto 6                                                                       |
 
-**Enmienda HARD-1 (2026-09-26) a C-04 en `/Cancel`:** `401`, `402` y `400` en Cancel ya no son deterministas. El
-contrato de Cancel sólo define `200` y `479`, así que ningún otro desenlace de `/Cancel` (incluidos `401`, `402`, `400`
-y códigos de otras operaciones como `201`, `207`, `300`, `315` o `405`) prueba que TBO no haya cancelado: el ACL lo
-lanza como `TboCancelOutcomeUnknownError` (un `TboApiError` con el mismo `kind`, que el breaker sigue leyendo) y la
-política lo deja `UNVERIFIED` con `verify-cancellation`, nunca `FAILED` sin una lectura. El resto de C-04 sigue vigente.
-Detalle en [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.3.
+**Enmiendas a C-04 en `/Cancel`.** La fila de C-04 ya las incorpora (VERIFICADO-CODIGO en la rama `feat/tbo-hotels` al
+2026-09-27):
+
+- **HARD-1 (2026-09-26, `45d574f`).** `401`, `402` y `400` en Cancel ya no son deterministas. El contrato de Cancel
+  sólo define `200` y `479`, así que ningún otro desenlace de `/Cancel` (incluidos `401`, `402`, `400` y códigos de
+  otras operaciones como `201`, `207`, `300`, `315` o `405`) prueba que TBO no haya cancelado: el ACL lo lanza como
+  `TboCancelOutcomeUnknownError` (un `TboApiError` con el mismo `kind`, que el breaker sigue leyendo) y la política lo
+  deja `UNVERIFIED` con `verify-cancellation`, nunca `FAILED` sin una lectura. Un `Status.Code` desconocido sale como
+  `TboCancelMappingError`, también `UNVERIFIED`.
+- **Arreglo del limitador (`34ef9f4`).** Cuando el limitador de la cuenta no despacha la lectura previa o el
+  `/Cancel`, el ACL lanza `TboDispatchRejectedError` con `sentToProvider: false`, la misma marca que el rechazo del
+  breaker. Antes, su sufijo `RejectedError` lo volvía determinista: la cancelación cerraba `FAILED` sin reintento y la
+  reserva quedaba viva en TBO sin camino de la API para cancelarla. Ahora es `pre-write-transient`: `FAILED`
+  reintentable y encolado, sin conciliar ni escalar. En la misma entrega, la lectura previa sale por el cupo de
+  ventas cuando la pide una persona.
+
+La tabla por desenlace está en [01](./01-autenticacion-conectividad-y-errores.md) §9.3, la regla de implementación en
+[06](./06-seams-integracion-repo.md) §4.3 regla 9 y el detalle de post-venta en
+[04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §4.3 y §14.
 
 ---
 
