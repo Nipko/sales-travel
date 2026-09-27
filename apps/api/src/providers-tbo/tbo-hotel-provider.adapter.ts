@@ -15,6 +15,7 @@ import type {
   HotelBookingView,
   HotelBookingsByDatePort,
   HotelBookingsByDateResult,
+  HotelCancelRequestOptions,
   HotelCancelRequest,
   HotelCancelResult,
   HotelPrebookRequest,
@@ -521,10 +522,14 @@ export class TboHotelProviderAdapter
    * `UNVERIFIED`. Nada se reenvuelve aquí: un error con otro nombre cambiaría esa clasificación.
    *
    * La cuenta es la de este envoltorio: quien lo arma para la post-venta tiene que hacerlo con la
-   * que creó la reserva (RF-29; D-TBO-28 A).
+   * que creó la reserva (RF-29; D-TBO-28 A). `options.purpose` elige el cupo de la lectura previa.
    */
-  cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult> {
-    return this.#acl.cancelBooking(request, ctx);
+  cancelBooking(
+    request: HotelCancelRequest,
+    ctx: SearchContext,
+    options?: HotelCancelRequestOptions,
+  ): Promise<HotelCancelResult> {
+    return this.#acl.cancelBooking(request, ctx, options);
   }
 
   /** "Maximum of 60 days (about 2 months)" (p. 62): la conciliación parte los rangos más largos. */

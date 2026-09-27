@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import type { HotelBookingView, HotelCancelResult, SearchContext } from '@sales-travel/domain';
+import type {
+  HotelBookingView,
+  HotelCancelRequestOptions,
+  HotelCancelResult,
+  SearchContext,
+} from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
@@ -316,9 +321,14 @@ export class HotelOrderCancellationService {
 
   /**
    * El pedido al proveedor. Lanza lo que lanza el ACL, sin reenvolverlo: la política de
-   * cancelaciones clasifica por la forma del error (04 §4.3).
+   * cancelaciones clasifica por la forma del error (04 §4.3). `options.purpose` dice si una persona
+   * espera (`interactive`) o es un job (`background`, por defecto): decide el cupo de la lectura previa.
    */
-  async send(tenantId: string, order: HotelOrderToCancel): Promise<HotelCancelAttempt> {
+  async send(
+    tenantId: string,
+    order: HotelOrderToCancel,
+    options: HotelCancelRequestOptions = { purpose: 'background' },
+  ): Promise<HotelCancelAttempt> {
     // La orden se relee con el tenant fijado antes de llamar: una de otra agencia no existe aunque
     // las dos reserven con la misma cuenta heredada (RF-29 CA 3).
     const target = await this.store.findTarget(tenantId, order.id);
@@ -332,7 +342,7 @@ export class HotelOrderCancellationService {
     const result = await withProviderPayloadScope({ tenantId, orderId: target.orderId }, () =>
       this.breaker.execute(
         provider.code,
-        () => provider.adapter.cancelBooking({ providerBookingId: locator }, ctx),
+        () => provider.adapter.cancelBooking({ providerBookingId: locator }, ctx, options),
         { ...provider.circuit, scope: 'post-sale' },
       ),
     );

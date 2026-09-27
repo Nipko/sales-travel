@@ -17,6 +17,7 @@ import type {
   HotelBookingReadPurpose,
   HotelBookingRoomGuests,
   HotelBookingView,
+  HotelCancelRequestOptions,
   HotelCancelPort,
   HotelCancelRequest,
   HotelCancelResult,
@@ -642,7 +643,16 @@ function lookupOf(query: TboBookingDetailQuery): TboBookingLookup {
 export interface TboCancelQuery {
   /** El localizador de TBO con que se creó la reserva (`orders.provider_order_id`). */
   readonly confirmationNumber: string;
+  /**
+   * El cupo de la lectura PREVIA: `interactive` si una persona espera en el panel (01 §7.2 punto 3),
+   * `background` (por defecto) si es un job. El `/Cancel` sale siempre por el cupo de dinero y la
+   * lectura posterior, por el de fondo.
+   */
+  readonly purpose?: TboCancelReadPurpose;
 }
+
+/** Los propósitos que admite la lectura previa al Cancel. */
+export type TboCancelReadPurpose = Extract<TboBookingDetailPurpose, 'interactive' | 'background'>;
 
 /**
  * Una lectura de BookingDetail dentro de la secuencia de cancelación. `failed` sólo existe para la
@@ -1255,8 +1265,17 @@ export class TboHotelsAdapter
   }
 
   /** `HotelCancelPort`: la secuencia completa por el localizador de TBO. */
-  async cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult> {
-    return (await this.cancelReport({ confirmationNumber: request.providerBookingId }, ctx)).result;
+  async cancelBooking(
+    request: HotelCancelRequest,
+    ctx: SearchContext,
+    options?: HotelCancelRequestOptions,
+  ): Promise<HotelCancelResult> {
+    const purpose = options?.purpose === 'interactive' ? 'interactive' : undefined;
+    const query: TboCancelQuery = {
+      confirmationNumber: request.providerBookingId,
+      ...(purpose === undefined ? {} : { purpose }),
+    };
+    return (await this.cancelReport(query, ctx)).result;
   }
 
   /**
@@ -1281,7 +1300,7 @@ export class TboHotelsAdapter
     const confirmationNumber = body.ConfirmationNumber;
     const base = { confirmationNumber, accountRef: this.#client.accountRef };
 
-    const before = await this.#readForCancel(confirmationNumber, ctx);
+    const before = await this.#readForCancel(confirmationNumber, ctx, query.purpose);
     const preflight = decideTboCancelPreflight(before.view);
     if (!preflight.send) {
       const report: TboCancelReport = {
@@ -1406,7 +1425,7 @@ export class TboHotelsAdapter
   async #readForCancel(
     confirmationNumber: string,
     ctx: SearchContext,
-    purpose: Extract<TboBookingDetailPurpose, 'background' | 'after-cancel'> = 'background',
+    purpose: TboCancelReadPurpose | 'after-cancel' = 'background',
   ): Promise<Extract<TboCancelReading, { state: 'read' }>> {
     const report = await this.bookingDetailReport({ confirmationNumber, purpose }, ctx);
     return { state: 'read', view: report.view, requestId: report.requestId };

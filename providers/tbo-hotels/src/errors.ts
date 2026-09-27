@@ -258,13 +258,18 @@ export type TboDispatchRejectionReason = 'QUEUE_TIMEOUT' | 'ABORTED' | 'DEADLINE
  * La llamada se rechazó en NUESTRO lado, antes del cable: no salió ningún byte hacia TBO.
  *
  * No es un `TboApiError` porque no hubo intento, y no es un `TboRequestBuildError` porque el body
- * era válido. El nombre termina en `RejectedError` a propósito: `cancel-retry-policy.ts` lo lee como
- * determinista y previo al write, así que un Cancel que no llegó a salir no queda `UNVERIFIED` ni
- * pide conciliar (08 RF-04 CA-5). En Search, el adapter lo convierte en un lote degradado con
- * motivo visible en vez de encolarlo más allá del presupuesto de la búsqueda (RNF-13).
+ * era válido. Lleva `sentToProvider: false`, la misma marca que el rechazo del breaker: la llamada
+ * puede repetirse tal cual. Sin ella, `cancel-retry-policy.ts` lo leía por el sufijo `RejectedError`
+ * como determinista, y un Cancel (o su lectura previa) que el limitador no despachó cerraba FAILED
+ * sin reintento: la reserva quedaba viva y ningún camino de la API podía cancelarla (04 §14.3). Con
+ * la marca es previo al write y reintentable, y tampoco queda `UNVERIFIED` ni pide conciliar (08
+ * RF-04 CA-5). En Search, el adapter lo convierte en un lote degradado con motivo visible en vez de
+ * encolarlo más allá del presupuesto de la búsqueda (RNF-13).
  */
 export class TboDispatchRejectedError extends TboError {
   readonly path: string;
+  /** El limitador no le dio cupo: no salió ningún byte hacia TBO. */
+  readonly sentToProvider = false as const;
 
   constructor(
     path: string,

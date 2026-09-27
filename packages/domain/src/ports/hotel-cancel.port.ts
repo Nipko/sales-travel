@@ -1,5 +1,5 @@
 import type { SearchContext } from './flight-search.port';
-import type { HotelBookingStatus } from './hotel-booking-read.port';
+import type { HotelBookingReadPurpose, HotelBookingStatus } from './hotel-booking-read.port';
 import type { HotelProviderOptions } from './hotel-search.port';
 import type { OrderCancelResult } from './order-manage.port';
 
@@ -26,8 +26,23 @@ export interface HotelCancelResult extends OrderCancelResult {
   refundAwaited?: boolean;
 }
 
+/**
+ * Quién espera el desenlace. Un proveedor con cupo de llamadas por cuenta elige con esto el cupo de
+ * la lectura previa al pedido, nunca el del pedido mismo; uno sin cupos lo ignora.
+ *
+ * - `interactive`: una persona canceló desde el panel y espera la respuesta.
+ * - `background` (por defecto): un job reintenta una cancelación que no llegó a salir.
+ */
+export interface HotelCancelRequestOptions {
+  readonly purpose?: Extract<HotelBookingReadPurpose, 'interactive' | 'background'>;
+}
+
 export interface HotelCancelPort {
-  cancelBooking(request: HotelCancelRequest, ctx: SearchContext): Promise<HotelCancelResult>;
+  cancelBooking(
+    request: HotelCancelRequest,
+    ctx: SearchContext,
+    options?: HotelCancelRequestOptions,
+  ): Promise<HotelCancelResult>;
 }
 
 export const HOTEL_CANCEL_PORT = 'HOTEL_CANCEL_PORT';

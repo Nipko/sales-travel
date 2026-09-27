@@ -393,7 +393,9 @@ describe('TboHotelProviderAdapter', () => {
     const pedido = { providerBookingId: 'FL1IMA' };
 
     await expect(adapter.cancelBooking(pedido, CTX)).resolves.toBe(RESULTADO_CANCEL);
-    expect(a.cancelBooking).toHaveBeenCalledWith(pedido, CTX);
+    expect(a.cancelBooking).toHaveBeenCalledWith(pedido, CTX, undefined);
+    await adapter.cancelBooking(pedido, CTX, { purpose: 'interactive' });
+    expect(a.cancelBooking).toHaveBeenLastCalledWith(pedido, CTX, { purpose: 'interactive' });
     expect(typeof TboHotelsAdapter.prototype.cancelBooking).toBe('function');
   });
 

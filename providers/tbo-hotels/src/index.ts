@@ -149,6 +149,7 @@ export type {
   TboBookingsByDateQuery,
   TboBookingsByDateReport,
   TboCancelQuery,
+  TboCancelReadPurpose,
   TboCancelReading,
   TboCancelReport,
   TboHotelRatesReport,

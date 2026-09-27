@@ -9,6 +9,7 @@ import { sql, type Transaction } from 'kysely';
 import {
   type BookingContactInfo,
   type FlightSearchCriteria,
+  type HotelCancelRequestOptions,
   type OrderCancelResult,
   type OrderCreateResult,
   type OrderPayResult,
@@ -141,6 +142,9 @@ function fareSelectionChanged(before: Offer, after: Offer): boolean {
  * índice no es "ya hay una cancelación pendiente": sale tal cual y no se disfraza de 409.
  */
 const PENDING_CANCEL_CONSTRAINT = 'uq_order_operations_pending_cancel';
+
+/** Quién espera una cancelación: una persona en el panel o un job. */
+type CancelRequestPurpose = NonNullable<HotelCancelRequestOptions['purpose']>;
 
 interface CreatedOrderResult {
   result: OrderCreateResult;
@@ -1064,6 +1068,8 @@ export class OrdersService {
     actorUserId?: string,
     /** Compensación selectiva: sólo estos `itemId`. Sin ellos, la cancelación es de la reserva. */
     cancellableItemIds?: readonly string[],
+    /** `interactive` si una persona espera la respuesta; los jobs van por el cupo de fondo. */
+    purpose: CancelRequestPurpose = 'background',
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     const existing = await this.findById(tenantId, id);
     if (!existing?.provider_order_id) {
@@ -1074,7 +1080,7 @@ export class OrdersService {
     }
     const hotels = this.hotelCancellationsFor(existing);
     if (hotels !== undefined) {
-      return this.runHotelCancel(hotels, tenantId, existing, claim, actorUserId);
+      return this.runHotelCancel(hotels, tenantId, existing, claim, actorUserId, purpose);
     }
 
     let result: OrderCancelResult;
@@ -1232,11 +1238,12 @@ export class OrdersService {
     tenantId: string,
     order: OrderRow,
     claim: CancellationClaim,
-    actorUserId?: string,
+    actorUserId: string | undefined,
+    purpose: CancelRequestPurpose,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     let attempt: HotelCancelAttempt;
     try {
-      attempt = await hotels.send(tenantId, order);
+      attempt = await hotels.send(tenantId, order, { purpose });
     } catch (err) {
       const failure = classifyCancelThrownFailure(err);
       const tracking = hotels.thrownTracking(failure, Date.now());
@@ -1441,6 +1448,8 @@ export class OrdersService {
   /**
    * Sólo encola cuando la evidencia dice que el write NO empezó (p.ej. falló el get/check previo).
    * Un timeout del endpoint de cancelación se registra como UNVERIFIED y nunca llega a BullMQ.
+   * Lo llaman sólo los endpoints: una persona espera, y en hoteles la lectura previa al Cancel sale
+   * por el cupo de ventas en vez del de fondo (04 §14.3).
    */
   private async attemptCancelAndMaybeQueue(
     tenantId: string,
@@ -1450,7 +1459,7 @@ export class OrdersService {
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     try {
-      return await this.runCancel(tenantId, id, pnr, claim, actorUserId);
+      return await this.runCancel(tenantId, id, pnr, claim, actorUserId, undefined, 'interactive');
     } catch (err) {
       const policy = classifyCancelThrownFailure(err);
       if (policy.retryable) {

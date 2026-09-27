@@ -9,6 +9,7 @@ import {
   TboApiError,
   TboCancelMappingError,
   TboCancelOutcomeUnknownError,
+  TboDispatchRejectedError,
 } from '@sales-travel/tbo-hotels';
 import { describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
@@ -252,7 +253,7 @@ describe('RF-25 CA-2: 200 con la cancelación en curso (D-TBO-25 A)', () => {
     const { result, order } = await b.cancelar();
 
     expect(b.cancelBooking).toHaveBeenCalledOnce();
-    expect(b.cancelBooking).toHaveBeenCalledWith(...pedido());
+    expect(b.cancelBooking).toHaveBeenCalledWith(...pedido(), { purpose: 'interactive' });
     expect(result).toEqual({
       success: true,
       warnings: [],
@@ -517,6 +518,37 @@ describe('RF-25 CA-4: falla la lectura previa, antes de enviar', () => {
     expect(b.cancelBooking).toHaveBeenCalledTimes(2);
     expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
     expect(b.mem.calls.filter((c) => c.method === 'markRequested')).toHaveLength(2);
+  });
+
+  it('el limitador de la cuenta que no despacha la lectura previa: reintentable y se encola (04 §14.3)', async () => {
+    // Antes quedaba FAILED determinista: sin reintento, sin escalado y con `cancelOrder`
+    // rechazando toda cancelación nueva, con la reserva viva en TBO.
+    const b = banco();
+    const sinCupo = new TboDispatchRejectedError('/BookingDetail', 'QUEUE_TIMEOUT', 30_000);
+    b.cancelBooking.mockRejectedValueOnce(sinCupo);
+
+    await expect(b.cancelar()).rejects.toBe(sinCupo);
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('confirmed');
+    expect(b.mem.result(b.ultimaOperacion())).toMatchObject({
+      outcome: 'FAILED',
+      retryable: true,
+      reconciliationRequired: false,
+      reason: 'pre-write-transient',
+    });
+    expect(b.queue.jobs.filter((j) => j.name === 'cancel')).toHaveLength(1);
+
+    b.cancelBooking.mockResolvedValue(respuesta({ bookingStatus: 'CANCELLED' }));
+    await b.service.runCancelById(TENANT, ORDEN);
+
+    expect(b.mem.order(ORDEN)?.['status']).toBe('cancelled');
+    // Quien espera elige el cupo de las lecturas: la persona el de ventas, el job el de fondo.
+    expect(b.cancelBooking).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), {
+      purpose: 'interactive',
+    });
+    expect(b.cancelBooking).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), {
+      purpose: 'background',
+    });
   });
 
   it('el rechazo del breaker (no salió nada) también es reintentable', async () => {

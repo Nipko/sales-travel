@@ -407,13 +407,15 @@ describe('compatibilidad con el clasificador de cancelaciones de apps/api', () =
 
   it('un Cancel que el limitador no despachó es previo al write (RF-04 CA-5)', async () => {
     // Nada salió hacia TBO: si quedara UNVERIFIED se bloquearía el reintento hasta conciliar una
-    // cancelación que no existió. La otra rama es el timeout de más arriba, que sí es incierto.
-    expect(
-      await classify(new TboDispatchRejectedError('/Cancel', 'QUEUE_TIMEOUT', 60_000)),
-    ).toMatchObject({
+    // cancelación que no existió, y si fuera determinista la orden no se podría volver a cancelar
+    // (04 §14.3). La otra rama es el timeout de más arriba, que sí es incierto.
+    const error = new TboDispatchRejectedError('/Cancel', 'QUEUE_TIMEOUT', 60_000);
+    expect(error.sentToProvider).toBe(false);
+    expect(await classify(error)).toMatchObject({
       outcome: 'FAILED',
-      retryable: false,
+      retryable: true,
       reconciliationRequired: false,
+      reason: 'pre-write-transient',
     });
   });
 

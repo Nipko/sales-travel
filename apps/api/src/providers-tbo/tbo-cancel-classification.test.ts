@@ -131,12 +131,21 @@ describe('lo que no salió hacia TBO', () => {
     });
   });
 
-  it('el rechazo del limitador de la cuenta tampoco pide conciliar', () => {
-    const err = new TboDispatchRejectedError(CANCEL, 'QUEUE_TIMEOUT', 10_000);
-    expect(classifyCancelThrownFailure(err)).toMatchObject({
-      outcome: 'FAILED',
-      reconciliationRequired: false,
-    });
+  it('el rechazo del limitador, en el Cancel o en su lectura previa, es previo al envío y se reintenta', () => {
+    // 04 §14.3: antes el sufijo `RejectedError` lo volvía determinista y la orden quedaba sin poder
+    // cancelarse por ningún camino de la API, con la reserva viva en TBO.
+    for (const path of [CANCEL, '/BookingDetail']) {
+      for (const reason of ['QUEUE_TIMEOUT', 'ABORTED'] as const) {
+        expect(
+          classifyCancelThrownFailure(new TboDispatchRejectedError(path, reason, 10_000)),
+        ).toEqual({
+          outcome: 'FAILED',
+          retryable: true,
+          reconciliationRequired: false,
+          reason: 'pre-write-transient',
+        });
+      }
+    }
   });
 
   it('un body que no pasó la guarda D1 es determinista y previo al cable', () => {

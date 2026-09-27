@@ -267,6 +267,18 @@ describe('Cancel: la secuencia de 04 §4.4', () => {
     expect(h.timeouts).toEqual([30_000, 60_000, 30_000]);
   });
 
+  it('pedida desde el panel, la lectura previa sale por el cupo de ventas; el Cancel y la posterior no cambian', async () => {
+    // 04 §14.3: lo que espera una persona no va por el cupo de fondo (01 §7.2 punto 3).
+    const h = harness();
+    const port: HotelCancelPort = h.adapter;
+    await port.cancelBooking({ providerBookingId: LOCATOR }, CTX, { purpose: 'interactive' });
+    expect(h.lanes).toEqual(['sales', 'money', 'background']);
+
+    const job = harness();
+    await job.adapter.cancelBooking({ providerBookingId: LOCATOR }, CTX, { purpose: 'background' });
+    expect(job.lanes).toEqual(['background', 'money', 'background']);
+  });
+
   it('por el puerto neutral, con refundAmount vacío (04 §4.5)', async () => {
     const h = harness();
     const port: HotelCancelPort = h.adapter;
