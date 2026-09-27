@@ -2,13 +2,22 @@
 
 import { BedDouble, Info, Moon, RefreshCw, Search, ShieldAlert, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { Button } from '../../../../../components/ui/button';
 import { cn } from '../../../../../lib/cn';
 import type { HotelRoompack } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
 import { RateItem } from '../../_components/hotel-rate-item';
+import {
+  checkoutHref,
+  offerReferenceOf,
+  rateSelectionOf,
+  saveRateSelection,
+} from '../../_components/hotel-rate-selection';
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
-import type { HotelStay } from '../../_components/hotel-search-handoff';
+import { newSearchToken, type HotelStay } from '../../_components/hotel-search-handoff';
 import { isRateExpired, OfferExpiry } from '../../_components/offer-expiry';
 import type { HotelDetailRatesResult } from '../actions';
 import { detailRatesView, emptyRatesView, type FailedProvider } from './hotel-detail-view';
@@ -145,6 +154,47 @@ function RateDetailExtras({
   );
 }
 
+/**
+ * Reservar una tarifa: lleva al checkout, que la revalida con el proveedor (PR-6.3). Sólo las
+ * tarifas que se revalidan por el PreBook neutral: las de un proveedor que reserva por su flujo
+ * propio (Despegar, D-TBO-08 A) no tienen checkout en el panel, y se dice.
+ */
+function RateBookAction({
+  row,
+  bookable,
+  expired,
+  onBook,
+}: {
+  row: HotelRateRow;
+  bookable: boolean;
+  expired: boolean;
+  onBook: () => void;
+}) {
+  if (!bookable) {
+    return (
+      <p className="text-[11px] text-[var(--color-fg-muted)]">
+        Esta tarifa todavía no se puede reservar desde el panel.
+      </p>
+    );
+  }
+  return (
+    <div className="flex justify-end pt-1">
+      <Button
+        type="button"
+        size="sm"
+        className="w-full sm:w-auto"
+        disabled={expired}
+        onClick={onBook}
+      >
+        Reservar
+        <span className="sr-only">
+          : {row.board}, {row.rooms}, {formatMoney(row.sale)}
+        </span>
+      </Button>
+    </div>
+  );
+}
+
 /** Volver a pedir las tarifas: la misma estadía, una búsqueda nueva. */
 function RetryButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
   return (
@@ -201,6 +251,10 @@ export function RatesNeedSearch() {
 }
 
 interface HotelDetailRatesProps {
+  /** El hotel, para volver a él desde el checkout. */
+  hotelKey: string;
+  /** La búsqueda desde la que se abrió el detalle. */
+  searchToken: string | undefined;
   stay: HotelStay;
   nights: number;
   showProvider: boolean;
@@ -214,6 +268,8 @@ interface HotelDetailRatesProps {
 }
 
 export function HotelDetailRates({
+  hotelKey,
+  searchToken,
   stay,
   nights,
   showProvider,
@@ -238,6 +294,31 @@ export function HotelDetailRates({
   );
   const expired = (row: HotelRateRow) =>
     expiredCutoffMs !== undefined && isRateExpired(row.expiresAt, expiredCutoffMs);
+
+  const router = useRouter();
+  const book = (row: HotelRateRow) => {
+    const seller = row.pack.provider?.name;
+    const selection = rateSelectionOf({
+      pack: row.pack,
+      sale: row.sale,
+      hotelKey,
+      searchToken,
+      stay,
+      showProviderInResults: showProvider,
+      sellerFacts: seller === undefined ? undefined : facts.get(seller),
+      shownFacts,
+      nowMs: Date.now(),
+    });
+    if (selection === undefined) return;
+    const token = newSearchToken();
+    if (!saveRateSelection(token, selection)) {
+      toast.error(
+        'No pudimos guardar la tarifa elegida en este navegador. Revisá que no esté en modo privado o sin espacio e intentá de nuevo.',
+      );
+      return;
+    }
+    router.push(checkoutHref(token));
+  };
 
   if (rates === undefined || view === undefined) {
     return (
@@ -306,6 +387,12 @@ export function HotelDetailRates({
                     checkinDate={stay.checkinDate}
                     nights={nights}
                     sellingNote={note}
+                  />
+                  <RateBookAction
+                    row={row}
+                    bookable={offerReferenceOf(row.pack) !== undefined}
+                    expired={expired(row)}
+                    onBook={() => book(row)}
                   />
                 </RateItem>
               );

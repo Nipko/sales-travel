@@ -211,6 +211,8 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
         {handoff === null ? <RatesNeedSearch /> : null}
         {handoff ? (
           <HotelDetailRates
+            hotelKey={hotelKey}
+            searchToken={searchToken}
             stay={handoff.stay}
             nights={stayNights(handoff.stay)}
             showProvider={handoff.showProviderInResults}
