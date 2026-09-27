@@ -1268,6 +1268,18 @@ sembrados; la Playwright corre contra el stack de certificación.
 
 **Criterio de salida de la Fase 6.** U-01 a U-20 cumplidos en el stack de certificación; RF-40 CA 4 a 7 en verde.
 
+**Estado al 2026-09-27 (VERIFICADO-CODIGO, rama `feat/tbo-hotels`).** PR-6.1 a PR-6.5 están hechos; RF-40 CA 4 a 7
+tiene tests unitarios en la web. Falta PR-6.6, que necesita la cuenta de test y el stack de PR-7.2: hasta entonces
+ningún U-xx está probado de punta a punta. Desviaciones respecto del checklist de [07](./07-certificacion.md) §8:
+
+- **U-04.** El selector usa los topes de la plataforma (8 habitaciones, 8 adultos, 6 niños, 0 a 17 años), no los de
+  TBO. Es una decisión de PR-6.1: con 5 o 6 niños, TBO queda fuera de esa búsqueda con el motivo en el aviso de
+  resultados incompletos ("hasta 4 niños por habitación") y los demás proveedores buscan igual. Un tenant que sólo
+  tiene TBO ve "Ningún proveedor pudo buscar esta vez" con ese motivo.
+- **U-05.** La imagen del hotel está en el detalle (`/hoteles/[hotelKey]`, contenido estático), no en la tarjeta de
+  resultados: la oferta neutral de disponibilidad no trae imagen. Llevarla a la tarjeta exige sumar una miniatura del
+  catálogo a `POST /hotels/availability`.
+
 ---
 
 ## 14. Fase 7 — Certificación
