@@ -89,6 +89,7 @@ Number (HCN), la conciliación diaria y los datos que hay que guardar para post-
    `order-events.ts:15-30`). El path `/Cancel` de TBO ya casa con `CANCEL_WRITE_PATH`
    (`cancel-retry-policy.ts:36`).
 9. **Faltan seis piezas** (VERIFICADO-CODIGO):
+
    - `delay` en la cola (`apps/api/src/queue/post-sale-queue.service.ts:110`);
    - verificar la creación por `BookingReferenceId`, porque hoy se exige `provider_order_id`
      (`orders.service.ts:1579`);
@@ -97,6 +98,11 @@ Number (HCN), la conciliación diaria y los datos que hay que guardar para post-
    - los jobs `hcn-check` y de conciliación;
    - una vía para cerrar una cancelación `UNVERIFIED` con evidencia (`orders.service.ts:1809-1816`);
    - guardar la cuenta de credenciales con la que se creó cada reserva.
+
+   **Estado al 2026-09-26 (VERIFICADO-CODIGO, rama `feat/tbo-hotels`):** las seis piezas existen. El `delay` salió
+   de PR-0.7; el resto, de las Fases 4 y 5 de [09](./09-plan-implementacion.md), con las migraciones `0042` y `0044`
+   a `0047` (09 §3.3). El endurecimiento HARD-1 a HARD-4 cambió varias posturas de este documento; el resumen está
+   en §14.
 
 ---
 
@@ -170,6 +176,25 @@ llegan los dos o ninguno (p. 43) → [Q-45](./10-preguntas-para-tbo.md#q-45). Nu
 `planVerification` escala con `verification-unavailable` si el proveedor no declara `retrieve`
 (VERIFICADO-CODIGO `order-create.saga.ts:229`). El factory de TBO tiene que declarar `retrieve: true` y
 `cancel: true`.
+
+**Cupo de cada lectura (HARD-2, VERIFICADO-CODIGO).** Quien lee dice para qué lee: `HotelBookingReadPurpose`, en
+`packages/domain/src/ports/hotel-booking-read.port.ts`. El ACL traduce ese propósito a un cupo del limitador por
+cuenta y a un número de intentos (`DETAIL_PURPOSES` en `providers/tbo-hotels/src/tbo-hotels.adapter.ts`; cupos en
+`providers/tbo-hotels/src/http/limiter.ts`; [01](./01-autenticacion-conectividad-y-errores.md) §7.2 punto 3). Así una
+ráfaga de jobs no le quita al vendedor más que el techo de su cupo.
+
+| #   | Propósito                                                                          | Cupo           | Intentos           |
+| --- | ---------------------------------------------------------------------------------- | -------------- | ------------------ |
+| 1   | `booking`                                                                          | `money`        | 3                  |
+| 2   | `verification`                                                                     | `verification` | 3                  |
+| 3   | Previa y posterior al Cancel: las fija el ACL; `verify-cancellation`: `background` | `background`   | 3; la posterior, 1 |
+| 4   | `background`                                                                       | `background`   | 3                  |
+| 5   | `background`; `BookingDetailsbasedondate` sale siempre por `background`            | `background`   | 3                  |
+| 6   | `interactive`                                                                      | `sales`        | 2                  |
+
+El orden de despacho es `money`, `verification`, `sales` y `background`. Los cupos `verification` y `background`
+tienen techo propio: 1 QPS y 1 llamada en vuelo por cuenta (INFERIDO: TBO no publica su QPS,
+[Q-10](./10-preguntas-para-tbo.md#q-10)). La fila 3 tiene un hueco, anotado en §14.3.
 
 ### 3.3 Response
 
@@ -417,16 +442,17 @@ cancelación ni cancelación por habitación (VERIFICADO-PDF, ausencia en p. 41)
 Un rechazo de negocio no lanza: `runCancel` lo recibe como `success: false` (VERIFICADO-CODIGO
 `orders.service.ts:1185-1189`).
 
-| Desenlace TBO                                           | Qué entrega el ACL (propuesta)                                                                               | Resultado en el repo                                                                                                                                                                                                 | Estado de la orden                                      | Siguiente paso                                       |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
-| 200                                                     | `{ success: true }` más la lectura posterior (§4.4)                                                          | `CANCEL_SUCCESS_POLICY` (`cancel-retry-policy.ts:184-189`)                                                                                                                                                           | Según `BookingDetail` (decisión PV-A)                   | `verify-cancellation` si el estado es intermedio     |
-| 479                                                     | `{ success: false, error: 'TBO_CANCEL_FAIL' }`, sin lanzar                                                   | `CANCEL_REJECTED_POLICY`: FAILED, sin reintento (`cancel-retry-policy.ts:191-196`)                                                                                                                                   | Vuelve al estado previo (`orders.service.ts:1332-1336`) | Leer `BookingDetail`: si ya está cancelada, es éxito |
-| 401, 402 o 400 en el cuerpo (HARD-1)                    | Lanza `TboCancelOutcomeUnknownError` (un `TboApiError` con el mismo `kind`, `status`, `tboCode` y `failure`) | El nombre casa con `CANCEL_OUTCOME_UNKNOWN_ERROR` antes que la regla de los deterministas: UNVERIFIED. El breaker sigue leyendo `failure.circuit` (`OPEN_ACCOUNT`)                                                   | `pending`, `cancel-unverified`                          | `verify-cancellation` y alerta                       |
-| 201, 207, 300, 315, 405 u otro código conocido (HARD-1) | Lanza `TboCancelOutcomeUnknownError`                                                                         | UNVERIFIED, por el nombre. Antes salía el `TboApiError` con `NO_RETRY` y la cancelación cerraba FAILED sin releer: si TBO sí había cancelado, la orden volvía a confirmada                                           | `pending`, `cancel-unverified`                          | `verify-cancellation`                                |
-| 500 en el cuerpo, HTTP 5xx, timeout o red               | Lanza `TboCancelOutcomeUnknownError { status, path: '/Cancel' }` (`status: 0` para red y timeout; HARD-1)    | Por el nombre (antes, por el `path`, que casa con `CANCEL_WRITE_PATH`): UNVERIFIED y escalado (`orders.service.ts:1273-1278`)                                                                                        | Queda `pending` (`orders.service.ts:1252`)              | `verify-cancellation` de solo lectura (PV-B)         |
-| 429 en el cuerpo                                        | `TboCancelOutcomeUnknownError { status: 429, path: '/Cancel' }` (HARD-1)                                     | Por el nombre: UNVERIFIED (el 429 ya estaba excluido de los deterministas, `cancel-retry-policy.ts:74`)                                                                                                              | `pending`                                               | Igual que la fila anterior                           |
-| HTTP 200 con cuerpo ilegible                            | Lanza `TboCancelMappingError`                                                                                | Casa con `CANCEL_OUTCOME_UNKNOWN_ERROR` (`cancel-retry-policy.ts`): UNVERIFIED                                                                                                                                       | `pending`                                               | Igual que la fila anterior                           |
-| Falla la lectura previa, antes de enviar el Cancel      | `TboApiError { status: 0 o 5xx, path: '/BookingDetail' }`                                                    | Path distinto del write y error transitorio: FAILED reintentable; se intenta encolar en BullMQ (`orders.service.ts:1484-1487`), pero hoy BullMQ rechaza el `jobId` `cancel:<orderId>` y no queda nada encolado (§10) | Estado previo                                           | Reintento automático (hoy, manual)                   |
+| Desenlace TBO                                           | Qué entrega el ACL (propuesta)                                                                               | Resultado en el repo                                                                                                                                                                                                                                                | Estado de la orden                                      | Siguiente paso                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| 200                                                     | `{ success: true }` más la lectura posterior (§4.4)                                                          | `CANCEL_SUCCESS_POLICY` (`cancel-retry-policy.ts:184-189`)                                                                                                                                                                                                          | Según `BookingDetail` (decisión PV-A)                   | `verify-cancellation` si el estado es intermedio     |
+| 479                                                     | `{ success: false, error: 'TBO_CANCEL_FAIL' }`, sin lanzar                                                   | `CANCEL_REJECTED_POLICY`: FAILED, sin reintento (`cancel-retry-policy.ts:191-196`)                                                                                                                                                                                  | Vuelve al estado previo (`orders.service.ts:1332-1336`) | Leer `BookingDetail`: si ya está cancelada, es éxito |
+| 401, 402 o 400 en el cuerpo (HARD-1)                    | Lanza `TboCancelOutcomeUnknownError` (un `TboApiError` con el mismo `kind`, `status`, `tboCode` y `failure`) | El nombre casa con `CANCEL_OUTCOME_UNKNOWN_ERROR` antes que la regla de los deterministas: UNVERIFIED. El breaker sigue leyendo `failure.circuit` (`OPEN_ACCOUNT`)                                                                                                  | `pending`, `cancel-unverified`                          | `verify-cancellation` y alerta                       |
+| 201, 207, 300, 315, 405 u otro código conocido (HARD-1) | Lanza `TboCancelOutcomeUnknownError`                                                                         | UNVERIFIED, por el nombre. Antes salía el `TboApiError` con `NO_RETRY` y la cancelación cerraba FAILED sin releer: si TBO sí había cancelado, la orden volvía a confirmada                                                                                          | `pending`, `cancel-unverified`                          | `verify-cancellation`                                |
+| 500 en el cuerpo, HTTP 5xx, timeout o red               | Lanza `TboCancelOutcomeUnknownError { status, path: '/Cancel' }` (`status: 0` para red y timeout; HARD-1)    | Por el nombre (antes, por el `path`, que casa con `CANCEL_WRITE_PATH`): UNVERIFIED y escalado (`orders.service.ts:1273-1278`)                                                                                                                                       | Queda `pending` (`orders.service.ts:1252`)              | `verify-cancellation` de solo lectura (PV-B)         |
+| 429 en el cuerpo                                        | `TboCancelOutcomeUnknownError { status: 429, path: '/Cancel' }` (HARD-1)                                     | Por el nombre: UNVERIFIED (el 429 ya estaba excluido de los deterministas, `cancel-retry-policy.ts:74`)                                                                                                                                                             | `pending`                                               | Igual que la fila anterior                           |
+| HTTP 200 con cuerpo ilegible                            | Lanza `TboCancelMappingError`                                                                                | Casa con `CANCEL_OUTCOME_UNKNOWN_ERROR` (`cancel-retry-policy.ts`): UNVERIFIED                                                                                                                                                                                      | `pending`                                               | Igual que la fila anterior                           |
+| Falla la lectura previa, antes de enviar el Cancel      | `TboApiError { status: 0 o 5xx, path: '/BookingDetail' }`                                                    | Path distinto del write y error transitorio: FAILED reintentable; se encola en BullMQ con `jobId` `cancel:<orderId>:<operationId>` (`enqueueCancelRetry` en `attemptCancelAndMaybeQueue`; el `jobId` de dos segmentos que BullMQ rechazaba lo corrigió PR-0.7, §10) | Estado previo                                           | Reintento automático                                 |
+| El limitador no despacha la lectura previa o el Cancel  | Lanza `TboDispatchRejectedError`, sin `sentToProvider: false`                                                | El nombre casa con `DETERMINISTIC_ERROR`: FAILED **sin** reintento (`deterministic`) aunque nada salió. No se encola y `cancelOrder` rechaza toda cancelación nueva de la orden (§14.3)                                                                             | Estado previo                                           | Ninguno por la API: hueco de §14.3                   |
 
 Trampas que el ACL tiene que respetar (VERIFICADO-CODIGO; la consecuencia es INFERIDO):
 
@@ -460,7 +486,7 @@ Trampas que el ACL tiene que respetar (VERIFICADO-CODIGO; la consecuencia es INF
   (`CANCEL_OUTCOME_UNKNOWN_ERROR` en `cancel-retry-policy.ts`). Queda `UNVERIFIED`, `cancel-unverified` y con
   `verify-cancellation`. Reemplaza la fila "401, 402 o 400 → deterministas" de la versión anterior y de
   [08](./08-requisitos-maestro.md) §9 C-04 para `/Cancel`. Lo que no salió (limitador, body) sigue siendo previo
-  al write.
+  al write, y el rechazo del limitador cierra hoy sin reintento (§14.3).
 - **Un claim que el proceso dejó en vuelo** (`order_operations` `cancel` en `pending` desde hace más de 15 min,
   medido por `updated_at`) lo vence el barrido de post-venta (`StaleCancelClaimService`): pasa a `UNVERIFIED` sin
   reenviar nada, escala `cancellation-unverified` con `staleClaim: true` y, en hoteles, abre `verify-cancellation`
@@ -494,7 +520,9 @@ Trampas que el ACL tiene que respetar (VERIFICADO-CODIGO; la consecuencia es INF
    - lectura `Cancelled` o `CancelledAndRefundAwaited`: `cancelled`;
    - lectura intermedia (`CancellationInProgress`, `CancelPending`, `CxlRequestSentToHotel`) o sin lectura: según
      la decisión PV-A. La recomendación es `pending`, con el subestado guardado y el job `verify-cancellation`;
-   - 479 con lectura `Confirmed` o `Vouchered`: vuelve al estado previo.
+   - 479 con lectura `Confirmed` o `Vouchered`: vuelve al estado previo;
+   - presupuesto de la petición agotado (45 s, HARD-1): la respuesta es "Cancelación en curso" con la penalidad
+     estimada, y `runCancel` termina después con su claim y fija el estado con las mismas reglas (§4.3).
 
    **Seam:** hoy `runCancel` fija `cancelled` ante cualquier éxito (VERIFICADO-CODIGO
    `orders.service.ts:1332-1336`), y `OrderCancelResult` solo tiene `success`, `refundAmount`, `warnings` y
@@ -507,7 +535,12 @@ Trampas que el ACL tiene que respetar (VERIFICADO-CODIGO; la consecuencia es INF
 6. **`verify-cancellation`.** Es solo lectura. Corre a los 2 min, 15 min, 1 h, 6 h y 24 h (INFERIDO: TBO no
    publica tiempos). Cuando llega a un estado terminal, pasa la orden a `cancelled`. Si después del último
    intento sigue en estado intermedio, emite `OrderEscalated` con motivo `cancellation-stuck` (código nuevo,
-   vocabulario cerrado).
+   vocabulario cerrado). Lo que agregó el endurecimiento (VERIFICADO-CODIGO, §14):
+   - lee con la cuenta de la orden y por el cupo `background` (§3.2); si esa cuenta ya no está en la red del
+     tenant, deja de leer y escala `provider-account-changed`;
+   - un estado fuera del enum no cierra el calendario: avisa la primera vez y sigue leyendo (HARD-1);
+   - una lectura del barrido que falla no avanza el paso: se reprograma con backoff, sin pasar la hora del paso
+     siguiente (HARD-2).
 7. **HCN.** La cancelación detiene el seguimiento del HCN (§8).
 
 ### 4.5 Penalidad y reembolso: la API no los da
@@ -722,7 +755,7 @@ de TBO vive en un **subestado** (`provider_status`, §11).
 | `CancelledAndRefundAwaited`                                                                                                        | `cancelled`                                                                | Valor crudo y `refundAwaited=true` | La conciliación sigue hasta `Cancelled`, sin bloquear nada                                                                                                | `OrderProviderStatusChanged`                                                          |
 | `Cancelled`                                                                                                                        | `cancelled`                                                                | Valor crudo                        | Detener el HCN                                                                                                                                            | `OrderProviderStatusChanged`                                                          |
 | Cancel 479 y lectura `Confirmed` o `Vouchered`                                                                                     | Estado previo                                                              | Valor crudo                        | —                                                                                                                                                         | `OrderCancellationAttempted` (`success: false`)                                       |
-| Cancel UNVERIFIED                                                                                                                  | `pending`                                                                  | `cancel-unverified`                | `verify-cancellation` (decisión PV-B)                                                                                                                     | `OrderEscalated` `cancellation-unverified` (ya existe, `orders.service.ts:1350-1371`) |
+| Cancel UNVERIFIED: desenlace de `/Cancel` que no sea un 200 legible ni un 479, o un claim en vuelo de más de 15 min (HARD-1)       | `pending`                                                                  | `cancel-unverified`                | `verify-cancellation` (decisión PV-B)                                                                                                                     | `OrderEscalated` `cancellation-unverified` (ya existe, `orders.service.ts:1350-1371`) |
 | Conciliación: TBO en cancelación y la nuestra `confirmed`                                                                          | Según el mapeo, después de confirmar con `BookingDetail`                   | Valor crudo                        | Notificar a la agencia                                                                                                                                    | `OrderReconciliationDiscrepancy` y `OrderProviderStatusChanged`                       |
 | Conciliación: TBO en `Confirmed` o `Vouchered` y la nuestra `cancelled`                                                            | **Sin cambio automático**                                                  | —                                  | Revisión humana urgente: la reserva sigue viva y cobrable                                                                                                 | `OrderReconciliationDiscrepancy` (`severity: 'critical'`)                             |
 | `BookingStatus` desconocido                                                                                                        | Sin cambio                                                                 | `unknown`, con el valor crudo      | Revisión humana                                                                                                                                           | `OrderEscalated` `provider-status-unknown`                                            |
@@ -746,7 +779,7 @@ stateDiagram-v2
     pending_cancel --> pending_cancel_async: CancellationInProgress, CancelPending o CxlRequestSentToHotel
     pending_cancel_async --> cancelled: verify-cancellation
     pending_cancel --> confirmed: 479 y la lectura sigue Confirmed
-    pending_cancel --> pending_cancel_unverified: timeout, 5xx o 429 en Cancel
+    pending_cancel --> pending_cancel_unverified: Cancel sin 200 ni 479 (codigo, timeout o red) o claim de mas de 15 min
     pending_cancel_unverified --> cancelled: la lectura confirma la cancelacion
     pending_cancel_unverified --> revision_humana: la lectura sigue Confirmed
     confirmed --> cancelled: conciliacion (cancelada fuera de la plataforma)
@@ -807,7 +840,8 @@ incierto:
    `verify-hotel-booking` con `delay: 120_000` y el primer paso del calendario de [03](./03-prebook-y-book.md) §4.2.
    No se extiende `verify-creation`: exige `provider_order_id` y resuelve por el registry de vuelos (§7.4;
    [08](./08-requisitos-maestro.md) §9 C-06).
-3. El job llama a `BookingDetail` con `{ "BookingReferenceId": …, "PaymentMode": "Limit" }`.
+3. El job llama a `BookingDetail` con `{ "BookingReferenceId": …, "PaymentMode": "Limit" }`, con la cuenta que hizo
+   la reserva (`registry.forOrder`, mientras siga en la red del tenant) y por el cupo `verification` (§3.2; HARD-2).
 4. Según el desenlace (§7.3), el job consolida el intent con el mismo CAS de hoy
    (`status = 'pending' AND provider_raw IS NULL`, `orders.service.ts:820-852`) o agenda el siguiente intento.
 5. **Nunca se reenvía el Book automáticamente.** No está documentado si un segundo Book con el mismo
@@ -818,9 +852,10 @@ incierto:
 | Desenlace de `BookingDetail`                                                                | Acción                                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 200 con `BookingDetail.ConfirmationNumber`                                                  | Consolidar: `provider_order_id = ConfirmationNumber`, estado según §6.3, `OrderCreationVerified` con `recoveredBy: 'booking-reference'`. Después, HCN y cobro al cliente ([03](./03-prebook-y-book.md))                                                                                                          |
-| Error de transporte (red, timeout, 5xx)                                                     | Lanzar para que BullMQ reintente (5 intentos con backoff exponencial de 10 s, `post-sale-queue.service.ts:113-118`). La lectura es idempotente                                                                                                                                                                   |
+| Error de transporte (red, timeout, 5xx)                                                     | Lanzar para que BullMQ reintente (5 intentos con backoff exponencial de 10 s, `post-sale-queue.service.ts:113-118`). La lectura es idempotente. En el último intento se escala `verification-unavailable` una vez y el paso queda vencido; el barrido lo reintenta con backoff, sin avanzarlo (HARD-2, §14)      |
 | "No encontrada" (`Status.Code ≠ 200` o sin `BookingDetail`; la forma es desconocida, PV-01) | **No lanzar.** Encolar el paso siguiente del calendario de [03](./03-prebook-y-book.md) §4.2: `tf` + 5 min, + 15 min y + 60 min (INFERIDO). Si sigue sin aparecer, subestado `create-not-found-yet`, `OrderEscalated` `create-not-found`, y la decisión la toma la conciliación (§9, R5) según PV-C (D-TBO-24 A) |
-| 401 o 402                                                                                   | Escalado inmediato: sin credenciales válidas no hay forma de verificar                                                                                                                                                                                                                                           |
+| 401 o 402                                                                                   | Escalado `provider-account-issue` (una vez, desde el job): sin credenciales válidas no hay forma de verificar. El paso queda vencido y el barrido lo reintenta con backoff, por si la cuenta se arregla (HARD-2)                                                                                                 |
+| La cuenta de la orden ya no está en la red del tenant (HARD-2)                              | No se lee con otra cuenta, que diría "no está" de una reserva que puede existir (PV-15). Se deja de preguntar y escala `provider-account-changed`; la orden queda `pending` con `create-uncertain`                                                                                                               |
 
 ### 7.4 Seams
 
@@ -870,7 +905,7 @@ VERIFICADO-PDF p. 42–43:
 | PV-38 | Con check-in a más de 30 días de la reserva no hay HCN. No se dice si llega cuando la fecha entra en la ventana                                                                    | VERIFICADO-PDF p. 42                                                                                       | Programar una "entrada en ventana" en check-in − 720 h y aplicar desde ahí el SLA de P5, como si la reserva se hubiera hecho en ese momento. Sin ticket automático para estas reservas hasta que TBO confirme                           | → [Q-54](./10-preguntas-para-tbo.md#q-54) |
 | PV-39 | No hay canal ni formato para el "operations ticket"                                                                                                                                | VERIFICADO-PDF p. 43                                                                                       | Cola interna de operaciones; decisión PV-F                                                                                                                                                                                              | → [Q-55](./10-preguntas-para-tbo.md#q-55) |
 | PV-40 | No se sabe si el HCN puede cambiar después de entregado, ni si es uno por reserva o uno por habitación                                                                             | VERIFICADO-PDF p. 45 (un solo campo; a nivel `BookingDetail` por su posición en la tabla, INFERIDO, PV-06) | Se guarda el primero. La conciliación no lo relee. Si una lectura posterior trae otro valor, se guarda el nuevo y se emite `OrderProviderStatusChanged` con `source: 'hcn'`                                                             | → [Q-47](./10-preguntas-para-tbo.md#q-47) |
-| PV-41 | Cada consulta de HCN consume QPS, y el QPS no está publicado                                                                                                                       | VERIFICADO-PDF p. 9                                                                                        | Limitador propio para jobs de fondo, separado del de Search                                                                                                                                                                             | → [Q-10](./10-preguntas-para-tbo.md#q-10) |
+| PV-41 | Cada consulta de HCN consume QPS, y el QPS no está publicado                                                                                                                       | VERIFICADO-PDF p. 9                                                                                        | Limitador propio para jobs de fondo, separado del de Search. Implementado (HARD-2): el HCN sale por el cupo `background`, con techo propio y detrás de las ventas (§3.2)                                                                | → [Q-10](./10-preguntas-para-tbo.md#q-10) |
 
 ### 8.3 Plan de consultas (función pura)
 
@@ -892,7 +927,9 @@ para que migrar a Temporal sea barato (VERIFICADO-CODIGO `apps/api/src/orders/po
 W = `checkInInstant − bookedAt`. Todos los tiempos se miden desde `bookedAt`. SLA, reintentos y umbrales son
 VERIFICADO-PDF p. 43; la asignación de los límites y el momento del ticket son INFERIDO (PV-35, PV-37).
 
-Condiciones de corte: la reserva está cancelada o en cancelación, el check-in ya pasó, o el HCN ya llegó.
+Condiciones de corte: la reserva está cancelada o en cancelación, el check-in ya pasó, o el HCN ya llegó. Un HCN de
+relleno (`NA`, `Pending`, `0`…) no es "llegó": el ACL lo entrega como "todavía sin HCN" (PV-05; HARD-3). Un plan de un
+proveedor que no declara la capacidad `hcn` se corta sin leer, con motivo `provider-without-hcn` (HARD-3, §8.6).
 
 ### 8.4 Ejemplos
 
@@ -909,21 +946,28 @@ Todos con reserva el 2026-10-01 a las 10:00 UTC (INFERIDO, cálculo propio):
 
 - **Postgres manda y la cola despierta.** El plan se guarda en la fila de seguimiento del HCN (§11:
   `hcn_state`, `hcn_priority`, `hcn_next_check_at`, `hcn_attempts`). El job `hcn-check` es el mecanismo normal.
-  Un barrido periódico (`post-sale-sweeper`, §10) re-encola cualquier fila con `hcn_next_check_at` vencido hace
-  más de 15 minutos sin intento registrado. Así, perder un job en Redis cuesta minutos y no un HCN.
+  Un barrido periódico (`post-sale-sweeper`, §10) ejecuta él mismo la lectura de cualquier fila con
+  `hcn_next_check_at` vencido hace más de 15 minutos, de a 25 por tenant (VERIFICADO-CODIGO `HCN_CHECK_GRACE_MS` y
+  `HCN_SWEEP_LIMIT` en `apps/api/src/hotels/hcn-plan.ts`). Así, perder un job en Redis cuesta minutos y no un HCN.
 - **Job `hcn-check`.** Payload `{ tenantId, orderId, attempt }`, `delay` hasta `firstCheckAt` y `jobId`
   determinista `hcn-check:<orderId>:<attempt>`.
 - **"Todavía sin HCN" no es un error.** El worker no lanza: encola `attempt + 1` con `delay` de 1 h. Si lanzara,
   BullMQ reintentaría a los 10 s, 20 s, 40 s… (`post-sale-queue.service.ts:113-116`) y gastaría el plan de
   TBO en un minuto.
 - **Error de transporte.** Aquí sí se lanza. BullMQ reintenta con su backoff. La lectura es idempotente y no
-  cuenta como intento del plan.
+  cuenta como intento del plan. Si la que falla es la del barrido, la fila se reprograma con backoff (HARD-2,
+  `hcnSweepRetryAt`): la espera se mide desde la hora que el plan le daba a esa lectura, va de 15 min a 1 h (la
+  cadencia del plan) y nunca pasa del fin del día de entrada. Sin eso, 25 órdenes que fallan siempre ocuparían cada
+  corrida y taparían al resto del tenant.
 - **Retención de los jobs diferidos.** P5 deja jobs diferidos hasta 5 días. Redis de producción corre con AOF
   (VERIFICADO-CODIGO `infrastructure/hostinger/docker-compose.prod.yml:62`), así que los jobs sobreviven a un
   reinicio; el barrido cubre el resto. Este es el caso de "deadlines de días" que D9 llama frágil con BullMQ. La
   mitigación es que la fuente de verdad sea la fila de Postgres, no la cola.
 - **Al recibir el HCN:** se guarda, se emite `HotelConfirmationNumberReceived`, se habilita el voucher con HCN
-  ([03](./03-prebook-y-book.md)) y se notifica a la agencia. El canal de notificación queda fuera de alcance.
+  ([03](./03-prebook-y-book.md)) y se notifica a la agencia. El canal de notificación queda fuera de alcance. Si
+  había una tarea `hcn-ticket` abierta, se cierra en la misma transacción (§8.6; HARD-3).
+- **Cupo.** Cada lectura del plan sale por el cupo `background` de la cuenta, que cede ante las ventas (§3.2;
+  HARD-2).
 
 ### 8.6 Ticket de operaciones
 
@@ -964,8 +1008,8 @@ alcanza: Despegar la lee y no promete un HCN con SLA, así que sus órdenes no a
   agencia con cuenta propia usa la suya ([01](./01-autenticacion-conectividad-y-errores.md)). La corrida es
   **una por cuenta** (`provider_accounts.id`). Si se decide permitir credenciales de plataforma por entorno,
   también se concilia esa cuenta.
-- El cruce con órdenes necesita saber con qué cuenta se creó cada una: `provider_account_id` (§11). Hoy no se
-  guarda.
+- El cruce con órdenes necesita saber con qué cuenta se creó cada una: `provider_account_id` (§11). Se guarda desde
+  la migración M2 (`db/migrations/0042_hotel_orders.sql`, VERIFICADO-CODIGO).
   - `orders` tiene RLS forzada por tenant ([06](./06-seams-integracion-repo.md)). La consulta de las órdenes de
     una cuenta recorre los tenants del subárbol del dueño con `withTenant`, uno por uno, o usa un rol de
     mantenimiento explícito.
@@ -1050,8 +1094,8 @@ Todo el algoritmo es INFERIDO; las reglas del contrato que usa están citadas.
   decisión PV-E.
 - Registro propuesto: `provider_reconciliation_runs` (cuenta, ventanas, filas leídas, cruzadas, discrepancias,
   estado, inicio y fin) y `provider_reconciliation_items` (una fila por discrepancia, con RLS del tenant dueño de
-  la orden, o del dueño de la cuenta si es externa). Es la migración M3 de [08](./08-requisitos-maestro.md) §9 C-10;
-  su número tentativo está en [09](./09-plan-implementacion.md) §3.3.
+  la orden, o del dueño de la cuenta si es externa). Es la migración M3 de [08](./08-requisitos-maestro.md) §9 C-10,
+  que quedó en `db/migrations/0047_provider_reconciliation.sql` ([09](./09-plan-implementacion.md) §3.3).
 
 ---
 
@@ -1088,15 +1132,30 @@ Reglas:
   mismo criterio del comentario en `post-sale-queue.service.ts:88-97`).
 - **Formato del `jobId`.** BullMQ 5.78.0 rechaza un `jobId` con `:` salvo que tenga exactamente tres segmentos
   ("Custom Id cannot contain :", `node_modules/.pnpm/bullmq@5.78.0/node_modules/bullmq/dist/esm/classes/job.js:1044-1046`).
-  Los ids de la tabla tienen tres. El `cancel:<orderId>` de hoy tiene dos (`post-sale-queue.service.ts:80`):
-  `add()` atrapa el error y devuelve `false` (`:121-124`), y `attemptCancelAndMaybeQueue` ignora ese `false`
-  (`orders.service.ts:1486`). El reintento automático de una cancelación pre-write no se encola nunca, y ningún
-  test lo ve porque el doble `apps/api/src/queue/__fixtures__/recording-queue.service.ts` no pasa por BullMQ.
+  Los ids de la tabla tienen tres. El `cancel:<orderId>` de entonces tenía dos: `add()` atrapaba el error y devolvía
+  `false`, y `attemptCancelAndMaybeQueue` ignoraba ese `false`, así que el reintento automático de una cancelación
+  pre-write no se encolaba nunca. Lo corrigió PR-0.7: hoy es `cancel:<orderId>:<operationId>` (`cancelRetryJobId`,
+  VERIFICADO-CODIGO), y todos los ids salen de `postSaleJobId`.
 - Cada nombre nuevo necesita su `case` en `runPostSaleJob`, porque un nombre desconocido lanza (`post-sale.worker.ts:48-49`).
   La lógica de decisión (plan de HCN, mapeo de estados, clasificación de discrepancias) vive en funciones puras
   fuera del worker (D9).
 - Sin Redis, ninguno de estos jobs corre y el barrido tampoco. La degradación tiene que verse: el panel muestra
   las órdenes con HCN o verificación pendientes y vencidas, leídas de Postgres.
+
+**Lo que se construyó** (VERIFICADO-CODIGO, `apps/api/src/queue/post-sale-queue.service.ts` y
+`apps/api/src/orders/post-sale-sweeper.ts`). Los cinco jobs existen con esos nombres. Lo que difiere de la propuesta:
+
+- **`verify-cancellation`** lleva `{ tenantId, orderId, step, anchorAt, actorUserId? }` y su `jobId` es
+  `verify-cancellation:<orderId>:<paso>-<ancla>`. Con el paso solo, el job de una cancelación anterior que BullMQ
+  todavía conserva haría descartar el de la nueva.
+- **`reconcile-provider-account`** lleva `{ ownerTenantId, accountId, providerCode, trigger, slot, requestedBy? }` y
+  su `jobId` es `reconcile-provider-account:<accountId>:<turno>`. Un job aparte, `reconcile-provider-accounts`,
+  encola una conciliación por cuenta cada día a las 04:30 UTC.
+- **Sin Redis, el barrido corre igual** con un temporizador del proceso cada 15 min. Es la única vía por la que se
+  concilia y se verifica en ese caso.
+- **El barrido hace dos cosas más** desde el endurecimiento (§14). Vence primero los claims de cancelación que un
+  proceso dejó en vuelo, de cualquier vertical (HARD-1). Y cuando una lectura suya falla, reprograma la fila con
+  backoff en vez de dejarla con la hora vieja (HARD-2).
 
 ---
 
@@ -1127,6 +1186,12 @@ Reglas:
 
 - Una cuenta con reservas activas no se puede borrar ni desactivar sin migrar antes su post-venta, porque es la
   única que puede leerlas y cancelarlas (PV-15, INFERIDO).
+  - **Implementado en PR-5.2 (VERIFICADO-CODIGO):** `ProviderCredentialsService.upsert` responde 409
+    `PROVIDER_ACCOUNT_IN_USE` si el cambio desactiva la cuenta o deja de heredarla con reservas de la red hechas con
+    ella. Cuenta con `provider_account_active_orders` (`db/migrations/0045_order_provider_account_post_sale.sql`):
+    "activa" es `pending`, o `confirmed`/`ticketed` hasta el día siguiente al check-out, y sin fecha de salida legible
+    cuenta como activa. Si la base no contesta, tampoco se suelta la cuenta. Borrar no es un camino: la API no expone
+    el borrado de una cuenta, y la FK de la `0042` (`ON DELETE NO ACTION`) rechaza borrar una cuenta con órdenes.
   - **HARD-4 (VERIFICADO-CODIGO):** tampoco se la puede apuntar a otra cuenta de TBO mientras esté `active`:
     otro `username`, otro `environment` u otra `baseUrl` responden el mismo 409 `PROVIDER_ACCOUNT_IN_USE`
     (`accountIdentity` en `apps/api/src/provider-credentials/provider-specs.ts`). Otra contraseña del mismo usuario
@@ -1141,7 +1206,7 @@ Reglas:
 - La fila de seguimiento es una tabla satélite con `tenant_id` y RLS forzada, igual que `order_operations`
   (`db/migrations/0021_order_operations.sql:28-34`). No se agregan columnas específicas de hotel a `orders`: solo
   `provider_account_id` y `provider_booking_ref`, que son genéricas y sirven a cualquier proveedor (migración M2,
-  [08](./08-requisitos-maestro.md) §9 C-09 y C-10).
+  `db/migrations/0042_hotel_orders.sql`; [08](./08-requisitos-maestro.md) §9 C-09 y C-10).
 
 ---
 
@@ -1281,6 +1346,99 @@ p. 63).
 
 ---
 
+## 14. Endurecimiento de post-venta (HARD-1 a HARD-4)
+
+Después de las Fases 4 y 5 de [09](./09-plan-implementacion.md), cuatro pases de endurecimiento cambiaron posturas de
+este documento. Lo que sigue es VERIFICADO-CODIGO en la rama `feat/tbo-hotels` al 2026-09-26. Los motivos son
+INFERIDO salvo cita. Ninguno agregó migraciones ([09](./09-plan-implementacion.md) §3.3). Las secciones de la última
+columna tienen el detalle; esta tabla es el índice.
+
+### 14.1 Posturas
+
+| Postura                                           | Qué hace el código                                                                                                                                                                                                                                                                                                                                                                             | Dónde vive                                                                                                                                                                                             | Detalle                                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Códigos inesperados en `/Cancel`** (HARD-1)     | Todo desenlace de `/Cancel` que no sea `200` ni `479` sale como `TboCancelOutcomeUnknownError`. Incluye otro `Status.Code`, `401`, `402`, `400`, `5xx`, `429`, timeout y red. La cancelación queda `UNVERIFIED` con `verify-cancellation`, nunca `FAILED` sin lectura. Lo que no salió (limitador, body) sigue siendo previo al write; el rechazo del limitador, además, sin reintento (§14.3) | `providers/tbo-hotels/src/cancel/response.mapper.ts`; `CANCEL_OUTCOME_UNKNOWN_ERROR` en `apps/api/src/orders/cancel-retry-policy.ts`                                                                   | §4.2, §4.3; enmienda a [08](./08-requisitos-maestro.md) §9 C-04                     |
+| **Reclamos huérfanos** (HARD-1)                   | Un claim `cancel` en `pending` desde hace más de 15 min (por `updated_at`) lo vence el barrido, de a 25 por tenant. Pasa a `UNVERIFIED` sin reenviar nada, con CAS sobre el estado y `updated_at`. Escala `cancellation-unverified` con `staleClaim: true` y, en hoteles, abre `verify-cancellation` en la misma transacción. Vuelos y autos: mismo cierre, sin lectura                        | `apps/api/src/orders/stale-cancel-claim.service.ts` (`STALE_CANCEL_CLAIM_MS`) y `stale-cancel-claim.store.ts`                                                                                          | §4.3, §10                                                                           |
+| **Presupuesto de tiempo** (HARD-1)                | La petición que cancela un hotel espera hasta 45 s. Agotado, responde "Cancelación en curso" (`success: true`, `settlement: 'in-progress'`, aviso `CANCELLATION_STILL_RUNNING`, con la penalidad estimada). La cancelación sigue en el proceso con su claim, registrada para el apagado ordenado. La lectura posterior al Cancel hace un solo intento                                          | `HOTEL_CANCEL_SYNC_BUDGET_MS` y `withinBudget` en `apps/api/src/orders/hotel-order-cancellation.service.ts`; `hotelCancelWithinBudget` en `orders.service.ts`                                          | §4.3, §4.4                                                                          |
+| **Estado fuera del enum tras un `200`** (HARD-1)  | `verify-cancellation` no cierra el calendario: avisa la primera vez que ve ese valor y sigue leyendo. Agotado, `cancellation-stuck`                                                                                                                                                                                                                                                            | `keepReadingPlan` en `apps/api/src/hotels/hotel-cancellation-verification.ts`                                                                                                                          | §4.4 punto 6                                                                        |
+| **Cuenta de la orden al verificar** (HARD-2)      | `verify-hotel-booking` lee con la cuenta que hizo la reserva (`registry.forOrder`). Si ya no está en la red del tenant, deja de leer y escala `provider-account-changed` (RF-29; D-TBO-28 A). La verificación de una cancelación, el HCN y la conciliación ya lo hacían                                                                                                                        | `apps/api/src/hotels/hotel-booking-verification.service.ts`                                                                                                                                            | §7.2, §7.3                                                                          |
+| **Cupo de fondo** (HARD-2)                        | Cada lectura declara su propósito y el ACL lo traduce a un cupo. La verificación de un Book incierto va por `verification`; el HCN, `verify-cancellation` y la conciliación, por `background`. Los dos tienen techo propio (1 QPS y 1 en vuelo por cuenta, INFERIDO). La lectura de cierre del Book va por `money` y la consulta manual, por `sales`                                           | `HotelBookingReadPurpose` en `packages/domain/src/ports/hotel-booking-read.port.ts`; `DETAIL_PURPOSES` en `providers/tbo-hotels/src/tbo-hotels.adapter.ts`; `providers/tbo-hotels/src/http/limiter.ts` | §3.2; §9.5 punto 5; [01](./01-autenticacion-conectividad-y-errores.md) §7.2 punto 3 |
+| **Backoff del barrido** (HARD-2)                  | Una lectura del barrido que falla (Book, cancelación o HCN) no avanza el plan y reprograma la fila con CAS. La espera se mide desde la hora que tocaba: 15 min como mínimo y 6 h como máximo (1 h en el HCN), nunca después del paso siguiente (en el HCN, del fin del día de entrada). El barrido del Book ordena por la hora programada                                                      | `apps/api/src/hotels/sweep-retry.ts`; `hcnSweepRetryAt` en `apps/api/src/hotels/hcn-plan.ts`                                                                                                           | §4.4 punto 6, §7.3, §8.5                                                            |
+| **HCN de relleno** (HARD-3)                       | `NA`, `N/A`, `Pending`, `TBA`, `0`, `-`… son "todavía sin HCN": no cortan el seguimiento, no cierran la tarea y no llegan al voucher. La lista es nuestra y cada relleno se mide (`tbo.booking_detail.hcn_placeholder`)                                                                                                                                                                        | `providers/tbo-hotels/src/detail/hotel-confirmation-number.ts`                                                                                                                                         | §3.6 PV-05, §8.3; [Q-47](./10-preguntas-para-tbo.md#q-47)                           |
+| **Cierre de la tarea `hcn-ticket`** (HARD-3)      | El HCN que llega por cualquier lectura (seguimiento, consulta manual, cancelación o conciliación) cierra la tarea abierta en la misma transacción que lo guarda: `success`, con `resolution` y motivo `hcn-received`                                                                                                                                                                           | `apps/api/src/hotels/hcn-ticket.ts`                                                                                                                                                                    | §8.5, §8.6                                                                          |
+| **Capacidad `hcn`** (HARD-3)                      | Sólo siguen el HCN los proveedores que la declaran: `tbo-hotels` sí, `despegar-hotels` no, aunque lea reservas. Un plan de un proveedor sin ella se corta sin leer (`provider-without-hcn`)                                                                                                                                                                                                    | `HotelProviderCapabilities.hcn` en `apps/api/src/providers/hotel-provider.types.ts`; `apps/api/src/hotels/hcn-tracking.service.ts`                                                                     | §8.3, §8.6                                                                          |
+| **Conciliación de `PENDING` y `FAILED`** (HARD-4) | Todo par (estado de la orden, estado de la fila) está decidido. `PENDING` o `FAILED` sobre una orden `confirmed` es R7, y `PENDING` sobre una `cancelled` o `failed` también. El ítem guarda la clase que confirmó la lectura (PV-33). R8 mira nuestra cancelación. `resolvedBy` dice quién cerró un `UNVERIFIED`, y el día de conciliación empieza a las 04:30 UTC                            | `classifyMatched` en `apps/api/src/reconciliation/reconciliation.plan.ts`; `apps/api/src/reconciliation/reconciliation.service.ts`                                                                     | §9.4                                                                                |
+| **Cuentas con reservas vivas** (HARD-4)           | 409 `PROVIDER_ACCOUNT_IN_USE` también al apuntar una cuenta `active` a otra cuenta del proveedor (otro `username`, `environment` o `baseUrl`). `FOR UPDATE` contra el `FOR KEY SHARE` de la FK cierra la carrera entre el conteo y el cambio. El intent comprueba la versión de la cuenta y, si cambió, el Book responde 409 `SEARCH_ACCOUNT_CHANGED`                                          | `apps/api/src/provider-credentials/provider-credentials.service.ts`; `accountIdentity` en `provider-specs.ts`; `apps/api/src/orders/order-create-intent.store.ts`                                      | §11                                                                                 |
+
+### 14.2 Tests que las fijan
+
+Son los principales tests que cada pase agregó o cambió, no la lista completa (`git show --stat` del commit de cada
+pase la da). Muchos nombran el pase en su `describe`, en su `it` o en un comentario. Las `*.integration.test.ts`
+corren contra Postgres en CI.
+
+- **HARD-1:** `providers/tbo-hotels/src/cancel/response.mapper.test.ts`,
+  `providers/tbo-hotels/src/tbo-hotels.adapter.post-sale.test.ts`,
+  `apps/api/src/providers-tbo/tbo-cancel-classification.test.ts`, `apps/api/src/orders/cancel-retry-policy.test.ts`,
+  `apps/api/src/hotels/hotel-order-state.test.ts`, `apps/api/src/orders/orders.service.hotel-cancel.test.ts`,
+  `apps/api/src/orders/post-sale-sweeper.test.ts`, `apps/api/src/orders/stale-cancel-claim.integration.test.ts` y
+  `apps/api/src/hotels/hotel-cancellation-verification.test.ts`.
+- **HARD-2:** `providers/tbo-hotels/src/http/limiter.test.ts`, `providers/tbo-hotels/src/tbo-hotels.adapter.book.test.ts`,
+  `apps/api/src/hotels/sweep-retry.test.ts`, `apps/api/src/hotels/hcn-plan.test.ts`,
+  `apps/api/src/hotels/hcn-tracking.service.test.ts`, `apps/api/src/hotels/hotel-booking-verification.service.test.ts`,
+  `apps/api/src/hotels/hotel-booking-verification.store.test.ts`,
+  `apps/api/src/hotels/hotel-booking-verification.integration.test.ts`,
+  `apps/api/src/orders/hotel-order-cancellation.service.test.ts` y
+  `apps/api/src/orders/hotel-order-cancellation.integration.test.ts`.
+- **HARD-3:** `providers/tbo-hotels/src/detail/hotel-confirmation-number.test.ts`,
+  `providers/tbo-hotels/src/detail/response.mapper.test.ts`, `apps/api/src/hotels/hcn-tracking.service.test.ts`,
+  `apps/api/src/hotels/hcn-tracking.store.test.ts`, `apps/api/src/hotels/hcn-tracking.integration.test.ts`,
+  `apps/api/src/orders/hotel-order-tracking.store.test.ts`, `apps/api/src/orders/hotel-order-cancellation.store.test.ts`
+  y `apps/api/src/providers-tbo/tbo-hotels.factory.test.ts`.
+- **HARD-4:** `apps/api/src/reconciliation/reconciliation.plan.test.ts`,
+  `apps/api/src/reconciliation/reconciliation.service.test.ts`,
+  `apps/api/src/reconciliation/reconciliation.integration.test.ts`,
+  `apps/api/src/provider-credentials/provider-credentials.service.test.ts`,
+  `apps/api/src/orders/external-order-intent.service.test.ts`, `apps/api/src/hotels/hotel-booking.service.test.ts`,
+  `apps/api/src/orders/hotel-order-cancellation.store.test.ts` (`resolvedBy`) y
+  `apps/api/src/orders/hotel-order-post-sale.integration.test.ts`.
+
+### 14.3 Huecos conocidos
+
+- **Un rechazo del limitador deja la orden sin poder cancelarse** (VERIFICADO-CODIGO; es el más grave). Cuando el
+  limitador no despacha la lectura previa o el `/Cancel`, el ACL lanza `TboDispatchRejectedError`. Ese error no lleva
+  `sentToProvider: false`, a diferencia de `BreakerRejectionError`, y su nombre casa con `DETERMINISTIC_ERROR` en
+  `apps/api/src/orders/cancel-retry-policy.ts`. La operación `cancel` queda FAILED, con `retryable: false` y motivo
+  `deterministic`, aunque nada salió hacia `/Cancel`. Tres consecuencias:
+
+  - no se encola ningún reintento;
+  - no se escala a nadie, porque sólo se escala lo que pide conciliación;
+  - como es la última operación `cancel` de la orden, `cancelOrder` responde 409 ("La cancelación anterior no es
+    reintentable") y el reintento manual también ("Esta cancelación no es reintentable").
+
+  La orden vuelve a su estado previo con la reserva viva y cobrable en TBO, y ningún camino de la API la cancela.
+  El test "el rechazo del limitador de la cuenta tampoco pide conciliar"
+  (`apps/api/src/providers-tbo/tbo-cancel-classification.test.ts`) no mira `retryable`, así que no lo ve. Remedio
+  propuesto (INFERIDO): que el rechazo del limitador declare `sentToProvider: false`, como el del breaker. Así la
+  política lo trata como `pre-write-transient` y lo encola. Hay que revisar antes a los otros lectores de
+  `sentToProvider` (`apps/api/src/hotels/hotel-booking.service.ts`) y fijar `retryable: true` en ese test.
+
+- **La lectura previa al Cancel sale por el cupo `background` aunque la pida una persona.** `cancelReport` la hace
+  con el propósito por defecto (`#readForCancel` en `providers/tbo-hotels/src/tbo-hotels.adapter.ts`), sin saber quién
+  cancela. Compite con el HCN, `verify-cancellation` y la conciliación por un solo lugar en vuelo y cede ante las
+  ventas. Cada intento espera turno hasta el timeout de la operación (30 s, `maxWaitMs` en
+  `providers/tbo-hotels/src/http/tbo-http.client.ts`). Un listado de conciliación (timeout de 60 s) o una lectura de HCN
+  que tarda ocupan ese lugar lo suficiente para que la lectura previa no salga, y entonces cae en el hueco anterior:
+
+  - si pasa antes de los 45 s, la agencia recibe el 409 de un rechazo definitivo;
+  - si el presupuesto ya se agotó, la agencia vio "Cancelación en curso" y el fallo tardío sólo queda en la
+    operación y en el log (`hotels.cancel.finished_after_response`).
+
+  Contradice la regla de que lo que espera una persona no va por el cupo de fondo
+  ([01](./01-autenticacion-conectividad-y-errores.md) §7.2 punto 3). Remedio propuesto (INFERIDO): que `cancel()`
+  reciba el propósito y que la lectura previa de una cancelación pedida desde el panel salga por `sales`.
+
+---
+
 ## Preguntas abiertas para TBO
 
 Cada una se entiende sola; [10](./10-preguntas-para-tbo.md) las consolida y numera.
@@ -1360,9 +1518,11 @@ Cada una se entiende sola; [10](./10-preguntas-para-tbo.md) las consolida y nume
 5. **Timers de días sobre BullMQ.** El HCN de P5 deja jobs diferidos de hasta 5 días, justo lo que D9 llama
    frágil. Se mitiga con Postgres como fuente de verdad, el barrido de 15 minutos y el AOF de Redis.
 6. **Cuota compartida.** HCN, verificaciones y conciliación consumen un QPS no publicado que puede ser el mismo
-   de Search (PV-41). Se mitiga con un limitador propio para jobs de fondo.
+   de Search (PV-41). Se mitiga con un limitador propio para jobs de fondo: los cupos `verification` y `background`
+   de HARD-2 (§3.2). Los techos son INFERIDO hasta que TBO publique su QPS, y queda el hueco de §14.3.
 7. **Deriva de cuenta en BYOC.** Si una agencia cambia de credenciales heredadas a propias, la post-venta con la
-   cuenta nueva puede no ver sus reservas viejas (PV-15). Se mitiga guardando `provider_account_id`.
+   cuenta nueva puede no ver sus reservas viejas (PV-15). Se mitiga guardando `provider_account_id`, leyendo siempre
+   con esa cuenta y no dejando soltarla mientras tenga reservas activas (§11; HARD-2 y HARD-4).
 8. **PII en respuestas de post-venta.** `CustomerNames` (p. 48, 50) y probablemente `TripName` (p. 64) traen
    nombres. Se mitiga con: no loguear cuerpos, lista blanca para `provider_raw`, descartar `TripName` y guardar
    los payloads solo cifrados.

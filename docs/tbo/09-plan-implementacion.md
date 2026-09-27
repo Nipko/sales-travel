@@ -259,16 +259,33 @@ total antes del portal es el mismo.
 
 ### 3.3 Migraciones
 
-La última migración del repo es `0040_portfolio_ledger_idempotency.sql` (VERIFICADO-CODIGO). Números tentativos: si
-otro PR toma el número antes, se renumera al rebasar. El identificador estable es la letra M.
+**Numeración real al 2026-09-26** (VERIFICADO-CODIGO, listado de `db/migrations/` en la rama `feat/tbo-hotels`). Al
+escribir el plan, la última migración era `0040_portfolio_ledger_idempotency.sql` y los números eran tentativos. Las
+Fases 0 a 5 usaron de la `0041` a la `0047`:
 
-| Id  | Archivo tentativo                                     | Contenido                                                                                          | PR     |
-| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------ |
-| M1  | `db/migrations/0041_hotel_catalog_multi_provider.sql` | [05](./05-contenido-estatico-e-inventario.md) §7.3                                                 | PR-0.4 |
-| M2  | `db/migrations/0042_hotel_orders.sql`                 | `orders.provider_booking_ref`, `orders.provider_account_id`, tabla satélite `hotel_order_tracking` | PR-4.3 |
-| M5  | `db/migrations/0043_provider_payloads.sql`            | Bóveda cifrada de RQ/RS (sumada a 08 §9 C-10; §20 P-05)                                            | PR-4.9 |
-| M3  | `db/migrations/0044_provider_reconciliation.sql`      | Corridas e ítems de conciliación                                                                   | PR-5.5 |
-| M4  | `db/migrations/0045_provider_catalog_tbo_hotels.sql`  | Fila `tbo-hotels` en `provider_catalog`                                                            | PR-8.1 |
+- **Tres migraciones sin letra.** El plan preveía cinco con letra (M1 a M5). La implementación sumó tres más. Dos son
+  los calendarios de la verificación del Book incierto y de la verificación de una cancelación, que viven en Postgres
+  y no en Redis (RNF-10). La otra trae dos funciones `SECURITY DEFINER` que la RLS sola no permite: la cuenta con que
+  se opera la post-venta de una orden y el conteo de reservas activas de una cuenta en toda su red (RF-29).
+- **M3 corrió de número.** Pasó de la `0044` tentativa a la `0047`.
+- **M4 toma la siguiente libre, la `0048`.** Es la única que falta.
+- **El endurecimiento de post-venta no agregó migraciones.** HARD-1 a HARD-4
+  ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §14) usa lo que ya existía: `order_operations` (`0021`
+  y `0037`) y las tablas y funciones de la `0042` a la `0047`.
+
+El identificador estable sigue siendo la letra. Si otro PR toma la `0048` antes que PR-8.1, la M4 se renumera al
+rebasar.
+
+| Id  | Archivo                                                   | Contenido                                                                                                                                                                              | PR     | Estado                |
+| --- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------- |
+| M1  | `db/migrations/0041_hotel_catalog_multi_provider.sql`     | [05](./05-contenido-estatico-e-inventario.md) §7.3                                                                                                                                     | PR-0.4 | Existe                |
+| M2  | `db/migrations/0042_hotel_orders.sql`                     | `orders.provider_booking_ref`, `orders.provider_account_id`, tabla satélite `hotel_order_tracking`                                                                                     | PR-4.3 | Existe                |
+| M5  | `db/migrations/0043_provider_payloads.sql`                | Bóveda cifrada de RQ/RS (sumada a 08 §9 C-10; §20 P-05)                                                                                                                                | PR-4.9 | Existe                |
+| —   | `db/migrations/0044_hotel_booking_verification.sql`       | Calendario de la verificación del Book incierto en `hotel_order_tracking` (`verify_anchor_at`, `verify_step`, `verify_next_at`)                                                        | PR-4.7 | Existe                |
+| —   | `db/migrations/0045_order_provider_account_post_sale.sql` | `resolve_order_provider_account` (la cuenta de la orden, si sigue en la red del tenant) y `provider_account_active_orders` (reservas activas de una cuenta en toda su red, RF-29 CA 2) | PR-5.2 | Existe                |
+| —   | `db/migrations/0046_hotel_cancellation_verification.sql`  | Calendario de `verify-cancellation` en `hotel_order_tracking` (`cancel_verify_anchor_at`, `cancel_verify_step`, `cancel_verify_next_at`)                                               | PR-5.3 | Existe                |
+| M3  | `db/migrations/0047_provider_reconciliation.sql`          | Corridas e ítems de conciliación; `UNIQUE (id, tenant_id)` en `provider_accounts` para las FK compuestas                                                                               | PR-5.5 | Existe                |
+| M4  | `db/migrations/0048_provider_catalog_tbo_hotels.sql`      | Fila `tbo-hotels` en `provider_catalog`                                                                                                                                                | PR-8.1 | Por crear (tentativo) |
 
 ### 3.4 Definición de listo de un PR
 
@@ -1029,7 +1046,8 @@ son genéricos y van después de la Fase 2; PR-4.5 a 4.8, después de ellos). D-
 - **Crea.** `apps/api/src/hotels/hotel-booking-verification.ts` (plan puro: `tf + 120 s`, `+5`, `+15` y `+60 min`;
   desenlaces de [03](./03-prebook-y-book.md) §4.3; con D-TBO-24 A la reserva no encontrada queda "Verificando" hasta la
   conciliación), `apps/api/src/hotels/hotel-booking-verification.service.ts` y `apps/api/src/orders/post-sale-sweeper.ts`
-  (cada 15 min con `upsertJobScheduler`, tenant por tenant con `withTenant` o rol de mantenimiento).
+  (cada 15 min con `upsertJobScheduler`, tenant por tenant con `withTenant` o rol de mantenimiento). El calendario
+  vive en `db/migrations/0044_hotel_booking_verification.sql` (§3.3).
 - **Tests que lo cierran.** RF-21 CA 1 a 4 con reloj falso; sin Redis → `OrderEscalated` con `queued: false` y el
   barrido lo recoge; el esquema de "no existe" se ajusta a la captura de la sonda PR-05 (RF-21 CA 5).
 - **Depende de.** PR-0.7, PR-4.6; D-TBO-24 (A), D-TBO-29 (A); [Q-37](./10-preguntas-para-tbo.md#q-37),
@@ -1108,7 +1126,10 @@ PR-5.5.
   de fijas, `:38-53`, `:237-240`; `serialize` expone subestado, estado del proveedor y HCN sin PII; filtro de TBO);
   `apps/api/src/orders/orders.module.ts`; `apps/api/src/orders/order-events.ts` (eventos nuevos de 04 §6.5) y los
   motivos nuevos de `OrderEscalated`; `apps/api/src/provider-credentials/provider-credentials.service.ts` (no se borra
-  ni se desactiva una cuenta con reservas activas, RF-29 CA 2).
+  ni se desactiva una cuenta con reservas activas, ni se deja de heredar con reservas de la red, RF-29 CA 2). HARD-4
+  sumó que tampoco se la apunte a otra cuenta del proveedor y cerró la carrera entre el conteo y el cambio
+  ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §11). Las dos funciones de base que lo sostienen están en
+  `db/migrations/0045_order_provider_account_post_sale.sql` (§3.3).
 - **Tests que lo cierran.** La tabla de 04 §6.3 como test de función pura; RF-29 CA 1 a 3 (integración como
   `app_user`: la agencia B no lee la orden de la A aunque compartan la cuenta heredada).
 - **Depende de.** PR-4.3, PR-4.6, PR-5.1; D-TBO-25, D-TBO-28; [Q-46](./10-preguntas-para-tbo.md#q-46) a
@@ -1123,7 +1144,8 @@ PR-5.5.
   cola y worker (`verify-cancellation` a 2 min, 15 min, 1 h, 6 h y 24 h); `apps/api/src/portfolios/portfolios.service.ts`
   (libera la retención cuando la verificación cierra en `cancelled`, `:481-537`).
 - **Crea.** `apps/api/src/hotels/hotel-cancellation.ts` (función pura: penalidad estimada con el snapshot de PreBook en
-  la hora del hotel).
+  la hora del hotel) y `db/migrations/0046_hotel_cancellation_verification.sql` (calendario de `verify-cancellation`,
+  §3.3).
 - **Tests que lo cierran.** RF-25 CA 1 a 4; suite de cancelación de vuelos en verde; `refundAmount` vacío para TBO.
 - **Depende de.** PR-0.6, PR-5.1, PR-5.2; D-TBO-25 (A), D-TBO-26 (A); [Q-49](./10-preguntas-para-tbo.md#q-49) a
   [Q-53](./10-preguntas-para-tbo.md#q-53).
@@ -1141,7 +1163,7 @@ PR-5.5.
 #### PR-5.5 — `feat(orders): conciliación diaria por cuenta TBO (M3)` · 4 d-p · Cred.: no
 
 - **Objetivo.** RF-28 y el cierre de D-TBO-24 (A).
-- **Crea.** `db/migrations/0044_provider_reconciliation.sql` (corridas e ítems, con RLS del dueño);
+- **Crea.** `db/migrations/0047_provider_reconciliation.sql` (corridas e ítems, con RLS del dueño; §3.3);
   `apps/api/src/reconciliation/reconciliation.plan.ts` (función pura: tramos A y B, clasificador R1 a R8 de 04 §9.4),
   `reconciliation.service.ts`, job `reconcile-provider-account` diario con `upsertJobScheduler` y el botón de
   operaciones "forzar conciliación".
@@ -1309,11 +1331,11 @@ credenciales live recibidas.
 
 #### PR-8.1 — `feat(db): tbo-hotels en provider_catalog (M4) y runbook de producción` · 1,5 d-p · Cred.: **live**
 
-- **Crea.** `db/migrations/0045_provider_catalog_tbo_hotels.sql` (fila declarativa con las capacidades reales; hoy nadie
-  lee `provider_catalog`, G4) y el runbook de producción de TBO: pase a live **por sustitución** de la cuenta (RC-10;
-  `resolve_provider_account` devuelve una sola fila, `db/migrations/0012_provider_accounts.sql:75-76`), rotación de
-  contraseña, incidente `500` a las dos direcciones de soporte ([00](./00-fuentes.md) §7), ticket de HCN, uso del
-  kill-switch.
+- **Crea.** `db/migrations/0048_provider_catalog_tbo_hotels.sql` (la siguiente libre al 2026-09-26, §3.3; fila
+  declarativa con las capacidades reales; hoy nadie lee `provider_catalog`, G4) y el runbook de producción de TBO:
+  pase a live **por sustitución** de la cuenta (RC-10; `resolve_provider_account` devuelve una sola fila,
+  `db/migrations/0012_provider_accounts.sql:75-76`), rotación de contraseña, incidente `500` a las dos direcciones de
+  soporte ([00](./00-fuentes.md) §7), ticket de HCN, uso del kill-switch.
 - **Modifica.** `.github/workflows/deploy.yml` (`TBO_SYNC_*` de la cuenta live de catálogo).
 - **Salida.** Corrida del sync live completa **antes** de habilitar ventas; datos del formulario de producción (por
   ejemplo, IP de salida) entregados (RC-11).
