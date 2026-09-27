@@ -230,6 +230,11 @@ function uniqueBy<T>(items: readonly T[], key: (item: T) => string): T[] {
   });
 }
 
+/** `TBO_SYNC_CITIES` como parámetro: `NULL` = sin lista, y el `$n::text[] IS NULL` deja pasar todo. */
+function citiesParam(cities: readonly string[] | undefined): string[] | null {
+  return cities === undefined ? null : [...cities];
+}
+
 function placeholders(rows: number, columns: number): string {
   return Array.from({ length: rows }, (_, row) => {
     const params = Array.from({ length: columns }, (_, col) => `$${row * columns + col + 1}`);
@@ -423,8 +428,15 @@ export class PgCatalogStore implements CatalogStore {
          LEFT JOIN (${demandByCitySql({ provider: '$1', since: '$3', source: '$4' })}) d
            ON d.target_city_code = c.provider_city_code
         WHERE c.provider_code = $1
-          AND c.country_code::text = ANY($2::text[])`,
-      [this.#provider, [...query.countries], query.demandSince, this.#destinationSource],
+          AND c.country_code::text = ANY($2::text[])
+          AND ($5::text[] IS NULL OR c.provider_city_code = ANY($5::text[]))`,
+      [
+        this.#provider,
+        [...query.countries],
+        query.demandSince,
+        this.#destinationSource,
+        citiesParam(query.cities),
+      ],
     );
     return res.rows.map((row) => ({
       code: row.provider_city_code,
@@ -586,6 +598,7 @@ export class PgCatalogStore implements CatalogStore {
           AND h.active
           AND c.country_code::text = ANY($2::text[])
           AND (NOT $5::boolean OR COALESCE(d.searches, 0) > 0)
+          AND ($6::text[] IS NULL OR h.provider_city_code = ANY($6::text[]))
         GROUP BY h.hotel_id, d.searches`,
       [
         this.#provider,
@@ -593,6 +606,7 @@ export class PgCatalogStore implements CatalogStore {
         query.demandSince,
         this.#destinationSource,
         query.onlyDemand,
+        citiesParam(query.cities),
       ],
     );
     return res.rows.map((row) => {

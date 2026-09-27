@@ -62,6 +62,13 @@ export const DEFAULT_SYNC_COUNTRIES = Object.freeze([
   'ES',
 ] as const);
 
+/**
+ * Techo de `TBO_SYNC_CITIES`. La lista es para una corrida acotada (el stack de certificación,
+ * docs/tbo/07 §7.3 punto 6, o reintentar una ciudad concreta), no para recorrer un país ciudad por
+ * ciudad.
+ */
+export const MAX_SYNC_CITIES = 50;
+
 export const SYNC_LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type SyncLogLevel = (typeof SYNC_LOG_LEVELS)[number];
 
@@ -104,6 +111,12 @@ export interface SyncSettings {
    */
   readonly destinationSourceProvider: string;
   readonly countries: readonly string[];
+  /**
+   * `CityCode` de TBO a los que se limitan E3 y E4 (`TBO_SYNC_CITIES`), dentro de `countries`. Sin
+   * la lista, todas las ciudades de esos países. E2, E5 y E6 no cambian: la lista de ciudades se
+   * sigue pidiendo por país, que es como TBO la da.
+   */
+  readonly cities?: readonly string[];
   readonly stages: ReadonlySet<SyncStage>;
   /** Llamadas lógicas a TBO por corrida (`TBO_SYNC_MAX_CALLS`, 05 §6.4). */
   readonly maxCalls: number;
@@ -192,11 +205,33 @@ function csv<T extends z.ZodTypeAny>(
     .transform((items) => [...new Set(items)] as z.output<T>[]);
 }
 
+/** Como `csv`, sin valor por defecto: vacía = sin lista. Una lista de sólo comas no vale como vacía. */
+function optionalCsv<T extends z.ZodTypeAny>(
+  item: T,
+  maxItems: number,
+): z.ZodType<z.output<T>[] | undefined, z.ZodTypeDef, unknown> {
+  return z
+    .preprocess(blankToUndefined, z.string().optional())
+    .transform((raw) =>
+      raw
+        ?.split(',')
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    )
+    .pipe(z.array(item).min(1).max(maxItems).optional())
+    .transform((items) =>
+      items === undefined ? undefined : ([...new Set(items)] as z.output<T>[]),
+    );
+}
+
 const SyncEnvSchema = z.object({
   TBO_SYNC_ENABLED: flag(true),
   TBO_SYNC_ENVIRONMENT: z.preprocess(lowered, z.enum(['test', 'live']).default('test')),
   TBO_SYNC_BASE_URL: z.preprocess(blankToUndefined, z.string().optional()),
   TBO_SYNC_COUNTRIES: csv(z.string().regex(/^[A-Z]{2}$/), DEFAULT_SYNC_COUNTRIES, 60),
+  // `CityList[].Code` y `TBOHotelCodeList.CityCode`: un número en texto (pp. 54 y 65; 05 §2.3
+  // y §2.5).
+  TBO_SYNC_CITIES: optionalCsv(z.string().regex(/^\d{1,10}$/), MAX_SYNC_CITIES),
   TBO_SYNC_STAGES: csv(z.enum(SYNC_STAGES), SYNC_STAGES, SYNC_STAGES.length),
   TBO_SYNC_MAX_CALLS: integer(1, 100_000, 2_500),
   TBO_SYNC_MAX_MINUTES: integer(1, 360, 45),
@@ -325,6 +360,7 @@ export function resolveSyncEnv(env: SyncEnv): SyncEnvResolution {
       providerCode: TBO_HOTELS_PROVIDER_CODE,
       destinationSourceProvider: PLATFORM_DESTINATION_PROVIDER,
       countries: vars.TBO_SYNC_COUNTRIES,
+      ...(vars.TBO_SYNC_CITIES === undefined ? {} : { cities: vars.TBO_SYNC_CITIES }),
       stages: new Set(vars.TBO_SYNC_STAGES),
       maxCalls: vars.TBO_SYNC_MAX_CALLS,
       maxDurationMs: vars.TBO_SYNC_MAX_MINUTES * 60_000,

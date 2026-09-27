@@ -158,7 +158,8 @@ async function fetchBatch(
  *
  * - **Qué hoteles:** los activos de los países de la corrida que no tienen HotelDetails en un idioma
  *   o lo tienen de hace más de `TBO_SYNC_CONTENT_REFRESH_DAYS`; primero los de destinos con demanda
- *   (`selectContentTasks`). Con `TBO_SYNC_CONTENT_SCOPE=demand` (por defecto), sólo esos.
+ *   (`selectContentTasks`). Con `TBO_SYNC_CONTENT_SCOPE=demand` (por defecto), sólo esos. Con
+ *   `TBO_SYNC_CITIES`, sólo los de esas ciudades.
  * - **Idiomas:** ES, PT y EN para demanda y ES y PT para el resto (`TBO_SYNC_LANGS`,
  *   `TBO_SYNC_LANGS_REGULAR`). El inglés del resto es el `listing` de E3 y la lectura bajo demanda
  *   del API (PR-3.6), que no escribe estas tablas.
@@ -182,8 +183,10 @@ export async function runHotelContentStage(
   if (ctx.gate.stopReason !== undefined) return skipped(content.scope);
 
   const now = ctx.now();
+  const { cities } = ctx.settings;
   const candidates = await ctx.store.listContentCandidates({
     countries,
+    ...(cities === undefined ? {} : { cities }),
     demandSince: new Date(now - cadence.demandWindowMs),
     onlyDemand: content.scope === 'demand',
   });

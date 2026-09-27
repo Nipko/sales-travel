@@ -1338,7 +1338,9 @@ revisados contra el código de la rama `feat/tbo-hotels`, y el archivo en
   sugerencias salían sólo de `despegar-hotels`, que el stack no tiene; resuelto en código el 2026-09-27 con el
   catálogo local, [05](./05-contenido-estatico-e-inventario.md) §8.5) y el seed no cargaba el contacto operativo de la
   agencia que exige el Book (resuelto en código el mismo día, [07](./07-certificacion.md) §7.3 punto 8). Los dos
-  arreglos están pendientes de desplegar; el detalle está en las condiciones del Anexo B.
+  arreglos están pendientes de desplegar; el detalle está en las condiciones del Anexo B. El catálogo de TBO en la
+  base del stack (§7.3 punto 6) lo baja desde el mismo día el job `deploy-cert` con el input `cert_catalog`
+  (`infrastructure/hostinger/README.md` §9.4); falta correrlo.
 
 El Anexo A registra además dos puntos en que el código se aparta de una decisión firmada, y describe el código: un
 Book incierto no se cierra como fallido antes de 24 h aunque se use el botón de conciliación (D-TBO-24 A), y un `401`

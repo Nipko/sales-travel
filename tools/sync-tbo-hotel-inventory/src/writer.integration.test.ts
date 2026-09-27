@@ -501,6 +501,60 @@ d('PgCatalogStore contra Postgres (0041)', () => {
     expect(demandOnly.map((c) => c.hotelId)).toEqual(['c4demand']);
   });
 
+  it('TBO_SYNC_CITIES: E3 y E4 leen sólo esas ciudades; sin la lista, las del país', async () => {
+    // Un país que ningún otro test de este archivo usa.
+    await seedCity('IT-CTY-A', 'PY', null);
+    await seedCity('IT-CTY-B', 'PY', null);
+    await seedHotel(TBO, 'ctya', 'IT-CTY-A');
+    await seedHotel(TBO, 'ctyb', 'IT-CTY-B');
+    const store = new PgCatalogStore(db, { providerCode: TBO });
+    const since = new Date(Date.now() - 3_600_000);
+    const codes = (rows: readonly { readonly code: string }[]): string[] =>
+      rows.map((row) => row.code).sort();
+    const hotels = (rows: readonly { readonly hotelId: string }[]): string[] =>
+      rows.map((row) => row.hotelId).sort();
+
+    expect(
+      codes(await store.listCityCandidates({ countries: ['PY'], demandSince: since })),
+    ).toEqual(['IT-CTY-A', 'IT-CTY-B']);
+    expect(
+      codes(
+        await store.listCityCandidates({
+          countries: ['PY'],
+          cities: ['IT-CTY-B', 'IT-NO-EXISTE'],
+          demandSince: since,
+        }),
+      ),
+    ).toEqual(['IT-CTY-B']);
+    // La lista no saca una ciudad de fuera de los países de la corrida.
+    expect(
+      await store.listCityCandidates({
+        countries: ['CL'],
+        cities: ['IT-CTY-B'],
+        demandSince: since,
+      }),
+    ).toEqual([]);
+    expect(
+      hotels(
+        await store.listContentCandidates({
+          countries: ['PY'],
+          cities: ['IT-CTY-A'],
+          demandSince: since,
+          onlyDemand: false,
+        }),
+      ),
+    ).toEqual(['ctya']);
+    expect(
+      hotels(
+        await store.listContentCandidates({
+          countries: ['PY'],
+          demandSince: since,
+          onlyDemand: false,
+        }),
+      ),
+    ).toEqual(['ctya', 'ctyb']);
+  });
+
   it('E5: da de baja lo que ya no está en la lista global, y sólo de este proveedor', async () => {
     await seedHotel(TBO, 'e5-keep', 'IT-E5');
     await seedHotel(TBO, 'e5-gone', 'IT-E5');

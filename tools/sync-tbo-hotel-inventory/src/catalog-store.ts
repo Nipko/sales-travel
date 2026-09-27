@@ -141,6 +141,8 @@ export interface UnmappedDestination {
 
 export interface ContentCandidatesQuery {
   readonly countries: readonly string[];
+  /** Sólo hoteles de estas ciudades (`TBO_SYNC_CITIES`); sin la lista, los de todo `countries`. */
+  readonly cities?: readonly string[];
   readonly demandSince: Date;
   /** `true` con `TBO_SYNC_CONTENT_SCOPE=demand`: sólo hoteles de ciudades con demanda. */
   readonly onlyDemand: boolean;
@@ -163,6 +165,8 @@ export interface ContentWriteResult {
 
 export interface CityCandidatesQuery {
   readonly countries: readonly string[];
+  /** Sólo estas ciudades (`TBO_SYNC_CITIES`); sin la lista, todas las de `countries`. */
+  readonly cities?: readonly string[];
   /** Búsquedas desde este instante cuentan como demanda. */
   readonly demandSince: Date;
 }

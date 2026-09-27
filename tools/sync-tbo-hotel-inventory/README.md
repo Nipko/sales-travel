@@ -62,6 +62,7 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 | `TBO_SYNC_ENVIRONMENT`            | `test`                       | `test` o `live`                                                          |
 | `TBO_SYNC_BASE_URL`               | la de test del ACL           | Obligatoria en `live`                                                    |
 | `TBO_SYNC_COUNTRIES`              | `CO,PE,BR,US,MX,DO,AR,CL,ES` | Lista cerrada de D-TBO-12 A, ISO2                                        |
+| `TBO_SYNC_CITIES`                 | vacía = todas                | `CityCode` de esos países a los que se limitan E3 y E4 (máximo 50)       |
 | `TBO_SYNC_STAGES`                 | `E1,E2,E3,E4,E5,E6`          | Etapas que corren                                                        |
 | `TBO_SYNC_MAX_CALLS`              | `2500`                       | Llamadas a TBO por corrida                                               |
 | `TBO_SYNC_MAX_MINUTES`            | `45`                         | Duración por corrida; por encima de 50 la corta el tope del VPS          |
@@ -84,6 +85,18 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 
 `workflow_dispatch` acepta además `countries`, `stages` y `max_calls` para una sola ejecución, sin
 tocar las variables. Sólo letras, dígitos y comas.
+
+`TBO_SYNC_CITIES` es para una corrida acotada, no para la operación diaria: con la lista, E3 y E4 sólo
+tocan esas ciudades (con la cadencia y el orden de siempre) y las demás del país quedan pendientes. E2
+sigue pidiendo la lista de ciudades por país. Un código que no está en `hotel_provider_city` para esos
+países no falla: sale en el log como `tbo.sync.cities_unknown`.
+
+## Stack de certificación
+
+La base del stack de certificación (`sales_travel_cert`) no la toca este workflow: el catálogo se baja
+desde el job `deploy-cert` de `.github/workflows/deploy.yml`, con la cuenta de **test** del stack y una
+lista cerrada de países y ciudades. El comando y las comprobaciones están en
+[`infrastructure/hostinger/README.md`](../../infrastructure/hostinger/README.md) §9.4.
 
 ## Primera corrida con la cuenta de test (salida de PR-3.5)
 

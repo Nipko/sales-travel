@@ -662,6 +662,64 @@ describe('E1 y E2', () => {
   });
 });
 
+describe('TBO_SYNC_CITIES: una corrida acotada a unas ciudades (07 §7.3 punto 6)', () => {
+  function logged(lines: readonly string[], msg: string): Record<string, unknown>[] {
+    return lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line['msg'] === msg);
+  }
+
+  it('E2 sigue por país; E3 sólo recorre las de la lista y avisa de las que no encuentra', async () => {
+    const h = harness();
+    const report = synced(await h.run({ cities: ['900002', '777777'] }));
+
+    expect(h.tbo.callsTo('cityList').map((c) => c.body)).toEqual([
+      { CountryCode: 'AR' },
+      { CountryCode: 'AL' },
+    ]);
+    expect(h.tbo.callsTo('tboHotelCodeList').map((c) => c.body?.['CityCode'])).toEqual(['900002']);
+    expect(report.outcome).toBe('complete');
+    expect(report.e3).toMatchObject({ citiesDue: 1, cities: 1, hotelsUpserted: 1 });
+    // Las demás quedan pendientes para una corrida sin lista, no marcadas como recorridas.
+    expect(h.store.city('900001')).toMatchObject({ syncedAt: null, hotelCount: null });
+    expect(h.store.city('800001')).toMatchObject({ syncedAt: null, hotelCount: null });
+    expect(logged(h.lines, 'tbo.sync.cities_unknown')).toEqual([
+      expect.objectContaining({ stage: 'E3', unknownCities: ['777777'] }),
+    ]);
+  });
+
+  it('sin códigos desconocidos no avisa', async () => {
+    const h = harness();
+    await h.run({ cities: ['800001'] });
+    expect(logged(h.lines, 'tbo.sync.cities_unknown')).toEqual([]);
+  });
+
+  it('E4 pide contenido sólo de los hoteles de esas ciudades', async () => {
+    const h = harness();
+    h.store.seedCity({ code: '900001', countryCode: 'AR', syncedAt: new Date(T0), hotelCount: 2 });
+    h.store.seedCity({ code: '900002', countryCode: 'AR', syncedAt: new Date(T0), hotelCount: 1 });
+    for (const id of ['1000001', '1000002']) {
+      h.store.seedHotel({ hotelId: id, providerCityCode: '900001' });
+    }
+    h.store.seedHotel({ hotelId: '1000004', providerCityCode: '900002' });
+
+    const report = synced(
+      await h.run({
+        stages: new Set(['E4']),
+        countries: ['AR'],
+        cities: ['900002'],
+        content: { ...settings().content, scope: 'all', regularLangs: ['es'] },
+      }),
+    );
+
+    expect(h.tbo.callsTo('hotelDetails').map((c) => requestedHotelCodes(c.body))).toEqual([
+      ['1000004'],
+    ]);
+    expect(report.e4).toMatchObject({ hotelsDue: 1, contentsWritten: 1 });
+    expect(h.store.content('1000001', 'es')).toBeUndefined();
+  });
+});
+
 describe('Prioridad por demanda (05 §6.3)', () => {
   it('con presupuesto para una sola ciudad, va la de destinos más buscados', async () => {
     const h = harness();

@@ -1,6 +1,12 @@
 import { TBO_BASE_URLS, TBO_HOTELS_PROVIDER_CODE } from '@sales-travel/tbo-hotels';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SYNC_COUNTRIES, readLogLevel, resolveSyncEnv, type SyncEnv } from './env.js';
+import {
+  DEFAULT_SYNC_COUNTRIES,
+  MAX_SYNC_CITIES,
+  readLogLevel,
+  resolveSyncEnv,
+  type SyncEnv,
+} from './env.js';
 import { SyncConfigError } from './errors.js';
 
 /** E0 (05 §6.3): las `TBO_SYNC_*` validadas con Zod antes de gastar una sola llamada. */
@@ -117,6 +123,15 @@ describe('resolveSyncEnv: lo configurado', () => {
     expect([...settings.stages]).toEqual(['E3']);
   });
 
+  it('TBO_SYNC_CITIES: sin lista por defecto; con ella, los CityCode sin espacios ni repetidos', () => {
+    expect(run(BASE).settings.cities).toBeUndefined();
+    expect(run({ ...BASE, TBO_SYNC_CITIES: '  ' }).settings.cities).toBeUndefined();
+    expect(run({ ...BASE, TBO_SYNC_CITIES: ' 130443, 150184 ,130443' }).settings.cities).toEqual([
+      '130443',
+      '150184',
+    ]);
+  });
+
   it('números, fracción y banderas', () => {
     const { settings, client } = run({
       ...BASE,
@@ -196,6 +211,20 @@ describe('resolveSyncEnv: con credenciales, lo inválido es un error y nunca rep
     ]);
     expect(configIssues({ ...BASE, TBO_SYNC_ENABLED: 'quizás' })).toEqual([
       'TBO_SYNC_ENABLED:not_a_boolean',
+    ]);
+  });
+
+  it('una ciudad que no es un CityCode, una lista de sólo comas o una lista demasiado larga', () => {
+    expect(configIssues({ ...BASE, TBO_SYNC_CITIES: '130443,Bogota' })).toEqual([
+      'TBO_SYNC_CITIES.1:invalid_string',
+    ]);
+    // Vacía = sin lista; sólo comas no: correría el país entero creyendo que se acotó.
+    expect(configIssues({ ...BASE, TBO_SYNC_CITIES: ' , ,' })).toEqual([
+      'TBO_SYNC_CITIES:too_small',
+    ]);
+    const tooMany = Array.from({ length: MAX_SYNC_CITIES + 1 }, (_, i) => String(100_000 + i));
+    expect(configIssues({ ...BASE, TBO_SYNC_CITIES: tooMany.join(',') })).toEqual([
+      'TBO_SYNC_CITIES:too_big',
     ]);
   });
 

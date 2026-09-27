@@ -12,7 +12,9 @@
 #
 # Redes:
 #   internal  sólo entre contenedores de este proyecto (Postgres, Redis).
-#   egress    salida a internet del api, para llamar a TBO.
+#   egress    salida a internet del api, para llamar a TBO. El sync del catálogo de TBO no es un
+#             servicio de este archivo: cuando se pide (`cert_catalog`), el job `deploy-cert` lo
+#             corre en un contenedor suelto en `internal` y `egress`, con su env-file de vida corta.
 #   ingress   la ÚNICA red compartida con producción: la crean los dos jobs de despliegue y a ella
 #             se conectan el Caddy de producción y `cert-web-b2b`. El api y la base de producción
 #             no están en ella, y el api de certificación tampoco: ninguno de los dos stacks

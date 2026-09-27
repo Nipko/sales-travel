@@ -318,7 +318,10 @@ export class MemoryCatalogStore implements CatalogStore {
     return Promise.resolve(
       [...this.cities.values()]
         .filter(
-          (c) => c.providerCode === this.providerCode && query.countries.includes(c.countryCode),
+          (c) =>
+            c.providerCode === this.providerCode &&
+            query.countries.includes(c.countryCode) &&
+            (query.cities === undefined || query.cities.includes(c.code)),
         )
         .map((c) => ({
           code: c.code,
@@ -443,6 +446,7 @@ export class MemoryCatalogStore implements CatalogStore {
     for (const hotel of this.hotels.values()) {
       if (hotel.providerCode !== this.providerCode || !hotel.active) continue;
       if (hotel.providerCityCode === null) continue;
+      if (query.cities !== undefined && !query.cities.includes(hotel.providerCityCode)) continue;
       const city = this.city(hotel.providerCityCode);
       if (city === undefined || !query.countries.includes(city.countryCode)) continue;
       const demand = this.#demandOf(city.code);

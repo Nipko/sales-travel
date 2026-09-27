@@ -406,9 +406,40 @@ describe('lecturas y lock', () => {
       },
     ]);
     const s = db.statements[0] as Statement;
-    expect(s.values).toEqual([PROVIDER, ['AR', 'AL'], since, 'despegar-hotels']);
+    // Sin `TBO_SYNC_CITIES`, `NULL`: todas las ciudades de los países.
+    expect(s.values).toEqual([PROVIDER, ['AR', 'AL'], since, 'despegar-hotels', null]);
+    expectPlaceholdersMatch(s);
     expect(s.text).toContain("m.status = 'accepted'");
     expect(s.text).toContain("s.criteria->>'destinationId'");
+    expect(s.text).toContain('AND ($5::text[] IS NULL OR c.provider_city_code = ANY($5::text[]))');
+  });
+
+  it('TBO_SYNC_CITIES: E3 y E4 leen sólo esas ciudades, dentro de los países', async () => {
+    const db = new RecordingDb();
+    const store = new PgCatalogStore(db, { providerCode: PROVIDER });
+    const since = new Date('2026-09-11T00:00:00Z');
+    await store.listCityCandidates({ countries: ['AR'], cities: ['900001'], demandSince: since });
+    await store.listContentCandidates({
+      countries: ['AR'],
+      cities: ['900001', '900002'],
+      demandSince: since,
+      onlyDemand: false,
+    });
+    const [cities, contents] = db.statements as [Statement, Statement];
+    expect(cities.values).toEqual([PROVIDER, ['AR'], since, 'despegar-hotels', ['900001']]);
+    expect(cities.text).toContain('c.country_code::text = ANY($2::text[])');
+    expect(contents.values).toEqual([
+      PROVIDER,
+      ['AR'],
+      since,
+      'despegar-hotels',
+      false,
+      ['900001', '900002'],
+    ]);
+    expect(contents.text).toContain(
+      'AND ($6::text[] IS NULL OR h.provider_city_code = ANY($6::text[]))',
+    );
+    for (const s of db.statements) expectPlaceholdersMatch(s);
   });
 
   it('el lock es de la sesión, con una clave por proveedor en el rango de int4', async () => {
@@ -635,7 +666,7 @@ describe('listContentCandidates (E4)', () => {
       { hotelId: 'b', demand: 0, detailsFetchedAt: {} },
     ]);
     const s = db.statements[0] as Statement;
-    expect(s.values).toEqual([PROVIDER, ['AR'], since, 'despegar-hotels', true]);
+    expect(s.values).toEqual([PROVIDER, ['AR'], since, 'despegar-hotels', true, null]);
     expectPlaceholdersMatch(s);
     expect(s.text).toContain('WHERE h.provider_code = $1 AND h.active');
     expect(s.text).toContain("hc.source = 'details'");

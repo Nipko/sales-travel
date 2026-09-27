@@ -295,6 +295,9 @@ del `.env` del stack van sin comillas, así que el render sólo acepta `A-Z a-z 
 | `CERT_TBO_BASE_URL`                     | la de test del ACL              | Sólo el host de test de TBO; cualquier otro se rechaza                               |
 | `CERT_PROVIDERS_DISABLED`               | vacío                           | Kill-switch del stack: `tbo-hotels` o `tbo-hotels:ventas`                            |
 | `CERT_PROVIDER_PAYLOADS_RETENTION_DAYS` | `30`                            | Retención de la bóveda de RQ/RS                                                      |
+| `CERT_CATALOG_COUNTRIES`                | ninguno                         | Países ISO2 del catálogo de TBO (hasta 5). Obligatoria para el sync del catálogo     |
+| `CERT_CATALOG_CITIES`                   | ninguno                         | `CityCode` de TBO (hasta 20). Obligatoria con `cert_catalog: hotels`                 |
+| `CERT_CATALOG_MAX_CALLS`                | `500`                           | Llamadas a TBO por corrida del sync del catálogo (1 a 5000)                          |
 
 Sin `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE` el seed carga los de por defecto, porque el Book no reserva sin un
 contacto de la agencia (D-TBO-23 A) y el `vendedor` no puede cargarlo: _Mi Agencia_ es de administradores. El teléfono
@@ -319,7 +322,91 @@ rojo. El smoke test final pide `https://cert-app.planetour.cloud/login`.
 El seed corre en cada despliegue y es idempotente: cambiar un secret o una variable y volver a desplegar es la forma de
 rotar la contraseña del vendedor, cambiar la cuenta de TBO o suspender al usuario.
 
-### 9.4 Operaciones
+Con `cert_catalog` distinto de `none`, al final corre además el sync del catálogo de TBO (§9.4).
+
+### 9.4 Catálogo de TBO
+
+La base del stack empieza sin el catálogo de TBO (`docs/tbo/07` §7.3 punto 6): sin él, _Destino_ no sugiere nada y la
+búsqueda responde que el catálogo no está sincronizado. Lo baja
+[`tools/sync-tbo-hotel-inventory`](../../tools/sync-tbo-hotel-inventory/README.md), la misma imagen que el sync de
+producción y con el tag del stack, desde el job `deploy-cert` y **sólo si se pide** con el input `cert_catalog`:
+
+| `cert_catalog` | Etapas | Qué baja                                                                               | Llamadas a TBO                |
+| -------------- | ------ | -------------------------------------------------------------------------------------- | ----------------------------- |
+| `none`         | —      | Nada (por defecto)                                                                     | 0                             |
+| `cities`       | E1, E2 | La lista de ciudades de `CERT_CATALOG_COUNTRIES`, para elegir los `CityCode`           | 1 + una por país              |
+| `hotels`       | E3, E4 | Hoteles (nombre, estrellas, dirección) y contenido en español de `CERT_CATALOG_CITIES` | una por ciudad + hoteles / 10 |
+
+Siempre sobre una lista cerrada: hasta 5 países y 20 ciudades, `CERT_CATALOG_MAX_CALLS` llamadas (500 por defecto) y
+20 minutos por corrida. Sin `CERT_CATALOG_CITIES`, `hotels` no despliega: recorrería todas las ciudades del país en el
+orden de sus códigos.
+
+- **Cuenta.** La de **test** del stack (`CERT_TBO_USERNAME`, `CERT_TBO_PASSWORD`, `CERT_TBO_BASE_URL`), la misma que el
+  seed guarda en la bóveda; nunca las `TBO_SYNC_*` de producción. Comparte el cupo de peticiones con las búsquedas de
+  los testers (D-TBO-04 A, [Q-93](../../docs/tbo/10-preguntas-para-tbo.md#q-93)): se corre antes de enviar la guía del
+  portal, no mientras TBO la recorre.
+- **Credenciales.** `render-cert-env.mjs` escribe `catalog.env` con lista cerrada, como `seed.env`. El paso lo copia al
+  VPS, crea el contenedor con `--env-file` y lo borra antes de llamar a TBO. El paso de limpieza del final
+  (`Remove seed.env and catalog.env`, `if: always()`) lo vuelve a borrar pase lo que pase.
+- **Redes.** `sales-travel-cert_internal` (Postgres) y `sales-travel-cert_egress` (TBO), las del api del stack.
+- **Mientras corre**, un push a `main` espera: el job comparte el grupo de `concurrency` de producción.
+- **Cada despacho redespliega el stack**, y el seed recarga la cartera a `CERT_WALLET_BALANCE` (§9.3).
+
+Primera corrida, con `gh` (o Actions → **Deploy** → Run workflow con los mismos valores):
+
+```bash
+# 1. Países de la lista cerrada, en el entorno tbo-cert (una vez).
+gh variable set CERT_CATALOG_COUNTRIES --env tbo-cert --body 'CO'
+
+# 2. Lista de ciudades de esos países: E1 y E2, sin hoteles.
+gh workflow run deploy.yml -f target=cert -f cert_catalog=cities
+```
+
+```bash
+# 3. En el VPS: elegir los CityCode. `name_norm` va en minúsculas y sin acentos. Para las ciudades de los HotelCodes
+#    de test de docs/tbo/07 §4.1, su `CityId` sale de HotelDetails (Postman: `Hotel Details`).
+cd /opt/sales-travel-cert
+docker compose -f docker-compose.cert.yml --env-file .env exec -T postgres \
+  psql -U postgres -d sales_travel_cert -c "
+    SELECT provider_city_code, name, country_code
+      FROM hotel_provider_city
+     WHERE provider_code = 'tbo-hotels' AND name_norm LIKE '%bogota%'
+     ORDER BY name"
+```
+
+```bash
+# 4. Hoteles y contenido de esas ciudades (CityCode separados por coma, sin espacios).
+gh variable set CERT_CATALOG_CITIES --env tbo-cert --body '<CityCode>,<CityCode>'
+gh workflow run deploy.yml -f target=cert -f cert_catalog=hotels
+```
+
+El log del paso `Sync TBO catalog` termina con una línea `tbo.sync.result` con `ok: true`. Con `outcome: "partial"` el
+presupuesto no alcanzó: se repite el paso 4 y la corrida sigue donde quedó (las ciudades ya recorridas no se vuelven a
+pedir en 7 días). Una línea `tbo.sync.cities_unknown` nombra los `CityCode` que no están en la lista de ciudades de
+esos países: un código mal copiado o un país que falta en `CERT_CATALOG_COUNTRIES`.
+
+Comprobación en el VPS: cada ciudad de la lista con `synced_at`, hoteles activos y contenido en español.
+
+```bash
+docker compose -f docker-compose.cert.yml --env-file .env exec -T postgres \
+  psql -U postgres -d sales_travel_cert -c "
+    SELECT c.provider_city_code, c.name, c.synced_at,
+           count(DISTINCT h.hotel_id) AS hoteles_activos,
+           count(DISTINCT hc.hotel_id) AS con_contenido_es
+      FROM hotel_provider_city c
+      LEFT JOIN hotel_inventory h
+        ON h.provider_code = c.provider_code AND h.provider_city_code = c.provider_city_code AND h.active
+      LEFT JOIN hotel_content hc
+        ON hc.provider_code = h.provider_code AND hc.hotel_id = h.hotel_id
+       AND hc.lang = 'es' AND hc.source = 'details'
+     WHERE c.provider_code = 'tbo-hotels' AND c.synced_at IS NOT NULL
+     GROUP BY 1, 2, 3
+     ORDER BY 1"
+```
+
+Después, en `https://cert-app.planetour.cloud`, _Hoteles_ → _Destino_ sugiere esas ciudades.
+
+### 9.5 Operaciones
 
 ```bash
 cd /opt/sales-travel-cert
@@ -332,12 +419,12 @@ docker compose -f docker-compose.cert.yml --env-file .env down -v
 
 Para apagar TBO en el stack sin tocar la imagen: variable `CERT_PROVIDERS_DISABLED=tbo-hotels` y desplegar.
 
-### 9.5 Lo que falta para que el tester busque
+### 9.6 Lo que falta para que el tester busque
 
 - **Destinos.** Las sugerencias de destino (`GET /hotels/suggestions`) salen del proveedor de plataforma
   (`despegar-hotels`) cuando la agencia lo tiene; en este stack no lo tiene (RC-07), así que salen del catálogo local
   de TBO (`hotel_provider_city`, sólo ciudades con hoteles activos) con ids `tbo-hotels:<CityCode>` que la búsqueda
   resuelve sin el mapa de destinos ([`docs/tbo/05`](../../docs/tbo/05-contenido-estatico-e-inventario.md) §8.5).
   Requiere la imagen con ese cambio y el catálogo del punto siguiente: sin ciudades sincronizadas no hay qué sugerir.
-- **Catálogo.** La base del stack empieza sin el catálogo de TBO (07 §7.3.6): hay que correr `sync-tbo-hotel-inventory`
-  contra `sales_travel_cert`, al menos para las ciudades de los `HotelCodes` de test.
+- **Catálogo.** La base del stack empieza sin el catálogo de TBO (07 §7.3.6): hay que correr el sync del catálogo
+  (§9.4) al menos para las ciudades de los `HotelCodes` de test.

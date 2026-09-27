@@ -618,7 +618,7 @@ Postura: (A). Es la decisión DC-1 (§11). Con (B), los pasos de §7.3 se mantie
 3. **Sin ninguna otra cuenta de proveedor.** En la opción (A) tampoco hay variables de entorno de otros proveedores.
 4. **Cartera y crédito** del tenant con saldo ficticio suficiente para las reservas de TBO, para que el checkout B2B no pida tarjeta. Si el flujo del portal pasa por hosted checkout, el PSP va en modo test. Nunca PAN/CVV en ningún caso (D1).
 5. **Reglas de markup** de la vertical `hotels` con un margen visible, para que TBO vea precio de venta distinto del neto, y una regla que, sin el piso, quedaría por debajo de `RecommendedSellingRate`, para demostrar CK-09. Con D-TBO-16 (A) el piso aplica también en el portal B2B que se declara (DC-2 A).
-6. **Contenido estático** sincronizado para al menos las ciudades de los `HotelCodes` de test: nombre, estrellas, dirección e imágenes ([05](./05-contenido-estatico-e-inventario.md)). Sin eso, los resultados muestran códigos en vez de hoteles.
+6. **Contenido estático** sincronizado para al menos las ciudades de los `HotelCodes` de test: nombre, estrellas, dirección e imágenes ([05](./05-contenido-estatico-e-inventario.md)). Sin eso, los resultados muestran códigos en vez de hoteles. Lo baja el job `deploy-cert` con el input `cert_catalog`, con la cuenta de test del stack y una lista cerrada de países y ciudades (`CERT_CATALOG_COUNTRIES`, `CERT_CATALOG_CITIES`); el comando está en `infrastructure/hostinger/README.md` §9.4.
 7. **Clientes del CRM** ficticios. Ningún dato de persona real.
 8. **Contacto de soporte** del tenant (`support_email` y `support_phone`). El Book lo exige y lo manda a TBO en `EmailId` y `PhoneNumber` (D-TBO-23 A; `apps/api/src/hotels/hotel-booking-contact.ts`); sin él, _Confirmar reserva_ responde _Falta el contacto de soporte de la agencia._ Un tenant raíz no lo hereda de nadie y el `vendedor` no lo puede cargar (_Mi Agencia_ es de administradores), así que lo carga el seed desde `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE` (`infrastructure/hostinger/README.md` §9.2). Por defecto, un buzón de rol del dominio propio (`reservas.cert@planetour.cloud`) y un teléfono de la franja que NANPA reserva para ficción (`+1 202 555 0100`). El teléfono va con `+` y prefijo de país, no en dígitos sueltos como el `TBO_CERT_PHONE` del arnés (§6.2). Nunca datos de una persona.
 
@@ -1033,7 +1033,9 @@ desplegarse en el stack. Sin ellas TBO no puede recorrer el portal:
    cargaba: _Confirmar reserva_ respondía _Falta el contacto de soporte de la agencia._ y el `vendedor` no podía
    cargarlos (_Mi Agencia_ es de administradores). Resuelto el 2026-09-27: el seed los carga desde
    `CERT_SUPPORT_EMAIL` y `CERT_SUPPORT_PHONE`, con un buzón de rol y un teléfono ficticio por defecto (§7.3 punto 8).
-3. Catálogo de TBO sincronizado en `sales_travel_cert` para las ciudades de test (§7.3 punto 6).
+3. Catálogo de TBO sincronizado en `sales_travel_cert` para las ciudades de test (§7.3 punto 6). Desde el
+   2026-09-27 lo baja el job `deploy-cert` con `cert_catalog` (`cities` para elegir los `CityCode`, `hotels` para
+   sus hoteles; `infrastructure/hostinger/README.md` §9.4). Falta correrlo.
 4. `CERT_CURRENCY` igual a la moneda del perfil de la cuenta de test (`check`; [Q-82](./10-preguntas-para-tbo.md#q-82)).
 5. [Q-76](./10-preguntas-para-tbo.md#q-76) respondida (staging = endpoint de integración) o la cuenta del stack
    apuntando a lo que indique TBO.

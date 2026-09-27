@@ -38,6 +38,8 @@ const SKIPPED: E3Result = {
  * Una corrida que se corta a mitad (presupuesto, `429` seguidos, SIGTERM) deja intactas las
  * ciudades que no alcanzó (08 RF-30 CA 1).
  *
+ * Con `TBO_SYNC_CITIES` sólo se consideran esas ciudades, con la misma cadencia y el mismo orden.
+ *
  * El texto que TBOHotelCodeList trae de paso (descripción, servicios, atracciones) va a
  * `hotel_content` como `listing` en inglés, sin llamada extra: es el respaldo del detalle hasta que
  * E4 traiga HotelDetails, y nunca lo pisa (05 §6.3). Va en su propia transacción, después de la
@@ -50,12 +52,22 @@ export async function runCityHotelsStage(
 ): Promise<E3Result> {
   if (!ctx.settings.stages.has('E3') || countries.length === 0) return SKIPPED;
 
-  const { cadence, sweepMaxDrop } = ctx.settings;
+  const { cadence, sweepMaxDrop, cities: onlyCities } = ctx.settings;
   const now = ctx.now();
   const candidates = await ctx.store.listCityCandidates({
     countries,
+    ...(onlyCities === undefined ? {} : { cities: onlyCities }),
     demandSince: new Date(now - cadence.demandWindowMs),
   });
+  if (onlyCities !== undefined) {
+    // Un código mal copiado, o de un país que no está en la corrida, no se recorre y no falla: sin
+    // este aviso la corrida terminaría "completa" sin haber tocado esa ciudad.
+    const known = new Set(candidates.map((city) => city.code));
+    const unknownCities = onlyCities.filter((code) => !known.has(code));
+    if (unknownCities.length > 0) {
+      ctx.logger.warn('tbo.sync.cities_unknown', { stage: 'E3', countries, unknownCities });
+    }
+  }
   // Todas las vencidas, no sólo las que caben: el presupuesto lo corta la puerta, y así una corrida
   // que no llega a todas termina "ok parcial" en vez de decir que completó.
   const due = selectDueCities(candidates, { now, cadence, limit: candidates.length });

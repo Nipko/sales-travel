@@ -40,6 +40,9 @@ const OTHER_PROVIDER_MENTION = /DESPEGAR_|LATAM_|SABRE_|AGENT_CARS_|TBO_SYNC_/;
 const CERT_HOST = 'cert-app.planetour.cloud';
 const INGRESS_NETWORK = 'sales-travel-cert-ingress';
 const SEED_IMAGE_SUFFIX = 'seed-tbo-cert-tenant';
+const SYNC_IMAGE_SUFFIX = 'sync-tbo-hotel-inventory';
+const CATALOG_STEP = 'Sync TBO catalog';
+const CLEANUP_STEP = 'Remove seed.env and catalog.env';
 
 // ───────────────────────── Tipos de lo que se lee ─────────────────────────
 
@@ -48,20 +51,30 @@ interface EnvRule {
   readonly from: string;
   readonly kind: string;
   readonly optional?: boolean;
+  readonly fallback?: string;
 }
 
 interface RenderModule {
   renderCertEnv(source: Readonly<Record<string, string | undefined>>): {
     stack: string;
     seed: string;
+    catalog: string | null;
     stackNames: string[];
     seedNames: string[];
+    catalogNames: string[];
   };
   readonly STACK_ENV: readonly EnvRule[];
   readonly SEED_ENV: readonly EnvRule[];
   readonly SEED_CONNECTION: Readonly<Record<string, string>>;
+  readonly CATALOG_ENV: readonly EnvRule[];
+  readonly CATALOG_CONNECTION: Readonly<Record<string, string>>;
+  readonly CATALOG_FIXED: Readonly<Record<string, string>>;
+  readonly CATALOG_STAGES: Readonly<Record<string, string | null>>;
+  readonly CATALOG_LIMITS: Readonly<{ countries: number; cities: number; calls: number }>;
+  readonly CATALOG_MODE_VARIABLE: string;
   readonly CERT_DATABASE: string;
   readonly CERT_INTERNAL_NETWORK: string;
+  readonly CERT_EGRESS_NETWORK: string;
 }
 
 interface ComposeService {
@@ -89,6 +102,7 @@ interface WorkflowStep {
   readonly if?: string;
   readonly run?: string;
   readonly env?: Readonly<Record<string, string>>;
+  readonly 'timeout-minutes'?: number;
 }
 
 interface WorkflowJob {
@@ -96,13 +110,23 @@ interface WorkflowJob {
   readonly needs?: unknown;
   readonly environment?: string;
   readonly env?: Readonly<Record<string, string>>;
+  readonly 'timeout-minutes'?: number;
   readonly steps: readonly WorkflowStep[];
   readonly strategy?: {
     readonly matrix?: { readonly app?: readonly { name: string; dockerfile: string }[] };
   };
 }
 
+interface WorkflowInput {
+  readonly type?: string;
+  readonly options?: readonly string[];
+  readonly default?: string;
+}
+
 interface Workflow {
+  readonly on?: {
+    readonly workflow_dispatch?: { readonly inputs?: Readonly<Record<string, WorkflowInput>> };
+  };
   readonly env: Readonly<Record<string, string>>;
   readonly jobs: Readonly<Record<string, WorkflowJob>>;
 }
@@ -372,6 +396,125 @@ describe('render del .env del stack (RC-07)', () => {
   });
 });
 
+// ───────────────────────── catalog.env ─────────────────────────
+
+describe('catalog.env: sync del catálogo de TBO (07 §7.3 punto 6)', () => {
+  const CATALOG: Readonly<Record<string, string>> = {
+    ...VALID,
+    CERT_CATALOG_COUNTRIES: 'CO,PE',
+    CERT_CATALOG_CITIES: '130443,150184',
+  };
+
+  it('sin pedirlo no se escribe, aunque las variables del catálogo estén cargadas', () => {
+    for (const mode of [undefined, '', 'none']) {
+      const out = render.renderCertEnv({ ...CATALOG, CERT_CATALOG_MODE: mode });
+      expect(out.catalog).toBeNull();
+      expect(out.catalogNames).toEqual([]);
+    }
+  });
+
+  it('la cuenta es la de test del stack aunque el runner tenga la de catálogo de producción', () => {
+    // Las `TBO_SYNC_*` de producción son la cuenta de catálogo de plataforma (D-TBO-04 A), que
+    // puede ser la live: en el stack no pueden llegar ni por el nombre ni por el valor.
+    const poison = poisoned();
+    expect(Object.keys(poison)).toEqual(
+      expect.arrayContaining(['TBO_SYNC_USERNAME', 'TBO_SYNC_PASSWORD', 'TBO_SYNC_BASE_URL']),
+    );
+    const out = render.renderCertEnv({ ...poison, ...CATALOG, CERT_CATALOG_MODE: 'hotels' });
+    for (const value of Object.values(poison)) expect(out.catalog).not.toContain(value);
+    const catalog = entriesOf(out.catalog ?? '');
+    expect(catalog.get('TBO_SYNC_USERNAME')).toBe(VALID['CERT_TBO_USERNAME']);
+    expect(catalog.get('TBO_SYNC_PASSWORD')).toBe(VALID['CERT_TBO_PASSWORD']);
+    expect(catalog.get('TBO_SYNC_ENVIRONMENT')).toBe('test');
+    // Sin CERT_TBO_BASE_URL no se escribe: el sync usa la de test del ACL, como el seed.
+    expect(catalog.has('TBO_SYNC_BASE_URL')).toBe(false);
+    expect(catalog.get('PGPASSWORD')).toBe(VALID['CERT_POSTGRES_ADMIN_PASSWORD']);
+    expect(
+      [...catalog.keys()].filter((n) => OTHER_PROVIDER_VARIABLE.test(n) && !/^TBO_SYNC_/.test(n)),
+    ).toEqual([]);
+  });
+
+  it('escribe sólo la lista cerrada, con las etapas de cada modo', () => {
+    for (const [mode, stages] of [
+      ['cities', 'E1,E2'],
+      ['hotels', 'E3,E4'],
+    ] as const) {
+      const out = render.renderCertEnv({ ...poisoned(), ...CATALOG, CERT_CATALOG_MODE: mode });
+      const catalog = entriesOf(out.catalog ?? '');
+      const written = render.CATALOG_ENV.filter(
+        (r) => !r.optional || r.fallback !== undefined || (CATALOG[r.from] ?? '') !== '',
+      ).map((r) => r.name);
+      expect([...catalog.keys()].sort()).toEqual(
+        [
+          ...Object.keys(render.CATALOG_CONNECTION),
+          ...Object.keys(render.CATALOG_FIXED),
+          'TBO_SYNC_STAGES',
+          ...written,
+        ].sort(),
+      );
+      expect(catalog.get('TBO_SYNC_STAGES')).toBe(stages);
+      expect(render.CATALOG_STAGES[mode]).toBe(stages);
+      expect(out.catalogNames).toEqual([...catalog.keys()]);
+    }
+  });
+
+  it('la base es la del stack y la contraseña de TBO llega literal', () => {
+    const out = render.renderCertEnv({ ...CATALOG, CERT_CATALOG_MODE: 'cities' });
+    const catalog = entriesOf(out.catalog ?? '');
+    expect(render.CATALOG_CONNECTION).toEqual(render.SEED_CONNECTION);
+    expect(catalog.get('PGDATABASE')).toBe(CERT_DATABASE);
+    expect(out.catalog?.split('\n')).toContain(`TBO_SYNC_PASSWORD=${VALID['CERT_TBO_PASSWORD']}`);
+    expect(catalog.get('TBO_SYNC_MAX_CALLS')).toBe('500');
+  });
+
+  it('hotels exige la lista de ciudades: sin ella recorrería el país entero', () => {
+    const countriesOnly = { ...VALID, CERT_CATALOG_COUNTRIES: 'CO' };
+    expect(renderIssues({ ...countriesOnly, CERT_CATALOG_MODE: 'hotels' }).issues).toEqual([
+      'CERT_CATALOG_CITIES:required',
+    ]);
+    expect(
+      render.renderCertEnv({ ...countriesOnly, CERT_CATALOG_MODE: 'cities' }).catalog,
+    ).not.toBeNull();
+    expect(renderIssues({ ...VALID, CERT_CATALOG_MODE: 'cities' }).issues).toEqual([
+      'CERT_CATALOG_COUNTRIES:required',
+    ]);
+  });
+
+  it('rechaza listas abiertas o raras antes de tocar el VPS, sin repetir el valor', () => {
+    const tooManyCities = Array.from({ length: render.CATALOG_LIMITS.cities + 1 }, (_, i) =>
+      String(100_000 + i),
+    ).join(',');
+    const { issues, message } = renderIssues({
+      ...VALID,
+      CERT_CATALOG_MODE: 'hotels',
+      CERT_CATALOG_COUNTRIES: 'CO,COL',
+      CERT_CATALOG_CITIES: tooManyCities,
+      CERT_CATALOG_MAX_CALLS: '100000',
+    });
+    expect([...issues].sort()).toEqual(
+      [
+        'CERT_CATALOG_CITIES:too_many',
+        'CERT_CATALOG_COUNTRIES:not_iso2_list',
+        'CERT_CATALOG_MAX_CALLS:not_1_to_5000_calls',
+      ].sort(),
+    );
+    expect(message).not.toContain('100000');
+    const hotels = { ...CATALOG, CERT_CATALOG_MODE: 'hotels' };
+    expect(renderIssues({ ...hotels, CERT_CATALOG_CITIES: '130443,Bogota' }).issues).toEqual([
+      'CERT_CATALOG_CITIES:not_city_code_list',
+    ]);
+    expect(renderIssues({ ...hotels, CERT_CATALOG_COUNTRIES: 'CO,PE,BR,US,MX,AR' }).issues).toEqual(
+      ['CERT_CATALOG_COUNTRIES:too_many'],
+    );
+    expect(renderIssues({ ...hotels, CERT_CATALOG_MAX_CALLS: '0' }).issues).toEqual([
+      'CERT_CATALOG_MAX_CALLS:not_1_to_5000_calls',
+    ]);
+    expect(renderIssues({ ...CATALOG, CERT_CATALOG_MODE: 'all' }).issues).toEqual([
+      'CERT_CATALOG_MODE:invalid_mode',
+    ]);
+  });
+});
+
 // ───────────────────────── docker-compose.cert.yml ─────────────────────────
 
 describe('docker-compose.cert.yml', () => {
@@ -498,6 +641,14 @@ describe('docker-compose.cert.yml', () => {
     expect(service(CERT, 'cert-api').networks).toEqual(['internal', 'egress']);
   });
 
+  it('el sync del catálogo entra por las redes del api: la interna y la de salida, no la compartida', () => {
+    expect(render.CERT_EGRESS_NETWORK).toBe(`${CERT.name ?? ''}_egress`);
+    // Con un `name:` propio la red dejaría de llamarse `<proyecto>_egress` y el `connect` fallaría.
+    expect(CERT.networks?.['egress']?.name).toBeUndefined();
+    expect(CERT.networks?.['egress']?.internal).not.toBe(true);
+    expect(CERT.networks?.['egress']?.external).not.toBe(true);
+  });
+
   it('la base, la red y el host del seed son los del compose', () => {
     expect(render.CERT_DATABASE).toBe(CERT_DATABASE);
     expect(envOf(service(CERT, 'postgres'))['POSTGRES_DB']).toBe(CERT_DATABASE);
@@ -595,8 +746,8 @@ describe('deploy.yml: job deploy-cert', () => {
       'node infrastructure/hostinger/render-cert-env.mjs "$RUNNER_TEMP/cert-env"',
     );
     const env = render_.env ?? {};
-    const rules = [...render.STACK_ENV, ...render.SEED_ENV];
-    const wanted = new Set(rules.map((r) => r.from));
+    const rules = [...render.STACK_ENV, ...render.SEED_ENV, ...render.CATALOG_ENV];
+    const wanted = new Set([...rules.map((r) => r.from), render.CATALOG_MODE_VARIABLE]);
     expect(Object.keys(env).sort()).toEqual([...wanted].sort());
 
     const secretKinds = new Set(['secret', 'key32']);
@@ -610,6 +761,7 @@ describe('deploy.yml: job deploy-cert', () => {
         expect(expression, rule.from).toBe(`\${{ vars.${rule.from} }}`);
       }
     }
+    expect(env[render.CATALOG_MODE_VARIABLE]).toBe('${{ inputs.cert_catalog }}');
   });
 
   it('siembra con docker run en la red interna del stack y borra seed.env pase lo que pase', () => {
@@ -633,14 +785,17 @@ describe('deploy.yml: job deploy-cert', () => {
     expect(run).toContain(`cd ${certJob().env?.['CERT_DIR'] ?? '<sin CERT_DIR>'}\n`);
   });
 
-  it('borra seed.env también si el paso del seed no llega a correr', () => {
-    // El `trap` sólo cubre su propio paso: un rsync a medias o un job cancelado entre pasos lo
+  it('borra seed.env y catalog.env también si el paso que los usa no llega a correr', () => {
+    // Los `trap` sólo cubren su propio paso: un rsync a medias o un job cancelado entre pasos los
     // saltan y dejarían la cuenta de TBO en claro en el VPS.
-    const cleanup = step('deploy-cert', 'Remove seed.env');
+    const cleanup = step('deploy-cert', CLEANUP_STEP);
     expect(cleanup.if).toBe('always()');
-    expect(cleanup.run).toContain('"rm -f ${{ env.CERT_DIR }}/seed.env"');
+    expect(cleanup.run).toContain(
+      '"rm -f ${{ env.CERT_DIR }}/seed.env ${{ env.CERT_DIR }}/catalog.env"',
+    );
     const names = certJob().steps.map((s) => s.name);
-    expect(names.indexOf('Remove seed.env')).toBeGreaterThan(names.indexOf('Sync stack files'));
+    expect(names.indexOf(CLEANUP_STEP)).toBeGreaterThan(names.indexOf('Sync stack files'));
+    expect(names.indexOf(CLEANUP_STEP)).toBeGreaterThan(names.indexOf(CATALOG_STEP));
   });
 
   it('comprueba la imagen del seed antes de levantar el stack', () => {
@@ -659,6 +814,66 @@ describe('deploy.yml: job deploy-cert', () => {
     const row = job('build').strategy?.matrix?.app?.find((a) => a.name === SEED_IMAGE_SUFFIX);
     expect(row?.dockerfile).toBe(`tools/${SEED_IMAGE_SUFFIX}/Dockerfile`);
     expect(existsSync(new URL(row?.dockerfile ?? '', REPO_ROOT))).toBe(true);
+  });
+
+  it('el catálogo es opcional y por despacho: none por defecto, un modo por cada uno del render', () => {
+    const input = WORKFLOW.on?.workflow_dispatch?.inputs?.['cert_catalog'];
+    expect(input).toMatchObject({ type: 'choice', default: 'none' });
+    expect([...(input?.options ?? [])].sort()).toEqual(Object.keys(render.CATALOG_STAGES).sort());
+    const runs = Object.entries(render.CATALOG_STAGES)
+      .filter(([, stages]) => stages !== null)
+      .map(([mode]) => `inputs.cert_catalog == '${mode}'`);
+    expect(step('deploy-cert', CATALOG_STEP).if).toBe(runs.join(' || '));
+  });
+
+  it('el sync corre después del seed, en las redes del stack y con catalog.env de vida corta', () => {
+    const names = certJob().steps.map((s) => s.name);
+    // Después del seed: el seed rechaza una CERT_TBO_BASE_URL que no sea la de test de TBO.
+    expect(names.indexOf(CATALOG_STEP)).toBeGreaterThan(names.indexOf('Pull, up & seed'));
+    const run = step('deploy-cert', CATALOG_STEP).run ?? '';
+    expect(run).toContain('"$RUNNER_TEMP/cert-env/catalog.env"');
+    expect(run).toContain(`cd ${certJob().env?.['CERT_DIR'] ?? '<sin CERT_DIR>'}\n`);
+    // El `trap` se pone antes de lo primero que puede fallar, y su limpieza borra catalog.env.
+    const trap = run.indexOf('trap cleanup EXIT');
+    expect(trap).toBeGreaterThan(-1);
+    expect(trap).toBeLessThan(run.indexOf('docker pull'));
+    const cleanupBody = /cleanup\(\) \{\n([\s\S]*?)\n\s*\}\n/.exec(run)?.[1] ?? '';
+    expect(cleanupBody).toContain('rm -f catalog.env');
+    const create = run.indexOf(
+      `docker create --name "$NAME" --network ${render.CERT_INTERNAL_NETWORK} --env-file catalog.env "$IMAGE"`,
+    );
+    expect(create).toBeGreaterThan(-1);
+    // Docker lee el env-file al crear el contenedor: el archivo no espera a las llamadas a TBO.
+    const removed = run.indexOf('rm -f catalog.env', create);
+    expect(removed).toBeGreaterThan(create);
+    expect(removed).toBeLessThan(run.indexOf('docker start -a "$CID"'));
+    expect(run).toContain(`docker network connect ${render.CERT_EGRESS_NETWORK} "$CID"`);
+  });
+
+  it('la imagen del sync es la del tag del stack y la construye la matriz', () => {
+    const { REGISTRY, IMAGE_OWNER, IMAGE_PREFIX } = WORKFLOW.env;
+    const run = step('deploy-cert', CATALOG_STEP).run ?? '';
+    expect(run).toContain(
+      `IMAGE="${REGISTRY ?? ''}/${IMAGE_OWNER ?? ''}/${IMAGE_PREFIX ?? ''}-${SYNC_IMAGE_SUFFIX}:$TAG"`,
+    );
+    const pull = run.indexOf('docker pull -q "$IMAGE"');
+    expect(pull).toBeGreaterThan(-1);
+    expect(pull).toBeLessThan(run.indexOf('docker create'));
+    const row = job('build').strategy?.matrix?.app?.find((a) => a.name === SYNC_IMAGE_SUFFIX);
+    expect(row?.dockerfile).toBe(`tools/${SYNC_IMAGE_SUFFIX}/Dockerfile`);
+  });
+
+  it('la corrida se detiene sola antes que el tope del VPS, y el tope antes que GitHub', () => {
+    const catalogStep = step('deploy-cert', CATALOG_STEP);
+    const budget = Number(render.CATALOG_FIXED['TBO_SYNC_MAX_MINUTES']);
+    const guard = Number(/RUN_GUARD_MINUTES=(\d+)/.exec(catalogStep.run ?? '')?.[1]);
+    const stepTimeout = catalogStep['timeout-minutes'] ?? Number.POSITIVE_INFINITY;
+    const jobTimeout = certJob()['timeout-minutes'] ?? Number.POSITIVE_INFINITY;
+    expect(guard).toBeGreaterThan(budget);
+    // Descarga de la imagen, `--kill-after=90s` y `docker stop --time 60`.
+    expect(guard + 4).toBeLessThanOrEqual(stepTimeout);
+    // Más los 15 minutos del despliegue.
+    expect(stepTimeout + 15).toBeLessThanOrEqual(jobTimeout);
   });
 
   it('el smoke test pega al host que sirve Caddy', () => {
