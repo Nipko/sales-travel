@@ -7,6 +7,12 @@ import { searchHotelsAction, type HotelProviderOutcome, type HotelSearchResult }
 import { DestinationCombobox } from './_components/destination-combobox';
 import { HotelResultCard } from './_components/hotel-result-card';
 import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
+import {
+  detailLinkForOffer,
+  newSearchToken,
+  saveSearchHandoff,
+  stayOfCriteria,
+} from './_components/hotel-search-handoff';
 import { NationalityField, rememberNationality } from './_components/nationality-field';
 import { OfferExpiry } from './_components/offer-expiry';
 import { RoomsPicker } from './_components/rooms-picker';
@@ -88,6 +94,29 @@ export default function HotelesPage() {
   useEffect(() => {
     if (searchedNationality) rememberNationality(searchedNationality);
   }, [searchedNationality]);
+
+  // Cada búsqueda que sale bien deja su estadía y su divulgación para los detalles que se abran
+  // desde ella, con un identificador propio: dos búsquedas en dos pestañas no se pisan.
+  const [handoffToken, setHandoffToken] = useState<
+    { readonly forState: HotelSearchResult; readonly token: string } | undefined
+  >(undefined);
+  useEffect(() => {
+    const stay = state.ok && state.criteria ? stayOfCriteria(state.criteria) : undefined;
+    if (stay === undefined) {
+      setHandoffToken(undefined);
+      return;
+    }
+    const token = newSearchToken();
+    saveSearchHandoff(token, {
+      stay,
+      showProviderInResults: state.showProviderInResults,
+      savedAt: Date.now(),
+    });
+    setHandoffToken({ forState: state, token });
+  }, [state]);
+  // Sólo el identificador de ESTA búsqueda: en el render que trae resultados nuevos, antes del
+  // efecto, el anterior abriría estos hoteles con las fechas y la nacionalidad de la otra.
+  const searchToken = handoffToken?.forState === state ? handoffToken.token : undefined;
 
   const hotelCount = state.hotels.length;
 
@@ -258,15 +287,20 @@ export default function HotelesPage() {
             </OfferExpiry>
             {/* Con varios proveedores, dos pueden devolver el mismo id de hotel: el id solo no
                 es una clave única de la lista. */}
-            {state.hotels.map((offer, i) => (
-              <HotelResultCard
-                key={`${i}:${offer.hotelId}`}
-                offer={offer}
-                showProvider={state.showProviderInResults}
-                nights={state.criteria?.nights}
-                expiredCutoffMs={expiredCutoffMs}
-              />
-            ))}
+            {state.hotels.map((offer, i) => {
+              const detail =
+                searchToken === undefined ? undefined : detailLinkForOffer(offer, searchToken);
+              return (
+                <HotelResultCard
+                  key={`${i}:${offer.hotelId}`}
+                  offer={offer}
+                  showProvider={state.showProviderInResults}
+                  nights={state.criteria?.nights}
+                  expiredCutoffMs={expiredCutoffMs}
+                  detailHref={detail}
+                />
+              );
+            })}
           </section>
         ) : (
           <EmptyResults providers={state.providers} />

@@ -204,6 +204,9 @@ export interface HotelSearchCriteriaView {
   rooms: number;
   guests: number;
   guestNationality: string;
+  /** Una por habitación, en el orden de la búsqueda: el detalle del hotel vuelve a pedirla igual. */
+  occupancy: RoomDistribution[];
+  refundableOnly: boolean;
 }
 
 export interface HotelSearchResult {
@@ -376,6 +379,8 @@ export async function searchHotelsAction(
       rooms: rooms.length,
       guests: rooms.reduce((n, r) => n + r.adults + r.childrenAges.length, 0),
       guestNationality,
+      occupancy: rooms,
+      refundableOnly,
     },
     receivedAt: Date.now(),
   };
