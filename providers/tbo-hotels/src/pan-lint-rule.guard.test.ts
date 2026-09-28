@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// El ESLint real arma el programa de TypeScript en frío para cada sonda: en CI tardó 6-9 s y los
+// casos caían por el timeout de 5 s de vitest, no por la regla.
+vi.setConfig({ testTimeout: 60_000 });
 
 /**
  * La regla D1 de `eslint.config.mjs` sobre los builders de TBO, probada con el ESLint real del
