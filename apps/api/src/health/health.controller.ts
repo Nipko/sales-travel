@@ -14,6 +14,9 @@ interface HealthResponse {
    * Estado de los circuitos por proveedor. Se expone acá para poder ver desde fuera que
    * una vertical está degradada sin tener que leer logs: un circuito `open` explica por
    * qué las búsquedas de ese proveedor fallan rápido.
+   *
+   * Sólo los circuitos por CÓDIGO. Los de cuenta quedan fuera a propósito: esta ruta es pública
+   * y publicaría cuántas cuentas de agencia tienen la credencial rechazada o bloqueada.
    */
   providers: Record<string, { state: string; failures: number }>;
 }

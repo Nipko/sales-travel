@@ -1,7 +1,9 @@
+import { ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { PortfoliosService } from './portfolios.service.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -28,11 +30,18 @@ function harness(options?: {
   holdAmount?: number;
   existingRelease?: boolean;
   releaseUniqueRace?: boolean;
+  /** `search_criteria.vertical`; ausente como en vuelos. */
+  vertical?: string;
+  /** `false`: el registry de hoteles no conoce al proveedor. */
+  knownHotel?: boolean;
+  /** La orden no tiene retención. */
+  noHold?: boolean;
 }) {
   const provider = options?.provider ?? 'sabre';
   const order = {
     id: ORDER,
     provider,
+    ...(options?.vertical === undefined ? {} : { vertical: options.vertical }),
     provider_order_id: options?.providerOrderId === undefined ? 'PNR123' : options.providerOrderId,
     status: options?.orderStatus ?? 'confirmed',
   };
@@ -68,9 +77,8 @@ function harness(options?: {
       },
       executeTakeFirst: () => {
         if (table === 'orders') return Promise.resolve(order);
-        return Promise.resolve(
-          filters.get('transaction_type') === 'BOOKING_RELEASED' ? release : hold,
-        );
+        if (filters.get('transaction_type') === 'BOOKING_RELEASED') return Promise.resolve(release);
+        return Promise.resolve(options?.noHold === true ? undefined : hold);
       },
     };
     return query;
@@ -139,10 +147,18 @@ function harness(options?: {
     });
   });
   const orders = { cancelOrder } as unknown as OrdersService;
+  const hotelRegistry = {
+    capabilitiesOf: vi.fn(() =>
+      options?.knownHotel === false
+        ? undefined
+        : { retrieve: true, cancel: true, retrieveByClientReference: true, reconcileByDate: true },
+    ),
+  } as unknown as HotelProviderRegistry;
 
   return {
-    service: new PortfoliosService(db, registry, orders),
+    service: new PortfoliosService(db, registry, orders, hotelRegistry),
     registry: registry as unknown as { capabilitiesOf: ReturnType<typeof vi.fn> },
+    hotelRegistry: hotelRegistry as unknown as { capabilitiesOf: ReturnType<typeof vi.fn> },
     cancelOrder,
     insertInto,
     insertedValues,
@@ -237,6 +253,178 @@ describe('PortfoliosService — acciones sobre reservas retenidas', () => {
         /monto inválido/i,
       );
       expect(h.cancelOrder).not.toHaveBeenCalled();
+      expect(h.insertInto).not.toHaveBeenCalled();
+      expect(h.updateTable).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('PortfoliosService — la vertical de la orden decide con qué registry se resuelve', () => {
+  it('un hotel no se busca en el registry de vuelos, y su voucher no se emite desde la cartera', async () => {
+    const h = harness({ provider: 'tbo-hotels', vertical: 'hotels', pay: true, cancel: true });
+
+    await expect(h.service.approveBooking(TENANT, ORDER)).rejects.toThrow(
+      /no admite emisión diferida/i,
+    );
+    expect(h.registry.capabilitiesOf).not.toHaveBeenCalled();
+    expect(h.hotelRegistry.capabilitiesOf).toHaveBeenCalledWith('tbo-hotels');
+    expect(h.updateTable).not.toHaveBeenCalled();
+  });
+
+  it('el rechazo de un hotel confirmado no cancela con el camino de vuelos ni libera', async () => {
+    const h = harness({ provider: 'tbo-hotels', vertical: 'hotels', cancel: true });
+
+    await expect(h.service.rejectBooking(TENANT, ORDER, ADMIN)).rejects.toThrow(
+      /no admite cancelación real/i,
+    );
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+    expect(h.registry.capabilitiesOf).not.toHaveBeenCalled();
+    expect(h.insertInto).not.toHaveBeenCalled();
+    expect(h.updateTable).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['un hotel de un proveedor que el registry no conoce', 'hotels'],
+    ['una vertical sin registry propio (autos)', 'cars'],
+  ])('%s no se resuelve con el registry de vuelos', async (_caso, vertical) => {
+    const h = harness({ provider: 'otro', vertical, knownHotel: false, cancel: true, pay: true });
+
+    await expect(h.service.approveBooking(TENANT, ORDER)).rejects.toThrow(
+      /no admite emisión diferida/i,
+    );
+    await expect(h.service.rejectBooking(TENANT, ORDER, ADMIN)).rejects.toThrow(
+      /no admite cancelación real/i,
+    );
+    expect(h.registry.capabilitiesOf).not.toHaveBeenCalled();
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('una reserva `failed` libera su retención desde el rechazo sin tocar al proveedor', async () => {
+    const h = harness({
+      provider: 'tbo-hotels',
+      vertical: 'hotels',
+      orderStatus: 'failed',
+      cancel: false,
+    });
+
+    await expect(h.service.rejectBooking(TENANT, ORDER, ADMIN)).resolves.toEqual({
+      success: true,
+      message: 'El proveedor no hizo la reserva y el saldo retenido quedó liberado.',
+    });
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+    expect(h.hotelRegistry.capabilitiesOf).not.toHaveBeenCalled();
+    expect(h.insertedValues).toEqual([
+      expect.objectContaining({
+        amount_minor: 125_000,
+        transaction_type: 'BOOKING_RELEASED',
+        reference_id: ORDER,
+        notes: 'El proveedor no hizo la reserva; saldo retenido liberado',
+      }),
+    ]);
+  });
+});
+
+describe('PortfoliosService.releaseFailedBookingHold (RF-23 CA-2)', () => {
+  it('libera la retención de una orden `failed` con un asiento positivo', async () => {
+    const h = harness({ provider: 'tbo-hotels', vertical: 'hotels', orderStatus: 'failed' });
+
+    await expect(h.service.releaseFailedBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'released',
+    );
+    expect(h.insertedValues).toEqual([
+      expect.objectContaining({
+        portfolio_id: 'portfolio-1',
+        amount_minor: 125_000,
+        transaction_type: 'BOOKING_RELEASED',
+        reference_id: ORDER,
+        created_by: ADMIN,
+      }),
+    ]);
+    expect(h.updateTable).toHaveBeenCalledWith('agency_portfolios');
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('es idempotente: con la liberación ya escrita no acredita otra vez', async () => {
+    const h = harness({ orderStatus: 'failed', existingRelease: true });
+
+    await expect(h.service.releaseFailedBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'already-released',
+    );
+    expect(h.insertInto).not.toHaveBeenCalled();
+    expect(h.updateTable).not.toHaveBeenCalled();
+  });
+
+  it('la carrera del índice de liberación tampoco acredita dos veces', async () => {
+    const h = harness({ orderStatus: 'failed', releaseUniqueRace: true });
+
+    await expect(h.service.releaseFailedBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'already-released',
+    );
+    expect(h.updateTable).not.toHaveBeenCalled();
+  });
+
+  it('sin retención no hace nada', async () => {
+    const h = harness({ orderStatus: 'failed', noHold: true });
+
+    await expect(h.service.releaseFailedBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe('no-hold');
+    expect(h.insertInto).not.toHaveBeenCalled();
+    expect(h.updateTable).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'confirmed', 'cancelled'])(
+    'una orden `%s` conserva su retención: sólo `failed` prueba que no hubo reserva',
+    async (orderStatus) => {
+      const h = harness({ orderStatus });
+
+      await expect(h.service.releaseFailedBookingHold(TENANT, ORDER, ADMIN)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(h.insertInto).not.toHaveBeenCalled();
+      expect(h.updateTable).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('PortfoliosService.releaseCancelledBookingHold (docs/tbo/09 PR-5.3)', () => {
+  it('libera la retención de una orden que el proveedor ya muestra cancelada', async () => {
+    const h = harness({ provider: 'tbo-hotels', vertical: 'hotels', orderStatus: 'cancelled' });
+
+    await expect(h.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'released',
+    );
+    expect(h.insertedValues).toEqual([
+      expect.objectContaining({
+        amount_minor: 125_000,
+        transaction_type: 'BOOKING_RELEASED',
+        reference_id: ORDER,
+        notes: 'Cancelación confirmada por el proveedor; saldo retenido liberado',
+      }),
+    ]);
+    // La cancelación ya ocurrió: liberar no vuelve a llamar al proveedor.
+    expect(h.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('es idempotente, y sin retención no hace nada', async () => {
+    const liberada = harness({ orderStatus: 'cancelled', existingRelease: true });
+    await expect(liberada.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN)).resolves.toBe(
+      'already-released',
+    );
+    expect(liberada.insertInto).not.toHaveBeenCalled();
+
+    const sinRetencion = harness({ orderStatus: 'cancelled', noHold: true });
+    await expect(
+      sinRetencion.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN),
+    ).resolves.toBe('no-hold');
+  });
+
+  it.each(['pending', 'confirmed', 'failed'])(
+    'una orden `%s` conserva su retención: una cancelación en curso sigue cobrable (D-TBO-25 A)',
+    async (orderStatus) => {
+      const h = harness({ orderStatus });
+
+      await expect(
+        h.service.releaseCancelledBookingHold(TENANT, ORDER, ADMIN),
+      ).rejects.toBeInstanceOf(ConflictException);
       expect(h.insertInto).not.toHaveBeenCalled();
       expect(h.updateTable).not.toHaveBeenCalled();
     },

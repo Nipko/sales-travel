@@ -1,0 +1,13 @@
+{
+  "row": "01 §8.3 · 201 NO_AVAILABILITY en Search: resultado vacío, no error",
+  "source": "Ejemplo de Search sin disponibilidad, p. 18, literal.",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "bodyJson": {
+      "Status": { "Code": 201, "Description": "No Available rooms for given criteria" }
+    }
+  },
+  "expect": { "outcome": "NO_AVAILABILITY", "status": 200, "tboCode": 201 }
+}

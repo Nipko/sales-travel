@@ -6,6 +6,7 @@
 #   DEPLOY_USER   (default: deploy)
 #   SSH_PORT      (default: 22) — si lo cambiás, ajustar la var HOSTINGER_SSH_PORT en GH Actions
 #   APP_DIR       (default: /opt/sales-travel)
+#   CERT_DIR      (default: /opt/sales-travel-cert) — stack de certificación de TBO (docker-compose.cert.yml)
 #
 # Al final, si está conectado a una TTY, pide credenciales GHCR para hacer
 # `docker login` como el usuario deploy.
@@ -13,6 +14,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/sales-travel}"
+CERT_DIR="${CERT_DIR:-/opt/sales-travel-cert}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 SSH_PORT="${SSH_PORT:-22}"
 
@@ -55,8 +57,10 @@ chown -R "$DEPLOY_USER":"$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
 chmod 700 "/home/$DEPLOY_USER/.ssh"
 chmod 600 "/home/$DEPLOY_USER/.ssh/authorized_keys" 2>/dev/null || true
 
-echo "==> 4/8 Creando $APP_DIR"
+echo "==> 4/8 Creando $APP_DIR y $CERT_DIR"
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$APP_DIR"
+# El stack de certificación de TBO vive aparte: su .env no se mezcla con el de producción.
+install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$CERT_DIR"
 
 echo "==> 5/8 SSH hardening en :$SSH_PORT"
 SSHD_CONF="/etc/ssh/sshd_config.d/99-sales-travel.conf"

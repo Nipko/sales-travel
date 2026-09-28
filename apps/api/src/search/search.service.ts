@@ -417,6 +417,7 @@ export class SearchService {
           count: 0,
           simulated: SIMULATED_RESIDUE,
           skipReason: salteado.reason,
+          ...(salteado.detail === undefined ? {} : { reason: salteado.detail }),
         };
       }
 
@@ -438,6 +439,7 @@ export class SearchService {
           count: 0,
           simulated: SIMULATED_RESIDUE,
           skipReason: s.reason,
+          ...(s.detail === undefined ? {} : { reason: s.detail }),
         }),
       );
 
@@ -464,7 +466,8 @@ export class SearchService {
   ): Promise<OfferPriceResult> {
     // Enruta por el proveedor QUE EMITIÓ la oferta. Antes iba siempre al único proveedor
     // inyectado: con dos, revalidar una oferta ajena habría devuelto precios de otro vuelo.
-    const provider = await this.registry.byCode(tenantId, offer.provider.name);
+    // Es venta: si la plataforma lo apagó para el tenant, se corta aquí.
+    const provider = await this.registry.byCodeForOffer(tenantId, offer.provider.name);
     const result = await provider.adapter.priceOffer(offer, criteria, { tenantId });
 
     // La revalidación de precio devolvía la oferta del proveedor SIN pasar por el

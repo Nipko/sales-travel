@@ -1,0 +1,62 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1120548",
+      "Currency": "USD",
+      "Rooms": [
+        {
+          "Name": ["Luxury Room, 1 King Bed"],
+          "BookingCode": "1120548!TB!2!TB!4ee85bb9-9ca6-4c66-8a8a-524bfdd5ae2b",
+          "Inclusion": "Free WiFi",
+          "TotalFare": 152.88,
+          "TotalTax": 28.12,
+          "ExtraGuestCharges": "17.22",
+          "RecommendedSellingRate": "160.67",
+          "RoomPromotion": ["Private sale"],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": ["Luxury Room, 2 Twin Beds"],
+          "BookingCode": "1120548!TB!4!TB!4ee85bb9-9ca6-4c66-8a8a-524bfdd5ae2b",
+          "Inclusion": "Free WiFi",
+          "TotalFare": 152.88,
+          "TotalTax": 28.12,
+          "ExtraGuestCharges": "17.22",
+          "RecommendedSellingRate": "160.67",
+          "RoomPromotion": ["Private sale"],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20.0,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}

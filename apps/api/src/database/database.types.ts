@@ -46,6 +46,12 @@ export interface TenantsTable {
   /** 0033: host propio de la agencia. Sólo resuelve si está verificado. */
   custom_domain: string | null;
   custom_domain_verified_at: Timestamp | null;
+  /**
+   * 0007: crédito interno que la red le da a la agencia, en unidades MAYORES de
+   * `default_currency` (NUMERIC(14,2), que `pg` devuelve como texto). 0 = sin crédito. La agencia
+   * no lo edita: acota lo que puede reservar con una cuenta de proveedor heredada (RF-23).
+   */
+  credit_limit: Generated<string>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -210,14 +216,25 @@ export interface AirportsTable {
   updated_at: Generated<Timestamp>;
 }
 
-/** Catálogo de hoteles por proveedor (ciudad→IDs). Cross-tenant; lo escribe el job de sync. */
+/**
+ * `pg` devuelve NUMERIC como string (no hay type parser registrado) para no perder precisión.
+ * Tiparlo como `number` dejaría compilar `a.score + b.score`, que en ejecución concatena.
+ */
+type Numeric = ColumnType<string, number | string, number | string>;
+
+/**
+ * Catálogo de hoteles por proveedor (ciudad→IDs). Cross-tenant; lo escribe el job de sync y la
+ * app sólo lo lee (0041 le quitó la escritura que 0001 daba por defecto a toda tabla nueva).
+ */
 export interface HotelInventoryTable {
   provider_code: string;
   hotel_id: string;
+  /** Id de ciudad de Despegar. Los demás proveedores usan `provider_city_code`. */
   city_id: number | null;
   country_code: string | null;
   name: string | null;
-  stars: number | null;
+  /** NUMERIC(2,1): llega como `'4.5'`, no como `4.5`. */
+  stars: Numeric | null;
   property_type: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -225,6 +242,98 @@ export interface HotelInventoryTable {
   zipcode: string | null;
   merged_ids: unknown;
   synced_at: Generated<Timestamp>;
+  /** 0041: código de ciudad en el espacio de ids del propio proveedor. NULL en Despegar. */
+  provider_city_code: string | null;
+  /** 0041: baja lógica. La búsqueda sólo usa activos; el inactivo se conserva para vouchers. */
+  active: Generated<boolean>;
+  /** 0041: inicio de la última corrida que vio el hotel. NULL si el catálogo se reemplaza entero. */
+  last_seen_at: Timestamp | null;
+}
+
+/** 0041: ciudades de cada proveedor y checkpoint del sync. Cross-tenant; la app sólo lee. */
+export interface HotelProviderCityTable {
+  provider_code: string;
+  provider_city_code: string;
+  country_code: string;
+  name: string;
+  /** Minúsculas, sin acentos ni puntuación. Lo calcula el sync, no la base. */
+  name_norm: string;
+  hotel_count: number | null;
+  /** Mediana de las coordenadas de sus hoteles activos. */
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  synced_at: Timestamp | null;
+  last_status_code: number | null;
+}
+
+export type HotelDestinationMapMethod = 'overlap' | 'centroid' | 'manual';
+export type HotelDestinationMapStatus = 'accepted' | 'ambiguous' | 'rejected';
+
+/** 0041: destino de la UI → ciudades de otro proveedor. Sólo `accepted` se usa para vender. */
+export interface HotelDestinationMapTable {
+  source_provider_code: string;
+  source_city_id: string;
+  target_provider_code: string;
+  target_city_code: string;
+  method: HotelDestinationMapMethod;
+  score: Numeric | null;
+  status: HotelDestinationMapStatus;
+  computed_at: Generated<Timestamp>;
+}
+
+export type HotelMatchMethod = 'heuristic' | 'manual' | 'giata';
+export type HotelMatchStatus = 'accepted' | 'review' | 'rejected';
+
+/** 0041: el mismo hotel en varios proveedores comparte `canonical_hotel_id`. */
+export interface HotelMatchTable {
+  canonical_hotel_id: string;
+  provider_code: string;
+  hotel_id: string;
+  method: HotelMatchMethod;
+  score: Numeric | null;
+  status: HotelMatchStatus;
+  computed_at: Generated<Timestamp>;
+}
+
+/** Qué llamada del proveedor produjo el contenido: `details` gana sobre `listing`. */
+export type HotelContentSource = 'details' | 'listing';
+
+/** 0041: contenido de hotel por proveedor e idioma. */
+export interface HotelContentTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  name: string | null;
+  /** Saneado con lista blanca al ingerir. */
+  description_html: string | null;
+  /** `[{ label, text }]`. */
+  sections: unknown;
+  /** `string[]`. */
+  facilities: unknown;
+  attractions_html: string | null;
+  /** `string[]` de URLs: se enlazan, no se copian. */
+  images: unknown;
+  phone: string | null;
+  website_url: string | null;
+  /** TIME: `pg` lo devuelve como `'HH:MM:SS'`. */
+  check_in_time: string | null;
+  check_out_time: string | null;
+  source: HotelContentSource;
+  content_hash: string;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+export interface HotelRoomContentTable {
+  provider_code: string;
+  hotel_id: string;
+  room_id: string;
+  lang: LanguageCode;
+  name: string | null;
+  size_text: string | null;
+  description: string | null;
+  images: unknown;
+  fetched_at: Generated<Timestamp>;
 }
 
 export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'cancelled';
@@ -265,6 +374,91 @@ export interface OrdersTable {
   provider_raw: unknown;
   error_message: string | null;
   create_request_key: string | null;
+  /**
+   * 0042: referencia de reserva que generamos y mandamos al proveedor. Se escribe con el intent,
+   * antes de llamar, y es única por proveedor ENTRE tenants (no sólo dentro del tenant).
+   */
+  provider_booking_ref: string | null;
+  /** 0042: cuenta BYOC con la que se creó la reserva; la post-venta usa esta, no la vigente. */
+  provider_account_id: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/*
+ * 0042: vocabularios cerrados de `hotel_order_tracking`. Son valores y no sólo tipos porque los
+ * CHECK de la migración tienen que decir lo mismo, y un test los compara con el SQL.
+ */
+export const HOTEL_ORDER_SUB_STATUSES = [
+  'create-pending',
+  'create-uncertain',
+  'create-not-found-yet',
+  'cancel-requested',
+  'cancel-unverified',
+  'unverified-read',
+  'unknown',
+] as const;
+export type HotelOrderSubStatus = (typeof HOTEL_ORDER_SUB_STATUSES)[number];
+
+export const PROVIDER_STATUS_SOURCES = [
+  'book',
+  'verify',
+  'retrieve',
+  'cancel',
+  'hcn',
+  'reconciliation',
+] as const;
+export type ProviderStatusSource = (typeof PROVIDER_STATUS_SOURCES)[number];
+
+export const HCN_STATES = ['out-of-window', 'scheduled', 'received', 'missing', 'stopped'] as const;
+export type HcnState = (typeof HCN_STATES)[number];
+
+export const HCN_PRIORITIES = ['P0', 'P1', 'P2', 'P3', 'P4', 'P4+', 'P5'] as const;
+export type HcnPriority = (typeof HCN_PRIORITIES)[number];
+
+/**
+ * 0042: seguimiento de una orden de hotel, una fila por orden. Con tenant_id y RLS forzada, y
+ * `(order_id, tenant_id)` apunta a `(id, tenant_id)` de `orders`: no puede colgar de una orden
+ * de otro tenant. Es la fuente de verdad de los jobs de post-venta. Sin PII.
+ */
+export interface HotelOrderTrackingTable {
+  order_id: string;
+  tenant_id: string;
+  /** Crudo, sin normalizar ni CHECK: un valor desconocido se guarda con `sub_status = 'unknown'`. */
+  provider_status: string | null;
+  /** Booleano o texto según el proveedor; se guarda como texto. */
+  provider_voucher_status: string | null;
+  /** Va junto con `provider_status_source`: los dos o ninguno. */
+  provider_status_at: Timestamp | null;
+  provider_status_source: ProviderStatusSource | null;
+  /** NULL = el estado crudo alcanza para describir la orden. */
+  sub_status: HotelOrderSubStatus | null;
+  refund_awaited: Generated<boolean>;
+  invoice_number: string | null;
+  client_reference_id: string | null;
+  /** Nunca en blanco: "sin HCN" es NULL. */
+  hcn: string | null;
+  hcn_received_at: Timestamp | null;
+  hcn_state: HcnState | null;
+  hcn_priority: HcnPriority | null;
+  /** Sólo en `out-of-window` y `scheduled`; el barrido despierta las vencidas. */
+  hcn_next_check_at: Timestamp | null;
+  hcn_attempts: Generated<number>;
+  /**
+   * 0044: calendario de verificación de una reserva sin respuesta. El ancla y el paso van juntos;
+   * `verify_next_at` sólo existe con calendario y es lo que despierta el barrido.
+   */
+  verify_anchor_at: Timestamp | null;
+  /** Índice del PRÓXIMO paso; sólo avanza. */
+  verify_step: number | null;
+  verify_next_at: Timestamp | null;
+  /**
+   * 0046: calendario de la lectura que verifica una cancelación aceptada sin terminar o sin
+   * respuesta. Mismas reglas que el de 0044, en columnas propias.
+   */
+  cancel_verify_anchor_at: Timestamp | null;
+  cancel_verify_step: number | null;
+  cancel_verify_next_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -442,7 +636,18 @@ export interface PackageItemsTable {
   updated_at: Generated<Timestamp>;
 }
 
-export type OrderOperationType = 'cancel' | 'pay' | 'reshop' | 'retrieve';
+/**
+ * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
+ * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
+ */
+export type OrderOperationType =
+  | 'cancel'
+  | 'pay'
+  | 'reshop'
+  | 'retrieve'
+  | 'hcn-check'
+  | 'hcn-ticket'
+  | 'reconcile';
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
 export interface OrderOperationsTable {
@@ -459,6 +664,90 @@ export interface OrderOperationsTable {
   updated_at: Generated<Timestamp>;
 }
 
+/*
+ * 0047: vocabularios cerrados de la conciliación. Valores y no sólo tipos porque los CHECK de la
+ * migración tienen que decir lo mismo, y un test los compara con el SQL.
+ */
+export const RECONCILIATION_RUN_TRIGGERS = ['scheduled', 'sweep', 'forced'] as const;
+export type ReconciliationRunTrigger = (typeof RECONCILIATION_RUN_TRIGGERS)[number];
+
+export const RECONCILIATION_RUN_STATUSES = [
+  'running',
+  'completed',
+  'failed',
+  'invalid',
+  'abandoned',
+] as const;
+export type ReconciliationRunStatus = (typeof RECONCILIATION_RUN_STATUSES)[number];
+
+export const RECONCILIATION_ITEM_ACTIONS = [
+  'recovered',
+  'cancelled',
+  'cancellation-verifying',
+  'failed',
+  'reported',
+  'recorded',
+  'review',
+] as const;
+export type ReconciliationItemAction = (typeof RECONCILIATION_ITEM_ACTIONS)[number];
+
+/**
+ * 0047: una corrida de la conciliación de UNA cuenta de proveedor. Del dueño de la cuenta, con RLS
+ * forzada. Una sola `running` por cuenta (índice único parcial).
+ */
+export interface ProviderReconciliationRunsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  account_id: string;
+  provider_code: string;
+  trigger: ReconciliationRunTrigger;
+  requested_by: string | null;
+  status: Generated<ReconciliationRunStatus>;
+  windows: Generated<unknown>;
+  rows_read: Generated<number>;
+  rows_matched: Generated<number>;
+  discrepancies: Generated<number>;
+  summary: Generated<unknown>;
+  error_class: string | null;
+  started_at: Generated<Timestamp>;
+  finished_at: Timestamp | null;
+}
+
+/**
+ * 0047: una divergencia R1-R8. Del tenant de la orden o, en R2 y R6, del dueño de la cuenta.
+ * Append-only para `app_user`; única por `(account_id, dedupe_key)`.
+ */
+export interface ProviderReconciliationItemsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  run_id: string;
+  account_id: string;
+  provider_code: string;
+  kind: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8';
+  severity: 'info' | 'warning' | 'critical';
+  action: ReconciliationItemAction;
+  order_id: string | null;
+  provider_booking_id: string | null;
+  dedupe_key: string;
+  details: Generated<unknown>;
+  created_at: Generated<Timestamp>;
+}
+
+/**
+ * 0048: ajuste del superadmin sobre un proveedor. `tenant_id` NULL = global; con valor, vale para
+ * ese tenant y su red. Lectura abierta para el servidor; sólo escribe un superadmin (RLS).
+ */
+export interface ProviderEnablementTable {
+  id: Generated<string>;
+  provider_code: string;
+  tenant_id: string | null;
+  enabled: boolean;
+  reason: string | null;
+  updated_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -469,6 +758,49 @@ export interface DomainEventsTable {
   aggregate_id: string | null;
   payload: Generated<unknown>;
   meta: Generated<unknown>;
+}
+
+/**
+ * 0043: vocabulario de `provider_payloads.environment`. Valor y no sólo tipo porque el CHECK de la
+ * migración tiene que decir lo mismo, y un test los compara.
+ */
+export const PROVIDER_PAYLOAD_ENVIRONMENTS = ['test', 'live'] as const;
+export type ProviderPayloadEnvironment = (typeof PROVIDER_PAYLOAD_ENVIRONMENTS)[number];
+
+/**
+ * 0043: bóveda de RQ/RS completos de proveedor. Los cuerpos llegan cifrados desde la app; la base
+ * no ve ninguno en claro. Sin UPDATE ni DELETE para `app_user`: se borra sólo con
+ * `purge_expired_provider_payloads`. La lectura la acota `can_read_provider_payloads`.
+ */
+export interface ProviderPayloadsTable {
+  id: Generated<string>;
+  provider_code: string;
+  request_id: string;
+  attempt: number;
+  operation: string;
+  environment: ProviderPayloadEnvironment;
+  owner_tenant_id: string;
+  provider_account_id: string | null;
+  account_ref: string | null;
+  tenant_id: string | null;
+  /** Sin FK: la fila se escribe en segundo plano, fuera de la transacción de la orden. */
+  order_id: string | null;
+  sent_at: Timestamp;
+  duration_ms: number;
+  /** 0 = no llegó una respuesta completa. */
+  http_status: number;
+  provider_status_code: number | null;
+  outcome: string;
+  key_id: string;
+  /** Tamaño del cuerpo original; NULL = no hubo cuerpo. */
+  request_bytes: number | null;
+  /** NULL con `request_bytes` = no se guardó por su tamaño. */
+  request_enc: Buffer | null;
+  response_bytes: number | null;
+  response_enc: Buffer | null;
+  /** A lo sumo 90 días después de `created_at` (CHECK de la migración). */
+  expires_at: Timestamp;
+  created_at: Generated<Timestamp>;
 }
 
 export interface DB {
@@ -483,11 +815,21 @@ export interface DB {
   crm_tasks: CrmTasksTable;
   provider_accounts: ProviderAccountsTable;
   domain_events: DomainEventsTable;
+  provider_payloads: ProviderPayloadsTable;
   airports: AirportsTable;
   hotel_inventory: HotelInventoryTable;
+  hotel_provider_city: HotelProviderCityTable;
+  hotel_destination_map: HotelDestinationMapTable;
+  hotel_match: HotelMatchTable;
+  hotel_content: HotelContentTable;
+  hotel_room_content: HotelRoomContentTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
+  hotel_order_tracking: HotelOrderTrackingTable;
+  provider_reconciliation_runs: ProviderReconciliationRunsTable;
+  provider_reconciliation_items: ProviderReconciliationItemsTable;
+  provider_enablement: ProviderEnablementTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

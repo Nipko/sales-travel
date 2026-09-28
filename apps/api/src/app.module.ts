@@ -7,11 +7,13 @@ import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
+import { LifecycleModule } from './lifecycle/lifecycle.module.js';
 import { MeModule } from './me/me.module.js';
 import { AirportsModule } from './airports/airports.module.js';
 import { RequestContextMiddleware } from './request-context/request-context.middleware.js';
 import { RequestContextModule } from './request-context/request-context.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { PostSaleModule } from './orders/post-sale.module.js';
 import { QuotationsModule } from './quotations/quotations.module.js';
 import { SearchModule } from './search/search.module.js';
 import { TenantsModule } from './tenants/tenants.module.js';
@@ -20,6 +22,8 @@ import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
+import { ProviderEnablementAdminModule } from './provider-enablement/provider-enablement-admin.module.js';
+import { ProviderPayloadsModule } from './provider-payloads/provider-payloads.module.js';
 import { NetworkModule } from './network/network.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { BrandingModule } from './branding/branding.module.js';
@@ -37,6 +41,7 @@ import { PackagesModule } from './packages/packages.module.js';
     // Rate limiting global: 300 req/min por IP. Endpoints sensibles (login) bajan el límite
     // con @Throttle. Storage en memoria (1 contenedor api); migrar a Redis si se escala.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    LifecycleModule,
     DatabaseModule,
     RequestContextModule,
     AuditModule,
@@ -56,11 +61,14 @@ import { PackagesModule } from './packages/packages.module.js';
     ReportsModule,
     ProviderCredentialsModule,
     ProviderDisclosureModule,
+    ProviderEnablementAdminModule,
+    ProviderPayloadsModule,
     NetworkModule,
     PricingModule,
     MailerModule,
     QueueModule,
     HotelsModule,
+    PostSaleModule,
     CarsModule,
   ],
   controllers: [HealthController],

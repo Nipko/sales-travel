@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/infrastructure/hostinger/**",
+        "$TURBO_ROOT$/.github/workflows/deploy.yml",
+        "$TURBO_ROOT$/apps/api/src/provider-credentials/credentials-cipher.ts",
+        "$TURBO_ROOT$/apps/api/src/customers/pii-cipher.ts",
+        "$TURBO_ROOT$/apps/api/src/hotels/hotel-booking-contact.ts",
+        "$TURBO_ROOT$/apps/api/src/tenants/branding.schemas.ts",
+        "$TURBO_ROOT$/db/migrations/**"
+      ]
+    }
+  }
+}

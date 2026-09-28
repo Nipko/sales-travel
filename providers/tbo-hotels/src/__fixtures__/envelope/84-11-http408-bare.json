@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · HTTP 408 sin envelope",
+  "source": "Postura de 01 §8.4.",
+  "operation": "hotelDetails",
+  "response": {
+    "status": 408,
+    "bodyText": ""
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "UPSTREAM",
+    "status": 408,
+    "tboCode": null
+  }
+}

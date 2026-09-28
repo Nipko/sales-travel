@@ -2,12 +2,21 @@ import { Logger, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlightProviderRegistry } from './flight-provider.registry.js';
 import {
+  PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
+  ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
   type FlightProviderAdapter,
+  type ProviderEnablementDecision,
   type ProviderFlagsPort,
   type TenantProviderFactory,
 } from './provider.types.js';
+import {
+  APAGADO_GLOBAL,
+  apagadoPara,
+  providerFlags,
+  type FakeProviderFlags,
+} from './__fixtures__/provider-flags.js';
 import { StubProviderFactory } from './__fixtures__/stub-provider.factory.js';
 
 /**
@@ -19,14 +28,17 @@ import { StubProviderFactory } from './__fixtures__/stub-provider.factory.js';
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTRO_TENANT = '22222222-2222-4222-8222-222222222222';
 
-function flags(enabled: boolean | ((tenantId: string, code: string) => boolean)): {
+/** `false` = nadie decidió (manda la política); `true` = encendido; o una decisión a medida. */
+function flags(
+  enabled:
+    | boolean
+    | ((tenantId: string, code: string) => boolean | ProviderEnablementDecision | undefined),
+): {
   port: ProviderFlagsPort;
-  isEnabledForTenant: ReturnType<typeof vi.fn>;
+  decisionFor: FakeProviderFlags['decisionFor'];
 } {
-  const isEnabledForTenant = vi.fn((tenantId: string, code: string) =>
-    Promise.resolve(typeof enabled === 'function' ? enabled(tenantId, code) : enabled),
-  );
-  return { port: { isEnabledForTenant }, isEnabledForTenant };
+  const port = providerFlags(enabled);
+  return { port, decisionFor: port.decisionFor };
 }
 
 function registry(
@@ -92,14 +104,14 @@ describe('FlightProviderRegistry', () => {
 
     it("'opt-in' con el flag encendido entra al fan-out como uno más", async () => {
       const stub = new StubProviderFactory({ code: 'alfa-air', callPolicy: 'opt-in' });
-      const { port, isEnabledForTenant } = flags(true);
+      const { port, decisionFor } = flags(true);
       const r = registry([stub], port);
 
       const { active, skipped } = await r.forTenant(TENANT);
 
       expect(active.map((p) => p.code)).toEqual(['alfa-air']);
       expect(skipped).toEqual([]);
-      expect(isEnabledForTenant).toHaveBeenCalledWith(TENANT, 'alfa-air');
+      expect(decisionFor).toHaveBeenCalledWith(TENANT, 'alfa-air');
     });
 
     it('el flag es POR TENANT: activo para uno no es activo para el otro', async () => {
@@ -211,11 +223,141 @@ describe('FlightProviderRegistry', () => {
 
     it('NO consulta el flag de opt-in: una orden ya hecha se puede seguir operando', async () => {
       const stub = new StubProviderFactory({ code: 'alfa-air', callPolicy: 'opt-in' });
-      const { port, isEnabledForTenant } = flags(false);
+      const { port, decisionFor } = flags(false);
       const r = registry([stub], port);
 
       await expect(r.byCode(TENANT, 'alfa-air')).resolves.toMatchObject({ code: 'alfa-air' });
-      expect(isEnabledForTenant).not.toHaveBeenCalled();
+      expect(decisionFor).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('habilitación de la plataforma', () => {
+    it('un proveedor `always` apagado para el tenant sale `platform-disabled`, sin tocar la bóveda', async () => {
+      const stub = new StubProviderFactory({ code: 'alfa-air' });
+      const otro = new StubProviderFactory({ code: 'beta-air' });
+      const r = registry(
+        [stub, otro],
+        flags((_t, code) => (code === 'alfa-air' ? apagadoPara(TENANT) : undefined)).port,
+      );
+
+      const { active, skipped, unavailable } = await r.forTenant(TENANT);
+
+      expect(active.map((p) => p.code)).toEqual(['beta-air']);
+      expect(skipped).toEqual([
+        { code: 'alfa-air', reason: 'platform-disabled', detail: PLATFORM_DISABLED_TEXT },
+      ]);
+      expect(unavailable).toEqual([]);
+      // Ni al proveedor ni a la bóveda: el apagado se mira antes de resolver credenciales.
+      expect(stub.resolveCalls).toEqual([]);
+      expect(otro.resolveCalls).toEqual([TENANT]);
+    });
+
+    it('el motivo no es el de un `opt-in` sin encender: la acción es de la plataforma', async () => {
+      const r = registry(
+        [new StubProviderFactory({ code: 'alfa-air', callPolicy: 'opt-in' })],
+        flags(() => APAGADO_GLOBAL).port,
+      );
+
+      const { skipped } = await r.forTenant(TENANT);
+      expect(skipped[0]?.reason).toBe('platform-disabled');
+      expect(skipped[0]?.detail).toBe(PLATFORM_DISABLED_TEXT);
+    });
+
+    it('un `opt-in` encendido por la plataforma entra al fan-out como uno más', async () => {
+      const r = registry(
+        [new StubProviderFactory({ code: 'alfa-air', callPolicy: 'opt-in' })],
+        flags(() => ({ enabled: true, origin: 'tenant', tenantId: TENANT })).port,
+      );
+
+      const { active, skipped } = await r.forTenant(TENANT);
+      expect(active.map((p) => [p.code, p.callPolicy])).toEqual([['alfa-air', 'opt-in']]);
+      expect(skipped).toEqual([]);
+    });
+
+    it('se consulta para TODOS los proveedores, también los que se llaman siempre', async () => {
+      const { port, decisionFor } = flags(false);
+      const r = registry(
+        [
+          new StubProviderFactory({ code: 'alfa-air' }),
+          new StubProviderFactory({ code: 'beta-air', callPolicy: 'fallback' }),
+        ],
+        port,
+      );
+
+      await r.forTenant(TENANT);
+      expect(decisionFor.mock.calls).toEqual([
+        [TENANT, 'alfa-air'],
+        [TENANT, 'beta-air'],
+      ]);
+    });
+
+    it('la clave de caché de la búsqueda deja fuera al apagado', async () => {
+      const r = registry(
+        [
+          new StubProviderFactory({ code: 'alfa-air' }),
+          new StubProviderFactory({ code: 'beta-air' }),
+        ],
+        flags((_t, code) => (code === 'beta-air' ? APAGADO_GLOBAL : undefined)).port,
+      );
+
+      expect(await r.codesForTenant(TENANT)).toEqual(['alfa-air']);
+    });
+
+    it('`byCodeForOffer`: una venta nueva con un proveedor apagado es 400 con su propio motivo, sin bóveda', async () => {
+      const stub = new StubProviderFactory({ code: 'alfa-air' });
+      const r = registry([stub], flags(() => apagadoPara(TENANT)).port);
+
+      const err = await r.byCodeForOffer(TENANT, 'alfa-air').catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+      // Sigue siendo un "no habilitado" para quien ya lo trataba así.
+      expect(err).toBeInstanceOf(ProviderNotAvailableError);
+      expect((err as Error).message).toContain('deshabilitado por la plataforma');
+      // El motivo máquina que el filtro de excepciones deja pasar a la web, con un 400.
+      expect((err as ProviderDisabledByPlatformError).reason).toBe('PROVIDER_DISABLED_BY_PLATFORM');
+      expect((err as ProviderDisabledByPlatformError).getStatus()).toBe(400);
+      expect(stub.resolveCalls).toEqual([]);
+    });
+
+    it('`byCodeForOffer`: un `opt-in` que nadie encendió no se corta, como antes (la oferta ya la emitió)', async () => {
+      const r = registry([new StubProviderFactory({ code: 'alfa-air', callPolicy: 'opt-in' })]);
+
+      await expect(r.byCodeForOffer(TENANT, 'alfa-air')).resolves.toMatchObject({
+        code: 'alfa-air',
+      });
+      await expect(r.byCodeForOffer(TENANT, 'no-existe')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+    });
+
+    it('`byCode` (post-venta) NO mira la habilitación: lo ya vendido se sigue operando', async () => {
+      const { port, decisionFor } = flags(() => APAGADO_GLOBAL);
+      const r = registry([new StubProviderFactory({ code: 'alfa-air' })], port);
+
+      await expect(r.byCode(TENANT, 'alfa-air')).resolves.toMatchObject({ code: 'alfa-air' });
+      expect(decisionFor).not.toHaveBeenCalled();
+    });
+
+    it('`enablementOf` da la decisión y la política de cada uno sin resolver credenciales', async () => {
+      vi.stubEnv('FLIGHT_PROVIDER_CALL_POLICIES', 'beta-air:opt-in');
+      const alfa = new StubProviderFactory({ code: 'alfa-air' });
+      const beta = new StubProviderFactory({ code: 'beta-air' });
+      const r = registry(
+        [beta, alfa],
+        flags((_t, code) => (code === 'alfa-air' ? apagadoPara(OTRO_TENANT) : undefined)).port,
+      );
+
+      expect(await r.enablementOf(TENANT)).toEqual([
+        {
+          code: 'alfa-air',
+          vertical: 'flights',
+          callPolicy: 'always',
+          decision: { enabled: false, origin: 'tenant', tenantId: OTRO_TENANT },
+        },
+        { code: 'beta-air', vertical: 'flights', callPolicy: 'opt-in', decision: undefined },
+      ]);
+      expect(alfa.resolveCalls).toEqual([]);
+      expect(beta.resolveCalls).toEqual([]);
     });
   });
 

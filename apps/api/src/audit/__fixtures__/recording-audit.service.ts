@@ -16,6 +16,11 @@ export class RecordingAuditService {
     return Promise.resolve();
   }
 
+  /** Como `emit`: el doble no tiene transacción que compartir. */
+  emitWithin(_trx: unknown, event: AuditEvent): Promise<void> {
+    return this.emit(event);
+  }
+
   ofType(eventType: string): AuditEvent[] {
     return this.events.filter((e) => e.eventType === eventType);
   }

@@ -1,0 +1,31 @@
+{
+  "BookingCode": "1120548!TB!4!TB!8bd7a82e-439a-4b2d-869d-09de4456e482",
+  "CustomerDetails": [
+    {
+      "CustomerNames": [
+        {
+          "Title": "Mr",
+          "FirstName": "TestGuest",
+          "LastName": "One",
+          "Type": "Adult"
+        }
+      ]
+    },
+    {
+      "CustomerNames": [
+        {
+          "Title": "Mr",
+          "FirstName": "TestGuest",
+          "LastName": "second",
+          "Type": "Adult"
+        }
+      ]
+    }
+  ],
+  "ClientReferenceId": "1626135861wq4415-5686105",
+  "BookingReferenceId": "AVw12118",
+  "TotalFare": 360.13,
+  "EmailId": "reservas@agencia.example",
+  "PhoneNumber": "573001234567",
+  "BookingType": "Voucher"
+}

@@ -66,9 +66,34 @@ export interface ProviderField {
   readonly maxLength?: number;
   /** El valor tiene que ser una URL absoluta http(s). */
   readonly url?: boolean;
+  /**
+   * `true` ⇒ se manda tal cual se tecleó, sin `trim()`. Para contraseñas en las que un espacio en
+   * el borde puede ser parte del secreto: recortarlo guarda OTRA contraseña, y el fallo recién
+   * aparece como un 401 del proveedor. Un valor de sólo espacios sigue contando como vacío, que
+   * es como lo cuenta el API.
+   */
+  readonly verbatim?: boolean;
 }
 
 export type ProviderSection = 'credentials' | 'config';
+
+/** El cuerpo tal cual se va a mandar: con defaults aplicados y sin campos vacíos. */
+export interface ProviderAccountPayload {
+  readonly credentials: Record<string, string>;
+  readonly config: Record<string, string>;
+}
+
+/**
+ * Qué nodos de la red pueden ser dueños de una cuenta del proveedor. Sin declarar, cualquiera.
+ * Existe porque hay proveedores que sólo operan con la cuenta del consolidador: ofrecerle el alta
+ * a una agencia es invitarla a cargar una cuenta que el API va a dejar sin efecto.
+ */
+export interface OwnerRestriction {
+  /** Valores de `tenants.tenant_type` que pueden cargar su propia cuenta. */
+  readonly tenantTypes: readonly string[];
+  /** Por qué, dicho para el operador de un nodo que no puede. */
+  readonly explanation: string;
+}
 
 export interface ProviderForm {
   readonly label: string;
@@ -76,6 +101,19 @@ export interface ProviderForm {
   readonly note?: string;
   readonly credentials: readonly ProviderField[];
   readonly config: readonly ProviderField[];
+  readonly ownerRestriction?: OwnerRestriction;
+  /**
+   * Estado con el que arranca un alta. Sin declarar, el que ya usa cada pantalla. Un proveedor que
+   * declara `sandbox` quiere que la credencial se verifique antes de habilitarlo.
+   */
+  readonly initialStatus?: ProviderAccountStatus;
+  /**
+   * Reglas ENTRE campos que la forma declarativa no expresa (entorno y URL, por ejemplo). Recibe
+   * el payload efectivo y devuelve `fieldKey` → mensaje. Los mensajes nunca repiten el valor.
+   */
+  readonly draftIssues?: (payload: ProviderAccountPayload) => Readonly<Record<string, string>>;
+  /** Avisos que NO impiden guardar, pero que el operador tiene que leer antes de hacerlo. */
+  readonly draftWarnings?: (payload: ProviderAccountPayload) => readonly Notice[];
   /**
    * ¿El proveedor cae a credenciales de PLATAFORMA cuando el tenant no resuelve ninguna cuenta?
    *
@@ -305,11 +343,194 @@ const SABRE: ProviderForm = {
   fallsBackToPlatformCredentials: false,
 };
 
+/**
+ * Único endpoint que TBO publica sin TLS, y sólo para pruebas (manual de la API, p. 7). Es el que
+ * usa el ACL cuando una cuenta de test no trae URL (`TBO_BASE_URLS.test` en
+ * `providers/tbo-hotels/src/config.ts`); se repite acá porque el panel no importa el ACL.
+ */
+const TBO_TEST_BASE_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+
+function parsedUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+function withoutTrailingSlash(pathname: string): string {
+  return pathname.replace(/\/+$/, '');
+}
+
+/**
+ * Las reglas de transporte de TBO (D-TBO-30 A) tal como las aplica el API al guardar. Se repiten
+ * acá sólo para decirlas ANTES del viaje, junto al campo: la autoridad sigue siendo el API, que
+ * valida con el mismo esquema con el que el ACL construye el adapter.
+ */
+function tboDraftIssues(payload: ProviderAccountPayload): Readonly<Record<string, string>> {
+  const issues: Record<string, string> = {};
+  const environment = payload.config['environment'];
+  const raw = payload.config['baseUrl'];
+  const baseUrlKey = fieldKey('config', 'baseUrl');
+
+  if (payload.credentials['username']?.includes(':')) {
+    issues[fieldKey('credentials', 'username')] =
+      'El usuario no puede contener «:». La autenticación de TBO separa usuario y contraseña con ese carácter.';
+  }
+
+  if (raw === undefined) {
+    if (environment === 'live') {
+      issues[baseUrlKey] =
+        'En Producción la URL base es obligatoria: TBO no la publica y no hay valor por defecto, para que una credencial de producción nunca termine en el entorno de pruebas.';
+    }
+    return issues;
+  }
+
+  const url = parsedUrl(raw);
+  // Una URL que no parsea ya la marca la regla `url` del campo, con su propio mensaje.
+  if (url === null) return issues;
+
+  const test = new URL(TBO_TEST_BASE_URL);
+  const isTestEndpoint =
+    url.host === test.host &&
+    withoutTrailingSlash(url.pathname).toLowerCase() ===
+      withoutTrailingSlash(test.pathname).toLowerCase();
+
+  if (url.username !== '' || url.password !== '') {
+    issues[baseUrlKey] =
+      'La URL no puede llevar usuario ni contraseña: quedarían escritos en cualquier registro de la URL.';
+  } else if (url.search !== '' || url.hash !== '') {
+    issues[baseUrlKey] =
+      'La URL no puede llevar «?…» ni «#…»: a esa base se le agrega el nombre de cada operación.';
+  } else if (environment === 'live' && isTestEndpoint) {
+    issues[baseUrlKey] =
+      'Una cuenta de Producción no puede apuntar al entorno de pruebas de TBO. Cargá la URL de producción que te entregó TBO.';
+  } else if (url.protocol === 'http:' && environment === 'live') {
+    issues[baseUrlKey] =
+      'En Producción la URL tiene que empezar con https://: la contraseña de producción no puede viajar sin cifrar.';
+  } else if (url.protocol === 'http:' && url.host !== test.host) {
+    issues[baseUrlKey] =
+      'http:// sólo se admite para el entorno de pruebas que publica TBO (api.tbotechnology.in). Para cualquier otro host usá https://.';
+  }
+  return issues;
+}
+
+function tboDraftWarnings(payload: ProviderAccountPayload): readonly Notice[] {
+  if (payload.config['environment'] !== 'test') return [];
+  const url = parsedUrl(payload.config['baseUrl'] ?? TBO_TEST_BASE_URL);
+  if (url?.protocol !== 'http:') return [];
+  return [
+    {
+      tone: 'warn',
+      title: 'Las credenciales de test viajan sin cifrar',
+      body: 'TBO publica su entorno de pruebas sólo por http://, así que el usuario y la contraseña de test viajan legibles por internet en cada llamada. Usá credenciales exclusivas de test, nunca las de producción. En Producción la plataforma exige https://.',
+    },
+  ];
+}
+
+/**
+ * TBO Holidays, hoteles (docs/tbo/08 RF-37 y RF-01; D-TBO-03 A y D-TBO-30 A).
+ *
+ *  - Usuario y contraseña van SÓLO en `credentials` (cifrado): el factory no los lee de `config`, y
+ *    el API rechaza cualquiera de los dos en `config`. La contraseña es `verbatim` (Q-06).
+ *  - `environment` y `baseUrl` van en `config`. En Producción la URL es obligatoria y sin default.
+ *  - Sin fallback de plataforma: sin cuenta resoluble TBO queda AUSENTE de las búsquedas.
+ *  - Sólo la cargan la plataforma o un consolidador; las agencias la heredan. El factory deja a TBO
+ *    ausente con una cuenta de agencia mientras Q-77 siga abierta, así que ofrecerle el alta a una
+ *    agencia sería invitarla a cargar una cuenta que no se va a usar.
+ */
+const TBO_HOTELS: ProviderForm = {
+  label: 'TBO Holidays',
+  note: 'TBO autentica cada llamada con el usuario y la contraseña de API que te entrega TBO. La cuenta se carga una sola vez en el consolidador y la heredan las agencias de su red. Nace en Sandbox: se guarda cifrada pero no habilita TBO en ninguna búsqueda. Cuando la credencial esté verificada, promovela: abrí Editar, cargá de nuevo usuario y contraseña y guardala con estado Activo. Activo es necesario pero no alcanza: mientras no se conozca el costo por búsqueda, la plataforma además enciende TBO agencia por agencia, y sin ese permiso TBO no aparece aunque la cuenta esté activa. Al pasar de test a producción reemplazá esta misma cuenta, con la misma etiqueta, en vez de crear otra.',
+  credentials: [
+    {
+      key: 'username',
+      label: 'Usuario de API',
+      required: true,
+      requiredMessage:
+        'El usuario es obligatorio: TBO autentica cada llamada con usuario y contraseña.',
+      help: 'El usuario que TBO asignó a tu cuenta de API. Se guarda cifrado y no se muestra de vuelta.',
+    },
+    {
+      key: 'password',
+      label: 'Contraseña',
+      secret: true,
+      required: true,
+      verbatim: true,
+      requiredMessage: 'La contraseña es obligatoria: sin ella TBO rechaza cada llamada.',
+      help: 'Se guarda cifrada tal cual la escribís, espacios incluidos, y no se muestra de vuelta. Para rotarla hay que volver a cargar la cuenta completa.',
+    },
+  ],
+  config: [
+    {
+      key: 'environment',
+      label: 'Entorno',
+      required: true,
+      defaultValue: 'test',
+      options: [
+        { value: 'test', label: 'Test (certificación)' },
+        { value: 'live', label: 'Producción' },
+      ],
+      help: 'Test usa el entorno de pruebas que TBO publica. Producción usa las credenciales y la URL que TBO entrega al aprobar la certificación.',
+    },
+    {
+      key: 'baseUrl',
+      label: 'URL base',
+      url: true,
+      placeholder: 'https://…/HotelAPI',
+      help: `Obligatoria en Producción: TBO no la publica y no hay valor por defecto. En Test, vacía usa ${TBO_TEST_BASE_URL}.`,
+    },
+  ],
+  // D-TBO-03 A: BYOC puro, sin credenciales de plataforma a las que caer.
+  fallsBackToPlatformCredentials: false,
+  ownerRestriction: {
+    tenantTypes: ['platform', 'consolidator'],
+    explanation:
+      'TBO Holidays opera sólo con la cuenta del consolidador, que heredan las agencias de su red. Una cuenta propia de agencia no se usa: deja a TBO fuera de sus búsquedas. Si esta agencia tiene una, guardala Deshabilitada para volver a heredar la del consolidador.',
+  },
+  initialStatus: 'sandbox',
+  draftIssues: tboDraftIssues,
+  draftWarnings: tboDraftWarnings,
+};
+
 export const PROVIDERS: Readonly<Record<string, ProviderForm>> = {
   'latam-ndc': LATAM_NDC,
   'agent-cars': AGENT_CARS,
   sabre: SABRE,
+  'tbo-hotels': TBO_HOTELS,
 };
+
+/** ¿Este nodo puede cargar su propia cuenta del proveedor? Sin restricción declarada, sí. */
+export function canOwnAccount(form: ProviderForm, tenantType: string): boolean {
+  return (
+    form.ownerRestriction === undefined || form.ownerRestriction.tenantTypes.includes(tenantType)
+  );
+}
+
+/** Los formularios que se le ofrecen a un nodo para dar de ALTA una cuenta propia. */
+export function providerFormsForNode(
+  tenantType: string,
+): readonly (readonly [string, ProviderForm])[] {
+  return Object.entries(PROVIDERS).filter(([, form]) => canOwnAccount(form, tenantType));
+}
+
+/**
+ * El aviso para un nodo que tiene —o abre— una cuenta que no puede ser suya. `null` cuando puede.
+ * Una cuenta así existe si se cargó por API: el panel no la ofrece, pero tampoco puede esconderla.
+ */
+export function ownershipNotice(form: ProviderForm, tenantType: string): Notice | null {
+  if (form.ownerRestriction === undefined || canOwnAccount(form, tenantType)) return null;
+  return {
+    tone: 'warn',
+    title: `Este nodo no puede operar ${form.label} con cuenta propia`,
+    body: form.ownerRestriction.explanation,
+  };
+}
+
+/** Avisos del borrador que no impiden guardar. Se calculan sobre lo que se va a mandar. */
+export function draftWarnings(form: ProviderForm, draft: DraftSections): readonly Notice[] {
+  return form.draftWarnings?.(buildProviderAccountPayload(form, draft)) ?? [];
+}
 
 /**
  * Sin fallback, a propósito. La versión anterior caía a LATAM NDC ante un código desconocido y
@@ -347,10 +568,13 @@ export interface DraftValidation {
   readonly summary: string | null;
 }
 
-/** Valor efectivo de un campo: lo tecleado (recortado) o su default declarado. */
+/**
+ * Valor efectivo de un campo: lo tecleado —recortado, salvo en un campo `verbatim`— o su default
+ * declarado. Sólo espacios cuenta como vacío también en un campo `verbatim`: el API lo cuenta así.
+ */
 function effectiveValue(field: ProviderField, raw: string | undefined): string {
-  const typed = (raw ?? '').trim();
-  if (typed.length > 0) return typed;
+  const typed = raw ?? '';
+  if (typed.trim().length > 0) return field.verbatim === true ? typed : typed.trim();
   return field.defaultValue ?? '';
 }
 
@@ -404,6 +628,12 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
     }
   }
 
+  // Las reglas entre campos van después y no pisan: el problema propio del campo es más concreto.
+  const crossField = form.draftIssues?.(buildProviderAccountPayload(form, draft)) ?? {};
+  for (const [key, message] of Object.entries(crossField)) {
+    fieldErrors[key] ??= message;
+  }
+
   const messages = Object.values(fieldErrors);
   const first = messages[0];
   if (first === undefined) {
@@ -429,11 +659,6 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
     summary:
       messages.length === 1 ? first : `Revisá ${messages.length} campos antes de guardar. ${first}`,
   };
-}
-
-export interface ProviderAccountPayload {
-  readonly credentials: Record<string, string>;
-  readonly config: Record<string, string>;
 }
 
 /**

@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · HTTP 401 sin envelope",
+  "source": "Postura de 01 §8.4.",
+  "operation": "search",
+  "response": {
+    "status": 401,
+    "bodyText": ""
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "CREDENTIALS_INVALID",
+    "status": 401,
+    "tboCode": null
+  }
+}

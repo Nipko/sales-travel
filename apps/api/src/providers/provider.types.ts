@@ -1,4 +1,9 @@
-import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   FlightSearchPort,
   OfferPricePort,
@@ -10,6 +15,7 @@ import type {
   SearchContext,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
+import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
 
 /**
  * Un adapter de vuelos = los cuatro ports del dominio.
@@ -166,6 +172,34 @@ export interface TenantAdapter<TAdapter> {
    * Y el override de entorno gana sobre esto: es el kill-switch de operaciones.
    */
   readonly callPolicy?: CallPolicy | undefined;
+  /**
+   * Cómo pasan por el breaker las llamadas con ESTE adapter: la huella de la cuenta para el
+   * circuito por cuenta y el efecto de los errores que el ACL lanza sin `failure.circuit`.
+   * `undefined` = como siempre: circuito por código y efecto leído de la forma del error.
+   */
+  readonly circuit?: ProviderCircuitOptions | undefined;
+  /**
+   * Tenant DUEÑO de la cuenta con que sale el adapter: el propio, o el ancestro del que se hereda.
+   * `undefined` = no hay cuenta de un tenant detrás (credenciales de la plataforma) o el factory no
+   * lo dice.
+   *
+   * Existe porque un problema de la cuenta (sin saldo, bloqueada) lo arregla su dueño y no quien
+   * vende, y la agencia no puede leer la fila de una cuenta heredada (`provider_accounts` tiene RLS
+   * forzada): sólo el factory, que la resolvió, sabe de quién es.
+   */
+  readonly accountOwnerTenantId?: string | undefined;
+}
+
+/**
+ * Lo que quien llama sabe de una llamada fallida y el error no trae.
+ *
+ * Existe porque el adapter de una cuenta heredada es el MISMO para el consolidador y para sus
+ * agencias: el error no puede saber si la credencial rechazada es de quien lo ve o de su
+ * consolidador, y el mensaje cambia de destinatario ("verificá tus credenciales" frente a
+ * "avisale al consolidador").
+ */
+export interface ProviderErrorContext {
+  readonly credentialSource?: CredentialSource;
 }
 
 /**
@@ -199,13 +233,26 @@ export interface ResolvedProvider<TAdapter> {
   readonly callPolicy: CallPolicy;
 }
 
-/** Por qué un proveedor habilitado no llegó a ser llamado en esta búsqueda. */
-export type SkipReason = 'opt-in-disabled' | 'fallback-not-needed';
+/**
+ * Por qué un proveedor no llegó a ser llamado en esta búsqueda.
+ *
+ * - `opt-in-disabled`: su política es `opt-in` y nadie lo encendió para esta agencia.
+ * - `platform-disabled`: el superadmin lo apagó (para todos o para esta agencia o su red). Es otro
+ *   motivo y no un `opt-in-disabled` más porque la acción es otra: no se arregla cargando nada en
+ *   el panel de la agencia, sólo lo revierte la plataforma.
+ * - `fallback-not-needed`: es de respaldo y los demás ya trajeron suficiente.
+ */
+export type SkipReason = 'opt-in-disabled' | 'platform-disabled' | 'fallback-not-needed';
 
 export interface SkippedProvider {
   readonly code: string;
   readonly reason: SkipReason;
+  /** Mensaje ya humanizado para la pantalla. Presente en `platform-disabled`. */
+  readonly detail?: string;
 }
+
+/** Lo que ve el vendedor de un proveedor que la plataforma apagó para su agencia. */
+export const PLATFORM_DISABLED_TEXT = 'Deshabilitado por la plataforma para esta agencia.';
 
 /**
  * Por qué un proveedor de la plataforma no está disponible para este tenant.
@@ -277,8 +324,8 @@ export interface ProviderOutcome {
    */
   readonly simulated: boolean;
   /**
-   * Ya humanizado por el factory del proveedor. Presente en `status === 'error'` y en
-   * `status === 'unavailable'`.
+   * Ya humanizado por el factory del proveedor. Presente en `status === 'error'`, en
+   * `status === 'unavailable'` y en un `skipped` por `platform-disabled`.
    */
   readonly reason?: string;
   /** Sólo si `status === 'skipped'`. */
@@ -299,12 +346,71 @@ export const SIMULATED_RESIDUE = false;
 /** Token DI del listado de factories de vuelos. Sumar un proveedor = una línea en el módulo. */
 export const FLIGHT_PROVIDER_FACTORIES = 'FLIGHT_PROVIDER_FACTORIES';
 
-/** Token DI del gobierno por tenant de `callPolicy: 'opt-in'`. */
+/** Token DI de la habilitación por tenant de los proveedores de vuelos. */
 export const FLIGHT_PROVIDER_FLAGS = 'FLIGHT_PROVIDER_FLAGS';
 
+/**
+ * Quién decidió, fuera de la política del proveedor, si está encendido para un tenant.
+ *
+ * - `tenant`: un ajuste del superadmin para el propio tenant o para un ancestro suyo (el más
+ *   cercano gana: encender a un consolidador cubre su red y una agencia puntual se puede apagar).
+ * - `global`: el ajuste del superadmin para todos los tenants.
+ * - `legacy-env`: `FLIGHT_PROVIDERS_OPT_IN` / `HOTEL_PROVIDERS_OPT_IN`. Sólo enciende, y sólo
+ *   cuenta si en la base no hay ningún ajuste para ese proveedor y ese tenant.
+ */
+export type ProviderEnablementOrigin = 'tenant' | 'global' | 'legacy-env';
+
+export interface ProviderEnablementDecision {
+  readonly enabled: boolean;
+  readonly origin: ProviderEnablementOrigin;
+  /** Sólo en `origin: 'tenant'`: el tenant del ajuste que decidió (el propio o un ancestro). */
+  readonly tenantId?: string;
+}
+
+/**
+ * Habilitación por tenant de los proveedores de un registry.
+ *
+ * No incluye el kill-switch de `PROVIDERS_DISABLED`: ése lo sigue aplicando el breaker en cada
+ * llamada, que es el único que sabe si la llamada es de venta o de post-venta.
+ */
 export interface ProviderFlagsPort {
-  /** ¿El tenant activó este proveedor? Sólo se consulta para `callPolicy: 'opt-in'`. */
-  isEnabledForTenant(tenantId: string, providerCode: string): Promise<boolean>;
+  /**
+   * Lo que la plataforma decidió sobre este proveedor para este tenant. `undefined` = nadie
+   * decidió y manda la política del proveedor ({@link isProviderEnabled}).
+   */
+  decisionFor(
+    tenantId: string,
+    providerCode: string,
+  ): Promise<ProviderEnablementDecision | undefined>;
+}
+
+/**
+ * Estado efectivo de un proveedor para un tenant: la decisión de la plataforma o, sin ninguna, su
+ * política. Un proveedor `opt-in` nace apagado; `always` y `fallback` nacen encendidos.
+ */
+export function isProviderEnabled(
+  decision: ProviderEnablementDecision | undefined,
+  callPolicy: CallPolicy,
+): boolean {
+  return decision?.enabled ?? callPolicy !== 'opt-in';
+}
+
+/** ¿La plataforma lo apagó a propósito? Distinto de un `opt-in` que nadie encendió. */
+export function isDisabledByPlatform(decision: ProviderEnablementDecision | undefined): boolean {
+  return decision !== undefined && !decision.enabled;
+}
+
+/** Un proveedor de un registry, sin credenciales de nadie: lo que el panel de la plataforma lista. */
+export interface RegisteredProvider {
+  readonly code: string;
+  readonly vertical: ProviderVertical;
+  /** La política efectiva: la del factory o la de `*_PROVIDER_CALL_POLICIES`. */
+  readonly callPolicy: CallPolicy;
+}
+
+/** Un proveedor con lo que la plataforma decidió sobre él para UN tenant. */
+export interface ProviderEnablementEntry extends RegisteredProvider {
+  readonly decision: ProviderEnablementDecision | undefined;
 }
 
 /**
@@ -359,14 +465,77 @@ export class ProviderAccountIncompleteError extends NotFoundException {
 }
 
 /**
+ * El tenant SÍ resuelve una cuenta con este proveedor, pero la plataforma no acepta operar con
+ * ella: por ejemplo, TBO mientras sólo se admita la cuenta del consolidador (D-TBO-03 A, Q-77).
+ *
+ * Extiende `NotFoundException` por lo mismo que {@link ProviderAccountIncompleteError}: el efecto
+ * es el de no tener cuenta, y la búsqueda sigue sin el proveedor. Lleva `detail` porque la acción
+ * del vendedor no es ninguna de las dos que el registry sabe decir ("cargá" o "completá"): una
+ * cuenta que se acepta en la bóveda y se rechaza en silencio es una agencia creyendo que vende
+ * con un proveedor que nunca se llama.
+ *
+ * `detail` es un mensaje ya humanizado y sin datos de la cuenta.
+ */
+export class ProviderAccountNotAllowedError extends NotFoundException {
+  constructor(
+    readonly providerCode: string,
+    readonly detail: string,
+  ) {
+    super(`la cuenta de '${providerCode}' resoluble para este tenant no está admitida`);
+    this.name = 'ProviderAccountNotAllowedError';
+  }
+}
+
+/**
  * Se pidió operar con un proveedor que este tenant no tiene habilitado. Es 400 y no 500:
  * el dato viene del cliente (`offer.provider.name`, `orders.provider`).
  */
 export class ProviderNotAvailableError extends BadRequestException {
+  constructor(
+    readonly providerCode: string,
+    message = `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisá Mi Red → Credenciales.`,
+  ) {
+    super(message);
+    this.name = 'ProviderNotAvailableError';
+  }
+}
+
+/**
+ * La plataforma apagó este proveedor para el tenant (o para todos) y lo que se pidió es una venta
+ * nueva: revalidar, prebook, book o crear la orden. La post-venta de lo ya vendido no pasa por
+ * aquí.
+ *
+ * Es un {@link ProviderNotAvailableError} para que quien ya lo trata como "no habilitado" siga
+ * igual, con otro mensaje: "revisá tus credenciales" mandaría al vendedor a un panel donde no hay
+ * nada que arreglar.
+ */
+export class ProviderDisabledByPlatformError extends ProviderNotAvailableError {
+  readonly reason = 'PROVIDER_DISABLED_BY_PLATFORM';
+
+  constructor(providerCode: string) {
+    super(
+      providerCode,
+      `El proveedor '${providerCode}' está deshabilitado por la plataforma para esta agencia: no admite ventas nuevas. Lo ya vendido se sigue consultando y cancelando.`,
+    );
+    this.name = 'ProviderDisabledByPlatformError';
+  }
+}
+
+/**
+ * La reserva se hizo con una cuenta que el tenant ya no puede usar: la cuenta salió de su red (dejó
+ * de heredarse o se desactivó), quedó incompleta o la plataforma ya no la admite. La post-venta no
+ * cae a la cuenta vigente del tenant, porque el proveedor sólo reconoce la reserva con la que la
+ * creó (RF-29; D-TBO-28 A): se para y lo dice.
+ *
+ * 409 y no 404: la reserva existe y es del tenant; lo que falta es con qué operarla.
+ */
+export class ProviderOrderAccountUnavailableError extends ConflictException {
+  readonly reason = 'ORDER_PROVIDER_ACCOUNT_UNAVAILABLE';
+
   constructor(readonly providerCode: string) {
     super(
-      `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisá Mi Red → Credenciales.`,
+      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pedile al administrador de tu red que la revise en Mi Red → Credenciales.',
     );
-    this.name = 'ProviderNotAvailableError';
+    this.name = 'ProviderOrderAccountUnavailableError';
   }
 }

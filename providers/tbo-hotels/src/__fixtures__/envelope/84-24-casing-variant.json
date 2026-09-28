@@ -1,0 +1,19 @@
+{
+  "row": "01 §10.3 paso 4 · envelope sin distinguir mayúsculas y Code como string de 3 dígitos",
+  "source": "El PDF trae variantes de casing en nombres de campo (p. 56, 63).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "status": {
+        "code": "201",
+        "description": "No Availability"
+      }
+    }
+  },
+  "expect": {
+    "outcome": "NO_AVAILABILITY",
+    "status": 200,
+    "tboCode": 201
+  }
+}

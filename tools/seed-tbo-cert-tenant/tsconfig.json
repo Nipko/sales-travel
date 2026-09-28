@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  // Los tests y los dobles de `src/testing/` quedan DENTRO: `typecheck` y el lint con tipos los
+  // cubren igual que al código que corre. Lo que va a la imagen lo recorta `tsconfig.build.json`.
+  "include": ["src/**/*"]
+}

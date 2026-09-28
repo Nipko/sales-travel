@@ -13,6 +13,12 @@ export interface EffectiveBranding {
   websiteUrl: string | null;
 }
 
+/** El contacto de soporte efectivo de un tenant, con la herencia de 0030 resuelta. */
+export interface SupportContact {
+  email: string | null;
+  phone: string | null;
+}
+
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 /**
@@ -59,5 +65,22 @@ export class BrandingService {
       // El branding es decorativo: nunca debe impedir que salga un correo o una reserva.
       return null;
     }
+  }
+
+  /**
+   * Email y teléfono de soporte efectivos, sin exigir nombre comercial y SIN tragarse un fallo de la
+   * base: a diferencia de {@link resolve}, no es decorativo. Es el contacto operativo que viaja al
+   * proveedor en una reserva de marca blanca (docs/tbo/03 §3.5, D-TBO-23 A), y quien lo pide tiene
+   * que distinguir "no configurado" de "no se pudo leer".
+   */
+  async resolveSupportContact(tenantId: string): Promise<SupportContact> {
+    const res = await sql<{
+      support_email: string | null;
+      support_phone: string | null;
+    }>`SELECT support_email, support_phone FROM resolve_tenant_branding(${tenantId}::uuid)`.execute(
+      this.db.db,
+    );
+    const row = res.rows[0];
+    return { email: row?.support_email ?? null, phone: row?.support_phone ?? null };
   }
 }

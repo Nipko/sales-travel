@@ -1,0 +1,18 @@
+{
+  "row": "01 §9.3 · Status.Code desconocido en /Cancel: incierto, no FAILED",
+  "source": "Postura de 01 §9.3, penúltima fila; el nombre casa con cancel-retry-policy.ts:37.",
+  "operation": "cancel",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": {
+        "Code": 418,
+        "Description": "Something new"
+      }
+    }
+  },
+  "expect": {
+    "error": "TboCancelMappingError",
+    "issues": ["Status.Code:unknown_code"]
+  }
+}

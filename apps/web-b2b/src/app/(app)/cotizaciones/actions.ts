@@ -86,8 +86,11 @@ export interface Offer {
 /** Qué pasó con un proveedor en esta búsqueda. Espejo de ProviderOutcome en el API. */
 export type ProviderStatus = 'ok' | 'empty' | 'error' | 'simulated' | 'skipped';
 
-/** Por qué un proveedor habilitado no llegó a ser llamado. */
-export type ProviderSkipReason = 'opt-in-disabled' | 'fallback-not-needed';
+/**
+ * Por qué un proveedor no llegó a ser llamado. `platform-disabled`: el superadmin lo apagó para
+ * esta agencia, su red o todos; `reason` trae el texto ya humanizado.
+ */
+export type ProviderSkipReason = 'opt-in-disabled' | 'platform-disabled' | 'fallback-not-needed';
 
 export interface ProviderOutcome {
   code: string;
@@ -95,7 +98,7 @@ export interface ProviderOutcome {
   count: number;
   /** Semántica POR PROVEEDOR: estas tarifas son inventadas. */
   simulated: boolean;
-  /** Motivo ya humanizado por el API. Sólo cuando `status === 'error'`. */
+  /** Motivo ya humanizado por el API: cuando `status === 'error'` o en `platform-disabled`. */
   reason?: string;
   skipReason?: ProviderSkipReason;
 }

@@ -1,9 +1,27 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import type { Money } from '@sales-travel/canonical';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
+import {
+  BookingHoldLedger,
+  RELEASE_AFTER_CANCEL_NOTES,
+  RELEASE_AFTER_FAILURE_NOTES,
+  isUniqueViolation,
+  type BookingHoldRelease,
+  type BookingWithHold,
+} from './booking-hold.ledger.js';
+import {
+  BookingHoldRejectedError,
+  decideBookingHold,
+  internalCreditMinor,
+  type BookingHoldFacts,
+  type BookingHoldPolicy,
+  type BookingHoldRejection,
+} from './booking-hold.js';
 
 export interface PortfolioRow {
   id: string;
@@ -28,18 +46,17 @@ export interface PortfolioTransactionRow {
   created_at: Date;
 }
 
-interface BookingActionContext {
-  readonly orderId: string;
-  readonly provider: string;
-  readonly providerOrderId: string | null;
-  readonly orderStatus: string;
-  readonly hold: {
-    readonly id: string;
-    readonly portfolioId: string;
-    readonly amountMinor: number;
-    readonly createdBy: string;
-  };
+/** Lo que una reserva retenida admite desde la cartera. */
+interface BookingActionCapabilities {
+  /** Emisión diferida: convertir la retención en el cargo de una emisión. */
+  readonly pay: boolean;
+  /** Cancelación real con el proveedor por `OrdersService.cancelOrder`, antes de liberar. */
+  readonly cancel: boolean;
 }
+
+export type { BookingHoldRelease } from './booking-hold.ledger.js';
+
+const HOLD_BEFORE_BOOK_NOTES = 'Retención de saldo antes de reservar con el proveedor';
 
 export interface HoldBookingExpectations {
   /**
@@ -57,15 +74,6 @@ function normalizeCurrency(value: unknown): string | null {
   return /^[A-Z]{3}$/.test(normalized) ? normalized : null;
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
-  );
-}
-
 function assertSafePositiveMinor(amountMinor: number, label: string): void {
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
     throw new BadRequestException(`${label} must be a positive safe integer`);
@@ -79,15 +87,42 @@ function canonicalUuid(value: string, label: string): string {
   return value.toLowerCase();
 }
 
+/** El monto de una retención, validado y con la moneda normalizada. */
+function holdAmount(amount: Money): Money {
+  assertSafePositiveMinor(amount.amountMinor, 'Booking amount');
+  const currency = normalizeCurrency(amount.currency);
+  if (!currency) {
+    throw new BadRequestException('La reserva no tiene una moneda válida para retener saldo.');
+  }
+  return { amountMinor: amount.amountMinor, currency };
+}
+
+function holdRejection(
+  reason: BookingHoldRejection,
+  facts: BookingHoldFacts,
+): BookingHoldRejectedError {
+  return new BookingHoldRejectedError(reason, {
+    amountCurrency: facts.amount.currency,
+    portfolioCurrency: facts.portfolio.currency,
+  });
+}
+
 type FinancialMutationType = 'DEPOSIT_PAYMENT' | 'MANUAL_ADJUSTMENT';
 
 @Injectable()
 export class PortfoliosService {
+  private readonly holds: BookingHoldLedger;
+
   constructor(
     private readonly db: DatabaseService,
     private readonly providers: FlightProviderRegistry,
     private readonly orders: OrdersService,
-  ) {}
+    private readonly hotelProviders: HotelProviderRegistry,
+  ) {
+    // Se construye acá y no se inyecta, como el intent de `OrdersService`: comparte la base y la
+    // firma pública del servicio no cambia.
+    this.holds = new BookingHoldLedger(db);
+  }
 
   async getPortfolio(tenantId: string): Promise<PortfolioRow> {
     return this.db.withTenant(tenantId, async (trx) => {
@@ -455,12 +490,226 @@ export class PortfoliosService {
     }
   }
 
+  // ─────────────── Retención antes de reservar (docs/tbo/08 RF-23; D-TBO-21 A) ───────────────
+
+  /**
+   * ¿Alcanza la cartera para retener `amount`? Lee sin bloquear y ANTES de abrir la orden, para que
+   * una agencia sin saldo o sin crédito interno no llegue a llamar al proveedor (RF-23 CA-1). No
+   * reemplaza a {@link holdBookingIntent}, que vuelve a decidir con la cartera bloqueada.
+   *
+   * @throws BookingHoldRejectedError si no alcanza.
+   */
+  async assertBookingHoldAffordable(
+    tenantId: string,
+    amount: Money,
+    policy: BookingHoldPolicy,
+  ): Promise<void> {
+    const target = holdAmount(amount);
+    await this.db.withTenant(tenantId, async (trx) => {
+      const portfolio = await this.getOrCreatePortfolio(trx, tenantId);
+      const facts = await this.holdFacts(trx, tenantId, portfolio, target, policy);
+      const decision = decideBookingHold(facts);
+      if (!decision.ok) throw holdRejection(decision.reason, facts);
+    });
+  }
+
+  /**
+   * Retiene el precio de venta sobre la orden ABIERTA, antes de llamar al proveedor (RF-23;
+   * D-TBO-21 A). Es la retención de {@link holdBooking} —mismo asiento `BOOKING_HOLD`, mismo índice
+   * único por orden, mismo débito—, sobre el intent en vez de sobre una reserva confirmada: con un
+   * proveedor que cobra al crédito de una cuenta, la plata tiene que estar comprometida cuando sale
+   * la reserva, no después.
+   *
+   * El monto y la moneda se leen de la orden bajo el tenant y en la misma transacción; `expected` es
+   * sólo el control de que la saga retiene lo que cree. La cartera se bloquea ANTES de decidir, así
+   * que dos reservas de la misma agencia no gastan el mismo saldo.
+   *
+   * @throws BookingHoldRejectedError si la cartera o el crédito interno no alcanzan.
+   * @throws BadRequestException si la orden no es un intent abierto de este tenant.
+   * @throws ConflictException si la orden ya tiene una retención.
+   */
+  async holdBookingIntent(
+    tenantId: string,
+    orderId: string,
+    createdBy: string,
+    expected: Money,
+    policy: BookingHoldPolicy,
+  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
+    const target = holdAmount(expected);
+    try {
+      return await this.db.withTenant(tenantId, async (trx) => {
+        const order = await trx
+          .selectFrom('orders')
+          .select([
+            'id',
+            'status',
+            'total_amount',
+            'currency',
+            'provider_raw',
+            'create_request_key',
+          ])
+          .where('id', '=', orderId)
+          .where('tenant_id', '=', tenantId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!order) {
+          throw new BadRequestException(
+            'No se encontró la reserva. No se modificó el saldo de la cartera.',
+          );
+        }
+        // Una orden con desenlace ya lo tiene, y una sin clave no es una creación en curso.
+        if (
+          order.status !== 'pending' ||
+          order.provider_raw !== null ||
+          order.create_request_key === null
+        ) {
+          throw new BadRequestException(
+            'Sólo una reserva abierta, antes de enviarse al proveedor, puede retener saldo de cartera.',
+          );
+        }
+
+        const amountMinor = Number(order.total_amount);
+        const orderCurrency = normalizeCurrency(order.currency);
+        if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !orderCurrency) {
+          throw new BadRequestException(
+            'La reserva no tiene un total y una moneda válidos para crear la retención.',
+          );
+        }
+        if (amountMinor !== target.amountMinor || orderCurrency !== target.currency) {
+          throw new BadRequestException(
+            'El total de la reserva cambió. No se retuvo saldo de la cartera.',
+          );
+        }
+
+        const created = await this.getOrCreatePortfolio(trx, tenantId);
+        const portfolio = (await trx
+          .selectFrom('agency_portfolios')
+          .selectAll()
+          .where('id', '=', created.id)
+          .forUpdate()
+          .executeTakeFirstOrThrow()) as unknown as PortfolioRow;
+        const facts = await this.holdFacts(trx, tenantId, portfolio, target, policy);
+        const decision = decideBookingHold(facts);
+        if (!decision.ok) throw holdRejection(decision.reason, facts);
+
+        const transaction = await trx
+          .insertInto('portfolio_transactions')
+          .values({
+            portfolio_id: portfolio.id,
+            amount_minor: -amountMinor,
+            transaction_type: 'BOOKING_HOLD',
+            reference_id: order.id,
+            notes: HOLD_BEFORE_BOOK_NOTES,
+            created_by: createdBy,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+
+        // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra
+        // ruta escribió el saldo sin tomar el mismo bloqueo.
+        const updatedPortfolio = await trx
+          .updateTable('agency_portfolios')
+          .set({ balance_minor: sql<number>`balance_minor - ${amountMinor}` })
+          .where('id', '=', portfolio.id)
+          .where('status', '=', 'active')
+          .where(sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${amountMinor}`)
+          .where(
+            sql<boolean>`balance_minor::numeric - ${amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
+          )
+          .returningAll()
+          .executeTakeFirst();
+        if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', facts);
+
+        return {
+          portfolio: updatedPortfolio as unknown as PortfolioRow,
+          transaction: transaction as unknown as PortfolioTransactionRow,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Libera la retención de una reserva que el proveedor NO hizo (RF-23 CA-2). `failed` es la única
+   * prueba de eso: una orden `pending` puede tener reserva del otro lado (desenlace incierto,
+   * D-TBO-24 A) y conserva la retención hasta que se resuelva; una confirmada la convierte en cargo.
+   *
+   * Idempotente: una segunda llamada encuentra la liberación y no vuelve a acreditar. Sin retención
+   * no hace nada.
+   *
+   * @throws ConflictException si la orden tiene retención y no está `failed`.
+   */
+  async releaseFailedBookingHold(
+    tenantId: string,
+    orderId: string,
+    createdBy: string,
+  ): Promise<BookingHoldRelease> {
+    return this.holds.releaseFailed(tenantId, orderId, createdBy);
+  }
+
+  /**
+   * Libera la retención de una reserva que el proveedor ya muestra cancelada (docs/tbo/09 PR-5.3).
+   * La cancelación de un hotel puede quedar en curso y cerrarse horas después por una lectura, sin
+   * que nadie vuelva a pasar por {@link rejectBooking}. Idempotente; sin retención no hace nada.
+   *
+   * @throws ConflictException si la orden tiene retención y no está `cancelled`.
+   */
+  async releaseCancelledBookingHold(
+    tenantId: string,
+    orderId: string,
+    createdBy: string,
+  ): Promise<BookingHoldRelease> {
+    return this.holds.releaseCancelled(tenantId, orderId, createdBy);
+  }
+
+  /**
+   * Lo que la decisión necesita: la cartera y, con una cuenta heredada, el crédito interno del
+   * tenant. `tenants` no tiene RLS; el tenant es siempre el de la transacción.
+   */
+  private async holdFacts(
+    trx: Transaction<DB>,
+    tenantId: string,
+    portfolio: PortfolioRow,
+    amount: Money,
+    policy: BookingHoldPolicy,
+  ): Promise<BookingHoldFacts> {
+    const facts: BookingHoldFacts = {
+      amount,
+      portfolio: {
+        balanceMinor: Number(portfolio.balance_minor),
+        creditLimitMinor: Number(portfolio.credit_limit_minor),
+        currency: normalizeCurrency(portfolio.currency),
+        status: portfolio.status,
+      },
+    };
+    if (!policy.inheritedAccount) return facts;
+
+    const tenant = await trx
+      .selectFrom('tenants')
+      .select(['credit_limit', 'default_currency'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    return {
+      ...facts,
+      internalCredit: {
+        limitMinor: internalCreditMinor(tenant?.credit_limit),
+        currency: normalizeCurrency(tenant?.default_currency),
+      },
+    };
+  }
+
   async approveBooking(
     tenantId: string,
     orderId: string,
   ): Promise<{ success: boolean; message: string }> {
     const booking = await this.getBookingActionContext(tenantId, orderId);
-    const capabilities = this.providers.capabilitiesOf(booking.provider);
+    const capabilities = this.actionCapabilities(booking);
 
     if (capabilities?.pay !== true) {
       throw new BadRequestException(
@@ -487,8 +736,11 @@ export class PortfoliosService {
     // Recuperación idempotente: si la cancelación real ya quedó persistida pero el proceso cayó
     // antes de liberar el hold, no se reenvía el write al proveedor. Se termina únicamente la
     // mitad contable pendiente. El claim condicional de abajo sigue impidiendo doble liberación.
-    if (booking.orderStatus !== 'cancelled') {
-      const capabilities = this.providers.capabilitiesOf(booking.provider);
+    // Una reserva `failed` tampoco tiene nada que cancelar: el proveedor no la hizo, y si la saga
+    // no pudo liberar su retención, esto la libera.
+    const failed = booking.orderStatus === 'failed';
+    if (booking.orderStatus !== 'cancelled' && !failed) {
+      const capabilities = this.actionCapabilities(booking);
 
       if (capabilities?.cancel !== true) {
         throw new BadRequestException(
@@ -528,159 +780,47 @@ export class PortfoliosService {
       }
     }
 
-    await this.releaseBookingHold(tenantId, booking, actorUserId ?? booking.hold.createdBy);
+    await this.holds.release(
+      tenantId,
+      booking,
+      actorUserId ?? booking.hold.createdBy,
+      failed ? RELEASE_AFTER_FAILURE_NOTES : RELEASE_AFTER_CANCEL_NOTES,
+    );
 
     return {
       success: true,
-      message: 'Cancelación confirmada por el proveedor y saldo retenido liberado.',
+      message: failed
+        ? 'El proveedor no hizo la reserva y el saldo retenido quedó liberado.'
+        : 'Cancelación confirmada por el proveedor y saldo retenido liberado.',
     };
   }
 
-  private assertReleaseMatches(
-    release: Pick<PortfolioTransactionRow, 'portfolio_id' | 'amount_minor'>,
-    booking: BookingActionContext,
-  ): void {
-    const amount = Number(release.amount_minor);
-    const expected = -booking.hold.amountMinor;
-    if (
-      release.portfolio_id !== booking.hold.portfolioId ||
-      !Number.isSafeInteger(amount) ||
-      amount <= 0 ||
-      amount !== expected
-    ) {
-      throw new ConflictException(
-        'La reserva tiene una liberación contable inconsistente y requiere conciliación manual.',
-      );
-    }
-  }
-
-  private async findBookingRelease(
-    trx: Transaction<DB>,
-    booking: BookingActionContext,
-  ): Promise<PortfolioTransactionRow | null> {
-    const release = await trx
-      .selectFrom('portfolio_transactions')
-      .selectAll()
-      .where('portfolio_id', '=', booking.hold.portfolioId)
-      .where('transaction_type', '=', 'BOOKING_RELEASED')
-      .where(sql<boolean>`lower(reference_id) = lower(${booking.orderId})`)
-      .executeTakeFirst();
-    return (release as unknown as PortfolioTransactionRow | undefined) ?? null;
-  }
-
-  private async releaseBookingHold(
-    tenantId: string,
-    booking: BookingActionContext,
-    createdBy: string,
-  ): Promise<void> {
-    const releaseAmount = -booking.hold.amountMinor;
-    // `getBookingActionContext` ya lo valida; se repite en el borde del write por defensa.
-    if (!Number.isSafeInteger(releaseAmount) || releaseAmount <= 0) {
-      throw new BadRequestException(
-        'La retención tiene un monto inválido y no puede liberarse automáticamente.',
-      );
-    }
-
-    try {
-      await this.db.withTenant(tenantId, async (trx) => {
-        const existing = await this.findBookingRelease(trx, booking);
-        if (existing) {
-          this.assertReleaseMatches(existing, booking);
-          return;
-        }
-
-        // Asiento positivo append-only: el BOOKING_HOLD original conserva monto y actor.
-        const release = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: booking.hold.portfolioId,
-            amount_minor: releaseAmount,
-            transaction_type: 'BOOKING_RELEASED',
-            reference_id: booking.orderId,
-            notes: 'Cancelación confirmada por el proveedor; saldo retenido liberado',
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        this.assertReleaseMatches(release, booking);
-        const nextBalance = sql<number>`balance_minor + ${releaseAmount}`;
-        const portfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: nextBalance })
-          .where('id', '=', booking.hold.portfolioId)
-          .where(
-            sql<boolean>`balance_minor::numeric + ${releaseAmount} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returning('id')
-          .executeTakeFirst();
-        if (!portfolio) {
-          throw new BadRequestException(
-            'No se encontró la cartera o el saldo liberado excede el rango seguro.',
-          );
-        }
-      });
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      // Reintento/concurrencia después del COMMIT: verificar el asiento ganador basta; no se
-      // vuelve a incrementar el balance.
-      const replay = await this.db.withTenant(tenantId, (trx) =>
-        this.findBookingRelease(trx, booking),
-      );
-      if (!replay) throw error;
-      this.assertReleaseMatches(replay, booking);
-    }
+  /**
+   * Qué admite desde la cartera una reserva retenida, según su vertical. Un hotel no se busca en el
+   * registry de vuelos: ahí no existe, y un "no admite" por ese motivo diría lo correcto por la
+   * razón equivocada el día que el código de un proveedor se repita entre verticales.
+   */
+  private actionCapabilities(booking: BookingWithHold): BookingActionCapabilities | undefined {
+    if (booking.vertical === 'flights') return this.providers.capabilitiesOf(booking.provider);
+    if (booking.vertical !== 'hotels') return undefined;
+    if (this.hotelProviders.capabilitiesOf(booking.provider) === undefined) return undefined;
+    // El voucher del hotel sale con el Book: no queda una emisión que cobrar desde aquí. Y su
+    // cancelación puede quedar en curso horas (docs/tbo/04 §4.4), cosa que este rechazo, que
+    // libera en el acto, no sabe esperar: se cancela desde Reservas, y la retención la libera la
+    // propia cancelación, o su verificación, cuando la orden queda `cancelled`.
+    return { pay: false, cancel: false };
   }
 
   private async getBookingActionContext(
     tenantId: string,
     orderId: string,
-  ): Promise<BookingActionContext> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const order = await trx
-        .selectFrom('orders')
-        .select(['id', 'provider', 'provider_order_id', 'status'])
-        .where('id', '=', orderId)
-        .where('tenant_id', '=', tenantId)
-        .executeTakeFirst();
-      if (!order) {
-        throw new BadRequestException(
-          'No se encontró la reserva. No se modificó el saldo de la cartera.',
-        );
-      }
-
-      const hold = await trx
-        .selectFrom('portfolio_transactions')
-        .select(['id', 'portfolio_id', 'amount_minor', 'created_by'])
-        .where('transaction_type', '=', 'BOOKING_HOLD')
-        .where(sql<boolean>`lower(reference_id) = lower(${order.id})`)
-        .executeTakeFirst();
-      if (!hold) {
-        throw new BadRequestException(
-          'No existe una retención pendiente para esta reserva. No se modificó el saldo.',
-        );
-      }
-
-      const holdAmount = Number(hold.amount_minor);
-      if (!Number.isSafeInteger(holdAmount) || holdAmount >= 0) {
-        throw new BadRequestException(
-          'La retención tiene un monto inválido y requiere conciliación manual. No se modificó ' +
-            'el saldo.',
-        );
-      }
-
-      return {
-        orderId: order.id,
-        provider: order.provider,
-        providerOrderId: order.provider_order_id,
-        orderStatus: order.status,
-        hold: {
-          id: hold.id,
-          portfolioId: hold.portfolio_id,
-          amountMinor: holdAmount,
-          createdBy: hold.created_by,
-        },
-      };
-    });
+  ): Promise<BookingWithHold> {
+    const booking = await this.holds.load(tenantId, orderId);
+    if (booking.hold === undefined) {
+      throw new BadRequestException(
+        'No existe una retención pendiente para esta reserva. No se modificó el saldo.',
+      );
+    }
+    return { ...booking, hold: booking.hold };
   }
 }

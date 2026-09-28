@@ -32,13 +32,16 @@ import {
   accountCertainty,
   accountCertaintyNotice,
   accountConfigSummary,
+  draftWarnings,
   fieldKey,
   inheritableHelp,
   isProviderAccountStatus,
+  ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
   providerFields,
   providerFormFor,
+  providerFormsForNode,
   statusEnablesProvider,
   statusNotice,
   validateProviderDraft,
@@ -49,6 +52,7 @@ import {
   type ProviderForm,
   type ProviderSection,
 } from '../../../lib/provider-forms';
+import { providerAccountSaveError } from '../../../lib/provider-account-errors';
 
 interface NetworkTenant {
   id: string;
@@ -667,6 +671,8 @@ function CredentialsModal({
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  /** El 409 de una cuenta con reservas vivas: un aviso, no un error del formulario. */
+  const [inUse, setInUse] = useState<Notice | null>(null);
 
   const [providerCode, setProviderCode] = useState('latam-ndc');
   const [label, setLabel] = useState('default');
@@ -718,6 +724,13 @@ function CredentialsModal({
         : null,
     [provider, label, status, credentials, config, draftOrigin, tenant.name, ownerNameOf, editor],
   );
+
+  const warnings = useMemo(
+    () => (provider ? draftWarnings(provider, { credentials, config }) : []),
+    [provider, credentials, config],
+  );
+  // Sólo aparece al editar una cuenta que este nodo no puede tener: el alta ya no se la ofrece.
+  const ownershipCallout = provider ? ownershipNotice(provider, tenant.tenantType) : null;
 
   /**
    * Foco al abrir el formulario. Se pinta DEBAJO de la lista de cuentas: sin mover el foco, quien
@@ -780,10 +793,14 @@ function CredentialsModal({
   /** Cambiar de proveedor limpia lo tecleado: los campos de uno no significan nada en el otro. */
   function selectProvider(code: string) {
     setProviderCode(code);
+    // Un proveedor que pide verificar la credencial antes de habilitarlo arranca en Sandbox.
+    const initialStatus = providerFormFor(code)?.initialStatus;
+    if (initialStatus) setStatus(initialStatus);
     setCredentials({});
     setConfig({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
   }
 
   /** Alta: arranca siempre limpio, incluso viniendo de cerrar una edición. */
@@ -796,6 +813,7 @@ function CredentialsModal({
     setConfig({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
     setEditor({ kind: 'create' });
   }
 
@@ -822,11 +840,13 @@ function CredentialsModal({
     setCredentials({});
     setFieldErrors({});
     setError('');
+    setInUse(null);
     setEditor({ kind: 'edit', account, droppedConfigKeys: prefill.droppedConfigKeys });
   }
 
   async function save() {
     setError('');
+    setInUse(null);
     setFieldErrors({});
     if (!provider || !submission) {
       setError(
@@ -858,9 +878,11 @@ function CredentialsModal({
           status,
         }),
       });
-      const data = (await res.json()) as { message?: string | string[]; error?: string };
+      const data = (await res.json()) as unknown;
       if (!res.ok) {
-        setError(apiError(data, 'Error al guardar credenciales'));
+        const failure = providerAccountSaveError(res.status, data, 'Error al guardar credenciales');
+        if (failure.kind === 'in-use') setInUse(failure.notice);
+        else setError(failure.message);
         return;
       }
       setEditor(null);
@@ -897,8 +919,8 @@ function CredentialsModal({
           Las credenciales se cifran y nunca se muestran de vuelta. Sólo cuentan las cuentas en
           estado <strong className="text-[var(--color-fg)]">Activo</strong>: si esta agencia no
           tiene una propia activa, usa la del ancestro heredable más cercano que la tenga. Qué pasa
-          cuando no hay ninguna depende del proveedor — Sabre queda fuera de las búsquedas, y otros
-          caen a las credenciales de la plataforma.
+          cuando no hay ninguna depende del proveedor — Sabre y TBO Holidays quedan fuera de las
+          búsquedas, y otros caen a las credenciales de la plataforma.
         </span>
       </div>
 
@@ -973,6 +995,11 @@ function CredentialsModal({
                           Proveedor desconocido para esta versión del panel: no sabemos qué campos
                           pide, así que no se puede editar desde acá sin riesgo de dejarla
                           inservible.
+                        </div>
+                      )}
+                      {form && ownershipNotice(form, tenant.tenantType) && (
+                        <div className="text-[10px] font-medium text-amber-800">
+                          {form.ownerRestriction?.explanation}
                         </div>
                       )}
                     </div>
@@ -1056,7 +1083,12 @@ function CredentialsModal({
                   className={cn(selectClass, editor.kind === 'edit' && 'opacity-70')}
                   aria-describedby={editor.kind === 'edit' ? 'creds-provider-locked' : undefined}
                 >
-                  {Object.entries(PROVIDERS).map(([code, p]) => (
+                  {/* Al editar el select está bloqueado y tiene que poder mostrar la cuenta abierta,
+                      aunque sea de un proveedor que este nodo ya no puede dar de alta. */}
+                  {(editor.kind === 'edit'
+                    ? Object.entries(PROVIDERS)
+                    : providerFormsForNode(tenant.tenantType)
+                  ).map(([code, p]) => (
                     <option key={code} value={code}>
                       {p.label}
                     </option>
@@ -1089,6 +1121,7 @@ function CredentialsModal({
               <span>{provider.note}</span>
             </p>
           )}
+          {ownershipCallout && <NoticeBox notice={ownershipCallout} />}
 
           {/* Las dos mitades, separadas y rotuladas: cuál se cifra y cuál se guarda en claro no
               es un detalle interno —decide dónde puede acabar una contraseña. */}
@@ -1123,6 +1156,10 @@ function CredentialsModal({
                 </fieldset>
               );
             })}
+
+          {warnings.map((notice) => (
+            <NoticeBox key={notice.title} notice={notice} />
+          ))}
 
           {provider &&
             [...provider.credentials, ...provider.config].some((f) => f.required === true) && (
@@ -1196,6 +1233,12 @@ function CredentialsModal({
             </ErrorBox>
           )}
           {error && <ErrorBox>{error}</ErrorBox>}
+          {/* La cuenta quedó como estaba y el motivo dice qué sí se puede cambiar: aviso, no error. */}
+          {inUse && (
+            <div role="alert">
+              <NoticeBox notice={inUse} />
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setEditor(null)}>
               Cancelar

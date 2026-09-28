@@ -23,6 +23,7 @@
     "@sales-travel/domain": "workspace:*",
     "@sales-travel/latam-ndc": "workspace:*",
     "@sales-travel/sabre": "workspace:*",
+    "@sales-travel/tbo-hotels": "workspace:*",
     "@sales-travel/validation": "workspace:*",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.34.0",

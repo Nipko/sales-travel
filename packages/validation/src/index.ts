@@ -15,6 +15,9 @@ export const CountryCodeSchema = z
   .regex(/^[A-Z]{2}$/);
 export const LanguageCodeSchema = z.enum(['es', 'pt', 'en']);
 
+// Países ISO 3166-1: el CRM guarda alfa-3 y los proveedores piden alfa-2.
+export { ISO_3166_ALPHA3_TO_ALPHA2, isIsoCountryAlpha2, toIsoCountryAlpha2 } from './iso-3166';
+
 // Paginación
 export const PaginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

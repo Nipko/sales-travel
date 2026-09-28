@@ -31,10 +31,21 @@ interface ErrorShape {
     readonly kind?: unknown;
     readonly retry?: unknown;
   };
+  /**
+   * `false` sólo lo pone quien cortó la llamada antes de enviarla y sabe que puede repetirse tal
+   * cual: el rechazo del circuit breaker (`BreakerRejectionError`, kill-switch o circuito abierto).
+   */
+  readonly sentToProvider?: unknown;
 }
 
 const CANCEL_WRITE_PATH = /(?:^|\/)(?:cancel(?:booking)?|cancel\/bnpl)(?:$|[/?])/i;
-const CANCEL_RESPONSE_MAPPING_ERROR = /Cancel(?:Booking)?MappingError$/;
+/**
+ * El write salió y su desenlace no se pudo leer (`…CancelMappingError`) o no es uno de los que el
+ * contrato del proveedor define para una cancelación (`…CancelOutcomeUnknownError`, p. ej. un código
+ * de otra operación en TBO). Va antes que la regla de los deterministas porque esos errores pueden
+ * traer una naturaleza `NO_RETRY`, y "no reintentar" no es "no se canceló".
+ */
+const CANCEL_OUTCOME_UNKNOWN_ERROR = /Cancel(?:Booking)?(?:Mapping|OutcomeUnknown)Error$/;
 const DETERMINISTIC_ERROR =
   /(?:Build|Input|Config|Validation|Mapping|CredentialsMissing|NotSupported|Rejected)Error$/;
 
@@ -86,7 +97,19 @@ export function classifyCancelThrownFailure(error: unknown): CancelRetryPolicy {
   const name = typeof shape.name === 'string' ? shape.name : '';
   const path = typeof shape.path === 'string' ? shape.path : undefined;
 
-  if (CANCEL_RESPONSE_MAPPING_ERROR.test(name)) {
+  // El breaker frenó la llamada antes de que saliera: no hubo write que verificar. Es el único
+  // rechazo sin `path` que puede volver a BullMQ; antes caía al final, en `UNVERIFIED`, y una
+  // cancelación que nunca se envió terminaba en conciliación y escalado.
+  if (shape.sentToProvider === false) {
+    return {
+      outcome: 'FAILED',
+      retryable: true,
+      reconciliationRequired: false,
+      reason: 'pre-write-transient',
+    };
+  }
+
+  if (CANCEL_OUTCOME_UNKNOWN_ERROR.test(name)) {
     return {
       outcome: 'UNVERIFIED',
       retryable: false,
@@ -116,8 +139,8 @@ export function classifyCancelThrownFailure(error: unknown): CancelRetryPolicy {
     };
   }
 
-  // Sólo una ruta conocida distinta del write demuestra que la excepción ocurrió en el
-  // get/check previo. Éste es el único caso que puede entrar a BullMQ.
+  // Fuera del rechazo del breaker, sólo una ruta conocida distinta del write demuestra que la
+  // excepción ocurrió en el get/check previo. Son los dos únicos casos que pueden entrar a BullMQ.
   if (path !== undefined && isTransient(shape)) {
     return {
       outcome: 'FAILED',
@@ -201,3 +224,12 @@ export const CANCEL_UNVERIFIED_POLICY: CancelRetryPolicy = {
   reconciliationRequired: true,
   reason: 'write-unverified',
 };
+
+/** El `last_error` durable de una cancelación `UNVERIFIED`: qué se puede hacer, nunca el error. */
+export const CANCEL_UNVERIFIED_MESSAGE = 'Cancelación no verificada; requiere conciliación.';
+
+/** El estado que tenía la orden antes del claim, tal como lo guardó el resultado durable. */
+export function persistedPriorOrderStatus(result: unknown): string | undefined {
+  const prior = jsonObject(result)?.['priorOrderStatus'];
+  return typeof prior === 'string' ? prior : undefined;
+}

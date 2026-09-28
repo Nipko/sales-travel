@@ -21,6 +21,40 @@ export interface CommissionMetric {
   totalSalesMinor: number;
 }
 
+/** Etiqueta de cada vertical en los reportes. */
+const VERTICAL_LABELS: Readonly<Record<string, string>> = {
+  flights: 'Vuelos',
+  hotels: 'Hoteles',
+  cars: 'Autos',
+  assistance: 'Asistencias',
+};
+
+/**
+ * Proveedores de filas que no dicen su vertical. Las verticales que reservan fuera de la saga de
+ * vuelos escriben `search_criteria.vertical` (`ExternalOrderIntentService`, autos), así que esto
+ * sólo cubre filas viejas y proveedores de demostración.
+ */
+const LEGACY_PROVIDER_VERTICAL: Readonly<Record<string, string>> = {
+  'latam-ndc': 'flights',
+  hotelbeds: 'hotels',
+  hoteldo: 'hotels',
+  'despegar-hotels': 'hotels',
+  assistcard: 'assistance',
+};
+
+/**
+ * Etiqueta de la vertical de una orden: la que la fila declara en `search_criteria.vertical` y, si
+ * no la declara, la de su proveedor. Lo que no dice nada sigue contando como vuelo, que es la única
+ * vertical cuyas órdenes no escriben el campo; antes también caía ahí una reserva de hotel de un
+ * proveedor que no estuviera en la lista.
+ */
+export function salesVerticalLabel(provider: string, declaredVertical: string | null): string {
+  const declared = declaredVertical === null ? undefined : VERTICAL_LABELS[declaredVertical];
+  if (declared !== undefined) return declared;
+  const legacy = LEGACY_PROVIDER_VERTICAL[provider];
+  return (legacy === undefined ? undefined : VERTICAL_LABELS[legacy]) ?? 'Vuelos';
+}
+
 @Injectable()
 export class ReportsService {
   constructor(private readonly db: DatabaseService) {}
@@ -36,21 +70,14 @@ export class ReportsService {
         .selectFrom('orders')
         .select([
           'provider',
+          sql<string | null>`search_criteria->>'vertical'`.as('vertical'),
           sql<number>`SUM(total_amount)`.as('total_amount_sum'),
           sql<number>`COUNT(id)`.as('count_val'),
         ])
         .where('tenant_id', '=', tenantId)
         .where('status', 'in', ['confirmed', 'ticketed'])
-        .groupBy('provider')
+        .groupBy(['provider', sql`search_criteria->>'vertical'`])
         .execute();
-
-      // Convertir a verticales amigables
-      const verticalMap: Record<string, string> = {
-        'latam-ndc': 'Vuelos',
-        hotelbeds: 'Hoteles',
-        hoteldo: 'Hoteles',
-        assistcard: 'Asistencias',
-      };
 
       const byVerticalMap: Record<string, SalesVerticalMetric> = {
         Vuelos: { vertical: 'Vuelos', totalAmountMinor: 0, count: 0 },
@@ -59,7 +86,7 @@ export class ReportsService {
       };
 
       for (const row of byProvider) {
-        const vert = verticalMap[row.provider] ?? 'Vuelos';
+        const vert = salesVerticalLabel(row.provider, row.vertical);
         if (!byVerticalMap[vert]) {
           byVerticalMap[vert] = { vertical: vert, totalAmountMinor: 0, count: 0 };
         }

@@ -3,11 +3,13 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import {
   type BookingContactInfo,
   type FlightSearchCriteria,
+  type HotelCancelRequestOptions,
   type OrderCancelResult,
   type OrderCreateResult,
   type OrderPayResult,
@@ -22,11 +24,13 @@ import {
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
 import type {
+  DB,
   OrderOperationStatus,
   OrderOperationType,
   OrderStatus,
 } from '../database/database.types.js';
 import { AuditService } from '../audit/audit.service.js';
+import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -47,10 +51,21 @@ import {
   verificationSummary,
   type SagaDecision,
 } from './order-create.saga.js';
+import {
+  HotelOrderCancellationService,
+  type HotelCancelAttempt,
+} from './hotel-order-cancellation.service.js';
+import { HotelOrderReadsService, type HotelOrderReadResult } from './hotel-order-reads.service.js';
+import {
+  OrderCreateIntentStore,
+  createRequestKey,
+  uniqueViolationConstraint,
+} from './order-create-intent.store.js';
 import { ORDER_EVENTS, createdSummary } from './order-events.js';
 import {
   CANCEL_REJECTED_POLICY,
   CANCEL_SUCCESS_POLICY,
+  CANCEL_UNVERIFIED_MESSAGE,
   CANCEL_UNVERIFIED_POLICY,
   classifyCancelThrownFailure,
   persistedCancelRetryPolicy,
@@ -123,15 +138,13 @@ function fareSelectionChanged(before: Offer, after: Offer): boolean {
 }
 
 /**
- * Sentinel cerrado del intent de creación. Nunca contiene el mensaje del proveedor ni datos del
- * pasajero; además permite que el UPDATE final haga CAS usando el schema actual, sin una columna
- * nueva de versión.
+ * El índice de 0037 que hace de CAS entre dos cancelaciones de la misma orden. Un 23505 de otro
+ * índice no es "ya hay una cancelación pendiente": sale tal cual y no se disfraza de 409.
  */
-const CREATE_PENDING_RECONCILIATION_MARKER =
-  'Creación pendiente de conciliación con el proveedor. No reenviar la reserva.';
-const CREATE_NOT_SENT_MARKER = 'La creación no se envió al proveedor.';
-const CREATE_REQUEST_KEY_CONSTRAINT = 'uq_orders_create_request_key';
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PENDING_CANCEL_CONSTRAINT = 'uq_order_operations_pending_cancel';
+
+/** Quién espera una cancelación: una persona en el panel o un job. */
+type CancelRequestPurpose = NonNullable<HotelCancelRequestOptions['purpose']>;
 
 interface CreatedOrderResult {
   result: OrderCreateResult;
@@ -145,36 +158,19 @@ interface CancellationClaim {
   priorStatus: OrderStatus;
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
-  );
+/** Lo que se escribe junto con el cierre de la operación `cancel`, en su misma transacción. */
+interface CancellationCompletion {
+  /** Se suma al resultado durable de la operación (vocabulario cerrado). */
+  readonly result?: Readonly<Record<string, unknown>>;
+  readonly inTransaction?: (trx: Transaction<DB>) => Promise<void>;
 }
 
-function isCreateRequestKeyViolation(error: unknown): boolean {
-  if (!isUniqueViolation(error)) return false;
-  const constraint =
-    typeof error === 'object' && error !== null && 'constraint' in error
-      ? (error as { constraint?: unknown }).constraint
-      : undefined;
-  return constraint === CREATE_REQUEST_KEY_CONSTRAINT;
-}
-
-function createRequestKey(quotationId: string | undefined, clientRequestId: string | undefined) {
-  if (quotationId !== undefined) return `q:${quotationId.toLowerCase()}`;
-  const normalized = clientRequestId?.trim().toLowerCase();
-  if (normalized === undefined || normalized.length === 0) {
-    throw new BadRequestException(
-      'Se requiere Idempotency-Key UUID cuando la reserva no proviene de una cotización.',
-    );
-  }
-  if (!UUID_PATTERN.test(normalized)) {
-    throw new BadRequestException('Idempotency-Key debe ser un UUID válido.');
-  }
-  return `c:${normalized}`;
+/** El texto durable de un intento que lanzó: dice qué se puede hacer después, nunca el error. */
+function thrownCancelMessage(failure: CancelRetryPolicy): string {
+  if (failure.reconciliationRequired) return CANCEL_UNVERIFIED_MESSAGE;
+  return failure.retryable
+    ? 'Cancelación fallida antes de enviar el write.'
+    : 'Cancelación rechazada antes de completarse.';
 }
 
 export interface OrderOperationRow {
@@ -234,12 +230,18 @@ export interface OrderRow {
   provider_raw: unknown;
   error_message: string | null;
   create_request_key: string | null;
+  /** 0042. Sólo las verticales que mandan su propia referencia al proveedor la escriben. */
+  provider_booking_ref: string | null;
+  /** 0042. Cuenta BYOC con la que se reservó; la post-venta usa ésta y no la vigente. */
+  provider_account_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
 
 @Injectable()
 export class OrdersService {
+  private readonly intents: OrderCreateIntentStore;
+
   constructor(
     private readonly db: DatabaseService,
     private readonly registry: FlightProviderRegistry,
@@ -247,7 +249,18 @@ export class OrdersService {
     private readonly agentCars: AgentCarsProviderFactory,
     private readonly audit: AuditService,
     private readonly pricing: PricingService,
-  ) {}
+    /**
+     * La post-venta de las órdenes de hotel (PR-5.2). Opcional sólo para los dobles de las suites
+     * de vuelos, que no la necesitan: en la app siempre está.
+     */
+    @Optional() private readonly hotelReads?: HotelOrderReadsService,
+    /** La cancelación de las órdenes de hotel (PR-5.3). Opcional por el mismo motivo. */
+    @Optional() private readonly hotelCancellations?: HotelOrderCancellationService,
+  ) {
+    // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
+    // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
+    this.intents = new OrderCreateIntentStore(db);
+  }
 
   /**
    * Proveedor QUE HIZO la reserva, con sus capacidades. Antes se inyectaba el factory de un
@@ -353,7 +366,10 @@ export class OrdersService {
     const requestKey = createRequestKey(dto.quotationId, clientRequestId);
 
     const providerCode = dto.offer.provider.name;
-    const provider = await this.flightProvider(tenantId, providerCode);
+    // Es la única venta de este servicio: si la plataforma apagó el proveedor para el tenant, no se
+    // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
+    // `flightProvider`, que no mira la habilitación.
+    const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
 
     // El claim se inserta antes de priceOffer/createOrder. Una colisión termina aquí, sin tocar el
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.
@@ -367,7 +383,7 @@ export class OrdersService {
     try {
       verifiedDto = await this.revalidateForCreate(tenantId, provider, dto);
     } catch (error) {
-      await this.failCreateIntentBeforeProviderBestEffort(tenantId, intent);
+      await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
     }
 
@@ -390,7 +406,7 @@ export class OrdersService {
         },
       });
     } catch (error) {
-      await this.failCreateIntentBeforeProviderBestEffort(tenantId, intent);
+      await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
     }
 
@@ -463,7 +479,7 @@ export class OrdersService {
         reason: 'post-create-finalization-unavailable',
         status: 'pending',
       };
-      const marked = await this.markCreatePendingBestEffort(tenantId, order);
+      const marked = await this.intents.markPending(tenantId, order);
       try {
         await this.audit.emit({
           eventType: ORDER_EVENTS.escalated,
@@ -691,216 +707,51 @@ export class OrdersService {
   }
 
   /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */
-  private async insertCreateIntent(
+  private insertCreateIntent(
     tenantId: string,
     userId: string,
     dto: CreateOrderDto,
     providerCode: string,
     requestKey: string,
   ): Promise<OrderRow> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        return await this.insertCreateIntentOnce(tenantId, userId, dto, providerCode, requestKey);
-      } catch (error) {
-        if (!isCreateRequestKeyViolation(error)) throw error;
-
-        const existing = await this.findByCreateRequestKey(tenantId, requestKey);
-        if (existing !== undefined) {
-          throw new ConflictException({
-            statusCode: 409,
-            error: 'Conflict',
-            message:
-              'Esta solicitud de creación ya fue recibida. No vuelvas a reservar; usa la orden existente.',
-            orderId: existing.id,
-            ...(existing.provider_order_id === null ? {} : { pnr: existing.provider_order_id }),
-            duplicateRequest: true,
-            retryForbidden: true,
-            reconciliationRequired: true,
-          });
-        }
-
-        // El primer request pudo liberar la clave al cerrar FAILED entre el 23505 y esta lectura.
-        // Sólo se repite el INSERT; nunca priceOffer/createOrder.
-        if (attempt === 0) continue;
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          message: 'No se pudo adquirir de forma segura la clave de creación.',
-          duplicateRequest: true,
-          retryForbidden: true,
-          reconciliationRequired: true,
-        });
-      }
-    }
-    throw new ConflictException('No se pudo adquirir la clave de creación.');
+    return this.intents.insert(
+      tenantId,
+      {
+        userId,
+        quotationId: dto.quotationId ?? null,
+        provider: providerCode,
+        searchCriteria: dto.searchCriteria,
+        selectedOffer: dto.offer,
+        passengers: dto.passengers,
+        contactInfo: dto.contactInfo,
+        // El cliente paga el precio final (con la cascada de markup); el proveedor
+        // recibe el neto (dto.offer.total). Si no hay pricing, final = neto.
+        totalAmountMinor: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
+        currency: dto.offer.total.currency,
+        requestKey,
+      },
+      'pnr',
+    );
   }
 
-  private async insertCreateIntentOnce(
-    tenantId: string,
-    userId: string,
-    dto: CreateOrderDto,
-    providerCode: string,
-    requestKey: string,
-  ): Promise<OrderRow> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      // Lock real por tenant: dos transacciones no pueden observar el mismo MAX(order_number).
-      await trx
-        .selectFrom('tenants')
-        .select('id')
-        .where('id', '=', tenantId)
-        .forUpdate()
-        .executeTakeFirstOrThrow();
-
-      if (dto.quotationId !== undefined) {
-        const quotation = await trx
-          .selectFrom('quotations')
-          .select('id')
-          .where('id', '=', dto.quotationId)
-          .where('tenant_id', '=', tenantId)
-          .executeTakeFirst();
-        if (quotation === undefined) {
-          throw new BadRequestException('La cotización no pertenece a la agencia activa.');
-        }
-      }
-
-      const nextNumber = await trx
-        .selectFrom('orders')
-        .select(sql<number>`COALESCE(MAX(order_number), 0) + 1`.as('next'))
-        .where('tenant_id', '=', tenantId)
-        .executeTakeFirstOrThrow();
-
-      const row = await trx
-        .insertInto('orders')
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          quotation_id: dto.quotationId ?? null,
-          provider: providerCode,
-          provider_order_id: null,
-          status: 'pending',
-          search_criteria: JSON.stringify(dto.searchCriteria),
-          selected_offer: JSON.stringify(dto.offer),
-          passengers: JSON.stringify(dto.passengers),
-          contact_info: JSON.stringify(dto.contactInfo),
-          // El cliente paga el precio final (con la cascada de markup); el proveedor
-          // recibe el neto (dto.offer.total). Si no hay pricing, final = neto.
-          total_amount: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
-          currency: dto.offer.total.currency,
-          order_number: nextNumber.next,
-          provider_raw: null,
-          error_message: CREATE_PENDING_RECONCILIATION_MARKER,
-          create_request_key: requestKey,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      return row as unknown as OrderRow;
-    });
-  }
-
-  private async findByCreateRequestKey(
-    tenantId: string,
-    requestKey: string,
-  ): Promise<OrderRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const row = await trx
-        .selectFrom('orders')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('create_request_key', '=', requestKey)
-        .executeTakeFirst();
-      return row as unknown as OrderRow | undefined;
-    });
-  }
-
-  /**
-   * Consolida el resultado sobre la MISMA fila. `provider_raw IS NULL` es el CAS compatible con
-   * el schema vigente: todo resultado cerrado escribe una lista blanca no nula, incluso FAILED.
-   */
-  private async settleCreateIntent(
+  /** Consolida con CAS sobre el intent; `undefined` si otro camino ya lo cerró. */
+  private settleCreateIntent(
     tenantId: string,
     intent: OrderRow,
     dto: CreateOrderDto,
     created: CreatedOrderResult,
   ): Promise<OrderRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const row = await trx
-        .updateTable('orders')
-        .set({
-          provider_order_id: created.result.pnr ?? created.result.orderId ?? null,
-          status: ORDER_STATUS_BY_OUTCOME[created.result.outcome],
-          selected_offer: JSON.stringify(dto.offer),
-          search_criteria: JSON.stringify(dto.searchCriteria),
-          total_amount: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
-          currency: dto.offer.total.currency,
-          // Lista BLANCA del adapter (o la nuestra si no la ofrece). Nunca un volcado: la
-          // respuesta cruda de una creación arrastra el eco de lo que mandamos, con la PII de
-          // los viajeros, y `orders.provider_raw` se persiste para siempre.
-          provider_raw: JSON.stringify(created.providerRaw),
-          error_message: summarizeIssues(created.result.issues),
-          ...(created.result.outcome === 'FAILED' ? { create_request_key: null } : {}),
-        })
-        .where('id', '=', intent.id)
-        .where('tenant_id', '=', tenantId)
-        .where('status', '=', 'pending')
-        .where('provider_raw', 'is', null)
-        .returningAll()
-        .executeTakeFirst();
-
-      return row as unknown as OrderRow | undefined;
+    return this.intents.settle(tenantId, intent.id, {
+      status: ORDER_STATUS_BY_OUTCOME[created.result.outcome],
+      providerOrderId: created.result.pnr ?? created.result.orderId ?? null,
+      // Lista BLANCA del adapter (o la nuestra si no la ofrece). Nunca un volcado.
+      providerRaw: created.providerRaw,
+      errorMessage: summarizeIssues(created.result.issues),
+      selectedOffer: dto.offer,
+      searchCriteria: dto.searchCriteria,
+      totalAmountMinor: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
+      currency: dto.offer.total.currency,
     });
-  }
-
-  /** Un fallo anterior a createOrder es reintentable: cierra localmente y libera la clave. */
-  private async failCreateIntentBeforeProviderBestEffort(
-    tenantId: string,
-    intent: OrderRow,
-  ): Promise<void> {
-    try {
-      await this.db.withTenant(tenantId, async (trx) => {
-        await trx
-          .updateTable('orders')
-          .set({
-            status: 'failed',
-            provider_raw: JSON.stringify({ phase: 'pre-create', outcome: 'FAILED' }),
-            error_message: CREATE_NOT_SENT_MARKER,
-            create_request_key: null,
-          })
-          .where('id', '=', intent.id)
-          .where('tenant_id', '=', tenantId)
-          .where('status', '=', 'pending')
-          .where('provider_raw', 'is', null)
-          .where('create_request_key', '=', intent.create_request_key)
-          .execute();
-      });
-    } catch {
-      // Si la base cayó, el intent pending conserva la clave y bloquea un segundo create.
-    }
-  }
-
-  /** Baja el estado a pending sin pisar una transición concurrente; todos los fallos son seguros. */
-  private async markCreatePendingBestEffort(
-    tenantId: string,
-    order: OrderRow,
-  ): Promise<OrderRow | undefined> {
-    try {
-      return await this.db.withTenant(tenantId, async (trx) => {
-        const row = await trx
-          .updateTable('orders')
-          .set({
-            status: 'pending',
-            error_message: CREATE_PENDING_RECONCILIATION_MARKER,
-          })
-          .where('id', '=', order.id)
-          .where('tenant_id', '=', tenantId)
-          .where('status', '=', order.status)
-          .returningAll()
-          .executeTakeFirst();
-        return row as unknown as OrderRow | undefined;
-      });
-    } catch {
-      return undefined;
-    }
   }
 
   /**
@@ -1059,6 +910,26 @@ export class OrdersService {
   }
 
   /**
+   * La consulta manual de una orden, por su vertical (docs/tbo/09 PR-5.2). `row` es la fila que el
+   * controlador ya leyó con el tenant fijado; una orden de hotel se vuelve a leer con su
+   * seguimiento dentro de su servicio, antes de llamar al proveedor, y sale con la cuenta que hizo
+   * la reserva.
+   */
+  async retrieveOrder(
+    tenantId: string,
+    row: Pick<OrderRow, 'id' | 'provider' | 'provider_order_id'>,
+    actorUserId?: string,
+  ): Promise<OrderView | HotelOrderReadResult> {
+    if (this.hotelReads?.handles(row.provider) === true) {
+      return this.hotelReads.retrieve(tenantId, row.id, actorUserId);
+    }
+    if (!row.provider_order_id) {
+      throw new NotFoundException('La reserva no existe o no tiene localizador.');
+    }
+    return this.retrieveFromProvider(tenantId, row.provider_order_id, row.provider);
+  }
+
+  /**
    * Lectura de SÓLO VISUALIZACIÓN. No sirve —ni puede servir— como paso previo de una
    * modificación: su tipo de retorno no lleva firma de concurrencia. Ver RF-09.
    */
@@ -1085,6 +956,7 @@ export class OrdersService {
     actorUserId?: string,
   ): Promise<CancellationClaim> {
     this.assertGenericCancellationAllowed(order);
+    const hotels = this.hotelCancellationsFor(order);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         const operation = await trx
@@ -1118,11 +990,12 @@ export class OrdersService {
             'Otra ejecución cambió la reserva antes de adquirir el claim de cancelación.',
           );
         }
+        await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId: operation.id, priorStatus: order.status };
       });
     } catch (error) {
       if (error instanceof ConflictException) throw error;
-      if (isUniqueViolation(error)) {
+      if (uniqueViolationConstraint(error) === PENDING_CANCEL_CONSTRAINT) {
         throw new ConflictException(
           'Ya hay una cancelación pendiente. Hay que consultar y conciliar su estado antes de reenviar el write.',
         );
@@ -1141,6 +1014,7 @@ export class OrdersService {
     policy: CancelRetryPolicy,
     actorUserId?: string,
     finalOrderStatus?: OrderStatus,
+    completion: CancellationCompletion = {},
   ): Promise<OrderRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
       const completed = await trx
@@ -1149,6 +1023,7 @@ export class OrdersService {
           status,
           last_error: lastError,
           result: JSON.stringify({
+            ...completion.result,
             status,
             ...policy,
             priorOrderStatus: claim.priorStatus,
@@ -1164,6 +1039,7 @@ export class OrdersService {
           'Se perdió el claim durable de cancelación. No se puede reenviar el write hasta conciliar.',
         );
       }
+      await completion.inTransaction?.(trx);
 
       if (finalOrderStatus === undefined) return undefined;
       const order = await trx
@@ -1195,6 +1071,8 @@ export class OrdersService {
     actorUserId?: string,
     /** Compensación selectiva: sólo estos `itemId`. Sin ellos, la cancelación es de la reserva. */
     cancellableItemIds?: readonly string[],
+    /** `interactive` si una persona espera la respuesta; los jobs van por el cupo de fondo. */
+    purpose: CancelRequestPurpose = 'background',
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     const existing = await this.findById(tenantId, id);
     if (!existing?.provider_order_id) {
@@ -1202,6 +1080,10 @@ export class OrdersService {
     }
     if (existing.status === 'cancelled') {
       throw new ConflictException('La reserva ya está cancelada.');
+    }
+    const hotels = this.hotelCancellationsFor(existing);
+    if (hotels !== undefined) {
+      return this.runHotelCancel(hotels, tenantId, existing, claim, actorUserId, purpose);
     }
 
     let result: OrderCancelResult;
@@ -1236,17 +1118,12 @@ export class OrdersService {
       }
     } catch (err) {
       const failure = classifyCancelThrownFailure(err);
-      const durableError = failure.reconciliationRequired
-        ? 'Cancelación no verificada; requiere conciliación.'
-        : failure.retryable
-          ? 'Cancelación fallida antes de enviar el write.'
-          : 'Cancelación rechazada antes de completarse.';
       await this.completeCancellationOperation(
         tenantId,
         id,
         claim,
         'failed',
-        durableError,
+        thrownCancelMessage(failure),
         failure,
         actorUserId,
         failure.reconciliationRequired ? undefined : claim.priorStatus,
@@ -1325,7 +1202,7 @@ export class OrdersService {
       result.success
         ? null
         : operationPolicy.reconciliationRequired
-          ? 'Cancelación no verificada; requiere conciliación.'
+          ? CANCEL_UNVERIFIED_MESSAGE
           : 'Cancelación rechazada por el proveedor.',
       operationPolicy,
       actorUserId,
@@ -1341,6 +1218,108 @@ export class OrdersService {
     }
 
     return { result };
+  }
+
+  /** El servicio de cancelación de hoteles, si la orden es de un proveedor de hoteles. */
+  private hotelCancellationsFor(
+    order: Pick<OrderRow, 'provider'>,
+  ): HotelOrderCancellationService | undefined {
+    return this.hotelCancellations?.handles(order.provider) === true
+      ? this.hotelCancellations
+      : undefined;
+  }
+
+  /**
+   * La cancelación de una orden de hotel (docs/tbo/09 PR-5.3; 04 §4.4). Mismo claim, misma
+   * política y mismo `OrderCancellationAttempted` que la de vuelos; cambia qué queda de la orden:
+   * una cancelación aceptada que el proveedor todavía procesa la deja `pending` ("Cancelación en
+   * curso") con una lectura agendada que la cierra, y el seguimiento se escribe en la misma
+   * transacción que cierra la operación.
+   */
+  private async runHotelCancel(
+    hotels: HotelOrderCancellationService,
+    tenantId: string,
+    order: OrderRow,
+    claim: CancellationClaim,
+    actorUserId: string | undefined,
+    purpose: CancelRequestPurpose,
+  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    let attempt: HotelCancelAttempt;
+    try {
+      attempt = await hotels.send(tenantId, order, { purpose });
+    } catch (err) {
+      const failure = classifyCancelThrownFailure(err);
+      const tracking = hotels.thrownTracking(failure, Date.now());
+      const verifyScheduled = tracking.openCalendar !== undefined;
+      await this.completeCancellationOperation(
+        tenantId,
+        order.id,
+        claim,
+        'failed',
+        thrownCancelMessage(failure),
+        failure,
+        actorUserId,
+        failure.reconciliationRequired ? undefined : claim.priorStatus,
+        {
+          result: { vertical: 'hotels', verifyScheduled },
+          inTransaction: (trx) => hotels.writeTracking(trx, tenantId, order.id, tracking),
+        },
+      );
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.cancelled,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: order.provider,
+          vertical: 'hotels',
+          success: false,
+          threw: true,
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+          outcome: failure.outcome,
+          retryable: failure.retryable,
+          reconciliationRequired: failure.reconciliationRequired,
+        },
+      });
+      if (failure.reconciliationRequired) {
+        await this.emitCancellationEscalation(tenantId, order.id, order.provider, actorUserId, {
+          reason: failure.reason,
+          threw: true,
+          vertical: 'hotels',
+          verifyScheduled,
+        });
+      }
+      await hotels.afterThrow(tenantId, order, tracking, actorUserId ?? order.user_id);
+      throw err;
+    }
+
+    const settled = hotels.settle(attempt, claim.priorStatus, Date.now());
+    const { success } = settled.result;
+    const finalized = await this.completeCancellationOperation(
+      tenantId,
+      order.id,
+      claim,
+      success ? 'success' : 'failed',
+      success ? null : 'Cancelación rechazada por el proveedor.',
+      success ? CANCEL_SUCCESS_POLICY : CANCEL_REJECTED_POLICY,
+      actorUserId,
+      settled.outcome.orderStatus,
+      {
+        result: settled.record,
+        inTransaction: (trx) => hotels.writeTracking(trx, tenantId, order.id, settled.tracking),
+      },
+    );
+    await this.audit.emit({
+      eventType: ORDER_EVENTS.cancelled,
+      tenantId,
+      actorUserId,
+      aggregateType: 'order',
+      aggregateId: order.id,
+      payload: { provider: order.provider, success, ...settled.record },
+    });
+    await hotels.afterSettled(tenantId, settled, actorUserId);
+    return success ? { result: settled.result, order: finalized } : { result: settled.result };
   }
 
   /**
@@ -1425,6 +1404,7 @@ export class OrdersService {
     operationId: string,
     order: OrderRow,
   ): Promise<CancellationClaim | undefined> {
+    const hotels = this.hotelCancellationsFor(order);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         const claimed = await trx
@@ -1456,11 +1436,12 @@ export class OrdersService {
             'La reserva cambió antes de adquirir el claim de reintento de cancelación.',
           );
         }
+        await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId, priorStatus: order.status };
       });
     } catch (error) {
       if (error instanceof ConflictException) throw error;
-      if (isUniqueViolation(error)) {
+      if (uniqueViolationConstraint(error) === PENDING_CANCEL_CONSTRAINT) {
         throw new ConflictException('Otra ejecución ya tomó la cancelación pendiente.');
       }
       throw error;
@@ -1470,6 +1451,8 @@ export class OrdersService {
   /**
    * Sólo encola cuando la evidencia dice que el write NO empezó (p.ej. falló el get/check previo).
    * Un timeout del endpoint de cancelación se registra como UNVERIFIED y nunca llega a BullMQ.
+   * Lo llaman sólo los endpoints: una persona espera, y en hoteles la lectura previa al Cancel sale
+   * por el cupo de ventas en vez del de fondo (04 §14.3).
    */
   private async attemptCancelAndMaybeQueue(
     tenantId: string,
@@ -1479,11 +1462,16 @@ export class OrdersService {
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
     try {
-      return await this.runCancel(tenantId, id, pnr, claim, actorUserId);
+      return await this.runCancel(tenantId, id, pnr, claim, actorUserId, undefined, 'interactive');
     } catch (err) {
       const policy = classifyCancelThrownFailure(err);
       if (policy.retryable) {
-        await this.queue.enqueueCancelRetry({ tenantId, orderId: id, type: 'cancel' });
+        await this.queue.enqueueCancelRetry({
+          tenantId,
+          orderId: id,
+          operationId: claim.operationId,
+          type: 'cancel',
+        });
         throw err;
       }
       throw new ConflictException(
@@ -1504,6 +1492,7 @@ export class OrdersService {
     pnr: string,
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    const startedAt = Date.now();
     const current = await this.findById(tenantId, id);
     if (!current?.provider_order_id) {
       throw new NotFoundException('La reserva no existe o no tiene localizador.');
@@ -1534,8 +1523,50 @@ export class OrdersService {
         );
       }
     }
+    const hotels = this.hotelCancellationsFor(current);
+    await hotels?.assertCancellable(tenantId, current);
     const claim = await this.beginCancellationOperation(tenantId, current, actorUserId);
-    return this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+    const work = this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+    return hotels === undefined
+      ? work
+      : this.hotelCancelWithinBudget(hotels, current, startedAt, work);
+  }
+
+  /**
+   * HARD-1: la petición que cancela una orden de hotel responde dentro de su presupuesto aunque el
+   * proveedor tarde (lecturas con reintentos, un Cancel de 60 s, el cupo de la cuenta). Agotado,
+   * la respuesta es "Cancelación en curso" y la cancelación sigue en el proceso con su mismo claim:
+   * al terminar escribe la operación y agenda `verify-cancellation` como siempre, y si el proceso
+   * muere con ella en vuelo, el barrido vence el claim y la agenda igual
+   * (`StaleCancelClaimService`). Nunca se manda un segundo Cancel.
+   */
+  private async hotelCancelWithinBudget<T extends { result: OrderCancelResult }>(
+    hotels: HotelOrderCancellationService,
+    order: OrderRow,
+    startedAt: number,
+    work: Promise<T>,
+  ): Promise<T | { result: OrderCancelResult }> {
+    const done = await hotels.withinBudget(work, startedAt, {
+      orderId: order.id,
+      provider: order.provider,
+    });
+    return done.settled ? done.value : { result: hotels.stillRunning(order) };
+  }
+
+  /**
+   * La penalidad estimada de cancelar una orden de hotel, para mostrarla antes de confirmar (RF-25;
+   * D-TBO-26 A). `row` es la fila que el controlador ya leyó con el tenant fijado.
+   */
+  cancellationEstimate(
+    row: Pick<OrderRow, 'provider' | 'selected_offer'>,
+  ): HotelCancellationEstimate {
+    const hotels = this.hotelCancellationsFor(row);
+    if (hotels === undefined) {
+      throw new BadRequestException(
+        'La penalidad estimada sólo existe para reservas de hotel: el resto la informa el proveedor al cancelar.',
+      );
+    }
+    return hotels.estimate(row);
   }
 
   /**
@@ -1633,6 +1664,8 @@ export class OrdersService {
     const order = await this.findById(tenantId, orderId);
     if (!order?.provider_order_id) return;
     if (order.status === 'cancelled') return;
+    // Una reserva de hotel no tiene ítems que compensar por separado: se cancela entera o nada.
+    if (this.hotelCancellationsFor(order) !== undefined) return;
 
     const previous = await this.latestCancelOperation(tenantId, orderId);
     let claim: CancellationClaim | undefined;
@@ -1791,6 +1824,7 @@ export class OrdersService {
     opId: string,
     actorUserId?: string,
   ): Promise<{ result: OrderCancelResult }> {
+    const startedAt = Date.now();
     const op = await this.db.withTenant(tenantId, async (trx) =>
       trx
         .selectFrom('order_operations')
@@ -1829,17 +1863,22 @@ export class OrdersService {
       throw new ConflictException('La reserva ya está cancelada.');
     }
     this.assertGenericCancellationAllowed(order);
+    const hotels = this.hotelCancellationsFor(order);
+    await hotels?.assertCancellable(tenantId, order);
     const claim = await this.claimCancelRetry(tenantId, opId, order);
     if (!claim) {
       throw new ConflictException('Otra ejecución ya tomó esta operación de cancelación.');
     }
-    const { result } = await this.attemptCancelAndMaybeQueue(
+    const work = this.attemptCancelAndMaybeQueue(
       tenantId,
       orderId,
       order.provider_order_id,
       claim,
       actorUserId,
     );
+    const { result } = await (hotels === undefined
+      ? work
+      : this.hotelCancelWithinBudget(hotels, order, startedAt, work));
     return { result };
   }
 

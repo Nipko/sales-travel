@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estadoHttpValido, SERVICIO_NO_DISPONIBLE } from './api';
+import { estadoHttpValido, readApiResponse, SERVICIO_NO_DISPONIBLE } from './api';
 
 /**
  * La avería concreta: `ApiError.status` viaja sin mirar a 48 rutas de `app/api/`, que hacen
@@ -32,5 +32,40 @@ describe('estadoHttpValido: ningún estado puede reventar NextResponse.json', ()
     for (const status of [Number.NaN, Number.POSITIVE_INFINITY, 200.5]) {
       expect(estadoHttpValido(status)).toBe(SERVICIO_NO_DISPONIBLE);
     }
+  });
+});
+
+/**
+ * `readApiResponse` es lo que usa la ruta de reserva de hotel (RF-22): tiene que dejar pasar el
+ * estado y el cuerpo ENTEROS, porque ahí viajan el `202` de una reserva en curso, el precio nuevo
+ * de un `409` y las marcas que prohíben repetirla.
+ */
+describe('readApiResponse: estado y cuerpo completos', () => {
+  it('un 202 sigue siendo 202, con su cuerpo', async () => {
+    const body = { orderId: 'o-1', status: 'pending', retryForbidden: true };
+    const read = await readApiResponse(new Response(JSON.stringify(body), { status: 202 }));
+    expect(read).toEqual({ kind: 'json', status: 202, body });
+  });
+
+  it('un error conserva todo su cuerpo, no sólo `message`', async () => {
+    const body = {
+      statusCode: 409,
+      message: 'El precio subió.',
+      reason: 'PRICE_INCREASED',
+      details: { currentTotal: { amountMinor: 1, currency: 'USD' } },
+      orderId: 'o-1',
+      duplicateRequest: true,
+    };
+    const read = await readApiResponse(new Response(JSON.stringify(body), { status: 409 }));
+    expect(read).toEqual({ kind: 'json', status: 409, body });
+  });
+
+  it('una página de un proxy no rompe: queda el estado y un mensaje que dice qué hacer', async () => {
+    const read = await readApiResponse(
+      new Response('<!DOCTYPE html><html>timeout</html>', { status: 524 }),
+    );
+    expect(read.kind).toBe('not-json');
+    expect(read.status).toBe(524);
+    if (read.kind === 'not-json') expect(read.message).toMatch(/NO la repitas/);
   });
 });

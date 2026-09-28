@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/sync-tbo-hotel-inventory.yml",
+        "$TURBO_ROOT$/.github/workflows/deploy.yml",
+        "$TURBO_ROOT$/infrastructure/hostinger/render-cert-env.mjs"
+      ]
+    }
+  }
+}

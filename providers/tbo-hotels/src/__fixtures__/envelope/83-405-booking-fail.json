@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 405 BOOKING_FAIL con HTTP 200 (08 RF-03 CA-1)",
+  "source": "Code y Description de la tabla (p. 9). El HTTP que lo acompaña no está documentado (Q-07).",
+  "operation": "book",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 405, "Description": "Booking Failed" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "BOOKING_FAILED", "status": 200, "tboCode": 405 }
+}

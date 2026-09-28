@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Insertable, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
+import type { DB, DomainEventsTable } from '../database/database.types.js';
 import { currentContext } from '../request-context/request-context.js';
 
 export interface AuditEvent {
@@ -24,6 +25,27 @@ export interface AuditEntry {
   payload: Record<string, unknown>;
 }
 
+/** La fila de `domain_events` de un evento, con el actor y el tenant del request si no vienen. */
+function auditRow(event: AuditEvent): Insertable<DomainEventsTable> {
+  const ctx = currentContext();
+  return {
+    tenant_id: event.tenantId ?? ctx?.tenantId ?? null,
+    actor_user_id: event.actorUserId ?? ctx?.userId ?? null,
+    event_type: event.eventType,
+    aggregate_type: event.aggregateType ?? null,
+    aggregate_id: event.aggregateId ?? null,
+    payload: JSON.stringify(event.payload ?? {}),
+    meta: JSON.stringify({
+      requestId: ctx?.requestId ?? null,
+      // Sin IP ni user-agent, un audit log de seguridad no sirve para investigar
+      // un incidente: no se puede distinguir el acceso legítimo del robado.
+      ip: ctx?.ip ?? null,
+      userAgent: ctx?.userAgent ?? null,
+      sessionId: ctx?.sessionId ?? null,
+    }),
+  };
+}
+
 /**
  * Audit log append-only (`domain_events`). Registra acciones sensibles para trazabilidad.
  * `emit` es best-effort: un fallo de auditoría NUNCA debe romper la operación de negocio.
@@ -36,30 +58,21 @@ export class AuditService {
 
   async emit(event: AuditEvent): Promise<void> {
     try {
-      const ctx = currentContext();
-      await this.db.db
-        .insertInto('domain_events')
-        .values({
-          tenant_id: event.tenantId ?? ctx?.tenantId ?? null,
-          actor_user_id: event.actorUserId ?? ctx?.userId ?? null,
-          event_type: event.eventType,
-          aggregate_type: event.aggregateType ?? null,
-          aggregate_id: event.aggregateId ?? null,
-          payload: JSON.stringify(event.payload ?? {}),
-          meta: JSON.stringify({
-            requestId: ctx?.requestId ?? null,
-            // Sin IP ni user-agent, un audit log de seguridad no sirve para investigar
-            // un incidente: no se puede distinguir el acceso legítimo del robado.
-            ip: ctx?.ip ?? null,
-            userAgent: ctx?.userAgent ?? null,
-            sessionId: ctx?.sessionId ?? null,
-          }),
-        })
-        .execute();
+      await this.db.db.insertInto('domain_events').values(auditRow(event)).execute();
     } catch (err) {
       // No propagar: la auditoría no debe tumbar la acción principal.
       this.logger.warn(`no se pudo registrar ${event.eventType}: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Lo mismo que `emit`, pero dentro de la transacción de quien llama y SIN tragarse el fallo. Es
+   * para las lecturas que sólo pueden devolver datos si su rastro quedó escrito (la bóveda de
+   * payloads de proveedor): si el evento no entra, la transacción entera se deshace y la lectura
+   * no devuelve nada.
+   */
+  async emitWithin(trx: Transaction<DB>, event: AuditEvent): Promise<void> {
+    await trx.insertInto('domain_events').values(auditRow(event)).execute();
   }
 
   /**

@@ -31,6 +31,9 @@ export default defineConfig({
         // un test pueda ejercitar, y contarlos sólo diluye la medida.
         '**/*.module.ts',
         'src/main.ts',
+        // Dobles y datos de prueba: medirlos mueve el número sin decir nada del código que
+        // corre en producción (un método del doble que ningún test llama "baja" la cobertura).
+        '**/__fixtures__/**',
       ],
 
       /**
@@ -46,8 +49,14 @@ export default defineConfig({
        * ingresos y el que este PR acaba de cubrir. Ver `docs/sabre/11-plan-implementacion.md`
        * §3.1.
        *
-       * OJO: los ficheros que casan con un glob NO cuentan para el umbral global (así lo
-       * define Vitest), por eso el global de abajo mide la API *sin* `src/search`.
+       * `src/hotels/**` lleva el suyo desde que la vertical tiene red de seguridad (PR-0.1 del
+       * plan de hoteles multi-proveedor): va a pasar de un proveedor a varios y el refactor no
+       * puede dejar caminos sin probar en el único proveedor de hoteles en producción.
+       *
+       * OJO: en Vitest 2.x los ficheros que casan con un glob TAMBIÉN cuentan para el umbral
+       * global (`resolveThresholds` de `vitest/dist/coverage.js` mete todos los ficheros en el
+       * mapa global; Jest, en cambio, los resta). Un glob suma un piso propio, no saca nada
+       * del global: `src/search` y `src/hotels` empujan hacia arriba el número de abajo.
        */
       thresholds: {
         lines: 13,
@@ -64,6 +73,18 @@ export default defineConfig({
           statements: 84,
           functions: 78,
           branches: 88,
+        },
+
+        // Medido tras la búsqueda multi-proveedor (PR-0.5), sin Postgres (ningún test de la
+        // vertical lo necesita): 100 % líneas, sentencias y funciones y 99,6 % ramas. La única
+        // rama sin cubrir es la que v8 le asigna al `finally` de la llamada a cada proveedor en
+        // `hotels.service.ts`, la misma que queda sin cubrir en `search.service.ts`. Bajar un
+        // número de estos exige decir en el PR por qué.
+        'src/hotels/**': {
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 99,
         },
       },
     },

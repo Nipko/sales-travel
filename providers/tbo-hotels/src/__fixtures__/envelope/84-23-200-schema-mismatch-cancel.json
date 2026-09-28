@@ -1,0 +1,21 @@
+{
+  "row": "01 §9.3 · Status.Code 200 en /Cancel con cuerpo ilegible: TboCancelMappingError",
+  "source": "Postura de 01 §9.3 y 04 §4.3; el nombre casa con cancel-retry-policy.ts:37.",
+  "operation": "cancel",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": {
+        "Code": 200,
+        "Description": "Cancelled"
+      }
+    }
+  },
+  "responseSchema": {
+    "ConfirmationNumber": "string"
+  },
+  "expect": {
+    "error": "TboCancelMappingError",
+    "issues": ["ConfirmationNumber:invalid_type"]
+  }
+}

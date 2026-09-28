@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · sin respuesta: timeout local (status 0, timedOut)",
+  "source": "Postura de 01 §5.5 y §8.4. La señal de timeout ya viene disparada.",
+  "operation": "book",
+  "response": {
+    "network": "timeout"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "TRANSPORT",
+    "status": 0,
+    "tboCode": null,
+    "timedOut": true
+  }
+}

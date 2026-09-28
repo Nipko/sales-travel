@@ -2,6 +2,64 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
+// Claves de tarjeta de la regla D1 (ver el bloque D1 más abajo). La lista es explícita y sin flag
+// `i` porque la expresión va anclada (`^…$`): la insensibilidad a mayúsculas no alcanzaría
+// `CardHolderFirstName` ni `PaymentInfo`, y además aflojaría claves de otros proveedores sin que
+// nadie lo decidiera.
+const D1_CARD_KEYS = [
+  // Sabre y el resto de proveedores camelCase.
+  'cardNumber',
+  'cardSecurityCode',
+  'cardTypeCode',
+  'cardHolder',
+  'authentications',
+  'virtualCard',
+  'cvv',
+  'cvc',
+  'securityCode',
+  'unmaskPaymentCardNumbers',
+  // TBO Hotels (docs/tbo/03-prebook-y-book.md §7.3): PascalCase, así que ninguna casaba con la
+  // lista de arriba. `CardHolderlastName` con `l` minúscula es como lo escriben los ejemplos del
+  // PDF (p. 34-38) y se prohíbe junto a la forma de la tabla.
+  //
+  // `PaymentInfo` también es el nombre de un tipo de dominio que importan los builders de
+  // latam-ndc: los selectores miran claves escritas y lecturas de miembro, no identificadores de
+  // tipo, y esos builders siguen verdes.
+  'PaymentInfo',
+  'CardNumber',
+  'CvvNumber',
+  'CardExpirationMonth',
+  'CardExpirationYear',
+  'CardHolderFirstName',
+  'CardHolderLastName',
+  'CardHolderlastName',
+  'CardHolderAddress',
+].join('|');
+
+const D1_OUTBOUND_FILES = [
+  '**/request.builder.ts',
+  '**/*.request.builder.ts',
+  '**/*.serializer.ts',
+];
+
+const D1_CARD_KEY_SELECTORS = [
+  {
+    selector: `Property[key.name=/^(${D1_CARD_KEYS})$/]`,
+    message:
+      'D1: un fichero que construye un cuerpo de salida no puede escribir un campo de tarjeta. Se reserva y se emite sin PAN (CASH/ON_ACCOUNT/INVOICE) y se cobra por hosted checkout del PSP (PCI SAQ-A). Si esto es el carril SAQ-D, vive en otro fichero y detrás de un flag por tenant.',
+  },
+  {
+    selector: `Property[key.value=/^(${D1_CARD_KEYS})$/]`,
+    message:
+      'D1: lo mismo con la clave entre comillas. Ver la nota de eslint.config.mjs sobre el alcance de esta regla.',
+  },
+  {
+    selector: `MemberExpression[property.name=/^(${D1_CARD_KEYS})$/]`,
+    message:
+      'D1: leer un campo de tarjeta dentro de un builder de salida es el paso previo a escribirlo. El dato de tarjeta no entra en este carril.',
+  },
+];
+
 export default tseslint.config(
   {
     ignores: ['**/node_modules/**', '**/dist/**', '**/.next/**', '**/.turbo/**', '**/coverage/**'],
@@ -48,27 +106,37 @@ export default tseslint.config(
   // Los bytes de salida los vigila además `providers/sabre/src/pan-egress.guard.test.ts`, que
   // corre en la suite. Este lint es la red que dispara antes, al escribir.
   {
-    files: ['**/request.builder.ts', '**/*.request.builder.ts', '**/*.serializer.ts'],
+    files: D1_OUTBOUND_FILES,
+    rules: {
+      'no-restricted-syntax': ['error', ...D1_CARD_KEY_SELECTORS],
+    },
+  },
+  // D1 en los builders de TBO (docs/tbo/03-prebook-y-book.md §7; 08 RNF-04 capa 4): además de las
+  // claves, los modos de pago con tarjeta. `NewCard` y `SavedCard` obligan a mandar `PaymentInfo`
+  // con PAN o CVV; nosotros sólo reservamos con `Limit`. Son valores del enum de TBO (p. 70) y
+  // fuera de este paquete no significan nada, por eso el bloque no sale de `providers/tbo-hotels`.
+  //
+  // El bloque REPITE los selectores de claves: en la configuración plana, las opciones de
+  // `no-restricted-syntax` de un bloque posterior reemplazan a las del anterior, y un bloque con
+  // sólo el `Literal` apagaría la prohibición de claves justo en estos builders. Lo fija
+  // `providers/tbo-hotels/src/pan-lint-rule.guard.test.ts`.
+  //
+  // `Literal` también casa con los tipos literales (`'NewCard'` en una unión), y aquí se quiere:
+  // un builder de TBO no tiene por qué nombrar esos modos ni en un tipo. `Identifier` cubre el
+  // otro modo natural de escribirlos, `PaymentMode.NewCard` desde un enum declarado en otro
+  // fichero, donde en el builder no queda ningún literal. `PaymentMode: 'Limit'` y
+  // `PaymentInfo?: never` siguen permitidos.
+  {
+    files: D1_OUTBOUND_FILES.map((glob) => `providers/tbo-hotels/${glob}`),
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...D1_CARD_KEY_SELECTORS,
         {
           selector:
-            'Property[key.name=/^(cardNumber|cardSecurityCode|cardTypeCode|cardHolder|authentications|virtualCard|cvv|cvc|securityCode|unmaskPaymentCardNumbers)$/]',
+            ':matches(Literal[value=/^(NewCard|SavedCard)$/], Identifier[name=/^(NewCard|SavedCard)$/])',
           message:
-            'D1: un fichero que construye un cuerpo de salida no puede escribir un campo de tarjeta. Se reserva y se emite sin PAN (CASH/ON_ACCOUNT/INVOICE) y se cobra por hosted checkout del PSP (PCI SAQ-A). Si esto es el carril SAQ-D, vive en otro fichero y detrás de un flag por tenant.',
-        },
-        {
-          selector:
-            'Property[key.value=/^(cardNumber|cardSecurityCode|cardTypeCode|cardHolder|authentications|virtualCard|cvv|cvc|securityCode|unmaskPaymentCardNumbers)$/]',
-          message:
-            'D1: lo mismo con la clave entre comillas. Ver la nota de eslint.config.mjs sobre el alcance de esta regla.',
-        },
-        {
-          selector:
-            'MemberExpression[property.name=/^(cardNumber|cardSecurityCode|cardTypeCode|cardHolder|authentications|virtualCard|cvv|cvc|securityCode|unmaskPaymentCardNumbers)$/]',
-          message:
-            'D1: leer un campo de tarjeta dentro de un builder de salida es el paso previo a escribirlo. El dato de tarjeta no entra en este carril.',
+            'D1: un builder de TBO sólo reserva con PaymentMode "Limit". NewCard y SavedCard mandan PaymentInfo con PAN o CVV por nuestro servidor (docs/tbo/03-prebook-y-book.md §7): no se nombran ni como valor ni como tipo.',
         },
       ],
     },

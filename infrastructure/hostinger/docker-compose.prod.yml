@@ -16,6 +16,12 @@ networks:
   internal:
     driver: bridge
     internal: true
+  # Por aquí Caddy llega al panel del stack de certificación de TBO (docker-compose.cert.yml). Sólo
+  # la comparten Caddy y `cert-web-b2b`: el api y la base de producción no están en ella. La crea
+  # el paso "Pull & up" de deploy.yml antes de `up`, porque compose no crea una red `external`.
+  cert_ingress:
+    external: true
+    name: sales-travel-cert-ingress
 
 volumes:
   caddy_data:
@@ -34,7 +40,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [edge]
+    networks: [edge, cert_ingress]
     depends_on:
       - api
       - web-b2b
@@ -88,10 +94,19 @@ services:
   api:
     image: ghcr.io/nipko/sales-travel-api:${IMAGE_TAG:-latest}
     <<: [*restart, *logging]
+    # Apagado ordenado (docs/tbo/09 PR-4.10, RF-22): cada despliegue recrea este contenedor y un
+    # Book de TBO puede tardar 120 s. Con los 10 s por defecto de Docker, el SIGKILL lo cortaba y lo
+    # mandaba a la recuperación. `init: true` pone un init como PID 1 que reenvía la SIGTERM a
+    # `node`; el drenaje (SHUTDOWN_DRAIN_TIMEOUT_MS) tiene que quedar por debajo de este periodo.
+    init: true
+    stop_grace_period: 130s
     environment:
       NODE_ENV: production
       PORT: '3000'
       APP_VERSION: ${IMAGE_TAG:-dev}
+      # Espera máxima a peticiones y sagas en curso antes de cerrar el pool y la cola (ms). Los
+      # 5 s que quedan hasta el stop_grace_period son para ese cierre.
+      SHUTDOWN_DRAIN_TIMEOUT_MS: '125000'
       PGHOST: postgres
       PGPORT: '5432'
       PGUSER: app_user
@@ -100,6 +115,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       # BYOC: clave maestra AES-256-GCM para cifrar credenciales de proveedor (base64 de 32 bytes).
       PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:-}
+      # Bóveda de payloads de proveedor (0043): clave AES-256-GCM PROPIA (base64 de 32 bytes).
+      # Vacía = bóveda apagada, sin efecto sobre la venta. _PREVIOUS sólo durante una rotación.
+      PROVIDER_PAYLOADS_KEY: ${PROVIDER_PAYLOADS_KEY:-}
+      PROVIDER_PAYLOADS_KEY_PREVIOUS: ${PROVIDER_PAYLOADS_KEY_PREVIOUS:-}
+      PROVIDER_PAYLOADS_RETENTION_DAYS: ${PROVIDER_PAYLOADS_RETENTION_DAYS:-30}
       LATAM_API_URL: ${LATAM_API_URL:-https://sandbox.api.latam.com}
       LATAM_API_KEY: ${LATAM_API_KEY:-}
       LATAM_API_SECRET: ${LATAM_API_SECRET:-}
@@ -122,6 +142,16 @@ services:
       AGENT_CARS_SUGGEST_URL: ${AGENT_CARS_SUGGEST_URL:-https://suggest.agentcars.com/suggest}
       AGENT_CARS_SOURCE: ${AGENT_CARS_SOURCE:-}
       AGENT_CARS_LANGUAGE: ${AGENT_CARS_LANGUAGE:-}
+      # Gobierno de proveedores. Sin estas líneas no llegaban al contenedor aunque deploy.yml las
+      # escribiera en .env: el kill-switch no existía en producción.
+      # PROVIDERS_DISABLED: `código` apaga todo el proveedor; `código:ventas` sólo Search, PreBook
+      # y Book, y deja leer y cancelar lo ya vendido. Lista separada por comas.
+      PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
+      # LEGADO (D-TBO-18): los proveedores los enciende el superadmin desde el panel. Estas sólo
+      # encienden donde la base no tiene ajuste: `código` para todos o `código@<tenantId>` para uno.
+      # No se usan para encender nada nuevo (README §6.1).
+      FLIGHT_PROVIDERS_OPT_IN: ${FLIGHT_PROVIDERS_OPT_IN:-}
+      HOTEL_PROVIDERS_OPT_IN: ${HOTEL_PROVIDERS_OPT_IN:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
       # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
       APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}

@@ -11,6 +11,7 @@ pnpm-lock.yaml
 # Postman collections y environments (exports tal cual, no se reformatean)
 **/API_LATAM_*.json
 **/*.postman_collection.json
+**/*.postman_collection *.json
 **/*.postman_environment.json
 docs/research/*.postman.json
 

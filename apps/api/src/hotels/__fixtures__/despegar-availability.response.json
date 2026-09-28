@@ -1,0 +1,96 @@
+{
+  "items": [
+    {
+      "id": 101,
+      "hotel_info": {
+        "name": "Hotel Andino Plaza",
+        "type": "HOTEL",
+        "stars": 4,
+        "location": { "latitude": 4.6668, "longitude": -74.0526 }
+      },
+      "roompacks": [
+        {
+          "id": "RP-101-A",
+          "meal_plan": { "id": "BREAKFAST" },
+          "rooms": [
+            {
+              "name": "Habitación Doble Superior",
+              "reference": 1,
+              "room_type_id": "DBL-SUP",
+              "max_capacity": 3,
+              "bed_options": [{ "id": 1, "description": "1 cama king" }, "2 camas dobles"]
+            },
+            {
+              "name": "Habitación Sencilla",
+              "reference": 2,
+              "room_type_id": "SGL-STD",
+              "max_capacity": 1,
+              "bed_options": [{ "id": 3 }]
+            }
+          ],
+          "cancellation_policy": {
+            "status": "partially_refundable",
+            "hours_before_penalty": 72,
+            "vendor_notes": "Cancelaciones dentro de las 72 h previas pagan el 50 %.",
+            "cancellation_policy_rules": [
+              {
+                "type": "PERCENTAGE",
+                "penalty": { "percentage": 50 },
+                "anticipation": { "from": 0, "to": 72 }
+              },
+              { "type": "FREE", "anticipation": { "from": 72 } }
+            ]
+          },
+          "price_detail": {
+            "currency": "USD",
+            "total": 412.37,
+            "taxes": "62.10",
+            "taxes_detail": [{ "code": "IVA", "amount": 62.1 }],
+            "charge_at_destination": 8,
+            "agency_commission": { "amount": 41.24, "percentage": "10" }
+          }
+        },
+        {
+          "id": "RP-101-B",
+          "meal_plan": { "id": "ROOM_ONLY" },
+          "rooms": [
+            { "name": "Habitación Doble Estándar", "reference": 1 },
+            { "name": "Habitación Sencilla", "reference": 2 }
+          ],
+          "cancellation_policy": { "status": "non_refundable" },
+          "price_detail": { "currency": "USD", "total": "350.00" }
+        }
+      ]
+    },
+    {
+      "id": "205",
+      "hotel_info": { "name": "Casa Galería", "type": "APARTHOTEL" },
+      "roompacks": [
+        {
+          "id": "RP-205-A",
+          "meal_plan": { "id": "HALF_BOARD" },
+          "rooms": [
+            { "name": "Apartamento Familiar", "reference": 1, "max_capacity": 4 },
+            { "name": "Estudio", "reference": 2, "max_capacity": 2 }
+          ],
+          "cancellation_policy": {
+            "status": "fully_refundable",
+            "cancellation_policy_rules": [
+              {
+                "type": "NIGHTS",
+                "penalty": { "night_count": 1 },
+                "anticipation": { "from": 0, "to": 24 }
+              }
+            ]
+          },
+          "price_detail": { "currency": "USD", "total": 289.9, "taxes": 0, "taxes_detail": [] }
+        }
+      ]
+    },
+    {
+      "id": 350,
+      "hotel_info": { "name": "Hotel Mirador del Parque", "type": "HOTEL", "stars": 3 },
+      "roompacks": []
+    }
+  ]
+}

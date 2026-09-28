@@ -1,0 +1,18 @@
+{
+  "row": "01 §8.4 · HTTP 2xx con cuerpo que no es JSON (portal cautivo, WAF)",
+  "source": "Postura de 01 §8.4.",
+  "operation": "prebook",
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html"
+    },
+    "bodyText": "<html><body>Please log in to the network</body></html>"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "MALFORMED_RESPONSE",
+    "status": 200,
+    "tboCode": null
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "row": "01 §8.4 · HTTP 405 sin envelope: verbo equivocado (no es el 405 BOOKING_FAIL del cuerpo)",
+  "source": "Postura de 01 §3.2 punto 3 y §9.2: status y tboCode separados.",
+  "operation": "countryList",
+  "response": {
+    "status": 405,
+    "bodyText": "Method Not Allowed"
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "CLIENT_BUG",
+    "status": 405,
+    "tboCode": null
+  }
+}

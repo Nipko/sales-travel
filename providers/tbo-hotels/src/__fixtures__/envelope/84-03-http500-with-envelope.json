@@ -1,0 +1,20 @@
+{
+  "row": "01 §8.4 · HTTP no-2xx con envelope válido: manda el cuerpo (08 RF-03 CA-1, HTTP 500 con envelope)",
+  "source": "Postura de 01 §8.4 y §10.3 paso 6 (Q-07).",
+  "operation": "prebook",
+  "response": {
+    "status": 500,
+    "bodyJson": {
+      "Status": {
+        "Code": 500,
+        "Description": "Unexpected Error"
+      }
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "UPSTREAM",
+    "status": 500,
+    "tboCode": 500
+  }
+}

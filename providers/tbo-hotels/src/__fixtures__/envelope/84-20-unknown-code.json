@@ -1,0 +1,20 @@
+{
+  "row": "01 §8.4 · Status.Code fuera de la tabla",
+  "source": "Postura de 01 §8.4 (Q-08).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "Status": {
+        "Code": 418,
+        "Description": "Something new"
+      }
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "UNKNOWN_CODE",
+    "status": 200,
+    "tboCode": 418
+  }
+}

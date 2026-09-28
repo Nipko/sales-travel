@@ -46,8 +46,12 @@ function raizDeFuentes(): string {
 const SRC = raizDeFuentes();
 const ORDERS = join(SRC, 'orders');
 
-/** Verticales cuyos codes NO son proveedores de vuelos y por tanto no entran en este guard. */
-const NO_ES_VUELOS = new Set(['agent-cars', 'despegar-hotels']);
+/**
+ * Verticales cuyos codes NO son proveedores de vuelos y por tanto no entran en este guard.
+ * `tbo-hotels` declara su code como literal en el factory (`providers-tbo/tbo-hotels.factory.ts`)
+ * y sin esta línea el guard lo contaría como un proveedor de vuelos.
+ */
+const NO_ES_VUELOS = new Set(['agent-cars', 'despegar-hotels', 'tbo-hotels']);
 
 function ficheros(dir: string): string[] {
   return readdirSync(dir)

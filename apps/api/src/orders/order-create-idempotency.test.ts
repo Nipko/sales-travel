@@ -249,7 +249,7 @@ function dto(quotationId?: string): CreateOrderDto {
 function bank(options: MemoryDbOptions = {}) {
   const factory = new StubProviderFactory({ code: PROVIDER });
   const registry = new FlightProviderRegistry([factory], {
-    isEnabledForTenant: () => Promise.resolve(false),
+    decisionFor: () => Promise.resolve(undefined),
   });
   const { db, rows } = memoryDb(options);
   const adapter = factory.adapterFor(TENANT);

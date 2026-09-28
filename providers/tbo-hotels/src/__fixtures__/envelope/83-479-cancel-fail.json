@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 479 CANCEL_FAIL",
+  "source": "Code y Description de la tabla (p. 9). El adapter de Cancel lo convierte en { success: false } (04 §4.3).",
+  "operation": "cancel",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 479, "Description": "Cancel Failed" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "CANCEL_FAILED", "status": 200, "tboCode": 479 }
+}

@@ -1,0 +1,17 @@
+{
+  "row": "01 §8.4 · otro 4xx sin envelope",
+  "source": "Postura de 01 §8.4.",
+  "operation": "prebook",
+  "response": {
+    "status": 422,
+    "bodyJson": {
+      "error": "unprocessable"
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "CLIENT_BUG",
+    "status": 422,
+    "tboCode": null
+  }
+}

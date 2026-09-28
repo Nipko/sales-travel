@@ -4,13 +4,19 @@ import {
   CallPolicySchema,
   FLIGHT_PROVIDER_FACTORIES,
   FLIGHT_PROVIDER_FLAGS,
+  PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
+  ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
+  isDisabledByPlatform,
+  isProviderEnabled,
   type CallPolicy,
   type FlightProviderAdapter,
   type FlightProviderResolution,
   type ProviderCapabilities,
+  type ProviderEnablementEntry,
   type ProviderFlagsPort,
+  type RegisteredProvider,
   type ResolvedProvider,
   type SkippedProvider,
   type TenantProviderFactory,
@@ -114,13 +120,16 @@ export class FlightProviderRegistry {
     for (const factory of this.factories) {
       const callPolicy = this.policyOf(factory);
 
-      // El flag se consulta ANTES de resolver credenciales: un proveedor 'opt-in' apagado no
-      // recibe ninguna llamada, ni al proveedor ni a la bóveda de credenciales.
-      if (
-        callPolicy === 'opt-in' &&
-        !(await this.flags.isEnabledForTenant(tenantId, factory.code))
-      ) {
-        skipped.push({ code: factory.code, reason: 'opt-in-disabled' });
+      // La habilitación se consulta ANTES de resolver credenciales y para TODOS los proveedores,
+      // no sólo los 'opt-in': el superadmin puede apagar también uno que se llama siempre. Un
+      // proveedor apagado no recibe ninguna llamada, ni al proveedor ni a la bóveda.
+      const decision = await this.flags.decisionFor(tenantId, factory.code);
+      if (!isProviderEnabled(decision, callPolicy)) {
+        skipped.push(
+          isDisabledByPlatform(decision)
+            ? { code: factory.code, reason: 'platform-disabled', detail: PLATFORM_DISABLED_TEXT }
+            : { code: factory.code, reason: 'opt-in-disabled' },
+        );
         continue;
       }
 
@@ -133,10 +142,12 @@ export class FlightProviderRegistry {
   }
 
   /**
-   * Un proveedor concreto, para revalidar precio y para todo el ciclo de la orden.
+   * Un proveedor concreto, para la post-venta de una orden ya hecha: leerla, cancelarla, pagarla,
+   * sus servicios, el reshop y la verificación de su creación.
    *
-   * NO consulta el flag de `opt-in`: la oferta ya la emitió ese proveedor, y apagar el flag
-   * después no puede dejar una reserva a medio camino sin forma de tocarla.
+   * NO consulta la habilitación: ni el flag de `opt-in` ni el apagado de la plataforma. Apagar un
+   * proveedor corta las ventas nuevas ({@link byCodeForOffer}), no deja sin post-venta lo que ya
+   * se vendió.
    */
   async byCode(tenantId: string, code: string): Promise<ResolvedProvider<FlightProviderAdapter>> {
     const factory = this.factories.find((f) => f.code === code);
@@ -145,6 +156,55 @@ export class FlightProviderRegistry {
     const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
     if (!resolved.ok) throw new ProviderNotAvailableError(code);
     return resolved.provider;
+  }
+
+  /**
+   * Un proveedor concreto para seguir la VENTA de una oferta que él ya emitió: revalidar el precio
+   * y crear la orden.
+   *
+   * Si la plataforma lo apagó para el tenant, 400 sin tocar la bóveda: una venta nueva no se abre
+   * con un proveedor apagado, aunque la oferta venga de una búsqueda anterior al apagado. Un
+   * `opt-in` que simplemente nadie encendió NO se corta aquí, como antes: la oferta ya la emitió
+   * ese proveedor.
+   */
+  async byCodeForOffer(
+    tenantId: string,
+    code: string,
+  ): Promise<ResolvedProvider<FlightProviderAdapter>> {
+    const factory = this.factories.find((f) => f.code === code);
+    if (factory === undefined) throw new ProviderNotAvailableError(code);
+    if (isDisabledByPlatform(await this.flags.decisionFor(tenantId, factory.code))) {
+      throw new ProviderDisabledByPlatformError(factory.code);
+    }
+    return this.byCode(tenantId, code);
+  }
+
+  /**
+   * Los proveedores registrados con su política efectiva, sin tocar credenciales ni flags. Para el
+   * panel de la plataforma, que decide sobre proveedores y no sobre cuentas.
+   */
+  registeredProviders(): RegisteredProvider[] {
+    return this.factories.map((f) => ({
+      code: f.code,
+      vertical: f.vertical,
+      callPolicy: this.policyOf(f),
+    }));
+  }
+
+  /**
+   * Lo que la plataforma decidió sobre cada proveedor para el tenant, con la política con la que se
+   * compara, sin resolver credenciales. Es la misma consulta que hace {@link forTenant}: el panel
+   * ve lo que ve la búsqueda.
+   */
+  async enablementOf(tenantId: string): Promise<ProviderEnablementEntry[]> {
+    const entries: ProviderEnablementEntry[] = [];
+    for (const provider of this.registeredProviders()) {
+      entries.push({
+        ...provider,
+        decision: await this.flags.decisionFor(tenantId, provider.code),
+      });
+    }
+    return entries;
   }
 
   /**

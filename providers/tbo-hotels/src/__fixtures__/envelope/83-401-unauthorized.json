@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 401 UNAUTHORIZED",
+  "source": "Code y Description de la tabla (p. 9). Sin ejemplo publicado (H-10).",
+  "operation": "search",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 401, "Description": "Access Credentials is incorrect" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "CREDENTIALS_INVALID", "status": 200, "tboCode": 401 }
+}

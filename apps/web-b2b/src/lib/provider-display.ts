@@ -1,4 +1,4 @@
-import { Compass, Cpu, Globe, Plane, type LucideIcon } from 'lucide-react';
+import { BedDouble, Compass, Cpu, Globe, Plane, type LucideIcon } from 'lucide-react';
 
 /**
  * Cómo se PRESENTA cada proveedor: su nombre legible, su vertical y el color de su pastilla.
@@ -53,6 +53,16 @@ export const PROVIDER_METADATA: Readonly<Record<string, ProviderMeta>> = {
       'Inventario mayorista de hoteles en Latinoamérica y el mundo con tarifas B2B netas y disponibilidad en tiempo real.',
     icon: Globe,
     badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+  },
+  // Color propio y distinto del de Despegar: en una tarjeta de hotel agrupada las dos pastillas
+  // conviven, una por tarifa (RF-40 CA 5), y tienen que distinguirse de un vistazo.
+  'tbo-hotels': {
+    name: 'TBO Holidays',
+    vertical: 'Hotelería',
+    description:
+      'Banco de camas mayorista global de TBO Holidays con tarifas netas B2B y disponibilidad en tiempo real. Opera con la cuenta del consolidador, que hereda toda su red.',
+    icon: BedDouble,
+    badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',
   },
 };
 

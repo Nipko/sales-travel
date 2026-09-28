@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { classifyCancelThrownFailure, persistedCancelRetryPolicy } from './cancel-retry-policy.js';
+import { Logger } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import {
+  classifyCancelThrownFailure,
+  persistedCancelRetryPolicy,
+  persistedPriorOrderStatus,
+} from './cancel-retry-policy.js';
 
 function typedError(
   name: string,
@@ -74,12 +80,145 @@ describe('classifyCancelThrownFailure', () => {
     });
   });
 
+  it('HARD-1: un desenlace que el contrato no define para el write es UNVERIFIED aunque diga NO_RETRY', () => {
+    // Sin el nombre, un código de otra operación con naturaleza NO_RETRY cerraría como fallida una
+    // cancelación que el proveedor pudo aplicar.
+    const fields = {
+      path: '/Cancel',
+      status: 200,
+      retryable: false,
+      failure: { kind: 'BOOKING_FAILED', retry: 'NO_RETRY' },
+    };
+    expect(classifyCancelThrownFailure(typedError('XCancelError', fields))).toMatchObject({
+      outcome: 'FAILED',
+    });
+    expect(classifyCancelThrownFailure(typedError('XCancelOutcomeUnknownError', fields))).toEqual({
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+      reason: 'write-unverified',
+    });
+    expect(
+      classifyCancelThrownFailure(typedError('XCancelBookingOutcomeUnknownError', fields)).outcome,
+    ).toBe('UNVERIFIED');
+  });
+
   it('no adivina con un error desconocido: exige conciliación', () => {
     expect(classifyCancelThrownFailure(new Error('falló'))).toMatchObject({
       outcome: 'UNVERIFIED',
       retryable: false,
       reconciliationRequired: true,
     });
+  });
+});
+
+describe('classifyCancelThrownFailure — rechazo local del breaker (PR-0.6)', () => {
+  const PRE_WRITE = {
+    outcome: 'FAILED',
+    retryable: true,
+    reconciliationRequired: false,
+    reason: 'pre-write-transient',
+  };
+
+  beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Lo que recibe el runner cuando la cancelación pasa por el breaker y éste la frena. */
+  async function rechazoDelBreaker(breaker: CircuitBreakerService): Promise<unknown> {
+    const cancelar = vi.fn(() => Promise.resolve({ success: true }));
+    const err = await breaker
+      .execute('prov-a', cancelar, { scope: 'post-sale' })
+      .catch((e: unknown) => e);
+    expect(cancelar).not.toHaveBeenCalled();
+    return err;
+  }
+
+  it('kill-switch en Cancel → previo al write, reintentable, sin conciliar', async () => {
+    // Antes era un 503 sin `path`: caía en el caso por defecto y quedaba UNVERIFIED, con
+    // conciliación y escalado, aunque la cancelación nunca salió.
+    vi.stubEnv('PROVIDERS_DISABLED', 'prov-a');
+    const err = await rechazoDelBreaker(new CircuitBreakerService());
+
+    expect(err).toBeInstanceOf(BreakerRejectionError);
+    expect(classifyCancelThrownFailure(err)).toEqual(PRE_WRITE);
+  });
+
+  it('circuito abierto en Cancel → previo al write', async () => {
+    const breaker = new CircuitBreakerService();
+    for (let i = 0; i < 5; i++) {
+      await breaker
+        .execute('prov-a', () => Promise.reject(new Error('caído')))
+        .catch(() => undefined);
+    }
+
+    expect(classifyCancelThrownFailure(await rechazoDelBreaker(breaker))).toEqual(PRE_WRITE);
+  });
+
+  it('cuenta suspendida en Cancel → previo al write', async () => {
+    const breaker = new CircuitBreakerService();
+    await breaker
+      .execute(
+        'prov-a',
+        () =>
+          Promise.reject(
+            typedError('ProvApiError', {
+              failure: { kind: 'CREDENTIALS_INVALID', circuit: 'OPEN_ACCOUNT' },
+            }),
+          ),
+        { accountRef: 'acct-1', scope: 'post-sale' },
+      )
+      .catch(() => undefined);
+
+    const cancelar = vi.fn(() => Promise.resolve({ success: true }));
+    const err = await breaker
+      .execute('prov-a', cancelar, { accountRef: 'acct-1', scope: 'post-sale' })
+      .catch((e: unknown) => e);
+    expect(cancelar).not.toHaveBeenCalled();
+    expect(classifyCancelThrownFailure(err)).toEqual(PRE_WRITE);
+  });
+
+  it('un timeout del write que cruzó el breaker sigue UNVERIFIED: la marca es sólo del rechazo local', async () => {
+    const timeout = typedError('ProvApiError', {
+      path: '/cancel',
+      status: 0,
+      retryable: true,
+      failure: { kind: 'TRANSPORT', retry: 'RETRY_BACKOFF', circuit: 'COUNT' },
+    });
+    const err = await new CircuitBreakerService()
+      .execute('prov-a', () => Promise.reject(timeout), { scope: 'post-sale' })
+      .catch((e: unknown) => e);
+
+    expect(err).toBe(timeout);
+    expect(classifyCancelThrownFailure(err)).toEqual({
+      outcome: 'UNVERIFIED',
+      retryable: false,
+      reconciliationRequired: true,
+      reason: 'write-unverified',
+    });
+  });
+
+  it('`sentToProvider` distinto de `false` no dice nada', () => {
+    expect(
+      classifyCancelThrownFailure(typedError('ProvApiError', { sentToProvider: 'no' })),
+    ).toMatchObject({ outcome: 'UNVERIFIED', reconciliationRequired: true });
+  });
+});
+
+describe('persistedPriorOrderStatus', () => {
+  it('lee el estado previo del claim, como objeto o como texto; si no está, undefined', () => {
+    expect(persistedPriorOrderStatus({ priorOrderStatus: 'confirmed' })).toBe('confirmed');
+    expect(persistedPriorOrderStatus(JSON.stringify({ priorOrderStatus: 'pending' }))).toBe(
+      'pending',
+    );
+    expect(persistedPriorOrderStatus({ priorOrderStatus: 3 })).toBeUndefined();
+    expect(persistedPriorOrderStatus('{no es json')).toBeUndefined();
+    expect(persistedPriorOrderStatus(null)).toBeUndefined();
   });
 });
 

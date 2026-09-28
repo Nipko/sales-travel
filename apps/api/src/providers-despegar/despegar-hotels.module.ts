@@ -4,7 +4,7 @@ import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
 
 /**
  * Provee el factory de adapters Despegar Hotels resueltos por tenant (BYOC + fallback env).
- * Lo consume HotelsModule.
+ * Lo consumen HotelsModule y HotelProvidersModule.
  */
 @Module({
   imports: [ProviderCredentialsModule],

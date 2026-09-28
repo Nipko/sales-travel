@@ -1,0 +1,20 @@
+{
+  "row": "01 §8.4 · HTTP no-2xx con Status.Code 200: transporte y cuerpo se contradicen",
+  "source": "Postura de 01 §8.4.",
+  "operation": "search",
+  "response": {
+    "status": 502,
+    "bodyJson": {
+      "Status": {
+        "Code": 200,
+        "Description": "Successful"
+      }
+    }
+  },
+  "expect": {
+    "error": "TboApiError",
+    "kind": "MALFORMED_RESPONSE",
+    "status": 502,
+    "tboCode": 200
+  }
+}

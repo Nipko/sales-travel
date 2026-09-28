@@ -1,0 +1,14 @@
+{
+  "row": "01 §8.3 · 200 SUCCESS (Cancel)",
+  "source": "Ejemplo de respuesta de Cancel, p. 42, literal.",
+  "operation": "cancel",
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "bodyJson": {
+      "Status": { "Code": 200, "Description": "Cancelled" },
+      "ConfirmationNumber": "FL1IMA"
+    }
+  },
+  "expect": { "outcome": "SUCCESS", "status": 200, "tboCode": 200 }
+}

@@ -10,6 +10,7 @@ import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js
 import { SabreProviderFactory } from '../providers-sabre/sabre.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { ProviderFlagsPort } from '../providers/provider.types.js';
+import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { MemoryCacheAdapter } from './memory-cache.adapter.js';
 import type { SearchTelemetryService } from './search-telemetry.service.js';
@@ -51,7 +52,7 @@ function criteria(): FlightSearchCriteria {
   });
 }
 
-const FLAGS_ENCENDIDOS: ProviderFlagsPort = { isEnabledForTenant: () => Promise.resolve(true) };
+const FLAGS_ENCENDIDOS: ProviderFlagsPort = { decisionFor: () => Promise.resolve(ENCENDIDO) };
 
 /**
  * El servicio de búsqueda REAL sobre los factories REALES de los dos proveedores de vuelos.
@@ -399,5 +400,47 @@ describe('desde el endpoint de búsqueda no se alcanza ningún fabricante de ofe
     const dir = join(REPO, 'providers', 'sabre', 'src', '__fixtures__');
     const noJson = readdirSync(dir).filter((nombre) => !nombre.endsWith('.json'));
     expect(noJson).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 3. Segunda raíz: los endpoints de hoteles (TP-67)
+// ---------------------------------------------------------------------------------------------
+
+describe('desde los endpoints de hoteles no se alcanza ningún fixture', () => {
+  /**
+   * El controlador es el endpoint; el módulo es lo que conecta los factories de cada proveedor, y
+   * sin él el cierre no llegaría al factory de TBO. Los fixtures de TBO (respuestas del PDF y de
+   * Postman) y los dobles de Despegar existen para los tests y nunca pueden ser una tarifa que un
+   * vendedor cotiza.
+   */
+  const raices = ['hotels.controller.ts', 'hotels.module.ts'].map((f) =>
+    join(REPO, 'apps', 'api', 'src', 'hotels', f),
+  );
+  const nombres = [...new Set(raices.flatMap((raiz) => alcanzableDesde(raiz)))].map(relativoAlRepo);
+  const esFixture = (nombre: string): boolean => nombre.split('/').includes('__fixtures__');
+
+  it('la sonda ve el programa de verdad, a los dos lados de la frontera de paquete', () => {
+    expect(nombres).toContain('apps/api/src/hotels/hotels.controller.ts');
+    expect(nombres).toContain('apps/api/src/providers/hotel-provider.registry.ts');
+    expect(nombres).toContain('apps/api/src/providers-tbo/tbo-hotels.factory.ts');
+    expect(nombres).toContain('apps/api/src/providers-tbo/tbo-hotels-exception.filter.ts');
+    expect(nombres).toContain('providers/tbo-hotels/src/tbo-hotels.adapter.ts');
+    expect(nombres).toContain('providers/tbo-hotels/src/search/response.mapper.ts');
+    expect(nombres).toContain('providers/despegar-hotels/src/index.ts');
+  });
+
+  it('el filtro de fixtures reconoce uno cuando lo tiene delante (control positivo)', () => {
+    const doble = join(REPO, 'apps', 'api', 'src', 'hotels', '__fixtures__', 'fake-hotels-db.ts');
+    expect(alcanzableDesde(doble).map(relativoAlRepo).some(esFixture)).toBe(true);
+  });
+
+  it('ningún módulo de `__fixtures__` está en el cierre de imports de producción', () => {
+    const culpables = nombres.filter(esFixture);
+    expect(
+      culpables,
+      `desde /hotels se alcanza un fixture: ${culpables.join(', ')}. Un doble o una respuesta ` +
+        `grabada puede existir para los tests, pero no en el cierre de imports del endpoint.`,
+    ).toEqual([]);
   });
 });

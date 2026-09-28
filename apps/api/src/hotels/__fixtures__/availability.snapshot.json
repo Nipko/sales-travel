@@ -1,0 +1,185 @@
+{
+  "hotels": [
+    {
+      "hotelId": "101",
+      "name": "Hotel Andino Plaza",
+      "stars": 4,
+      "type": "HOTEL",
+      "location": {
+        "lat": 4.6668,
+        "lng": -74.0526
+      },
+      "roompacks": [
+        {
+          "id": "RP-101-A",
+          "board": "BB",
+          "rooms": [
+            {
+              "name": "Habitación Doble Superior",
+              "reference": 1,
+              "roomTypeId": "DBL-SUP",
+              "maxCapacity": 3,
+              "bedOptions": ["1 cama king", "2 camas dobles"]
+            },
+            {
+              "name": "Habitación Sencilla",
+              "reference": 2,
+              "roomTypeId": "SGL-STD",
+              "maxCapacity": 1,
+              "bedOptions": []
+            }
+          ],
+          "cancellation": {
+            "refundable": true,
+            "status": "partially_refundable",
+            "hoursBeforePenalty": 72,
+            "vendorNotes": "Cancelaciones dentro de las 72 h previas pagan el 50 %.",
+            "rules": [
+              {
+                "type": "PERCENTAGE",
+                "penaltyPercentage": 50,
+                "fromHours": 0,
+                "toHours": 72
+              },
+              {
+                "type": "FREE",
+                "fromHours": 72
+              }
+            ]
+          },
+          "price": {
+            "total": {
+              "amountMinor": 41237,
+              "currency": "USD"
+            },
+            "taxesDetail": [
+              {
+                "code": "IVA",
+                "amount": {
+                  "amountMinor": 6210,
+                  "currency": "USD"
+                }
+              }
+            ],
+            "taxes": {
+              "amountMinor": 6210,
+              "currency": "USD"
+            },
+            "chargeAtDestination": {
+              "amountMinor": 800,
+              "currency": "USD"
+            },
+            "agencyCommission": {
+              "amount": {
+                "amountMinor": 4124,
+                "currency": "USD"
+              },
+              "percentage": 10
+            }
+          },
+          "pricing": {
+            "costMinor": 45361,
+            "finalMinor": 47861,
+            "ownMarkupMinor": 2500,
+            "currency": "USD"
+          }
+        },
+        {
+          "id": "RP-101-B",
+          "board": "RO",
+          "rooms": [
+            {
+              "name": "Habitación Doble Estándar",
+              "reference": 1,
+              "bedOptions": []
+            },
+            {
+              "name": "Habitación Sencilla",
+              "reference": 2,
+              "bedOptions": []
+            }
+          ],
+          "cancellation": {
+            "refundable": false,
+            "status": "non_refundable",
+            "rules": []
+          },
+          "price": {
+            "total": {
+              "amountMinor": 35000,
+              "currency": "USD"
+            },
+            "taxesDetail": []
+          },
+          "pricing": {
+            "costMinor": 38500,
+            "finalMinor": 41000,
+            "ownMarkupMinor": 2500,
+            "currency": "USD"
+          }
+        }
+      ]
+    },
+    {
+      "hotelId": "205",
+      "name": "Casa Galería",
+      "type": "APARTHOTEL",
+      "roompacks": [
+        {
+          "id": "RP-205-A",
+          "board": "HB",
+          "rooms": [
+            {
+              "name": "Apartamento Familiar",
+              "reference": 1,
+              "maxCapacity": 4,
+              "bedOptions": []
+            },
+            {
+              "name": "Estudio",
+              "reference": 2,
+              "maxCapacity": 2,
+              "bedOptions": []
+            }
+          ],
+          "cancellation": {
+            "refundable": true,
+            "status": "fully_refundable",
+            "rules": [
+              {
+                "type": "NIGHTS",
+                "penaltyNights": 1,
+                "fromHours": 0,
+                "toHours": 24
+              }
+            ]
+          },
+          "price": {
+            "total": {
+              "amountMinor": 28990,
+              "currency": "USD"
+            },
+            "taxesDetail": [],
+            "taxes": {
+              "amountMinor": 0,
+              "currency": "USD"
+            }
+          },
+          "pricing": {
+            "costMinor": 31889,
+            "finalMinor": 34389,
+            "ownMarkupMinor": 2500,
+            "currency": "USD"
+          }
+        }
+      ]
+    },
+    {
+      "hotelId": "350",
+      "name": "Hotel Mirador del Parque",
+      "stars": 3,
+      "type": "HOTEL",
+      "roompacks": []
+    }
+  ]
+}

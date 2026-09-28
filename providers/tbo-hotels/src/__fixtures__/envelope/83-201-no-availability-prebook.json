@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 201 NO_AVAILABILITY fuera de Search: error de negocio",
+  "source": "Code y Description de la tabla (p. 9). TBO no publica ejemplo fuera de Search (H-10).",
+  "operation": "prebook",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 201, "Description": "No Availability" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "NO_AVAILABILITY", "status": 200, "tboCode": 201 }
+}

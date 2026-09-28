@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 500 UNEXPECTED_ERROR en el cuerpo",
+  "source": "Code y Description de la tabla (p. 9). Sin ejemplo publicado (H-10).",
+  "operation": "prebook",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 500, "Description": "Unexpected Error" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "UPSTREAM", "status": 200, "tboCode": 500 }
+}

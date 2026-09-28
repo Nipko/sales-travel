@@ -1,0 +1,19 @@
+{
+  "row": "01 §8.1 y §8.4 · hotelcodelist sin Status: éxito que valida su propio esquema (08 RF-03 CA-3)",
+  "source": "Ejemplo de hotelcodelist, p. 55, recortado a tres códigos. Q-61.",
+  "operation": "hotelCodeList",
+  "response": {
+    "status": 200,
+    "bodyJson": {
+      "HotelCodes": [1000000, 1000001, 1000002]
+    }
+  },
+  "responseSchema": {
+    "HotelCodes": "array"
+  },
+  "expect": {
+    "outcome": "SUCCESS",
+    "status": 200,
+    "tboCode": null
+  }
+}

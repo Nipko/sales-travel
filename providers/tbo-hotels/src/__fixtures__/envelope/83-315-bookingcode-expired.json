@@ -1,0 +1,10 @@
+{
+  "row": "01 §8.3 · 315 BOOKINGCODE_EXPIRED",
+  "source": "Code y Description de la tabla (p. 9). Sin ejemplo publicado (H-10).",
+  "operation": "prebook",
+  "response": {
+    "status": 200,
+    "bodyJson": { "Status": { "Code": 315, "Description": "Session Expired" } }
+  },
+  "expect": { "error": "TboApiError", "kind": "OFFER_EXPIRED", "status": 200, "tboCode": 315 }
+}

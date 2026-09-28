@@ -20,16 +20,19 @@ import type {
   OrderCancelScope,
   OrderCreateAudit,
   ProviderCapabilities,
+  ProviderFlagsPort,
   ProviderVertical,
   TenantAdapter,
   TenantProviderFactory,
 } from '../providers/provider.types.js';
+import { ProviderDisabledByPlatformError } from '../providers/provider.types.js';
+import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-flags.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
-import { runPostSaleJob } from './post-sale.worker.js';
+import { runPostSaleJob, type PostSaleJobHandlers } from './post-sale.worker.js';
 
 /**
  * EL SAGA DE CREACIÓN, por la puerta pública (`OrdersService.createOrder`).
@@ -249,7 +252,11 @@ function dbFalsa(
             operation['status'] === 'pending',
         )
       ) {
-        throw Object.assign(new Error('duplicate pending cancel'), { code: '23505' });
+        // Como `pg`: el 23505 dice qué índice lo produjo, y el servicio decide por ese nombre.
+        throw Object.assign(new Error('duplicate pending cancel'), {
+          code: '23505',
+          constraint: 'uq_order_operations_pending_cancel',
+        });
       }
       if (!operationValue) throw new Error('insert sin values');
       operaciones.push(operationValue);
@@ -405,11 +412,10 @@ function banco(
   caps: Partial<ProviderCapabilities> = {},
   semilla?: Record<string, unknown>,
   dbOptions: FakeDbOptions = {},
+  flags: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) },
 ): Banco {
   const adapter = new SagaAdapter(opts);
-  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], {
-    isEnabledForTenant: () => Promise.resolve(false),
-  });
+  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], flags);
   const { db, fila, operaciones } = dbFalsa(semilla, dbOptions);
   const audit = new RecordingAuditService();
   const queue = new RecordingQueueService();
@@ -796,6 +802,9 @@ describe('saga de creación — la compensación es selectiva y va a la cola', (
         actorUserId: USER,
       },
     ]);
+    expect(b.queue.jobs.map((job) => job.name)).toEqual(['compensate']);
+    expect(b.queue.jobs[0]?.jobId).toMatch(/^compensate:order-1:[0-9a-f]{64}$/);
+    expect(b.queue.jobs[0]).not.toHaveProperty('rejection');
   });
 
   it('un PARTIAL no se persiste como confirmado aunque haya PNR', async () => {
@@ -959,7 +968,7 @@ describe('saga de creación — la cola puede no estar, y se dice', () => {
     // existe es peor que no tener cola.
     const adapter = new SagaAdapter({ created: vueloCaido() });
     const registry = new FlightProviderRegistry([new SagaFactory(adapter)], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     });
     const { db } = dbFalsa();
     const audit = new RecordingAuditService();
@@ -1326,7 +1335,15 @@ describe('cancelación auditada — `UNVERIFIED` es PROHIBIDO-REINTENTAR', () =>
 
     await expect(b.orders.cancelOrder(TENANT, 'order-1', PNR, USER)).rejects.toBe(preflight);
 
-    expect(b.queue.cancels).toEqual([{ tenantId: TENANT, orderId: 'order-1', type: 'cancel' }]);
+    const opId = String(b.operaciones()[0]?.['id']);
+    expect(b.queue.cancels).toEqual([
+      { tenantId: TENANT, orderId: 'order-1', operationId: opId, type: 'cancel' },
+    ]);
+    // Pedirlo no basta: con `cancel:<orderId>` BullMQ rechazaba el id, `add()` devolvía `false`
+    // y el reintento no existía. El doble aplica la regla de BullMQ y el intento es la operación.
+    expect(b.queue.jobs.map((job) => job.name)).toEqual(['cancel']);
+    expect(b.queue.jobs[0]?.jobId).toBe(`cancel:order-1:${opId}`);
+    expect(b.queue.jobs[0]).not.toHaveProperty('rejection');
     expect(JSON.parse(String(b.operaciones()[0]?.['result']))).toMatchObject({
       outcome: 'FAILED',
       retryable: true,
@@ -1388,7 +1405,7 @@ describe('cancelación auditada — `UNVERIFIED` es PROHIBIDO-REINTENTAR', () =>
 
 describe('runPostSaleJob — el runner enruta, no decide', () => {
   function servicioEspiado(): {
-    orders: OrdersService;
+    orders: PostSaleJobHandlers;
     runCancelById: ReturnType<typeof vi.fn>;
     verifyCreationById: ReturnType<typeof vi.fn>;
     runCompensation: ReturnType<typeof vi.fn>;
@@ -1397,7 +1414,17 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
     const verifyCreationById = vi.fn(() => Promise.resolve());
     const runCompensation = vi.fn(() => Promise.resolve());
     return {
-      orders: { runCancelById, verifyCreationById, runCompensation } as unknown as OrdersService,
+      orders: {
+        orders: { runCancelById, verifyCreationById, runCompensation },
+        hotelBookings: { runJob: vi.fn(() => Promise.resolve()) },
+        hotelCancellations: { runJob: vi.fn(() => Promise.resolve()) },
+        hcn: { runJob: vi.fn(() => Promise.resolve()) },
+        reconciliation: {
+          runJob: vi.fn(() => Promise.resolve()),
+          runDaily: vi.fn(() => Promise.resolve({ accounts: 0, queued: 0, ran: 0, failed: 0 })),
+        },
+        sweeper: { run: vi.fn(() => Promise.reject(new Error('no se esperaba el barrido'))) },
+      },
       runCancelById,
       verifyCreationById,
       runCompensation,
@@ -1406,7 +1433,12 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
 
   it('enruta la cancelación', async () => {
     const e = servicioEspiado();
-    await runPostSaleJob(e.orders, 'cancel', { tenantId: TENANT, orderId: 'o1', type: 'cancel' });
+    await runPostSaleJob(e.orders, 'cancel', {
+      tenantId: TENANT,
+      orderId: 'o1',
+      operationId: 'op-1',
+      type: 'cancel',
+    });
     expect(e.runCancelById).toHaveBeenCalledWith(TENANT, 'o1');
   });
 
@@ -1440,7 +1472,12 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
     // hacer y la cola diría que todo salió bien.
     const e = servicioEspiado();
     await expect(
-      runPostSaleJob(e.orders, 'inventado', { tenantId: TENANT, orderId: 'o1', type: 'cancel' }),
+      runPostSaleJob(e.orders, 'inventado', {
+        tenantId: TENANT,
+        orderId: 'o1',
+        operationId: 'op-1',
+        type: 'cancel',
+      }),
     ).rejects.toThrow(/desconocido/);
   });
 });
@@ -1450,7 +1487,7 @@ describe('enrutado — ninguna oferta sale por el adapter de otro proveedor', ()
     const otro = new StubProviderFactory({ code: 'otro-air' });
     const mio = new SagaAdapter();
     const registry = new FlightProviderRegistry([new SagaFactory(mio), otro], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     });
     const { db } = dbFalsa();
     const orders = new OrdersService(
@@ -1470,5 +1507,66 @@ describe('enrutado — ninguna oferta sale por el adapter de otro proveedor', ()
     // y una lectura contra el GDS equivocado devuelve "no existe" en vez de fallar.
     expect(otro.adapterFor(TENANT).createOrder).not.toHaveBeenCalled();
     expect(otro.adapterFor(TENANT).retrieveForDisplay).not.toHaveBeenCalled();
+  });
+});
+
+describe('habilitación de la plataforma — corta la venta nueva, no la post-venta', () => {
+  const ORDEN_EN_BASE = { provider: PROVEEDOR, provider_order_id: PNR, status: 'confirmed' };
+  const APAGADO = (): ProviderFlagsPort => providerFlags(() => apagadoPara(TENANT));
+  const auditoriaVerificada = {
+    audit: { audited: true, outcome: 'CANCELLED' },
+    idempotencyKey: 'sha256-de-la-peticion',
+    verified: true,
+  };
+
+  it('con el proveedor apagado para el tenant, `createOrder` para antes de abrir la orden', async () => {
+    const b = banco({}, {}, undefined, {}, APAGADO());
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ProviderDisabledByPlatformError,
+    );
+
+    // Ni intent en la base ni llamada al proveedor: no queda nada a medio camino.
+    expect(b.fila()).toBeUndefined();
+    expect(b.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('una orden YA hecha se sigue cancelando con el proveedor apagado', async () => {
+    const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
+
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(b.adapter.cancelOrder).toHaveBeenCalledTimes(1);
+    expect(b.audit.first(ORDER_EVENTS.cancelled)).toBeDefined();
+  });
+
+  it('una orden YA hecha se sigue leyendo, y su compensación selectiva sigue saliendo', async () => {
+    const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
+
+    await b.orders.retrieveFromProvider(TENANT, PNR, PROVEEDOR);
+    await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
+
+    expect(b.adapter.retrieveForDisplay).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
+    expect(b.adapter.cancelScopes).toEqual([{ itemIds: ['12'] }]);
+  });
+
+  it('una orden YA hecha se sigue pagando: el pago de una reserva existente no es venta nueva', async () => {
+    const b = banco({}, {}, ORDEN_EN_BASE, {}, APAGADO());
+    b.adapter.payOrder.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, status: 'ticketed', warnings: [] } as never),
+    );
+    const orden = b.fila() as unknown as Parameters<OrdersService['payOrder']>[2];
+
+    const res = await b.orders.payOrder(
+      TENANT,
+      'order-1',
+      orden,
+      { type: 'Cash', amount: 100, currency: 'USD' },
+      USER,
+    );
+
+    expect(res.success).toBe(true);
+    expect(b.adapter.payOrder).toHaveBeenCalledTimes(1);
   });
 });

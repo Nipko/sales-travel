@@ -1,0 +1,81 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelDetails": [
+    {
+      "HotelCode": "1000000",
+      "HotelName": "Sofitel Legend Old Cataract Aswan",
+      "Description": "<p>HeadLine : Near Nubian Museum</p><p>Location : A stay at Sofitel Legend Old Cataract Aswan places you in the heart of Aswan, just a 5-minute walk from Nubian Museum and within a 5-minute drive of Elephantine Island.  This 5-star hotel is 1.2 mi (1.9 km) from Aswan Bazaar and 1.3 mi (2.1 km) from Unfinished Obelisk.</p><p>Rooms : Make yourself at home in one of the 138 guestrooms featuring minibars and LCD televisions. Complimentary wireless Internet access keeps you connected, and satellite programming is available for your entertainment. Private bathrooms with shower/tub combinations feature complimentary toiletries and bidets. Conveniences include phones, as well as safes and desks.</p><p>Dining : Enjoy French cuisine at 1902 RESTAURANT, one of the hotel s 4 restaurants, or stay in and take advantage of the 24-hour room service. Snacks are also available at the coffee shop/café. Relax with a refreshing drink from the poolside bar or one of the 4 bars/lounges.</p><p>Renovations : Due to COVID-19, this property’s food and beverage options may be limited.</p><p>CheckIn Instructions : Extra-person charges may apply and vary depending on property policy Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed No onsite parking is available This property accepts credit cards, debit cards, and cash Safety features at this property include a smoke detector and a security system Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property</p><p>Special Instructions : This property doesn t offer after-hours check-in. Front desk staff will greet guests on arrival.  Due to COVID-19, this property s food and beverage options may be limited pursuant to local regulations.</p>&nbsp;<br/><b>Disclaimer notification: Amenities are subject to availability and may be chargeable as per the hotel policy.</b>",
+      "HotelFacilities": [
+        "Library",
+        "Express check-in",
+        "elevator",
+        "Indoor pool",
+        "24-hour front desk",
+        "Poolside bar",
+        "Turkish bath/Hammam",
+        "Porter/bellhop",
+        "Express check-out",
+        "Dry cleaning/laundry service",
+        "Outdoor pool",
+        "Limo or Town Car service available",
+        "Conference space size (meters) - 44",
+        "Number of meeting rooms - 3",
+        "Terrace",
+        "Luggage storage",
+        "ATM/banking",
+        "Concierge services",
+        "Gift shops or newsstand",
+        "Snack bar/deli",
+        "Shopping on site",
+        "Pool umbrellas",
+        "Airport transportation (surcharge)",
+        "Barbecue grill(s)",
+        "Couples/private dining",
+        "Private picnics",
+        "Coffee/tea in common areas",
+        "Number of bars/lounges - 4",
+        "Full-service spa",
+        "Conference space",
+        "Spa treatment room(s)",
+        "Tours/ticket assistance",
+        "Coffee shop or café",
+        "Steam room",
+        "Free WiFi",
+        "Pool sun loungers",
+        "Babysitting or childcare (surcharge)",
+        "Smoke-free property",
+        "Proposal/romance packages available",
+        "Wheelchair accessible – no",
+        "24-hour business center",
+        "Conference space size (feet) - 474",
+        "Laundry facilities",
+        "Spa tub",
+        "24-hour fitness facilities",
+        "Garden",
+        "Free newspapers in lobby"
+      ],
+      "Attractions": {
+        "1) ": "Distances are displayed to the nearest 0.1 mile and kilometer. <br /> <p>Nubian Museum - 0.4 km / 0.2 mi <br /> Elephantine Island - 1.1 km / 0.7 mi <br /> Unfinished Obelisk - 1.5 km / 1 mi <br /> Kitchener s Island - 1.7 km / 1.1 mi <br /> Aswan Bazaar - 1.9 km / 1.2 mi <br /> Feryal Garden - 2.2 km / 1.4 mi <br /> Tombs of the Nobles - 4 km / 2.5 mi <br /> Philae Temple - 10 km / 6.2 mi <br /> Philae - 12 km / 7.5 mi <br /> High Dam Monument - 16.9 km / 10.5 mi <br /> Temple of Kalabsha - 17.4 km / 10.8 mi <br /> Aswan Dam - 17.8 km / 11.1 mi <br /> Monastery of St Simeon - 23.1 km / 14.4 mi <br /> Mausoleum of the Aga Khan - 23.4 km / 14.5 mi <br /> Kom Ombo Temple - 47 km / 29.2 mi <br /> </p><p>The preferred airport for Sofitel Legend Old Cataract Aswan is Aswan (ASW-Aswan Intl.) - 17.9 km / 11.1 mi </p>"
+      },
+      "Images": [
+        "https://api.tbotechnology.in/imageresource.aspx?img=9eMP+0FIICgCIk6ZClzZH9Cs+1gwAq6BFWcc22yNLMF/UJIXMdxPdTX9IMA+gOFHIZ0e6X2r2Pe98Nnf1JsUZ4vSpJuSO2+iow8K6weUG+E=",
+        "https://api.tbotechnology.in/imageresource.aspx?img=9eMP+0FIICgCIk6ZClzZH9Cs+1gwAq6BFWcc22yNLMF/UJIXMdxPdTX9IMA+gOFHIZ0e6X2r2Pf91tOg4n9rlIKdTqRz5JpHww9xfViYDdY="
+      ],
+      "Address": "Abtal El Tahrir Street,Aswan 81511, Assuan, Aswan, 81511, Egypt",
+      "PinCode": "81511",
+      "CityId": "109642",
+      "CountryName": "Egypt",
+      "PhoneNumber": "+20972316000",
+      "FaxNumber": "+20972316011",
+      "Map": "24.08166|32.88985",
+      "HotelRating": 5,
+      "CityName": "Aswan",
+      "CountryCode": "EG",
+      "CheckInTime": "3:00 PM",
+      "CheckOutTime": "12:00 PM"
+    }
+  ]
+}

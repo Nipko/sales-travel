@@ -4,8 +4,10 @@ import type {
   ProviderCredentialsService,
   ResolvedProviderAccount,
 } from '../provider-credentials/provider-credentials.service.js';
+import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
 import { FlightProviderRegistry } from './flight-provider.registry.js';
+import { HotelProviderRegistry } from './hotel-provider.registry.js';
 import type { ProviderFlagsPort } from './provider.types.js';
 
 /**
@@ -61,7 +63,7 @@ function entradasDeCache(factory: LatamNdcProviderFactory): string[] {
   return [...(factory as unknown as { cache: Map<string, unknown> }).cache.keys()];
 }
 
-const flagsApagados: ProviderFlagsPort = { isEnabledForTenant: () => Promise.resolve(false) };
+const flagsApagados: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) };
 
 describe('aislamiento del caché de adapters entre tenants', () => {
   beforeEach(() => {
@@ -159,6 +161,130 @@ describe('aislamiento del caché de adapters entre tenants', () => {
   it('el mismo tenant reutiliza su adapter entre búsquedas (el token no se repide)', async () => {
     const factory = factoryCon(() => Promise.resolve(cuenta()));
     const registry = new FlightProviderRegistry([factory], flagsApagados);
+
+    const primera = await registry.forTenant(TENANT_A);
+    const segunda = await registry.forTenant(TENANT_A);
+
+    expect(primera.active[0]?.adapter).toBe(segunda.active[0]?.adapter);
+  });
+});
+
+/**
+ * Lo mismo para hoteles, contra el factory REAL de Despegar. Con la cuenta del consolidador
+ * heredada a toda su red, que el caché sea por DUEÑO de la cuenta y no por tenant es lo que
+ * separa "comparten credencial, y está bien" de "una agencia reserva con la cuenta de otra".
+ */
+describe('aislamiento del caché de adapters de hoteles entre tenants', () => {
+  function cuentaDespegar(
+    overrides: Partial<ResolvedProviderAccount> = {},
+  ): ResolvedProviderAccount {
+    return {
+      id: 'acc-h1',
+      ownerTenantId: TENANT_A,
+      providerCode: 'despegar-hotels',
+      label: 'default',
+      config: { baseUrl: 'https://example.test/v3' },
+      credentials: { apiKey: 'k' },
+      inherited: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  function despegarCon(
+    resolve: ProviderCredentialsService['resolve'],
+  ): DespegarHotelsProviderFactory {
+    return new DespegarHotelsProviderFactory({ resolve } as unknown as ProviderCredentialsService);
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('dos tenants con cuentas propias distintas NO comparten adapter, ni el neutral ni el ACL', async () => {
+    const factory = despegarCon((tenantId) =>
+      Promise.resolve(
+        cuentaDespegar({ ownerTenantId: tenantId, credentials: { apiKey: tenantId } }),
+      ),
+    );
+
+    const a = await factory.resolveForTenant(TENANT_A);
+    const b = await factory.resolveForTenant(TENANT_B);
+
+    expect(a.adapter).not.toBe(b.adapter);
+    expect(await factory.forTenant(TENANT_A)).not.toBe(await factory.forTenant(TENANT_B));
+  });
+
+  it('dos tenants que HEREDAN la cuenta del consolidador comparten adapter, y eso es lo correcto', async () => {
+    const factory = despegarCon(() =>
+      Promise.resolve(cuentaDespegar({ ownerTenantId: CONSOLIDADOR, inherited: true })),
+    );
+
+    const a = await factory.resolveForTenant(TENANT_A);
+    const b = await factory.resolveForTenant(TENANT_B);
+
+    expect(a.adapter).toBe(b.adapter);
+    expect([a.credentialSource, b.credentialSource]).toEqual(['inherited', 'inherited']);
+  });
+
+  it('al rotar credenciales se construye otro adapter y la entrada vieja se descarta', async () => {
+    let updatedAt = new Date('2026-01-01T00:00:00Z');
+    const factory = despegarCon(() => Promise.resolve(cuentaDespegar({ updatedAt })));
+    const cache = (): string[] => [
+      ...(factory as unknown as { cache: Map<string, unknown> }).cache.keys(),
+    ];
+
+    const viejo = await factory.resolveForTenant(TENANT_A);
+    const antes = cache();
+    updatedAt = new Date('2026-02-01T00:00:00Z');
+    const nuevo = await factory.resolveForTenant(TENANT_A);
+
+    expect(nuevo.adapter).not.toBe(viejo.adapter);
+    expect(cache()).toHaveLength(1);
+    expect(cache()).not.toEqual(antes);
+  });
+
+  it('el adapter de la cuenta de plataforma no se mezcla con el de una agencia', async () => {
+    let hayCuenta = true;
+    const factory = despegarCon(() =>
+      hayCuenta
+        ? Promise.resolve(cuentaDespegar())
+        : Promise.reject(new NotFoundException('sin cuenta activa')),
+    );
+
+    const propio = await factory.resolveForTenant(TENANT_A);
+    hayCuenta = false;
+    const plataforma = await factory.resolveForTenant(TENANT_B);
+
+    expect(propio.adapter).not.toBe(plataforma.adapter);
+    expect(plataforma.credentialSource).toBe('env');
+  });
+
+  it('el registry de hoteles entrega adapters distintos a tenants distintos, con su origen', async () => {
+    const factory = despegarCon((tenantId) =>
+      tenantId === TENANT_A
+        ? Promise.resolve(cuentaDespegar({ ownerTenantId: TENANT_A, credentials: { apiKey: 'a' } }))
+        : Promise.resolve(
+            cuentaDespegar({
+              ownerTenantId: CONSOLIDADOR,
+              inherited: true,
+              credentials: { apiKey: 'c' },
+            }),
+          ),
+    );
+    const registry = new HotelProviderRegistry([factory], flagsApagados);
+
+    const a = await registry.byCode(TENANT_A, 'despegar-hotels');
+    const b = await registry.byCode(TENANT_B, 'despegar-hotels');
+
+    expect(a.adapter).not.toBe(b.adapter);
+    expect(a.credentialSource).toBe('own');
+    expect(b.credentialSource).toBe('inherited');
+  });
+
+  it('el mismo tenant reutiliza su adapter de hoteles entre búsquedas', async () => {
+    const factory = despegarCon(() => Promise.resolve(cuentaDespegar()));
+    const registry = new HotelProviderRegistry([factory], flagsApagados);
 
     const primera = await registry.forTenant(TENANT_A);
     const segunda = await registry.forTenant(TENANT_A);

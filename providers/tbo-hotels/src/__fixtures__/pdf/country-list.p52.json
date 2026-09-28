@@ -1,0 +1,28 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Success"
+  },
+  "CountryList": [
+    {
+      "Code": "AL",
+      "Name": "Albania"
+    },
+    {
+      "Code": "AD",
+      "Name": "Andorra"
+    },
+    {
+      "Code": "AG",
+      "Name": "Antigua"
+    },
+    {
+      "Code": "AR",
+      "Name": "Argentina"
+    },
+    {
+      "Code": "AW",
+      "Name": "Aruba"
+    }
+  ]
+}

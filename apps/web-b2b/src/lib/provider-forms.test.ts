@@ -6,12 +6,16 @@ import {
   accountCertaintyNotice,
   accountConfigSummary,
   buildProviderAccountPayload,
+  canOwnAccount,
+  draftWarnings,
   fieldKey,
   inheritableHelp,
   normalizeAccountLabel,
+  ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
   providerFormFor,
+  providerFormsForNode,
   statusEnablesProvider,
   statusNotice,
   validateProviderDraft,
@@ -38,8 +42,13 @@ function validSabreDraft(): DraftSections {
 }
 
 describe('catálogo de proveedores', () => {
-  it('incluye a Sabre junto a los dos que ya estaban', () => {
-    expect(Object.keys(PROVIDERS).sort()).toEqual(['agent-cars', 'latam-ndc', 'sabre']);
+  it('incluye a Sabre y a TBO Holidays junto a los dos que ya estaban', () => {
+    expect(Object.keys(PROVIDERS).sort()).toEqual([
+      'agent-cars',
+      'latam-ndc',
+      'sabre',
+      'tbo-hotels',
+    ]);
   });
 
   it('no inventa un formulario para un código desconocido', () => {
@@ -911,6 +920,214 @@ describe('accountConfigSummary', () => {
   it('omite los campos ausentes o vacíos', () => {
     expect(accountConfigSummary(sabre(), { environment: 'prod', agencyIata: '' })).toEqual([
       'Entorno: Producción',
+    ]);
+  });
+});
+
+/* ---------- TBO Holidays (docs/tbo/08 RF-37 y RF-01; 09 PR-2.2) ---------- */
+
+function tbo(): ProviderForm {
+  const form = providerFormFor('tbo-hotels');
+  if (!form) throw new Error('el panel tiene que conocer el proveedor "tbo-hotels"');
+  return form;
+}
+
+const TBO_TEST_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+const TBO_LIVE_URL = 'https://api.tbo-live.example/HotelAPI';
+// Espacios en los bordes a propósito: pueden ser parte de la contraseña (Q-06).
+const TBO_PASSWORD = '  cl4ve de TBO  ';
+
+function tboDraft(config: Record<string, string> = {}): DraftSections {
+  return { credentials: { username: 'usuario-tbo', password: TBO_PASSWORD }, config };
+}
+
+describe('TBO Holidays — la forma de la cuenta', () => {
+  it('usuario y contraseña van en el blob cifrado; entorno y URL en config', () => {
+    const form = tbo();
+    expect(form.credentials.map((f) => f.key)).toEqual(['username', 'password']);
+    expect(form.config.map((f) => f.key)).toEqual(['environment', 'baseUrl']);
+    // Ninguna de las dos mitades de la credencial se ofrece en config: se guarda en claro.
+    const payload = buildProviderAccountPayload(form, tboDraft());
+    expect(payload.config).not.toHaveProperty('password');
+    expect(payload.config).not.toHaveProperty('username');
+  });
+
+  it('la contraseña es secreta y una cuenta guardada no la precarga', () => {
+    const byKey = new Map(tbo().credentials.map((f) => [f.key, f]));
+    expect(byKey.get('password')?.secret).toBe(true);
+    const prefill = prefillFromAccount(tbo(), {
+      label: 'default',
+      status: 'sandbox',
+      isInheritable: true,
+      config: { environment: 'test', baseUrl: TBO_TEST_URL },
+    });
+    expect(prefill).not.toHaveProperty('credentials');
+    expect(prefill.config).toEqual({ environment: 'test', baseUrl: TBO_TEST_URL });
+  });
+
+  it('no cae a credenciales de plataforma: sin cuenta, TBO no aparece (D-TBO-03 A)', () => {
+    expect(tbo().fallsBackToPlatformCredentials).toBe(false);
+    const s = prepareAccountSubmission(
+      tbo(),
+      { label: 'default', status: 'active', sections: tboDraft() },
+      { resolved: null, tenantName: 'Planetour', ownerName: 'Planetour' },
+    );
+    expect(s.notice.body).toContain('no aparece en las búsquedas');
+    expect(s.notice.body).not.toContain('credenciales de la plataforma');
+  });
+
+  it('el entorno arranca en Test, nunca en Producción', () => {
+    expect(buildProviderAccountPayload(tbo(), tboDraft()).config['environment']).toBe('test');
+  });
+});
+
+describe('TBO Holidays — la contraseña no se recorta', () => {
+  it('viaja tal cual se tecleó, espacios de los bordes incluidos', () => {
+    const payload = buildProviderAccountPayload(tbo(), tboDraft());
+    expect(payload.credentials['password']).toBe(TBO_PASSWORD);
+  });
+
+  it('el resto de los campos se sigue recortando', () => {
+    const payload = buildProviderAccountPayload(tbo(), {
+      credentials: { username: '  usuario-tbo ', password: 'x' },
+      config: { baseUrl: `  ${TBO_LIVE_URL} `, environment: 'live' },
+    });
+    expect(payload.credentials['username']).toBe('usuario-tbo');
+    expect(payload.config['baseUrl']).toBe(TBO_LIVE_URL);
+  });
+
+  it('una contraseña de sólo espacios cuenta como vacía, como la cuenta el API', () => {
+    const result = validateProviderDraft(tbo(), {
+      credentials: { username: 'usuario-tbo', password: '   ' },
+      config: {},
+    });
+    expect(result.fieldErrors[fieldKey('credentials', 'password')]).toBeDefined();
+  });
+});
+
+describe('TBO Holidays — entorno y URL (D-TBO-30 A)', () => {
+  it.each([
+    ['test sin URL (usa la publicada)', {}],
+    ['test con la URL publicada', { environment: 'test', baseUrl: TBO_TEST_URL }],
+    ['producción con https', { environment: 'live', baseUrl: TBO_LIVE_URL }],
+  ])('acepta %s', (_caso, config) => {
+    const result = validateProviderDraft(tbo(), tboDraft(config));
+    expect(result.fieldErrors).toEqual({});
+    expect(result.ok).toBe(true);
+  });
+
+  it('producción sin URL no se guarda: no hay valor por defecto', () => {
+    const result = validateProviderDraft(tbo(), tboDraft({ environment: 'live' }));
+    expect(result.fieldErrors[fieldKey('config', 'baseUrl')]).toContain('obligatoria');
+  });
+
+  it.each([
+    ['http en producción', 'live', 'http://api.tbo-live.example/HotelAPI'],
+    ['http en test contra otro host', 'test', 'http://otro.example/api'],
+    ['producción contra el entorno de pruebas', 'live', `${TBO_TEST_URL}/`],
+    ['una URL con query', 'test', `${TBO_TEST_URL}?x=1`],
+    ['una URL con usuario', 'live', 'https://u:p@api.tbo-live.example'],
+  ])('rechaza %s junto al campo, sin repetir la URL', (_caso, environment, baseUrl) => {
+    const message = validateProviderDraft(tbo(), tboDraft({ environment, baseUrl })).fieldErrors[
+      fieldKey('config', 'baseUrl')
+    ];
+    expect(message).toBeDefined();
+    expect(message).not.toContain(baseUrl);
+  });
+
+  it('una URL que no es URL la marca la regla del campo, con su mensaje', () => {
+    const result = validateProviderDraft(tbo(), tboDraft({ environment: 'live', baseUrl: 'tbo' }));
+    expect(result.fieldErrors[fieldKey('config', 'baseUrl')]).toContain('URL completa');
+  });
+
+  it('un usuario con «:» se rechaza: la autenticación lo partiría en dos', () => {
+    const result = validateProviderDraft(tbo(), {
+      credentials: { username: 'usuario:tbo', password: 'x' },
+      config: {},
+    });
+    const message = result.fieldErrors[fieldKey('credentials', 'username')];
+    expect(message).toBeDefined();
+    expect(message).not.toContain('usuario:tbo');
+  });
+
+  it('avisa, sin bloquear, que en test la credencial viaja por http', () => {
+    const casos: Record<string, string>[] = [{}, { environment: 'test', baseUrl: TBO_TEST_URL }];
+    for (const config of casos) {
+      const [warning, ...rest] = draftWarnings(tbo(), tboDraft(config));
+      expect(rest).toEqual([]);
+      expect(warning?.tone).toBe('warn');
+      expect(warning?.body).toContain('nunca las de producción');
+      expect(validateProviderDraft(tbo(), tboDraft(config)).ok).toBe(true);
+    }
+  });
+
+  it('no avisa nada en producción con https', () => {
+    expect(draftWarnings(tbo(), tboDraft({ environment: 'live', baseUrl: TBO_LIVE_URL }))).toEqual(
+      [],
+    );
+  });
+
+  it('los proveedores sin reglas entre campos no ganan avisos', () => {
+    expect(draftWarnings(sabre(), validSabreDraft())).toEqual([]);
+  });
+});
+
+describe('TBO Holidays — sólo la carga el consolidador (D-TBO-03 A, Q-77)', () => {
+  it.each([
+    ['platform', true],
+    ['consolidator', true],
+    ['agency', false],
+    ['subagency', false],
+  ])('el alta se le ofrece a un nodo %s → %s', (tenantType, ofrecido) => {
+    const codes = providerFormsForNode(tenantType).map(([code]) => code);
+    expect(codes.includes('tbo-hotels')).toBe(ofrecido);
+    expect(canOwnAccount(tbo(), tenantType)).toBe(ofrecido);
+    // El resto de los proveedores no cambia para nadie.
+    expect(codes).toEqual(expect.arrayContaining(['latam-ndc', 'agent-cars', 'sabre']));
+  });
+
+  it('a una agencia con cuenta propia de TBO se le dice qué hacer con ella', () => {
+    const notice = ownershipNotice(tbo(), 'agency');
+    expect(notice?.tone).toBe('warn');
+    expect(notice?.body).toContain('consolidador');
+    expect(notice?.body).toContain('Deshabilitada');
+    expect(ownershipNotice(tbo(), 'consolidator')).toBeNull();
+    expect(ownershipNotice(sabre(), 'agency')).toBeNull();
+  });
+});
+
+describe('TBO Holidays — nace en Sandbox y la pantalla lo explica', () => {
+  it('el alta arranca en Sandbox, que no habilita el proveedor', () => {
+    const initial = tbo().initialStatus;
+    expect(initial).toBe('sandbox');
+    expect(statusEnablesProvider(initial ?? 'active')).toBe(false);
+  });
+
+  it('la nota dice que no habilita nada hasta promoverla a Activo, y cómo', () => {
+    const note = tbo().note ?? '';
+    expect(note).toContain('Nace en Sandbox');
+    expect(note).toContain('no habilita TBO');
+    expect(note).toContain('estado Activo');
+    // Promover exige volver a cargar la credencial: el API no la devuelve.
+    expect(note).toContain('cargá de nuevo usuario y contraseña');
+  });
+
+  it('no promete que Activo alcance: TBO además se enciende agencia por agencia (opt-in)', () => {
+    expect(tbo().note).toContain('Activo es necesario pero no alcanza');
+  });
+
+  it('el paso a producción reemplaza la cuenta, no agrega otra', () => {
+    expect(tbo().note).toContain('reemplazá esta misma cuenta');
+  });
+
+  it('el aviso del estado Sandbox dice que no habilita el proveedor', () => {
+    expect(statusNotice('sandbox').title).toContain('NO habilita');
+  });
+
+  it('el resumen de la cuenta muestra entorno y URL, que no son secretos', () => {
+    expect(accountConfigSummary(tbo(), { environment: 'test', baseUrl: TBO_TEST_URL })).toEqual([
+      'Entorno: Test (certificación)',
+      `URL base: ${TBO_TEST_URL}`,
     ]);
   });
 });

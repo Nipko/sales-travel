@@ -1,0 +1,13 @@
+{
+  "name": "@sales-travel/tbo-cert",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Arnés de certificación de TBO Hotels (docs/tbo/07-certificacion.md §6). No es runtime.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@sales-travel/tbo-hotels": "workspace:*"
+  }
+}

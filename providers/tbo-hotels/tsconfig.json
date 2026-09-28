@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true
+  },
+  // Los `*.test.ts` quedan DENTRO a propósito: `typecheck` y el lint con tipos los cubren igual que
+  // al código de producción. Lo que se publica lo recorta `tsconfig.build.json`, que sólo redefine
+  // `exclude` (en JSON no se fusiona: se reemplaza).
+  "include": ["src/**/*"]
+}

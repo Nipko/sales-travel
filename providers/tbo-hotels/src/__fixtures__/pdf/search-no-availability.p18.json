@@ -1,0 +1,6 @@
+{
+  "Status": {
+    "Code": 201,
+    "Description": "No Available rooms for given criteria"
+  }
+}

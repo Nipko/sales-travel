@@ -1,0 +1,186 @@
+name: Sync TBO Hotel Inventory
+
+# Catálogo de hoteles de TBO → Postgres (docs/tbo/05 §6; 08 RF-30). Herramienta, imagen y workflow
+# propios, no una extensión del sync de Despegar (D-TBO-12 A): el job que funciona no cambia.
+#
+# Secrets y variables `TBO_SYNC_*`: tools/sync-tbo-hotel-inventory/README.md. La cuenta es la de
+# catálogo, dedicada y de plataforma (D-TBO-04 A), nunca la de ventas del consolidador. Sin
+# `TBO_SYNC_USERNAME` o `TBO_SYNC_PASSWORD` en el `.env` del VPS el job sale con 0, como el de
+# Despegar sin su API key.
+
+on:
+  schedule:
+    # Cada hora de 06:17 a 09:17 UTC, alrededor de las 08:00 UTC: 01:17-04:17 en Bogotá y Lima y
+    # 03:17-06:17 en São Paulo, sin venta (05 §6.6 y §14 punto 9; D-TBO-12 A). Una corrida completa no
+    # cabe en una ejecución (05 §6.7): cada una avanza hasta su presupuesto y la siguiente reanuda por
+    # `hotel_provider_city.synced_at` (05 §6.4). El minuto 17 esquiva la cola de los crones en punto.
+    - cron: '17 6-9 * * *'
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'Países ISO2 separados por coma (ej. CO o CO,PE). Vacío = TBO_SYNC_COUNTRIES del VPS.'
+        required: false
+        type: string
+        default: ''
+      stages:
+        description: 'Etapas separadas por coma (ej. E1,E2,E3). Vacío = TBO_SYNC_STAGES del VPS.'
+        required: false
+        type: string
+        default: ''
+      max_calls:
+        description: 'Tope de llamadas a TBO de esta corrida. Vacío = TBO_SYNC_MAX_CALLS del VPS.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Una ejecución a la vez: la de la hora siguiente espera a la anterior en lugar de barrer las mismas
+# ciudades en paralelo. El lock consultivo de la herramienta es la segunda barrera (05 §6.4).
+concurrency:
+  group: sync-tbo-hotel-inventory
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync TBO inventory → Postgres
+    runs-on: ubuntu-latest
+    # Por encima de RUN_GUARD_MINUTES más la descarga de la imagen y el apagado ordenado. Si GitHub
+    # cortara primero, se cerraría la sesión SSH y el contenedor seguiría corriendo huérfano en el VPS.
+    timeout-minutes: 60
+    env:
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+    steps:
+      - name: Setup SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run sync container
+        env:
+          # Por `env` y no con `${{ }}` dentro del script: un input nunca se interpreta como shell.
+          INPUT_COUNTRIES: ${{ inputs.countries }}
+          INPUT_STAGES: ${{ inputs.stages }}
+          INPUT_MAX_CALLS: ${{ inputs.max_calls }}
+        run: |
+          # Viajan como argumentos del `bash -s` remoto, que ssh vuelve a partir por espacios: sólo
+          # letras, dígitos y comas. Lo demás (país inexistente, etapa desconocida) lo rechaza el Zod
+          # de la herramienta con salida 1.
+          for value in "$INPUT_COUNTRIES" "$INPUT_STAGES" "$INPUT_MAX_CALLS"; do
+            if [[ ! "$value" =~ ^[A-Za-z0-9,]*$ ]]; then
+              echo "::error::Los inputs sólo admiten letras, dígitos y comas."
+              exit 1
+            fi
+          done
+
+          # `-` = sin override: un argumento vacío desaparecería al cruzar ssh y correría los demás.
+          ssh -o ServerAliveInterval=30 -p "$SSH_PORT" "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+            bash -s -- "${INPUT_COUNTRIES:--}" "${INPUT_STAGES:--}" "${INPUT_MAX_CALLS:--}" <<'BASH'
+            set -euo pipefail
+            cd /opt/sales-travel
+
+            # No se hace `source .env`: deploy.yml lo escribe sin comillas, y un valor con espacios
+            # (una contraseña de aplicación de correo, por ejemplo) se ejecuta como comando y el job
+            # sale con 127 antes de sincronizar. Se exportan sólo las claves que usa este job, literales.
+            env_get() {
+              local v
+              v=$(grep -m1 -E "^$1=" .env | cut -d= -f2-) || true
+              case "$v" in
+                \'*\') v=${v#\'}; v=${v%\'} ;;
+                \"*\") v=${v#\"}; v=${v%\"} ;;
+              esac
+              printf '%s' "$v"
+            }
+            POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
+            while IFS= read -r line; do
+              key=${line%%=*}
+              case "$key" in
+                TBO_SYNC_*) export "$key=$(env_get "$key")" ;;
+              esac
+            done < .env
+
+            if [ -z "${TBO_SYNC_USERNAME:-}" ] || [ -z "${TBO_SYNC_PASSWORD:-}" ]; then
+              echo "TBO_SYNC_USERNAME o TBO_SYNC_PASSWORD no configurados en .env — se omite el sync."
+              exit 0
+            fi
+
+            [ "$1" = "-" ] || export TBO_SYNC_COUNTRIES="$1"
+            [ "$2" = "-" ] || export TBO_SYNC_STAGES="$2"
+            [ "$3" = "-" ] || export TBO_SYNC_MAX_CALLS="$3"
+
+            IMAGE=ghcr.io/nipko/sales-travel-sync-tbo-hotel-inventory:latest
+            NAME=sales-travel-sync-tbo-hotel-inventory
+            # Tope duro de la corrida en el VPS. La herramienta se detiene sola a los
+            # TBO_SYNC_MAX_MINUTES (45 por defecto); esto sólo alcanza a una corrida colgada o a un
+            # presupuesto configurado más largo, y la corta con SIGTERM, que la cierra "ok parcial".
+            RUN_GUARD_MINUTES=50
+
+            docker pull "$IMAGE"
+
+            # Con `concurrency` no hay dos ejecuciones a la vez, así que un contenedor vivo con este
+            # nombre es de una ejecución que perdió su sesión SSH. SIGTERM lo cierra en orden: la
+            # ciudad en curso termina o hace ROLLBACK y libera el lock.
+            if [ "$(docker inspect --format '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = "true" ]; then
+              echo "::warning::Seguía corriendo el sync de una ejecución anterior: se detiene en orden."
+              docker stop --time 60 "$NAME" >/dev/null || true
+            fi
+            docker rm -f "$NAME" >/dev/null 2>&1 || true
+
+            # `-e NOMBRE` sin valor toma el del entorno de `docker`, exportado arriba: así las
+            # contraseñas no quedan en la línea de comandos, visible en `ps` para cualquier usuario del VPS.
+            export PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}"
+
+            # 2 redes: internal (Postgres) + edge (Internet, TBO).
+            CID=$(docker create --name "$NAME" --network sales-travel_internal \
+              -e PGHOST=postgres \
+              -e PGPORT=5432 \
+              -e PGUSER=postgres \
+              -e PGPASSWORD \
+              -e PGDATABASE=sales_travel \
+              -e TBO_SYNC_ENABLED \
+              -e TBO_SYNC_ENVIRONMENT \
+              -e TBO_SYNC_BASE_URL \
+              -e TBO_SYNC_USERNAME \
+              -e TBO_SYNC_PASSWORD \
+              -e TBO_SYNC_COUNTRIES \
+              -e TBO_SYNC_CITIES \
+              -e TBO_SYNC_STAGES \
+              -e TBO_SYNC_MAX_CALLS \
+              -e TBO_SYNC_MAX_MINUTES \
+              -e TBO_SYNC_RPS \
+              -e TBO_SYNC_SWEEP_MAX_DROP \
+              -e TBO_SYNC_MAX_CONSECUTIVE_429 \
+              -e TBO_SYNC_MAX_CONSECUTIVE_ERRORS \
+              -e TBO_SYNC_DETAILED_RESPONSE \
+              -e TBO_SYNC_CODELIST_TIMEOUT_MS \
+              -e TBO_SYNC_DEMAND_REFRESH_HOURS \
+              -e TBO_SYNC_REFRESH_DAYS \
+              -e TBO_SYNC_EMPTY_REFRESH_DAYS \
+              -e TBO_SYNC_DEMAND_WINDOW_DAYS \
+              -e TBO_SYNC_CONTENT_SCOPE \
+              -e TBO_SYNC_LANGS \
+              -e TBO_SYNC_LANGS_REGULAR \
+              -e TBO_SYNC_DETAILS_BATCH \
+              -e TBO_SYNC_CONTENT_REFRESH_DAYS \
+              -e TBO_SYNC_LOG_LEVEL \
+              "$IMAGE")
+            # También si algo falla antes de terminar. `stop` primero porque `rm -f` mata con SIGKILL
+            # y cortaría la transacción de la ciudad en curso.
+            trap 'docker stop --time 60 "$CID" >/dev/null 2>&1 || true; docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+
+            docker network connect sales-travel_edge "$CID"
+
+            # `docker start -a` reenvía la señal de `timeout` al contenedor. El código de salida es el
+            # del contenedor, no el de `timeout`: un corte por SIGTERM es "ok parcial" (salida 0).
+            RC=0
+            timeout --signal=TERM --kill-after=90s "${RUN_GUARD_MINUTES}m" docker start -a "$CID" || RC=$?
+            if [ "$RC" -eq 124 ] || [ "$RC" -eq 137 ]; then
+              echo "::warning::El sync pasó los ${RUN_GUARD_MINUTES} min y se cortó con SIGTERM."
+            fi
+            docker stop --time 60 "$CID" >/dev/null 2>&1 || true
+            EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}')
+            exit "$EXIT"
+          BASH
