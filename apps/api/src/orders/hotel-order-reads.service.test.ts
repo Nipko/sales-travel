@@ -11,8 +11,10 @@ import {
 import type { HotelProviderAdapter } from '../providers/hotel-provider.types.js';
 import {
   ProviderOrderAccountUnavailableError,
+  type ProviderFlagsPort,
   type TenantAdapter,
 } from '../providers/provider.types.js';
+import { apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
   HotelOrderReadsService,
@@ -205,6 +207,7 @@ function banco(
   opciones: {
     read?: HotelBookingView;
     factory?: ProveedorConCuentas;
+    flags?: ProviderFlagsPort;
   } = {},
 ) {
   const factory = opciones.factory ?? new ProveedorConCuentas();
@@ -214,7 +217,7 @@ function banco(
   const a = almacen(ordenes);
   const audit = new RecordingAuditService();
   const service = new HotelOrderReadsService(
-    hotelRegistry([factory], hotelFlags(false)),
+    hotelRegistry([factory], opciones.flags ?? hotelFlags(false)),
     a.store,
     new CircuitBreakerService(),
     audit.asService(),
@@ -456,6 +459,17 @@ describe('consulta manual de una orden de hotel', () => {
     const b = banco({ [ORDEN_A]: { tenantId: AGENCIA_A } });
 
     await expect(b.service.retrieve(AGENCIA_A, ORDEN_A)).resolves.toMatchObject({ found: true });
+    expect(b.factory.deLaOrden.getBooking).toHaveBeenCalledTimes(1);
+  });
+
+  it('con el proveedor apagado por la plataforma para la agencia, la consulta sale igual con la cuenta de la orden', async () => {
+    const b = banco(
+      { [ORDEN_A]: { tenantId: AGENCIA_A } },
+      { flags: hotelFlags(() => apagadoPara(AGENCIA_A)) },
+    );
+
+    await expect(b.service.retrieve(AGENCIA_A, ORDEN_A)).resolves.toMatchObject({ found: true });
+    expect(b.factory.ordenesResueltas).toEqual([[AGENCIA_A, ORDEN_A]]);
     expect(b.factory.deLaOrden.getBooking).toHaveBeenCalledTimes(1);
   });
 

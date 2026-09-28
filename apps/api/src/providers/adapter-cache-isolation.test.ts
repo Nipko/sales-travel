@@ -63,7 +63,7 @@ function entradasDeCache(factory: LatamNdcProviderFactory): string[] {
   return [...(factory as unknown as { cache: Map<string, unknown> }).cache.keys()];
 }
 
-const flagsApagados: ProviderFlagsPort = { isEnabledForTenant: () => Promise.resolve(false) };
+const flagsApagados: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) };
 
 describe('aislamiento del caché de adapters entre tenants', () => {
   beforeEach(() => {

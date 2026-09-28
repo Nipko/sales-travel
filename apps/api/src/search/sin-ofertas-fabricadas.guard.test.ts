@@ -10,6 +10,7 @@ import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js
 import { SabreProviderFactory } from '../providers-sabre/sabre.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { ProviderFlagsPort } from '../providers/provider.types.js';
+import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { MemoryCacheAdapter } from './memory-cache.adapter.js';
 import type { SearchTelemetryService } from './search-telemetry.service.js';
@@ -51,7 +52,7 @@ function criteria(): FlightSearchCriteria {
   });
 }
 
-const FLAGS_ENCENDIDOS: ProviderFlagsPort = { isEnabledForTenant: () => Promise.resolve(true) };
+const FLAGS_ENCENDIDOS: ProviderFlagsPort = { decisionFor: () => Promise.resolve(ENCENDIDO) };
 
 /**
  * El servicio de búsqueda REAL sobre los factories REALES de los dos proveedores de vuelos.

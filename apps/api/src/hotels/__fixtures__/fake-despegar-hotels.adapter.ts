@@ -28,9 +28,11 @@ import type {
 } from '../../providers/hotel-provider.types.js';
 import type {
   CredentialSource,
+  ProviderEnablementDecision,
   ProviderFlagsPort,
   TenantAdapter,
 } from '../../providers/provider.types.js';
+import { providerFlags } from '../../providers/__fixtures__/provider-flags.js';
 import { DespegarHotelProviderAdapter } from '../../providers-despegar/despegar-hotel-provider.adapter.js';
 import { DespegarHotelsProviderFactory } from '../../providers-despegar/despegar-hotels.factory.js';
 
@@ -153,14 +155,20 @@ export function fakeDespegarFactory(
   return { factory, forTenant, resolveForTenant };
 }
 
-/** Flags de `opt-in`: todos encendidos, todos apagados o a medida. */
+/**
+ * Habilitación: `true` enciende todo, `false` deja que mande la política de cada proveedor (un
+ * `opt-in` apagado, el resto encendido) y la función decide a medida, también con una decisión de
+ * la plataforma (ver `providers/__fixtures__/provider-flags.ts`).
+ */
 export function hotelFlags(
-  enabled: boolean | ((tenantId: string, code: string) => boolean) = false,
+  enabled:
+    | boolean
+    | ((
+        tenantId: string,
+        code: string,
+      ) => boolean | ProviderEnablementDecision | undefined) = false,
 ): ProviderFlagsPort {
-  return {
-    isEnabledForTenant: (tenantId, code) =>
-      Promise.resolve(typeof enabled === 'function' ? enabled(tenantId, code) : enabled),
-  };
+  return providerFlags(enabled);
 }
 
 /** El registry REAL de hoteles con los factories dados. */

@@ -110,7 +110,7 @@ function banco(providers: StubFactoryOptions[]): Banco {
   });
 
   const registry = new FlightProviderRegistry(factories, {
-    isEnabledForTenant: () => Promise.resolve(false),
+    decisionFor: () => Promise.resolve(undefined),
   });
 
   const telemetry = {

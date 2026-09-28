@@ -20,6 +20,15 @@ export interface PasswordHasher {
 export const TBO_PROVIDER_CODE = 'tbo-hotels';
 const ACCOUNT_LABEL = 'default';
 
+/**
+ * Motivo del ajuste que enciende TBO para el tenant (`provider_enablement`, 0048). Es lo que ve el
+ * superadmin en el panel de la plataforma junto al tenant.
+ */
+export const ENABLEMENT_REASON = 'Stack de certificación de TBO (seed-tbo-cert-tenant)';
+
+/** El `domain_event` de un cambio de habilitación: el mismo tipo que escribe la API. */
+const ENABLEMENT_EVENT = 'platform.provider_enablement.updated';
+
 /** Marca, en `markup_rules.conditions`, de la regla que es del seed. La cascada no lee esa columna. */
 const MARKUP_MARKER = Object.freeze({ seed: 'seed-tbo-cert-tenant' });
 
@@ -45,6 +54,8 @@ export interface SeedReport {
   readonly passwordRotated: boolean;
   readonly providerAccountId: string;
   readonly providerAccount: Change;
+  /** El ajuste que enciende TBO para el tenant en `provider_enablement` (0048). */
+  readonly providerEnablement: Change;
   readonly walletCurrency: string;
   readonly walletBalanceMinor: number;
   readonly walletToppedUpMinor: number;
@@ -425,6 +436,60 @@ async function upsertTboAccount(
   return { id: current.id, change: 'updated' };
 }
 
+/**
+ * TBO encendido para el tenant por el ajuste de la plataforma (`provider_enablement`, 0048), que es
+ * como el superadmin lo gobierna desde el panel. TBO es `opt-in`: sin este ajuste, el tenant sólo
+ * lo ve por la variable LEGADO `HOTEL_PROVIDERS_OPT_IN` del stack, que se mantiene
+ * (docker-compose.cert.yml) para no depender del orden entre este seed y un despliegue viejo.
+ *
+ * Idempotente y declarativo, como el resto del seed: si alguien lo apagó desde el panel del stack,
+ * el despliegue siguiente lo vuelve a encender, porque este tenant existe para certificar TBO.
+ * Cada cambio deja el mismo `domain_event` que escribe la API, sin actor (lo hizo el seed).
+ */
+async function enableTbo(db: Queryable, tenantId: string): Promise<Change> {
+  const row = await one<{ id: string; enabled: boolean; reason: string | null }>(
+    db,
+    `SELECT id, enabled, reason FROM provider_enablement
+      WHERE provider_code = $1 AND tenant_id = $2
+      FOR UPDATE`,
+    [TBO_PROVIDER_CODE, tenantId],
+  );
+  if (row?.enabled === true && row.reason === ENABLEMENT_REASON) return 'unchanged';
+
+  if (row === undefined) {
+    await db.query(
+      `INSERT INTO provider_enablement (provider_code, tenant_id, enabled, reason, updated_by)
+       VALUES ($1, $2, true, $3, NULL)`,
+      [TBO_PROVIDER_CODE, tenantId, ENABLEMENT_REASON],
+    );
+  } else {
+    await db.query(
+      `UPDATE provider_enablement
+          SET enabled = true, reason = $2, updated_by = NULL, updated_at = now()
+        WHERE id = $1`,
+      [row.id, ENABLEMENT_REASON],
+    );
+  }
+  const after = { enabled: true, reason: ENABLEMENT_REASON };
+  await db.query(
+    `INSERT INTO domain_events (tenant_id, actor_user_id, event_type, aggregate_type, aggregate_id, payload)
+     VALUES (NULL, NULL, $1, 'provider_enablement', $2, $3::jsonb)`,
+    [
+      ENABLEMENT_EVENT,
+      `${TBO_PROVIDER_CODE}@${tenantId}`,
+      JSON.stringify({
+        providerCode: TBO_PROVIDER_CODE,
+        scope: 'tenant',
+        targetTenantId: tenantId,
+        before: row === undefined ? null : { enabled: row.enabled, reason: row.reason },
+        after,
+        source: 'seed-tbo-cert-tenant',
+      }),
+    ],
+  );
+  return row === undefined ? 'created' : 'updated';
+}
+
 interface WalletRow {
   id: string;
   balance_minor: number | string;
@@ -628,6 +693,7 @@ export async function runSeed(
     const vendedor = await upsertVendedor(db, tenant.id, settings.vendedor, hasher);
     await db.query(`SELECT set_config('app.current_user_id', $1, true)`, [vendedor.id]);
     const account = await upsertTboAccount(db, tenant.id, settings);
+    const enablement = await enableTbo(db, tenant.id);
     const wallet = await topUpWallet(db, tenant.id, settings);
     const markup = await upsertHotelMarkup(db, tenant.id, settings.hotelMarkupBasisPoints);
     const customers = await seedCustomers(db, tenant.id, settings.credentialsKey);
@@ -643,6 +709,7 @@ export async function runSeed(
       passwordRotated: vendedor.passwordRotated,
       providerAccountId: account.id,
       providerAccount: account.change,
+      providerEnablement: enablement,
       walletCurrency: wallet.currency,
       walletBalanceMinor: wallet.balanceMinor,
       walletToppedUpMinor: wallet.toppedUpMinor,

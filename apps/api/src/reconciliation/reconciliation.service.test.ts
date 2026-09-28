@@ -17,7 +17,8 @@ import {
   StubHotelProviderFactory,
 } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import type { HotelProviderAdapter } from '../providers/hotel-provider.types.js';
-import type { TenantAdapter } from '../providers/provider.types.js';
+import type { ProviderFlagsPort, TenantAdapter } from '../providers/provider.types.js';
+import { APAGADO_GLOBAL } from '../providers/__fixtures__/provider-flags.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
@@ -162,7 +163,10 @@ function orden(extra: Partial<MemoryOrder> & Pick<MemoryOrder, 'tenantId'>): Mem
   };
 }
 
-function banco(orders: MemoryOrder[], opts: { queueAccepts?: boolean } = {}) {
+function banco(
+  orders: MemoryOrder[],
+  opts: { queueAccepts?: boolean; flags?: ProviderFlagsPort } = {},
+) {
   const mem = new MemoryReconciliationBank(
     [
       { id: CONSOLIDADOR, parent: null },
@@ -182,7 +186,7 @@ function banco(orders: MemoryOrder[], opts: { queueAccepts?: boolean } = {}) {
   const queue = new RecordingQueueService(opts.queueAccepts ?? true);
   const work = new InflightWorkRegistry();
   const service = new ReconciliationService(
-    hotelRegistry([proveedor], hotelFlags(false)),
+    hotelRegistry([proveedor], opts.flags ?? hotelFlags(false)),
     mem.asCredentials(),
     mem.asStore(),
     mem.asTracking(),
@@ -307,6 +311,17 @@ describe('una corrida por cuenta: el listado nunca sale de la red del dueño sin
         windows: [{ from: '2026-09-24', to: '2026-09-26', leg: 'A' }],
       }),
     ]);
+    expect(b.proveedor.cuentasResueltas).toEqual([[CONSOLIDADOR, CUENTA]]);
+  });
+
+  it('con el proveedor apagado por la plataforma, la cuenta se sigue conciliando', async () => {
+    const b = banco([orden({ tenantId: AGENCIA_A, createdAt: NOW - HOUR })], {
+      flags: hotelFlags(() => APAGADO_GLOBAL),
+    });
+
+    await correr(b);
+
+    expect(b.mem.runs).toEqual([expect.objectContaining({ status: 'completed' })]);
     expect(b.proveedor.cuentasResueltas).toEqual([[CONSOLIDADOR, CUENTA]]);
   });
 

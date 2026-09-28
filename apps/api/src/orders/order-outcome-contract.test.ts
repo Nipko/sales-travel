@@ -187,7 +187,7 @@ interface Banco {
 function banco(resultado: OrderCreateResult): Banco {
   const factory = new StubProviderFactory({ code: PROVEEDOR });
   const registry = new FlightProviderRegistry([factory], {
-    isEnabledForTenant: () => Promise.resolve(false),
+    decisionFor: () => Promise.resolve(undefined),
   });
   const { db, insertado } = dbFalsa();
 
@@ -308,7 +308,7 @@ function bancoHttp(
     { resolve: brandingResolve } as unknown as BrandingService,
     { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
     new FlightProviderRegistry([new StubProviderFactory({ code: PROVEEDOR, capabilities })], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     }),
     // Un proveedor de vuelos: la post-venta de hoteles no lo reconoce.
     {

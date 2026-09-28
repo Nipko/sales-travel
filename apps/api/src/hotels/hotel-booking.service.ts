@@ -387,7 +387,10 @@ export class HotelBookingService {
     // Sin clave no hay forma de reconocer el segundo envío: 400 antes de tocar nada.
     createRequestKey(undefined, idempotencyKey);
 
-    const provider = await this.registry.byCode(tenantId, input.providerCode);
+    // Es venta nueva: un proveedor que la plataforma apagó para el tenant no reserva, aunque el
+    // PreBook sea de antes del apagado. Lo que sigue sobre la orden (verificación, HCN, cancelación)
+    // va por `forOrder` y no mira la habilitación.
+    const provider = await this.registry.byCodeForOffer(tenantId, input.providerCode);
     const { adapter } = provider;
     if (!supportsHotelBookingContext(adapter) || !supportsHotelPrebookContext(adapter)) {
       throw new HotelProviderCapabilityError(provider.code, OPERATION);

@@ -20,8 +20,10 @@ import type {
 } from '../providers/hotel-provider.types.js';
 import {
   ProviderOrderAccountUnavailableError,
+  type ProviderFlagsPort,
   type TenantAdapter,
 } from '../providers/provider.types.js';
+import { APAGADO_GLOBAL, apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
@@ -108,6 +110,7 @@ function banco(
     capabilities?: Partial<HotelProviderCapabilities>;
     queueAccepts?: boolean;
     operations?: Row[];
+    flags?: ProviderFlagsPort;
   } = {},
 ) {
   const mem = memoryHotelCancellation({
@@ -122,7 +125,7 @@ function banco(
   );
   const proveedor = new Proveedor(opts.capabilities);
   const service = new HotelOrderCancellationService(
-    hotelRegistry([proveedor], hotelFlags(false)),
+    hotelRegistry([proveedor], opts.flags ?? hotelFlags(false)),
     mem.store,
     new CircuitBreakerService(),
     audit.asService(),
@@ -547,6 +550,34 @@ describe('las piezas de la cancelación', () => {
         selected_offer: {},
       }),
     ).rejects.toBeInstanceOf(HotelProviderCapabilityError);
+  });
+
+  it('con el proveedor apagado por la plataforma, la cancelación de lo ya vendido sale igual', async () => {
+    const b = banco({ flags: hotelFlags(() => apagadoPara(TENANT)) });
+    const pedido = {
+      id: ORDEN,
+      provider: PROVEEDOR,
+      provider_account_id: CUENTA,
+      selected_offer: {},
+    };
+
+    await expect(b.service.assertCancellable(TENANT, pedido)).resolves.toBeUndefined();
+    await b.service.send(TENANT, pedido);
+
+    expect(b.proveedor.adapter.cancelBooking).toHaveBeenCalledWith(
+      { providerBookingId: 'FL1IMA' },
+      { tenantId: TENANT, requestId: ORDEN },
+      { purpose: 'background' },
+    );
+  });
+
+  it('con el proveedor apagado para todos, la verificación de una cancelación sigue leyendo', async () => {
+    const b = banco({ tracking: enCurso(), flags: hotelFlags(() => APAGADO_GLOBAL) });
+    b.proveedor.adapter.getBooking.mockResolvedValue(vista({ status: 'CANCELLATION_IN_PROGRESS' }));
+
+    await b.service.runJob(job(0), { final: false });
+
+    expect(b.proveedor.adapter.getBooking).toHaveBeenCalledTimes(1);
   });
 
   it('send: una orden que el tenant no lee, o sin localizador, no sale al proveedor', async () => {

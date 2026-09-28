@@ -366,7 +366,10 @@ export class OrdersService {
     const requestKey = createRequestKey(dto.quotationId, clientRequestId);
 
     const providerCode = dto.offer.provider.name;
-    const provider = await this.flightProvider(tenantId, providerCode);
+    // Es la única venta de este servicio: si la plataforma apagó el proveedor para el tenant, no se
+    // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
+    // `flightProvider`, que no mira la habilitación.
+    const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
 
     // El claim se inserta antes de priceOffer/createOrder. Una colisión termina aquí, sin tocar el
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.

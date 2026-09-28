@@ -6,12 +6,16 @@ import type { ApplicableRule, PricingService } from '../pricing/pricing.service.
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
   AllFlightProvidersFailedError,
+  PLATFORM_DISABLED_TEXT,
+  ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
+  type ProviderEnablementDecision,
 } from '../providers/provider.types.js';
 import {
   StubProviderFactory,
   type StubFactoryOptions,
 } from '../providers/__fixtures__/stub-provider.factory.js';
+import { ENCENDIDO, apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { MemoryCacheAdapter } from './memory-cache.adapter.js';
 import type { SearchTelemetryService } from './search-telemetry.service.js';
@@ -84,8 +88,11 @@ function banco(
     providers?: StubFactoryOptions[];
     rules?: ApplicableRule[];
     quotaImpl?: () => Promise<void>;
-    /** Gobierno de `callPolicy: 'opt-in'` por tenant. */
-    flags?: (tenantId: string, code: string) => boolean;
+    /**
+     * Habilitación por tenant: `true` encendido, `false` sin decisión (manda la política) o una
+     * decisión de la plataforma.
+     */
+    flags?: (tenantId: string, code: string) => boolean | ProviderEnablementDecision | undefined;
   } = {},
 ): Banco {
   const orden: string[] = [];
@@ -117,7 +124,10 @@ function banco(
   }
 
   const registry = new FlightProviderRegistry([...factories.values()], {
-    isEnabledForTenant: (tenantId, code) => Promise.resolve(opts.flags?.(tenantId, code) ?? false),
+    decisionFor: (tenantId, code) => {
+      const d = opts.flags?.(tenantId, code);
+      return Promise.resolve(d === true ? ENCENDIDO : d === false ? undefined : d);
+    },
   });
 
   const assertWithinQuota = vi.fn(() => {
@@ -544,6 +554,26 @@ describe('SearchService.searchFlights', () => {
       });
     });
 
+    it('un proveedor que la plataforma apagó para el tenant sale skipped con su motivo, sin llamarlo', async () => {
+      const b = banco({
+        providers: [{ code: PRINCIPAL }, { code: 'alfa-air' }],
+        flags: (tenantId, code) => (code === 'alfa-air' ? apagadoPara(tenantId) : undefined),
+      });
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(b.llamadas('alfa-air')).toBe(0);
+      expect(b.llamadas(PRINCIPAL)).toBe(1);
+      expect(res.providers).toContainEqual({
+        code: 'alfa-air',
+        status: 'skipped',
+        count: 0,
+        simulated: false,
+        skipReason: 'platform-disabled',
+        reason: PLATFORM_DISABLED_TEXT,
+      });
+    });
+
     it("'fallback' no se llama si la primera ola ya trajo suficientes ofertas", async () => {
       const muchas = [1, 2, 3, 4, 5].map((n) => offer({ id: `offer-${n}` }));
       const b = banco({
@@ -737,6 +767,16 @@ describe('SearchService.priceOffer', () => {
 
     expect(b.adapter('alfa-air').priceOffer).toHaveBeenCalledTimes(1);
     expect(b.adapter(PRINCIPAL).priceOffer).not.toHaveBeenCalled();
+  });
+
+  it('una oferta de un proveedor que la plataforma apagó para el tenant es 400 sin llamarlo', async () => {
+    const b = banco({ flags: (tenantId) => apagadoPara(tenantId) });
+
+    await expect(b.service.priceOffer(offer(), criteria(), TENANT)).rejects.toBeInstanceOf(
+      ProviderDisabledByPlatformError,
+    );
+    expect(b.adapter().priceOffer).not.toHaveBeenCalled();
+    expect(b.orden).toEqual([]);
   });
 
   it('una oferta de un proveedor no habilitado es 400 con mensaje, no un 500', async () => {

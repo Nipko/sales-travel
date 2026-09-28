@@ -20,10 +20,13 @@ import type {
   OrderCancelScope,
   OrderCreateAudit,
   ProviderCapabilities,
+  ProviderFlagsPort,
   ProviderVertical,
   TenantAdapter,
   TenantProviderFactory,
 } from '../providers/provider.types.js';
+import { ProviderDisabledByPlatformError } from '../providers/provider.types.js';
+import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-flags.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
@@ -409,11 +412,10 @@ function banco(
   caps: Partial<ProviderCapabilities> = {},
   semilla?: Record<string, unknown>,
   dbOptions: FakeDbOptions = {},
+  flags: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) },
 ): Banco {
   const adapter = new SagaAdapter(opts);
-  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], {
-    isEnabledForTenant: () => Promise.resolve(false),
-  });
+  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], flags);
   const { db, fila, operaciones } = dbFalsa(semilla, dbOptions);
   const audit = new RecordingAuditService();
   const queue = new RecordingQueueService();
@@ -966,7 +968,7 @@ describe('saga de creación — la cola puede no estar, y se dice', () => {
     // existe es peor que no tener cola.
     const adapter = new SagaAdapter({ created: vueloCaido() });
     const registry = new FlightProviderRegistry([new SagaFactory(adapter)], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     });
     const { db } = dbFalsa();
     const audit = new RecordingAuditService();
@@ -1485,7 +1487,7 @@ describe('enrutado — ninguna oferta sale por el adapter de otro proveedor', ()
     const otro = new StubProviderFactory({ code: 'otro-air' });
     const mio = new SagaAdapter();
     const registry = new FlightProviderRegistry([new SagaFactory(mio), otro], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     });
     const { db } = dbFalsa();
     const orders = new OrdersService(
@@ -1505,5 +1507,66 @@ describe('enrutado — ninguna oferta sale por el adapter de otro proveedor', ()
     // y una lectura contra el GDS equivocado devuelve "no existe" en vez de fallar.
     expect(otro.adapterFor(TENANT).createOrder).not.toHaveBeenCalled();
     expect(otro.adapterFor(TENANT).retrieveForDisplay).not.toHaveBeenCalled();
+  });
+});
+
+describe('habilitación de la plataforma — corta la venta nueva, no la post-venta', () => {
+  const ORDEN_EN_BASE = { provider: PROVEEDOR, provider_order_id: PNR, status: 'confirmed' };
+  const APAGADO = (): ProviderFlagsPort => providerFlags(() => apagadoPara(TENANT));
+  const auditoriaVerificada = {
+    audit: { audited: true, outcome: 'CANCELLED' },
+    idempotencyKey: 'sha256-de-la-peticion',
+    verified: true,
+  };
+
+  it('con el proveedor apagado para el tenant, `createOrder` para antes de abrir la orden', async () => {
+    const b = banco({}, {}, undefined, {}, APAGADO());
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ProviderDisabledByPlatformError,
+    );
+
+    // Ni intent en la base ni llamada al proveedor: no queda nada a medio camino.
+    expect(b.fila()).toBeUndefined();
+    expect(b.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('una orden YA hecha se sigue cancelando con el proveedor apagado', async () => {
+    const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
+
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(b.adapter.cancelOrder).toHaveBeenCalledTimes(1);
+    expect(b.audit.first(ORDER_EVENTS.cancelled)).toBeDefined();
+  });
+
+  it('una orden YA hecha se sigue leyendo, y su compensación selectiva sigue saliendo', async () => {
+    const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
+
+    await b.orders.retrieveFromProvider(TENANT, PNR, PROVEEDOR);
+    await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
+
+    expect(b.adapter.retrieveForDisplay).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
+    expect(b.adapter.cancelScopes).toEqual([{ itemIds: ['12'] }]);
+  });
+
+  it('una orden YA hecha se sigue pagando: el pago de una reserva existente no es venta nueva', async () => {
+    const b = banco({}, {}, ORDEN_EN_BASE, {}, APAGADO());
+    b.adapter.payOrder.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, status: 'ticketed', warnings: [] } as never),
+    );
+    const orden = b.fila() as unknown as Parameters<OrdersService['payOrder']>[2];
+
+    const res = await b.orders.payOrder(
+      TENANT,
+      'order-1',
+      orden,
+      { type: 'Cash', amount: 100, currency: 'USD' },
+      USER,
+    );
+
+    expect(res.success).toBe(true);
+    expect(b.adapter.payOrder).toHaveBeenCalledTimes(1);
   });
 });

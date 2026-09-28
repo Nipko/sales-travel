@@ -116,7 +116,7 @@ export class BreakerRejectionError extends ServiceUnavailableException {
   }
 }
 
-type KillLevel = 'all' | 'sales';
+export type KillLevel = 'all' | 'sales';
 
 /**
  * Nivel de apagado de `providerCode` en `PROVIDERS_DISABLED`, o `undefined` si está encendido.
@@ -125,8 +125,11 @@ type KillLevel = 'all' | 'sales';
  * venta de un proveedor no puede impedir leer ni cancelar lo que ya se vendió. Cualquier otro
  * sufijo apaga todo, porque un error de tipeo del operador no puede dejar las ventas encendidas; y
  * si el código aparece dos veces gana el apagado más amplio.
+ *
+ * Se exporta sólo para que el panel de la plataforma pueda decir que el kill-switch le gana a sus
+ * ajustes; quien lo aplica sigue siendo {@link CircuitBreakerService.execute}.
  */
-function killLevel(providerCode: string): KillLevel | undefined {
+export function killLevel(providerCode: string): KillLevel | undefined {
   let level: KillLevel | undefined;
   for (const entry of (process.env['PROVIDERS_DISABLED'] ?? '').split(',')) {
     // Sin límite en el split: `código:ventas:algo` es un sufijo que nadie definió y apaga todo;

@@ -9,7 +9,11 @@ import type {
   HotelOccupancyLimits,
   HotelSearchProfile,
 } from '../providers/hotel-provider.types.js';
-import type { UnavailableProvider, UnavailableReason } from '../providers/provider.types.js';
+import {
+  PLATFORM_DISABLED_TEXT,
+  type UnavailableProvider,
+  type UnavailableReason,
+} from '../providers/provider.types.js';
 import type { ProviderSearchSlice } from '../search/search-telemetry.service.js';
 
 /*
@@ -26,6 +30,7 @@ import type { ProviderSearchSlice } from '../search/search-telemetry.service.js'
  * Por qué un proveedor habilitado no aportó tarifas a ESTA búsqueda, aunque podía.
  *
  * - `opt-in-disabled`: está apagado para esta agencia (flag de `opt-in`). No se le llamó.
+ * - `platform-disabled`: el superadmin lo apagó para esta agencia, su red o todos. No se le llamó.
  * - `fallback-not-needed`: es de respaldo y los demás ya trajeron suficiente. No se le llamó.
  * - `catalog-empty`: su catálogo no tiene hoteles para el destino. No se le llamó.
  * - `no-destination-map`: el destino no está vinculado con sus ciudades. No se le llamó.
@@ -37,6 +42,7 @@ import type { ProviderSearchSlice } from '../search/search-telemetry.service.js'
  */
 export type HotelSkipReason =
   | 'opt-in-disabled'
+  | 'platform-disabled'
   | 'fallback-not-needed'
   | 'catalog-empty'
   | 'no-destination-map'
@@ -90,6 +96,7 @@ export const SKIP_REASON_TEXT: Readonly<
   Record<Exclude<HotelSkipReason, 'occupancy-limits' | 'currency-mismatch'>, string>
 > = {
   'opt-in-disabled': 'Este proveedor no está activado para esta agencia.',
+  'platform-disabled': PLATFORM_DISABLED_TEXT,
   'fallback-not-needed':
     'Es un proveedor de respaldo y los demás ya trajeron suficientes hoteles: no se le consultó.',
   'catalog-empty': 'Su catálogo de hoteles para este destino todavía no está sincronizado.',

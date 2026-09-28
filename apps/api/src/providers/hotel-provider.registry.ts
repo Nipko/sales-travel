@@ -13,13 +13,19 @@ import {
 } from './hotel-provider.types.js';
 import {
   CallPolicySchema,
+  PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
+  ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
   ProviderOrderAccountUnavailableError,
+  isDisabledByPlatform,
+  isProviderEnabled,
   type CallPolicy,
+  type ProviderEnablementEntry,
   type ProviderErrorContext,
   type ProviderFlagsPort,
+  type RegisteredProvider,
   type SkippedProvider,
   type UnavailableProvider,
 } from './provider.types.js';
@@ -127,13 +133,16 @@ export class HotelProviderRegistry {
     for (const factory of this.factories) {
       const callPolicy = this.policyOf(factory);
 
-      // El flag se consulta ANTES de resolver credenciales: un proveedor 'opt-in' apagado no
-      // recibe ninguna llamada, ni al proveedor ni a la bóveda de credenciales.
-      if (
-        callPolicy === 'opt-in' &&
-        !(await this.flags.isEnabledForTenant(tenantId, factory.code))
-      ) {
-        skipped.push({ code: factory.code, reason: 'opt-in-disabled' });
+      // La habilitación se consulta ANTES de resolver credenciales y para TODOS los proveedores,
+      // no sólo los 'opt-in': el superadmin puede apagar también uno que se llama siempre. Un
+      // proveedor apagado no recibe ninguna llamada, ni al proveedor ni a la bóveda.
+      const decision = await this.flags.decisionFor(tenantId, factory.code);
+      if (!isProviderEnabled(decision, callPolicy)) {
+        skipped.push(
+          isDisabledByPlatform(decision)
+            ? { code: factory.code, reason: 'platform-disabled', detail: PLATFORM_DISABLED_TEXT }
+            : { code: factory.code, reason: 'opt-in-disabled' },
+        );
         continue;
       }
 
@@ -146,11 +155,11 @@ export class HotelProviderRegistry {
   }
 
   /**
-   * Un proveedor concreto, para el PreBook (por `offer.provider.name`) y para todo lo que sigue
-   * sobre una reserva (por `orders.provider`).
+   * Un proveedor concreto, para todo lo que sigue sobre una reserva ya hecha (por
+   * `orders.provider`) y como base de {@link byCodeForOffer} y {@link byCodeForSale}.
    *
-   * NO consulta el flag de `opt-in`: la tarifa ya la emitió ese proveedor, y apagar el flag
-   * después no puede dejar una reserva a medio camino sin forma de tocarla.
+   * NO consulta la habilitación: ni el flag de `opt-in` ni el apagado de la plataforma. Apagar un
+   * proveedor corta las ventas nuevas, no deja sin post-venta lo que ya se vendió.
    */
   async byCode(tenantId: string, code: string): Promise<ResolvedHotelProvider> {
     const factory = this.factories.find((f) => f.code === code);
@@ -169,8 +178,9 @@ export class HotelProviderRegistry {
    * Una orden sin cuenta guardada (anterior a 0042, o de un proveedor que no la usa) sale con la
    * vigente, como antes. Una con cuenta nunca cae a otra: si la suya ya no está disponible para el
    * tenant (salió de su red, se desactivó, quedó incompleta o no se admite), se para con
-   * {@link ProviderOrderAccountUnavailableError}. Como {@link byCode}, no consulta el flag de
-   * `opt-in`: apagar un proveedor no puede dejar sus reservas sin post-venta.
+   * {@link ProviderOrderAccountUnavailableError}. Como {@link byCode}, no consulta la habilitación
+   * (ni el `opt-in` ni el apagado de la plataforma): apagar un proveedor no puede dejar sus reservas
+   * sin post-venta.
    */
   async forOrder(tenantId: string, order: HotelOrderProviderRef): Promise<ResolvedHotelProvider> {
     const factory = this.factories.find((f) => f.code === order.provider);
@@ -208,8 +218,8 @@ export class HotelProviderRegistry {
   /**
    * El proveedor con UNA cuenta propia del tenant dueño, para lo que se hace por cuenta y no por
    * tenant: la conciliación lee las reservas de la cuenta entera (docs/tbo/04 §9.2). Nunca cae a
-   * otra cuenta. Como {@link forOrder}, no consulta el flag de `opt-in`: apagar un proveedor no
-   * puede dejar sin conciliar las reservas que ya hizo.
+   * otra cuenta. Como {@link forOrder}, no consulta la habilitación: apagar un proveedor no puede
+   * dejar sin conciliar las reservas que ya hizo.
    *
    * @throws ProviderNotAvailableError si el proveedor no concilia por cuenta, o si la cuenta ya no
    *   es una cuenta activa, completa y admitida de ese tenant.
@@ -258,23 +268,69 @@ export class HotelProviderRegistry {
   }
 
   /**
+   * Un proveedor concreto para seguir la VENTA de una tarifa que él ya emitió: el PreBook, el Book
+   * y las rutas de venta de Despegar.
+   *
+   * Si la plataforma lo apagó para el tenant, 400 sin tocar la bóveda: una venta nueva no se abre
+   * con un proveedor apagado, aunque la tarifa venga de una búsqueda anterior al apagado. Un
+   * `opt-in` que simplemente nadie encendió NO se corta aquí, como antes (PR-2.1): la tarifa ya la
+   * emitió ese proveedor.
+   */
+  async byCodeForOffer(tenantId: string, code: string): Promise<ResolvedHotelProvider> {
+    const factory = this.factories.find((f) => f.code === code);
+    if (factory === undefined) throw new ProviderNotAvailableError(code);
+    if (isDisabledByPlatform(await this.flags.decisionFor(tenantId, factory.code))) {
+      throw new ProviderDisabledByPlatformError(factory.code);
+    }
+    return this.byCode(tenantId, code);
+  }
+
+  /**
    * Un proveedor concreto para una VENTA que no parte de una tarifa que él ya emitió, como el
    * detalle de un hotel pedido por código.
    *
-   * A diferencia de {@link byCode}, respeta el flag de `opt-in` igual que la búsqueda, y antes de
+   * A diferencia de {@link byCode}, respeta la habilitación igual que la búsqueda, y antes de
    * resolver credenciales: sin esto, nombrar al proveedor en el request era una puerta lateral para
    * consultar, con la cuenta heredada, a un proveedor que la búsqueda de ese tenant nunca llama.
    */
   async byCodeForSale(tenantId: string, code: string): Promise<ResolvedHotelProvider> {
     const factory = this.factories.find((f) => f.code === code);
-    if (
-      factory !== undefined &&
-      this.policyOf(factory) === 'opt-in' &&
-      !(await this.flags.isEnabledForTenant(tenantId, factory.code))
-    ) {
-      throw new ProviderNotAvailableError(code);
+    if (factory !== undefined) {
+      const decision = await this.flags.decisionFor(tenantId, factory.code);
+      if (isDisabledByPlatform(decision)) throw new ProviderDisabledByPlatformError(code);
+      if (!isProviderEnabled(decision, this.policyOf(factory))) {
+        throw new ProviderNotAvailableError(code);
+      }
     }
     return this.byCode(tenantId, code);
+  }
+
+  /**
+   * Los proveedores registrados con su política efectiva, sin tocar credenciales ni flags. Para el
+   * panel de la plataforma, que decide sobre proveedores y no sobre cuentas.
+   */
+  registeredProviders(): RegisteredProvider[] {
+    return this.factories.map((f) => ({
+      code: f.code,
+      vertical: f.vertical,
+      callPolicy: this.policyOf(f),
+    }));
+  }
+
+  /**
+   * Lo que la plataforma decidió sobre cada proveedor para el tenant, con la política con la que se
+   * compara, sin resolver credenciales. Es la misma consulta que hace {@link forTenant}: el panel
+   * ve lo que ve la búsqueda.
+   */
+  async enablementOf(tenantId: string): Promise<ProviderEnablementEntry[]> {
+    const entries: ProviderEnablementEntry[] = [];
+    for (const provider of this.registeredProviders()) {
+      entries.push({
+        ...provider,
+        decision: await this.flags.decisionFor(tenantId, provider.code),
+      });
+    }
+    return entries;
   }
 
   /** Sólo los codes habilitados, en orden estable. Para la clave de caché. */

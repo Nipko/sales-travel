@@ -109,7 +109,7 @@ function banco(filas: OrderRow[]) {
     {} as unknown as BrandingService,
     { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
     new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
-      isEnabledForTenant: () => Promise.resolve(false),
+      decisionFor: () => Promise.resolve(undefined),
     }),
     reads,
   );

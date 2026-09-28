@@ -164,7 +164,7 @@ function banco(codes: string[]): {
 } {
   const factories = new Map(codes.map((code) => [code, new StubProviderFactory({ code })]));
   const registry = new FlightProviderRegistry([...factories.values()], {
-    isEnabledForTenant: () => Promise.resolve(false),
+    decisionFor: () => Promise.resolve(undefined),
   });
   const { db, insertado } = dbFalsa();
 

@@ -249,9 +249,9 @@ export interface HotelProviderResolution {
 export const HOTEL_PROVIDER_FACTORIES = 'HOTEL_PROVIDER_FACTORIES';
 
 /**
- * Token DI del gobierno por tenant de `callPolicy: 'opt-in'` en hoteles. Es otro token que el de
- * vuelos a propósito: activar un proveedor de vuelos para una agencia no puede encender uno de
- * hoteles, que factura distinto.
+ * Token DI de la habilitación por tenant de los proveedores de hoteles. Es otro token que el de
+ * vuelos a propósito: cada uno lleva su variable de entorno legado, y activar por entorno un
+ * proveedor de vuelos para una agencia no puede encender uno de hoteles, que factura distinto.
  */
 export const HOTEL_PROVIDER_FLAGS = 'HOTEL_PROVIDER_FLAGS';
 

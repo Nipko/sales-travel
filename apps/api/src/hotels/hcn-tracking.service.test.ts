@@ -13,8 +13,10 @@ import type {
 } from '../providers/hotel-provider.types.js';
 import {
   ProviderOrderAccountUnavailableError,
+  type ProviderFlagsPort,
   type TenantAdapter,
 } from '../providers/provider.types.js';
+import { apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
@@ -130,6 +132,7 @@ function banco(
     tracking?: [string, MemoryHcnRow][];
     capabilities?: Partial<HotelProviderCapabilities>;
     queueAccepts?: boolean;
+    flags?: ProviderFlagsPort;
   } = {},
 ) {
   const mem = new MemoryHcnTracking(opts.orders ?? [orden()], opts.tracking ?? []);
@@ -138,7 +141,7 @@ function banco(
   const proveedor = new Proveedor(opts.capabilities);
   proveedor.adapter.getBooking.mockResolvedValue(vista());
   const service = new HcnTrackingService(
-    hotelRegistry([proveedor], hotelFlags(false)),
+    hotelRegistry([proveedor], opts.flags ?? hotelFlags(false)),
     mem.asStore(),
     new CircuitBreakerService(),
     audit.asService(),
@@ -381,6 +384,19 @@ describe('el job hcn-check: sólo la lectura vigente', () => {
       priority: 'P2',
       attempt: 1,
     });
+  });
+
+  it('con el proveedor apagado por la plataforma para la agencia, el HCN se sigue leyendo', async () => {
+    const b = banco({
+      tracking: [[ORDEN, programada(0)]],
+      flags: hotelFlags(() => apagadoPara(TENANT)),
+    });
+    vi.setSystemTime(PRIMERA + 30_000);
+
+    await b.service.runJob(job(0), { final: false });
+
+    expect(b.leer).toHaveBeenCalledTimes(1);
+    expect(b.mem.row(ORDEN)).toMatchObject({ hcn_attempts: 1 });
   });
 
   it('llegó el HCN: se guarda, se emite HotelConfirmationNumberReceived y el seguimiento termina', async () => {

@@ -155,7 +155,7 @@ function banco(orders: Row[] = [ordenHotel()], opciones: HotelCancelOptions = {}
   );
   const service = new OrdersService(
     mem.db,
-    new FlightProviderRegistry([vuelos], { isEnabledForTenant: () => Promise.resolve(false) }),
+    new FlightProviderRegistry([vuelos], { decisionFor: () => Promise.resolve(undefined) }),
     queue.asService(),
     {} as unknown as AgentCarsProviderFactory,
     audit.asService(),

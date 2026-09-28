@@ -733,6 +733,21 @@ export interface ProviderReconciliationItemsTable {
   created_at: Generated<Timestamp>;
 }
 
+/**
+ * 0048: ajuste del superadmin sobre un proveedor. `tenant_id` NULL = global; con valor, vale para
+ * ese tenant y su red. Lectura abierta para el servidor; sólo escribe un superadmin (RLS).
+ */
+export interface ProviderEnablementTable {
+  id: Generated<string>;
+  provider_code: string;
+  tenant_id: string | null;
+  enabled: boolean;
+  reason: string | null;
+  updated_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -814,6 +829,7 @@ export interface DB {
   hotel_order_tracking: HotelOrderTrackingTable;
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
+  provider_enablement: ProviderEnablementTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

@@ -58,7 +58,12 @@ import type {
 import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import type { SearchTelemetryService } from '../search/search-telemetry.service.js';
-import type { CredentialSource } from '../providers/provider.types.js';
+import {
+  ProviderDisabledByPlatformError,
+  type CredentialSource,
+  type ProviderFlagsPort,
+} from '../providers/provider.types.js';
+import { apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
 import { MemoryVerificationStore } from './__fixtures__/memory-verification-store.js';
@@ -534,6 +539,8 @@ interface OpcionesBanco {
    * búsqueda (`CUENTA`).
    */
   cuentaEnBase?: { updatedAt?: string; available?: boolean };
+  /** Habilitación de la plataforma. Por defecto, todo encendido. */
+  flags?: ProviderFlagsPort;
 }
 
 interface Banco {
@@ -598,7 +605,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
   const inflight = new InflightWorkRegistry();
   const branding = { resolveSupportContact: vi.fn(() => Promise.resolve(opts.soporte ?? SOPORTE)) };
   const pricing = { getApplicableRules: vi.fn(() => Promise.resolve(opts.reglas ?? [])) };
-  const registry = hotelRegistry([stub], hotelFlags(true));
+  const registry = hotelRegistry([stub], opts.flags ?? hotelFlags(true));
   const breaker = new CircuitBreakerService();
   const audit = { emit } as unknown as AuditService;
   const queue = new RecordingQueueService(opts.redis ?? true);
@@ -1100,6 +1107,14 @@ describe('las puertas: todo rechazo ocurre ANTES de abrir la orden y de llamar a
       );
       expect(err).toBeInstanceOf(HotelProviderCapabilityError);
     }
+  });
+
+  it('la plataforma apagó el proveedor para la agencia → 400 con su motivo, sin abrir la orden', async () => {
+    const b = await banco({ flags: hotelFlags(() => apagadoPara(AGENCIA)) });
+
+    const err = await sinTocarNada(b, b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+    expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+    expect((err as { getStatus?: () => number }).getStatus?.()).toBe(HttpStatus.BAD_REQUEST);
   });
 
   it('un proveedor que no existe → el 400 del registry', async () => {

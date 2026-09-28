@@ -30,7 +30,12 @@ import type {
   HotelProviderAccountFingerprint,
   HotelProviderFactory,
 } from '../providers/hotel-provider.types.js';
-import { ProviderNotAvailableError } from '../providers/provider.types.js';
+import {
+  ProviderDisabledByPlatformError,
+  ProviderNotAvailableError,
+  type ProviderEnablementDecision,
+} from '../providers/provider.types.js';
+import { apagadoPara } from '../providers/__fixtures__/provider-flags.js';
 import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import type { SearchTelemetryService } from '../search/search-telemetry.service.js';
@@ -264,7 +269,7 @@ interface OpcionesBanco {
   reglas?: ApplicableRule[];
   requiresGuestNationality?: boolean;
   callPolicy?: 'always' | 'opt-in';
-  flags?: boolean;
+  flags?: boolean | ProviderEnablementDecision;
   cache?: CachePort;
 }
 
@@ -282,7 +287,10 @@ function banco(opts: OpcionesBanco = {}): Banco {
   const emit = vi.fn(() => Promise.resolve());
   const breaker = new CircuitBreakerService();
   const service = new HotelPrebookService(
-    hotelRegistry([stub], hotelFlags(opts.flags ?? true)),
+    hotelRegistry(
+      [stub],
+      hotelFlags(() => opts.flags ?? true),
+    ),
     contexts,
     snapshots,
     { getApplicableRules: () => Promise.resolve(opts.reglas ?? []) } as unknown as PricingService,
@@ -431,6 +439,16 @@ describe('PreBook de una tarifa buscada: lo que llega al proveedor sale del serv
     const b = await bancoConBusqueda({ callPolicy: 'opt-in', flags: false });
 
     await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).resolves.toBeDefined();
+  });
+
+  it('la plataforma apagó el proveedor para la agencia: el PreBook es venta nueva y para sin llamarlo', async () => {
+    const b = await bancoConBusqueda({ flags: apagadoPara(AGENCIA) });
+
+    await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).rejects.toBeInstanceOf(
+      ProviderDisabledByPlatformError,
+    );
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+    expect(b.stub.resolveCalls).toEqual([]);
   });
 });
 

@@ -61,7 +61,8 @@ function isRejection(err: unknown): err is DespegarApiError {
  *
  * - por el registry: si Despegar no está habilitado para el tenant con las mismas reglas que la
  *   búsqueda (cuenta propia, heredada o fallback de plataforma), la ruta responde 400 en vez de
- *   salir con las credenciales de la plataforma;
+ *   salir con las credenciales de la plataforma; y si la plataforma lo apagó para el tenant, las
+ *   rutas de venta responden 400 y las de post-venta siguen;
  * - por capacidad: lectura y cancelación, según lo que declara el factory; medios de pago y salto
  *   de precio, según los puertos opcionales que implementa su adapter;
  * - por el circuito, como la búsqueda: `PROVIDERS_DISABLED=despegar-hotels` apaga también la
@@ -132,7 +133,12 @@ export class DespegarHotelReservationsService {
     requirement: Requirement | undefined,
     op: (acl: DespegarHotelsAdapter) => Promise<T>,
   ): Promise<T> {
-    const provider = await this.registry.byCode(tenantId, CODE);
+    // Las rutas de venta respetan el apagado de la plataforma para el tenant; leer y cancelar lo ya
+    // vendido, no.
+    const provider =
+      scope === 'sales'
+        ? await this.registry.byCodeForOffer(tenantId, CODE)
+        : await this.registry.byCode(tenantId, CODE);
     if (requirement !== undefined) {
       const ok =
         'capability' in requirement

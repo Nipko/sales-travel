@@ -112,7 +112,7 @@ export class HotelPrebookService {
     reference: HotelOfferReference,
     actorUserId: string | undefined,
   ): Promise<HotelPrebookResponse> {
-    const provider = await this.registry.byCode(tenantId, reference.providerCode);
+    const provider = await this.registry.byCodeForOffer(tenantId, reference.providerCode);
     const { code, adapter, circuit, searchProfile } = provider;
     if (!supportsHotelPrebookContext(adapter)) {
       throw new HotelProviderCapabilityError(code, OPERATION);

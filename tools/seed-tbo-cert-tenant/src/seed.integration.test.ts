@@ -6,7 +6,13 @@ import { blindIndex, derivePiiKeys, open } from './crypto.js';
 import { FICTITIOUS_CUSTOMERS } from './customers.js';
 import { resolveSeedEnv, SEED_DEFAULTS, SeedSecret, type SeedSettings } from './env.js';
 import { SeedRefusedError } from './errors.js';
-import { runSeed, SEED_ACTOR_ID, TBO_PROVIDER_CODE, type PasswordHasher } from './seed.js';
+import {
+  ENABLEMENT_REASON,
+  runSeed,
+  SEED_ACTOR_ID,
+  TBO_PROVIDER_CODE,
+  type PasswordHasher,
+} from './seed.js';
 
 /**
  * El seed contra Postgres con todas las migraciones, como corre en el stack.
@@ -117,6 +123,7 @@ d('runSeed contra Postgres', () => {
       tenant: 'created',
       vendedor: 'created',
       providerAccount: 'created',
+      providerEnablement: 'created',
       markupRule: 'created',
       walletCurrency: 'USD',
       walletBalanceMinor: 100_000,
@@ -192,6 +199,30 @@ d('runSeed contra Postgres', () => {
     ).not.toThrow();
     expect(account?.config).toEqual({ environment: 'test', baseUrl: s.tboAccount.baseUrl });
 
+    // TBO encendido para el tenant como lo lee el api: por la cadena de `provider_enablement`
+    // (0048), con el ajuste del propio tenant y su evento de auditoría.
+    const chain = await q<{ tenant_id: string | null; enabled: boolean }>(
+      `SELECT tenant_id, enabled FROM provider_enablement_chain($1::uuid) WHERE provider_code = $2`,
+      [report.tenantId, TBO_PROVIDER_CODE],
+    );
+    expect(chain).toContainEqual({ tenant_id: report.tenantId, enabled: true });
+    const [ajuste] = await q<{ reason: string; updated_by: string | null }>(
+      `SELECT reason, updated_by FROM provider_enablement WHERE provider_code = $1 AND tenant_id = $2`,
+      [TBO_PROVIDER_CODE, report.tenantId],
+    );
+    expect(ajuste).toEqual({ reason: ENABLEMENT_REASON, updated_by: null });
+    const eventos = await q<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM domain_events WHERE aggregate_type = 'provider_enablement' AND aggregate_id = $1`,
+      [`${TBO_PROVIDER_CODE}@${report.tenantId}`],
+    );
+    expect(eventos.map((e) => e.payload)).toEqual([
+      expect.objectContaining({
+        before: null,
+        after: { enabled: true, reason: ENABLEMENT_REASON },
+        source: 'seed-tbo-cert-tenant',
+      }),
+    ]);
+
     const [wallet] = await q<{ balance_minor: string; currency: string; status: string }>(
       'SELECT balance_minor::text, currency, status FROM agency_portfolios WHERE tenant_id = $1',
       [report.tenantId],
@@ -240,6 +271,7 @@ d('runSeed contra Postgres', () => {
       vendedor: 'unchanged',
       passwordRotated: false,
       providerAccount: 'unchanged',
+      providerEnablement: 'unchanged',
       markupRule: 'unchanged',
       walletToppedUpMinor: 0,
       customersCreated: 0,
@@ -250,6 +282,27 @@ d('runSeed contra Postgres', () => {
       [report.tenantId],
     );
     expect(n).toBe(FICTITIOUS_CUSTOMERS.length);
+  });
+
+  it('TBO apagado desde el panel del stack vuelve a quedar encendido en el despliegue siguiente', async () => {
+    const s = settings();
+    const [tenant] = await q<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [
+      s.tenant.slug,
+    ]);
+    await client.query(
+      `UPDATE provider_enablement SET enabled = false, reason = 'apagado a mano'
+        WHERE provider_code = $1 AND tenant_id = $2`,
+      [TBO_PROVIDER_CODE, tenant!.id],
+    );
+
+    const report = await runSeed(client, s, fakeHasher);
+
+    expect(report.providerEnablement).toBe('updated');
+    const [ajuste] = await q<{ enabled: boolean; reason: string }>(
+      `SELECT enabled, reason FROM provider_enablement WHERE provider_code = $1 AND tenant_id = $2`,
+      [TBO_PROVIDER_CODE, tenant!.id],
+    );
+    expect(ajuste).toEqual({ enabled: true, reason: ENABLEMENT_REASON });
   });
 
   it('recarga la cartera hasta el objetivo después de que una reserva retuvo saldo', async () => {

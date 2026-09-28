@@ -19,6 +19,7 @@ import {
   supportsAuditedCreate,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
+import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
 import { SabreOperationNotSupportedError } from './sabre-errors.js';
 import {
   SABRE_PROVIDER_CODE,
@@ -589,7 +590,9 @@ describe('FlightProviderRegistry + Sabre', () => {
     resolve: ProviderCredentialsService['resolve'],
     enabled = true,
   ): FlightProviderRegistry {
-    const flags: ProviderFlagsPort = { isEnabledForTenant: () => Promise.resolve(enabled) };
+    const flags: ProviderFlagsPort = {
+      decisionFor: () => Promise.resolve(enabled ? ENCENDIDO : undefined),
+    };
     return new FlightProviderRegistry([factoryWith(resolve)], flags);
   }
 

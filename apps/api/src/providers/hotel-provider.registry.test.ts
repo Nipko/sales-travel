@@ -26,11 +26,22 @@ import {
 } from './hotel-provider.types.js';
 import { EnvHotelProviderFlags } from './hotel-providers.module.js';
 import {
+  PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
   ProviderAccountNotAllowedError,
+  ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
+  ProviderOrderAccountUnavailableError,
+  type ProviderEnablementDecision,
   type ProviderFlagsPort,
 } from './provider.types.js';
+import {
+  APAGADO_GLOBAL,
+  ENCENDIDO,
+  apagadoPara,
+  providerFlags,
+  type FakeProviderFlags,
+} from './__fixtures__/provider-flags.js';
 import {
   StubHotelProviderFactory,
   stubHotelOffer,
@@ -53,14 +64,17 @@ const CRITERIO = {
   currency: 'USD',
 };
 
-function flags(enabled: boolean | ((tenantId: string, code: string) => boolean)): {
+/** `false` = nadie decidió (manda la política); `true` = encendido; o una decisión a medida. */
+function flags(
+  enabled:
+    | boolean
+    | ((tenantId: string, code: string) => boolean | ProviderEnablementDecision | undefined),
+): {
   port: ProviderFlagsPort;
-  isEnabledForTenant: ReturnType<typeof vi.fn>;
+  decisionFor: FakeProviderFlags['decisionFor'];
 } {
-  const isEnabledForTenant = vi.fn((tenantId: string, code: string) =>
-    Promise.resolve(typeof enabled === 'function' ? enabled(tenantId, code) : enabled),
-  );
-  return { port: { isEnabledForTenant }, isEnabledForTenant };
+  const port = providerFlags(enabled);
+  return { port, decisionFor: port.decisionFor };
 }
 
 function registry(
@@ -143,14 +157,14 @@ describe('HotelProviderRegistry', () => {
 
     it("'opt-in' con el flag encendido entra como uno más", async () => {
       const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
-      const { port, isEnabledForTenant } = flags(true);
+      const { port, decisionFor } = flags(true);
       const r = registry([stub], port);
 
       const { active, skipped } = await r.forTenant(TENANT);
 
       expect(active.map((p) => [p.code, p.callPolicy])).toEqual([['alfa-hotels', 'opt-in']]);
       expect(skipped).toEqual([]);
-      expect(isEnabledForTenant).toHaveBeenCalledWith(TENANT, 'alfa-hotels');
+      expect(decisionFor).toHaveBeenCalledWith(TENANT, 'alfa-hotels');
     });
 
     it('el flag es POR TENANT: activo para uno no es activo para el otro', async () => {
@@ -405,13 +419,13 @@ describe('HotelProviderRegistry', () => {
 
     it('NO consulta el flag de opt-in: una reserva ya hecha se puede seguir operando', async () => {
       const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
-      const { port, isEnabledForTenant } = flags(false);
+      const { port, decisionFor } = flags(false);
       const r = registry([stub], port);
 
       await expect(r.byCode(TENANT, 'alfa-hotels')).resolves.toMatchObject({
         code: 'alfa-hotels',
       });
-      expect(isEnabledForTenant).not.toHaveBeenCalled();
+      expect(decisionFor).not.toHaveBeenCalled();
     });
 
     it('entrega el adapter del proveedor pedido y no el de otro', async () => {
@@ -430,13 +444,13 @@ describe('HotelProviderRegistry', () => {
   describe('byCodeForSale', () => {
     it("'opt-in' con el flag apagado es 400 sin tocar la bóveda: nombrarlo no lo enciende", async () => {
       const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
-      const { port, isEnabledForTenant } = flags(false);
+      const { port, decisionFor } = flags(false);
       const r = registry([stub], port);
 
       await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).rejects.toBeInstanceOf(
         ProviderNotAvailableError,
       );
-      expect(isEnabledForTenant).toHaveBeenCalledWith(TENANT, 'alfa-hotels');
+      expect(decisionFor).toHaveBeenCalledWith(TENANT, 'alfa-hotels');
       expect(stub.resolveCalls).toEqual([]);
     });
 
@@ -452,8 +466,8 @@ describe('HotelProviderRegistry', () => {
       );
     });
 
-    it('lo que no es `opt-in` no mira el flag, y el desconocido sigue siendo 400', async () => {
-      const { port, isEnabledForTenant } = flags(false);
+    it('lo que no es `opt-in` y nadie apagó se resuelve, y el desconocido sigue siendo 400', async () => {
+      const { port, decisionFor } = flags(false);
       const r = registry([new StubHotelProviderFactory({ code: 'alfa-hotels' })], port);
 
       await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).resolves.toMatchObject({
@@ -462,7 +476,137 @@ describe('HotelProviderRegistry', () => {
       await expect(r.byCodeForSale(TENANT, 'no-existe')).rejects.toBeInstanceOf(
         ProviderNotAvailableError,
       );
-      expect(isEnabledForTenant).not.toHaveBeenCalled();
+      // El desconocido no llega a preguntar por la habilitación.
+      expect(decisionFor.mock.calls).toEqual([[TENANT, 'alfa-hotels']]);
+    });
+
+    it('un `always` apagado por la plataforma es 400 con su propio motivo, sin tocar la bóveda', async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels' });
+      const r = registry([stub], flags(() => apagadoPara(TENANT)).port);
+
+      await expect(r.byCodeForSale(TENANT, 'alfa-hotels')).rejects.toBeInstanceOf(
+        ProviderDisabledByPlatformError,
+      );
+      expect(stub.resolveCalls).toEqual([]);
+    });
+  });
+
+  describe('habilitación de la plataforma', () => {
+    it('un proveedor `always` apagado para el tenant sale `platform-disabled`, sin tocar la bóveda', async () => {
+      const alfa = new StubHotelProviderFactory({ code: 'alfa-hotels' });
+      const beta = new StubHotelProviderFactory({ code: 'beta-hotels' });
+      const r = registry(
+        [alfa, beta],
+        flags((_t, code) => (code === 'alfa-hotels' ? apagadoPara(TENANT) : undefined)).port,
+      );
+
+      const { active, skipped, unavailable } = await r.forTenant(TENANT);
+
+      expect(active.map((p) => p.code)).toEqual(['beta-hotels']);
+      expect(skipped).toEqual([
+        { code: 'alfa-hotels', reason: 'platform-disabled', detail: PLATFORM_DISABLED_TEXT },
+      ]);
+      expect(unavailable).toEqual([]);
+      expect(alfa.resolveCalls).toEqual([]);
+    });
+
+    it('un `opt-in` encendido por la plataforma para ESE tenant entra; para otro, no', async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
+      const r = registry(
+        [stub],
+        flags((tenantId) =>
+          tenantId === TENANT ? { enabled: true, origin: 'tenant', tenantId } : undefined,
+        ).port,
+      );
+
+      expect((await r.forTenant(TENANT)).active.map((p) => p.code)).toEqual(['alfa-hotels']);
+      expect((await r.forTenant(OTRO_TENANT)).skipped).toEqual([
+        { code: 'alfa-hotels', reason: 'opt-in-disabled' },
+      ]);
+    });
+
+    it('`byCodeForOffer` (PreBook, Book): apagado por la plataforma es 400 sin bóveda', async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels' });
+      const r = registry([stub], flags(() => APAGADO_GLOBAL).port);
+
+      const err = await r.byCodeForOffer(TENANT, 'alfa-hotels').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+      expect(err).toBeInstanceOf(ProviderNotAvailableError);
+      expect(stub.resolveCalls).toEqual([]);
+    });
+
+    it('`byCodeForOffer`: un `opt-in` que nadie encendió no se corta (PR-2.1); encendido, tampoco', async () => {
+      const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });
+
+      await expect(
+        registry([stub], flags(false).port).byCodeForOffer(TENANT, 'alfa-hotels'),
+      ).resolves.toMatchObject({ code: 'alfa-hotels' });
+      await expect(
+        registry([stub], flags(() => ENCENDIDO).port).byCodeForOffer(TENANT, 'alfa-hotels'),
+      ).resolves.toMatchObject({ code: 'alfa-hotels' });
+      await expect(
+        registry([stub], flags(false).port).byCodeForOffer(TENANT, 'no-existe'),
+      ).rejects.toBeInstanceOf(ProviderNotAvailableError);
+    });
+
+    it('la post-venta NO mira la habilitación: `byCode`, `forOrder` y `forAccount` siguen con el proveedor apagado', async () => {
+      const base = new StubHotelProviderFactory({
+        code: 'alfa-hotels',
+        capabilities: { reconcileByDate: true },
+      });
+      const conCuenta = (tenantId: string) =>
+        Promise.resolve({ adapter: base.adapterFor(tenantId), credentialSource: 'own' as const });
+      const resolveForOrder = vi.fn(conCuenta);
+      const resolveForAccount = vi.fn(conCuenta);
+      const factory = Object.assign(base, { resolveForOrder, resolveForAccount });
+      const { port, decisionFor } = flags(() => apagadoPara(TENANT));
+      const r = registry([factory], port);
+
+      await expect(r.byCode(TENANT, 'alfa-hotels')).resolves.toMatchObject({
+        code: 'alfa-hotels',
+      });
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-hotels', providerAccountId: 'acc-1' }),
+      ).resolves.toMatchObject({ code: 'alfa-hotels' });
+      await expect(
+        r.forAccount(TENANT, { provider: 'alfa-hotels', accountId: 'acc-1' }),
+      ).resolves.toMatchObject({ code: 'alfa-hotels' });
+      expect(r.reconcilableProviders()).toEqual(['alfa-hotels']);
+      expect(resolveForOrder).toHaveBeenCalledWith(TENANT, 'o-1');
+      expect(decisionFor).not.toHaveBeenCalled();
+    });
+
+    it('una orden cuya cuenta ya no está sigue parando por la cuenta, no por la habilitación', async () => {
+      const base = new StubHotelProviderFactory({ code: 'alfa-hotels' });
+      const factory = Object.assign(base, {
+        resolveForOrder: () => Promise.reject(new NotFoundException('fuera de la red')),
+      });
+      const r = registry([factory], flags(() => APAGADO_GLOBAL).port);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-hotels', providerAccountId: 'acc-1' }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+    });
+
+    it('`enablementOf` y `registeredProviders` no resuelven credenciales', async () => {
+      vi.stubEnv('HOTEL_PROVIDER_CALL_POLICIES', 'beta-hotels:opt-in');
+      const alfa = new StubHotelProviderFactory({ code: 'alfa-hotels' });
+      const beta = new StubHotelProviderFactory({ code: 'beta-hotels' });
+      const r = registry(
+        [beta, alfa],
+        flags((_t, code) => (code === 'alfa-hotels' ? APAGADO_GLOBAL : undefined)).port,
+      );
+
+      expect(r.registeredProviders()).toEqual([
+        { code: 'alfa-hotels', vertical: 'hotels', callPolicy: 'always' },
+        { code: 'beta-hotels', vertical: 'hotels', callPolicy: 'opt-in' },
+      ]);
+      expect(await r.enablementOf(TENANT)).toEqual([
+        { code: 'alfa-hotels', vertical: 'hotels', callPolicy: 'always', decision: APAGADO_GLOBAL },
+        { code: 'beta-hotels', vertical: 'hotels', callPolicy: 'opt-in', decision: undefined },
+      ]);
+      expect(alfa.resolveCalls).toEqual([]);
+      expect(beta.resolveCalls).toEqual([]);
     });
   });
 
@@ -625,6 +769,29 @@ describe('EnvHotelProviderFlags', () => {
     expect(await f.isEnabledForTenant(OTRO_TENANT, 'alfa-hotels')).toBe(true);
     expect(await f.isEnabledForTenant(TENANT, 'beta-hotels')).toBe(true);
     expect(await f.isEnabledForTenant(OTRO_TENANT, 'beta-hotels')).toBe(false);
+  });
+
+  it('como puerto, sólo enciende y lo dice como legado; si no la nombra, no opina', async () => {
+    vi.stubEnv('HOTEL_PROVIDERS_OPT_IN', `beta-hotels@${TENANT}`);
+    const f = new EnvHotelProviderFlags();
+
+    expect(await f.decisionFor(TENANT, 'beta-hotels')).toEqual(ENCENDIDO);
+    expect(await f.decisionFor(OTRO_TENANT, 'beta-hotels')).toBeUndefined();
+  });
+
+  it('`describe` dice a quién enciende todavía, para el panel', () => {
+    vi.stubEnv(
+      'HOTEL_PROVIDERS_OPT_IN',
+      `alfa-hotels, beta-hotels@${OTRO_TENANT}, beta-hotels@${TENANT}`,
+    );
+    const f = new EnvHotelProviderFlags();
+
+    expect(f.describe('alfa-hotels')).toEqual({ allTenants: true, tenantIds: [] });
+    expect(f.describe('beta-hotels')).toEqual({
+      allTenants: false,
+      tenantIds: [TENANT, OTRO_TENANT].sort(),
+    });
+    expect(f.describe('gamma-hotels')).toEqual({ allTenants: false, tenantIds: [] });
   });
 
   it('no lee la variable de vuelos: encender un proveedor de vuelos no enciende hoteles', async () => {
