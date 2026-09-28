@@ -16,20 +16,37 @@ jobs:
     timeout-minutes: 10
     env:
       SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+      SSH_OPTS: -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10
     steps:
       - name: Setup SSH
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          # known_hosts best-effort, como en deploy.yml: la conexión real usa accept-new, así que un
+          # keyscan que no responde a tiempo no tumba el job.
+          ssh-keyscan -T 15 -H -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts \
+            || echo "::warning::ssh-keyscan falló (se continúa con accept-new)"
 
       - name: Run sync container
         run: |
-          ssh -p "$SSH_PORT" "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" bash -s <<'BASH'
+          ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" bash -s <<'BASH'
             set -euo pipefail
             cd /opt/sales-travel
-            set -a; source .env; set +a
+
+            # No se hace `source .env`: deploy.yml lo escribe sin comillas, y un valor con espacios
+            # (una contraseña de aplicación de correo, por ejemplo) se ejecuta como comando y el job
+            # sale con 127 antes de sincronizar. Se lee sólo la clave que usa este job, literal.
+            env_get() {
+              local v
+              v=$(grep -m1 -E "^$1=" .env | cut -d= -f2-) || true
+              case "$v" in
+                \'*\') v=${v#\'}; v=${v%\'} ;;
+                \"*\") v=${v#\"}; v=${v%\"} ;;
+              esac
+              printf '%s' "$v"
+            }
+            POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
 
             docker pull ghcr.io/nipko/sales-travel-sync-airports:latest
 
