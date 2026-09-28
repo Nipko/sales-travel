@@ -81,7 +81,26 @@ jobs:
             bash -s -- "${INPUT_COUNTRIES:--}" "${INPUT_STAGES:--}" "${INPUT_MAX_CALLS:--}" <<'BASH'
             set -euo pipefail
             cd /opt/sales-travel
-            set -a; source .env; set +a
+
+            # No se hace `source .env`: deploy.yml lo escribe sin comillas, y un valor con espacios
+            # (una contraseña de aplicación de correo, por ejemplo) se ejecuta como comando y el job
+            # sale con 127 antes de sincronizar. Se exportan sólo las claves que usa este job, literales.
+            env_get() {
+              local v
+              v=$(grep -m1 -E "^$1=" .env | cut -d= -f2-) || true
+              case "$v" in
+                \'*\') v=${v#\'}; v=${v%\'} ;;
+                \"*\") v=${v#\"}; v=${v%\"} ;;
+              esac
+              printf '%s' "$v"
+            }
+            POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
+            while IFS= read -r line; do
+              key=${line%%=*}
+              case "$key" in
+                TBO_SYNC_*) export "$key=$(env_get "$key")" ;;
+              esac
+            done < .env
 
             if [ -z "${TBO_SYNC_USERNAME:-}" ] || [ -z "${TBO_SYNC_PASSWORD:-}" ]; then
               echo "TBO_SYNC_USERNAME o TBO_SYNC_PASSWORD no configurados en .env — se omite el sync."
@@ -110,7 +129,7 @@ jobs:
             fi
             docker rm -f "$NAME" >/dev/null 2>&1 || true
 
-            # `-e NOMBRE` sin valor toma el del entorno de `docker`, ya exportado por `set -a`: así las
+            # `-e NOMBRE` sin valor toma el del entorno de `docker`, exportado arriba: así las
             # contraseñas no quedan en la línea de comandos, visible en `ps` para cualquier usuario del VPS.
             export PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}"
 

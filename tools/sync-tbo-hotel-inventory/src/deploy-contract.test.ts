@@ -97,7 +97,8 @@ describe('variables: env.ts ↔ deploy.yml ↔ workflow', () => {
   });
 
   it('cada TBO_SYNC_* va entre comillas simples: un valor raro no rompe los otros syncs', () => {
-    // Los tres workflows de sync hacen `set -euo pipefail; source .env`. Sin comillas, `CO, PE`
+    // Los workflows ya no hacen `source .env`, pero un operador sí puede hacerlo a mano en el VPS
+    // (README §9). Sin comillas, `CO, PE`
     // (que el Zod acepta) o una contraseña con `&` sale con 127 al leer el `.env` y deja en rojo
     // también el sync de Despegar y el de aeropuertos, no sólo éste.
     const rendered = renderedEnv();

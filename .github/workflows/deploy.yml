@@ -137,7 +137,8 @@ jobs:
       - name: Render .env
         run: |
           umask 077
-          # Las TBO_SYNC_* van entre comillas simples porque los tres syncs hacen `source .env`: un
+          # Ningún sync hace ya `source .env` (leen sus claves como texto literal), pero las TBO_SYNC_*
+          # siguen entre comillas simples por quien lo haga a mano en el VPS: un
           # valor como `CO, PE` o una contraseña con `&` o `;` cortaría también el de Despegar y el
           # de aeropuertos (salida 127 con `set -e`). `docker compose --env-file` las lee igual.
           cat > .env <<EOF

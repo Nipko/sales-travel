@@ -237,7 +237,8 @@ Después del primer deploy verde, crear tu cuenta superadmin con la imagen
 
 ```bash
 cd /opt/sales-travel
-set -a; source .env; set +a   # exporta POSTGRES_ADMIN_PASSWORD al entorno
+# Sin `source .env`: un valor con espacios (p. ej. MAIL_PASS) se ejecutaría como comando.
+export POSTGRES_ADMIN_PASSWORD="$(grep -m1 '^POSTGRES_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
 
 docker run --rm --network sales-travel_internal \
   -e PGHOST=postgres \
