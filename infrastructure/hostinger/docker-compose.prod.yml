@@ -147,7 +147,9 @@ services:
       # PROVIDERS_DISABLED: `código` apaga todo el proveedor; `código:ventas` sólo Search, PreBook
       # y Book, y deja leer y cancelar lo ya vendido. Lista separada por comas.
       PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
-      # `callPolicy: 'opt-in'`: `código` para todos los tenants o `código@<tenantId>` para uno.
+      # LEGADO (D-TBO-18): los proveedores los enciende el superadmin desde el panel. Estas sólo
+      # encienden donde la base no tiene ajuste: `código` para todos o `código@<tenantId>` para uno.
+      # No se usan para encender nada nuevo (README §6.1).
       FLIGHT_PROVIDERS_OPT_IN: ${FLIGHT_PROVIDERS_OPT_IN:-}
       HOTEL_PROVIDERS_OPT_IN: ${HOTEL_PROVIDERS_OPT_IN:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del

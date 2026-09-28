@@ -97,8 +97,8 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
   readonly vertical = 'hotels' as const;
 
   /**
-   * `opt-in` hasta conocer el costo por búsqueda (D-TBO-18 A; Q-87): encenderlo para un tenant es
-   * `HOTEL_PROVIDERS_OPT_IN=tbo-hotels@<tenantId>`, y con el flag apagado no se toca ni la bóveda.
+   * `opt-in` hasta conocer el costo por búsqueda (D-TBO-18 A; Q-87): lo enciende el superadmin
+   * para un tenant, su red o todos (`provider_enablement`, 0048), y apagado no se toca ni la bóveda.
    */
   readonly defaultCallPolicy: CallPolicy = 'opt-in';
 

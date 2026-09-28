@@ -113,9 +113,12 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 #### Variables (opcionales)
 
-| Variable             | Default | Uso                                          |
-| -------------------- | ------- | -------------------------------------------- |
-| `HOSTINGER_SSH_PORT` | `22`    | Si cambiaste el puerto SSH en `provision.sh` |
+| Variable                  | Default | Uso                                                           |
+| ------------------------- | ------- | ------------------------------------------------------------- |
+| `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                  |
+| `PROVIDERS_DISABLED`      | vacío   | Kill-switch de emergencia por proveedor (§6.1)                |
+| `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
+| `HOTEL_PROVIDERS_OPT_IN`  | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 
@@ -176,6 +179,54 @@ ssh deploy@<IP> "docker compose -f /opt/sales-travel/docker-compose.yml exec -T 
 # Estado del stack
 ssh deploy@<IP> "cd /opt/sales-travel && docker compose ps"
 ```
+
+### 6.1 Proveedores: quién los enciende y cómo se apagan en una emergencia
+
+Desde el 2026-09-28 qué proveedores usa cada agencia lo decide el **superadmin desde el panel**, no el entorno
+([`docs/tbo/08`](../../docs/tbo/08-requisitos-maestro.md#d-tbo-18--en-qué-búsquedas-se-consulta-tbo) D-TBO-18). El
+estado de un proveedor para una agencia sale de lo primero que opine, en este orden:
+
+1. `PROVIDERS_DISABLED`, el kill-switch de emergencia: le gana a todo.
+2. El ajuste de la agencia o, si no tiene, el del ancestro más cercano de su red.
+3. El ajuste global del proveedor.
+4. Las variables legado `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN`, sólo si la base no tiene ningún ajuste de
+   ese proveedor para esa agencia, sus ancestros ni global.
+5. La política del proveedor: `opt-in` apagado (TBO), `always` encendido (Despegar, LATAM, Sabre).
+
+**Lo normal: el panel.** En `https://app.planetour.cloud`, con un usuario `superadmin` (§7; `platform_admin` no
+alcanza):
+
+- _Proveedores de la plataforma_ (`/admin/plataforma/proveedores`): por proveedor, el interruptor _Todos los tenants_ y
+  las excepciones por agencia (_Heredar_, _Habilitado_, _Deshabilitado_), con motivo y confirmación antes de apagar.
+  Muestra el estado efectivo de cada una y de dónde sale.
+- _Gestión de Agencias_ → una agencia (`/admin/tenants/<id>`): sus proveedores, con el mismo control.
+
+No hace falta desplegar: la réplica del api que recibe el cambio lo aplica al instante y las demás en 10 s como mucho.
+Apagar un proveedor para una agencia corta sus búsquedas y ventas nuevas; lo ya vendido se sigue consultando,
+cancelando y conciliando con la cuenta de la orden. Cada cambio queda en `domain_events` como
+`platform.provider_enablement.updated`, con quién lo hizo, el antes y el después. Los ajustes, desde el VPS:
+
+```bash
+ssh deploy@<IP> "cd /opt/sales-travel && docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  'SELECT provider_code, tenant_id, enabled, reason, updated_at FROM provider_enablement ORDER BY 1, 2 NULLS FIRST'"
+```
+
+**Emergencia: `PROVIDERS_DISABLED`.** Variable de GitHub, lista separada por comas: `código` apaga el proveedor del
+todo, post-venta incluida; `código:ventas` apaga sólo búsqueda, PreBook y Book, y deja leer y cancelar lo vendido. Vale
+para toda la plataforma y le gana a cualquier ajuste del panel, que la muestra como _Apagado de emergencia de
+operaciones_. Es para incidentes (el proveedor responde mal, un bug nuestro), no para decidir quién vende con qué, y
+exige desplegar (Actions → **Deploy** → Run workflow). Editar `PROVIDERS_DISABLED` en el `.env` del VPS y hacer
+`docker compose up -d api` es más rápido, pero el despliegue siguiente reescribe el `.env` con la variable de GitHub:
+hay que cambiar las dos.
+
+**Legado: `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN`.** Hasta el 2026-09-28 eran la única forma de encender un
+proveedor `opt-in` (`código` para todas las agencias, `código@<tenantId>` para una) y cada cambio exigía desplegar.
+Siguen contando, sólo para encender y sólo donde la base no tiene ningún ajuste, para no apagar el día del despliegue lo
+que ya estaba encendido; el panel las muestra como origen _legado_. Se validan al arrancar: una entrada mal escrita
+tumba el despliegue. `deploy.yml` escribe `sabre` en la de vuelos si la variable no existe, sin efecto mientras Sabre
+sea `always`; la de hoteles va vacía. **No se usan para encender nada nuevo.** Para retirar una entrada: poner el
+ajuste equivalente en el panel, comprobar que el origen ya no dice _legado_, y después quitar la entrada de la
+variable y desplegar.
 
 ---
 
@@ -293,7 +344,7 @@ del `.env` del stack van sin comillas, así que el render sólo acepta `A-Z a-z 
 | `CERT_WALLET_BALANCE`                   | `50000`                         | Saldo ficticio, en unidades mayores, al que se recarga la cartera en cada despliegue |
 | `CERT_HOTEL_MARKUP_PERCENT`             | `5`                             | Markup de hoteles del tenant                                                         |
 | `CERT_TBO_BASE_URL`                     | la de test del ACL              | Sólo el host de test de TBO; cualquier otro se rechaza                               |
-| `CERT_PROVIDERS_DISABLED`               | vacío                           | Kill-switch del stack: `tbo-hotels` o `tbo-hotels:ventas`                            |
+| `CERT_PROVIDERS_DISABLED`               | vacío                           | Kill-switch: `tbo-hotels` o `tbo-hotels:ventas`. Le gana al ajuste del seed          |
 | `CERT_PROVIDER_PAYLOADS_RETENTION_DAYS` | `30`                            | Retención de la bóveda de RQ/RS                                                      |
 | `CERT_CATALOG_COUNTRIES`                | ninguno                         | Países ISO2 del catálogo de TBO (hasta 5). Obligatoria para el sync del catálogo     |
 | `CERT_CATALOG_CITIES`                   | ninguno                         | `CityCode` de TBO (hasta 20). Obligatoria con `cert_catalog: hotels`                 |
@@ -417,7 +468,12 @@ docker compose -f docker-compose.cert.yml --env-file .env logs -f cert-api
 docker compose -f docker-compose.cert.yml --env-file .env down -v
 ```
 
-Para apagar TBO en el stack sin tocar la imagen: variable `CERT_PROVIDERS_DISABLED=tbo-hotels` y desplegar.
+TBO queda encendido para `tbo-cert` por un ajuste de tenant en `provider_enablement` que el seed repone en cada
+despliegue ([`docs/tbo/07`](../../docs/tbo/07-certificacion.md) §7.3 punto 9), y el compose del stack mantiene además
+la variable legado `HOTEL_PROVIDERS_OPT_IN: tbo-hotels` (§6.1). El job del stack no siembra un superadmin, así que su
+panel de plataforma no se usa para esto. Para apagar TBO en el stack sin tocar la imagen: variable
+`CERT_PROVIDERS_DISABLED=tbo-hotels` (o `tbo-hotels:ventas`, que deja consultar y cancelar lo reservado) y desplegar;
+le gana al ajuste del seed.
 
 ### 9.6 Lo que falta para que el tester busque
 

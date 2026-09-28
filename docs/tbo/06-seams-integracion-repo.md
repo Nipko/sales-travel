@@ -553,20 +553,47 @@ export const HOTEL_PROVIDER_FACTORIES = 'HOTEL_PROVIDER_FACTORIES';
 
 | Pieza                             | Comportamiento                                                                                                                                                                          | Molde                                              |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `HotelProvidersModule`            | `useFactory: (despegar, tbo) => [despegar, tbo]`, `inject: [DespegarHotelsProviderFactory, TboHotelsProviderFactory]`, flags por env mientras no haya Unleash.                          | `apps/api/src/providers/providers.module.ts:55-71` |
-| `forTenant(tenantId)`             | `{ active, skipped, unavailable }` en orden alfabético; `opt-in` consulta el flag antes de tocar la bóveda.                                                                             | `flight-provider.registry.ts:109-133`              |
-| `byCode(tenantId, code)`          | Para prebook, book, cancel y post-venta; no consulta el flag; desconocido → `ProviderNotAvailableError` (400).                                                                          | `flight-provider.registry.ts:141-148`              |
+| `HotelProvidersModule`            | `useFactory: (despegar, tbo) => [despegar, tbo]`, `inject: [DespegarHotelsProviderFactory, TboHotelsProviderFactory]`; habilitación por el superadmin (abajo).                          | `apps/api/src/providers/providers.module.ts:55-71` |
+| `forTenant(tenantId)`             | `{ active, skipped, unavailable }` en orden alfabético; consulta la habilitación antes de tocar la bóveda.                                                                              | `flight-provider.registry.ts:109-133`              |
+| `byCode(tenantId, code)`          | Post-venta; no consulta la habilitación; desconocido → `ProviderNotAvailableError` (400). PreBook y Book van por `byCodeForOffer`, que sí la consulta.                                  | `flight-provider.registry.ts:141-148`              |
 | Fallback de plataforma            | `PLATFORM_DEFAULT_HOTEL_PROVIDERS` con default `'despegar-hotels'`: conserva el comportamiento actual de Despegar (cae a env, `despegar-hotels.factory.ts:31-35`) sin extenderlo a TBO. | `flight-provider.registry.ts:20-25`, `:214-222`    |
 | `capabilitiesOf`, `humanizeError` | Delegan en el factory.                                                                                                                                                                  | `flight-provider.registry.ts:167-176`              |
 
+**Habilitación desde el superadmin** (D-TBO-18, cerrada el 2026-09-28; VERIFICADO-CODIGO en la rama `feat/tbo-hotels` a
+esa fecha, sin número de línea). Antes, el touchpoint de flags era una variable de entorno por vertical
+(`EnvProviderFlags` sobre `FLIGHT_PROVIDERS_OPT_IN`, `EnvHotelProviderFlags` sobre `HOTEL_PROVIDERS_OPT_IN`) y cada
+cambio exigía redesplegar. Ahora los dos registries reciben, por `FLIGHT_PROVIDER_FLAGS` y `HOTEL_PROVIDER_FLAGS`, un
+`PlatformProviderFlags` (`apps/api/src/provider-enablement/platform-provider-flags.ts`) que implementa
+`ProviderFlagsPort`:
+
+- lee los ajustes de `provider_enablement` (`db/migrations/0048_provider_enablement.sql`) para la cadena del tenant, con
+  una caché en memoria de 10 s por tenant que se invalida al escribir en la misma réplica;
+- decide el ajuste de tenant más cercano en el árbol y, si no hay, el global
+  (`apps/api/src/provider-enablement/provider-enablement.policy.ts`);
+- solo si la base no opina, pregunta a la variable de la vertical, que queda como **legado** y solo enciende;
+- devuelve la decisión con su origen (`tenant`, `global` o `legacy-env`), o nada, y el registry la compara con la
+  política del proveedor. El kill-switch `PROVIDERS_DISABLED` no pasa por el puerto: lo sigue aplicando el breaker en
+  cada llamada, y le gana a todo.
+
+| Llamada del registry                                            | Proveedor apagado por la plataforma                                                           | `opt-in` que nadie encendió                      |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `forTenant` (búsqueda)                                          | `skipped` con `platform-disabled` y "Deshabilitado por la plataforma para esta agencia."      | `skipped` con `opt-in-disabled`                  |
+| `byCodeForOffer` (PreBook, Book; revalidación y orden de vuelo) | 400 `ProviderDisabledByPlatformError`                                                         | Se resuelve: la oferta ya la emitió el proveedor |
+| `byCodeForSale` (hoteles: detalle de un hotel por código)       | 400 `ProviderDisabledByPlatformError`                                                         | 400 `ProviderNotAvailableError`                  |
+| `byCode`; en hoteles, también `forOrder` y `forAccount`         | Se resuelve: la post-venta (lecturas, cancelación, HCN, conciliación) no mira la habilitación | Se resuelve                                      |
+
+Cuando corta, corta antes de tocar la bóveda. Los tests que lo fijan están en
+`apps/api/src/providers/hotel-provider.registry.test.ts` y `flight-provider.registry.test.ts`, y los de la post-venta,
+en las suites de lecturas, cancelación, HCN y conciliación de hoteles y en `order-create-saga.test.ts` para vuelos.
+
 **Enrutado.**
 
-| Operación                            | Cómo se elige el proveedor                                                                                                                               |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Búsqueda                             | Fan-out sobre `registry.forTenant(tenantId).active`; por proveedor, sus `hotel_id` de `hotel_inventory` con **su** `provider_code`.                      |
-| PreBook                              | `offer.provider.name` del body, validado con `registry.byCode` (mismo criterio que `priceOffer` en vuelos, `apps/api/src/search/search.service.ts:467`). |
-| Book                                 | `orders.provider` del intent creado en el PreBook o en el Book (§5.5), nunca un campo libre del cliente.                                                 |
-| Detalle / cancelación / verificación | `orders.provider` de la fila, leída con RLS del tenant.                                                                                                  |
+| Operación                            | Cómo se elige el proveedor                                                                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Búsqueda                             | Fan-out sobre `registry.forTenant(tenantId).active`; por proveedor, sus `hotel_id` de `hotel_inventory` con **su** `provider_code`.                                                                    |
+| PreBook                              | `offer.provider.name` del body, validado con `registry.byCodeForOffer`: `byCode` más la habilitación de D-TBO-18 (mismo criterio que `priceOffer` en vuelos, `apps/api/src/search/search.service.ts`). |
+| Book                                 | `orders.provider` del intent creado en el PreBook o en el Book (§5.5), nunca un campo libre del cliente.                                                                                               |
+| Detalle / cancelación / verificación | `orders.provider` de la fila, leída con RLS del tenant.                                                                                                                                                |
 
 **Espejo o registry genérico.** Espejo (copiar ~250 líneas cambiando tipo, token y variables) no toca `src/search/**`,
 que tiene umbral de cobertura propio (`apps/api/vitest.config.ts:62-67`). Un `ProviderRegistry<TAdapter>` genérico del
@@ -912,8 +939,9 @@ trabajo o después. La columna "¿TBO lo necesita resuelto?" dice si la integrac
 
 Cada una se presenta con opciones en [08-requisitos-maestro.md](./08-requisitos-maestro.md). Aquí solo se dice qué
 touchpoints mueve cada opción. Cinco filas quedaron cerradas por el founder el 2026-09-25 con la línea base (D-TBO-03,
-D-TBO-06 y D-TBO-07; [Registro de decisiones](./08-requisitos-maestro.md#registro-de-decisiones)) y lo dicen; el
-resto se construye con la línea base mientras el founder no diga otra cosa.
+D-TBO-06 y D-TBO-07) y una el 2026-09-28 (D-TBO-18), y lo dicen
+([Registro de decisiones](./08-requisitos-maestro.md#registro-de-decisiones)); el resto se construye con la línea base
+mientras el founder no diga otra cosa.
 
 | Decisión                                                    | Línea base                                                                                         | Qué cambia con la alternativa                                                                                                                                                           |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -925,6 +953,7 @@ resto se construye con la línea base mientras el founder no diga otra cosa.
 | Book síncrono o asíncrono para el navegador                 | Asíncrono (orden `pending` + consulta)                                                             | Síncrono: riesgo H4.                                                                                                                                                                    |
 | Destino multi-proveedor                                     | Tabla de mapeo calculada (D-TBO-10 A, se aplica; [05](./05-contenido-estatico-e-inventario.md) §8) | Define TP-45 y TP-58.                                                                                                                                                                   |
 | Sync TBO: tool hermano o `sync-hotel-inventory` con fuentes | Tool hermano (D-TBO-12 A, se aplica)                                                               | Tool hermano suma TP-49; generalizar cambia el contrato de env del job de Despegar.                                                                                                     |
+| Quién enciende y apaga un proveedor por tenant              | El superadmin, en `provider_enablement` (D-TBO-18 A, cerrada; §5.4)                                | Por variable de entorno, lo de antes: cada alta o baja exige redesplegar y un proveedor `always` no se puede apagar para una sola agencia.                                              |
 | Circuito por código o por cuenta                            | Por cuenta (D-TBO-32 A, se aplica; §8 G12)                                                         | Por cuenta: cambia `circuit-breaker.service.ts` y afecta a vuelos (PR-0.6 de [09](./09-plan-implementacion.md)). Por código, como hoy: una cuenta BYOC mala apaga TBO para toda la red. |
 | `types` del paquete a `dist` o a `src`                      | `dist` (Sabre)                                                                                     | `src`: riesgo de `dist` rancio en tests de `apps/api`.                                                                                                                                  |
 | Cuándo corregir los gaps de §8 que TBO no necesita          | Aparte                                                                                             | En el mismo trabajo: más alcance, menos deuda.                                                                                                                                          |

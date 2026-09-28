@@ -17,8 +17,9 @@ TBO**. No repite el contrato ni el diseño: cada PR enlaza la sección que lo de
 > y que hoy no existe es **PROPUESTA**. Las estimaciones de esfuerzo y calendario son INFERIDO por definición.
 >
 > **Decisiones que el plan asume.** Las cuatro que el founder firmó el 2026-09-25 —D-TBO-02 (B), sin compuerta de
-> valor; D-TBO-03 (A); D-TBO-06 (A), con el requisito "me tiene que mostrar de dónde es" (RF-40); y D-TBO-07 (A)— y,
-> para las otras 34, la recomendada (A) de [08](./08-requisitos-maestro.md) §7 hasta que el founder diga otra cosa
+> valor; D-TBO-03 (A); D-TBO-06 (A), con el requisito "me tiene que mostrar de dónde es" (RF-40); y D-TBO-07 (A)—, la
+> que cerró el 2026-09-28 —D-TBO-18 (A), con el encendido de TBO en manos del superadmin— y, para las otras 33, la
+> recomendada (A) de [08](./08-requisitos-maestro.md) §7 hasta que el founder diga otra cosa
 > ([Registro de decisiones](./08-requisitos-maestro.md#registro-de-decisiones)). Cada PR
 > dice qué decisión lo condiciona (`D-TBO-NN`) y qué pregunta a TBO puede cambiarlo
 > ([`Q-NN`](./10-preguntas-para-tbo.md)). **No se reabren** D1 (nunca PAN ni CVV; en TBO, solo `PaymentMode: "Limit"`) ni D9 (BullMQ para las
@@ -31,6 +32,13 @@ TBO**. No repite el contrato ni el diseño: cada PR enlaza la sección que lo de
 > a ser una medición informativa que no bloquea nada (§10) y el carril B hace el ACL de las Fases 4 y 5 antes que el
 > catálogo, así que el zip sale unas tres semanas antes (§2.4). Portal, credenciales live y primera venta no se mueven.
 > RF-40 entra en PR-0.5, PR-2.2, PR-2.6, PR-6.1 y PR-6.2 (§19).
+>
+> **Revisión del 2026-09-28.** El founder cerró D-TBO-18: los proveedores —los `opt-in` como TBO y también los que se
+> llaman siempre— los enciende y los apaga el superadmin desde el panel de la plataforma, para todos los tenants o por
+> tenant, sin redesplegar
+> ([08](./08-requisitos-maestro.md#d-tbo-18--en-qué-búsquedas-se-consulta-tbo)). Ya está construido, fuera de la
+> numeración de PRs de este plan (commits `79a91e0` y `b3e8c35`), y tomó la migración `0048`. Cambian la barrera 2 de
+> §3.1, la numeración de §3.3 (M4 pasa a la `0049`), PR-8.1 y PR-8.2 (§15), §16 y §18.
 
 ---
 
@@ -116,7 +124,7 @@ numeración de este plan es la del encargo; la equivalencia es:
 | Fase 5    | F5                              | Sin la UI                                                                                                                                                                                                                                  |
 | Fase 6    | UI de F3, F4 y F5               | Toda la UI junta, con la Playwright que hoy no existe (§20, P-03)                                                                                                                                                                          |
 | Fase 7    | F1 (arnés) + F6 (certificación) | Arnés de sondas en PR-1.6; `run`/`zip` en PR-7.1; stack de certificación en PR-7.2                                                                                                                                                         |
-| Fase 8    | F6 (salida)                     | Migración M4, runbook y habilitación piloto                                                                                                                                                                                                |
+| Fase 8    | F6 (salida)                     | Migración M4, runbook y habilitación piloto desde el panel del superadmin (D-TBO-18)                                                                                                                                                       |
 
 Las fases son las mismas piezas; cambia dónde se cortan. Los criterios de salida de 08 §8 siguen valiendo y están
 repartidos en los criterios de salida de cada fase de este plan.
@@ -234,10 +242,14 @@ total antes del portal es el mismo.
 - **Todo PR se mergea a `main` con TBO apagado en producción.** Tres barreras independientes:
   1. sin cuenta `tbo-hotels` `active` en la bóveda, el factory deja a TBO **ausente** (BYOC puro, D-TBO-03 A; una
      cuenta `sandbox` no resuelve, `db/migrations/0012_provider_accounts.sql:70`, VERIFICADO-CODIGO);
-  2. `defaultCallPolicy: 'opt-in'` (D-TBO-18 A): sin `HOTEL_PROVIDERS_OPT_IN=tbo-hotels@<tenantId>` no hay ni una
-     llamada, igual que `FLIGHT_PROVIDERS_OPT_IN` en vuelos (`apps/api/src/providers/providers.module.ts:17-48`,
-     VERIFICADO-CODIGO);
-  3. kill-switch `PROVIDERS_DISABLED` en dos niveles, cableado en producción por PR-0.6.
+  2. `defaultCallPolicy: 'opt-in'` (D-TBO-18 A, cerrada el 2026-09-28): ni una llamada a TBO para un tenant sin un
+     ajuste del superadmin que lo encienda —para ese tenant, para un ancestro suyo o para todos— en
+     `provider_enablement` (`db/migrations/0048_provider_enablement.sql`). Hasta ese día la única llave era la
+     variable `HOTEL_PROVIDERS_OPT_IN`; queda como legado, cuenta solo mientras ningún ajuste de TBO alcance al
+     tenant (ni suyo, ni de un ancestro, ni global) y `.github/workflows/deploy.yml` no le da valor por defecto, así
+     que en producción va vacía mientras nadie cree esa variable de GitHub;
+  3. kill-switch `PROVIDERS_DISABLED` en dos niveles, cableado en producción por PR-0.6. Le gana a cualquier ajuste
+     del panel.
 - **Ramas cortas.** Ningún PR supera 4 d-p. Los que tocan dinero se revisan con el test de la puerta pública en el
   mismo PR, nunca "en un PR de tests posterior".
 - **Commits:** Conventional Commits. El título propuesto de cada PR ya lo sigue.
@@ -259,21 +271,23 @@ total antes del portal es el mismo.
 
 ### 3.3 Migraciones
 
-**Numeración real al 2026-09-26** (VERIFICADO-CODIGO, listado de `db/migrations/` en la rama `feat/tbo-hotels`). Al
+**Numeración real al 2026-09-28** (VERIFICADO-CODIGO, listado de `db/migrations/` en la rama `feat/tbo-hotels`). Al
 escribir el plan, la última migración era `0040_portfolio_ledger_idempotency.sql` y los números eran tentativos. Las
-Fases 0 a 5 usaron de la `0041` a la `0047`:
+Fases 0 a 5 usaron de la `0041` a la `0047`, y la habilitación de proveedores del superadmin, la `0048`:
 
 - **Tres migraciones sin letra.** El plan preveía cinco con letra (M1 a M5). La implementación sumó tres más. Dos son
   los calendarios de la verificación del Book incierto y de la verificación de una cancelación, que viven en Postgres
   y no en Redis (RNF-10). La otra trae dos funciones `SECURITY DEFINER` que la RLS sola no permite: la cuenta con que
   se opera la post-venta de una orden y el conteo de reservas activas de una cuenta en toda su red (RF-29).
 - **M3 corrió de número.** Pasó de la `0044` tentativa a la `0047`.
-- **M4 toma la siguiente libre, la `0048`.** Es la única que falta.
+- **La `0048` no es de ningún PR del plan.** Es `0048_provider_enablement.sql`, la tabla con que el superadmin
+  enciende y apaga proveedores (D-TBO-18, cerrada el 2026-09-28). Es genérica y no nombra a TBO.
+- **M4 toma la siguiente libre, la `0049`.** Es la única que falta.
 - **El endurecimiento de post-venta no agregó migraciones.** HARD-1 a HARD-4
   ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §14) usa lo que ya existía: `order_operations` (`0021`
   y `0037`) y las tablas y funciones de la `0042` a la `0047`.
 
-El identificador estable sigue siendo la letra. Si otro PR toma la `0048` antes que PR-8.1, la M4 se renumera al
+El identificador estable sigue siendo la letra. Si otro PR toma la `0049` antes que PR-8.1, la M4 se renumera al
 rebasar.
 
 | Id  | Archivo                                                   | Contenido                                                                                                                                                                              | PR     | Estado                |
@@ -285,7 +299,8 @@ rebasar.
 | —   | `db/migrations/0045_order_provider_account_post_sale.sql` | `resolve_order_provider_account` (la cuenta de la orden, si sigue en la red del tenant) y `provider_account_active_orders` (reservas activas de una cuenta en toda su red, RF-29 CA 2) | PR-5.2 | Existe                |
 | —   | `db/migrations/0046_hotel_cancellation_verification.sql`  | Calendario de `verify-cancellation` en `hotel_order_tracking` (`cancel_verify_anchor_at`, `cancel_verify_step`, `cancel_verify_next_at`)                                               | PR-5.3 | Existe                |
 | M3  | `db/migrations/0047_provider_reconciliation.sql`          | Corridas e ítems de conciliación; `UNIQUE (id, tenant_id)` en `provider_accounts` para las FK compuestas                                                                               | PR-5.5 | Existe                |
-| M4  | `db/migrations/0048_provider_catalog_tbo_hotels.sql`      | Fila `tbo-hotels` en `provider_catalog`                                                                                                                                                | PR-8.1 | Por crear (tentativo) |
+| —   | `db/migrations/0048_provider_enablement.sql`              | Ajustes del superadmin sobre qué proveedores usa cada tenant, global y por tenant, y `provider_enablement_chain()` (D-TBO-18; fuera de los PRs del plan)                               | —      | Existe                |
+| M4  | `db/migrations/0049_provider_catalog_tbo_hotels.sql`      | Fila `tbo-hotels` en `provider_catalog`                                                                                                                                                | PR-8.1 | Por crear (tentativo) |
 
 ### 3.4 Definición de listo de un PR
 
@@ -355,7 +370,7 @@ rebasar.
 | PR-7.2  | Stack de certificación                                      | 7    |    4 | B      | T     | 2.2                 |
 | PR-7.3  | Entregables de certificación                                | 7    |    1 | A      | T     | 7.1                 |
 | PR-8.1  | M4, runbook y cableado live                                 | 8    |  1,5 | A      | L     | 7.3                 |
-| PR-8.2  | Habilitación piloto                                         | 8    |    1 | A      | L     | 8.1                 |
+| PR-8.2  | Habilitación piloto desde el superadmin                     | 8    |    1 | A      | L     | 8.1                 |
 
 ---
 
@@ -464,7 +479,8 @@ TBO no se firma, la fase conserva todo su valor para Hotelbeds o RateHawk.
 - **Crea.** `apps/api/src/providers/hotel-provider.types.ts` (`HotelProviderAdapter`, `HotelProviderCapabilities`,
   `HOTEL_PROVIDER_FACTORIES`, `HOTEL_PROVIDER_FLAGS`), `apps/api/src/providers/hotel-provider.registry.ts`,
   `apps/api/src/providers/hotel-providers.module.ts` (con `EnvHotelProviderFlags` sobre `HOTEL_PROVIDERS_OPT_IN`, espejo
-  de `providers.module.ts:28-48`), `apps/api/src/providers/hotel-provider.registry.test.ts`,
+  de `providers.module.ts:28-48`; desde el 2026-09-28 es la variable legado detrás de los ajustes del superadmin,
+  §3.1), `apps/api/src/providers/hotel-provider.registry.test.ts`,
   `apps/api/src/providers/__fixtures__/stub-hotel-provider.factory.ts`,
   `apps/api/src/providers-despegar/despegar-hotel-provider.adapter.ts` (envoltorio que implementa
   `HotelProviderAdapter` delegando en el adapter concreto, como `SabreFlightProviderAdapter`,
@@ -539,7 +555,7 @@ TBO no se firma, la fase conserva todo su valor para Hotelbeds o RateHawk.
   write (hoy cae en `UNVERIFIED`, `:130-135`). `apps/api/src/health/health.controller.ts` agrega o excluye los
   circuitos de cuenta en el snapshot público (`:50`). `infrastructure/hostinger/docker-compose.prod.yml` y
   `.github/workflows/deploy.yml` pasan `PROVIDERS_DISABLED`, `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN` al
-  contenedor `api`, que hoy no los recibe (G13).
+  contenedor `api`, que hoy no los recibe (G13). Las dos `*_OPT_IN` son legado desde el 2026-09-28 (§3.1).
 - **Tests que lo cierran.** Un error sin `failure` cuenta como hoy (Despegar y LATAM sin cambios); cinco `IGNORE` no
   abren; `OPEN_ACCOUNT` abre solo esa cuenta; `/health` sin ids de tenant; `x:ventas` no frena lecturas de post-venta;
   un rechazo local en Cancel se clasifica como previo al write.
@@ -1315,6 +1331,9 @@ Dos tramos que se solapan: **7.a JSON** (PR-7.1 y el envío del zip, en cuanto e
 - **Salida.** El `.env` renderizado del stack no contiene variables de ningún otro proveedor (test sobre el render);
   el `vendedor` entra sin MFA y busca y reserva contra TBO test.
 - **Depende de.** PR-2.2 (y, para ser útil, las Fases 4 y 5); D-TBO-35, D-TBO-36; [Q-76](./10-preguntas-para-tbo.md#q-76).
+- **Desde el 2026-09-28** el seed deja TBO encendido para `tbo-cert` con un ajuste de tenant en `provider_enablement`
+  (0048), el mismo que pone el superadmin desde el panel (D-TBO-18). La variable legado `HOTEL_PROVIDERS_OPT_IN` del
+  compose del stack se mantiene ([07](./07-certificacion.md) §7.3 punto 9).
 
 #### PR-7.3 — `docs(tbo): entregables de certificación` · 1 d-p · Cred.: **test**
 
@@ -1361,25 +1380,35 @@ credenciales live recibidas.
 
 #### PR-8.1 — `feat(db): tbo-hotels en provider_catalog (M4) y runbook de producción` · 1,5 d-p · Cred.: **live**
 
-- **Crea.** `db/migrations/0048_provider_catalog_tbo_hotels.sql` (la siguiente libre al 2026-09-26, §3.3; fila
+- **Crea.** `db/migrations/0049_provider_catalog_tbo_hotels.sql` (la siguiente libre al 2026-09-28, §3.3; fila
   declarativa con las capacidades reales; hoy nadie lee `provider_catalog`, G4) y el runbook de producción de TBO:
   pase a live **por sustitución** de la cuenta (RC-10; `resolve_provider_account` devuelve una sola fila,
   `db/migrations/0012_provider_accounts.sql:75-76`), rotación de contraseña, incidente `500` a las dos direcciones de
-  soporte ([00](./00-fuentes.md) §7), ticket de HCN, uso del kill-switch.
+  soporte ([00](./00-fuentes.md) §7), ticket de HCN, encendido y apagado de TBO desde el panel del superadmin y uso
+  del kill-switch como emergencia (`infrastructure/hostinger/README.md` §6.1).
 - **Modifica.** `.github/workflows/deploy.yml` (`TBO_SYNC_*` de la cuenta live de catálogo).
 - **Salida.** Corrida del sync live completa **antes** de habilitar ventas; datos del formulario de producción (por
   ejemplo, IP de salida) entregados (RC-11).
 - **Depende de.** Sign-off; D-TBO-30, D-TBO-32; [Q-04](./10-preguntas-para-tbo.md#q-04),
   [Q-06](./10-preguntas-para-tbo.md#q-06), [Q-80](./10-preguntas-para-tbo.md#q-80).
 
-#### PR-8.2 — `feat(hotels): habilitación piloto de TBO` · 1 d-p · Cred.: **live**
+#### PR-8.2 — `feat(hotels): habilitación piloto de TBO desde el superadmin` · 1 d-p · Cred.: **live**
 
-- **Modifica.** `HOTEL_PROVIDERS_OPT_IN=tbo-hotels@<tenantId>` para el consolidador piloto y su red; alertas sobre
-  `tbo.http.requests{kind}`, `tbo.search.pack_rejected` y escalamientos. Reversión: `PROVIDERS_DISABLED=tbo-hotels:ventas`.
+- **Habilitación, sin variable ni redespliegue** (D-TBO-18, cerrada el 2026-09-28). El superadmin enciende
+  `tbo-hotels` para el consolidador piloto en _Proveedores de la plataforma_ (`/admin/plataforma/proveedores`) con una
+  excepción de tenant en _Habilitado_ y su motivo. Cubre su red; una agencia de la red que no deba verlo queda en
+  _Deshabilitado_ debajo. El ajuste global de TBO no se toca durante el piloto. Antes de dar el piloto por abierto, el
+  detalle del consolidador (`/admin/tenants/<id>`) muestra TBO habilitado por "Ajuste propio de esta agencia" y no por
+  la variable legado, y `HOTEL_PROVIDERS_OPT_IN` de producción no nombra `tbo-hotels`.
+- **Modifica.** Alertas sobre `tbo.http.requests{kind}`, `tbo.search.pack_rejected` y escalamientos.
+- **Reversión.** En el panel: la excepción del consolidador a _Deshabilitado_, o quitarla para volver a heredar. Corta
+  búsquedas y ventas nuevas en 10 s como mucho y deja la post-venta de lo ya vendido; el cambio queda en
+  `domain_events`. Como emergencia de operaciones, para toda la plataforma: `PROVIDERS_DISABLED=tbo-hotels:ventas`,
+  que exige redesplegar (`tbo-hotels` a secas corta también la post-venta).
 - **Salida (hito V).** Primera reserva real con `BookingDetail` de cierre, conciliación limpia durante 7 días y un HCN
-  recibido para un check-in a menos de 30 días. Pasar `callPolicy` a `always` solo si
-  [Q-87](./10-preguntas-para-tbo.md#q-87) confirma que no hay costo por búsqueda.
-- **Depende de.** PR-8.1; D-TBO-18.
+  recibido para un check-in a menos de 30 días. Pasar a toda búsqueda —el ajuste global de TBO en _Habilitado_— solo
+  si [Q-87](./10-preguntas-para-tbo.md#q-87) confirma que no hay costo por búsqueda.
+- **Depende de.** PR-8.1; D-TBO-18 y la habilitación de proveedores del superadmin (migración `0048`, ya construida).
 
 ---
 
@@ -1395,6 +1424,10 @@ credenciales live recibidas.
 | PR-4.4          | La creación de órdenes de vuelos usa primitivos extraídos                                                                                      | Regresión en el flujo que genera ingresos             | Suite de creación de vuelos sin cambios; el PR no cambia ningún test existente                                                                                                              |
 | PR-5.2 / PR-5.3 | `runCancel` y la consulta manual enrutan por vertical                                                                                          | Una orden de vuelo va al adapter equivocado           | Guard de despacho (`order-provider-dispatch.guard.test.ts`); suites de cancelación de vuelos y autos                                                                                        |
 | PR-6.1          | La tarjeta muestra precio de venta para Despegar (corrige G3) y, si la divulgación ya está en "Mostrar", la pastilla "Despegar Hotels" (RF-40) | Sorpresa de las agencias                              | Cambio anunciado; el neto sigue visible para el vendedor si el rol lo permite; la pastilla sigue el ajuste que el consolidador ya eligió para vuelos                                        |
+| Fuera del plan  | Los registries de vuelos y hoteles leen los ajustes del superadmin (0048); Despegar, LATAM y Sabre ya se pueden apagar por tenant              | Un ajuste global mal puesto apaga a toda la red       | Sin ajustes nada cambia (legado y política como antes); confirmación antes de apagar; motivo y actor en `domain_events`; la post-venta nunca se corta; tests de los dos registries          |
+
+La fila "Fuera del plan" es la habilitación de proveedores de D-TBO-18, construida el 2026-09-28 (commits `79a91e0` y
+`b3e8c35`) y no numerada entre los PRs de este plan.
 
 Las reservas de Despegar siguen en su flujo actual (`/hotels/reservations/*`) hasta que se decida D-TBO-08 como tarea
 aparte. Ningún PR de este plan hace que Despegar persista órdenes.
@@ -1419,13 +1452,15 @@ contrato que no hayamos visto en el PDF.
 
 ## 18. Gestiones no técnicas y cuándo bloquean
 
-Desde el 2026-09-25 ninguna decisión D-TBO bloquea: cuatro están firmadas y el resto se construye con su opción (A)
-([08](./08-requisitos-maestro.md#registro-de-decisiones)). Para esas, "Cuándo" es la fecha hasta la que el founder
-puede cambiar de opción sin rehacer trabajo, y "Bloquea" dice qué se rehace si la cambia después.
+Desde el 2026-09-25 ninguna decisión D-TBO bloquea: cinco están cerradas (cuatro el 2026-09-25 y D-TBO-18 el
+2026-09-28) y el resto se construye con su opción (A) ([08](./08-requisitos-maestro.md#registro-de-decisiones)). Para
+esas, "Cuándo" es la fecha hasta la que el founder puede cambiar de opción sin rehacer trabajo, y "Bloquea" dice qué
+se rehace si la cambia después.
 
 | Gestión                                                                                        | Dueño   | Bloquea                                                                      | Cuándo                                          |
 | ---------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------- | ----------------------------------------------- |
 | Firmar D-TBO-02 (B), D-TBO-03 (A), D-TBO-06 (A) y D-TBO-07 (A)                                 | Founder | Ya no bloquean                                                               | Hecho el 2026-09-25                             |
+| Cerrar D-TBO-18: (A), con el encendido de TBO en manos del superadmin                          | Founder | Ya no bloquea; PR-8.2 enciende el piloto desde el panel                      | Hecho el 2026-09-28                             |
 | Confirmar o cambiar D-TBO-01 (se aplica la A)                                                  | Founder | Nada; cambiarla después rehace desde PR-1.1                                  | Antes de la semana 1                            |
 | Envío del email de [10](./10-preguntas-para-tbo.md) §12 con el pedido de credenciales (DQ-1 A) | Founder | PR-1.6, PR-7.1, PR-3.5                                                       | Hoy                                             |
 | Confirmar o cambiar D-TBO-20, D-TBO-22 y D-TBO-23 (se aplica la A)                             | Founder | Nada; cambiarlas después rehace partes de PR-4.1 y PR-4.2                    | Antes de la semana 4                            |

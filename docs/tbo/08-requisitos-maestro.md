@@ -27,6 +27,13 @@ estado: borrador
 > el resto se implemente con la opción recomendada. Quedan registradas al inicio de §7
 > ([Registro de decisiones](#registro-de-decisiones)). Con D-TBO-06 dejó un requisito nuevo, "me tiene que mostrar de
 > dónde es", que es RF-40. Las citas `ruta:línea` que agrega esta revisión siguen siendo del commit `8972c6a`.
+>
+> **Revisión del 2026-09-28.** El founder cerró D-TBO-18: "quiero que sea del superadmin que lo active para un tenant
+> o todos, se pueda deshabilitar para algún si es necesario". TBO sigue siendo `opt-in` (A), pero ya no lo enciende
+> una variable de entorno: lo enciende el superadmin desde el panel de la plataforma, para todos los tenants o para un
+> tenant y su red, y lo apaga para la agencia que haga falta, sin redesplegar
+> ([ficha](#d-tbo-18--en-qué-búsquedas-se-consulta-tbo); [Registro de decisiones](#registro-de-decisiones)). Las rutas
+> que cita esta revisión son de la rama `feat/tbo-hotels` al 2026-09-28, sin número de línea.
 
 ---
 
@@ -901,10 +908,11 @@ tipos de la web se actualiza (TP-57).
 
 **Enunciado.** `HotelProviderRegistry`, `HOTEL_PROVIDER_FACTORIES` y `TboHotelsProviderFactory implements
 TenantProviderFactory` (`vertical: 'hotels'`, capacidades `retrieve`, `cancel`, `retrieveByClientReference` y
-`reconcileByDate`, política de llamada según D-TBO-18). La puerta de credenciales queda **fuera** de cualquier `try`
-que atrape `NotFoundException`. Enrutado: búsqueda por fan-out; PreBook por el proveedor de la oferta, validado con
-`byCode`; Book, detalle y cancelación por `orders.provider`. `HotelsService` y `HotelsController` pasan a tipos
-neutrales, con los dos filtros de excepción. Todas las llamadas a TBO pasan por el breaker.
+`reconcileByDate`, política `opt-in` encendida por el superadmin según D-TBO-18). La puerta de credenciales queda
+**fuera** de cualquier `try` que atrape `NotFoundException`. Enrutado: búsqueda por fan-out; PreBook por el
+proveedor de la oferta, validado con `byCode`; Book, detalle y cancelación por `orders.provider`. `HotelsService` y
+`HotelsController` pasan a tipos neutrales, con los dos filtros de excepción. Todas las llamadas a TBO pasan por el
+breaker.
 
 **Fuente.** `HotelsService` inyecta el factory concreto de Despegar (`apps/api/src/hotels/hotels.service.ts:21`,
 `:29`), VERIFICADO-CODIGO. [06](./06-seams-integracion-repo.md) §5.2, §5.4, §5.6.
@@ -915,6 +923,11 @@ neutrales, con los dos filtros de excepción. Todas las llamadas a TBO pasan por
 2. Una oferta `tbo-hotels` nunca llega al adapter de Despegar.
 3. Test de aislamiento del caché de adapters por dueño de la cuenta.
 4. El factory de Despegar implementa el contrato sin cambiar su comportamiento.
+5. Con TBO apagado por la plataforma para el tenant (ajuste propio, de un ancestro o global; D-TBO-18), la búsqueda
+   lo deja `skipped` con `skipReason: 'platform-disabled'` y un motivo distinto del de un `opt-in` sin encender, sin
+   llamarlo ni leer la bóveda; PreBook y Book responden 400 aunque la tarifa venga de una búsqueda anterior al apagado.
+6. Apagarlo no corta la post-venta: detalle, cancelación, verificaciones, HCN y conciliación siguen con la cuenta de
+   la orden (RF-29).
 
 **Depende de.** D-TBO-06, D-TBO-03, D-TBO-18, RF-35.
 
@@ -1202,6 +1215,12 @@ proveedores ([02](./02-search-y-oferta-canonica.md) §4.3 punto 6). Es la misma 
 proveedor y cableados en `docker-compose.prod.yml` y `deploy.yml`, o movidos a `provider_catalog.status` o Unleash.
 Con el circuito abierto, los jobs de lectura se reprograman en vez de fallar.
 
+**El kill-switch no es la habilitación del superadmin** (D-TBO-18, cerrada el 2026-09-28). `PROVIDERS_DISABLED` sigue
+siendo la palanca de emergencia de operaciones: vive en el entorno, exige redesplegar, apaga el proveedor para toda
+la plataforma y le gana a cualquier ajuste del panel. Encender o apagar TBO para un tenant, su red o todos es el
+ajuste del superadmin (`provider_enablement`, `db/migrations/0048_provider_enablement.sql`), que corta búsquedas y
+ventas nuevas y nunca la post-venta; lo que corta la post-venta es solo el nivel "todo" del kill-switch.
+
 ### RNF-12 — Zod en todos los bordes
 
 Configuración de la cuenta, variables de entorno del sync, bodies de salida (`.strict()`) y respuestas (tolerantes
@@ -1346,12 +1365,13 @@ fichas de las decisiones firmadas conservan todas sus opciones como registro y m
 | D-TBO-03 | **CERRADA, 2026-09-25** | **(A)** La cuenta TBO del consolidador vive en la bóveda de su nodo y se hereda a su red; sin fallback a variables de entorno de plataforma; las cuentas propias de agencias quedan deshabilitadas hasta que responda Q-77 | RF-23, RF-36 CA 1, RF-37; D-TBO-38. `tbo-hotels` no entra en `PLATFORM_DEFAULT_HOTEL_PROVIDERS` y no hay variables de venta `TBO_*` en el despliegue (las `TBO_SYNC_*` del catálogo son de D-TBO-04)                                                            |
 | D-TBO-06 | **CERRADA, 2026-09-25** | **(A)** Generalizar la vertical: contrato neutral Zod en `packages/canonical`, puertos en `packages/domain` y `HotelProviderRegistry` espejo del de vuelos                                                                 | RF-35, RF-36, F3. **Con un requisito explícito del founder: "me tiene que mostrar de dónde es"** → RF-40: cada tarifa de la búsqueda combinada lleva su proveedor y la web lo pinta con la política de divulgación que ya existe para vuelos, sin reglas nuevas |
 | D-TBO-07 | **CERRADA, 2026-09-25** | **(A)** Intent `pending` con `BookingReferenceId` antes del Book, por una API pública de intent en `OrdersService`                                                                                                         | RF-19 a RF-29, F4                                                                                                                                                                                                                                               |
+| D-TBO-18 | **CERRADA, 2026-09-28** | **(A)** Opt-in por tenant, encendido y apagado por el superadmin desde el panel de la plataforma (para todos los tenants o para un tenant y su red, con excepciones por tenant), no por variable de entorno                | RF-36 CA 5 y 6; RNF-11. Tabla `provider_enablement` (0048), para todo proveedor de vuelos y hoteles; `*_PROVIDERS_OPT_IN` quedan de legado y `PROVIDERS_DISABLED` de emergencia. [09](./09-plan-implementacion.md) PR-8.2 enciende el piloto desde el panel     |
 
-**Las otras 34 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
-otra cosa.** Son D-TBO-01, D-TBO-04, D-TBO-05 y D-TBO-08 a D-TBO-38; así lo pidió el founder el mismo 2026-09-25. Todas
-tienen la recomendada en (A). Cambiar una después de que empezó el PR que la aplica cuesta el retrabajo que dice su
-línea "Bloquea"; las fechas hasta las que se puede cambiar sin retrabajo están en [09](./09-plan-implementacion.md)
-§18.
+**Las otras 33 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
+otra cosa.** Son D-TBO-01, D-TBO-04, D-TBO-05, D-TBO-08 a D-TBO-17 y D-TBO-19 a D-TBO-38; así lo pidió el founder el
+mismo 2026-09-25. Todas tienen la recomendada en (A). Cambiar una después de que empezó el PR que la aplica cuesta el
+retrabajo que dice su línea "Bloquea"; las fechas hasta las que se puede cambiar sin retrabajo están en
+[09](./09-plan-implementacion.md) §18.
 
 **Punto abierto que deja RF-40** (no es una decisión D-TBO, porque afecta igual a vuelos): el aviso de proveedor
 degradado nombra al proveedor aunque la divulgación esté en oculto, en vuelos hoy y en hoteles por copia (RF-40
@@ -1394,7 +1414,7 @@ Si TBO objeta alguna en la verificación de portal, el cambio es el que describe
 | D-TBO-15 | ¿Qué pasa si TBO cotiza en otra moneda?                         | Puerta de moneda, sin conversión                                   | RF-07, RF-13                 | Abierta; se aplica (A)                                 |
 | D-TBO-16 | ¿Dónde aplica el precio mínimo de TBO?                          | En todo canal                                                      | RF-12                        | Abierta; se aplica (A)                                 |
 | D-TBO-17 | ¿Cuántos hoteles, cuánta espera y a qué ritmo?                  | 100 códigos, 10 s, 5 QPS                                           | RF-05, RF-14, RNF-01, RNF-02 | Abierta; se aplica (A)                                 |
-| D-TBO-18 | ¿En qué búsquedas se consulta TBO?                              | Opt-in hasta conocer el costo por búsqueda                         | RF-36                        | Abierta; se aplica (A)                                 |
+| D-TBO-18 | ¿En qué búsquedas se consulta TBO?                              | Opt-in hasta conocer el costo por búsqueda                         | RF-36                        | **CERRADA 2026-09-28: (A)**, encendido por superadmin  |
 | D-TBO-19 | ¿Cuándo ve el vendedor las políticas de cancelación?            | Al abrir un hotel, "sujetas a confirmación"                        | RF-05, RF-11                 | Abierta; se aplica (A)                                 |
 | D-TBO-20 | ¿Qué pasa si el precio cambia antes de reservar?                | Revalidar siempre; si baja, avisar                                 | RF-15, RF-20                 | Abierta; se aplica (A)                                 |
 | D-TBO-21 | ¿Cómo se cobra y se controla el crédito `Limit`?                | Retención antes del Book y límite por sub-agencia                  | RF-23                        | Abierta; se aplica (A)                                 |
@@ -1746,14 +1766,66 @@ TBO recomienda hasta 100 códigos por llamada (p. 10), un timeout de Search de 5
 
 #### D-TBO-18 — ¿En qué búsquedas se consulta TBO?
 
+**Estado: CERRADA el 2026-09-28 con la opción (A), encendida por el superadmin.** El founder: "quiero que sea del
+superadmin que lo active para un tenant o todos, se pueda deshabilitar para algún si es necesario". TBO sigue siendo
+`opt-in` mientras no se sepa si hay costo por búsqueda; lo que cambia es quién lo enciende. Hasta ese día era la
+variable `HOTEL_PROVIDERS_OPT_IN=tbo-hotels@<tenantId>`, y cada alta o baja exigía redesplegar.
+
 TBO no documenta costo por búsqueda ni límite de búsquedas por reserva ([06](./06-seams-integracion-repo.md) §9 H10).
 Sabre quedó en `always` con un comentario que pide `opt-in`, y [06](./06-seams-integracion-repo.md) pide no repetir
 esa divergencia.
 
-- **(A) Recomendada. Opt-in por tenant hasta que TBO confirme que no hay costo por búsqueda ni límite de
-  look-to-book; después, en toda búsqueda.** Solo los tenants habilitados ven TBO las primeras semanas.
+- **(A) Recomendada y elegida el 2026-09-28. Opt-in por tenant hasta que TBO confirme que no hay costo por búsqueda ni
+  límite de look-to-book; después, en toda búsqueda.** Solo los tenants habilitados ven TBO las primeras semanas. Al
+  elegirla, el founder fijó quién la opera: el superadmin, desde el panel de la plataforma, no una variable de entorno.
 - **(B) En toda búsqueda desde el día 1.** Consecuencias: si hay costo por búsqueda, se descubre en la factura.
 - **(C) Solo como respaldo, cuando Despegar no devuelve resultados.** Consecuencias: TBO nunca compite en precio.
+
+**Cómo se aplica** (VERIFICADO-CODIGO en la rama `feat/tbo-hotels` al 2026-09-28, commits `79a91e0` y `b3e8c35`). Es
+genérico: vale para todos los proveedores de los registries de vuelos y de hoteles, no solo para TBO.
+
+- **Dónde se decide.** Tabla `provider_enablement` (`db/migrations/0048_provider_enablement.sql`): un ajuste global por
+  proveedor (todos los tenants) y ajustes por tenant, cada uno encendido o apagado, con motivo opcional, quién y
+  cuándo. El servidor la lee sin RLS de tenant, porque es configuración de plataforma; solo la escribe un superadmin
+  (policies de escritura con `can_manage_provider_enablement()`).
+- **Estado efectivo de un proveedor para un tenant**, de lo que más manda a lo que menos:
+
+  1. el kill-switch `PROVIDERS_DISABLED` (RNF-11), sin cambios: le gana a todo;
+  2. el ajuste de tenant más cercano en el árbol, el del propio tenant y después el de sus ancestros: encender a un
+     consolidador cubre su red, y una agencia puntual se apaga debajo;
+  3. el ajuste global;
+  4. las variables legado `HOTEL_PROVIDERS_OPT_IN` y `FLIGHT_PROVIDERS_OPT_IN`, que solo encienden y solo cuentan si
+     la base no tiene ningún ajuste de ese proveedor para la cadena del tenant ni global;
+  5. la política del proveedor: `opt-in` apagado; `always` y `fallback` encendidos.
+
+  La regla vive en `apps/api/src/provider-enablement/provider-enablement.policy.ts`; la cadena la lee
+  `provider_enablement_chain()` con el mismo patrón que `provider_disclosure_chain` (0036).
+
+- **Qué ve el vendedor.** Un proveedor apagado por la plataforma sale `skipped` con `skipReason: 'platform-disabled'` y
+  el motivo "Deshabilitado por la plataforma para esta agencia.", distinto del de un `opt-in` que nadie encendió, sin
+  llamada al proveedor ni lectura de la bóveda. PreBook y Book de hoteles, y la revalidación de precio y la creación
+  de una orden de vuelo, responden 400 (`ProviderDisabledByPlatformError`) aunque la oferta venga de una búsqueda
+  anterior al apagado.
+- **La post-venta no se corta** (RF-29): lecturas, cancelación, verificaciones, HCN y conciliación resuelven con la
+  cuenta de la orden sin mirar la habilitación. Solo el nivel "todo" del kill-switch la corta.
+- **Cuándo se nota.** Los registries leen los ajustes con una caché en memoria de 10 s por tenant. Escribir invalida
+  la de la réplica que atendió el cambio; las demás lo ven en 10 s como mucho. Si al vencer la caché la relectura
+  falla, la réplica sigue con la última copia hasta que la base responda, para no encender por error lo que se apagó.
+- **API y panel.** `GET /admin/providers`, `GET /admin/providers/tenants/:tenantId`,
+  `PUT`/`DELETE /admin/providers/:code/global` y `PUT`/`DELETE /admin/providers/:code/tenants/:tenantId`, solo para
+  `superadmin` (`platform_admin` no), con Zod en los bordes. Cada cambio deja un `domain_event`
+  `platform.provider_enablement.updated` con el antes y el después. En `apps/web-b2b`, _Proveedores de la plataforma_
+  (`/admin/plataforma/proveedores`): por proveedor, el interruptor _Todos los tenants_ y las excepciones por tenant
+  (_Heredar_, _Habilitado_, _Deshabilitado_, con motivo y confirmación antes de apagar), con el estado efectivo y su
+  origen; y los proveedores de cada agencia en su detalle (`/admin/tenants/<id>`).
+- **Legado.** Las variables siguen encendiendo lo que encendían el día del despliegue, para no apagar el stack de
+  certificación ni los despliegues actuales, y el panel las muestra como origen "legado". Para retirarlas se pone el
+  ajuste equivalente en el panel y después se quita la entrada de la variable.
+
+**Consecuencias.** PR-8.2 de [09](./09-plan-implementacion.md) enciende el piloto desde el panel, sin redesplegar.
+"Después, en toda búsqueda" es encender el ajuste global cuando responda Q-87, sin tocar código. El stack de
+certificación deja TBO encendido para `tbo-cert` con un ajuste de tenant que pone su seed
+([07](./07-certificacion.md) §7.3).
 
 **Bloquea:** RF-36. → [Q-87](./10-preguntas-para-tbo.md#q-87). **Consolida:** [06](./06-seams-integracion-repo.md) §10 (`callPolicy`).
 
