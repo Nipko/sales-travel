@@ -178,6 +178,7 @@ export interface RoomDistribution {
 /** Por qué un proveedor no aportó tarifas a esta búsqueda. Espejo de `HotelSkipReason`. */
 export type HotelProviderSkipReason =
   | 'opt-in-disabled'
+  | 'platform-disabled'
   | 'fallback-not-needed'
   | 'catalog-empty'
   | 'no-destination-map'

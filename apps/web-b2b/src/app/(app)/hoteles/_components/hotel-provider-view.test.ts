@@ -62,9 +62,20 @@ describe('degradedProviders — el aviso de resultados incompletos', () => {
       reason: 'Una parte de sus hoteles no respondió.',
     },
     { code: 'apagado-hotels', status: 'skipped', count: 0, skipReason: 'opt-in-disabled' },
+    {
+      code: 'plataforma-hotels',
+      status: 'skipped',
+      count: 0,
+      skipReason: 'platform-disabled',
+      reason: 'Deshabilitado por la plataforma para esta agencia.',
+    },
     { code: 'respaldo-hotels', status: 'skipped', count: 0, skipReason: 'fallback-not-needed' },
     { code: 'sin-cuenta-hotels', status: 'unavailable', count: 0 },
   ];
+
+  it('lo que apagó la plataforma para la agencia no es un faltante de esta búsqueda', () => {
+    expect(degradedProviders(parte).map((p) => p.code)).not.toContain('plataforma-hotels');
+  });
 
   it('avisa lo que falta por ESTA búsqueda: fallos, omisiones, respuestas parciales y descartes', () => {
     expect(degradedProviders(parte).map((p) => p.code)).toEqual([
@@ -144,5 +155,29 @@ describe('emptyResultsView — U-08, sin disponibilidad', () => {
         'Tu agencia no tiene proveedores de hoteles activos.',
       );
     }
+  });
+
+  it('si los apagó la plataforma, no manda a buscar un interruptor en Proveedores (GDS)', () => {
+    const view = emptyResultsView([
+      { code: 'tbo-hotels', status: 'skipped', count: 0, skipReason: 'platform-disabled' },
+      { code: 'despegar-hotels', status: 'skipped', count: 0, skipReason: 'platform-disabled' },
+    ]);
+    expect(view.title).toBe('Tu agencia no tiene proveedores de hoteles activos.');
+    expect(view.hint).toMatch(/La plataforma los deshabilitó/);
+    expect(view.hint).not.toMatch(/Proveedores \(GDS\)/);
+  });
+
+  it('con apagados por la plataforma y sin cuenta a la vez, dice qué resuelve cada quien', () => {
+    const view = emptyResultsView([
+      { code: 'tbo-hotels', status: 'skipped', count: 0, skipReason: 'platform-disabled' },
+      {
+        code: 'despegar-hotels',
+        status: 'unavailable',
+        count: 0,
+        unavailableReason: 'no-credentials',
+      },
+    ]);
+    expect(view.hint).toMatch(/Proveedores \(GDS\)/);
+    expect(view.hint).toMatch(/sólo los reactiva la plataforma/);
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { Button } from './button';
 
@@ -81,6 +81,7 @@ export function Dialog({
   className?: string;
 }) {
   const panelRef = useModalBehavior(open, onClose);
+  const descriptionId = useId();
   if (!open) return null;
 
   return (
@@ -91,6 +92,9 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        // En una confirmación, la descripción es lo que dice qué se corta: el lector de pantalla
+        // tiene que leerla al abrir, no sólo el título.
+        aria-describedby={description ? descriptionId : undefined}
         className={cn(
           'relative w-full max-w-md animate-scale-up rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-xl)]',
           className,
@@ -99,7 +103,9 @@ export function Dialog({
         <div className="mb-4 pr-8">
           <h2 className="text-base font-semibold text-[var(--color-fg)]">{title}</h2>
           {description ? (
-            <p className="mt-1 text-xs text-[var(--color-fg-muted)]">{description}</p>
+            <p id={descriptionId} className="mt-1 text-xs text-[var(--color-fg-muted)]">
+              {description}
+            </p>
           ) : null}
         </div>
         <button

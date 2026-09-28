@@ -1,6 +1,7 @@
 'use client';
 
 import { Building2, Plus, Search, X } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Label } from '../../../../components/ui/label';
@@ -204,9 +205,13 @@ export default function AdminTenantsPage() {
                         <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
                           <Building2 className="size-4" />
                         </div>
-                        <span className="text-sm font-medium text-[var(--color-fg)]">
+                        <Link
+                          href={`/admin/tenants/${tenant.id}`}
+                          className="rounded text-sm font-medium text-[var(--color-fg)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                        >
                           {tenant.name}
-                        </span>
+                          <span className="sr-only"> — ver proveedores</span>
+                        </Link>
                       </div>
                     </td>
                     <td className="px-4 py-3">

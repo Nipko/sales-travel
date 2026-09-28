@@ -10,6 +10,7 @@ import {
   Lock,
   MapPin,
   Network,
+  Plug,
   Settings,
   Shield,
   Ticket,
@@ -58,4 +59,7 @@ export const accountNav: NavItem[] = [
 
 export const superAdminNav: NavItem[] = [
   { label: 'Gestión de Agencias', href: '/admin/tenants', icon: Building2 },
+  // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
+  // la de las credenciales de la agencia (adminNav).
+  { label: 'Proveedores de la plataforma', href: '/admin/plataforma/proveedores', icon: Plug },
 ];
