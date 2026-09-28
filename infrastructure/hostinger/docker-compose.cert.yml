@@ -131,8 +131,10 @@ services:
       PROVIDER_PAYLOADS_RETENTION_DAYS: ${PROVIDER_PAYLOADS_RETENTION_DAYS:-30}
       # Kill-switch de TBO en este stack (`tbo-hotels` o `tbo-hotels:ventas`). Vacío = nada apagado.
       PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
-      # TBO es `opt-in` (D-TBO-18 A); aquí se enciende para todos los tenants porque en esta base
-      # sólo existe el de certificación, y así no depende de un id que genera el seed.
+      # TBO es `opt-in` (D-TBO-18 A). Quien lo enciende es el ajuste de `provider_enablement` (0048)
+      # que pone el seed para el tenant de certificación. Esta variable es LEGADO: sólo cuenta para
+      # un tenant al que no alcanza ningún ajuste de TBO (ni global ni de su cadena); se deja como
+      # red por si el seed no corrió.
       HOTEL_PROVIDERS_OPT_IN: tbo-hotels
       FLIGHT_PROVIDERS_OPT_IN: ''
       # Dos capas más, además de no tener credenciales: ningún proveedor usa las de plataforma, y
