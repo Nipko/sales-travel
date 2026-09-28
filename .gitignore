@@ -109,3 +109,9 @@ tmp/
 # ya pasado por las guardas, se copia a docs/tbo/evidence/cert/.
 .env.tbo
 .tbo-cert/
+
+# Documentos originales de TBO (especificación, certificación y colección Postman): son del proveedor y no se
+# versionan (decisión del founder, 2026-09-28). Se verifican con los SHA-256 de docs/tbo/00-fuentes.md §1.
+docs/tbo/*.pdf
+docs/tbo/*.docx
+docs/tbo/*.postman_collection*.json
