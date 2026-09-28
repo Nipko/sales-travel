@@ -29,7 +29,20 @@ jobs:
           ssh -p "$SSH_PORT" "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" bash -s <<'BASH'
             set -euo pipefail
             cd /opt/sales-travel
-            set -a; source .env; set +a
+
+            # No se hace `source .env`: deploy.yml lo escribe sin comillas, y un valor con espacios
+            # (una contraseña de aplicación de correo, por ejemplo) se ejecuta como comando y el job
+            # sale con 127 antes de sincronizar. Se lee sólo la clave que usa este job, literal.
+            env_get() {
+              local v
+              v=$(grep -m1 -E "^$1=" .env | cut -d= -f2-) || true
+              case "$v" in
+                \'*\') v=${v#\'}; v=${v%\'} ;;
+                \"*\") v=${v#\"}; v=${v%\"} ;;
+              esac
+              printf '%s' "$v"
+            }
+            POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
 
             docker pull ghcr.io/nipko/sales-travel-sync-airports:latest
 
