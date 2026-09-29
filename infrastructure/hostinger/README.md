@@ -230,34 +230,123 @@ variable y desplegar.
 
 ---
 
-## 7. Crear el primer superadmin
+## 7. El superadmin
 
-Después del primer deploy verde, crear tu cuenta superadmin con la imagen
-`seed-superadmin` (one-shot, idempotente). Como `deploy` en el VPS:
+El superadmin es un usuario de Planetour, el tenant `platform` de tipo `platform` y raíz de la red. Ve y ajusta toda la
+red, pero **no vende**: las búsquedas, reservas, órdenes y carteras le responden 403 `PLATFORM_ROLE_CANNOT_SELL`, en
+cualquier nodo donde también sea miembro. Planetour vende a nombre propio con **sucursales**: agencias hijas de
+Planetour, con sus propios vendedores.
+
+Lo asigna la imagen `seed-superadmin`. Es one-shot e idempotente, y su comportamiento y sus negativas están en
+[`tools/seed-superadmin`](../../tools/seed-superadmin/README.md). En resumen:
+
+- Promueve `platform` a tipo `platform` si hace falta, sin renombrarlo.
+- Cambia a `superadmin` la membership que tu cuenta tiene en `platform`.
+- No toca tu contraseña.
+- Se niega si `platform` cuelga de otro nodo o si la base ya tiene otra plataforma.
+
+**Antes:** el despliegue de `main` con las migraciones 0049 a 0051 tiene que estar verde. La imagen tiene que ser la del
+mismo despliegue (`IMAGE_TAG`). No uses una `seed-superadmin` anterior a este cambio: rota la contraseña y, sin
+`SUPERADMIN_TENANT_NAME`, renombra "Planetour S.A.S" a "Platform".
+
+### 7.1 En producción, con tu cuenta actual
+
+Hoy tu cuenta es `consolidator_admin` de `platform`. Como `deploy` en el VPS, cambiando sólo el correo:
 
 ```bash
 cd /opt/sales-travel
+TAG=$(sed -n 's/^IMAGE_TAG=//p' .env)
 # Sin `source .env`: un valor con espacios (p. ej. MAIL_PASS) se ejecutaría como comando.
-export POSTGRES_ADMIN_PASSWORD="$(grep -m1 '^POSTGRES_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+# `-e PGPASSWORD` sin valor lo toma del entorno: la contraseña no queda en la línea de comandos, que
+# cualquier usuario del VPS ve en `ps`, ni en el historial de la shell.
+export PGPASSWORD="$(grep -m1 '^POSTGRES_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
 
 docker run --rm --network sales-travel_internal \
   -e PGHOST=postgres \
   -e PGPORT=5432 \
   -e PGUSER=postgres \
-  -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" \
+  -e PGPASSWORD \
   -e PGDATABASE=sales_travel \
-  -e SUPERADMIN_EMAIL="nirlevin89@gmail.com" \
-  -e SUPERADMIN_PASSWORD="<una-contraseña-fuerte>" \
-  -e SUPERADMIN_NAME="Nir Levin" \
-  ghcr.io/nipko/sales-travel-seed-superadmin:latest
+  -e SUPERADMIN_TENANT_SLUG=platform \
+  -e SUPERADMIN_EMAIL='<el correo con el que entras hoy>' \
+  "ghcr.io/nipko/sales-travel-seed-superadmin:${TAG}"
+
+unset PGPASSWORD
 ```
 
-Output esperado: `{"ok":true,"action":"created","userId":"...","tenantId":"...","tenantSlug":"platform","email":"..."}`.
+No se pasa `SUPERADMIN_PASSWORD`. Si el correo tiene un error, el seed no crea una cuenta nueva: sale con
+`SUPERADMIN_PASSWORD:required_to_create_user` y no escribe nada.
 
-Vars opcionales (defaults): `SUPERADMIN_TENANT_SLUG=platform`, `SUPERADMIN_TENANT_NAME=Platform`,
-`SUPERADMIN_TENANT_COUNTRY=CO`, `SUPERADMIN_TENANT_CURRENCY=USD`.
+Salida esperada: sale con `0` e imprime una sola línea, que aquí se muestra formateada.
 
-Re-correrlo con el mismo email **rota la contraseña** (idempotente).
+```json
+{
+  "ok": true,
+  "tenantId": "…",
+  "tenantSlug": "platform",
+  "tenant": "unchanged",
+  "previousTenantType": null,
+  "tenantStatus": "active",
+  "userId": "…",
+  "user": "existing",
+  "userStatus": "active",
+  "membership": "updated",
+  "previousRole": "consolidator_admin",
+  "passwordIgnored": false
+}
+```
+
+- `"previousRole"` distinto de `"consolidator_admin"` (por ejemplo `null`) significa que el correo es de **otra** cuenta
+  que ya existía, y ahora esa cuenta es superadmin. Compruébalo con la primera consulta de abajo, que muestra el correo.
+  Si no es el tuyo, no sigas: devuélvele a esa membership lo que dice `before` en su evento `MembershipRoleChanged` (la
+  segunda consulta), o bórrala si `before` es `null`.
+- `"tenant": "promoted"` en lugar de `"unchanged"` significa que 0049 no había promovido `platform` y lo hizo el seed.
+- Correrlo otra vez da `"membership": "unchanged"` y no escribe nada.
+- Si sale con `1`, la línea trae el motivo (`reason` o `issues`) y la base queda como estaba.
+
+Al entrar al panel, pide activar MFA si tu cuenta no lo tiene: es obligatorio para el superadmin.
+
+Para comprobarlo:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT u.email, t.slug, t.tenant_type, m.role, m.status FROM memberships m JOIN tenants t ON t.id = m.tenant_id JOIN users u ON u.id = m.user_id WHERE m.role = 'superadmin'"
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT occurred_at, event_type, payload FROM domain_events WHERE payload->>'source' = 'seed-superadmin' ORDER BY occurred_at"
+```
+
+**Después:**
+
+- Cuelga `amazon-minimalist` de Planetour. Hoy es una raíz suelta y no hereda las credenciales de Planetour; la
+  migración 0050 lo avisa con un `WARNING` en el log de `postgres`. Se hace como superadmin desde _Gestión de
+  Agencias_ → **Mover bajo Planetour S.A.S** (por API: `POST /admin/tenants/<id de amazon-minimalist>/move` con
+  `{"parentTenantId": "<tenantId de la salida>"}`).
+- Crea las sucursales de Planetour y sus vendedores.
+
+El paso a paso completo, con las comprobaciones, está en el runbook de
+[`docs/platform/13`](../../docs/platform/13-validacion-modelo-red.md#5-runbook-del-vps) §5.
+
+### 7.2 Con una cuenta nueva
+
+Si el correo no tiene cuenta, el seed la crea. Hacen falta dos variables más, y la contraseña se escribe sin eco en
+lugar de ir en la línea de comandos. `TAG` y `PGPASSWORD` se preparan igual que en §7.1. En una base sin plataforma
+hace falta además `SUPERADMIN_TENANT_NAME`, el nombre con el que se crea.
+
+```bash
+read -rsp 'Contraseña del superadmin (12+ caracteres): ' SUPERADMIN_PASSWORD && echo
+export SUPERADMIN_PASSWORD
+docker run --rm --network sales-travel_internal \
+  -e PGHOST=postgres -e PGPORT=5432 -e PGUSER=postgres -e PGPASSWORD -e PGDATABASE=sales_travel \
+  -e SUPERADMIN_TENANT_SLUG=platform \
+  -e SUPERADMIN_EMAIL='<correo>' \
+  -e SUPERADMIN_NAME='<nombre y apellido>' \
+  -e SUPERADMIN_PASSWORD \
+  "ghcr.io/nipko/sales-travel-seed-superadmin:${TAG}"
+unset SUPERADMIN_PASSWORD PGPASSWORD
+```
+
+El seed **nunca cambia la contraseña de una cuenta que ya existe**: si llega `SUPERADMIN_PASSWORD`, la ignora y lo dice
+con `"passwordIgnored": true`. Para cambiar una contraseña está _Olvidé mi contraseña_.
 
 ---
 

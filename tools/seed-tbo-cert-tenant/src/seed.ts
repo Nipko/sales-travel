@@ -40,13 +40,31 @@ const MARKUP_MARKER = Object.freeze({ seed: 'seed-tbo-cert-tenant' });
 export const SEED_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 const WALLET_REFERENCE = 'seed-tbo-cert-tenant';
 
+/**
+ * La raíz `platform` que el seed crea si la base no tiene ninguna, como la del stack, que nace vacía.
+ * Desde 0050 sólo la plataforma es raíz y hay una sola por base (D4 A): si ya existe, se usa esa.
+ */
+export const CERT_PLATFORM_SLUG = 'tbo-cert-platform';
+const CERT_PLATFORM_NAME = 'Sales-Travel Certification Platform';
+
 export type Change = 'created' | 'updated' | 'unchanged';
+
+/**
+ * Dónde quedó el tenant: `platform` si cuelga de la raíz; `legacy-root` si es el consolidador raíz de
+ * una versión anterior del seed y la base todavía no deja moverlo (reservas abiertas pagadas con
+ * cartera, STH02 de 0051). El despliegue siguiente lo vuelve a intentar.
+ */
+export type TenantPlacement = 'platform' | 'legacy-root';
 
 /** Lo que imprime el contenedor. Ni contraseñas ni credenciales: ids, estados y contadores. */
 export interface SeedReport {
+  /** La raíz `platform` de la base, de la que cuelga el tenant (D4 A). */
+  readonly platformTenantId: string;
+  readonly platform: Change;
   readonly tenantId: string;
   readonly tenantSlug: string;
   readonly tenant: Change;
+  readonly placement: TenantPlacement;
   readonly userId: string;
   readonly vendedorEmail: string;
   readonly vendedor: Change;
@@ -135,19 +153,93 @@ interface TenantRow {
 }
 
 /**
- * Consolidador raíz y sin hijos: el factory de TBO sólo opera cuentas de plataforma o de
- * consolidador (D-TBO-03 A; apps/api/src/providers-tbo/tbo-hotels.factory.ts), y sin hijos nadie
- * más hereda la cuenta de test.
+ * La raíz `platform` de la base: la que haya o, en una base sin ninguna, una propia del stack.
+ *
+ * Buscar o crear sin carrera: si otra alta se cruza, el índice único de 0050 decide y
+ * `ON CONFLICT DO NOTHING` no aborta la transacción del seed. La fila queda `FOR SHARE`: nadie le
+ * cambia el tipo mientras se siembra.
+ */
+async function upsertPlatformRoot(
+  db: Queryable,
+  tenant: SeedSettings['tenant'],
+): Promise<{ id: string; change: Change }> {
+  const platformSql = `SELECT id FROM tenants WHERE tenant_type = 'platform' FOR SHARE`;
+  const existing = await one<{ id: string }>(db, platformSql, []);
+  if (existing !== undefined) return { id: existing.id, change: 'unchanged' };
+
+  const created = await one<{ id: string }>(
+    db,
+    `INSERT INTO tenants (slug, name, country_code, default_currency, default_language, tenant_type)
+     VALUES ($1, $2, $3, $4, 'es', 'platform')
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [CERT_PLATFORM_SLUG, CERT_PLATFORM_NAME, tenant.countryCode, tenant.currency],
+  );
+  if (created !== undefined) return { id: created.id, change: 'created' };
+
+  const raced = await one<{ id: string }>(db, platformSql, []);
+  if (raced !== undefined) return { id: raced.id, change: 'unchanged' };
+  throw new SeedRefusedError(
+    'platform_slug_taken',
+    `la base no tiene raíz platform y el slug '${CERT_PLATFORM_SLUG}' es de otro tenant: libéralo o crea la raíz antes de sembrar`,
+  );
+}
+
+const MOVE_SAVEPOINT = 'seed_move_under_platform';
+
+/**
+ * Un consolidador raíz de una versión anterior del seed (antes de 0050 nacía sin padre) se cuelga
+ * de la plataforma con `move_tenant_subtree` (0051), que recalcula su `path` y deja el evento.
+ *
+ * Si tiene reservas abiertas pagadas con cartera (STH02), la base no lo deja mover y el seed no lo
+ * fuerza: lo deja como raíz y sigue. En el stack no cambia nada de lo que usa TBO, porque la
+ * plataforma no tiene cuentas, reglas ni marca que heredarle y el tenant sigue siendo un consolidador
+ * con su cuenta propia; y un despliegue en rojo mientras TBO tiene reservas de prueba abiertas
+ * frenaría la certificación. El informe lo dice (`placement: 'legacy-root'`) y el despliegue
+ * siguiente lo reintenta. Cualquier otra negativa de la jerarquía (STH01) sí detiene el seed.
+ *
+ * El `SAVEPOINT` deja la transacción del seed usable después de la negativa.
+ */
+async function moveUnderPlatform(
+  db: Queryable,
+  tenantId: string,
+  platformId: string,
+): Promise<TenantPlacement> {
+  await db.query(`SAVEPOINT ${MOVE_SAVEPOINT}`);
+  try {
+    await db.query('SELECT move_tenant_subtree($1::uuid, $2::uuid)', [tenantId, platformId]);
+  } catch (err) {
+    await db.query(`ROLLBACK TO SAVEPOINT ${MOVE_SAVEPOINT}`);
+    const code = (err as { code?: unknown }).code;
+    if (code === 'STH02') return 'legacy-root';
+    if (code === 'STH01') {
+      throw new SeedRefusedError(
+        'tenant_move_blocked',
+        `el tenant de certificación es un consolidador raíz de una versión anterior del seed y no se pudo colgar de la plataforma: ${(err as Error).message}`,
+      );
+    }
+    throw err;
+  }
+  await db.query(`RELEASE SAVEPOINT ${MOVE_SAVEPOINT}`);
+  return 'platform';
+}
+
+/**
+ * Consolidador hijo de la plataforma y sin hijos: el factory de TBO sólo opera cuentas de plataforma
+ * o de consolidador (D-TBO-03 A; apps/api/src/providers-tbo/tbo-hotels.factory.ts), la matriz D4
+ * (0050) cuelga los consolidadores de la plataforma, y sin hijos nadie más hereda la cuenta de test.
+ * El vendedor es del consolidador: la plataforma no vende.
  *
  * Con su contacto de soporte (07 §7.3.8): el Book lo toma de `resolve_tenant_branding` y, sin
  * email o sin teléfono internacional, rechaza la reserva antes de abrir la orden (D-TBO-23 A;
- * apps/api/src/hotels/hotel-booking-contact.ts). Un tenant raíz no tiene de quién heredarlo, y el
- * `vendedor` no puede cargarlo porque _Mi Agencia_ es de administradores.
+ * apps/api/src/hotels/hotel-booking-contact.ts). La plataforma del stack no tiene contacto que
+ * heredarle, y el `vendedor` no puede cargarlo porque _Mi Agencia_ es de administradores.
  */
 async function upsertTenant(
   db: Queryable,
   tenant: SeedSettings['tenant'],
-): Promise<{ id: string; change: Change }> {
+  platformId: string,
+): Promise<{ id: string; change: Change; placement: TenantPlacement }> {
   const row = await one<TenantRow>(
     db,
     `SELECT id, name, country_code, default_currency, support_email, support_phone, tenant_type,
@@ -159,26 +251,29 @@ async function upsertTenant(
     const created = await one<{ id: string }>(
       db,
       `INSERT INTO tenants
-         (slug, name, country_code, default_currency, default_language, tenant_type, support_email,
-          support_phone)
-       VALUES ($1, $2, $3, $4, 'es', 'consolidator', $5, $6)
+         (slug, name, country_code, default_currency, default_language, tenant_type, parent_tenant_id,
+          support_email, support_phone)
+       VALUES ($1, $2, $3, $4, 'es', 'consolidator', $5, $6, $7)
        RETURNING id`,
       [
         tenant.slug,
         tenant.name,
         tenant.countryCode,
         tenant.currency,
+        platformId,
         tenant.supportEmail,
         tenant.supportPhone,
       ],
     );
-    return { id: created!.id, change: 'created' };
+    return { id: created!.id, change: 'created', placement: 'platform' };
   }
 
-  if (row.tenant_type !== 'consolidator' || row.parent_tenant_id !== null) {
+  const legacyRoot = row.parent_tenant_id === null;
+  const underPlatform = legacyRoot || row.parent_tenant_id === platformId;
+  if (row.tenant_type !== 'consolidator' || !underPlatform) {
     throw new SeedRefusedError(
       'tenant_shape',
-      `el tenant '${tenant.slug}' ya existe como '${row.tenant_type}'${row.parent_tenant_id === null ? '' : ' con padre'}: la cuenta de TBO sólo opera desde un consolidador raíz`,
+      `el tenant '${tenant.slug}' ya existe como '${row.tenant_type}'${underPlatform ? '' : ' colgado de otro nodo'}: la cuenta de TBO sólo opera desde un consolidador de la plataforma`,
     );
   }
   const children = await count(
@@ -192,6 +287,8 @@ async function upsertTenant(
       `el tenant '${tenant.slug}' tiene ${children} nodo(s) hijo(s): el de certificación va sin red (docs/tbo/07 §7.3.1)`,
     );
   }
+  const placement = legacyRoot ? await moveUnderPlatform(db, row.id, platformId) : 'platform';
+  const moved = legacyRoot && placement === 'platform';
 
   const same =
     row.name === tenant.name &&
@@ -200,7 +297,7 @@ async function upsertTenant(
     row.support_email === tenant.supportEmail &&
     row.support_phone === tenant.supportPhone &&
     row.status === 'active';
-  if (same) return { id: row.id, change: 'unchanged' };
+  if (same) return { id: row.id, change: moved ? 'updated' : 'unchanged', placement };
   await db.query(
     `UPDATE tenants
         SET name = $2, country_code = $3, default_currency = $4, support_email = $5,
@@ -215,7 +312,7 @@ async function upsertTenant(
       tenant.supportPhone,
     ],
   );
-  return { id: row.id, change: 'updated' };
+  return { id: row.id, change: 'updated', placement };
 }
 
 interface UserRow {
@@ -686,7 +783,8 @@ export async function runSeed(
   await db.query('BEGIN');
   try {
     await assertTarget(db, settings);
-    const tenant = await upsertTenant(db, settings.tenant);
+    const platform = await upsertPlatformRoot(db, settings.tenant);
+    const tenant = await upsertTenant(db, settings.tenant, platform.id);
     // Contexto de las políticas RLS para lo que sigue. El superusuario no las necesita; se fija
     // igual para que las filas pasen el `WITH CHECK` si el seed corriera con otro rol.
     await db.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [tenant.id]);
@@ -699,9 +797,12 @@ export async function runSeed(
     const customers = await seedCustomers(db, tenant.id, settings.credentialsKey);
     await db.query('COMMIT');
     return {
+      platformTenantId: platform.id,
+      platform: platform.change,
       tenantId: tenant.id,
       tenantSlug: settings.tenant.slug,
       tenant: tenant.change,
+      placement: tenant.placement,
       userId: vendedor.id,
       vendedorEmail: settings.vendedor.email,
       vendedor: vendedor.change,

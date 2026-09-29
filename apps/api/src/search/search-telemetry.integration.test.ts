@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 import { SearchTelemetryService } from './search-telemetry.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * El contrato entre el ESCRITOR de `search_logs` y la función de cuota, contra Postgres real.
@@ -76,9 +77,9 @@ d('search_logs: una fila por proveedor, una búsqueda en la cuota', () => {
     database.onModuleInit();
     telemetry = new SearchTelemetryService(database);
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1::text, $1::text, 'CO', 'COP', 'consolidator') RETURNING id`,
-      [`stl-${sfx}`],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1::text, $1::text, 'CO', 'COP', 'consolidator', $2) RETURNING id`,
+      [`stl-${sfx}`, await platformRootId(pool)],
     );
     tenantId = rows[0]!.id;
   });

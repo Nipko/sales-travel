@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Valida la RLS jerárquica de memberships (migración 0020) invocando la FUNCIÓN REAL
@@ -30,7 +31,7 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text,$1::text,'CO','COP',$2,$3) RETURNING id`,
-      [slug, type, parent],
+      [slug, type, parent ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -71,7 +72,8 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
     // 0025_role_escalation_guard un rol global sólo puede existir sobre tenant_type
     // 'platform'. Es el invariante que impide que un admin de agencia se fabrique un
     // superadmin dentro de su propio nodo y obtenga acceso a toda la plataforma.
-    platform = await tenant(`p-${sfx}`, 'platform', null);
+    // La raíz platform es única por base (0050): se comparte con los demás tests y no se borra.
+    platform = await platformRootId(pool);
     cons = await tenant(`c-${sfx}`, 'consolidator', null);
     agency = await tenant(`a-${sfx}`, 'agency', cons);
     sub = await tenant(`s-${sfx}`, 'subagency', agency);
@@ -87,7 +89,7 @@ d('hierarchical memberships RLS (can_read_membership)', () => {
   });
 
   afterAll(async () => {
-    for (const id of [sub, agency, cons, other, platform]) {
+    for (const id of [sub, agency, cons, other]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
     await pool.query('DELETE FROM users WHERE id = ANY($1)', [[agencyAdmin, superadmin, vendedor]]);

@@ -9,6 +9,7 @@ import type { FlightProviderRegistry } from '../providers/flight-provider.regist
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { BookingHoldRejectedError } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Retención antes del Book contra Postgres real (docs/tbo/09 PR-4.8; 08 RF-23 CA 1 y 2).
@@ -51,7 +52,7 @@ d('retención de cartera sobre el intent contra Postgres (0007 + 0039 + 0042)', 
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'USD', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

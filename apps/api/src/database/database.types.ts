@@ -27,9 +27,14 @@ export interface TenantsTable {
   default_language: Generated<LanguageCode>;
   status: Generated<TenantStatus>;
   // Modelo consolidador (jerarquía B2B2B). path lo mantiene un trigger (ltree → string).
+  // Qué tipo cuelga de cuál lo valida la base (0050, D4 A): raíz sólo 'platform', y una sola;
+  // bajo ella 'consolidator' y 'agency'; bajo un consolidador 'agency'; bajo una agencia
+  // 'subagency'. El padre no se cambia por UPDATE: se mueve con move_tenant_subtree (0051).
   parent_tenant_id: string | null;
   tenant_type: Generated<TenantType>;
   path: Generated<string>;
+  /** 0050: sucursal de Planetour (agencia hija directa de la plataforma, con vendedores propios). */
+  is_branch: Generated<boolean>;
   // Branding heredable por la jerarquía (0030). NULL = hereda del ancestro más cercano.
   logo_url: string | null;
   favicon_url: string | null;

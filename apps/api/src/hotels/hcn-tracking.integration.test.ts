@@ -14,6 +14,7 @@ import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.a
 import { HCN_READS } from './hcn-plan.js';
 import { HcnTrackingService } from './hcn-tracking.service.js';
 import { HcnTrackingStore } from './hcn-tracking.store.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * El seguimiento del HCN contra Postgres real (docs/tbo/09 PR-5.4; 08 RF-27; columnas `hcn_*` y
@@ -66,9 +67,9 @@ d('seguimiento del HCN contra Postgres', () => {
 
   async function crearTenant(slug: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1::text, $1::text, 'CO', 'COP', 'agency') RETURNING id`,
-      [slug],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1::text, $1::text, 'CO', 'COP', 'agency', $2) RETURNING id`,
+      [slug, await platformRootId(pool)],
     );
     return rows[0]!.id;
   }

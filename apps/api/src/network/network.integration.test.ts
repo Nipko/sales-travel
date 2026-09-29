@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Verifica la autorización jerárquica del modelo consolidador (subárbol por `path`),
@@ -19,7 +20,7 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
   let cons: string;
   let agency: string;
   let sub: string;
-  let other: string; // raíz de otra red
+  let other: string; // otra red: hermana bajo la plataforma
   let userId: string;
   let vendedorId: string;
 
@@ -27,7 +28,7 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text,$1::text,'CO','COP',$2,$3) RETURNING id`,
-      [slug, type, parent],
+      [slug, type, parent ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

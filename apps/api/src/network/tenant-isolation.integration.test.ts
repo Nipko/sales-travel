@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Aislamiento cross-tenant REAL, ejercitando la RLS.
@@ -72,9 +73,9 @@ d('aislamiento cross-tenant bajo RLS (como app_user)', () => {
   beforeAll(async () => {
     const mk = async (slug: string): Promise<string> => {
       const { rows } = await admin.query<{ id: string }>(
-        `INSERT INTO tenants (slug, name, country_code, default_currency)
-         VALUES ($1::text,$1::text,'CO','COP') RETURNING id`,
-        [slug],
+        `INSERT INTO tenants (slug, name, country_code, default_currency, parent_tenant_id)
+         VALUES ($1::text,$1::text,'CO','COP',$2) RETURNING id`,
+        [slug, await platformRootId(admin)],
       );
       return rows[0]!.id;
     };

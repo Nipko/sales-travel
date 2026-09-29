@@ -27,6 +27,7 @@ import {
   SabreProviderFactory,
   sabreShopOptionsFromAccountConfig,
 } from './sabre.factory.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /** Valores que NUNCA pueden aparecer en un mensaje de error ni en un log. */
 const EPR = 'EPR-DE-LA-OFICINA';
@@ -684,7 +685,7 @@ d('SabreProviderFactory — jerarquía consolidador → agencia → sub-agencia'
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text,$1::text,'CO','COP',$2,$3) RETURNING id`,
-      [slug, type, parent],
+      [slug, type, parent ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

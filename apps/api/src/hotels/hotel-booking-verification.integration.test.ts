@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { HotelBookingVerificationStore } from './hotel-booking-verification.store.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * El calendario de verificación (migración 0044) y su store contra Postgres real (docs/tbo/09
@@ -62,9 +63,9 @@ d('calendario de verificación de hoteles (0044) contra Postgres', () => {
 
   async function crearTenant(slug: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1::text, $1::text, 'CO', 'COP', 'agency') RETURNING id`,
-      [slug],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1::text, $1::text, 'CO', 'COP', 'agency', $2) RETURNING id`,
+      [slug, await platformRootId(pool)],
     );
     return rows[0]!.id;
   }

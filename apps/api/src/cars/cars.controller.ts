@@ -40,6 +40,7 @@ import {
   type ReleaseBody,
 } from './cars.schemas.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
 @Roles(...SELLING_ROLES)
@@ -80,6 +81,7 @@ export class CarsController {
     return { rates: await this.cars.getRates(tenantId, query) };
   }
 
+  @SalesOperation()
   @Post('search')
   async search(
     @CurrentUser() userId: string | undefined,
@@ -89,6 +91,7 @@ export class CarsController {
     return { cars: await this.cars.getMatrix(tenantId, body) };
   }
 
+  @SalesOperation()
   @Post('selection')
   async selection(
     @CurrentUser() userId: string | undefined,
@@ -98,6 +101,7 @@ export class CarsController {
     return this.cars.getSelection(tenantId, body);
   }
 
+  @SalesOperation()
   @Get('rate-detail')
   async rateDetail(
     @CurrentUser() userId: string | undefined,
@@ -109,6 +113,7 @@ export class CarsController {
 
   // ───────────────────────── Reserva ─────────────────────────
 
+  @SalesOperation()
   @Post('book')
   async book(
     @CurrentUser() userId: string | undefined,
@@ -137,6 +142,7 @@ export class CarsController {
     return this.cars.cancel(tenantId, body);
   }
 
+  @SalesOperation()
   @Post('reservations/release')
   async release(
     @CurrentUser() userId: string | undefined,

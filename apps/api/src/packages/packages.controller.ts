@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, ForbiddenException, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -26,6 +27,7 @@ export class PackagesController {
     private readonly activeTenant: ActiveTenantService,
   ) {}
 
+  @SalesOperation()
   @Post()
   async create(
     @CurrentUser() userId: string | undefined,
@@ -52,6 +54,7 @@ export class PackagesController {
     return { package: serializePackage(pkg), items: items.map(serializeItem) };
   }
 
+  @SalesOperation()
   @Post(':id/items')
   async addItem(
     @CurrentUser() userId: string | undefined,
@@ -63,6 +66,7 @@ export class PackagesController {
     return { package: serializePackage(await this.packages.addItem(tenantId, id, body)) };
   }
 
+  @SalesOperation()
   @Delete(':id/items/:itemId')
   async removeItem(
     @CurrentUser() userId: string | undefined,

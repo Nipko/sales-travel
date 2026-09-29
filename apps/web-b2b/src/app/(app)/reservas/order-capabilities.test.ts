@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SALE_ORDER_CAPABILITIES,
   cancellationInProgress,
+  capabilitiesForViewer,
   supportsOrderCancellation,
   supportsOrderCapability,
   type OrderCapabilities,
@@ -67,5 +69,40 @@ describe('cancelación de hotel en curso (D-TBO-25 A)', () => {
       }),
     ).toBe(true);
     expect(cancellationInProgress(undefined)).toBe(false);
+  });
+});
+
+describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () => {
+  const latam: OrderCapabilities = {
+    retrieve: true,
+    cancel: true,
+    pay: true,
+    services: true,
+    reshop: true,
+  };
+
+  it('quien vende conserva todo, tal cual lo mandó el API', () => {
+    expect(capabilitiesForViewer(latam, true)).toBe(latam);
+  });
+
+  it('el superadmin pierde pagar/emitir, servicios y recotizar; consulta y cancela', () => {
+    const view = capabilitiesForViewer(latam, false);
+    expect(view).toEqual({
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    });
+    expect(latam.pay).toBe(true);
+  });
+
+  it('las de venta son exactamente las que la API marca @SalesOperation en órdenes', () => {
+    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['pay', 'reshop', 'services']);
+  });
+
+  it('sin capabilities sigue fallando cerrada', () => {
+    expect(capabilitiesForViewer(undefined, false)).toBeUndefined();
+    expect(supportsOrderCapability(capabilitiesForViewer(undefined, false), 'pay')).toBe(false);
   });
 });

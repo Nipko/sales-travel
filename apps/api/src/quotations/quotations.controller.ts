@@ -25,6 +25,7 @@ import {
 } from './dto.js';
 import { QuotationsService, type CreateQuotationDto } from './quotations.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
 @Roles(...SELLING_ROLES)
@@ -39,6 +40,7 @@ export class QuotationsController {
   ) {}
 
   /** Envía la cotización por email al cliente (usa el BYO-email del tenant / fallback sistema). */
+  @SalesOperation()
   @Post(':id/send-email')
   @HttpCode(200)
   async sendEmail(
@@ -69,6 +71,7 @@ export class QuotationsController {
     return { sent, to: row.customer_email };
   }
 
+  @SalesOperation()
   @Post()
   async create(
     @CurrentUser() userId: string | undefined,
@@ -97,6 +100,7 @@ export class QuotationsController {
     return { quotation: this.serialize(row) };
   }
 
+  @SalesOperation()
   @Patch(':id/status')
   async updateStatus(
     @CurrentUser() userId: string | undefined,
@@ -110,6 +114,7 @@ export class QuotationsController {
     return { quotation: this.serialize(row) };
   }
 
+  @SalesOperation()
   @Patch(':id/customer')
   async updateCustomer(
     @CurrentUser() userId: string | undefined,

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { foldDisclosure, type DisclosureNode } from './provider-disclosure.policy.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * El recorrido de la jerarquía, contra base de verdad. Requiere la migración 0036; se SALTA
@@ -18,6 +19,7 @@ const d = hasDb ? describe : describe.skip;
 d('provider_disclosure_chain (0036)', () => {
   const pool = new pg.Pool();
   const sfx = randomBytes(4).toString('hex');
+  let plataforma: string;
   let consolidador: string;
   let agencia: string;
   let sub: string;
@@ -27,7 +29,7 @@ d('provider_disclosure_chain (0036)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text,$1::text,'CO','COP',$2,$3) RETURNING id`,
-      [slug, type, parent],
+      [slug, type, parent ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -53,6 +55,7 @@ d('provider_disclosure_chain (0036)', () => {
   }
 
   beforeAll(async () => {
+    plataforma = await platformRootId(pool);
     consolidador = await tenant(`pd-cons-${sfx}`, 'consolidator', null);
     agencia = await tenant(`pd-ag-${sfx}`, 'agency', consolidador);
     sub = await tenant(`pd-sub-${sfx}`, 'subagency', agencia);
@@ -66,7 +69,8 @@ d('provider_disclosure_chain (0036)', () => {
 
   it('devuelve la rama entera del tenant, de la raíz hacia abajo', async () => {
     const nodos = await chain(sub);
-    expect(nodos.map((n) => n.tenantId)).toEqual([consolidador, agencia, sub]);
+    // La red cuelga de la plataforma, raíz única de la base (0050).
+    expect(nodos.map((n) => n.tenantId)).toEqual([plataforma, consolidador, agencia, sub]);
   });
 
   it('no arrastra tenants de otra red', async () => {

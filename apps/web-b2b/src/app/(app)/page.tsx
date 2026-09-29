@@ -7,10 +7,13 @@ import {
   Users,
   Sparkles,
   Building2,
+  Network,
 } from 'lucide-react';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { Card, CardContent } from '../../components/ui/card';
 import { api } from '../../lib/api';
+import { canSell, viewerOf, type Viewer } from '../../lib/viewer';
 
 interface Membership {
   id: string;
@@ -19,6 +22,41 @@ interface Membership {
   tenantId: string;
   tenantSlug: string;
   tenantName: string;
+}
+
+interface QuickAction {
+  href: Route;
+  title: string;
+  description: string;
+  icon: typeof Calendar;
+}
+
+/**
+ * El primer acceso rápido. El superadmin no vende: en lugar de Buscar Vuelos, que le daría el aviso
+ * de que no vende, va a donde sí trabaja, que es armar la red.
+ */
+function primaryAction(viewer: Viewer): QuickAction {
+  if (canSell(viewer)) {
+    return {
+      href: '/cotizaciones',
+      title: 'Buscar Vuelos',
+      description: 'Inicie una nueva cotización de pasajes aéreos',
+      icon: Search,
+    };
+  }
+  return viewer.superadmin
+    ? {
+        href: '/admin/tenants',
+        title: 'Gestión de Agencias',
+        description: 'Arme y corrija la red: sucursales, agencias y consolidadores',
+        icon: Network,
+      }
+    : {
+        href: '/red',
+        title: 'Mi Red',
+        description: 'Nodos, credenciales y reglas de su red',
+        icon: Network,
+      };
 }
 
 interface Stat {
@@ -95,6 +133,8 @@ export default async function DashboardPage() {
   const memberships = res.ok ? res.data : [];
   // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y seria falso.
   const stats = buildStats(kpiRes?.ok ? kpiRes.data : null);
+  const primary = primaryAction(viewerOf(memberships));
+  const PrimaryIcon = primary.icon;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8 space-y-8 animate-fade-in-up">
@@ -116,19 +156,19 @@ export default async function DashboardPage() {
 
       {/* Acciones Rápidas Modernizadas */}
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <Link href="/cotizaciones" className="group">
+        <Link href={primary.href} className="group">
           <Card className="border border-[var(--color-border)]/50 hover:border-[var(--color-primary)]/40 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] transition-all duration-200 h-full rounded-xl overflow-hidden">
             <CardContent className="p-6 flex items-center justify-between">
               <div className="flex items-center gap-4.5">
                 <div className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-tr from-[var(--color-primary)] to-[var(--color-accent)] text-white shadow-[var(--shadow-sm)] transition-transform duration-200 group-hover:scale-105">
-                  <Search className="size-5" />
+                  <PrimaryIcon className="size-5" />
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-[var(--color-fg)] group-hover:text-[var(--color-primary)] transition-colors">
-                    Buscar Vuelos
+                    {primary.title}
                   </h3>
                   <p className="text-xs text-[var(--color-fg-muted)] mt-0.5 leading-relaxed">
-                    Inicie una nueva cotización de pasajes aéreos
+                    {primary.description}
                   </p>
                 </div>
               </div>

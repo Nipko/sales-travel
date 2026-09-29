@@ -60,3 +60,27 @@ export function supportsOrderCancellation(
     supportsOrderCapability(capabilities, 'cancel')
   );
 }
+
+/**
+ * Las acciones de una orden que son VENTA en la API (`@SalesOperation()`): pagar o emitir, vender
+ * servicios adicionales y recotizar. Consultar y cancelar son post-venta.
+ */
+export const SALE_ORDER_CAPABILITIES = [
+  'pay',
+  'services',
+  'reshop',
+] as const satisfies readonly OrderCapability[];
+
+/**
+ * Las capacidades que se le ofrecen a quien mira. El superadmin no vende: se le apagan las de
+ * venta y conserva consultar y cancelar lo vendido, que la API le permite.
+ */
+export function capabilitiesForViewer(
+  capabilities: Partial<OrderCapabilities> | undefined,
+  canSell: boolean,
+): Partial<OrderCapabilities> | undefined {
+  if (canSell || capabilities === undefined) return capabilities;
+  const out: Partial<Record<OrderCapability, boolean>> = { ...capabilities };
+  for (const capability of SALE_ORDER_CAPABILITIES) out[capability] = false;
+  return out;
+}

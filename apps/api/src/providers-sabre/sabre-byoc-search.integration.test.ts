@@ -20,6 +20,7 @@ import { SearchTelemetryService } from '../search/search-telemetry.service.js';
 import { SearchController } from '../search/search.controller.js';
 import { SearchService, type FlightSearchResponse } from '../search/search.service.js';
 import { SABRE_PROVIDER_CODE, SabreProviderFactory } from './sabre.factory.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * BYOC de Sabre de punta a punta: `provider_accounts` cifrado → `resolve_provider_account`
@@ -333,7 +334,7 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', $2, $3, $4) RETURNING id`,
-      [slug, MONEDA, tipo, padre],
+      [slug, MONEDA, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

@@ -21,6 +21,8 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useViewer } from '../../../components/layout/viewer-context';
+import { NodeKindBadge, NodeKindPicker } from '../../../components/network/node-kind';
 import { Button } from '../../../components/ui/button';
 import { Label } from '../../../components/ui/label';
 import { cn } from '../../../lib/cn';
@@ -53,12 +55,25 @@ import {
   type ProviderSection,
 } from '../../../lib/provider-forms';
 import { providerAccountSaveError } from '../../../lib/provider-account-errors';
+import {
+  buildForest,
+  createActionLabel,
+  createFields,
+  creatableKinds,
+  networkRoot,
+  newNodeLabel,
+  slugify,
+  statusLabel,
+  type CreatableKind,
+} from '../../../lib/tenant-network';
 
 interface NetworkTenant {
   id: string;
   slug: string;
   name: string;
   tenantType: string;
+  /** Sucursal de Planetour (0050): se muestra como "Sucursal". */
+  isBranch?: boolean;
   parentTenantId: string | null;
   status: string;
   depth: number;
@@ -88,7 +103,7 @@ interface CreateForm {
   countryCode: string;
   defaultCurrency: string;
   defaultLanguage: 'es' | 'pt' | 'en';
-  tenantType: 'agency' | 'subagency';
+  kind: CreatableKind | undefined;
   adminEmail: string;
   adminName: string;
   adminPassword: string;
@@ -98,17 +113,6 @@ const inputClass =
   'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
 const selectClass =
   'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-
-const AGENCY_TYPE = { label: 'Agencia', className: 'bg-sky-50 text-sky-700 border-sky-200' };
-const TYPE_CONFIG: Record<string, { label: string; className: string }> = {
-  platform: { label: 'Plataforma', className: 'bg-violet-50 text-violet-700 border-violet-200' },
-  consolidator: {
-    label: 'Consolidador',
-    className: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  },
-  agency: AGENCY_TYPE,
-  subagency: { label: 'Sub-agencia', className: 'bg-teal-50 text-teal-700 border-teal-200' },
-};
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-emerald-500',
@@ -159,6 +163,7 @@ interface SalesRow {
 }
 
 export default function RedPage() {
+  const { superadmin } = useViewer();
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
@@ -211,25 +216,11 @@ export default function RedPage() {
     setSales(map);
   }
 
-  // Construye el árbol a partir de parentTenantId (raíces = nodos cuyo padre no está en la red visible).
-  const { roots, childrenOf } = useMemo(() => {
-    const ids = new Set(tenants.map((t) => t.id));
-    const childrenOf = new Map<string, NetworkTenant[]>();
-    const roots: NetworkTenant[] = [];
-    for (const t of tenants) {
-      if (t.parentTenantId && ids.has(t.parentTenantId)) {
-        const arr = childrenOf.get(t.parentTenantId) ?? [];
-        arr.push(t);
-        childrenOf.set(t.parentTenantId, arr);
-      } else {
-        roots.push(t);
-      }
-    }
-    const byName = (a: NetworkTenant, b: NetworkTenant) => a.name.localeCompare(b.name);
-    roots.sort(byName);
-    for (const arr of childrenOf.values()) arr.sort(byName);
-    return { roots, childrenOf };
-  }, [tenants]);
+  // El árbol a partir de parentTenantId (raíces = nodos cuyo padre no está en la red visible). La
+  // raíz de la red es la plataforma por su tipo, no la primera por orden alfabético.
+  const { roots, childrenOf } = useMemo(() => buildForest(tenants), [tenants]);
+  const root = useMemo(() => networkRoot(tenants), [tenants]);
+  const rootKinds = root ? creatableKinds(root, { superadmin }) : [];
 
   // Para nombrar al dueño de una credencial heredada: `resolve` devuelve el id, no el nombre.
   const tenantNames = useMemo(
@@ -237,10 +228,10 @@ export default function RedPage() {
     [tenants],
   );
 
-  function renderRows(nodes: NetworkTenant[], level: number): React.ReactNode[] {
+  function renderRows(nodes: readonly NetworkTenant[], level: number): React.ReactNode[] {
     return nodes.flatMap((t) => {
       const kids = childrenOf.get(t.id) ?? [];
-      const type = TYPE_CONFIG[t.tenantType] ?? AGENCY_TYPE;
+      const childKinds = creatableKinds(t, { superadmin });
       return [
         <tr
           key={t.id}
@@ -266,21 +257,14 @@ export default function RedPage() {
             </div>
           </td>
           <td className="px-4 py-3">
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium',
-                type.className,
-              )}
-            >
-              {type.label}
-            </span>
+            <NodeKindBadge node={t} />
           </td>
           <td className="px-4 py-3">
             <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-fg-muted)]">
               <span
                 className={cn('size-1.5 rounded-full', STATUS_DOT[t.status] ?? 'bg-zinc-400')}
               />
-              {t.status}
+              {statusLabel(t.status)}
             </span>
           </td>
           <td className="px-4 py-3">
@@ -324,15 +308,18 @@ export default function RedPage() {
                 <Users className="size-3.5" />
                 Usuarios
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setCreateFor(t)}
-              >
-                <Plus className="size-3.5" />
-                Sub-agencia
-              </Button>
+              {childKinds.length > 0 ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1.5"
+                  aria-label={`${createActionLabel(childKinds)} bajo ${t.name}`}
+                  onClick={() => setCreateFor(t)}
+                >
+                  <Plus className="size-3.5" />
+                  {createActionLabel(childKinds)}
+                </Button>
+              ) : null}
             </div>
           </td>
         </tr>,
@@ -365,19 +352,17 @@ export default function RedPage() {
             variant="secondary"
             className="gap-2"
             onClick={() => setShowAudit(true)}
-            disabled={!roots.length}
+            disabled={!root}
           >
             <ScrollText className="size-4" />
             Actividad
           </Button>
-          <Button
-            className="gap-2"
-            onClick={() => setCreateFor(roots[0] ?? null)}
-            disabled={!roots.length}
-          >
-            <Plus className="size-4" />
-            Nueva agencia
-          </Button>
+          {rootKinds.length > 0 ? (
+            <Button className="gap-2" onClick={() => setCreateFor(root ?? null)}>
+              <Plus className="size-4" />
+              {newNodeLabel(rootKinds)}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -428,6 +413,7 @@ export default function RedPage() {
       {createFor && (
         <CreateAgencyModal
           parent={createFor}
+          superadmin={superadmin}
           onClose={() => setCreateFor(null)}
           onCreated={() => {
             setCreateFor(null);
@@ -451,48 +437,44 @@ export default function RedPage() {
 
       {emailFor && <EmailModal tenant={emailFor} onClose={() => setEmailFor(null)} />}
 
-      {showAudit && roots[0] && (
-        <AuditModal rootId={roots[0].id} onClose={() => setShowAudit(false)} />
-      )}
+      {showAudit && root && <AuditModal rootId={root.id} onClose={() => setShowAudit(false)} />}
     </div>
   );
 }
 
+/**
+ * Alta de un nodo bajo `parent`. El tipo lo decide el padre (D4 A): bajo la plataforma nace una
+ * agencia (o una sucursal o un consolidador, si quien crea es el superadmin); bajo un consolidador,
+ * una agencia; bajo una agencia, una sub-agencia. La API vuelve a validarlo.
+ */
 function CreateAgencyModal({
   parent,
+  superadmin,
   onClose,
   onCreated,
 }: {
   parent: NetworkTenant;
+  superadmin: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const defaultType: 'agency' | 'subagency' =
-    parent.tenantType === 'consolidator' ? 'agency' : 'subagency';
+  const kinds = creatableKinds(parent, { superadmin });
   const [form, setForm] = useState<CreateForm>({
     name: '',
     slug: '',
     countryCode: 'CO',
     defaultCurrency: 'COP',
     defaultLanguage: 'es',
-    tenantType: defaultType,
+    kind: kinds[0],
     adminEmail: '',
     adminName: '',
     adminPassword: '',
   });
 
   function onName(name: string) {
-    setForm((f) => ({
-      ...f,
-      name,
-      slug: name
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .slice(0, 50),
-    }));
+    setForm((f) => ({ ...f, name, slug: slugify(name) }));
   }
 
   async function submit() {
@@ -501,16 +483,29 @@ function CreateAgencyModal({
       setError('Nombre y slug son requeridos.');
       return;
     }
+    if (form.kind === undefined) {
+      setError('Elegí qué tipo de nodo crear.');
+      return;
+    }
+    const { kind, adminEmail, adminName, adminPassword, ...rest } = form;
     setSaving(true);
     try {
       const res = await fetch('/api/admin/tenants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, parentTenantId: parent.id }),
+        body: JSON.stringify({
+          ...rest,
+          ...createFields(kind),
+          parentTenantId: parent.id,
+          // Vacío es "sin admin": no se manda, en vez de un '' que el API tenga que interpretar.
+          ...(adminEmail.trim() ? { adminEmail: adminEmail.trim() } : {}),
+          ...(adminName.trim() ? { adminName: adminName.trim() } : {}),
+          ...(adminPassword ? { adminPassword } : {}),
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
-        setError(data.error ?? 'Error al crear la agencia');
+        setError(data.error ?? 'No se pudo crear el nodo.');
         return;
       }
       onCreated();
@@ -522,7 +517,7 @@ function CreateAgencyModal({
   }
 
   return (
-    <Modal title="Nueva agencia" onClose={onClose}>
+    <Modal title={newNodeLabel(kinds)} onClose={onClose}>
       <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
         Colgará de <span className="font-medium text-[var(--color-fg)]">{parent.name}</span>.
       </p>
@@ -543,18 +538,13 @@ function CreateAgencyModal({
             className={inputClass}
           />
         </Field>
-        <Field label="Tipo">
-          <select
-            value={form.tenantType}
-            onChange={(e) =>
-              setForm({ ...form, tenantType: e.target.value as 'agency' | 'subagency' })
-            }
-            className={selectClass}
-          >
-            <option value="agency">Agencia</option>
-            <option value="subagency">Sub-agencia</option>
-          </select>
-        </Field>
+        <div className="sm:col-span-2">
+          <NodeKindPicker
+            kinds={kinds}
+            value={form.kind}
+            onChange={(kind) => setForm({ ...form, kind })}
+          />
+        </div>
         <Field label="País">
           <select
             value={form.countryCode}

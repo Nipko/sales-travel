@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { Role, UserStatus } from '../database/database.types.js';
+import { PLATFORM_ROLES } from './roles.js';
 
 /** Ventana de refresco perezoso de last_seen_at: evita un UPDATE por request. */
 const LAST_SEEN_REFRESH_MS = 10 * 60 * 1000;
@@ -9,6 +10,13 @@ const LAST_SEEN_REFRESH_MS = 10 * 60 * 1000;
 export interface ValidatedSession {
   /** Rol efectivo en el tenant activo. undefined si no hay membership activa allí. */
   role?: Role;
+  /**
+   * `true` si el usuario tiene una membership ACTIVA con un rol de plataforma en cualquier nodo;
+   * ausente si no. Es la misma identidad global que mira NetworkService.isSuperadmin(), no el rol
+   * del tenant activo: RolesGuard la usa para que el superadmin no venda ni desde una sucursal
+   * donde además sea vendedor.
+   */
+  platformUser?: true;
 }
 
 export interface SessionSummary {
@@ -63,7 +71,8 @@ export class SessionService {
    * Devuelve null —request no autenticado— si la sesión no existe, fue revocada o expiró,
    * si el usuario está suspendido, o si el token es anterior al último cambio de
    * contraseña. El rol se lee de la base, NO del JWT, para que una degradación de rol o
-   * una membership suspendida apliquen en el acto.
+   * una membership suspendida apliquen en el acto. Tampoco hay rol si el nodo, o alguno de
+   * sus ancestros, no está activo: suspender un nodo corta a toda su red en el acto.
    */
   async validate(params: {
     sessionId: string;
@@ -82,6 +91,8 @@ export class SessionService {
         password_changed_at: Date | null;
         role: Role | null;
         membership_status: string | null;
+        tenant_active: boolean | null;
+        platform_user: boolean;
       }>`
         SELECT s.revoked_at,
                s.expires_at,
@@ -89,7 +100,21 @@ export class SessionService {
                u.status              AS user_status,
                u.password_changed_at,
                m.role                AS role,
-               m.status              AS membership_status
+               m.status              AS membership_status,
+               NOT EXISTS (
+                 SELECT 1
+                 FROM tenants t
+                 JOIN tenants a ON a.path OPERATOR(public.@>) t.path
+                 WHERE t.id = m.tenant_id
+                   AND a.status <> 'active'
+               )                     AS tenant_active,
+               EXISTS (
+                 SELECT 1
+                 FROM memberships pm
+                 WHERE pm.user_id = s.user_id
+                   AND pm.status = 'active'
+                   AND pm.role = ANY(${[...PLATFORM_ROLES]}::text[])
+               )                     AS platform_user
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         LEFT JOIN memberships m
@@ -119,8 +144,17 @@ export class SessionService {
       await this.touch(sessionId, userId);
     }
 
-    const role = result.role && result.membership_status === 'active' ? result.role : undefined;
-    return role ? { role } : {};
+    // Un nodo suspendido (o colgado de uno suspendido) no opera: sin rol, RolesGuard corta todo
+    // endpoint de gestión y de venta. Es lo que hace efectivo suspender un nodo desde el panel.
+    const role =
+      result.role && result.membership_status === 'active' && result.tenant_active === true
+        ? result.role
+        : undefined;
+    // El superadmin no vende (modelo Planetour): la marca sigue al USUARIO, no al tenant activo.
+    return {
+      ...(role ? { role } : {}),
+      ...(result.platform_user === true ? { platformUser: true as const } : {}),
+    };
   }
 
   private async touch(sessionId: string, userId: string): Promise<void> {

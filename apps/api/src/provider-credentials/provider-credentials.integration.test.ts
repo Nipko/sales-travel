@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Test de integración del modelo CONSOLIDADOR (jerarquía + BYOC con herencia).
@@ -33,7 +34,7 @@ d('consolidator hierarchy + BYOC resolution', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, type, parentId],
+      [slug, type, parentId ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -68,12 +69,12 @@ d('consolidator hierarchy + BYOC resolution', () => {
     await pool.end();
   });
 
-  it('builds a 3-level path consolidator → agency → subagency', async () => {
+  it('builds a 4-level path platform → consolidator → agency → subagency', async () => {
     const { rows } = await pool.query<{ depth: number }>(
       `SELECT nlevel(path) AS depth FROM tenants WHERE id = $1`,
       [subagencyId],
     );
-    expect(Number(rows[0]!.depth)).toBe(3);
+    expect(Number(rows[0]!.depth)).toBe(4);
   });
 
   it("resolves a tenant's OWN account when present", async () => {
@@ -101,11 +102,11 @@ d('consolidator hierarchy + BYOC resolution', () => {
     expect(rows[0]?.id ?? null).toBeNull();
   });
 
-  it('enforces the 4-level depth limit', async () => {
-    const l4 = await createTenant(`l4-${sfx}`, 'subagency', subagencyId); // depth 4 ok
-    await expect(
-      createTenant(`l5-${sfx}`, 'subagency', l4), // depth 5 → rejected
-    ).rejects.toThrow();
-    await pool.query('DELETE FROM tenants WHERE id = $1', [l4]);
+  it('nothing hangs below the level-4 subagency', async () => {
+    // Nivel 5 → rechazado. Con la matriz D4 (0050) lo corta la regla de tipos antes que el límite
+    // de profundidad: una sub-agencia no admite hijos.
+    await expect(createTenant(`l5-${sfx}`, 'subagency', subagencyId)).rejects.toMatchObject({
+      code: 'STH01',
+    });
   });
 });

@@ -20,6 +20,9 @@ export const PLATFORM_ROLES = ['superadmin', 'platform_admin'] as const satisfie
  * superadmin en CUALQUIER nodo, así que poder asignarlo desde un endpoint de red
  * equivale a escalada global. Sólo se conceden por migración/operación manual, y
  * 0025_role_escalation_guard.sql lo refuerza a nivel base de datos.
+ *
+ * `platform_admin` además está retirado (D7 B): sigue en el tipo `Role` y en la base porque
+ * puede haber memberships viejas, pero ni la API ni la web lo asignan.
  */
 export const ASSIGNABLE_ROLES = [
   'consolidator_admin',
@@ -42,8 +45,8 @@ export const ADMIN_ROLES = [
 
 /**
  * Administradores de un nodo de la red (sin los roles globales de plataforma, que
- * RolesGuard deja pasar siempre). Es el grupo que gobierna configuración sensible:
- * markup, credenciales BYOC, límites de crédito y movimientos de cartera.
+ * RolesGuard deja pasar salvo en las operaciones de venta). Es el grupo que gobierna
+ * configuración sensible: markup, credenciales BYOC, límites de crédito y movimientos de cartera.
  */
 export const AGENCY_ADMIN_ROLES = [
   'consolidator_admin',
@@ -56,8 +59,22 @@ export const AGENCY_ADMIN_ROLES = [
  * Quienes operan comercialmente: los admins de nodo más el vendedor. Cubre cotizar,
  * reservar y gestionar clientes. Excluye a `cliente_final`, que no debe alcanzar
  * ningún endpoint de gestión.
+ *
+ * Excluye también PLATFORM_ROLES, y en las rutas `@SalesOperation()` RolesGuard la aplica sin
+ * el pase libre de la plataforma: el superadmin cuadra la red pero no vende. Planetour vende por
+ * sus sucursales, con usuarios de esas sucursales.
  */
 export const SELLING_ROLES = [...AGENCY_ADMIN_ROLES, 'vendedor'] as const satisfies readonly Role[];
+
+type MustBeEmpty<T extends never> = T;
+
+/**
+ * Siempre `never`. Deja de compilar si alguien suma un rol de plataforma a SELLING_ROLES: sería
+ * devolverle al superadmin la venta por la puerta de atrás.
+ */
+export type PlatformRoleThatSells = MustBeEmpty<
+  Extract<(typeof SELLING_ROLES)[number], (typeof PLATFORM_ROLES)[number]>
+>;
 
 /**
  * Jerarquía de privilegio. Se usa para impedir que un admin asigne un rol igual o
@@ -82,9 +99,27 @@ export function isAdminRole(role: Role): boolean {
   return (ADMIN_ROLES as readonly Role[]).includes(role);
 }
 
+/** ¿Puede operar una ruta de venta? Nunca un rol de plataforma. */
+export function canSell(role: Role): boolean {
+  return (SELLING_ROLES as readonly Role[]).includes(role);
+}
+
 /** ¿`actor` puede otorgar/quitar el rol `target`? Sólo roles estrictamente por debajo suyo. */
 export function canGrantRole(actor: Role, target: Role): boolean {
   return ROLE_RANK[actor] > ROLE_RANK[target];
+}
+
+/** ¿Se puede asignar por API? Para lo que no pasa por Zod, como una invitación ya guardada. */
+export function isAssignableRole(role: Role): boolean {
+  return (ASSIGNABLE_ROLES as readonly Role[]).includes(role);
+}
+
+/** El de más rango, o `undefined` si no hay ninguno. */
+export function highestRole(roles: readonly Role[]): Role | undefined {
+  return roles.reduce<Role | undefined>(
+    (best, role) => (best === undefined || ROLE_RANK[role] > ROLE_RANK[best] ? role : best),
+    undefined,
+  );
 }
 
 /** Roles a los que se les exige MFA. Requisito no negociable de CLAUDE.md. */

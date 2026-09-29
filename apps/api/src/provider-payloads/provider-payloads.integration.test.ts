@@ -18,6 +18,7 @@ import {
   PROVIDER_PAYLOAD_EVENTS,
   PROVIDER_PAYLOAD_READER_ROLES,
 } from './provider-payloads.types.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Bóveda de payloads (migración 0043) contra Postgres real (docs/tbo/09 PR-4.9).
@@ -87,7 +88,7 @@ d('bóveda de payloads (0043) contra Postgres', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -171,12 +172,13 @@ d('bóveda de payloads (0043) contra Postgres', () => {
 
   beforeAll(async () => {
     database.onModuleInit();
-    plataforma = await crearTenant(`pp-p-${sfx}`, 'platform', null);
+    // La raíz platform es única por base (0050): se comparte con los demás tests y no se borra.
+    plataforma = await platformRootId(pool);
     consolidador = await crearTenant(`pp-c-${sfx}`, 'consolidator', null);
     agencia = await crearTenant(`pp-a-${sfx}`, 'agency', consolidador);
     otroConsolidador = await crearTenant(`pp-o-${sfx}`, 'consolidator', null);
 
-    // La plataforma NO es ancestro de los consolidadores: sus roles se leen como globales.
+    // Los roles de plataforma se leen como globales, no por ser la plataforma ancestro de todos.
     await crearUsuario('plataforma', plataforma, 'platform_admin');
     await crearUsuario('consolidador', consolidador, 'consolidator_admin');
     await crearUsuario('tenantAdmin', consolidador, 'tenant_admin');
@@ -207,7 +209,7 @@ d('bóveda de payloads (0043) contra Postgres', () => {
 
   afterAll(async () => {
     // parent_tenant_id es ON DELETE RESTRICT: de hoja a raíz. Cada tenant se lleva sus filas.
-    for (const id of [agencia, consolidador, otroConsolidador, plataforma]) {
+    for (const id of [agencia, consolidador, otroConsolidador]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
     const ids = Object.values(usuarios);

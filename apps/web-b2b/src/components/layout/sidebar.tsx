@@ -11,7 +11,9 @@ import {
   type NavItem,
 } from '../../lib/nav';
 import { cn } from '../../lib/cn';
+import { navForViewer } from '../../lib/viewer';
 import { BrandMark } from './brand-mark';
+import { useViewer } from './viewer-context';
 
 interface SidebarProps {
   role?: string;
@@ -63,6 +65,9 @@ export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: Sideba
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
+  // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos en su menú (lib/viewer.ts).
+  const operations = navForViewer(operationsNav, useViewer());
+
   const isSuperAdmin = role === 'superadmin';
   const isAdmin = [
     'superadmin',
@@ -112,7 +117,7 @@ export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: Sideba
             Operaciones
           </p>
           <ul className="space-y-1">
-            {operationsNav.map((item) => (
+            {operations.map((item) => (
               <li key={item.href}>
                 <NavLink item={item} active={isActive(item.href)} />
               </li>

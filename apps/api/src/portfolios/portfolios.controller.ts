@@ -53,6 +53,7 @@ import {
   type PortfolioTransactionRow,
 } from './portfolios.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
 @Roles(...SELLING_ROLES)
@@ -152,6 +153,7 @@ export class PortfoliosController {
     return { portfolio: this.serializePortfolio(portfolio) };
   }
 
+  @SalesOperation()
   @Post('hold-booking')
   async hold(
     @CurrentUser() userId: string | undefined,
@@ -178,6 +180,7 @@ export class PortfoliosController {
     };
   }
 
+  @SalesOperation()
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/approve')
   async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {

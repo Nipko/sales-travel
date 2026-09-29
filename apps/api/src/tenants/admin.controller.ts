@@ -4,6 +4,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Param,
   Patch,
   Post,
   UnauthorizedException,
@@ -16,22 +17,34 @@ import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
-import { currentRole } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
   CreateUserSchema,
+  MoveTenantSchema,
   SetMembershipStatusSchema,
   SetUserStatusSchema,
+  TenantIdParamSchema,
+  UpdateTenantSchema,
   type ChangeRoleDto,
   type CreateTenantDto,
   type CreateUserDto,
+  type MoveTenantDto,
   type SetMembershipStatusDto,
   type SetUserStatusDto,
+  type UpdateTenantDto,
 } from './dto.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, canGrantRole, isAdminRole } from '../auth/roles.js';
+import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
+import { assertCanGrant } from './tenant-admin.policy.js';
+import {
+  TenantsService,
+  type CreatedTenant,
+  type MovedTenant,
+  type NetworkNode,
+  type TenantState,
+} from './tenants.service.js';
 
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('admin')
@@ -42,6 +55,7 @@ export class AdminController {
     private readonly network: NetworkService,
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
+    private readonly tenants: TenantsService,
   ) {}
 
   /** Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant. */
@@ -56,10 +70,7 @@ export class AdminController {
       throw new ForbiddenException('no podés cambiar tu propio rol');
     }
 
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
-    }
+    const actorRole = await this.actorRoleOver(userId, body.tenantId);
 
     const current = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
       trx
@@ -73,8 +84,8 @@ export class AdminController {
 
     // Hay que superar en rango tanto al rol actual del objetivo (para poder tocarlo) como
     // al rol que se le quiere dar (para no conceder más autoridad de la propia).
-    this.assertOutranks(current.role, superadmin);
-    this.assertOutranks(body.role, superadmin);
+    this.assertOutranks(actorRole, current.role);
+    this.assertOutranks(actorRole, body.role);
 
     // Degradar al último admin dejaría el nodo sin quien lo administre.
     if (isAdminRole(current.role) && !isAdminRole(body.role)) {
@@ -103,54 +114,16 @@ export class AdminController {
     return { id: updated.id, role: updated.role };
   }
 
+  /**
+   * Toda la red para el panel de la plataforma, con tipo, sucursal, padre y profundidad. Sólo
+   * superadmin: un admin de red ve la suya con /tenants/network.
+   */
   @Get('tenants')
-  async listTenants(@CurrentUser() userId: string | undefined) {
-    // Panel de plataforma: lista TODOS los tenants ⇒ sólo superadmin (un consolidador usa
-    // /tenants/network para ver su propia red).
-    await this.assertSuperadmin(userId);
-
-    const rows = await this.db.db
-      .selectFrom('tenants')
-      .select([
-        'tenants.id',
-        'tenants.slug',
-        'tenants.name',
-        'tenants.country_code',
-        'tenants.default_currency',
-        'tenants.status',
-        'tenants.created_at',
-      ])
-      .orderBy('tenants.created_at', 'desc')
-      .execute();
-
-    const tenantIds = rows.map((r) => r.id);
-    const counts =
-      tenantIds.length > 0
-        ? await this.db.withRequestContext({ userId }, async (trx) => {
-            return trx
-              .selectFrom('memberships')
-              .select(['tenant_id'])
-              .select((eb) => eb.fn.countAll<number>().as('count'))
-              .where('tenant_id', 'in', tenantIds)
-              .groupBy('tenant_id')
-              .execute();
-          })
-        : [];
-
-    const countMap = new Map(counts.map((c) => [c.tenant_id, Number(c.count)]));
-
-    return {
-      tenants: rows.map((r) => ({
-        id: r.id,
-        slug: r.slug,
-        name: r.name,
-        countryCode: r.country_code,
-        defaultCurrency: r.default_currency,
-        status: r.status,
-        userCount: countMap.get(r.id) ?? 0,
-        createdAt: r.created_at,
-      })),
-    };
+  async listTenants(
+    @CurrentUser() userId: string | undefined,
+  ): Promise<{ tenants: NetworkNode[] }> {
+    const actor = await this.assertSuperadmin(userId);
+    return { tenants: await this.tenants.listNetwork(actor) };
   }
 
   @Get('users')
@@ -190,106 +163,40 @@ export class AdminController {
     };
   }
 
+  /**
+   * Alta de un nodo de la red: el superadmin en cualquier lugar (sin padre, bajo la plataforma);
+   * un admin de red, bajo un nodo que administre. Tipo, sucursal y admin inicial: ver
+   * TenantsService.create.
+   */
   @Post('tenants')
   async createTenant(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(CreateTenantSchema)) body: CreateTenantDto,
-  ) {
+  ): Promise<CreatedTenant> {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
+    return this.tenants.create(userId, body);
+  }
 
-    // Jerarquía: crear un tenant RAÍZ (sin padre) es sólo para superadmin. Un admin de
-    // red puede crear sub-agencias, pero sólo bajo un nodo que administre (su subárbol).
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin) {
-      if (!body.parentTenantId) {
-        throw new ForbiddenException('only superadmin can create root tenants');
-      }
-      const canManageParent = await this.network.canManageTenant(userId, body.parentTenantId);
-      if (!canManageParent) {
-        throw new ForbiddenException('parent tenant is outside your network');
-      }
-    }
+  /** Corrige estado, sucursal o tipo de un nodo (dentro de D4). Sólo superadmin, auditado. */
+  @Patch('tenants/:id')
+  async updateTenant(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Body(new ZodValidationPipe(UpdateTenantSchema)) body: UpdateTenantDto,
+  ): Promise<{ tenant: TenantState }> {
+    const actor = await this.assertSuperadmin(userId);
+    return { tenant: await this.tenants.update(actor, tenantId, body) };
+  }
 
-    const existing = await this.db.db
-      .selectFrom('tenants')
-      .select('id')
-      .where('slug', '=', body.slug)
-      .executeTakeFirst();
-    if (existing) throw new ConflictException('slug already in use');
-
-    const result = await this.db.db.transaction().execute(async (trx) => {
-      const tenantType = body.tenantType ?? (body.parentTenantId ? 'subagency' : 'agency');
-      const tenant = await trx
-        .insertInto('tenants')
-        .values({
-          slug: body.slug,
-          name: body.name,
-          country_code: body.countryCode,
-          default_currency: body.defaultCurrency,
-          default_language: body.defaultLanguage ?? 'es',
-          parent_tenant_id: body.parentTenantId ?? null,
-          tenant_type: tenantType,
-        })
-        .returning(['id', 'slug', 'name'])
-        .executeTakeFirstOrThrow();
-
-      // El admin de un consolidador es consolidator_admin; el resto, tenant_admin.
-      const adminRole = tenantType === 'consolidator' ? 'consolidator_admin' : 'tenant_admin';
-
-      if (body.adminEmail && body.adminPassword) {
-        const existingUser = await trx
-          .selectFrom('users')
-          .select('id')
-          .where('email', '=', body.adminEmail)
-          .executeTakeFirst();
-
-        let adminUserId: string;
-        if (existingUser) {
-          adminUserId = existingUser.id;
-        } else {
-          const hash = await this.password.hash(body.adminPassword);
-          const newUser = await trx
-            .insertInto('users')
-            .values({
-              email: body.adminEmail,
-              name: body.adminName ?? null,
-              password_hash: hash,
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          adminUserId = newUser.id;
-        }
-
-        await sql`SELECT set_config('app.current_tenant_id', ${tenant.id}, true)`.execute(trx);
-        await trx
-          .insertInto('memberships')
-          .values({
-            tenant_id: tenant.id,
-            user_id: adminUserId,
-            role: adminRole,
-            invited_by: userId,
-          })
-          .execute();
-      }
-
-      return tenant;
-    });
-
-    await this.audit.emit({
-      eventType: 'TenantCreated',
-      tenantId: result.id,
-      actorUserId: userId,
-      aggregateType: 'tenant',
-      aggregateId: result.id,
-      payload: {
-        slug: body.slug,
-        tenantType: body.tenantType,
-        parentTenantId: body.parentTenantId,
-      },
-    });
-
-    return { tenant: result };
+  /** Mueve un nodo con su subárbol bajo otro padre (D6 A). Sólo superadmin, auditado. */
+  @Post('tenants/:id/move')
+  async moveTenant(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Body(new ZodValidationPipe(MoveTenantSchema)) body: MoveTenantDto,
+  ): Promise<MovedTenant> {
+    const actor = await this.assertSuperadmin(userId);
+    return this.tenants.move(actor, tenantId, body.parentTenantId);
   }
 
   @Post('users')
@@ -298,12 +205,14 @@ export class AdminController {
     @Body(new ZodValidationPipe(CreateUserSchema)) body: CreateUserDto,
   ) {
     if (!userId) throw new UnauthorizedException();
-    await this.assertAdmin(userId);
-
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
-    }
+    // G-06: el rango se mide sobre el nodo DESTINO. Antes no se medía: un `admin` creaba un
+    // consolidator_admin o un tenant_admin, incluso con su propio email en un nodo hijo.
+    const actorRole = await this.actorRoleOver(
+      userId,
+      body.tenantId,
+      'target tenant is outside your network',
+    );
+    this.assertOutranks(actorRole, body.role);
 
     const existingUser = await this.db.db
       .selectFrom('users')
@@ -388,10 +297,7 @@ export class AdminController {
       throw new ForbiddenException('no podés cambiar el estado de tu propia membership');
     }
 
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
-    }
+    const actorRole = await this.actorRoleOver(userId, body.tenantId);
 
     const target = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
       trx
@@ -403,7 +309,7 @@ export class AdminController {
     );
     if (!target) throw new ForbiddenException('membership not found in this tenant');
 
-    this.assertOutranks(target.role, superadmin);
+    this.assertOutranks(actorRole, target.role);
 
     // No dejar el nodo sin ningún admin activo: quedaría inadministrable salvo por soporte.
     if (body.status === 'suspended' && isAdminRole(target.role)) {
@@ -471,19 +377,28 @@ export class AdminController {
   }
 
   /**
-   * El actor debe superar estrictamente en rango al rol que toca. Impide auto-promoción
-   * y que un `admin` degrade o suspenda a un `tenant_admin` por encima suyo.
-   *
-   * Se apoya en el rol efectivo del tenant activo del request (lo resuelve
-   * RequestContextMiddleware contra la base). Si el actor opera desde un nodo ancestro
-   * distinto del tenant destino, ese rol es igualmente el que le da la potestad.
+   * El rol con que el actor administra `tenantId` (el de más rango sobre ese nodo o un ancestro;
+   * `superadmin` si lo es). 403 si no lo administra.
    */
-  private assertOutranks(targetRole: Role, isSuperadmin: boolean): void {
-    if (isSuperadmin) return;
-    const actorRole = currentRole();
-    if (!actorRole || !canGrantRole(actorRole, targetRole)) {
-      throw new ForbiddenException('no podés modificar a un usuario de rango igual o superior');
-    }
+  private async actorRoleOver(
+    actorUserId: string,
+    tenantId: string,
+    outsideMessage = 'not authorized to manage this tenant',
+  ): Promise<Role> {
+    const role = await this.network.roleOver(actorUserId, tenantId);
+    if (role === undefined) throw new ForbiddenException(outsideMessage);
+    return role;
+  }
+
+  /**
+   * El actor debe superar estrictamente en rango al rol que toca, medido sobre el nodo destino
+   * (G-06) y no sobre el tenant activo del request. Impide la auto-promoción y que un `admin`
+   * degrade o suspenda a un `tenant_admin` por encima suyo. El superadmin toca cualquier rol;
+   * darlo, sólo los asignables (Zod).
+   */
+  private assertOutranks(actorRole: Role, targetRole: Role): void {
+    if (actorRole === 'superadmin') return;
+    assertCanGrant(actorRole, targetRole);
   }
 
   private async assertNotLastAdmin(
@@ -510,30 +425,12 @@ export class AdminController {
     }
   }
 
-  private async assertAdmin(userId: string): Promise<void> {
-    const row = await this.db.withRequestContext({ userId }, async (trx) => {
-      return trx
-        .selectFrom('memberships')
-        .select('role')
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .where('role', 'in', [
-          'superadmin',
-          'platform_admin',
-          'consolidator_admin',
-          'tenant_admin',
-          'agency_admin',
-          'admin',
-        ])
-        .executeTakeFirst();
-    });
-    if (!row) throw new ForbiddenException('admin access required');
-  }
-
-  private async assertSuperadmin(userId: string | undefined): Promise<void> {
+  /** El id del actor si es superadmin. 401 sin sesión, 403 si no lo es. */
+  private async assertSuperadmin(userId: string | undefined): Promise<string> {
     if (!userId) throw new UnauthorizedException();
     if (!(await this.network.isSuperadmin(userId))) {
       throw new ForbiddenException('superadmin access required');
     }
+    return userId;
   }
 }

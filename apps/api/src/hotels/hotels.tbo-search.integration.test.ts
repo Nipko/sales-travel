@@ -33,6 +33,7 @@ import { HotelSearchContextStore } from './hotel-search-context.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
 import { HotelAvailabilityInputSchema, HotelDetailInputSchema } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * TBO en `POST /hotels/availability` contra Postgres real (docs/tbo/09 PR-2.6; 08 RF-14, RF-33,
@@ -232,7 +233,7 @@ d('TBO en la búsqueda de /hotels, contra Postgres sembrado', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', $2, $3, $4) RETURNING id`,
-      [slug, MONEDA, tipo, padre],
+      [slug, MONEDA, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

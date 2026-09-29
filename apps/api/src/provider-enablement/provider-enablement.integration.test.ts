@@ -18,6 +18,7 @@ import {
   ProviderEnablementService,
 } from './provider-enablement.service.js';
 import { ProviderEnablementStore } from './provider-enablement.store.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * La habilitación de proveedores contra Postgres de verdad (0048).
@@ -75,7 +76,7 @@ d('provider_enablement (0048) contra Postgres', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, type, parent],
+      [slug, type, parent ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -188,7 +189,8 @@ d('provider_enablement (0048) contra Postgres', () => {
 
   beforeAll(async () => {
     database.onModuleInit();
-    plataforma = await tenant(`pe-plat-${sfx}`, 'platform', null);
+    // La raíz platform es única por base (0050): se comparte con los demás tests y no se borra.
+    plataforma = await platformRootId(pool);
     consolidador = await tenant(`pe-cons-${sfx}`, 'consolidator', null);
     agencia = await tenant(`pe-ag-${sfx}`, 'agency', consolidador);
     sub = await tenant(`pe-sub-${sfx}`, 'subagency', agencia);
@@ -220,9 +222,10 @@ d('provider_enablement (0048) contra Postgres', () => {
       const filas = await cadena(sub);
 
       expect(filas).toEqual([
-        { providerCode: VUELO, tenantId: sub, depth: 3, enabled: true },
-        { providerCode: VUELO, tenantId: agencia, depth: 2, enabled: false },
-        { providerCode: VUELO, tenantId: consolidador, depth: 1, enabled: true },
+        // La red cuelga de la plataforma (nivel 1, sin ajustes propios en este test).
+        { providerCode: VUELO, tenantId: sub, depth: 4, enabled: true },
+        { providerCode: VUELO, tenantId: agencia, depth: 3, enabled: false },
+        { providerCode: VUELO, tenantId: consolidador, depth: 2, enabled: true },
         { providerCode: VUELO, tenantId: null, depth: 0, enabled: false },
       ]);
       expect(filas.map((f) => f.tenantId)).not.toContain(otraRed);
