@@ -1,6 +1,8 @@
 import { brandStyleSheet } from '../../lib/brand-tokens';
+import { ANONYMOUS_VIEWER, type Viewer } from '../../lib/viewer';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
+import { ViewerProvider } from './viewer-context';
 
 interface TenantBranding {
   logoUrl: string | null;
@@ -15,6 +17,8 @@ interface AppShellProps {
   tenantSlug?: string;
   role?: string;
   branding?: TenantBranding;
+  /** Quién mira: decide si se ofrecen las pantallas de venta (el superadmin no vende). */
+  viewer?: Viewer;
 }
 
 export function AppShell({
@@ -24,6 +28,7 @@ export function AppShell({
   tenantSlug,
   role,
   branding,
+  viewer = ANONYMOUS_VIEWER,
 }: AppShellProps) {
   // Hoja de estilo con alcance :root en vez de un style inline en este div. Dos razones:
   // los Portals de React (toasts, diálogos) se montan fuera de este árbol y con el style
@@ -31,7 +36,7 @@ export function AppShell({
   // foreground del color elegido en lugar de repetir el mismo hex (ver brand-tokens.ts).
   const brandCss = brandStyleSheet(branding?.primaryColor, branding?.accentColor);
 
-  return (
+  const shell = (
     // `h-dvh` + `overflow-hidden`, NO `min-h-screen`: con `min-h-screen` el contenedor crece
     // con el contenido, así que quien scrollea es el documento entero y el sidebar se va con
     // él. El `overflow-y-auto` del `<main>` no salvaba nada porque `main` no tenía altura
@@ -64,4 +69,6 @@ export function AppShell({
       </div>
     </div>
   );
+
+  return <ViewerProvider viewer={viewer}>{shell}</ViewerProvider>;
 }

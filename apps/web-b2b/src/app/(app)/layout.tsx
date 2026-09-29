@@ -1,7 +1,9 @@
 import { Toaster } from 'sonner';
 import { api } from '../../lib/api';
 import { getActiveTenant, setActiveTenant } from '../../lib/session';
+import { viewerOf } from '../../lib/viewer';
 import { AppShell } from '../../components/layout/app-shell';
+import { SalesGate } from '../../components/layout/sales-gate';
 import { VerifyBanner } from '../../components/layout/verify-banner';
 
 interface Membership {
@@ -51,6 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const showVerifyBanner = meRes?.ok ? meRes.data.emailVerified === false : false;
+  // El superadmin es una identidad del usuario, no del tenant activo: se mira en todas sus
+  // memberships, como hace la API al rechazar una venta.
+  const viewer = viewerOf(memberships);
 
   return (
     <AppShell
@@ -59,9 +64,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       tenantSlug={activeTenant?.tenantSlug}
       role={activeTenant?.role}
       branding={branding}
+      viewer={viewer}
     >
       {showVerifyBanner && <VerifyBanner />}
-      {children}
+      <SalesGate>{children}</SalesGate>
       <Toaster richColors closeButton position="top-right" />
     </AppShell>
   );

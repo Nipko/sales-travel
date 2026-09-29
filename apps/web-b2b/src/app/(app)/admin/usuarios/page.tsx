@@ -6,6 +6,7 @@ import { Button } from '../../../../components/ui/button';
 import { Label } from '../../../../components/ui/label';
 import { useConfirm } from '../../../../components/ui/dialog';
 import { cn } from '../../../../lib/cn';
+import { networkRoot, treeOrder } from '../../../../lib/tenant-network';
 
 /**
  * Equipo de la red.
@@ -19,8 +20,11 @@ import { cn } from '../../../../lib/cn';
 
 interface NetworkTenant {
   id: string;
+  slug: string;
   name: string;
   tenantType: string;
+  isBranch?: boolean;
+  parentTenantId: string | null;
   depth: number;
   status: string;
 }
@@ -105,14 +109,16 @@ export default function AdminUsuariosPage() {
     role: 'vendedor',
   });
 
-  // Carga de la red: el primer nodo es el propio, y es el que se selecciona por defecto.
+  // Carga de la red, en orden del árbol. Arranca en la raíz de la red del usuario (la plataforma, si
+  // la ve): antes era el primero por orden alfabético, y una agencia suelta pasaba delante.
   useEffect(() => {
     fetch('/api/tenants/network')
       .then((r) => r.json() as Promise<{ tenants?: NetworkTenant[] }>)
       .then((d) => {
         const list = d.tenants ?? [];
-        setTenants(list);
-        if (list.length > 0) setTenantId(list[0]!.id);
+        setTenants(treeOrder(list));
+        const root = networkRoot(list);
+        if (root) setTenantId(root.id);
         else setLoading(false);
       })
       .catch(() => {

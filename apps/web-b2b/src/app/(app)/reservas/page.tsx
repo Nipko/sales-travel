@@ -18,6 +18,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
+import { useViewer } from '../../../components/layout/viewer-context';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
 import { isCarOrder, isHotelOrder, orderVerticalOf } from '../../../lib/order-vertical';
@@ -25,6 +27,7 @@ import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
 import { humanizeProviderError } from '../../../lib/provider-errors';
+import { canSell } from '../../../lib/viewer';
 import {
   canRetryCancelOperation,
   directCancellationBlock,
@@ -38,6 +41,7 @@ import {
   type HotelOrderTracking,
 } from './hotel-order-view';
 import {
+  capabilitiesForViewer,
   supportsOrderCancellation,
   supportsOrderCapability,
   type OrderCapabilities,
@@ -176,6 +180,8 @@ function humanizeOrderError(raw: string): string {
 }
 
 export default function ReservasPage() {
+  // El superadmin no vende: consulta y cancela lo vendido, sin Pagar/Emitir, Servicios ni Repricing.
+  const sells = canSell(useViewer());
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -241,32 +247,38 @@ export default function ReservasPage() {
    * "Cancelación en curso"), así que no se supone: se lee. Una relectura que falla no borra lo que
    * ya se veía.
    */
-  const loadOrders = useCallback(async (initial: boolean): Promise<Order[] | null> => {
-    try {
-      const res = await fetch('/api/orders');
-      const data = (await res.json()) as { orders?: Order[]; error?: string };
-      if (!res.ok) {
+  const loadOrders = useCallback(
+    async (initial: boolean): Promise<Order[] | null> => {
+      try {
+        const res = await fetch('/api/orders');
+        const data = (await res.json()) as { orders?: Order[]; error?: string };
+        if (!res.ok) {
+          if (initial) {
+            setLoadError(data.error ?? 'No se pudieron cargar las reservas.');
+            setOrders([]);
+          }
+          return null;
+        }
+        const fresh = (data.orders ?? []).map((o) => ({
+          ...o,
+          capabilities: capabilitiesForViewer(o.capabilities, sells),
+        }));
+        setOrders(fresh);
+        setLoadError(null);
+        setDetailOrder((prev) => (prev ? (fresh.find((o) => o.id === prev.id) ?? prev) : prev));
+        return fresh;
+      } catch {
         if (initial) {
-          setLoadError(data.error ?? 'No se pudieron cargar las reservas.');
+          setLoadError('Error de conexión al cargar las reservas.');
           setOrders([]);
         }
         return null;
+      } finally {
+        if (initial) setLoading(false);
       }
-      const fresh = data.orders ?? [];
-      setOrders(fresh);
-      setLoadError(null);
-      setDetailOrder((prev) => (prev ? (fresh.find((o) => o.id === prev.id) ?? prev) : prev));
-      return fresh;
-    } catch {
-      if (initial) {
-        setLoadError('Error de conexión al cargar las reservas.');
-        setOrders([]);
-      }
-      return null;
-    } finally {
-      if (initial) setLoading(false);
-    }
-  }, []);
+    },
+    [sells],
+  );
 
   useEffect(() => {
     void loadOrders(true).then((fresh) => {
@@ -556,6 +568,13 @@ export default function ReservasPage() {
           {filtered.length !== orders.length ? ` · ${filtered.length} visibles` : ''}
         </p>
       </div>
+
+      {sells ? null : (
+        <SalesBlockedBanner>
+          Acá consultás y cancelás lo ya vendido; pagar, emitir y vender servicios lo hace una
+          sucursal.
+        </SalesBlockedBanner>
+      )}
 
       {!loading && orders.length > 0 ? (
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -49,12 +49,14 @@ import {
   type ProviderSection,
   validateProviderDraft,
 } from '../../../../lib/provider-forms';
+import { networkRoot, nodeKindLabel, treeOrder } from '../../../../lib/tenant-network';
 
 interface NetworkTenant {
   id: string;
   slug: string;
   name: string;
   tenantType: string;
+  isBranch?: boolean;
   parentTenantId: string | null;
   status: string;
   depth: number;
@@ -151,10 +153,11 @@ export default function ProveedoresPage() {
             }
           }
         }
-        setTenants(list);
-        if (list.length > 0 && list[0]) {
-          setSelectedTenant(list[0]);
-        }
+        // En orden del árbol y arrancando por la raíz de la red (la plataforma, si se la ve): con
+        // una agencia suelta, el primero por orden alfabético podía ser ella y no Planetour, y a
+        // una agencia no se le ofrece TBO.
+        setTenants(treeOrder(list));
+        setSelectedTenant(networkRoot(list) ?? null);
       } catch {
         setTenants([]);
       } finally {
@@ -424,7 +427,7 @@ export default function ProveedoresPage() {
             >
               {tenants.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} ({t.tenantType})
+                  {t.name} ({nodeKindLabel(t)})
                 </option>
               ))}
             </select>
