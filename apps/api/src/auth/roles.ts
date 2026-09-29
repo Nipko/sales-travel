@@ -20,6 +20,9 @@ export const PLATFORM_ROLES = ['superadmin', 'platform_admin'] as const satisfie
  * superadmin en CUALQUIER nodo, así que poder asignarlo desde un endpoint de red
  * equivale a escalada global. Sólo se conceden por migración/operación manual, y
  * 0025_role_escalation_guard.sql lo refuerza a nivel base de datos.
+ *
+ * `platform_admin` además está retirado (D7 B): sigue en el tipo `Role` y en la base porque
+ * puede haber memberships viejas, pero ni la API ni la web lo asignan.
  */
 export const ASSIGNABLE_ROLES = [
   'consolidator_admin',
@@ -85,6 +88,19 @@ export function isAdminRole(role: Role): boolean {
 /** ¿`actor` puede otorgar/quitar el rol `target`? Sólo roles estrictamente por debajo suyo. */
 export function canGrantRole(actor: Role, target: Role): boolean {
   return ROLE_RANK[actor] > ROLE_RANK[target];
+}
+
+/** ¿Se puede asignar por API? Para lo que no pasa por Zod, como una invitación ya guardada. */
+export function isAssignableRole(role: Role): boolean {
+  return (ASSIGNABLE_ROLES as readonly Role[]).includes(role);
+}
+
+/** El de más rango, o `undefined` si no hay ninguno. */
+export function highestRole(roles: readonly Role[]): Role | undefined {
+  return roles.reduce<Role | undefined>(
+    (best, role) => (best === undefined || ROLE_RANK[role] > ROLE_RANK[best] ? role : best),
+    undefined,
+  );
 }
 
 /** Roles a los que se les exige MFA. Requisito no negociable de CLAUDE.md. */

@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { PasswordService } from '../auth/password.service.js';
+import { isAssignableRole } from '../auth/roles.js';
 import type { Role } from '../database/database.types.js';
 import { DatabaseService } from '../database/database.service.js';
 import { MailerService } from '../mail/mailer.service.js';
@@ -178,6 +179,11 @@ export class InvitationsService {
 
     const invitation = found.rows[0];
     if (!invitation) throw new BadRequestException('la invitación es inválida o venció');
+    // Las invitaciones sólo se crean con roles asignables, pero el rol se relee de la base: una
+    // fila con `platform_admin` (retirado, D7 B) o `superadmin` no concede nada.
+    if (!isAssignableRole(invitation.role)) {
+      throw new BadRequestException('la invitación es inválida o venció');
+    }
 
     const hash = await this.password.hash(params.password);
 

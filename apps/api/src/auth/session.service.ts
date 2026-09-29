@@ -63,7 +63,8 @@ export class SessionService {
    * Devuelve null —request no autenticado— si la sesión no existe, fue revocada o expiró,
    * si el usuario está suspendido, o si el token es anterior al último cambio de
    * contraseña. El rol se lee de la base, NO del JWT, para que una degradación de rol o
-   * una membership suspendida apliquen en el acto.
+   * una membership suspendida apliquen en el acto. Tampoco hay rol si el nodo, o alguno de
+   * sus ancestros, no está activo: suspender un nodo corta a toda su red en el acto.
    */
   async validate(params: {
     sessionId: string;
@@ -82,6 +83,7 @@ export class SessionService {
         password_changed_at: Date | null;
         role: Role | null;
         membership_status: string | null;
+        tenant_active: boolean | null;
       }>`
         SELECT s.revoked_at,
                s.expires_at,
@@ -89,7 +91,14 @@ export class SessionService {
                u.status              AS user_status,
                u.password_changed_at,
                m.role                AS role,
-               m.status              AS membership_status
+               m.status              AS membership_status,
+               NOT EXISTS (
+                 SELECT 1
+                 FROM tenants t
+                 JOIN tenants a ON a.path OPERATOR(public.@>) t.path
+                 WHERE t.id = m.tenant_id
+                   AND a.status <> 'active'
+               )                     AS tenant_active
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         LEFT JOIN memberships m
@@ -119,7 +128,12 @@ export class SessionService {
       await this.touch(sessionId, userId);
     }
 
-    const role = result.role && result.membership_status === 'active' ? result.role : undefined;
+    // Un nodo suspendido (o colgado de uno suspendido) no opera: sin rol, RolesGuard corta todo
+    // endpoint de gestión y de venta. Es lo que hace efectivo suspender un nodo desde el panel.
+    const role =
+      result.role && result.membership_status === 'active' && result.tenant_active === true
+        ? result.role
+        : undefined;
     return role ? { role } : {};
   }
 

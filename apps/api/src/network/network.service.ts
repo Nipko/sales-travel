@@ -1,12 +1,16 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import { AGENCY_ADMIN_ROLES, highestRole } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { Role } from '../database/database.types.js';
 
 export interface NetworkTenant {
   id: string;
   slug: string;
   name: string;
   tenantType: string;
+  /** Sucursal de Planetour (0050): la UI la muestra como "Sucursal". */
+  isBranch: boolean;
   parentTenantId: string | null;
   status: string;
   depth: number;
@@ -37,6 +41,7 @@ interface NetworkRow {
   slug: string;
   name: string;
   tenant_type: string;
+  is_branch: boolean;
   parent_tenant_id: string | null;
   status: string;
   depth: number;
@@ -73,6 +78,10 @@ export class NetworkService {
   /**
    * ¿Puede el usuario administrar `targetTenantId`? True si es superadmin, o si tiene
    * una membership admin en un nodo ancestro-o-igual del target.
+   *
+   * Una membership en un nodo suspendido (o colgado de uno suspendido) no da potestad, igual que
+   * en SessionService.validate: el admin de una agencia suspendida que además opera en otra red no
+   * la sigue administrando desde allá. Su ancestro activo sí.
    */
   async canManageTenant(userId: string, targetTenantId: string): Promise<boolean> {
     return this.db.withRequestContext({ userId }, async (trx) => {
@@ -88,10 +97,54 @@ export class NetworkService {
               m.role = 'superadmin'
               OR (m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin') AND admin_t.path OPERATOR(public.@>) target_t.path)
             )
+            AND NOT EXISTS (
+              SELECT 1 FROM tenants anc
+              WHERE anc.path OPERATOR(public.@>) admin_t.path
+                AND anc.status <> 'active'
+            )
         ) AS ok
       `.execute(trx);
       return result.rows[0]?.ok === true;
     });
+  }
+
+  /**
+   * El rol con que el usuario ACTÚA sobre `tenantId`: el de más rango entre sus memberships
+   * activas que le dan potestad sobre ese nodo (superadmin en cualquier nodo, o un rol de admin
+   * en el nodo o en un ancestro, como canManageTenant). `undefined` si no lo administra.
+   *
+   * El rango para asignar o tocar un rol se compara contra ESTE rol y no contra el del tenant
+   * activo del request (G-06): quien es consolidator_admin en su red y admin en otra no puede
+   * usar el primero para repartir roles en la segunda.
+   *
+   * Como canManageTenant, una membership en un nodo suspendido (o bajo uno suspendido) no cuenta.
+   */
+  async roleOver(userId: string, tenantId: string): Promise<Role | undefined> {
+    const roles = await this.db.withRequestContext({ userId }, async (trx) => {
+      const result = await sql<{ role: Role }>`
+        SELECT m.role
+        FROM memberships m
+        JOIN tenants admin_t ON admin_t.id = m.tenant_id
+        WHERE m.user_id = ${userId}::uuid
+          AND m.status = 'active'
+          AND (
+            m.role = 'superadmin'
+            OR (
+              m.role = ANY(${[...AGENCY_ADMIN_ROLES]}::text[])
+              AND admin_t.path OPERATOR(public.@>) (
+                SELECT target_t.path FROM tenants target_t WHERE target_t.id = ${tenantId}::uuid
+              )
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM tenants anc
+            WHERE anc.path OPERATOR(public.@>) admin_t.path
+              AND anc.status <> 'active'
+          )
+      `.execute(trx);
+      return result.rows.map((r) => r.role);
+    });
+    return highestRole(roles);
   }
 
   /**
@@ -200,14 +253,14 @@ export class NetworkService {
     return this.db.withRequestContext({ userId }, async (trx) => {
       const result = superadmin
         ? await sql<NetworkRow>`
-            SELECT t.id, t.slug, t.name, t.tenant_type, t.parent_tenant_id, t.status,
+            SELECT t.id, t.slug, t.name, t.tenant_type, t.is_branch, t.parent_tenant_id, t.status,
                    nlevel(t.path) AS depth
             FROM tenants t
             ORDER BY nlevel(t.path), t.name
           `.execute(trx)
         : await sql<NetworkRow>`
-            SELECT DISTINCT t.id, t.slug, t.name, t.tenant_type, t.parent_tenant_id, t.status,
-                   nlevel(t.path) AS depth
+            SELECT DISTINCT t.id, t.slug, t.name, t.tenant_type, t.is_branch, t.parent_tenant_id,
+                   t.status, nlevel(t.path) AS depth
             FROM tenants t
             JOIN memberships m ON m.user_id = ${userId}::uuid AND m.status = 'active'
                               AND m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin')
@@ -221,6 +274,7 @@ export class NetworkService {
         slug: r.slug,
         name: r.name,
         tenantType: r.tenant_type,
+        isBranch: r.is_branch,
         parentTenantId: r.parent_tenant_id,
         status: r.status,
         depth: Number(r.depth),

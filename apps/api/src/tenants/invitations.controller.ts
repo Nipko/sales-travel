@@ -14,7 +14,6 @@ import { Public } from '../auth/decorators/public.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES, canGrantRole } from '../auth/roles.js';
 import { NetworkService } from '../network/network.service.js';
-import { currentRole } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   AcceptInvitationSchema,
@@ -39,14 +38,14 @@ export class InvitationsController {
   ) {
     if (!userId) throw new UnauthorizedException();
 
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, body.tenantId))) {
+    // El rol con que el actor administra el nodo DESTINO (G-06), no el de su tenant activo:
+    // quien es consolidator_admin en su red y admin en otra no invita tenant_admins en la segunda.
+    const actorRole = await this.network.roleOver(userId, body.tenantId);
+    if (actorRole === undefined) {
       throw new ForbiddenException('target tenant is outside your network');
     }
-
     // No se puede invitar a alguien con rango igual o superior al propio.
-    const actorRole = currentRole();
-    if (!superadmin && (!actorRole || !canGrantRole(actorRole, body.role))) {
+    if (!canGrantRole(actorRole, body.role)) {
       throw new ForbiddenException('no podés invitar con un rol igual o superior al tuyo');
     }
 
