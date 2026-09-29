@@ -201,6 +201,7 @@ Orden obligatorio. Cada paso dice cómo comprobar que salió bien. Los comandos 
 - El PR de `feat/network-model` tiene el CI en verde, incluidos los tests de integración contra Postgres real.
 - Hay un backup reciente de la base ([`infrastructure/hostinger/README.md`](../../infrastructure/hostinger/README.md) §6, "Backup de Postgres").
 - Entre el paso 2 y el paso 5 **Planetour no tiene quién venda**: la cuenta del founder pasa a superadmin y el superadmin no vende. Conviene hacer los pasos 2 a 5 seguidos.
+- Desde este deploy el login pide enrolar MFA a todo usuario con un rol que lo exige (`tenant_admin` o superior) y que no lo tenga, en cualquiera de sus nodos. Antes no lo pedía nunca: la API corre como `app_user` y el login leía las memberships sin el contexto del usuario, así que la RLS no le dejaba ver ninguna. Avísale al admin de Amazon Minimalist que al entrar lo mandarán a _Configuración → Seguridad_ a enrolarse.
 
 ### Paso 1 — Deploy
 

@@ -338,13 +338,19 @@ export class AuthService {
 
   /** Resuelve el tenant por defecto y emite la sesión. Compartido por login y completeMfa. */
   private async finishLogin(userId: string, mfaEnabled: boolean): Promise<AuthResult> {
-    const membership = await this.db.db
-      .selectFrom('memberships')
-      .select(['tenant_id', 'role'])
-      .where('user_id', '=', userId)
-      .where('status', '=', 'active')
-      .orderBy('created_at')
-      .executeTakeFirst();
+    // Con el GUC del usuario: la API corre como app_user y `memberships` tiene RLS. Sin él la
+    // policy memberships_self no deja ver ninguna fila, el token salía sin tenant y el login nunca
+    // pedía enrolar MFA, ni al superadmin.
+    const memberships = await this.db.withRequestContext({ userId }, (trx) =>
+      trx
+        .selectFrom('memberships')
+        .select(['tenant_id', 'role'])
+        .where('user_id', '=', userId)
+        .where('status', '=', 'active')
+        .orderBy('created_at')
+        .execute(),
+    );
+    const membership = memberships[0];
 
     const token = await this.issueToken({
       userId,
@@ -360,9 +366,9 @@ export class AuthService {
       payload: { mfa: mfaEnabled },
     });
 
-    const enrollmentRequired = Boolean(
-      membership?.role && requiresMfa(membership.role) && !mfaEnabled,
-    );
+    // El MFA sigue a la persona, no al tenant por defecto: basta un rol que lo exija en cualquier
+    // nodo (el superadmin que además es miembro de otro nodo creado antes, por ejemplo).
+    const enrollmentRequired = !mfaEnabled && memberships.some((m) => requiresMfa(m.role));
 
     return {
       token,
