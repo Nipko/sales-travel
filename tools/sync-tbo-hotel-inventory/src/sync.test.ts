@@ -11,6 +11,7 @@ import { runSync, type SyncDeps, type SyncReport } from './sync.js';
 import {
   fakeTbo,
   requestedHotelCodes,
+  tboNoHotelsFound,
   tboStatus,
   type FakeTbo,
   type FakeTboWorld,
@@ -624,6 +625,112 @@ describe('Errores por ciudad y errores de cuenta', () => {
         op === 'tboHotelCodeList' ? tboStatus(402, 'Agent is blocked') : undefined,
     });
     await expect(h.run()).rejects.toMatchObject({ code: 'ACCOUNT_BLOCKED', stage: 'E3' });
+  });
+});
+
+describe('Ciudad sin hoteles: "No Hotels Found" (01 §8.5; producción, 2026-09-29)', () => {
+  const DAY = 86_400_000;
+  const answersEmpty =
+    (cityCode: string): FakeTboWorld['override'] =>
+    (op, body) =>
+      op === 'tboHotelCodeList' && body?.['CityCode'] === cityCode ? tboNoHotelsFound() : undefined;
+
+  function callsFor(h: Harness, cityCode: string): number {
+    return h.tbo.callsTo('tboHotelCodeList').filter((call) => call.body?.['CityCode'] === cityCode)
+      .length;
+  }
+
+  function logLines(h: Harness): Record<string, unknown>[] {
+    return h.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  it('una llamada y queda al día con hotel_count 0: ni fallo, ni error, ni racha', async () => {
+    const h = harness({ ...WORLD, override: answersEmpty('900002') });
+    // Con un umbral de 1, una ciudad vacía contada como error habría cortado la corrida.
+    const report = synced(await h.run({ maxConsecutiveErrors: 1 }));
+
+    expect(report).toMatchObject({ outcome: 'complete', stopReason: null });
+    expect(report.errorsByCode).toEqual({});
+    expect(report.e3).toMatchObject({ cities: 3, citiesEmpty: 1, citiesFailed: 0 });
+    expect(callsFor(h, '900002')).toBe(1);
+    expect(h.store.city('900002')).toMatchObject({
+      hotelCount: 0,
+      centroidLat: null,
+      centroidLng: null,
+      lastStatusCode: 200,
+      syncedAt: new Date(T0),
+    });
+    const lines = logLines(h);
+    expect(lines.filter((line) => line['msg'] === 'tbo.http.error')).toEqual([]);
+    expect(lines.find((line) => line['msg'] === 'tbo.static.city_without_hotels')).toMatchObject({
+      level: 'info',
+      cityCode: '900002',
+      tboCode: 500,
+      attempt: 1,
+    });
+    expect(
+      lines.find((line) => line['msg'] === 'tbo.sync.stage' && line['stage'] === 'E3'),
+    ).toMatchObject({ citiesEmpty: 1, citiesFailed: 0 });
+  });
+
+  it('vuelve con la cadencia de las vacías (TBO_SYNC_EMPTY_REFRESH_DAYS), no en cada corrida', async () => {
+    let now = T0;
+    const h = harness({ ...WORLD, override: answersEmpty('900002') }, () => now);
+    const onlyE3 = { stages: new Set(['E3'] as const), countries: ['AR'] };
+
+    synced(await h.run(onlyE3));
+    expect(callsFor(h, '900002')).toBe(1);
+
+    // A la hora, nada vence: ni la ciudad con hoteles ni la vacía.
+    now = T0 + 3_600_000;
+    expect(synced(await h.run(onlyE3)).e3).toMatchObject({ citiesDue: 0 });
+
+    // A los 8 días vence la cadencia semanal de la ciudad con hoteles; la vacía espera a los 30.
+    now = T0 + 8 * DAY;
+    expect(synced(await h.run(onlyE3)).e3).toMatchObject({ citiesDue: 1, citiesEmpty: 0 });
+    expect(callsFor(h, '900002')).toBe(1);
+
+    now = T0 + 30 * DAY;
+    expect(synced(await h.run(onlyE3)).e3).toMatchObject({ citiesEmpty: 1 });
+    expect(callsFor(h, '900002')).toBe(2);
+    expect(h.store.city('900002')?.syncedAt).toEqual(new Date(T0 + 30 * DAY));
+  });
+
+  it('una ciudad CON hoteles que contesta "No Hotels Found" no se barre: anomalía y pendiente', async () => {
+    const h = harness({ ...WORLD, override: answersEmpty('900001') });
+    seedBuenosAires(h.store);
+    const report = synced(await h.run({ stages: new Set(['E3']), countries: ['AR'] }));
+
+    expect(report.e3).toMatchObject({
+      sweepAnomalies: 1,
+      citiesEmpty: 0,
+      citiesFailed: 0,
+      hotelsDeactivated: 0,
+    });
+    for (const id of ['1000001', '1000002', '1000003', '1000098']) {
+      expect(h.store.hotel(id)?.active).toBe(true);
+    }
+    expect(h.store.city('900001')).toMatchObject({ syncedAt: LONG_AGO, hotelCount: 4 });
+    expect(logLines(h).find((line) => line['msg'] === 'tbo.sync.sweep_anomaly')).toMatchObject({
+      city: '900001',
+      verdict: 'empty-response',
+      previouslyActive: 4,
+    });
+  });
+
+  it('cualquier otro 500 sigue siendo una ciudad fallida, con sus reintentos y pendiente', async () => {
+    const h = harness({
+      ...WORLD,
+      override: (op, body) =>
+        op === 'tboHotelCodeList' && body?.['CityCode'] === '900002'
+          ? tboStatus(500, 'Unexpected Error')
+          : undefined,
+    });
+    const report = synced(await h.run());
+    expect(report).toMatchObject({ errorsByCode: { UPSTREAM: 1 } });
+    expect(report.e3).toMatchObject({ citiesEmpty: 0, citiesFailed: 1 });
+    expect(callsFor(h, '900002')).toBe(5);
+    expect(h.store.city('900002')).toMatchObject({ lastStatusCode: 500, syncedAt: null });
   });
 });
 

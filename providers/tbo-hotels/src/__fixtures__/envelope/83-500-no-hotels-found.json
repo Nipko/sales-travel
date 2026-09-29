@@ -1,0 +1,11 @@
+{
+  "row": "01 §8.3 y §8.5 · TBOHotelCodeList: HTTP 200 con 500 \"No Hotels Found\" es la ciudad sin hoteles, resultado vacío y no error",
+  "source": "Observado en producción: primera corrida del sync contra TBO test (CO), 2026-09-29, 86 respuestas en 20 ciudades. Del log tbo.http.error: HTTP 200, application/json, 55 bytes, Status.Code 500, Status.Description \"No Hotels Found\". El cuerpo se reconstruye con esos datos (el Status compacto mide 55 bytes); el orden de las claves no quedó en el log.",
+  "operation": "tboHotelCodeList",
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "bodyText": "{\"Status\":{\"Code\":500,\"Description\":\"No Hotels Found\"}}"
+  },
+  "expect": { "outcome": "NO_AVAILABILITY", "status": 200, "tboCode": 500 }
+}

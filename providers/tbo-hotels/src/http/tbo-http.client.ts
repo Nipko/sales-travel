@@ -29,7 +29,11 @@ import {
   type TboOperationName,
   type TboOperationSpec,
 } from './operations';
-import { classifyTboResponse, type TboEnvelopeOutcome } from './status-envelope';
+import {
+  classifyTboResponse,
+  type TboEnvelopeInput,
+  type TboEnvelopeOutcome,
+} from './status-envelope';
 
 /**
  * Cliente HTTP de TBO Hotels (docs/tbo/01 §10; 08 RF-02, RF-03, RNF-01, RNF-02, RNF-04 capa 3 y
@@ -148,6 +152,11 @@ interface TboHttpResultBase {
   readonly attempts: number;
 }
 
+/**
+ * `NO_AVAILABILITY` es el vacío que la fila admite: el 201 de Search o el 500 "No Hotels Found" de
+ * TBOHotelCodeList (`tboCode` dice cuál). No es un error, así que no reintenta ni cuenta para el
+ * breaker.
+ */
 export type TboHttpResult<T> =
   | (TboHttpResultBase & { readonly outcome: 'SUCCESS'; readonly data: T })
   | (TboHttpResultBase & { readonly outcome: 'NO_AVAILABILITY' });
@@ -329,6 +338,11 @@ const MONEY_OPERATIONS: ReadonlySet<string> = new Set<TboOperationName>(['book',
 interface CallPlan {
   readonly name: TboOperationName;
   readonly spec: TboOperationSpec;
+  /**
+   * Las columnas de la fila que usa el clasificador. En Book y Cancel, sin la excepción de "No
+   * Hotels Found" aunque la fila la pida: un 500 ahí es incierto y se concilia, nunca un vacío.
+   */
+  readonly verdictRules: TboEnvelopeInput['operation'];
   readonly money: boolean;
   readonly isCancel: boolean;
   readonly lane: TboLane;
@@ -497,6 +511,11 @@ export class TboHttpClient {
     return {
       name: operation,
       spec,
+      verdictRules: {
+        envelope: spec.envelope,
+        emptyOnNoAvailability: spec.emptyOnNoAvailability,
+        emptyOnNoHotelsFound: !money && spec.emptyOnNoHotelsFound,
+      },
       money,
       isCancel: operation === 'cancel',
       lane,
@@ -598,7 +617,11 @@ export class TboHttpClient {
     const verdict =
       res === undefined || text === undefined
         ? undefined
-        : classifyTboResponse({ httpStatus: res.status, bodyText: text, operation: spec });
+        : classifyTboResponse({
+            httpStatus: res.status,
+            bodyText: text,
+            operation: plan.verdictRules,
+          });
     const status = verdict === undefined || res === undefined ? 0 : res.status;
     const outcome: TboEnvelopeOutcome | TboFailureKind =
       verdict === undefined ? 'TRANSPORT' : verdict.ok ? verdict.outcome : verdict.kind;

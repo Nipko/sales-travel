@@ -4,6 +4,7 @@ import {
   normalizeTboCheckTime,
   normalizeTboCountryCode,
   normalizeTboImageUrl,
+  normalizeTboLatLng,
   normalizeTboMap,
   normalizeTboStars,
   normalizeTboText,
@@ -79,6 +80,47 @@ describe('Map "lat|lon" → {lat, lng}', () => {
 
   it('un texto vacío es ausencia, sin nota', () => {
     expect(normalizeTboMap('  ')).toEqual({ location: null });
+  });
+});
+
+describe('Latitude / Longitude de TBOHotelCodeList (producción, 2026-09-29)', () => {
+  it('número o string numérico, en cualquier combinación', () => {
+    expect(normalizeTboLatLng(40.764167, -73.994468)).toEqual({
+      location: { lat: 40.764167, lng: -73.994468 },
+    });
+    expect(normalizeTboLatLng(' 4.60971 ', '-74.08175')).toEqual({
+      location: { lat: 4.60971, lng: -74.08175 },
+    });
+    expect(normalizeTboLatLng('10.4', -75.51)).toEqual({ location: { lat: 10.4, lng: -75.51 } });
+  });
+
+  it('los dos en cero son un dato vacío, como Map "0|0"', () => {
+    expect(normalizeTboLatLng(0, 0)).toEqual({ location: null, issue: 'LAT_LNG_ZERO' });
+    expect(normalizeTboLatLng('0.0', '0')).toEqual({ location: null, issue: 'LAT_LNG_ZERO' });
+  });
+
+  it('un solo eje en cero sí es una coordenada', () => {
+    expect(normalizeTboLatLng(0, -78.5)).toEqual({ location: { lat: 0, lng: -78.5 } });
+  });
+
+  it('los dos ausentes o vacíos son ausencia, sin nota', () => {
+    expect(normalizeTboLatLng(undefined, undefined)).toEqual({ location: null });
+    expect(normalizeTboLatLng(' ', '')).toEqual({ location: null });
+  });
+
+  it.each<[string | number | undefined, string | number | undefined]>([
+    [91, 10],
+    [10, -181],
+    ['4,6', '-74'],
+    ['abc', '10'],
+    ['1e1', '10'],
+    [Number.NaN, 10],
+    [Number.POSITIVE_INFINITY, 10],
+    [4.6, undefined],
+    [undefined, '-74.08'],
+    ['', -74.08],
+  ])('%j | %j no da un punto', (lat, lng) => {
+    expect(normalizeTboLatLng(lat, lng)).toEqual({ location: null, issue: 'LAT_LNG_INVALID' });
   });
 });
 

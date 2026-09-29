@@ -5,7 +5,7 @@ import type { TboCatalogHotel, TboCityHotelsMapping, TboHotelContent } from './c
 import { readTboHotelRecord } from './hotel-record';
 import { TboStaticObserver, type TboStaticMapDeps } from './observer';
 import {
-  TBO_HOTEL_FIELD_KEYS,
+  TBO_CITY_HOTEL_FIELD_KEYS,
   TBO_STATIC_ROOT_KEYS,
   TboHotelItemSchema,
   TboStaticCodeSchema,
@@ -27,6 +27,8 @@ import {
  *   necesita ver el conteo real de descartes.
  * - **El contenido es `listing`, en inglés por inferencia** (sin parámetro de idioma, p. 65; Q-66).
  *   `TBOHotelCodeList` no trae imágenes ni horarios (CE-09): esos campos quedan vacíos.
+ * - **Coordenadas**: `Latitude`/`Longitude` de cada hotel, que TBO manda aunque el PDF no las
+ *   documente (producción, 2026-09-29), y si no sirven, `Map` (05 §2.5 y §3).
  */
 export interface TboCityHotelsMapContext {
   /** `CityCode` con que se pidió la lista. */
@@ -71,7 +73,7 @@ export function mapTboCityHotelsResponse(
   const seen = new Set<string>();
   observer.container(envelope.Hotels, 'Hotels').forEach((raw, index) => {
     observer.received += 1;
-    observer.collectUnknownKeys(raw, TBO_HOTEL_FIELD_KEYS, 'Hotels[].');
+    observer.collectUnknownKeys(raw, TBO_CITY_HOTEL_FIELD_KEYS, 'Hotels[].');
     const parsed = TboHotelItemSchema.safeParse(raw);
     if (!parsed.success || !isRecord(raw)) {
       observer.reject(
@@ -96,6 +98,7 @@ export function mapTboCityHotelsResponse(
       lang: 'en',
       source: 'listing',
       requestCityCode: cityCode,
+      latitudeLongitude: true,
       ...(countryCode === undefined ? {} : { fallbackCountryCode: countryCode }),
     });
     hotels.push(record.hotel);
@@ -104,4 +107,19 @@ export function mapTboCityHotelsResponse(
   });
 
   return { cityCode, hotels, listingContents, diagnostics: observer.finish() };
+}
+
+/**
+ * La ciudad sin hoteles: TBO contestó `Status.Code` 500 "No Hotels Found" y el cliente HTTP ya lo
+ * clasificó como resultado vacío (01 §8.5). No hay cuerpo que leer; la ciudad es la de la request,
+ * validada igual que en una respuesta con hoteles. El sync la guarda con `hotel_count = 0` y nunca
+ * barre con ella una ciudad que tenía hoteles (05 §6.5).
+ */
+export function emptyTboCityHotelsMapping(
+  context: TboCityHotelsMapContext,
+  deps: TboStaticMapDeps = {},
+): TboCityHotelsMapping {
+  const { cityCode } = readContext(context);
+  const observer = new TboStaticObserver('tboHotelCodeList', deps);
+  return { cityCode, hotels: [], listingContents: [], diagnostics: observer.finish() };
 }

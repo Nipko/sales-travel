@@ -84,6 +84,25 @@ export function tboStatus(code: number, description: string): Response {
   return jsonResponse({ Status: { Code: code, Description: description } });
 }
 
+interface ObservedEnvelopeFixture {
+  readonly response: {
+    readonly status: number;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly bodyText: string;
+  };
+}
+
+/**
+ * La ciudad sin hoteles tal como la contestó TBO en producción (2026-09-29): HTTP 200 con
+ * `Status.Code` 500 "No Hotels Found", del fixture del ACL (`envelope/83-500-no-hotels-found.json`).
+ */
+export function tboNoHotelsFound(): Response {
+  const { response } = aclFixture(
+    'envelope/83-500-no-hotels-found.json',
+  ) as ObservedEnvelopeFixture;
+  return new Response(response.bodyText, { status: response.status, headers: response.headers });
+}
+
 interface CountryListFixture {
   readonly Status: unknown;
   readonly CountryList: readonly { readonly Code: string; readonly Name: string }[];

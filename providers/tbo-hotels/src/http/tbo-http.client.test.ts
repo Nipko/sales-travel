@@ -863,6 +863,96 @@ describe('reintentos', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// 01 §8.5: la ciudad sin hoteles de TBOHotelCodeList, tal como llegó en producción (2026-09-29)
+// ---------------------------------------------------------------------------------------------
+
+describe('TBOHotelCodeList: 500 "No Hotels Found" es un resultado vacío, no un error', () => {
+  const observed = FIXTURES.find(([file]) => file === '83-500-no-hotels-found.json')?.[1];
+  if (observed === undefined || 'network' in observed.response) {
+    throw new Error('falta el fixture 83-500-no-hotels-found.json');
+  }
+  const bodyText = observed.response.bodyText ?? '';
+  const noHotelsFound =
+    (status = 200): Responder =>
+    () =>
+      new Response(bodyText, { status, headers: { 'content-type': 'application/json' } });
+
+  it('el fixture es el cuerpo observado: 55 bytes, Code 500, "No Hotels Found"', () => {
+    expect(Buffer.byteLength(bodyText)).toBe(55);
+    expect(JSON.parse(bodyText)).toEqual({
+      Status: { Code: 500, Description: 'No Hotels Found' },
+    });
+  });
+
+  it('UNA llamada con los 5 intentos de la tabla: vacío con su código, sin error para el breaker', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound());
+    const { logger, calls: logs } = spyLogger();
+    const { metrics, calls: measured } = spyMetrics();
+    const sleeps: number[] = [];
+    const result = await client({
+      fetch,
+      logger,
+      metrics,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        return Promise.resolve();
+      },
+    }).send('tboHotelCodeList', { CityCode: '130452', IsDetailedResponse: 'true' });
+
+    // No lanza: no hay `TboApiError` que el breaker cuente (circuito IGNORE) ni que se reintente.
+    expect(result).toMatchObject({
+      outcome: 'NO_AVAILABILITY',
+      status: 200,
+      tboCode: 500,
+      attempts: 1,
+      requestId: REQUEST_ID,
+    });
+    expect(TBO_OPERATIONS.tboHotelCodeList.maxAttempts).toBe(5);
+    expect(calls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    expect(logs.filter((log) => log.level === 'warn' || log.level === 'error')).toEqual([]);
+    expect(logs.map((log) => log.message)).toEqual(['tbo.http.ok']);
+    expect(logs[0]).toMatchObject({
+      level: 'debug',
+      meta: { outcome: 'NO_AVAILABILITY', tboCode: 500, description: 'No Hotels Found' },
+    });
+    expect(JSON.stringify(logs)).not.toMatch(/"circuit"|"retry"/);
+    expect(measured.find((m) => m.name === 'tbo.http.requests')?.tags).toEqual({
+      op: 'tboHotelCodeList',
+      kind: 'NO_AVAILABILITY',
+      tbo_code: '500',
+    });
+  });
+
+  it('otro 500 en la misma operación sigue siendo UPSTREAM: 5 intentos y circuito COUNT', async () => {
+    const { fetch, calls } = spyFetch(
+      json({ Status: { Code: 500, Description: 'Unexpected Error' } }),
+    );
+    const error = await apiError(client({ fetch }).send('tboHotelCodeList', { probe: 1 }));
+    expect(error.kind).toBe('UPSTREAM');
+    expect(error.failure.circuit).toBe('COUNT');
+    expect(calls).toHaveLength(5);
+  });
+
+  it('el mismo cuerpo con HTTP 500 de transporte no es lo observado: UPSTREAM y se reintenta', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound(500));
+    const error = await apiError(client({ fetch }).send('tboHotelCodeList', { probe: 1 }));
+    expect(error).toMatchObject({ kind: 'UPSTREAM', status: 500, tboCode: 500 });
+    expect(calls).toHaveLength(5);
+  });
+
+  it.each(['cityList', 'hotelDetails'] as const)(
+    'en %s, sin evidencia, el mismo cuerpo es UPSTREAM y se reintenta',
+    async (op) => {
+      const { fetch, calls } = spyFetch(noHotelsFound());
+      const error = await apiError(client({ fetch }).send(op, { probe: 1 }));
+      expect(error.kind).toBe('UPSTREAM');
+      expect(calls).toHaveLength(TBO_OPERATIONS[op].maxAttempts);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
 // Dinero: una llamada, siempre (08 RF-02 CA-1). La guarda contra la tabla editada está en
 // `src/money-paths.guard.test.ts`.
 // ---------------------------------------------------------------------------------------------

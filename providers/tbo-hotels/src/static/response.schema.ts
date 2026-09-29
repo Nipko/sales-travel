@@ -122,6 +122,13 @@ export const TboTextFieldSchema = z.union([z.string(), z.number().finite()]);
 /** `HotelRating`: enum `"ThreeStar"` (p. 67) o número `5` (p. 62), según el método (CE-02). */
 export const TboRatingFieldSchema = z.union([z.string(), z.number()]);
 
+/**
+ * `Latitude` / `Longitude` de TBOHotelCodeList: no están en el PDF y llegan en producción
+ * (2026-09-29, 05 §2.5). El log sólo dio sus nombres, así que se admite número o string; que sea
+ * un número en rango lo decide `normalizeTboLatLng`.
+ */
+export const TboCoordinateFieldSchema = z.union([z.number(), z.string()]);
+
 /** `HotelFacilities`, `Images`: String en la tabla, array en los ejemplos (p. 60-62, 68-69). */
 export const TboListFieldSchema = z.union([z.array(z.unknown()), z.string()]);
 
@@ -176,4 +183,15 @@ export const TBO_HOTEL_FIELD_KEYS: readonly string[] = [
   'images',
   'checkintime',
   'checkouttime',
+];
+
+/**
+ * TBOHotelCodeList conoce además `Latitude` y `Longitude`: la primera corrida del sync en producción
+ * (2026-09-29) las registró como claves desconocidas en todas las ciudades con hoteles. HotelDetails
+ * no las trajo nunca, así que allí siguen siendo desconocidas: si aparecen, el log lo dice.
+ */
+export const TBO_CITY_HOTEL_FIELD_KEYS: readonly string[] = [
+  ...TBO_HOTEL_FIELD_KEYS,
+  'latitude',
+  'longitude',
 ];

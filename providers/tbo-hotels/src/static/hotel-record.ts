@@ -16,6 +16,7 @@ import {
   normalizeTboCheckTime,
   normalizeTboCountryCode,
   normalizeTboImageUrl,
+  normalizeTboLatLng,
   normalizeTboMap,
   normalizeTboStars,
   normalizeTboText,
@@ -25,6 +26,7 @@ import {
 import type { TboStaticObserver } from './observer';
 import {
   TboAttractionsFieldSchema,
+  TboCoordinateFieldSchema,
   TboListFieldSchema,
   TboRatingFieldSchema,
   TboStaticCodeSchema,
@@ -63,6 +65,11 @@ export interface TboHotelRecordScope {
   readonly requestCityCode?: string;
   /** País con que se pidió la ciudad: respaldo de un `CountryCode` inválido (05 §3). */
   readonly fallbackCountryCode?: string;
+  /**
+   * Leer `Latitude`/`Longitude` antes que `Map`. Sólo TBOHotelCodeList, que las manda sin que el PDF
+   * las documente (producción, 2026-09-29); en HotelDetails no hay evidencia y no se leen.
+   */
+  readonly latitudeLongitude?: boolean;
 }
 
 export interface TboHotelRecord {
@@ -129,7 +136,25 @@ function readStars(reader: RecordReader, at: string): number | null {
   return read.stars;
 }
 
-function readLocation(reader: RecordReader, at: string): TboCatalogHotel['location'] {
+/**
+ * `Latitude`/`Longitude` si la operación las trae y dan un punto válido; si no, `Map` (05 §3). Una
+ * pareja inválida o `0|0` deja su nota y cede a `Map`, que puede dejar la suya.
+ */
+function readLocation(
+  reader: RecordReader,
+  scope: TboHotelRecordScope,
+): TboCatalogHotel['location'] {
+  const { at } = scope;
+  if (scope.latitudeLongitude === true) {
+    const read = normalizeTboLatLng(
+      reader.field(TboCoordinateFieldSchema, 'Latitude'),
+      reader.field(TboCoordinateFieldSchema, 'Longitude'),
+    );
+    if (read.location !== null) return read.location;
+    if (read.issue !== undefined) {
+      reader.note(read.issue, `${at}.Latitude:${read.issue.toLowerCase()}`);
+    }
+  }
   const raw = reader.field(TboTextFieldSchema, 'Map');
   if (raw === undefined) return null;
   const read = normalizeTboMap(String(raw));
@@ -254,7 +279,7 @@ export function readTboHotelRecord(
     hotelId: scope.hotelId,
     name,
     stars: readStars(reader, at),
-    location: readLocation(reader, at),
+    location: readLocation(reader, scope),
     address: reader.text('Address', MAX_ADDRESS),
     zipcode: reader.text('PinCode', MAX_ZIPCODE),
     countryCode: readCountry(reader, scope),

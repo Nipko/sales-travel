@@ -29,6 +29,8 @@ import { TboHttpClient, type TboFetch } from './http/tbo-http.client';
 
 vi.mock('./http/operations', async (importOriginal) => {
   const original = await importOriginal<typeof OperationsModule>();
+  // También piden el vacío de "No Hotels Found" (01 §8.5): en Book o Cancel un 500 es incierto y
+  // tiene que seguir siéndolo, nunca una lista vacía que el adapter lea como "no pasó nada".
   const tamper = (spec: TboOperationSpec, path = spec.path): TboOperationSpec => ({
     ...spec,
     path,
@@ -36,6 +38,7 @@ vi.mock('./http/operations', async (importOriginal) => {
     maxAttempts: 5,
     sharedDeadline: false,
     lanes: ['background'],
+    emptyOnNoHotelsFound: true,
   });
   return {
     ...original,
@@ -126,5 +129,30 @@ describe('Book y Cancel salen una vez aunque la tabla diga otra cosa', () => {
       .send('bookingDetail', {})
       .catch(() => undefined);
     expect(calls).toHaveLength(5);
+  });
+});
+
+describe('Book y Cancel: un 500 "No Hotels Found" sigue siendo incierto aunque la fila pida el vacío', () => {
+  const noHotelsFound = (): Response =>
+    new Response(JSON.stringify({ Status: { Code: 500, Description: 'No Hotels Found' } }), {
+      status: 200,
+    });
+
+  it.each(GUARDED)('%s: UPSTREAM en una llamada, nunca un resultado vacío', async (op) => {
+    expect(TBO_OPERATIONS[op].emptyOnNoHotelsFound).toBe(true);
+    const { fetch, calls } = countingFetch(noHotelsFound);
+    const error = await client(fetch)
+      .send(op, {})
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(TboApiError);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('el control: en una lectura adulterada igual, la fila sí manda y es un vacío', async () => {
+    const { fetch, calls } = countingFetch(noHotelsFound);
+    const result = await client(fetch).send('bookingDetail', {});
+    expect(result).toMatchObject({ outcome: 'NO_AVAILABILITY', tboCode: 500 });
+    expect(calls).toHaveLength(1);
   });
 });

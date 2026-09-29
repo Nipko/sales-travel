@@ -10,8 +10,10 @@ import type { TboOperationSpec } from './operations';
  * `Code: 405` es un Book fallido, y un 500 de transporte con `Code: 201` en Search es "sin
  * disponibilidad". Manda el cuerpo cuando trae un envelope válido; sin él, el HTTP.
  *
- * Ninguna rama compara `Status.Description` (01 §8.6): los textos de los ejemplos no coinciden con
- * los de la tabla. Sólo se devuelve, recortada, para el log de las operaciones sin datos personales.
+ * `Status.Description` no decide nada (01 §8.6): los textos de los ejemplos no coinciden con los de
+ * la tabla. Se devuelve, recortada, para el log de las operaciones sin datos personales. La única
+ * excepción es la de la fila que la pide (`emptyOnNoHotelsFound`, sólo TBOHotelCodeList): un 500
+ * "No Hotels Found" con HTTP 2xx es la ciudad sin hoteles, observada en producción (01 §8.5).
  */
 
 /** Los 12 códigos de la tabla de p. 8-10, en el orden del PDF, con su desenlace (01 §8.3). */
@@ -36,7 +38,14 @@ export const TBO_STATUS_CODES: ReadonlyMap<number, 'SUCCESS' | TboFailureKind> =
 /** Largo máximo de `Status.Description` en un log (01 §11.1). */
 export const TBO_DESCRIPTION_LOG_MAX = 120;
 
+/**
+ * `NO_AVAILABILITY` es el resultado vacío de una operación que lo admite: el 201 de Search y el 500
+ * "No Hotels Found" de TBOHotelCodeList. Qué significa "vacío" lo decide quien llamó.
+ */
 export type TboEnvelopeOutcome = 'SUCCESS' | 'NO_AVAILABILITY';
+
+/** `Status.Description` de la ciudad sin hoteles, sin espacios y en minúsculas (01 §8.5). */
+const NO_HOTELS_FOUND = 'nohotelsfound';
 
 interface VerdictBase {
   /** `Status.Code` del cuerpo, sólo si hubo un envelope legible. */
@@ -61,7 +70,10 @@ export interface TboEnvelopeInput {
   readonly httpStatus: number;
   /** El cuerpo leído como texto. */
   readonly bodyText: string;
-  readonly operation: Pick<TboOperationSpec, 'envelope' | 'emptyOnNoAvailability'>;
+  readonly operation: Pick<
+    TboOperationSpec,
+    'envelope' | 'emptyOnNoAvailability' | 'emptyOnNoHotelsFound'
+  >;
 }
 
 type ParsedBody = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
@@ -113,6 +125,11 @@ function readDescription(raw: unknown): string | undefined {
   return oneLine.length === 0 ? undefined : oneLine.slice(0, TBO_DESCRIPTION_LOG_MAX);
 }
 
+/** Sobre el texto entero, no sobre el recorte del log: igual sin mayúsculas ni espacios, nada más. */
+function isNoHotelsFound(raw: unknown): boolean {
+  return typeof raw === 'string' && raw.replace(/\s+/g, '').toLowerCase() === NO_HOTELS_FOUND;
+}
+
 type Envelope =
   | { readonly state: 'absent' }
   | { readonly state: 'invalid'; readonly casingVariant: boolean }
@@ -121,6 +138,7 @@ type Envelope =
       readonly code: number;
       readonly casingVariant: boolean;
       readonly description: string | undefined;
+      readonly noHotelsFound: boolean;
     };
 
 function readEnvelope(value: unknown): Envelope {
@@ -145,6 +163,7 @@ function readEnvelope(value: unknown): Envelope {
     code: parsedCode,
     casingVariant,
     description: description.state === 'one' ? readDescription(description.value) : undefined,
+    noHotelsFound: description.state === 'one' && isNoHotelsFound(description.value),
   };
 }
 
@@ -186,7 +205,7 @@ function classifyCode(
   return { ...base, ok: false, kind: mapped ?? 'UNKNOWN_CODE' };
 }
 
-/** El algoritmo de 01 §10.3, pasos 4 a 6. */
+/** El algoritmo de 01 §10.3, pasos 4 a 6, con la excepción de 01 §8.5 en el paso 5. */
 export function classifyTboResponse(input: TboEnvelopeInput): TboEnvelopeVerdict {
   const { httpStatus, bodyText, operation } = input;
   const parsed = parseBody(bodyText);
@@ -196,6 +215,23 @@ export function classifyTboResponse(input: TboEnvelopeInput): TboEnvelopeVerdict
 
   if (isSuccessStatus(httpStatus)) {
     if (!parsed.ok) return { ...noEnvelope, ok: false, kind: 'MALFORMED_RESPONSE' };
+    // Sólo con transporte 2xx, que es lo observado (01 §8.5): un HTTP de error con el mismo cuerpo
+    // no se sabe qué es y sigue la regla general.
+    if (
+      envelope.state === 'valid' &&
+      envelope.code === 500 &&
+      envelope.noHotelsFound &&
+      operation.emptyOnNoHotelsFound
+    ) {
+      return {
+        tboCode: envelope.code,
+        casingVariant: envelope.casingVariant,
+        description: envelope.description,
+        ok: true,
+        outcome: 'NO_AVAILABILITY',
+        data: parsed.value,
+      };
+    }
     if (envelope.state === 'valid') return classifyCode(envelope, parsed.value, operation);
     if (envelope.state === 'absent' && operation.envelope === 'optional') {
       return { ...noEnvelope, ok: true, outcome: 'SUCCESS', data: parsed.value };

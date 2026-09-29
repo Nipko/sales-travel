@@ -163,6 +163,82 @@ describe('hotelcodelist: envelope opcional (p. 55)', () => {
   });
 });
 
+describe('TBOHotelCodeList: 500 "No Hotels Found" es la ciudad sin hoteles (01 §8.5)', () => {
+  const CITY_HOTELS = TBO_OPERATIONS.tboHotelCodeList;
+  const noHotels = (description: unknown): unknown => ({
+    Status: { Code: 500, Description: description },
+  });
+
+  it.each(['No Hotels Found', 'no hotels found', '  NO  HOTELS\tFOUND ', 'NoHotelsFound'])(
+    '%j, con HTTP 200: resultado vacío que conserva código y texto',
+    (description) => {
+      expect(classify(noHotels(description), 200, CITY_HOTELS)).toMatchObject({
+        ok: true,
+        outcome: 'NO_AVAILABILITY',
+        tboCode: 500,
+      });
+    },
+  );
+
+  it('el envelope con otro casing y el código como string también', () => {
+    expect(
+      classify({ status: { code: '500', description: 'No Hotels Found' } }, 200, CITY_HOTELS),
+    ).toMatchObject({ ok: true, outcome: 'NO_AVAILABILITY', casingVariant: true });
+  });
+
+  it.each([
+    'Unexpected Error',
+    'No Hotels Found.',
+    'No Hotel Found',
+    'No Hotels Found for this city',
+    '',
+    null,
+    42,
+  ])('otro 500 (%j) sigue siendo UPSTREAM: la excepción no se amplía', (description) => {
+    expect(classify(noHotels(description), 200, CITY_HOTELS)).toMatchObject({
+      ok: false,
+      kind: 'UPSTREAM',
+    });
+  });
+
+  it('sin Description, un 500 es UPSTREAM', () => {
+    expect(classify({ Status: { Code: 500 } }, 200, CITY_HOTELS)).toMatchObject({
+      ok: false,
+      kind: 'UPSTREAM',
+    });
+  });
+
+  it('el texto sólo cuenta con Code 500', () => {
+    expect(
+      classify({ Status: { Code: 400, Description: 'No Hotels Found' } }, 200, CITY_HOTELS),
+    ).toMatchObject({ ok: false, kind: 'CLIENT_BUG' });
+  });
+
+  it('con HTTP de error el mismo cuerpo sigue la regla general: no es lo observado', () => {
+    for (const status of [500, 502, 404]) {
+      expect(classify(noHotels('No Hotels Found'), status, CITY_HOTELS)).toMatchObject({
+        ok: false,
+        kind: 'UPSTREAM',
+      });
+    }
+  });
+
+  it.each([
+    'cityList',
+    'hotelDetails',
+    'countryList',
+    'search',
+    'prebook',
+    'book',
+    'cancel',
+  ] as const)('en %s, sin evidencia, es UPSTREAM', (name) => {
+    expect(classify(noHotels('No Hotels Found'), 200, TBO_OPERATIONS[name])).toMatchObject({
+      ok: false,
+      kind: 'UPSTREAM',
+    });
+  });
+});
+
 describe('Status.Description (01 §8.6)', () => {
   it('no decide nada: el mismo código con otro texto da el mismo desenlace', () => {
     const a = classify({ Status: { Code: 207, Description: 'Successful' } }, 200, PREBOOK);

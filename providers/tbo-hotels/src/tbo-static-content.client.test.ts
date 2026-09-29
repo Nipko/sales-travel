@@ -266,6 +266,118 @@ describe('TboStaticContentClient: cupo, timeouts e intentos', () => {
   });
 });
 
+describe('TboStaticContentClient: la ciudad sin hoteles y las coordenadas (producción, 2026-09-29)', () => {
+  // El cuerpo que TBO devolvió en 16 ciudades de CO (envelope/83-500-no-hotels-found.json).
+  const observed = JSON.parse(
+    readFileSync(
+      join(__dirname, '__fixtures__', 'envelope', '83-500-no-hotels-found.json'),
+      'utf8',
+    ),
+  ) as { response: { bodyText: string } };
+  const noHotelsFound = (): Response =>
+    new Response(observed.response.bodyText, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('"No Hotels Found": lista vacía en UNA llamada, sin warn y con una línea info de la ciudad', async () => {
+    let served = 0;
+    const h = harness({
+      ...ROUTES,
+      [TBO_OPERATIONS.tboHotelCodeList.path]: () => {
+        served += 1;
+        return noHotelsFound();
+      },
+    });
+    const result = await h.client.listCityHotels('130452', { countryCode: 'US' });
+
+    expect(served).toBe(1);
+    expect(result).toMatchObject({
+      cityCode: '130452',
+      hotels: [],
+      listingContents: [],
+      attempts: 1,
+    });
+    expect(result.diagnostics).toEqual({
+      received: 0,
+      mapped: 0,
+      rejected: {},
+      notes: {},
+      unknownKeys: [],
+    });
+    const logs = h.logs.map(
+      (line) => JSON.parse(line) as { level: string; message: string; meta: unknown },
+    );
+    expect(logs.filter((log) => log.level === 'warn' || log.level === 'error')).toEqual([]);
+    expect(logs.filter((log) => log.level === 'info')).toEqual([
+      {
+        level: 'info',
+        message: 'tbo.static.city_without_hotels',
+        meta: {
+          provider: 'tbo-hotels',
+          op: 'tboHotelCodeList',
+          cityCode: '130452',
+          requestId: result.requestId,
+          tboCode: 500,
+          durationMs: result.durationMs,
+          attempt: 1,
+        },
+      },
+    ]);
+  });
+
+  it('cualquier otro 500 sigue siendo un error con sus reintentos: nunca una lista vacía', async () => {
+    let served = 0;
+    const h = harness({
+      ...ROUTES,
+      [TBO_OPERATIONS.tboHotelCodeList.path]: () => {
+        served += 1;
+        return json({ Status: { Code: 500, Description: 'Unexpected Error' } });
+      },
+    });
+    const error = await h.client.listCityHotels('130452').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(TboApiError);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+    expect(served).toBe(TBO_OPERATIONS.tboHotelCodeList.maxAttempts);
+  });
+
+  it('el mismo cuerpo en CityList, sin evidencia, es un error y no una lista de ciudades vacía', async () => {
+    const h = harness({ ...ROUTES, [TBO_OPERATIONS.cityList.path]: noHotelsFound });
+    const error = await h.client.listCities('CO', { maxAttempts: 1 }).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(TboApiError);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+  });
+
+  it('Latitude/Longitude mandan sobre Map y ya no se registran como claves desconocidas', async () => {
+    const h = harness({
+      ...ROUTES,
+      [TBO_OPERATIONS.tboHotelCodeList.path]: () =>
+        json(
+          JSON.parse(
+            readFileSync(
+              join(
+                __dirname,
+                '__fixtures__',
+                'observed',
+                'tbo-hotel-code-list.latitude-longitude.json',
+              ),
+              'utf8',
+            ),
+          ),
+        ),
+    });
+    const result = await h.client.listCityHotels('130452', { countryCode: 'US' });
+    expect(result.hotels.map((hotel) => hotel.location)).toEqual([
+      { lat: 40.764167, lng: -73.994468 },
+      { lat: 40.758, lng: -73.9855 },
+      { lat: 40.7484, lng: -73.9857 },
+      { lat: 40.7527, lng: -73.9772 },
+    ]);
+    expect(result.diagnostics.unknownKeys).toEqual([]);
+    expect(h.logs.join('\n')).not.toContain('tbo.static.unknown_keys');
+  });
+});
+
 describe('TboStaticContentClient: construcción', () => {
   it('sin credenciales usables no existe', () => {
     expect(() => new TboStaticContentClient(parseTboConfig({ environment: 'test' }))).toThrow(

@@ -52,7 +52,10 @@ export interface TboCatalogHotel {
   readonly name: string | null;
   /** 1 a 5, con medias estrellas; `null` sin clasificación o con un valor desconocido (Q-68). */
   readonly stars: number | null;
-  /** `null` si `Map` falta, está malformado o es `0|0`. */
+  /**
+   * En TBOHotelCodeList, `Latitude`/`Longitude` si son válidas y, si no, `Map`; en HotelDetails,
+   * `Map`. `null` si ninguna sirve: falta, malformada, fuera de rango o `0|0`.
+   */
   readonly location: TboGeoPoint | null;
   /** Tal cual, sin parsear: se llama "first line" y trae la dirección entera (CE-12). */
   readonly address: string | null;
@@ -134,6 +137,10 @@ export type TboStaticNote =
   | 'STARS_UNKNOWN'
   | 'MAP_INVALID'
   | 'MAP_ZERO'
+  /** `Latitude`/`Longitude` que no dan un punto (falta una, no es número, fuera de rango): va `Map`. */
+  | 'LAT_LNG_INVALID'
+  /** `Latitude` y `Longitude` en cero: dato vacío, como `Map` `0|0`; va `Map`. */
+  | 'LAT_LNG_ZERO'
   | 'COUNTRY_INVALID'
   | 'COUNTRY_FROM_CITY'
   | 'IMAGE_DROPPED'
