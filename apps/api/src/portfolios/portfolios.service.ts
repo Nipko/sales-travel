@@ -214,7 +214,8 @@ export class PortfoliosService {
         currency: 'COP',
         status: 'active',
       })
-      .onConflict((conflict) => conflict.column('tenant_id').doNothing())
+      // Una cartera por (tenant, moneda) desde 0052.
+      .onConflict((conflict) => conflict.columns(['tenant_id', 'currency']).doNothing())
       .returningAll()
       .executeTakeFirst();
     if (inserted) return inserted as unknown as PortfolioRow;

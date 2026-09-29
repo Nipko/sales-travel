@@ -14,7 +14,7 @@ PR-7.2). El stack, el despliegue y los registros DNS están en
 | Usuario `vendedor`  | Rol `vendedor`: busca, reserva y cancela **sin MFA** (07 §7.4). Correo verificado; el stack no envía correo.                                                                                                                                                                              |
 | Cuenta `tbo-hotels` | `active`, no heredable, `environment: test`. Usuario y contraseña cifrados con la clave del stack, leídos del entorno del contenedor. Sólo acepta el host de test de TBO: este stack nunca guarda una live.                                                                               |
 | TBO habilitado      | Ajuste del tenant en `provider_enablement` (0048), como lo pone el superadmin desde el panel, con su `domain_event`. Si alguien lo apagó en el stack, el despliegue siguiente lo vuelve a encender. La variable legado `HOTEL_PROVIDERS_OPT_IN` del stack se mantiene.                    |
-| Cartera             | En `CERT_CURRENCY`, recargada hasta `CERT_WALLET_BALANCE` con un `DEPOSIT_PAYMENT` del seed (nunca PAN, D1).                                                                                                                                                                              |
+| Cartera             | La de `CERT_CURRENCY`, recargada hasta `CERT_WALLET_BALANCE` con un `DEPOSIT_PAYMENT` del seed (nunca PAN, D1). Hay una por moneda (0052): otra `CERT_CURRENCY` abre otra y la anterior queda con sus movimientos.                                                                        |
 | Regla de markup     | `hotels`, porcentaje `CERT_HOTEL_MARKUP_PERCENT`. Margen bajo a propósito: el tester ve el precio de venta y el piso del `RecommendedSellingRate` actuando (CK-09).                                                                                                                       |
 | Clientes del CRM    | Cuatro ficticios (correo `example.com`, sin teléfono), de cuatro nacionalidades, con el documento cifrado como lo guarda el api.                                                                                                                                                          |
 
@@ -40,8 +40,7 @@ en rojo por las reservas de prueba de TBO. El despliegue siguiente lo reintenta;
 - el correo del vendedor es de un usuario de otra red (no le cambia la contraseña);
 - hay otra cuenta de TBO `active` en el tenant, o la actual ya tiene órdenes y cambió su usuario o su URL (se quedarían
   sin post-venta);
-- la cuenta guardada no se descifra con `PROVIDER_CREDENTIALS_KEY` (la clave del stack cambió);
-- la cartera cambia de moneda y ya tiene movimientos de reservas.
+- la cuenta guardada no se descifra con `PROVIDER_CREDENTIALS_KEY` (la clave del stack cambió).
 
 Sale con `1` y una línea JSON con el motivo. Nunca imprime un valor de credencial.
 

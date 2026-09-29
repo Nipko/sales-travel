@@ -120,9 +120,9 @@ function bank(options?: { balance?: number; credit?: number; portfolio?: boolean
             return query;
           },
           onConflict: (
-            callback: (builder: { column: () => { doNothing: () => unknown } }) => unknown,
+            callback: (builder: { columns: () => { doNothing: () => unknown } }) => unknown,
           ) => {
-            callback({ column: () => ({ doNothing: () => query }) });
+            callback({ columns: () => ({ doNothing: () => query }) });
             return query;
           },
           returningAll: () => query,

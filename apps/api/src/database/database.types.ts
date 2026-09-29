@@ -53,8 +53,12 @@ export interface TenantsTable {
   custom_domain_verified_at: Timestamp | null;
   /**
    * 0007: crédito interno que la red le da a la agencia, en unidades MAYORES de
-   * `default_currency` (NUMERIC(14,2), que `pg` devuelve como texto). 0 = sin crédito. La agencia
-   * no lo edita: acota lo que puede reservar con una cuenta de proveedor heredada (RF-23).
+   * `default_currency` (NUMERIC(14,2), que `pg` devuelve como texto). 0 = sin crédito.
+   *
+   * FUERA DE USO desde 0053: su valor pasó al cupo de la cartera en `default_currency`
+   * (`agency_portfolios.credit_limit_minor`), que fija quien financia al nodo. Se conserva como dato.
+   * `PortfoliosService.holdFacts` todavía lo combina con el cupo (el menor de los dos): hay que
+   * retirarlo de ahí.
    */
   credit_limit: Generated<string>;
   created_at: Generated<Timestamp>;
@@ -574,17 +578,34 @@ export interface CrmInteractionsTable {
   created_at: Generated<Timestamp>;
 }
 
+export type PortfolioStatus = 'active' | 'suspended' | 'overlimit';
+
+/**
+ * Carteras B2B (0010). Desde 0052, una por (tenant, moneda): la moneda es obligatoria y no cambia
+ * (STW01 `portfolio_identity_immutable`). El cupo y el estado —y abrir una cartera con cupo o
+ * saldo— los escribe sólo quien financia al nodo (`can_finance_tenant`), con `app.current_user_id`
+ * del que actúa: sin él la base responde 42501 `portfolio_financier_required`. `app_user` no la
+ * borra (se llevaría su libro y su deuda).
+ */
 export interface AgencyPortfoliosTable {
   id: Generated<string>;
   tenant_id: string;
+  /** Unidades menores de `currency`, entre 0 y 2^53 − 1. */
   credit_limit_minor: Generated<number>;
   balance_minor: Generated<number>;
-  currency: Generated<string>;
-  status: Generated<string>;
+  /** ISO 4217 en mayúsculas. Sin default desde 0052. */
+  currency: string;
+  status: Generated<PortfolioStatus>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
 
+/**
+ * El libro de la cartera. Desde 0052 es de sólo agregar para `app_user` (sin UPDATE ni DELETE), y un
+ * `DEPOSIT_PAYMENT` o un `MANUAL_ADJUSTMENT` exige ser quien financia al dueño de la cartera, va
+ * firmado por el que actúa (`created_by` = `app.current_user_id`, si no 42501
+ * `portfolio_entry_author`) y su `created_at` lo pone la base.
+ */
 export interface PortfolioTransactionsTable {
   id: Generated<string>;
   portfolio_id: string;
@@ -595,6 +616,41 @@ export interface PortfolioTransactionsTable {
   notes: string | null;
   created_by: string;
   created_at: Generated<Timestamp>;
+}
+
+export type DepositReportStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * Depósitos que informa una agencia (0052). Nacen `pending` (los informa la agencia con
+ * `app.current_tenant_id` = su tenant y `reported_by` = `app.current_user_id`) y quien financia al
+ * nodo los pasa UNA vez a `approved` —enlazando el `DEPOSIT_PAYMENT` de esa cartera por ese monto— o
+ * a `rejected` con motivo. `reported_at` y `resolved_at` los fija la base, y cada paso deja su
+ * `domain_event` (`portfolio.deposit_report.submitted | approved | rejected`) desde un trigger: la
+ * API no escribe otro. Nadie los borra desde la aplicación.
+ */
+export interface PortfolioDepositReportsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  portfolio_id: string;
+  /** Unidades menores, entre 1 y 2^53 − 1. */
+  amount_minor: number;
+  /** La de la cartera (FK compuesta a agency_portfolios). */
+  currency: string;
+  /** Referencia de la transferencia o consignación, hasta 100 caracteres. */
+  reference: string;
+  deposited_on: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  /** Comentario de la agencia, hasta 500 caracteres. No va a los domain_events. */
+  notes: string | null;
+  status: Generated<DepositReportStatus>;
+  idempotency_key: string | null;
+  reported_by: string;
+  reported_at: Generated<Timestamp>;
+  resolved_by: string | null;
+  resolved_at: Timestamp | null;
+  /** Obligatorio al rechazar; hasta 500 caracteres. */
+  resolution_reason: string | null;
+  portfolio_transaction_id: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface MarkupRulesTable {
@@ -842,6 +898,7 @@ export interface DB {
   crm_interactions: CrmInteractionsTable;
   agency_portfolios: AgencyPortfoliosTable;
   portfolio_transactions: PortfolioTransactionsTable;
+  portfolio_deposit_reports: PortfolioDepositReportsTable;
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;
   package_items: PackageItemsTable;

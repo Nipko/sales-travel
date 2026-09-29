@@ -355,6 +355,34 @@ d('runSeed contra Postgres', () => {
     expect(report.walletBalanceMinor).toBe(100_000);
   });
 
+  it('otra CERT_CURRENCY abre la cartera de esa moneda y la anterior queda como estaba (0052)', async () => {
+    const slug = `tbo-cert-it-cur-${SUFFIX}`;
+    const email = `vendedor-cur-${SUFFIX}@example.com`;
+    const usd = await runSeed(client, settings({ slug, email }), fakeHasher);
+    createdTenants.push(usd.tenantId);
+    createdUsers.push(usd.userId);
+    const [held] = await q<{ id: string }>(
+      `SELECT id FROM agency_portfolios WHERE tenant_id = $1 AND currency = 'USD'`,
+      [usd.tenantId],
+    );
+    await client.query(
+      'UPDATE agency_portfolios SET balance_minor = balance_minor - 30000 WHERE id = $1',
+      [held!.id],
+    );
+
+    const eur = await runSeed(client, settings({ slug, email, currency: 'EUR' }), fakeHasher);
+    expect(eur).toMatchObject({ walletCurrency: 'EUR', walletToppedUpMinor: 100_000 });
+    const wallets = await q<{ currency: string; balance_minor: string }>(
+      `SELECT currency, balance_minor::text FROM agency_portfolios WHERE tenant_id = $1
+        ORDER BY currency`,
+      [usd.tenantId],
+    );
+    expect(wallets).toEqual([
+      { currency: 'EUR', balance_minor: '100000' },
+      { currency: 'USD', balance_minor: '70000' },
+    ]);
+  });
+
   it('cambia el contacto de soporte con sus variables, y no lo reescribe si no cambió', async () => {
     const s = settings({
       supportEmail: `reservas-${SUFFIX}@example.com`,
