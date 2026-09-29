@@ -5,9 +5,12 @@ vi.mock('../../../lib/api', () => ({ api: apiMock }));
 
 import {
   customerForHotelSearchAction,
+  hotelSearchCurrenciesAction,
   searchHotelsAction,
+  suggestDestinationsAction,
   type HotelSearchResult,
 } from './actions';
+import { SUGGESTIONS_UNAVAILABLE } from './_components/destination-suggestions';
 
 const INITIAL: HotelSearchResult = {
   ok: false,
@@ -117,6 +120,130 @@ describe('searchHotelsAction — el sobre de la respuesta', () => {
     apiMock.mockResolvedValue({ ok: false, error: { status: 400, message: 'Algo falló' } });
     const res = await searchHotelsAction(INITIAL, form({}));
     expect(res).toMatchObject({ ok: false, error: 'Algo falló', showProviderInResults: false });
+  });
+});
+
+describe('searchHotelsAction — moneda de la búsqueda (D-TBO-15)', () => {
+  function cuerpo(): Record<string, unknown> {
+    const [, init] = apiMock.mock.calls[0] as [string, { body: string }];
+    return JSON.parse(init.body) as Record<string, unknown>;
+  }
+
+  it('la moneda elegida viaja en el cuerpo y vuelve en lo que se buscó', async () => {
+    const res = await searchHotelsAction(INITIAL, form({ currency: 'USD' }));
+    expect(cuerpo()).toMatchObject({ currency: 'USD' });
+    expect(res.criteria?.currency).toBe('USD');
+  });
+
+  it('sin moneda (el selector no cargó) no se manda: el API busca en la de la agencia', async () => {
+    const res = await searchHotelsAction(INITIAL, form({}));
+    expect(cuerpo()).not.toHaveProperty('currency');
+    expect(res.criteria).not.toHaveProperty('currency');
+  });
+
+  it('una moneda que no es un código ISO no llega al API', async () => {
+    const res = await searchHotelsAction(INITIAL, form({ currency: 'dólares' }));
+    expect(res.error).toBe('Elegí la moneda de la búsqueda de la lista.');
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('el rechazo del API (moneda no permitida) se muestra con su motivo', async () => {
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: {
+        status: 400,
+        message:
+          'Los hoteles se buscan en COP o USD: la moneda EUR no está disponible para esta agencia.',
+      },
+    });
+    const res = await searchHotelsAction(INITIAL, form({ currency: 'EUR' }));
+    expect(res.error).toContain('COP o USD');
+  });
+
+  it('las monedas en que cotizó un proveedor fuera por moneda llegan a la pantalla', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: {
+        hotels: [],
+        providers: [
+          {
+            code: 'tbo-hotels',
+            status: 'skipped',
+            count: 0,
+            skipReason: 'currency-mismatch',
+            droppedForCurrency: 3,
+            droppedCurrencies: ['USD'],
+          },
+        ],
+      },
+    });
+    const res = await searchHotelsAction(INITIAL, form({ currency: 'COP' }));
+    expect(res.providers[0]?.droppedCurrencies).toEqual(['USD']);
+  });
+});
+
+describe('hotelSearchCurrenciesAction — las monedas del selector', () => {
+  it('la lista del API, con la de la agencia primero', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { defaultCurrency: 'COP', currencies: ['COP', 'USD'] },
+    });
+    expect(await hotelSearchCurrenciesAction()).toEqual({
+      defaultCurrency: 'COP',
+      currencies: ['COP', 'USD'],
+    });
+    expect(apiMock.mock.calls[0]?.[0]).toBe('/hotels/currencies');
+  });
+
+  it('un fallo o una respuesta sin forma: null, y se busca en la de la agencia', async () => {
+    apiMock.mockResolvedValue({ ok: false, error: { status: 503, message: 'x' } });
+    expect(await hotelSearchCurrenciesAction()).toBeNull();
+    apiMock.mockResolvedValue({ ok: true, data: { currencies: 'USD' } });
+    expect(await hotelSearchCurrenciesAction()).toBeNull();
+  });
+});
+
+describe('suggestDestinationsAction — "no hay ciudades" no es "no se pudo consultar"', () => {
+  it('las sugerencias del API, sin error', async () => {
+    const items = [{ id: 982, gid: 'g-1', type: 1, display: 'Bogotá, Colombia' }];
+    apiMock.mockResolvedValue({ ok: true, data: { items } });
+    expect(await suggestDestinationsAction(' bogo ')).toEqual({ items });
+    expect(apiMock.mock.calls[0]?.[0]).toBe('/hotels/suggestions?q=bogo');
+  });
+
+  it('ninguna ciudad coincide: lista vacía y sin error', async () => {
+    apiMock.mockResolvedValue({ ok: true, data: { items: [] } });
+    expect(await suggestDestinationsAction('zzzz')).toEqual({ items: [] });
+  });
+
+  it('el API falló: el motivo, sin su texto técnico', async () => {
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: { status: 502, message: 'despegar-hotels: upstream 500 {"trace":"abc"}' },
+    });
+    const res = await suggestDestinationsAction('bogo');
+    expect(res).toEqual({ items: [], error: SUGGESTIONS_UNAVAILABLE });
+    expect(res.error).not.toContain('despegar');
+  });
+
+  it('la sesión venció: se dice así', async () => {
+    apiMock.mockResolvedValue({ ok: false, error: { status: 401, message: 'Unauthorized' } });
+    expect((await suggestDestinationsAction('bogo')).error).toBe(
+      'Tu sesión venció. Volvé a iniciar sesión para buscar destinos.',
+    );
+  });
+
+  it('una respuesta sin lista tampoco es "no hay ciudades"', async () => {
+    apiMock.mockResolvedValue({ ok: true, data: { resultados: [] } });
+    expect(await suggestDestinationsAction('bogo')).toEqual({
+      items: [],
+      error: SUGGESTIONS_UNAVAILABLE,
+    });
+  });
+
+  it('muy corto no pregunta', async () => {
+    expect(await suggestDestinationsAction('b')).toEqual({ items: [] });
+    expect(apiMock).not.toHaveBeenCalled();
   });
 });
 

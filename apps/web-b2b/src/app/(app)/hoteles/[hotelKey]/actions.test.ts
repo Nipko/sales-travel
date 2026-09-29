@@ -97,6 +97,31 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
     });
   });
 
+  it('D-TBO-15: con la moneda de la búsqueda, el detalle la pide igual', async () => {
+    apiMock.mockImplementation((_path: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { hotelId: string };
+      return Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
+    });
+    await hotelRatesAction(KEY, { ...STAY, currency: 'USD' });
+    const calls = apiMock.mock.calls as [string, { body: string }][];
+    for (const [, init] of calls) {
+      expect(JSON.parse(init.body)).toMatchObject({ currency: 'USD' });
+    }
+  });
+
+  it('sin moneda en la estadía no se manda: el API busca en la de la agencia', async () => {
+    apiMock.mockResolvedValue({ ok: true, data: { hotelId: '555', roompacks: [] } });
+    await hotelRatesAction(KEY, STAY);
+    const calls = apiMock.mock.calls as [string, { body: string }][];
+    expect(JSON.parse(calls[0]![1].body)).not.toHaveProperty('currency');
+  });
+
+  it('una moneda inválida en la estadía no llega al API', async () => {
+    const res = await hotelRatesAction(KEY, { ...STAY, currency: 'dolares' });
+    expect(res.ok).toBe(false);
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
   it('sin estadía válida no se busca: nunca una nacionalidad por defecto (RF-06)', async () => {
     const res = await hotelRatesAction(KEY, { ...STAY, guestNationality: '' });
     expect(res.ok).toBe(false);

@@ -195,6 +195,8 @@ export interface StaySummary {
   readonly nights: number;
   readonly details: string;
   readonly nationality: string;
+  /** La moneda en que se cotiza, si la búsqueda eligió una (D-TBO-15). */
+  readonly currency?: string;
 }
 
 /**
@@ -218,5 +220,6 @@ export function staySummary(stay: HotelStay, countryName: (code: string) => stri
     nights,
     details: parts.join(' · '),
     nationality: countryName(stay.guestNationality),
+    ...(stay.currency === undefined ? {} : { currency: stay.currency }),
   };
 }

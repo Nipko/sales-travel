@@ -107,6 +107,8 @@ export async function hotelRatesAction(
         guestNationality: parsed.guestNationality,
       };
       if (parsed.refundableOnly) body.refundableOnly = true;
+      // La moneda del listado: sin ella el detalle buscaría en la de la agencia (D-TBO-15).
+      if (parsed.currency !== undefined) body.currency = parsed.currency;
       const res = await api<unknown>('/hotels/detail', {
         method: 'POST',
         body: JSON.stringify(body),

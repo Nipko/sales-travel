@@ -1,6 +1,7 @@
 import { isCountryAlpha2 } from '../../../../lib/countries';
 import type { HotelOffer, HotelSearchCriteriaView, RoomDistribution } from '../actions';
 import { encodeHotelKey, hotelRefsOf } from './hotel-key';
+import { isCurrencyCode } from './search-currency';
 
 /*
  * Lo que el detalle de un hotel necesita de la búsqueda desde la que se abrió: la estadía, para
@@ -25,6 +26,12 @@ export interface HotelStay {
   /** ISO 3166-1 alfa-2. */
   readonly guestNationality: string;
   readonly refundableOnly: boolean;
+  /**
+   * La moneda de la búsqueda (ISO 4217, D-TBO-15): el detalle pide sus tarifas en la misma, o
+   * mostraría otras que las del listado. Ausente: la de la agencia (una búsqueda sin moneda
+   * elegida, o guardada antes del selector).
+   */
+  readonly currency?: string;
 }
 
 export interface SearchHandoff {
@@ -84,12 +91,17 @@ export function parseStay(value: unknown): HotelStay | undefined {
   if (raw['rooms'].length > MAX_ROOMS) return undefined;
   const rooms = raw['rooms'].map(roomOf);
   if (rooms.some((r) => r === undefined)) return undefined;
+  // Una moneda que no es un código ISO no se descarta callada: el detalle buscaría en otra que la
+  // del listado. Sin moneda, sí vale: es la de la agencia.
+  const currency = raw['currency'];
+  if (currency !== undefined && !isCurrencyCode(currency)) return undefined;
   return {
     checkinDate,
     checkoutDate,
     rooms: rooms as RoomDistribution[],
     guestNationality,
     refundableOnly: raw['refundableOnly'] === true,
+    ...(currency === undefined ? {} : { currency }),
   };
 }
 
@@ -210,7 +222,12 @@ export function detailLinkForOffer(
 export function stayOfCriteria(
   criteria: Pick<
     HotelSearchCriteriaView,
-    'checkinDate' | 'checkoutDate' | 'occupancy' | 'guestNationality' | 'refundableOnly'
+    | 'checkinDate'
+    | 'checkoutDate'
+    | 'occupancy'
+    | 'guestNationality'
+    | 'refundableOnly'
+    | 'currency'
   >,
 ): HotelStay | undefined {
   return parseStay({
@@ -219,5 +236,6 @@ export function stayOfCriteria(
     rooms: criteria.occupancy,
     guestNationality: criteria.guestNationality,
     refundableOnly: criteria.refundableOnly,
+    ...(criteria.currency === undefined ? {} : { currency: criteria.currency }),
   });
 }

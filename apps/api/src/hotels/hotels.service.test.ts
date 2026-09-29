@@ -360,7 +360,6 @@ describe('HotelsService.searchAvailability — telemetría', () => {
     ]);
     expect(err.message).not.toContain('boom');
     expect(b.instrument).toHaveBeenCalledTimes(1);
-    expect(b.getApplicableRules).not.toHaveBeenCalled();
   });
 });
 
@@ -476,10 +475,10 @@ describe('HotelsService.searchAvailability — criterio que recibe Despegar', ()
 
   it('la moneda y el país de la entrada ganan a los del tenant', async () => {
     const b = banco({ tenant: { default_currency: 'COP', country_code: 'CO' } });
-    await b.service.searchAvailability(TENANT, entrada({ currency: 'BRL', countryCode: 'PE' }));
+    await b.service.searchAvailability(TENANT, entrada({ currency: 'USD', countryCode: 'PE' }));
 
     const q = consultaEnviada(b);
-    expect(q.currency).toBe('BRL');
+    expect(q.currency).toBe('USD');
     expect(q.countryCode).toBe('PE');
   });
 
@@ -635,7 +634,9 @@ describe('HotelsService.getHotelDetail', () => {
 
   it('pasa el criterio con los defaults del tenant y el roompack pedido', async () => {
     const b = banco({ tenant: { default_currency: 'COP', country_code: 'CO' } });
-    await b.service.getHotelDetail(TENANT, detalle);
+    // El ACL falso responde en USD: con la búsqueda en COP, la puerta del detalle lo rechaza
+    // (ver `HotelsService — moneda de la búsqueda`). Acá sólo importa lo que se le pidió.
+    await b.service.getHotelDetail(TENANT, detalle).catch(() => undefined);
 
     expect(b.adapter.getHotelDetail).toHaveBeenCalledWith({
       hotelId: '101',

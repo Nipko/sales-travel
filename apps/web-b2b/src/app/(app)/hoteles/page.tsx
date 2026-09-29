@@ -1,9 +1,15 @@
 'use client';
 
-import { Hotel, Info, Loader2, Search, TriangleAlert } from 'lucide-react';
+import { Hotel, Info, Loader2, RefreshCw, Search, TriangleAlert } from 'lucide-react';
 import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
 import { cn } from '../../../lib/cn';
-import { searchHotelsAction, type HotelProviderOutcome, type HotelSearchResult } from './actions';
+import {
+  hotelSearchCurrenciesAction,
+  searchHotelsAction,
+  type HotelProviderOutcome,
+  type HotelSearchResult,
+} from './actions';
+import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
 import { HotelResultCard } from './_components/hotel-result-card';
 import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
@@ -16,6 +22,13 @@ import {
 import { NationalityField, rememberNationality } from './_components/nationality-field';
 import { OfferExpiry } from './_components/offer-expiry';
 import { RoomsPicker } from './_components/rooms-picker';
+import {
+  currencyFromQuery,
+  currencySwitchSuggestion,
+  initialSearchCurrency,
+  queryWithCurrency,
+  type SearchCurrencies,
+} from './_components/search-currency';
 
 const INITIAL: HotelSearchResult = {
   ok: false,
@@ -39,8 +52,21 @@ function todayISO(): string {
  * Resultados incompletos: un proveedor no respondió, se omitió en esta búsqueda o respondió con
  * tarifas que no se pueden mostrar. Sin este aviso, una lista corta —o vacía— se lee como "no hay
  * más hoteles", y eso es lo que el vendedor le dice a su cliente.
+ *
+ * Si un proveedor quedó fuera por cotizar en otra moneda que la agencia puede usar, ofrece repetir
+ * la búsqueda en esa moneda (D-TBO-15): es lo único que el vendedor puede hacer para verlo.
  */
-function DegradedProvidersNotice({ providers }: { providers: HotelProviderOutcome[] }) {
+function DegradedProvidersNotice({
+  providers,
+  switchTo,
+  onSearchIn,
+  searching,
+}: {
+  providers: HotelProviderOutcome[];
+  switchTo?: string;
+  onSearchIn: (currency: string) => void;
+  searching: boolean;
+}) {
   const degraded = degradedProviders(providers);
   if (degraded.length === 0) return null;
 
@@ -70,6 +96,26 @@ function DegradedProvidersNotice({ providers }: { providers: HotelProviderOutcom
             </li>
           ))}
         </ul>
+        {switchTo ? (
+          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              Hay tarifas en {switchTo} que no se muestran: buscá en {switchTo} para verlas. No se
+              convierte ningún precio.
+            </p>
+            <button
+              type="button"
+              onClick={() => onSearchIn(switchTo)}
+              disabled={searching}
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={cn('size-3.5', searching && 'animate-spin')}
+              />
+              Buscar en {switchTo}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -83,6 +129,47 @@ export default function HotelesPage() {
   const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
   const formRef = useRef<HTMLFormElement>(null);
   const today = todayISO();
+
+  // Moneda de la búsqueda (D-TBO-15): la lista la da el API; la elección se recuerda en la URL.
+  const [currencyOptions, setCurrencyOptions] = useState<SearchCurrencies | null | undefined>(
+    undefined,
+  );
+  const [currency, setCurrency] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    hotelSearchCurrenciesAction()
+      .catch(() => null)
+      .then((options) => {
+        if (cancelled) return;
+        setCurrencyOptions(options);
+        if (options !== null) {
+          setCurrency(initialSearchCurrency(options, currencyFromQuery(window.location.search)));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function chooseCurrency(next: string) {
+    setCurrency(next);
+    if (!currencyOptions) return;
+    const { pathname, search, hash } = window.location;
+    const query = queryWithCurrency(search, next, currencyOptions.defaultCurrency);
+    // `null`, como indica Next: su router conserva su propio estado y se entera del cambio.
+    window.history.replaceState(null, '', `${pathname}${query}${hash}`);
+  }
+
+  /** "Buscar en USD" del aviso: la misma búsqueda, con la otra moneda. */
+  function searchIn(next: string) {
+    const form = formRef.current;
+    if (!form) return;
+    chooseCurrency(next);
+    // El valor del campo todavía es el anterior hasta el próximo render: se pisa en los datos.
+    const data = new FormData(form);
+    data.set('currency', next);
+    startTransition(() => formAction(data));
+  }
 
   // `expiresAt` lo fija el servidor: el contador corre con SU reloj, no con el del navegador,
   // que puede estar minutos corrido.
@@ -197,8 +284,10 @@ export default function HotelesPage() {
           <RoomsPicker />
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-start">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_minmax(0,1fr)_auto] xl:items-start">
           <NationalityField />
+
+          <CurrencyField options={currencyOptions} value={currency} onChange={chooseCurrency} />
 
           <div className="space-y-1.5">
             <label htmlFor="hotelIds" className="block text-xs font-medium text-[var(--color-fg)]">
@@ -213,7 +302,7 @@ export default function HotelesPage() {
             />
           </div>
 
-          <label className="flex h-10 items-center gap-2 text-xs text-[var(--color-fg-muted)] lg:mt-[1.375rem]">
+          <label className="flex h-10 items-center gap-2 text-xs text-[var(--color-fg-muted)] sm:mt-[1.375rem]">
             <input
               type="checkbox"
               name="refundableOnly"
@@ -264,7 +353,18 @@ export default function HotelesPage() {
         </div>
       ) : null}
 
-      {state.ok ? <DegradedProvidersNotice providers={state.providers} /> : null}
+      {state.ok ? (
+        <DegradedProvidersNotice
+          providers={state.providers}
+          switchTo={currencySwitchSuggestion(
+            state.providers,
+            currencyOptions?.currencies,
+            state.criteria?.currency ?? currencyOptions?.defaultCurrency,
+          )}
+          onSearchIn={searchIn}
+          searching={isPending}
+        />
+      ) : null}
 
       {state.ok ? (
         hotelCount > 0 ? (
@@ -282,7 +382,8 @@ export default function HotelesPage() {
             >
               <h2 id="hotel-results-title" className="font-normal">
                 {hotelCount} hotel{hotelCount === 1 ? '' : 'es'} con disponibilidad · precios de
-                venta por la estadía completa
+                venta{state.criteria?.currency ? ` en ${state.criteria.currency}` : ''} por la
+                estadía completa
               </h2>
             </OfferExpiry>
             {/* Con varios proveedores, dos pueden devolver el mismo id de hotel: el id solo no

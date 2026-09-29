@@ -1,18 +1,26 @@
 'use client';
 
-import { Loader2, MapPin } from 'lucide-react';
+import { Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { suggestDestinationsAction, type GeoSuggestion } from '../actions';
+import {
+  SUGGESTIONS_MIN_QUERY,
+  SUGGESTIONS_UNAVAILABLE,
+  destinationNotice,
+} from './destination-suggestions';
 
 /**
- * Autocomplete de destino contra /hotels/suggestions (Despegar). Hoy es contextual:
- * `availability` exige IDs de hotel, así que la selección guarda el `gid` para cuando
- * exista el catálogo ciudad→IDs. Escribe inputs ocultos destinationGid/destinationLabel.
+ * Autocomplete de destino contra /hotels/suggestions. Escribe los inputs ocultos
+ * destinationId/destinationGid/destinationLabel.
+ *
+ * Si la consulta falla lo dice, con un motivo sin datos técnicos y la opción de reintentar: una
+ * lista vacía se leería como "no hay ciudades que coincidan" (ver `destination-suggestions.ts`).
  */
 export function DestinationCombobox() {
   const id = useId();
   const listId = `${id}-list`;
+  const noticeId = `${id}-notice`;
   const containerRef = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
 
@@ -23,12 +31,15 @@ export function DestinationCombobox() {
   const [items, setItems] = useState<GeoSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [attempt, setAttempt] = useState(0);
   const [active, setActive] = useState(-1);
 
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2 || q === label) {
+    if (q.length < SUGGESTIONS_MIN_QUERY || q === label) {
       setItems([]);
+      setError(undefined);
       setLoading(false);
       return;
     }
@@ -38,16 +49,21 @@ export function DestinationCombobox() {
       suggestDestinationsAction(q)
         .then((res) => {
           if (my !== seq.current) return;
-          setItems(res);
+          setItems(res.items);
+          setError(res.error);
           setActive(-1);
           setLoading(false);
         })
         .catch(() => {
-          if (my === seq.current) setLoading(false);
+          // La acción misma no respondió (red, despliegue en curso): tampoco es "no hay ciudades".
+          if (my !== seq.current) return;
+          setItems([]);
+          setError(SUGGESTIONS_UNAVAILABLE);
+          setLoading(false);
         });
     }, 250);
     return () => clearTimeout(t);
-  }, [query, label]);
+  }, [query, label, attempt]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -65,6 +81,10 @@ export function DestinationCombobox() {
     setItems([]);
     setOpen(false);
   }
+
+  const notice = open
+    ? destinationNotice({ query, label, loading, itemsCount: items.length, error })
+    : undefined;
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (items.length === 0) return;
@@ -106,6 +126,7 @@ export function DestinationCombobox() {
           placeholder="Ciudad o destino"
           aria-expanded={open && items.length > 0}
           aria-controls={listId}
+          aria-describedby={notice ? noticeId : undefined}
           aria-autocomplete="list"
           onChange={(e) => {
             setQuery(e.target.value);
@@ -165,17 +186,42 @@ export function DestinationCombobox() {
         </ul>
       ) : null}
 
-      {open &&
-      !loading &&
-      query.trim().length >= 2 &&
-      query.trim() !== label &&
-      items.length === 0 ? (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 text-center shadow-lg">
-          <p className="text-xs text-[var(--color-fg-muted)]">
-            Sin resultados para «{query.trim()}»
-          </p>
-        </div>
-      ) : null}
+      {/* Región viva siempre montada: un lector de pantalla anuncia el motivo cuando cambia. */}
+      <div role="status" aria-live="polite">
+        {notice ? (
+          <div
+            id={noticeId}
+            className={cn(
+              'absolute z-50 mt-1 w-full rounded-lg border bg-[var(--color-surface)] px-4 py-3 shadow-lg',
+              notice.kind === 'error'
+                ? 'border-[var(--color-danger)]/35'
+                : 'border-[var(--color-border)] text-center',
+            )}
+          >
+            <p
+              className={cn(
+                'text-xs',
+                notice.kind === 'error'
+                  ? 'text-[var(--color-danger)]'
+                  : 'text-[var(--color-fg-muted)]',
+              )}
+            >
+              {notice.text}
+            </p>
+            {notice.kind === 'error' ? (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setAttempt((n) => n + 1)}
+                className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 text-xs font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
+              >
+                <RefreshCw aria-hidden="true" className="size-3.5" />
+                Reintentar
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

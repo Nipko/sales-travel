@@ -208,8 +208,9 @@ const ENTRADAS: [string, Clase][] = [
     'POST /crm/tasks/reassign',
   ),
   ...noVenta(
-    'datos de referencia sin precio: autocompletar destinos, oficinas y tipos de tarifa',
+    'datos de referencia sin precio: autocompletar destinos, monedas de búsqueda, oficinas y tipos de tarifa',
     'GET /hotels/suggestions',
+    'GET /hotels/currencies',
     'GET /cars/suggestions',
     'GET /cars/offices',
     'GET /cars/rates',

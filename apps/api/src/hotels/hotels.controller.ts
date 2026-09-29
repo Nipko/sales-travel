@@ -33,6 +33,7 @@ import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filte
 import { HotelBookingService, type HotelBookingSummary } from './hotel-booking.service.js';
 import { HotelContentService, type HotelContentView } from './hotel-content.service.js';
 import { HotelPrebookService, type HotelPrebookResponse } from './hotel-prebook.service.js';
+import type { HotelSearchCurrencyOptions } from './hotel-search-currency.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
 import { HotelsService } from './hotels.service.js';
 import {
@@ -96,6 +97,13 @@ export class HotelsController {
   ): Promise<{ items: HotelDestinationSuggestion[] }> {
     const tenantId = await this.tenant(userId);
     return { items: await this.hotels.suggest(tenantId, query.q, query.locale) };
+  }
+
+  /** Las monedas del selector de la búsqueda: la de la agencia, elegida por defecto, y USD. */
+  @Get('currencies')
+  async currencies(@CurrentUser() userId: string | undefined): Promise<HotelSearchCurrencyOptions> {
+    const tenantId = await this.tenant(userId);
+    return this.hotels.searchCurrencies(tenantId);
   }
 
   /** El sobre CRECE, no cambia: `hotels` sigue igual y se suman `providers` y el booleano. */

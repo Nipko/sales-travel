@@ -303,6 +303,7 @@ describe('HotelsController — superficie HTTP', () => {
 
   it.each([
     ['suggestions', RequestMethod.GET, 'suggestions', [HotelSuggestQuerySchema]],
+    ['currencies', RequestMethod.GET, 'currencies', []],
     ['availability', RequestMethod.POST, 'availability', [HotelAvailabilityInputSchema]],
     ['detail', RequestMethod.POST, 'detail', [HotelDetailInputSchema]],
     ['prebook', RequestMethod.POST, 'prebook', [HotelPrebookBodySchema]],
@@ -328,7 +329,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas diez', () => {
+  it('no hay más rutas que esas once', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -340,6 +341,7 @@ describe('HotelsController — superficie HTTP', () => {
         'book',
         'cancel',
         'content',
+        'currencies',
         'detail',
         'getReservation',
         'payments',
@@ -369,6 +371,7 @@ describe('HotelsController — tenant', () => {
 
   const HANDLERS: [string, (c: HotelsController, u: string | undefined) => Promise<unknown>][] = [
     ['suggestions', (c, u) => c.suggestions(u, { q: 'bogo' })],
+    ['currencies', (c, u) => c.currencies(u)],
     ['availability', (c, u) => c.availability(u, pedidoValidado())],
     [
       'detail',
@@ -437,6 +440,14 @@ describe('HotelsController — sobres y paso de parámetros', () => {
     expect(b.adapter.suggest).toHaveBeenCalledWith('bogo', 'es_CO');
     expect(Object.keys(res)).toEqual(['items']);
     expect(res.items).toBe(await b.adapter.suggest.mock.results[0]?.value);
+  });
+
+  it('currencies devuelve las monedas de la agencia del usuario para el selector (D-TBO-15)', async () => {
+    const b = banco();
+    await expect(b.controller.currencies(USUARIO)).resolves.toEqual({
+      defaultCurrency: 'USD',
+      currencies: ['USD'],
+    });
   });
 
   it('payments devuelve `{ modalities }`', async () => {
