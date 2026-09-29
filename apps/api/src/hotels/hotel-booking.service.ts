@@ -311,9 +311,11 @@ interface HoldRef {
  *    búsqueda y contacto operativo de la agencia.
  * 2. **Orden `pending`** con la clave, la referencia de reserva y la cuenta, comprometida antes de
  *    llamar (D-TBO-07 A). Una clave repetida es 409 `duplicateRequest` sin tocar al proveedor.
- * 3. **Cartera** (RF-23 CA-1): saldo o crédito para el precio mostrado y, con una cuenta heredada,
- *    el límite interno de la agencia. Si no alcanza, la orden se cierra como no enviada y el
- *    proveedor no se entera.
+ * 3. **Cartera** (RF-23 CA-1): la de la agencia en la moneda de la tarifa, activa, con saldo más
+ *    el cupo que le fija quien la financia para el precio mostrado; con cuenta propia o heredada,
+ *    el mismo tope (el crédito interno de 0007 pasó a ese cupo en 0053). Sin cartera en esa moneda
+ *    (`PORTFOLIO_CURRENCY_NOT_ENABLED`), suspendida o sin saldo, la orden se cierra como no enviada
+ *    y el proveedor no se entera. El PreBook ya se lo avisó al vendedor (`funding`).
  * 4. **PreBook de revalidación (C2)** contra lo aceptado y precio de venta con la cascada y el
  *    piso. Si sube o cambian las condiciones, la orden se cierra como no enviada y 409 con los
  *    valores nuevos; si baja, se sigue con el nuevo y se avisa.

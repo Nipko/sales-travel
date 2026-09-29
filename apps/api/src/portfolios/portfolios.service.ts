@@ -16,8 +16,11 @@ import {
 } from './booking-hold.ledger.js';
 import {
   BookingHoldRejectedError,
+  bookingHoldMessage,
   decideBookingHold,
+  type BookingHoldDecision,
   type BookingHoldFacts,
+  type BookingHoldPreview,
   type BookingHoldRejection,
 } from './booking-hold.js';
 import {
@@ -63,6 +66,12 @@ interface BookingActionCapabilities {
 export type { BookingHoldRelease } from './booking-hold.ledger.js';
 
 const HOLD_BEFORE_BOOK_NOTES = 'Retención de saldo antes de reservar con el proveedor';
+const HOLD_CONFIRMED_NOTES = 'Retención preventiva de saldo por reserva pendiente de emisión';
+
+interface HeldOnWallet {
+  portfolio: PortfolioRow;
+  transaction: PortfolioTransactionRow;
+}
 
 export interface HoldBookingExpectations {
   /**
@@ -275,13 +284,22 @@ export class PortfoliosService {
     return report;
   }
 
-  // Flujo de Aprobación de Reserva
+  /**
+   * Retiene el total de una reserva ya confirmada y no emitida (vuelos y autos, `POST
+   * /portfolios/hold-booking`), con las mismas reglas que la retención previa al Book de un hotel:
+   * la cartera de la moneda de la orden, activa, y su saldo más el cupo que fija quien financia.
+   *
+   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   * @throws BadRequestException si la orden no es una reserva confirmada de este tenant, o no dice
+   *   lo que el cliente esperaba.
+   * @throws ConflictException si la orden ya tiene una retención.
+   */
   async holdBooking(
     tenantId: string,
     orderId: string,
     createdBy: string,
     expected: HoldBookingExpectations = {},
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
+  ): Promise<HeldOnWallet> {
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         // La orden, su monto y su moneda se leen bajo el tenant y dentro de la MISMA transacción
@@ -327,64 +345,16 @@ export class PortfoliosService {
           }
         }
 
-        // La cartera de la moneda de la reserva: la retención no convierte, y sin cartera en esa
-        // moneda no se abre una implícita.
-        const portfolio = await findWallet(trx, tenantId, orderCurrency);
-        if (!portfolio) {
-          throw holdRejection('PORTFOLIO_CURRENCY_NOT_ENABLED', {
-            amountMinor,
-            currency: orderCurrency,
-          });
-        }
-        if (portfolio.status !== 'active') {
-          throw new BadRequestException(
-            'La cartera no está activa. No se creó ninguna retención de saldo.',
-          );
-        }
-
-        // El índice parcial único reclama primero el orderId. Si dos requests compiten, el
-        // perdedor falla aquí y toda su transacción se revierte sin un segundo débito.
-        const transaction = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: portfolio.id,
-            amount_minor: -amountMinor,
-            transaction_type: 'BOOKING_HOLD',
-            // PostgreSQL devuelve UUID en representación canónica minúscula. No persistimos el
-            // casing/control textual que llegó por HTTP.
-            reference_id: order.id,
-            notes: 'Retención preventiva de saldo por reserva pendiente de emisión',
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        // La suficiencia se evalúa en el UPDATE que descuenta, después de adquirir el lock de la
-        // fila. Así dos reservas distintas tampoco pueden gastar el mismo saldo simultáneamente.
-        const heldBalance = sql<number>`balance_minor - ${amountMinor}`;
-        const updatedPortfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: heldBalance })
-          .where('id', '=', portfolio.id)
-          .where('status', '=', 'active')
-          .where(
-            sql<boolean>`balance_minor::numeric + credit_limit_minor::numeric >= ${amountMinor}`,
-          )
-          .where(
-            sql<boolean>`balance_minor::numeric - ${amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returningAll()
-          .executeTakeFirst();
-        if (!updatedPortfolio) {
-          throw new BadRequestException(
-            'Saldo insuficiente para reservar. Recargue saldo o solicite límite de crédito.',
-          );
-        }
-
-        return {
-          portfolio: updatedPortfolio as unknown as PortfolioRow,
-          transaction: transaction as unknown as PortfolioTransactionRow,
-        };
+        // `order.id` y no `orderId`: PostgreSQL lo devuelve en su forma canónica, y el asiento no
+        // guarda el casing que llegó por HTTP.
+        return this.retainOnWallet(
+          trx,
+          tenantId,
+          order.id,
+          { amountMinor, currency: orderCurrency },
+          createdBy,
+          HOLD_CONFIRMED_NOTES,
+        );
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -408,11 +378,33 @@ export class PortfoliosService {
    */
   async assertBookingHoldAffordable(tenantId: string, amount: Money): Promise<void> {
     const target = holdAmount(amount);
-    await this.db.withTenant(tenantId, async (trx) => {
-      const portfolio = await findWallet(trx, tenantId, target.currency);
-      const decision = decideBookingHold(holdFacts(portfolio, target));
-      if (!decision.ok) throw holdRejection(decision.reason, target);
-    });
+    const decision = await this.readHoldDecision(tenantId, target);
+    if (!decision.ok) throw holdRejection(decision.reason, target);
+  }
+
+  /**
+   * El aviso del PreBook: la misma decisión que {@link assertBookingHoldAffordable}, devuelta en vez
+   * de lanzada, para que el vendedor sepa ANTES de cargar huéspedes que la agencia no tiene cartera
+   * en la moneda de la tarifa, que está suspendida o que no le alcanza. Sólo lee y no promete nada:
+   * la reserva vuelve a decidir con la cartera bloqueada.
+   */
+  async previewBookingHold(tenantId: string, amount: Money): Promise<BookingHoldPreview> {
+    const target = holdAmount(amount);
+    const decision = await this.readHoldDecision(tenantId, target);
+    if (decision.ok) return { status: 'ok', currency: target.currency };
+    return {
+      status: 'blocked',
+      currency: target.currency,
+      reason: decision.reason,
+      message: bookingHoldMessage(decision.reason, target.currency),
+    };
+  }
+
+  /** La decisión sobre la cartera de la moneda de `target`, leída sin bloquearla. */
+  private async readHoldDecision(tenantId: string, target: Money): Promise<BookingHoldDecision> {
+    return this.db.withTenant(tenantId, async (trx) =>
+      decideBookingHold(holdFacts(await findWallet(trx, tenantId, target.currency), target)),
+    );
   }
 
   /**
@@ -435,7 +427,7 @@ export class PortfoliosService {
     orderId: string,
     createdBy: string,
     expected: Money,
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
+  ): Promise<HeldOnWallet> {
     const target = holdAmount(expected);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
@@ -482,43 +474,14 @@ export class PortfoliosService {
           );
         }
 
-        const portfolio = await findWallet(trx, tenantId, target.currency, { forUpdate: true });
-        if (!portfolio) throw holdRejection('PORTFOLIO_CURRENCY_NOT_ENABLED', target);
-        const decision = decideBookingHold(holdFacts(portfolio, target));
-        if (!decision.ok) throw holdRejection(decision.reason, target);
-
-        const transaction = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: portfolio.id,
-            amount_minor: -amountMinor,
-            transaction_type: 'BOOKING_HOLD',
-            reference_id: order.id,
-            notes: HOLD_BEFORE_BOOK_NOTES,
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra
-        // ruta escribió el saldo sin tomar el mismo bloqueo.
-        const updatedPortfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: sql<number>`balance_minor - ${amountMinor}` })
-          .where('id', '=', portfolio.id)
-          .where('status', '=', 'active')
-          .where(sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${amountMinor}`)
-          .where(
-            sql<boolean>`balance_minor::numeric - ${amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returningAll()
-          .executeTakeFirst();
-        if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', target);
-
-        return {
-          portfolio: updatedPortfolio as unknown as PortfolioRow,
-          transaction: transaction as unknown as PortfolioTransactionRow,
-        };
+        return this.retainOnWallet(
+          trx,
+          tenantId,
+          order.id,
+          target,
+          createdBy,
+          HOLD_BEFORE_BOOK_NOTES,
+        );
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -528,6 +491,64 @@ export class PortfoliosService {
       }
       throw error;
     }
+  }
+
+  /**
+   * El asiento `BOOKING_HOLD` y el débito, dentro de la transacción que ya bloqueó la orden. Una
+   * cartera por moneda: se usa la de la moneda de la reserva, nunca otra, y sin ella no se abre una
+   * implícita. La cartera se bloquea ANTES de decidir, así que dos reservas de la misma agencia no
+   * gastan el mismo saldo. El índice único por orden (0039) frena una segunda retención con 23505,
+   * que traduce quien llama.
+   *
+   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   */
+  private async retainOnWallet(
+    trx: Transaction<DB>,
+    tenantId: string,
+    orderId: string,
+    target: Money,
+    createdBy: string,
+    notes: string,
+  ): Promise<HeldOnWallet> {
+    const portfolio = await findWallet(trx, tenantId, target.currency, { forUpdate: true });
+    if (!portfolio) throw holdRejection('PORTFOLIO_CURRENCY_NOT_ENABLED', target);
+    const decision = decideBookingHold(holdFacts(portfolio, target));
+    if (!decision.ok) throw holdRejection(decision.reason, target);
+
+    const transaction = await trx
+      .insertInto('portfolio_transactions')
+      .values({
+        portfolio_id: portfolio.id,
+        amount_minor: -target.amountMinor,
+        transaction_type: 'BOOKING_HOLD',
+        reference_id: orderId,
+        notes,
+        created_by: createdBy,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra ruta
+    // escribió el saldo sin tomar el mismo bloqueo.
+    const updatedPortfolio = await trx
+      .updateTable('agency_portfolios')
+      .set({ balance_minor: sql<number>`balance_minor - ${target.amountMinor}` })
+      .where('id', '=', portfolio.id)
+      .where('status', '=', 'active')
+      .where(
+        sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${target.amountMinor}`,
+      )
+      .where(
+        sql<boolean>`balance_minor::numeric - ${target.amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
+      )
+      .returningAll()
+      .executeTakeFirst();
+    if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', target);
+
+    return {
+      portfolio: updatedPortfolio as unknown as PortfolioRow,
+      transaction: transaction as unknown as PortfolioTransactionRow,
+    };
   }
 
   /**

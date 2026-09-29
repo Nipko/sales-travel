@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpStatus, Logger, NotFoundException } from '@nestjs/common';
-import type { HotelOffer, HotelRoompack } from '@sales-travel/canonical';
+import type { HotelOffer, HotelRoompack, Money } from '@sales-travel/canonical';
 import type { CachePort } from '@sales-travel/core';
 import type { SearchContext } from '@sales-travel/domain';
 import { TboApiError, type TboFetch } from '@sales-travel/tbo-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
 import type { TenantType } from '../database/database.types.js';
+import type { BookingHoldPreview } from '../portfolios/booking-hold.js';
+import type { PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
 import type {
   ProviderCredentialsService,
@@ -263,6 +265,20 @@ interface Banco {
   puerto: PuertoPrebook;
   emit: Mock;
   breaker: CircuitBreakerService;
+  cartera: Cartera;
+}
+
+type Cartera = Mock<(tenantId: string, amount: Money) => Promise<BookingHoldPreview>>;
+
+/** La cartera de la agencia vista desde el PreBook: por defecto cubre la tarifa. */
+function carteraQueCubre(): Cartera {
+  return vi.fn((_tenantId: string, amount: Money) =>
+    Promise.resolve<BookingHoldPreview>({ status: 'ok', currency: amount.currency }),
+  );
+}
+
+function fondos(cartera: Cartera): PortfoliosService {
+  return { previewBookingHold: cartera } as unknown as PortfoliosService;
 }
 
 interface OpcionesBanco {
@@ -271,6 +287,7 @@ interface OpcionesBanco {
   callPolicy?: 'always' | 'opt-in';
   flags?: boolean | ProviderEnablementDecision;
   cache?: CachePort;
+  cartera?: Cartera;
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -286,6 +303,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
   const snapshots = new HotelPrebookSnapshotStore(cache);
   const emit = vi.fn(() => Promise.resolve());
   const breaker = new CircuitBreakerService();
+  const cartera = opts.cartera ?? carteraQueCubre();
   const service = new HotelPrebookService(
     hotelRegistry(
       [stub],
@@ -296,8 +314,9 @@ function banco(opts: OpcionesBanco = {}): Banco {
     { getApplicableRules: () => Promise.resolve(opts.reglas ?? []) } as unknown as PricingService,
     breaker,
     { emit } as unknown as AuditService,
+    fondos(cartera),
   );
-  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker };
+  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker, cartera };
 }
 
 async function bancoConBusqueda(opts: OpcionesBanco = {}, ctx = contexto()): Promise<Banco> {
@@ -488,6 +507,59 @@ describe('RF-12 con el valor de PreBook: la cascada y el piso sobre el neto reva
   });
 });
 
+describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue huéspedes', () => {
+  it('pregunta por el precio de VENTA revalidado, en la moneda de la tarifa, y lo devuelve', async () => {
+    const b = await bancoConBusqueda({ reglas: [MAS_3_CONSOLIDADOR, MAS_1_AGENCIA] });
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ pisoMinor: PISO }));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    // El piso, no el neto: es lo que el Book retiene.
+    expect(b.cartera).toHaveBeenCalledWith(AGENCIA, { amountMinor: PISO, currency: 'USD' });
+    expect(res.funding).toEqual({ status: 'ok', currency: 'USD' });
+  });
+
+  it('sin cartera en la moneda de la tarifa: el PreBook sale igual, con el aviso y el motivo', async () => {
+    const aviso: BookingHoldPreview = {
+      status: 'blocked',
+      currency: 'USD',
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    };
+    const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.funding).toEqual(aviso);
+    // El snapshot queda: con la cartera habilitada, el vendedor reserva esta misma tarifa.
+    expect(await b.snapshots.get(AGENCIA, res.prebookRef)).toBeDefined();
+  });
+
+  it('si la cartera no se puede leer, el PreBook no se cae: sale sin el aviso y lo decide el Book', async () => {
+    const b = await bancoConBusqueda({
+      cartera: vi.fn(() => Promise.reject(new Error(`base caída para ${AGENCIA}`))),
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('funding');
+    expect(res.prebookRef).toMatch(/^[0-9a-f-]{36}$/);
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    expect(logs).toContain(`hotels.prebook.funding_check_failed provider=${STUB} error=Error`);
+    expect(logs.join('\n')).not.toContain(AGENCIA);
+  });
+
+  it('un PreBook que el proveedor rechaza no pregunta por la cartera', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockRejectedValueOnce(new Error('proveedor caído'));
+
+    await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).rejects.toThrow(
+      'proveedor caído',
+    );
+    expect(b.cartera).not.toHaveBeenCalled();
+  });
+});
+
 describe('RF-15 CA-3: un cambio se informa y deja rastro, sin PII ni texto del proveedor', () => {
   it('UNCHANGED no emite `HotelOfferRepriced`', async () => {
     const b = await bancoConBusqueda();
@@ -625,6 +697,7 @@ describe('las puertas: todo rechazo ocurre ANTES de llamar al proveedor', () => 
       { getApplicableRules: () => Promise.resolve([]) } as unknown as PricingService,
       new CircuitBreakerService(),
       { emit: vi.fn() } as unknown as AuditService,
+      fondos(carteraQueCubre()),
     );
 
     const err: unknown = await service
@@ -850,9 +923,15 @@ function bancoTbo(
     breaker,
     contexts,
   );
-  const prebooks = new HotelPrebookService(registry, contexts, snapshots, pricing, breaker, {
-    emit,
-  } as unknown as AuditService);
+  const prebooks = new HotelPrebookService(
+    registry,
+    contexts,
+    snapshots,
+    pricing,
+    breaker,
+    { emit } as unknown as AuditService,
+    fondos(carteraQueCubre()),
+  );
   return { hotels, prebooks, snapshots, fetch, emit };
 }
 

@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { OrdersService } from '../orders/orders.service.js';
@@ -315,7 +315,7 @@ describe('PortfoliosService.holdBooking', () => {
     expect(h.state.transactions).toHaveLength(0);
   });
 
-  it('revierte el claim cuando el saldo más el cupo no alcanza', async () => {
+  it('sin saldo más cupo que cubra el total: 409 con motivo, sin asiento ni débito', async () => {
     const h = harness({
       portfolio: {
         id: '44444444-4444-4444-8444-444444444444',
@@ -329,8 +329,55 @@ describe('PortfoliosService.holdBooking', () => {
       },
     });
 
-    await expect(h.service.holdBooking(TENANT, ORDER, USER)).rejects.toThrow(/saldo insuficiente/i);
+    const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
+    expect((err as BookingHoldRejectedError).getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((err as BookingHoldRejectedError).message).toMatch(/Informá un depósito en Cartera B2B/);
     expect(h.state.portfolio?.balance_minor).toBe(100_000);
+    expect(h.state.transactions).toHaveLength(0);
+  });
+
+  it('el cupo que fija quien financia completa lo que falta de saldo', async () => {
+    const h = harness({
+      portfolio: {
+        id: '44444444-4444-4444-8444-444444444444',
+        tenant_id: TENANT,
+        credit_limit_minor: 25_000,
+        balance_minor: 100_000,
+        currency: 'COP',
+        status: 'active',
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    });
+
+    const result = await h.service.holdBooking(TENANT, ORDER, USER);
+
+    expect(result.portfolio.balance_minor).toBe(-25_000);
+    expect(h.state.transactions).toHaveLength(1);
+  });
+
+  it('con la cartera de esa moneda suspendida: 409 PORTFOLIO_INACTIVE, sin asiento', async () => {
+    const h = harness({
+      portfolio: {
+        id: '44444444-4444-4444-8444-444444444444',
+        tenant_id: TENANT,
+        credit_limit_minor: 0,
+        balance_minor: 500_000,
+        currency: 'COP',
+        status: 'suspended',
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    });
+
+    const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_INACTIVE' });
+    expect(h.state.portfolio?.balance_minor).toBe(500_000);
     expect(h.state.transactions).toHaveLength(0);
   });
 

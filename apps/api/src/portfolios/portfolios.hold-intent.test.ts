@@ -261,6 +261,62 @@ describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin 
   });
 });
 
+describe('PortfoliosService.previewBookingHold: el aviso del PreBook, antes de cargar huéspedes', () => {
+  it('con la cartera de la moneda de la tarifa que alcanza: ok, sin escribir ni bloquear', async () => {
+    const b = banco();
+
+    await expect(b.service.previewBookingHold(SUBAGENCIA, USD(34_012))).resolves.toEqual({
+      status: 'ok',
+      currency: 'USD',
+    });
+    expect(b.estado.transactions).toHaveLength(0);
+    expect(b.estado.locks).toEqual([]);
+  });
+
+  it.each([
+    [
+      'sin cartera en esa moneda',
+      { currency: 'COP' },
+      'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    ],
+    [
+      'con la cartera suspendida',
+      { status: 'suspended' },
+      'PORTFOLIO_INACTIVE',
+      'La cartera en USD de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pedile a quien te financia que la reactive.',
+    ],
+    [
+      'sin saldo ni cupo',
+      { balance_minor: 34_011 },
+      'PORTFOLIO_FUNDS_INSUFFICIENT',
+      'La cartera en USD de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informá un depósito en Cartera B2B o pedile más cupo a quien te financia.',
+    ],
+  ])(
+    '%s: bloqueado con el motivo y el texto de la reserva, sin saldo ni cupo',
+    async (_caso, cambio, reason, message) => {
+      const b = banco({ portfolio: { ...banco().estado.portfolio, ...cambio } });
+
+      const preview = await b.service.previewBookingHold(SUBAGENCIA, USD(34_012));
+
+      expect(preview).toEqual({ status: 'blocked', currency: 'USD', reason, message });
+      // Lo mismo que diría la reserva: el aviso no inventa un texto propio.
+      const err = await rechazo(b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012)));
+      expect(err).toMatchObject({ reason, message });
+      expect(JSON.stringify(preview)).not.toMatch(/34011|100000/);
+      expect(b.estado.transactions).toHaveLength(0);
+    },
+  );
+
+  it('un monto inválido es 400, como la retención: el aviso no inventa un "ok"', async () => {
+    const b = banco();
+
+    await expect(
+      b.service.previewBookingHold(SUBAGENCIA, { amountMinor: 0, currency: 'USD' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
 describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abierta', () => {
   it('retiene el total de la orden, con la orden y la cartera bloqueadas antes de decidir', async () => {
     const b = banco();

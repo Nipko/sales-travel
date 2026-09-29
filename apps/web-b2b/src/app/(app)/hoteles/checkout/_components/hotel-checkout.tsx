@@ -27,6 +27,8 @@ import { SECONDARY_ACTION } from './action-styles';
 import { BookingStep } from './booking-step';
 import { CancelPolicy } from './cancel-policy';
 import { CheckoutExpiry } from './checkout-expiry';
+import { FundingNotice } from './funding-notice';
+import { fundingNotice } from './funding-view';
 import { draftFitsRooms, emptyGuestDraft, type GuestDraft } from './guest-form-view';
 import { PriceChangeNotice } from './price-change-notice';
 import { PrebookSummary, PrebookTotal } from './prebook-summary';
@@ -334,7 +336,14 @@ function PrebookReady({
     [prebook, selection.shownSale],
   );
   const signals = useMemo(() => signalsView(prebook.signals), [prebook.signals]);
-  const gate = continueGate({ expired, blocked: signals.blocking, change, accepted });
+  const funding = useMemo(() => fundingNotice(prebook.funding), [prebook.funding]);
+  const gate = continueGate({
+    expired,
+    blocked: signals.blocking,
+    change,
+    accepted,
+    ...(prebook.funding === undefined ? {} : { funding: prebook.funding }),
+  });
   const hotelLink = hotelLinkOf(selection);
   const nights = stayNights(selection.stay);
 
@@ -351,6 +360,7 @@ function PrebookReady({
         <p>Revisá la tarifa antes de cargar los huéspedes.</p>
       </CheckoutExpiry>
 
+      <FundingNotice view={funding} />
       {change ? (
         <PriceChangeNotice
           change={change}

@@ -27,6 +27,7 @@ import {
   type ConfirmedView,
   type FailedView,
 } from './booking-view';
+import { PORTFOLIOS_HREF, PORTFOLIOS_LINK_LABEL } from './funding-view';
 import { PriceChangeNotice } from './price-change-notice';
 
 /*
@@ -447,9 +448,9 @@ export function BookNoticeView({
           Volver al hotel
         </Link>
       ) : notice.kind === 'rejected' && notice.action === 'portfolios' ? (
-        <Link href="/carteras" className={SECONDARY_ACTION}>
+        <Link href={PORTFOLIOS_HREF} className={SECONDARY_ACTION}>
           <Wallet aria-hidden="true" className="size-3.5" />
-          Ir a Carteras
+          {PORTFOLIOS_LINK_LABEL}
         </Link>
       ) : notice.kind === 'rejected' && notice.action === 'agency' ? (
         <Link href="/configuracion" className={SECONDARY_ACTION}>

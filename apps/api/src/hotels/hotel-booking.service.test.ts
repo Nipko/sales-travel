@@ -23,7 +23,12 @@ import {
   CREATE_PENDING_RECONCILIATION_MARKER,
 } from '../orders/order-create-intent.store.js';
 import { ORDER_EVENTS } from '../orders/order-events.js';
-import { BookingHoldRejectedError, decideBookingHold } from '../portfolios/booking-hold.js';
+import {
+  BookingHoldRejectedError,
+  bookingHoldMessage,
+  decideBookingHold,
+  type BookingHoldPreview,
+} from '../portfolios/booking-hold.js';
 import type { BookingHoldRelease, PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
 import {
@@ -449,6 +454,7 @@ interface Fondos {
   releaseFailedBookingHold: Mock<
     (tenantId: string, orderId: string, createdBy: string) => Promise<BookingHoldRelease>
   >;
+  previewBookingHold: Mock<(tenantId: string, amount: Money) => Promise<BookingHoldPreview>>;
 }
 
 /**
@@ -457,9 +463,9 @@ interface Fondos {
  */
 function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
   const estado = { saldoMinor: c.saldoMinor, retenciones: new Map<string, number>() };
-  const decidir = (amount: Money): void => {
+  const decision = (amount: Money) => {
     const moneda = c.moneda ?? amount.currency;
-    const decision = decideBookingHold({
+    return decideBookingHold({
       amount,
       // Como PortfoliosService: la cartera de la moneda de la reserva, o ninguna.
       portfolio:
@@ -472,11 +478,25 @@ function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
             }
           : null,
     });
-    if (!decision.ok) {
-      throw new BookingHoldRejectedError(decision.reason, { amountCurrency: amount.currency });
-    }
+  };
+  const decidir = (amount: Money): void => {
+    const d = decision(amount);
+    if (!d.ok) throw new BookingHoldRejectedError(d.reason, { amountCurrency: amount.currency });
   };
   const fondos = {
+    previewBookingHold: vi.fn((_tenantId: string, amount: Money) => {
+      const d = decision(amount);
+      return Promise.resolve<BookingHoldPreview>(
+        d.ok
+          ? { status: 'ok', currency: amount.currency }
+          : {
+              status: 'blocked',
+              currency: amount.currency,
+              reason: d.reason,
+              message: bookingHoldMessage(d.reason, amount.currency),
+            },
+      );
+    }),
     assertBookingHoldAffordable: vi.fn(
       (_tenantId: string, amount: Money) =>
         new Promise<void>((resolve) => {
@@ -2534,7 +2554,10 @@ interface BancoTbo {
   fondos: Fondos;
 }
 
-function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo {
+function bancoTbo(
+  prebookC2: () => unknown = () => prebookVendible(),
+  cartera?: CarteraFake,
+): BancoTbo {
   let prebooks = 0;
   const fetch = vi.fn<TboFetch>((url, init) => {
     avanzarReloj();
@@ -2595,7 +2618,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     queue.asService(),
     hcn as unknown as HcnTrackingService,
   );
-  const fondos = carteraDe();
+  const fondos = carteraDe(cartera);
   const hotels = new HotelsService(
     registry,
     fakeHotelsDb().service,
@@ -2611,6 +2634,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     pricing,
     breaker,
     audit,
+    fondos.service,
   );
   const bookings = new HotelBookingService(
     registry,
@@ -2656,7 +2680,9 @@ const HUESPEDES_TBO: HotelBookingRoomGuests[] = [
   },
 ];
 
-async function prebookTbo(b: BancoTbo): Promise<{ prebookRef: string; total: Money }> {
+async function prebookTbo(
+  b: BancoTbo,
+): Promise<{ prebookRef: string; total: Money; funding?: BookingHoldPreview }> {
   const searchId = busquedaDe(await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO));
   const res = await b.prebooks.prebook(
     AGENCIA,
@@ -2669,6 +2695,7 @@ async function prebookTbo(b: BancoTbo): Promise<{ prebookRef: string; total: Mon
       amountMinor: res.roompack.pricing?.finalMinor ?? res.roompack.price.total.amountMinor,
       currency: res.roompack.price.total.currency,
     },
+    ...(res.funding === undefined ? {} : { funding: res.funding }),
   };
 }
 
@@ -2730,6 +2757,43 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       provider_order_id: 'YOSUR8',
       provider_account_id: CUENTA.accountId,
     });
+  });
+
+  it('RF-23: sin cartera en la moneda de la tarifa, el PreBook lo avisa y el Book se rechaza sin salir a TBO', async () => {
+    // Con saldo de sobra en COP: la tarifa es en USD y la retención no convierte.
+    const b = bancoTbo(undefined, { saldoMinor: 10_000_000_000, moneda: 'COP' });
+    const { prebookRef, total, funding } = await prebookTbo(b);
+    expect(total.currency).toBe('USD');
+    expect(funding).toEqual({
+      status: 'blocked',
+      currency: 'USD',
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    });
+    const prebooksDelVendedor = cuerpos(b.fetch, '/PreBook').length;
+
+    const err: unknown = await b.bookings
+      .book(AGENCIA, USUARIO, CLAVE, {
+        providerCode: TBO,
+        prebookRef,
+        acceptedTotal: total,
+        atPropertyAcknowledged: true,
+        rooms: HUESPEDES_TBO,
+        contact: CONTACTO_HUESPED,
+      })
+      .catch((e: unknown) => e);
+
+    // El mismo motivo y el mismo texto que el aviso: el vendedor no ve dos versiones.
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    });
+    // Ni el PreBook de C2 ni el Book salieron: TBO no se enteró.
+    expect(cuerpos(b.fetch, '/PreBook')).toHaveLength(prebooksDelVendedor);
+    expect(cuerpos(b.fetch, '/Book')).toHaveLength(0);
+    expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
+    expect(b.memory.rows()[0]).toMatchObject({ status: 'failed', create_request_key: null });
   });
 
   it('un 207 del Book: la orden queda `failed` con la clave libre y el mensaje de TBO en español', async () => {
