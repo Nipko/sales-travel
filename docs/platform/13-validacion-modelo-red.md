@@ -272,6 +272,7 @@ Lo que Amazon gana y lo que todavía no conviene darle:
 
 - Hereda de Planetour sus cuentas heredables (hoy sólo puede ser la de Sabre de certificación, si está marcada heredable), sus reglas, su marca y sus ajustes de habilitación de proveedores. LATAM y AgentCars le siguen llegando, como hasta ahora, de las variables del servidor.
 - Hasta la tanda 2, ve el neto del proveedor y administra su propia cartera. No cargues en Planetour reglas de margen que quieras ocultarle, y no le habilites TBO (paso 6).
+- **Sabre de certificación.** Sabre se llama siempre (política `always`). Si la cuenta de Planetour está `active` y es heredable, desde el movimiento cada búsqueda de vuelos de Amazon sale también a Sabre CERT, con tarifas y PNR de prueba, igual que ya pasa en Planetour y pasará en sus sucursales. Antes de mover, revísala: `SELECT status, is_inheritable, config->>'environment' AS entorno FROM provider_accounts WHERE provider_code = 'sabre'`. Si no quieres eso para Amazon, en _Proveedores de la plataforma_ → Sabre agrega una excepción **Deshabilitado** para Amazon Minimalist, con motivo, antes de pulsar **Mover**.
 
 ### Paso 5 — Crear una sucursal y su vendedor
 
