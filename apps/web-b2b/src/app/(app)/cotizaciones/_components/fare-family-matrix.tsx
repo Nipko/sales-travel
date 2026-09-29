@@ -19,6 +19,7 @@ import { cn } from '../../../../lib/cn';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { Button } from '../../../../components/ui/button';
 import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
+import { TicketingDeadlineBadge } from './ticketing-deadline-badge';
 
 interface FareFamilyMatrixProps {
   fares: Offer[];
@@ -290,6 +291,7 @@ function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
           {formatMoney(venta.ownMarginMinor, venta.currency)}
         </p>
       )}
+      <TicketingDeadlineBadge raw={fare.provider.raw} className="mt-2" />
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-fg-subtle)]">
         <span>
           Base{' '}

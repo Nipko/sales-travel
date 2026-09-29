@@ -22,6 +22,12 @@ export const SABRE_FLIGHT_CHECK_RAW_KEYS = Object.freeze({
   bookingOfferItemIds: 'bookingOfferItemIds',
   validation: 'flightCheckBookingClassValidation',
   validUntil: 'flightCheckValidUntil',
+  /**
+   * Plazo de pago/emisión de la oferta revalidada. Es la única fuente del plazo con zona
+   * horaria EXPLÍCITA en el carril ATPCO (`format: date-time`, flightcheck-api-v1.yml:1175-1179):
+   * el `lastTicketDate`/`lastTicketTime` de BFM llega sin zona. Opcional en el contrato.
+   */
+  paymentTimeLimit: 'flightCheckPaymentTimeLimit',
 });
 
 export const SABRE_FLIGHT_CHECK_VALIDATIONS = ['Matched', 'Same cabin', 'None', 'Unknown'] as const;
@@ -105,6 +111,7 @@ const FlightOfferSchema = z.object({
   type: z.string(),
   id: z.string().min(1),
   validUntil: z.string(),
+  paymentTimeLimit: z.string().optional(),
   totalPrice: z.object({ amount: z.string(), currencyCode: z.string() }),
   items: z.array(OfferItemSchema).min(1).optional(),
 });
@@ -379,12 +386,23 @@ function mapOffer(
   const breakdown = resolveBreakdown(bookableNode, totalMinor, currency, basis, path, warnings);
   const samePrice = basis.total.amountMinor === totalMinor && basis.total.currency === currency;
   const fareFamily = deriveGlobalFareFamily(mappedComponents);
+  // El plazo de un Flight Check ANTERIOR no se hereda: si esta respuesta no lo trae, la oferta
+  // queda sin plazo de Flight Check y la pantalla cae al de BFM, que dice de dónde sale.
+  const { [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: _plazoAnterior, ...basisRaw } =
+    basis.provider.raw ?? {};
   const providerRaw: Record<string, ProviderRawValue> = {
-    ...(basis.provider.raw ?? {}),
+    ...basisRaw,
     [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId]: node.id,
     [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds]: itemIds,
     [SABRE_FLIGHT_CHECK_RAW_KEYS.validUntil]: validUntil,
   };
+  // Un plazo que no se puede leer como instante con zona NO se guarda: mejor «sin plazo» que
+  // una hora en la zona equivocada impresa como fecha límite.
+  const paymentTimeLimit =
+    node.paymentTimeLimit === undefined ? null : normalizedTimestamp(node.paymentTimeLimit);
+  if (paymentTimeLimit !== null) {
+    providerRaw[SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit] = paymentTimeLimit;
+  }
 
   const candidate = {
     id: nextUuid(),
