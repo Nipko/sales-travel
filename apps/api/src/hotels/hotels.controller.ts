@@ -31,7 +31,11 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
 import { HotelBookingService, type HotelBookingSummary } from './hotel-booking.service.js';
-import { HotelContentService, type HotelContentView } from './hotel-content.service.js';
+import {
+  HotelContentService,
+  type HotelContentBatchView,
+  type HotelContentView,
+} from './hotel-content.service.js';
 import { HotelPrebookService, type HotelPrebookResponse } from './hotel-prebook.service.js';
 import type { HotelSearchCurrencyOptions } from './hotel-search-currency.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
@@ -40,6 +44,7 @@ import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
   HotelBookBodySchema,
+  HotelContentBatchBodySchema,
   HotelContentParamsSchema,
   HotelContentQuerySchema,
   HotelDetailInputSchema,
@@ -52,6 +57,7 @@ import {
   type CancelBody,
   type HotelAvailabilityInput,
   type HotelBookBody,
+  type HotelContentBatchBody,
   type HotelContentParams,
   type HotelContentQuery,
   type HotelDetailInput,
@@ -148,6 +154,24 @@ export class HotelsController {
   ): Promise<HotelContentView> {
     const tenantId = await this.tenant(userId);
     return this.hotelContent.getContent(tenantId, { ...params, lang: query.lang });
+  }
+
+  /**
+   * Fotos de una pantalla de resultados, en segundo plano (estrategia de fotos del 2026-09-29): lo
+   * que el catálogo ya tiene sale al instante y lo que falta se trae del proveedor en lotes, se
+   * guarda y se devuelve; lo que no llega a tiempo sale `pending` con `retryAfterMs`. Nunca es un
+   * error por falta de fotos: un hotel sin foto sale `none`.
+   *
+   * `POST` y no `GET` porque la lista de hoteles no cabe con holgura en una URL. No es una venta ni
+   * gasta cuota de búsqueda: sólo lee contenido estático por el cupo de fondo de la cuenta.
+   */
+  @Post('content/batch')
+  async contentBatch(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(HotelContentBatchBodySchema)) body: HotelContentBatchBody,
+  ): Promise<HotelContentBatchView> {
+    const tenantId = await this.tenant(userId);
+    return this.hotelContent.getContentBatch(tenantId, { lang: body.lang, hotels: body.hotels });
   }
 
   // ───────────────────────── Reserva ─────────────────────────

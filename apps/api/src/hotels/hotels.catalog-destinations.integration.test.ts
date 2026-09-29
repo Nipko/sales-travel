@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { TboFetch } from '@sales-travel/tbo-hotels';
+import { TBO_BASE_URLS, TBO_OPERATIONS, type TboFetch } from '@sales-travel/tbo-hotels';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi, type Mock } from 'vitest';
 import { DatabaseService } from '../database/database.service.js';
@@ -97,6 +97,21 @@ function respuestaSearch(init: RequestInit | undefined): Response {
   });
 }
 
+/** El ejemplo de TBOHotelCodeList de p. 67 con esos códigos. */
+function respuestaCodeList(codes: readonly string[]): Response {
+  const ejemplo = JSON.parse(
+    readFileSync(join(EJEMPLO_P15, '..', 'tbo-hotel-code-list.p67.json'), 'utf8'),
+  ) as { Status: unknown; Hotels: Record<string, unknown>[] };
+  const [modelo] = ejemplo.Hotels;
+  return new Response(
+    JSON.stringify({
+      Status: ejemplo.Status,
+      Hotels: codes.map((code) => ({ ...modelo, HotelCode: code, CountryCode: 'CO' })),
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
 /** Letras al azar: un nombre de ciudad que ninguna base real tiene. */
 function palabraAlAzar(largo: number): string {
   return [...randomBytes(largo)].map((b) => String.fromCharCode(97 + (b % 26))).join('');
@@ -129,6 +144,8 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
   const PARECIDA: Ciudad = { code: cod(6), name: Palabra.slice(0, -1), hotels: 1 };
   const SIN_HOTELES: Ciudad = { code: cod(7), name: `${Palabra} Vacío`, hotels: 0 };
   const SIN_SINCRONIZAR: Ciudad = { code: cod(8), name: `${Palabra} Pendiente`, hotels: null };
+  /** Bajada por E2A sin hoteles, con un nombre que ninguna otra comparte: se carga al buscarla. */
+  const NUEVA: Ciudad = { code: cod(10), name: `Zzq${palabraAlAzar(6)}`, hotels: null };
   /** De un proveedor que la plataforma no tiene registrado. */
   const OTRO_PROVEEDOR: Ciudad = {
     code: cod(9),
@@ -146,7 +163,12 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
     SIN_HOTELES,
     SIN_SINCRONIZAR,
     OTRO_PROVEEDOR,
+    NUEVA,
   ];
+
+  /** Los hoteles que TBOHotelCodeList devuelve para NUEVA (el ejemplo de p. 67 con estos códigos). */
+  const N1 = `IT${sfx}N1`;
+  const N2 = `IT${sfx}N2`;
 
   /** Hoteles de TBO de la ciudad EXACTA: T1 (4★), T2 (5★) y T3 inactivo. */
   const T1 = `IT${sfx}T1`;
@@ -166,7 +188,13 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
   }
 
   function montar(): Api {
-    const fetch = vi.fn<TboFetch>((_url, init) => Promise.resolve(respuestaSearch(init)));
+    const fetch = vi.fn<TboFetch>((url, init) =>
+      Promise.resolve(
+        url.slice(TBO_BASE_URLS.test.length) === TBO_OPERATIONS.tboHotelCodeList.path
+          ? respuestaCodeList([N1, N2])
+          : respuestaSearch(init),
+      ),
+    );
     const despegar = new FakeDespegarHotelsAdapter();
     const registry = new HotelProviderRegistry(
       [fakeDespegarFactory(despegar).factory, new TboHotelsProviderFactory(creds, fetch)],
@@ -280,6 +308,10 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
       TBO,
       `IT${sfx}%`,
     ]);
+    await pool.query(`DELETE FROM hotel_content WHERE provider_code = $1 AND hotel_id LIKE $2`, [
+      TBO,
+      `IT${sfx}%`,
+    ]);
     await pool.query(`DELETE FROM hotel_provider_city WHERE provider_city_code LIKE $1`, [
       `IT${sfx}%`,
     ]);
@@ -303,7 +335,9 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
   it('U-02: sin Despegar, sugiere ciudades de TBO en orden: exacta, prefijo, palabra, contiene, parecida', async () => {
     const res = await sugerir(montar(), Palabra);
 
-    expect(res.items.map((s) => s.id)).toEqual([
+    // La que se carga al buscarla (sin hoteles todavía) sale también; su lugar lo prueba el test de
+    // abajo. Aquí, el orden de las que ya tienen hoteles.
+    expect(res.items.map((s) => s.id).filter((id) => id !== idDe(SIN_SINCRONIZAR))).toEqual([
       idDe(EXACTA),
       idDe(PREFIJO),
       // Mismo nombre: primero la de más hoteles.
@@ -323,12 +357,56 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
     expect(conAcentos.items).toEqual(plana.items);
   });
 
-  it('no salen ciudades sin hoteles, ni sin sincronizar, ni de proveedores no activos', async () => {
-    const ids = (await sugerir(montar(), Palabra)).items.map((s) => s.id);
+  it('no salen ciudades que TBO dio vacías ni de proveedores no activos; las nunca cargadas, marcadas', async () => {
+    const items = (await sugerir(montar(), Palabra)).items as {
+      id: unknown;
+      loadsOnSearch?: boolean;
+    }[];
+    const ids = items.map((s) => s.id);
 
     expect(ids).not.toContain(idDe(SIN_HOTELES));
-    expect(ids).not.toContain(idDe(SIN_SINCRONIZAR));
     expect(ids).not.toContain(idDe(OTRO_PROVEEDOR));
+    // Cobertura global (E2A): la ciudad existe en TBO y sus hoteles se traen al buscarla.
+    expect(items.find((s) => s.id === idDe(SIN_SINCRONIZAR))?.loadsOnSearch).toBe(true);
+    expect(items.find((s) => s.id === idDe(EXACTA))).not.toHaveProperty('loadsOnSearch');
+    // Con hoteles, antes que la que se carga al buscar del mismo grupo (prefijo).
+    expect(ids.indexOf(idDe(PREFIJO))).toBeLessThan(ids.indexOf(idDe(SIN_SINCRONIZAR)));
+  });
+
+  it('una ciudad nunca cargada: UNA llamada a TBOHotelCodeList, se guarda y se busca', async () => {
+    const api = montar();
+
+    const res = await buscar(api, idDe(NUEVA));
+
+    const paths = api.fetch.mock.calls.map(([url]) => url.slice(TBO_BASE_URLS.test.length));
+    expect(paths).toEqual([TBO_OPERATIONS.tboHotelCodeList.path, TBO_OPERATIONS.search.path]);
+    expect(cuerpoDe(api.fetch.mock.calls[0]?.[1])).toMatchObject({ CityCode: NUEVA.code });
+    expect(res.hotels.map((h) => h.hotelId).sort()).toEqual([N1, N2].sort());
+
+    // Quedó en el catálogo, escrita por la función de 0054 (que `app_user` pueda ejecutarla sin
+    // `INSERT` sobre la tabla lo prueba `hotel-catalog-on-demand.integration.test.ts`).
+    const { rows: hoteles } = await pool.query<{ hotel_id: string; active: boolean }>(
+      `SELECT hotel_id, active FROM hotel_inventory
+        WHERE provider_code = $1 AND provider_city_code = $2 ORDER BY hotel_id`,
+      [TBO, NUEVA.code],
+    );
+    expect(hoteles).toEqual([
+      { hotel_id: N1, active: true },
+      { hotel_id: N2, active: true },
+    ]);
+    const { rows: ciudad } = await pool.query<{ hotel_count: number; synced: boolean }>(
+      `SELECT hotel_count, synced_at IS NOT NULL AS synced FROM hotel_provider_city
+        WHERE provider_code = $1 AND provider_city_code = $2`,
+      [TBO, NUEVA.code],
+    );
+    expect(ciudad).toEqual([{ hotel_count: 2, synced: true }]);
+
+    // La segunda búsqueda ya no la carga: va directo a Search.
+    const otra = montar();
+    await buscar(otra, idDe(NUEVA));
+    expect(otra.fetch.mock.calls.map(([url]) => url.slice(TBO_BASE_URLS.test.length))).toEqual([
+      TBO_OPERATIONS.search.path,
+    ]);
   });
 
   it('lo que la app lee lo puede leer `app_user`: la tabla y la similitud trigram', async () => {

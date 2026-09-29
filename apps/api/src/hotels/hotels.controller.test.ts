@@ -44,6 +44,7 @@ import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
   HotelBookBodySchema,
+  HotelContentBatchBodySchema,
   HotelContentParamsSchema,
   HotelContentQuerySchema,
   HotelDetailInputSchema,
@@ -322,6 +323,7 @@ describe('HotelsController — superficie HTTP', () => {
       // Nest registra los parámetros del último al primero: el query antes que la ruta.
       [HotelContentQuerySchema, HotelContentParamsSchema],
     ],
+    ['contentBatch', RequestMethod.POST, 'content/batch', [HotelContentBatchBodySchema]],
     ['cancel', RequestMethod.POST, 'reservations/:id/cancel', [CancelBodySchema]],
     ['recovery', RequestMethod.POST, 'reservations/:id/recovery', [RecoveryBodySchema]],
   ])('%s → %s /hotels/%s, validado con su esquema', (nombre, metodo, ruta, esquemas) => {
@@ -334,7 +336,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas once', () => {
+  it('no hay más rutas que esas doce', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -346,6 +348,7 @@ describe('HotelsController — superficie HTTP', () => {
         'book',
         'cancel',
         'content',
+        'contentBatch',
         'currencies',
         'detail',
         'getReservation',
@@ -406,6 +409,14 @@ describe('HotelsController — tenant', () => {
     [
       'content',
       (c, u) => c.content(u, { providerCode: 'despegar-hotels', hotelId: '101' }, { lang: 'es' }),
+    ],
+    [
+      'contentBatch',
+      (c, u) =>
+        c.contentBatch(u, {
+          lang: 'es',
+          hotels: [{ providerCode: 'despegar-hotels', hotelId: '101' }],
+        }),
     ],
     ['cancel', (c, u) => c.cancel(u, 'RES-0001', {})],
     [
@@ -480,6 +491,31 @@ describe('HotelsController — sobres y paso de parámetros', () => {
     expect(res.roompacks.map((rp) => [rp.id, rp.provider.name])).toEqual(
       delAcl.roompacks.map((rp) => [rp.id, 'despegar-hotels']),
     );
+  });
+
+  it('contentBatch: las fotos por lote; sin contenido que traer, `none` y sin salir al proveedor', async () => {
+    const b = banco();
+    const res = await b.controller.contentBatch(USUARIO, {
+      lang: 'es',
+      hotels: [{ providerCode: 'despegar-hotels', hotelId: '101' }],
+    });
+
+    expect(res).toEqual({
+      lang: 'es',
+      items: [
+        {
+          providerCode: 'despegar-hotels',
+          hotelId: '101',
+          status: 'none',
+          mainImage: null,
+          imageCount: 0,
+        },
+      ],
+    });
+    const tocados = Object.values(b.adapter).filter(
+      (m) => vi.isMockFunction(m) && m.mock.calls.length > 0,
+    );
+    expect(tocados).toEqual([]);
   });
 
   it('PR-3.6: content devuelve la ficha sin sobre; sin contenido, sin imágenes y sin error', async () => {

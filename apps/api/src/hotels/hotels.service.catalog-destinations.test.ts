@@ -271,32 +271,35 @@ describe('GET /hotels/suggestions — sin autocompletado de la plataforma, el ca
     expect(b.despegar.suggest).not.toHaveBeenCalled();
   });
 
-  it('la consulta: sólo sus proveedores activos, sólo ciudades con hoteles, por nombre normalizado', async () => {
+  it('la consulta: sólo sus proveedores activos, con hoteles o por cargar, por nombre normalizado', async () => {
     const b = banco();
     await b.service.suggest(AGENCIA, '  BOGOTÁ ');
 
     const [consulta, ...otras] = b.db.consultasA('hotel_provider_city');
     expect(otras).toEqual([]);
     expect(consulta?.sql).toContain('"provider_code" in ($1)');
-    expect(consulta?.sql).toContain('"hotel_count" > $2');
+    // Con hoteles, o nunca cargada (la cobertura global de E2A); NUNCA una que TBO dio vacía.
+    expect(consulta?.sql).toContain('("hotel_count" > $2 or "hotel_count" is null)');
     expect(consulta?.sql).toContain('"name_norm" like $3');
-    expect(consulta?.sql).toContain('similarity(name_norm, $4) >= $5');
-    expect(consulta?.parameters.slice(0, 5)).toEqual([
+    // `%` usa el índice trigram de 0041; la similitud mínima filtra después.
+    expect(consulta?.sql).toContain('(name_norm % $4 and similarity(name_norm, $5) >= $6)');
+    expect(consulta?.parameters.slice(0, 6)).toEqual([
       TBO,
       0,
       '%bogota%',
       'bogota',
+      'bogota',
       CATALOG_SUGGESTION_MIN_SIMILARITY,
     ]);
     // Exacta, prefijo, palabra, contiene, parecida; y desempates estables.
-    expect(consulta?.parameters.slice(5, 9)).toEqual([
+    expect(consulta?.parameters.slice(6, 10)).toEqual([
       'bogota',
       'bogota%',
       '% bogota%',
       '%bogota%',
     ]);
     expect(consulta?.sql).toMatch(
-      /order by case when name_norm = \$6 then 0\s+when name_norm like \$7 then 1\s+when name_norm like \$8 then 2\s+when name_norm like \$9 then 3\s+else 4 end, similarity\(name_norm, \$10\) desc, "hotel_count" desc, "name", "provider_code", "provider_city_code" limit \$11$/,
+      /order by case when name_norm = \$7 then 0\s+when name_norm like \$8 then 1\s+when name_norm like \$9 then 2\s+when name_norm like \$10 then 3\s+else 4 end, similarity\(name_norm, \$11\) desc, hotel_count desc nulls last, "name", "provider_code", "provider_city_code" limit \$12$/,
     );
     expect(consulta?.parameters.at(-1)).toBe(CATALOG_SUGGESTION_LIMIT);
   });

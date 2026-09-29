@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
 import {
   TBO_HOTEL_DETAILS_LIMITS,
+  tboHotelContentHash,
   type TboContentLanguage,
   type TboContentSource,
   type TboHotelContent,
@@ -14,33 +14,14 @@ import type { ContentSettings } from './env.js';
  */
 
 /**
- * Versión de la huella. Cambiarla obliga a reescribir todo el contenido en la próxima pasada, que
- * es lo que hace falta si cambia qué columnas entran en ella.
- */
-const CONTENT_HASH_VERSION = 'tbo-content-v1';
-
-/**
- * `hotel_content.content_hash` (0041): SHA-256 de las columnas que se guardan, en un orden fijo.
- * TBO no ofrece deltas (05 §10) y cada refresco trae todo; con la huella, una fila que no cambió
- * no se reescribe.
+ * `hotel_content.content_hash` (0041). La regla vive en el ACL (`tboHotelContentHash`,
+ * `tbo-content-v1`) porque el API también escribe contenido de HotelDetails bajo demanda: con dos
+ * cálculos, cada uno vería "cambió" en las filas del otro y las reescribiría en cada pasada.
  *
  * `source` no entra: su cambio (`listing` → `details`) se decide aparte y siempre reescribe.
  */
 export function contentHash(content: TboHotelContent): string {
-  const canonical = JSON.stringify([
-    CONTENT_HASH_VERSION,
-    content.name,
-    content.descriptionHtml,
-    content.sections.map((section) => [section.label, section.text]),
-    content.facilities,
-    content.attractionsHtml,
-    content.images,
-    content.phone,
-    content.websiteUrl,
-    content.checkInTime,
-    content.checkOutTime,
-  ]);
-  return createHash('sha256').update(canonical, 'utf8').digest('hex');
+  return tboHotelContentHash(content);
 }
 
 export interface StoredContentRef {

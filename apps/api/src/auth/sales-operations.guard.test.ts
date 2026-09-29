@@ -220,6 +220,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /hotels/content/:providerCode/:hotelId',
   ),
   ...noVenta(
+    'fotos de los resultados por lote: contenido estático sin precio, por el cupo de fondo',
+    'POST /hotels/content/batch',
+  ),
+  ...noVenta(
     'post-venta de lectura',
     'GET /orders',
     'GET /orders/:id',

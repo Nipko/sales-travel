@@ -221,6 +221,9 @@ describe('TboHotelsProviderFactory — contrato del registry de hoteles', () => 
       occupancy: { maxRooms: 8, maxAdultsPerRoom: 8, maxChildrenPerRoom: 4, maxChildAge: 18 },
       requiresGuestNationality: true,
       contentFromCatalog: true,
+      // Las fotos de HotelDetails (`imageresource.aspx`) salen de dominios de TBO: sólo ésas pasan
+      // por el proxy de imágenes de los resultados.
+      imageHosts: ['tbotechnology.in', 'tboholidays.com'],
     });
   });
 

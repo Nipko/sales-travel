@@ -14,6 +14,7 @@ import { HcnTrackingStore } from './hcn-tracking.store.js';
 import { HotelBookingVerificationService } from './hotel-booking-verification.service.js';
 import { HotelBookingVerificationStore } from './hotel-booking-verification.store.js';
 import { HotelBookingService } from './hotel-booking.service.js';
+import { HotelCatalogStore } from './hotel-catalog.store.js';
 import { HOTEL_CONTENT_CACHE, HotelContentService } from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { HotelPrebookService } from './hotel-prebook.service.js';
@@ -47,7 +48,8 @@ import { HotelsService } from './hotels.service.js';
  *
  * La ficha de un hotel (PR-3.6) guarda lo que trae del proveedor en SU instancia del `CachePort`:
  * horas de contenido de catálogo no pueden desalojar los contextos de minutos que el PreBook
- * necesita, ni al revés.
+ * necesita, ni al revés. Las fotos de los resultados y las ciudades que se cargan al buscarlas
+ * escriben el catálogo por `HotelCatalogStore`, sólo por las funciones de 0054.
  */
 @Module({
   imports: [
@@ -73,6 +75,7 @@ import { HotelsService } from './hotels.service.js';
     HcnTrackingStore,
     HcnTrackingService,
     HotelContentService,
+    HotelCatalogStore,
     { provide: HOTEL_SEARCH_CONTEXT_CACHE, useClass: MemoryCacheAdapter },
     { provide: HOTEL_CONTENT_CACHE, useClass: MemoryCacheAdapter },
   ],

@@ -40,6 +40,8 @@ export interface GeoSuggestion {
   display: string;
   city?: string;
   country?: string;
+  /** Ciudad del catálogo sin hoteles cargados todavía: se traen al buscarla (unos segundos más). */
+  loadsOnSearch?: boolean;
 }
 
 export interface HotelTax {
@@ -182,6 +184,11 @@ export interface HotelOffer {
   roompacks: HotelRoompack[];
   /** Presente sólo cuando la tarjeta reúne el mismo hotel de varios proveedores. */
   providerHotels?: HotelProviderHotel[];
+  /**
+   * La foto principal si el catálogo ya la tiene, por el proxy propio (`/api/hotels/images/…`,
+   * lib/hotel-image-proxy). Sin ella, se pide en segundo plano a `/api/hotels/content/batch`.
+   */
+  mainImage?: { url: string };
 }
 
 export interface RoomDistribution {

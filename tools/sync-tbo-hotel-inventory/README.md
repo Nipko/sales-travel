@@ -99,7 +99,7 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 | `TBO_SYNC_BASE_URL`               | la de test del ACL           | Obligatoria en `live`. Sólo con el override                              |
 | `TBO_SYNC_COUNTRIES`              | `CO,PE,BR,US,MX,DO,AR,CL,ES` | Lista cerrada de D-TBO-12 A, ISO2                                        |
 | `TBO_SYNC_CITIES`                 | vacía = todas                | `CityCode` de esos países a los que se limitan E3 y E4 (máximo 50)       |
-| `TBO_SYNC_STAGES`                 | `E1,E2,E3,E4,E5,E6`          | Etapas que corren                                                        |
+| `TBO_SYNC_STAGES`                 | `E1,E2,E3,E4,E5,E6`          | Etapas que corren; `E2A` (ciudades del mundo) sólo si se la nombra       |
 | `TBO_SYNC_MAX_CALLS`              | `2500`                       | Llamadas a TBO por corrida                                               |
 | `TBO_SYNC_MAX_MINUTES`            | `45`                         | Duración por corrida; por encima de 50 la corta el tope del VPS          |
 | `TBO_SYNC_RPS`                    | `1`                          | Peticiones por segundo, una conexión (Q-10)                              |
@@ -121,6 +121,26 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 
 `workflow_dispatch` acepta además `countries`, `stages` y `max_calls` para una sola ejecución, sin
 tocar las variables. Sólo letras, dígitos y comas.
+
+### Cobertura global: E2A, las ciudades de todos los países
+
+E2A baja `CountryList` y un `CityList` por cada país de TBO que todavía no tiene ciudades guardadas y
+que no refresca E2 (los de la corrida, cuando la corrida incluye E2 o E3): ~250 llamadas la primera
+vez; después, sólo los países nuevos. Deja las ciudades en `hotel_provider_city` **sin hoteles**
+(`hotel_count` en `NULL`): el autocompletado del API las sugiere como "se cargan al buscar" y, la
+primera vez que alguien busca una, el API trae sus `HotelCodes` con un `TBOHotelCodeList` (1-5 s) y
+la guarda. Es opt-in, corre al final de la corrida (no le quita presupuesto a E3 ni a E4) y tiene un
+tope propio de 300 países por corrida. Para correrla, `workflow_dispatch` con `stages=E1,E2A` y
+`max_calls=300`.
+
+### Demanda y precarga
+
+La demanda de una ciudad (qué refrescar primero en E3 y qué contenido bajar en E4) son las búsquedas
+de los últimos `TBO_SYNC_DEMAND_WINDOW_DAYS` días que la nombran: las de un destino de la plataforma
+traducido por el mapa de destinos aceptado, **y** las de una ciudad del catálogo local elegida en el
+autocompletado propio (`search_logs.criteria.destinationProvider` + `destinationCityCode`), que antes
+no contaban. Una ciudad buscada de un país fuera de `TBO_SYNC_COUNTRIES` (la que cargó el API bajo
+demanda) también entra en E3 y E4 mientras tenga búsquedas; sin búsquedas, no.
 
 `TBO_SYNC_CITIES` es para una corrida acotada, no para la operación diaria: con la lista, E3 y E4 sólo
 tocan esas ciudades (con la cadencia y el orden de siempre) y las demás del país quedan pendientes. E2

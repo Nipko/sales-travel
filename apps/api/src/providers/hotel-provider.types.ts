@@ -150,6 +150,13 @@ export interface HotelSearchProfile {
    * informó. Ausente, el proveedor los trae y el catálogo no se consulta para eso.
    */
   readonly contentFromCatalog?: boolean;
+  /**
+   * Dominios (y sus subdominios) desde los que el proveedor sirve las fotos de sus hoteles. Sólo
+   * una foto de estos dominios, por `https`, sale en los resultados, y por el proxy de imágenes
+   * propio (`/api/hotels/images/…`), nunca enlazada directo. Ausente, sus fotos no se muestran en
+   * los resultados.
+   */
+  readonly imageHosts?: readonly string[];
 }
 
 /**
@@ -619,8 +626,8 @@ export interface HotelContentFetchOptions {
 
 /**
  * Un proveedor cuyo contenido estático se puede pedir para UN hotel cuando el catálogo todavía no
- * lo tiene (TBO `HotelDetails`, docs/tbo/05 §6.3). Es una lectura: no escribe nada, y las tablas
- * del catálogo las sigue escribiendo sólo el sync.
+ * lo tiene (TBO `HotelDetails`, docs/tbo/05 §6.3). Es una lectura: el puerto no escribe nada. Lo
+ * que se guarda en el catálogo pasa por {@link HotelContentBatchPort}, con la huella del sync.
  */
 export interface HotelContentPort {
   /** `null`: el proveedor respondió, pero sin ese hotel. */
@@ -630,6 +637,93 @@ export interface HotelContentPort {
     ctx: SearchContext,
     options: HotelContentFetchOptions,
   ): Promise<HotelProviderContent | null>;
+}
+
+// ───────────────────────── Catálogo bajo demanda: fotos y ciudades ─────────────────────────
+
+/** Qué llamada produjo una fila de `hotel_content` (0041). */
+export type HotelContentSource = 'details' | 'listing';
+
+/**
+ * Una fila de `hotel_content` lista para guardar: sus columnas con los nombres del contrato, más la
+ * huella con que la escribe el sync del MISMO proveedor. Con otra huella, el sync vería "cambió" en
+ * cada fila que el API guardó y la reescribiría entera en su próxima pasada.
+ */
+export interface HotelContentRecord {
+  readonly hotelId: string;
+  readonly lang: HotelContentLanguage;
+  readonly source: HotelContentSource;
+  readonly name: string | null;
+  /** Saneado por el ACL con su lista blanca; la base lo vuelve a comprobar al guardar. */
+  readonly descriptionHtml: string | null;
+  readonly sections: readonly HotelContentSection[];
+  readonly facilities: readonly string[];
+  readonly attractionsHtml: string | null;
+  /** URLs absolutas `https`. */
+  readonly images: readonly string[];
+  readonly phone: string | null;
+  readonly websiteUrl: string | null;
+  /** `HH:mm`. */
+  readonly checkInTime: string | null;
+  readonly checkOutTime: string | null;
+  /** `content_hash` (SHA-256 en hexadecimal). */
+  readonly contentHash: string;
+}
+
+/** Lo que el proveedor respondió a un lote de contenido. */
+export interface HotelContentBatch {
+  readonly contents: readonly HotelContentRecord[];
+  /** Pedidos que no volvieron: el proveedor no tiene contenido de ese hotel (o no lo conoce). */
+  readonly missingHotelIds: readonly string[];
+}
+
+/**
+ * Un proveedor cuyo contenido se pide por lotes para GUARDARLO en el catálogo (TBO `HotelDetails`,
+ * de a 10): las fotos de los resultados de una búsqueda aparecen a medida que llegan.
+ */
+export interface HotelContentBatchPort {
+  /** Códigos por llamada. */
+  readonly contentBatchSize: number;
+  fetchHotelContents(
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelContentBatch>;
+}
+
+/** Un hotel del catálogo de una ciudad: las columnas de `hotel_inventory` que llena el proveedor. */
+export interface HotelCatalogRecord {
+  readonly hotelId: string;
+  readonly name: string | null;
+  readonly stars: number | null;
+  readonly location: { readonly lat: number; readonly lng: number } | null;
+  readonly address: string | null;
+  readonly zipcode: string | null;
+  /** ISO2. */
+  readonly countryCode: string | null;
+}
+
+/** Los hoteles de UNA ciudad del proveedor, con el texto que llega de paso (`listing`). */
+export interface HotelCityCatalog {
+  readonly hotels: readonly HotelCatalogRecord[];
+  readonly listingContents: readonly HotelContentRecord[];
+  /** Hoteles que el ACL descartó por ilegibles. */
+  readonly unreadable: number;
+}
+
+/**
+ * Un proveedor que lista los hoteles de una ciudad suya (TBO `TBOHotelCodeList`): la primera vez que
+ * se busca una ciudad que el catálogo tiene sin hoteles, el API los trae y los guarda (05 §8.5).
+ * Una ciudad sin hoteles vuelve con la lista vacía, no con un error.
+ */
+export interface HotelCityCatalogPort {
+  listCityCatalog(
+    cityCode: string,
+    countryCode: string | undefined,
+    ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelCityCatalog>;
 }
 
 // ───────────────────────── Capacidades opcionales, por presencia ─────────────────────────
@@ -717,4 +811,16 @@ export function supportsHotelContent<T extends object>(
   adapter: T,
 ): adapter is T & HotelContentPort {
   return hasMethod<HotelContentPort>(adapter, 'fetchHotelContent');
+}
+
+export function supportsHotelContentBatch<T extends object>(
+  adapter: T,
+): adapter is T & HotelContentBatchPort {
+  return hasMethod<HotelContentBatchPort>(adapter, 'fetchHotelContents');
+}
+
+export function supportsHotelCityCatalog<T extends object>(
+  adapter: T,
+): adapter is T & HotelCityCatalogPort {
+  return hasMethod<HotelCityCatalogPort>(adapter, 'listCityCatalog');
 }

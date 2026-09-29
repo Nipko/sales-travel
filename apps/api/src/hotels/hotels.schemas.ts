@@ -6,6 +6,7 @@ import {
   toIsoCountryAlpha2,
   z,
 } from '@sales-travel/validation';
+import { HOTEL_CONTENT_BATCH_MAX_HOTELS } from './hotel-content.service.js';
 import { PROVIDER_DESTINATION_INVALID, isProviderDestinationId } from './hotel-destination.js';
 import {
   HotelOfferReferenceSchema,
@@ -174,6 +175,18 @@ export const HotelContentQuerySchema = z.object({
     LanguageCodeSchema.default('es'),
   ),
 });
+
+/**
+ * Contenido por lote de una pantalla de resultados (las fotos, estrategia del 2026-09-29): hasta
+ * `HOTEL_CONTENT_BATCH_MAX_HOTELS` hoteles, cada uno con el proveedor que lo vende y su código en
+ * ese proveedor. El mismo hotel dos veces no es un error: se responde una vez.
+ */
+export const HotelContentBatchBodySchema = z
+  .object({
+    lang: HotelContentQuerySchema.shape.lang,
+    hotels: z.array(HotelContentParamsSchema).min(1).max(HOTEL_CONTENT_BATCH_MAX_HOTELS),
+  })
+  .strict();
 
 // ───────────────────────── Reserva ─────────────────────────
 
@@ -418,6 +431,7 @@ export type HotelAvailabilityInput = z.infer<typeof HotelAvailabilityInputSchema
 export type HotelDetailInput = z.infer<typeof HotelDetailInputSchema>;
 export type HotelContentParams = z.infer<typeof HotelContentParamsSchema>;
 export type HotelContentQuery = z.infer<typeof HotelContentQuerySchema>;
+export type HotelContentBatchBody = z.infer<typeof HotelContentBatchBodySchema>;
 export type PaymentOptionsInput = z.infer<typeof PaymentOptionsQuerySchema>;
 export type CancelBody = z.infer<typeof CancelBodySchema>;
 export type RecoveryBody = z.infer<typeof RecoveryBodySchema>;

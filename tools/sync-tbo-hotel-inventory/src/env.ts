@@ -33,9 +33,21 @@ import { PLATFORM_DESTINATION_PROVIDER } from './match-rules.js';
  *    ("sin credenciales"), como el sync de Despegar sin su API key.
  */
 
-/** E6 no llama a TBO: es SQL sobre lo que E3 dejó (05 §6.3), y no gasta presupuesto. */
-export const SYNC_STAGES = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6'] as const;
+/**
+ * E6 no llama a TBO: es SQL sobre lo que E3 dejó (05 §6.3), y no gasta presupuesto. E2A baja las
+ * ciudades de TODOS los países de TBO (cobertura global del buscador, ~250 llamadas la primera vez)
+ * y es opt-in: no está en {@link DEFAULT_SYNC_STAGES}.
+ */
+export const SYNC_STAGES = ['E1', 'E2', 'E2A', 'E3', 'E4', 'E5', 'E6'] as const;
 export type SyncStage = (typeof SYNC_STAGES)[number];
+
+/**
+ * Las etapas de una corrida sin `TBO_SYNC_STAGES`: todas menos E2A, que se pide a mano
+ * (`stages=E1,E2A`) porque su primera pasada gasta una llamada por país del mundo.
+ */
+export const DEFAULT_SYNC_STAGES: readonly SyncStage[] = Object.freeze(
+  SYNC_STAGES.filter((stage) => stage !== 'E2A'),
+);
 
 /**
  * A qué hoteles les toca contenido de HotelDetails (E4). `demand`: sólo los de ciudades con
@@ -247,7 +259,7 @@ const SyncEnvSchema = z.object({
   // `CityList[].Code` y `TBOHotelCodeList.CityCode`: un número en texto (pp. 54 y 65; 05 §2.3
   // y §2.5).
   TBO_SYNC_CITIES: optionalCsv(z.string().regex(/^\d{1,10}$/), MAX_SYNC_CITIES),
-  TBO_SYNC_STAGES: csv(z.enum(SYNC_STAGES), SYNC_STAGES, SYNC_STAGES.length),
+  TBO_SYNC_STAGES: csv(z.enum(SYNC_STAGES), DEFAULT_SYNC_STAGES, SYNC_STAGES.length),
   TBO_SYNC_MAX_CALLS: integer(1, 100_000, 2_500),
   TBO_SYNC_MAX_MINUTES: integer(1, 360, 45),
   // El techo es el cupo que el limitador deja a lo que no es dinero (5 QPS menos la reserva).

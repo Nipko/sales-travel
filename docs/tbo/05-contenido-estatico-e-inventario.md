@@ -963,8 +963,9 @@ que `GET /hotels/suggestions` respondía 503, el vendedor no podía elegir desti
   una vez repuesto Despegar, ya no lo consultan. Alternativa descartada por ahora: caer al catálogo con un aviso. Al
   revés, el kill-switch de TBO no oculta sus ciudades, porque sugerir no lo llama: la búsqueda lo informa con su
   motivo.
-- **Qué se sugiere.** Filas de `hotel_provider_city` de esos proveedores con `hotel_count > 0` (una ciudad que el
-  sync todavía no bajó terminaría en el 503 de catálogo vacío). Lo escrito se normaliza con el mismo algoritmo que
+- **Qué se sugiere.** Filas de `hotel_provider_city` de esos proveedores con `hotel_count > 0` y, desde el
+  2026-09-29, también las que el sync bajó sin hoteles (`hotel_count` en `NULL`), marcadas `loadsOnSearch`: sus
+  hoteles se traen la primera vez que se buscan (§8.6). Nunca las que TBO ya contestó vacías (`hotel_count = 0`). Lo escrito se normaliza con el mismo algoritmo que
   `name_norm` (`normalizeName` del sync: minúsculas, sin acentos ni puntuación), así que "Bogotá", "BOGOTA" y
   "bogota" dan lo mismo. Coinciden las que contienen lo escrito y, para tolerar un error de tipeo, las de similitud
   trigram ≥ 0,4 (`pg_trgm`). Orden: nombre exacto, empieza así, alguna palabra empieza así, lo contiene, parecida;
@@ -983,10 +984,46 @@ que `GET /hotels/suggestions` respondía 503, el vendedor no podía elegir desti
   catálogo sin sincronizar. Un id de un proveedor de la plataforma (`despegar-hotels:2345`) no se busca en nadie.
 - **Telemetría.** `search_logs.criteria` guarda `destinationProvider` y `destinationCityCode`, nunca `destinationId`:
   con el id ahí, el sync lo listaría como un destino de Despegar sin mapear (`listUnmappedDestinations`). La demanda
-  por ciudad del sync (`demandByCitySql`) todavía no cuenta estas búsquedas: queda como mejora del sync.
+  por ciudad del sync (`demandByCitySql`) cuenta estas búsquedas desde el 2026-09-29 (§8.6).
 - **Límites.** Es un autocomplete de ciudades de proveedor, no de destinos canónicos (opción C de §8.2): con dos
   proveedores de ids propios activos y sin Despegar, la misma ciudad saldría una vez por proveedor y cada una busca
   sólo en el suyo. Con el tercer bedbank o con tenants solo-TBO en producción, la opción C sigue siendo el camino.
+
+### 8.6 Cobertura global, ciudades que se cargan al buscar y fotos bajo demanda (APLICADO, 2026-09-29)
+
+Motivo: producción tenía el catálogo de Colombia entero en `hotel_inventory` pero `hotel_content` vacío (E4 sólo baja
+lo que tiene demanda, y la demanda no contaba las búsquedas del catálogo local), y la búsqueda por ciudad sólo servía
+en los países de `TBO_SYNC_COUNTRIES` con datos. Estrategia aprobada por el founder (mockup del 2026-09-29):
+
+- **Precarga por demanda.** `demandByCitySql` suma a las búsquedas de destinos de la plataforma (por el mapa
+  aceptado) las de ciudades del catálogo local (`search_logs.criteria.destinationProvider` +
+  `destinationCityCode`), contadas por búsqueda. Una ciudad buscada de un país fuera de la corrida entra en E3 y E4
+  mientras tenga búsquedas (`tools/sync-tbo-hotel-inventory/src/writer.ts`).
+- **Cobertura global (E2A).** Etapa opt-in del sync: `CountryList` y un `CityList` por cada país de TBO que no tiene
+  ciudades guardadas y que no refresca E2 (los de la corrida, si la corrida incluye E2 o E3) (~250 llamadas la
+  primera vez), con tope propio de 300 por corrida y al final de la corrida. Deja las ciudades sin hoteles (`hotel_count` en `NULL`). Se corre con `stages=E1,E2A`.
+- **Ciudad que se carga al buscarla.** Si la ciudad elegida no tiene hoteles activos y el sync nunca la cargó, la
+  búsqueda (después de la cuota y sólo con TBO activo para la agencia) hace UNA llamada a `TBOHotelCodeList` por el
+  circuito (pasiva), guarda los hoteles con `hotel_catalog_import_city` (0054) y sigue. Vacía → 503 "no tiene
+  hoteles"; caída → 503 "probá en unos minutos". Dos búsquedas simultáneas de la misma ciudad hacen una llamada.
+- **Fotos bajo demanda.** `POST /hotels/content/batch` (hasta 24 hoteles, Zod): lo que el catálogo tiene sale al
+  instante —del hotel o del mismo hotel en otro proveedor, por `hotel_match` aceptado—; lo que falta se pide a
+  HotelDetails en lotes de 10 (a lo sumo 2 por petición), por el cupo de fondo del limitador, con la cuenta de la
+  agencia y por el circuito (pasiva), y se guarda con `hotel_catalog_store_contents` (0054), con la huella
+  `tbo-content-v1` del ACL (la misma del sync). La respuesta espera 9 s como mucho: lo que no llegó sale `pending` con
+  `retryAfterMs` y la llamada sigue y guarda. Un hotel sin contenido (o cuya fila la base rechazó) o un lote
+  fallido se recuerdan un rato, para no volver a pedirlos en cada pantalla.
+- **Foto principal en la disponibilidad.** Cada hotel con foto en el catálogo trae `mainImage.url`, la ruta del proxy
+  del panel (`/api/hotels/images/<base64url>`), nunca la URL de TBO.
+- **Proxy de imágenes.** `apps/web-b2b/src/app/api/hotels/images/[key]`: sólo `https` de dominios de TBO
+  (`TBO_IMAGE_HOST_SUFFIXES`), redirecciones sólo dentro de ellos, 8 s, 5 MB, sólo bytes que son imagen por su firma
+  (nunca SVG), caché en memoria con techo en bytes y en entradas, a lo sumo 32 descargas a la vez (lo demás, 503
+  sin guardar: la ruta es pública y el host de fotos de TBO es el de su API) y `Cache-Control` de un día. `next/image` la usa por
+  `images.localPatterns` para servir miniaturas cacheadas en disco (`img-src 'self'`).
+- **Escritura desde el API.** La app sigue sin `INSERT`/`UPDATE` sobre el catálogo (0041): escribe sólo por las dos
+  funciones `SECURITY DEFINER` de 0054, que validan cada campo y aplican las reglas del sync (sólo hoteles del
+  catálogo, `listing` nunca sobre `details`, HTML de lista blanca, imágenes `https`, nunca desactivar ni mover un
+  hotel activo).
 
 ---
 
