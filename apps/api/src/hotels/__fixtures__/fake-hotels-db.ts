@@ -114,6 +114,8 @@ export interface FakeHotelsDbOptions {
    * filtra por nombre ni ordena. Eso lo hace el SQL, y el test lo lee del SQL.
    */
   ciudades?: readonly FilaCiudad[];
+  /** Si se define, la consulta de `hotel_provider_city` falla con este error. */
+  ciudadesFallan?: Error;
 }
 
 export interface FakeHotelsDb {
@@ -235,6 +237,7 @@ export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
       case 'hotel_content':
         return contenidosDe(opts, q);
       case 'hotel_provider_city':
+        if (opts.ciudadesFallan !== undefined) throw opts.ciudadesFallan;
         return [...(opts.ciudades ?? [])];
       default:
         throw new Error(`consulta no prevista por el doble de hoteles: ${q.sql}`);

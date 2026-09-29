@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   DespegarApiError,
   DespegarHotelsAdapter,
@@ -13,13 +13,21 @@ import type {
   HotelProviderFactory,
   HotelSearchProfile,
 } from '../providers/hotel-provider.types.js';
-import type { CallPolicy, CredentialSource, TenantAdapter } from '../providers/provider.types.js';
+import {
+  ProviderAccountIncompleteError,
+  type CallPolicy,
+  type CredentialSource,
+  type TenantAdapter,
+} from '../providers/provider.types.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelProviderAdapter,
 } from './despegar-hotel-provider.adapter.js';
 
 const PROVIDER_CODE = DESPEGAR_HOTELS_PROVIDER_CODE;
+
+/** El único campo sin el cual no hay llamada posible: Despegar autentica sólo con `x-apikey`. */
+const API_KEY_FIELD = 'apiKey';
 
 /**
  * El ACL y su envoltorio neutral viven y mueren juntos: son la misma credencial, y rotarla tiene
@@ -45,10 +53,24 @@ interface CachedAdapters {
  *    Despegar figura en `PLATFORM_DEFAULT_HOTEL_PROVIDERS`: el fallback es de Despegar, no del
  *    contrato.
  *
- * Sigue sin puerta de credenciales, como opera hoy: a una cuenta sin `apiKey` `toConfig` le
- * completa la `DESPEGAR_API_KEY` de la plataforma (401 de Despegar sólo si tampoco está), y aun
- * así sale como `own`/`inherited`. Quien lea `credentialSource` para atribuir consumo tiene que
- * saberlo. Cambiarlo a "proveedor ausente" es un cambio de comportamiento que se declara aparte.
+ * ## Puerta de credenciales
+ *
+ * Sin api key no se construye nada ni se sale a la red: el proveedor queda AUSENTE y el registry lo
+ * nombra en `providers[]` con su motivo, como LATAM, Sabre y TBO. Hasta este cambio caía a la
+ * `DESPEGAR_API_KEY` de la plataforma aunque estuviera vacía y seguía activo: en producción, sin
+ * esa variable ni cuentas en la bóveda, cada sugerencia y cada búsqueda salían a Despegar a
+ * cobrar un 401, y las sugerencias nunca llegaban al catálogo de TBO (2026-09-29).
+ *
+ * - Sin cuenta y sin `DESPEGAR_API_KEY` → `NotFoundException`, que el registry traduce a
+ *   `no-credentials`: no hay cuenta que completar, hay que cargarla.
+ * - Con cuenta pero sin `apiKey` propia ni de la plataforma → {@link ProviderAccountIncompleteError}
+ *   con el campo que falta (`incomplete-account`).
+ * - Una clave de sólo espacios cuenta como ausente: `fetch` recorta el valor del header y la
+ *   llamada saldría sin credencial.
+ *
+ * Con clave, todo sigue igual: a una cuenta sin `apiKey` `toConfig` le completa la de la
+ * plataforma y aun así sale como `own`/`inherited`. Quien lea `credentialSource` para atribuir
+ * consumo tiene que saberlo.
  */
 @Injectable()
 export class DespegarHotelsProviderFactory implements HotelProviderFactory {
@@ -82,7 +104,14 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     catalogOrder: 'hotel_id',
   };
 
+  private readonly logger = new Logger('DespegarHotels');
   private readonly cache = new Map<string, CachedAdapters>();
+
+  /**
+   * La falta de clave de la plataforma es del despliegue, no de un tenant: se avisa una vez por
+   * proceso. Con cada búsqueda y cada tecla del autocompletado, sería el log entero.
+   */
+  private platformKeyWarned = false;
 
   constructor(private readonly creds: ProviderCredentialsService) {}
 
@@ -123,6 +152,10 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
       credentialSource = 'env';
     }
 
+    // Puerta única, ANTES de construir: la negativa sale como una ausencia que el registry sabe
+    // explicar, y no como un 401 de Despegar por cada búsqueda.
+    if (cfg.apiKey === '') throw this.missingApiKey(tenantId, credentialSource);
+
     let adapters = this.cache.get(key);
     if (!adapters) {
       const acl = new DespegarHotelsAdapter(cfg);
@@ -131,6 +164,27 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
       this.evictStale(key);
     }
     return { adapters, credentialSource };
+  }
+
+  /**
+   * Dos negativas distintas, porque la acción es distinta: con CUENTA hay un campo que completar;
+   * sin cuenta, al caer a la plataforma tampoco hay nada ahí, y "completá tu cuenta" mandaría al
+   * vendedor a una pantalla vacía. En el log, sólo el nombre del campo y el origen: nunca valores.
+   */
+  private missingApiKey(tenantId: string, credentialSource: CredentialSource): NotFoundException {
+    if (credentialSource !== 'env') {
+      this.logger.warn(
+        `cuenta de Despegar sin ${API_KEY_FIELD} para ${tenantId} (origen: ${credentialSource}) y sin DESPEGAR_API_KEY de plataforma — proveedor NO habilitado`,
+      );
+      return new ProviderAccountIncompleteError(PROVIDER_CODE, [API_KEY_FIELD]);
+    }
+    if (!this.platformKeyWarned) {
+      this.platformKeyWarned = true;
+      this.logger.warn(
+        'DESPEGAR_API_KEY vacía: Despegar queda ausente para todo tenant sin cuenta propia ni heredada',
+      );
+    }
+    return new NotFoundException(`no hay api key de Despegar resoluble desde ${tenantId}`);
   }
 
   /** Conserva sólo la entrada vigente por owner (al rotar credenciales el `updatedAt` cambia la key). */
@@ -149,7 +203,7 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     const c = credentials;
     const g = config;
     const cfg: DespegarHotelsConfig = {
-      apiKey: str(c['apiKey']) ?? str(c['apikey']) ?? process.env['DESPEGAR_API_KEY'] ?? '',
+      apiKey: apiKey(c['apiKey']) ?? apiKey(c['apikey']) ?? platformApiKey(),
       baseUrl: str(g['baseUrl']) ?? process.env['DESPEGAR_BASE_URL'] ?? DESPEGAR_BASE_URLS.sandbox,
     };
     const language = lang(g['language']) ?? lang(process.env['DESPEGAR_LANGUAGE']);
@@ -165,7 +219,7 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
 
   private envConfig(): DespegarHotelsConfig {
     const cfg: DespegarHotelsConfig = {
-      apiKey: process.env['DESPEGAR_API_KEY'] ?? '',
+      apiKey: platformApiKey(),
       baseUrl: process.env['DESPEGAR_BASE_URL'] ?? DESPEGAR_BASE_URLS.sandbox,
     };
     const language = lang(process.env['DESPEGAR_LANGUAGE']);
@@ -179,6 +233,20 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/**
+ * La clave recortada, o `undefined` si no queda nada. Recortarla no cambia lo que sale por el
+ * cable —`fetch` ya recorta el valor de un header—; sí evita tomar por clave lo que no lo es.
+ */
+function apiKey(v: unknown): string | undefined {
+  const trimmed = typeof v === 'string' ? v.trim() : '';
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** La `DESPEGAR_API_KEY` de la plataforma, o `''` si no hay: es lo que cierra la puerta. */
+function platformApiKey(): string {
+  return apiKey(process.env['DESPEGAR_API_KEY']) ?? '';
 }
 
 function lang(v: unknown): 'EN' | 'ES' | 'PT' | undefined {
