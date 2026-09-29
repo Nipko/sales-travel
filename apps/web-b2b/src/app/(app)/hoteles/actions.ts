@@ -241,6 +241,10 @@ export interface HotelSearchCriteriaView {
    * agencia. El detalle del hotel vuelve a pedir la misma.
    */
   currency?: string;
+  /** El destino como lo mostró el autocompletado, para la barra de la búsqueda. */
+  destinationLabel?: string;
+  /** Cuántos hoteles puntuales se pidieron por su ID. */
+  hotelIdsCount?: number;
 }
 
 export interface HotelSearchResult {
@@ -386,6 +390,22 @@ function parseDestinationId(raw: string): number | string | undefined {
   return PROVIDER_DESTINATION_RE.test(raw) ? raw : undefined;
 }
 
+/** Lo que se muestra del destino elegido: una línea de texto, sin caracteres de control. */
+const DESTINATION_LABEL_MAX = 120;
+
+function isControlChar(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return code < 0x20 || code === 0x7f;
+}
+
+function parseDestinationLabel(raw: string): string | undefined {
+  const label = Array.from(raw, (ch) => (isControlChar(ch) ? ' ' : ch))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return label === '' ? undefined : label.slice(0, DESTINATION_LABEL_MAX);
+}
+
 function parseHotelIds(raw: string): string[] {
   return raw
     .split(/[\s,;]+/)
@@ -403,6 +423,10 @@ export async function searchHotelsAction(
   const rooms = parseRooms(asString(formData.get('rooms')));
   const hotelIds = parseHotelIds(asString(formData.get('hotelIds')));
   const destinationId = parseDestinationId(asString(formData.get('destinationId')));
+  const destinationLabel =
+    destinationId === undefined
+      ? undefined
+      : parseDestinationLabel(asString(formData.get('destinationLabel')));
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
   const nationalityRaw = asString(formData.get('guestNationality'));
   const guestNationality = toCountryAlpha2(nationalityRaw);
@@ -455,6 +479,8 @@ export async function searchHotelsAction(
       occupancy: rooms,
       refundableOnly,
       ...(currency === undefined ? {} : { currency }),
+      ...(destinationLabel === undefined ? {} : { destinationLabel }),
+      ...(hotelIds.length === 0 ? {} : { hotelIdsCount: hotelIds.length }),
     },
     receivedAt: Date.now(),
   };

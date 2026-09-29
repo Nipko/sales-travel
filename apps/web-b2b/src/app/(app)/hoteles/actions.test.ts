@@ -117,6 +117,28 @@ describe('searchHotelsAction — el sobre de la respuesta', () => {
     expect(typeof res.receivedAt).toBe('number');
   });
 
+  it('el destino como lo mostró el autocompletado vuelve para la barra de la búsqueda', async () => {
+    const res = await searchHotelsAction(
+      INITIAL,
+      form({ destinationLabel: '  Bogotá,\n Colombia\u0007 ' }),
+    );
+    expect(res.criteria?.destinationLabel).toBe('Bogotá, Colombia');
+    expect(res.criteria?.hotelIdsCount).toBeUndefined();
+    // No viaja al API: es sólo para la pantalla.
+    expect(JSON.parse(String(apiMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty(
+      'destinationLabel',
+    );
+  });
+
+  it('sin destino elegido no hay etiqueta; por IDs, cuántos se pidieron', async () => {
+    const res = await searchHotelsAction(
+      INITIAL,
+      form({ destinationId: '', destinationLabel: 'Bogotá', hotelIds: '123, 456' }),
+    );
+    expect(res.criteria?.destinationLabel).toBeUndefined();
+    expect(res.criteria?.hotelIdsCount).toBe(2);
+  });
+
   it('un error del API se muestra con su mensaje', async () => {
     apiMock.mockResolvedValue({ ok: false, error: { status: 400, message: 'Algo falló' } });
     const res = await searchHotelsAction(INITIAL, form({}));
