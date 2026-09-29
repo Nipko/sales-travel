@@ -456,7 +456,13 @@ function baggageToken(offer: Offer): string {
 function policiesToken(offer: Offer): string {
   const p = offer.policies;
   if (p === undefined) return 'pol:?';
-  return `pol:${p.refundable ? 'R' : '-'}${p.changeable ? 'C' : '-'}`;
+  // El cargo es parte de la tarifa: «reembolsable gratis» y «reembolsable con USD 150 de multa»
+  // no son la misma oferta y no se pueden fundir.
+  const flag = (value: boolean | undefined, yes: string) =>
+    value === undefined ? '?' : value ? yes : '-';
+  const fee = (m: { amountMinor: number; currency: string } | undefined) =>
+    m === undefined ? '' : `${m.amountMinor}${m.currency}`;
+  return `pol:${flag(p.refundable, 'R')}${fee(p.refundFee)}${flag(p.changeable, 'C')}${fee(p.changeFee)}`;
 }
 
 /**

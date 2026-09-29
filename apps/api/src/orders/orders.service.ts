@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import {
+  OrderCreateNotSentError,
   type BookingContactInfo,
   type FlightSearchCriteria,
   type HotelCancelRequestOptions,
@@ -80,6 +81,37 @@ import {
  * proveedor y pueden incluir datos que enviamos (documento, email o incluso un PAN si algún día se
  * habilitara tarjeta); ninguno puede terminar en una columna durable ni volver al navegador.
  */
+const CAMPO_LEGIBLE: ReadonlyArray<readonly [RegExp, string]> = [
+  [/documentNumber/i, 'número de documento'],
+  [/expiryDate/i, 'vencimiento del documento'],
+  [/givenName/i, 'nombre'],
+  [/surname/i, 'apellido'],
+  [/birthDate/i, 'fecha de nacimiento'],
+  [/phone/i, 'teléfono'],
+  [/email/i, 'email'],
+];
+
+/**
+ * El motivo de un rechazo ANTES de salir al proveedor, en palabras del vendedor.
+ *
+ * El detalle trae rutas de campo (`travelers.0.givenName:invalid_string`), nunca valores: de ahí
+ * se sacan el pasajero y el campo. Si no se reconoce ninguno, el problema está en la oferta y no
+ * en lo que el vendedor tecleó.
+ */
+export function notSentMessage(detail: string): string {
+  const partes = new Set<string>();
+  for (const match of detail.matchAll(/travelers\.(\d+)\.([\w.]+)/g)) {
+    const campo = CAMPO_LEGIBLE.find(([re]) => re.test(match[2] ?? ''))?.[1];
+    if (campo !== undefined) partes.add(`pasajero ${Number(match[1]) + 1}: ${campo}`);
+  }
+  if (/contactInfo\.phones/.test(detail)) partes.add('teléfono de contacto');
+  if (/contactInfo\.emails/.test(detail)) partes.add('email de contacto');
+  if (partes.size === 0) {
+    return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalidá el precio y volvé a intentar.';
+  }
+  return `La reserva no se envió a la aerolínea. Revisá ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
+}
+
 export function summarizeIssues(issues: ProviderIssue[]): string | null {
   const relevantes = issues.filter((i) => i.severity === 'ERROR');
   if (relevantes.length === 0) return null;
@@ -410,7 +442,7 @@ export class OrdersService {
       throw error;
     }
 
-    const created = await this.callCreate(tenantId, userId, provider, verifiedDto, intent.id);
+    const created = await this.callCreate(tenantId, userId, provider, verifiedDto, intent);
 
     // Tras el write externo, un fallo del audit log no puede convertir la respuesta en un 500 que
     // invite a reservar otra vez. El intent durable sigue siendo la fuente de conciliación.
@@ -641,8 +673,9 @@ export class OrdersService {
     userId: string,
     provider: ResolvedProvider<FlightProviderAdapter>,
     dto: CreateOrderDto,
-    intentId: string,
+    intent: OrderRow,
   ): Promise<CreatedOrderResult> {
+    const intentId = intent.id;
     const request = {
       offer: dto.offer,
       criteria: dto.searchCriteria,
@@ -672,6 +705,9 @@ export class OrdersService {
         providerRaw: fallbackProviderRaw(provider.code, result),
       };
     } catch (err) {
+      if (err instanceof OrderCreateNotSentError) {
+        await this.rejectNotSent(tenantId, userId, provider.code, intent, err);
+      }
       // Una excepción NO es un `FAILED`. Un `FAILED` es el proveedor diciendo "no reservé nada";
       // un timeout es el proveedor no diciendo nada, y la reserva puede existir.
       const decision = decideAfterCreateThrew();
@@ -704,6 +740,44 @@ export class OrdersService {
         reconciliationRequired: true,
       });
     }
+  }
+
+  /**
+   * La petición no salió: no hay reserva que conciliar. Se libera la clave para que el vendedor
+   * corrija el dato y vuelva a reservar la MISMA cotización, y se le dice qué campo mirar.
+   */
+  private async rejectNotSent(
+    tenantId: string,
+    userId: string,
+    providerCode: string,
+    intent: OrderRow,
+    err: OrderCreateNotSentError,
+  ): Promise<never> {
+    await this.intents.failBeforeProvider(tenantId, intent);
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.createFailed,
+        tenantId,
+        actorUserId: userId,
+        aggregateType: 'order',
+        aggregateId: intent.id,
+        payload: {
+          provider: providerCode,
+          reason: 'rejected-before-send',
+          errorName: err.name,
+          uncertain: false,
+        },
+      });
+    } catch {
+      // Nada salió al proveedor: perder este evento no abre ninguna reserva fantasma.
+    }
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: notSentMessage(err.message),
+      orderId: intent.id,
+      retryForbidden: false,
+    });
   }
 
   /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */

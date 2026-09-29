@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertTriangle, FileText, Search, TriangleAlert } from 'lucide-react';
+import { flightDate, flightTime, formatMoney } from '../../../lib/flight-format';
+import { AlertTriangle, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -98,7 +99,7 @@ function SubmitButton() {
     <Button
       type="submit"
       disabled={pending}
-      className="h-14 w-full gap-2 rounded-xl px-7 text-[15px] font-semibold xl:w-auto"
+      className="h-14 w-full gap-2 rounded-xl px-7 text-[15px] font-semibold shadow-[var(--shadow-sm)] transition-all duration-200 hover:shadow-[var(--shadow-md)] active:scale-[0.99] xl:w-auto"
     >
       {pending ? (
         <>
@@ -113,25 +114,6 @@ function SubmitButton() {
       )}
     </Button>
   );
-}
-
-function formatMoney(amountMinor: number, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100);
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function formatDuration(minutes: number): string {
@@ -195,6 +177,8 @@ function sortGroups(groups: FlightGroup[], sort: SortKey): FlightGroup[] {
   return sorted;
 }
 
+type QuoteCriteria = Omit<Parameters<typeof createQuotationAction>[1], 'currency'>;
+
 export default function CotizacionesPage() {
   const router = useRouter();
   const [result, formAction] = useActionState(searchFlightsAction, initialState);
@@ -215,6 +199,12 @@ export default function CotizacionesPage() {
   const [quoteError, setQuoteError] = useState('');
   /** Qué se está buscando, congelado al enviar: si el usuario sigue tocando, el eco no miente. */
   const [echo, setEcho] = useState('');
+  /**
+   * Los criterios de la búsqueda que PRODUJO los resultados, congelados al enviar. La cotización
+   * se guardaba con lo que el formulario tuviera al pulsar «Cotizar»: cambiar los pasajeros
+   * después de buscar dejaba una cotización de 2 adultos con precio de 1, y así se reservaba.
+   */
+  const [searched, setSearched] = useState<QuoteCriteria | null>(null);
 
   const draft = useMemo<SearchDraft>(
     () => ({
@@ -289,6 +279,15 @@ export default function CotizacionesPage() {
 
     setProblem(null);
     setEcho(searchEcho(draft));
+    setSearched({
+      origin: originCode,
+      destination: destinationCode,
+      departureDate,
+      ...(tripMode === 'roundtrip' && returnDate ? { returnDate } : {}),
+      tripType: tripMode,
+      paxCount: { adults: pax.adults, children: pax.children, infants: pax.infants },
+      cabin,
+    });
     setHasSearched(true);
     // El loader y los resultados aparecen debajo del formulario, fuera del viewport.
     setTimeout(
@@ -299,14 +298,12 @@ export default function CotizacionesPage() {
 
   const handleQuote = useCallback(
     async (offer: Offer) => {
+      if (searched === null) {
+        setQuoteError('Volvé a buscar antes de cotizar.');
+        return;
+      }
       const res = await createQuotationAction(offer, {
-        origin: originCode,
-        destination: destinationCode,
-        departureDate,
-        returnDate: returnDate || undefined,
-        tripType: tripMode,
-        paxCount: { adults: pax.adults, children: pax.children, infants: pax.infants },
-        cabin,
+        ...searched,
         currency: offer.total.currency,
       });
       if (res.ok && res.quotationId) {
@@ -315,7 +312,7 @@ export default function CotizacionesPage() {
         setQuoteError(res.error || 'No se pudo guardar la cotización.');
       }
     },
-    [originCode, destinationCode, departureDate, returnDate, tripMode, pax, cabin, router],
+    [searched, router],
   );
 
   // Los grupos sin filtrar alimentan las OPCIONES de filtro (aerolineas, precio maximo):
@@ -335,13 +332,21 @@ export default function CotizacionesPage() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
-            Buscar vuelos
-          </h1>
-          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            Tarifas en vivo por conexión directa con los proveedores.
-          </p>
+        <div className="flex items-center gap-3.5">
+          <span
+            aria-hidden="true"
+            className="flex size-11 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-primary)]/15"
+          >
+            <Plane className="size-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
+              Buscar vuelos
+            </h1>
+            <p className="mt-0.5 text-sm text-[var(--color-fg-muted)]">
+              Tarifas en vivo por conexión directa con los proveedores.
+            </p>
+          </div>
         </div>
         <Link
           href="/cotizaciones/guardadas"
@@ -353,7 +358,9 @@ export default function CotizacionesPage() {
       </header>
 
       <form action={formAction} onSubmit={handleSubmit}>
-        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-sm)] sm:p-5">
+        {/* Un solo plano elevado, con el tinte de marca apenas perceptible: separa el formulario
+            del fondo sin bordes gruesos ni decoración. */}
+        <section className="rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-surface)_0%,color-mix(in_oklab,var(--color-primary)_3%,var(--color-surface))_100%)] p-4 shadow-[var(--shadow-md)] sm:p-6">
           {/* Ajustes: se tocan pocas veces, muestran su valor y se cambian en un clic. */}
           <div className="mb-3 flex flex-wrap items-center gap-x-1 gap-y-1">
             <TripModeSwitch value={tripMode} onChange={handleTripMode} />
@@ -599,8 +606,8 @@ function SearchResults({
                   group={group}
                   showProvider={result.showProviderInResults}
                   formatMoney={formatMoney}
-                  formatTime={formatTime}
-                  formatDate={formatDate}
+                  formatTime={flightTime}
+                  formatDate={flightDate}
                   formatDuration={formatDuration}
                   onQuote={onQuote}
                 />

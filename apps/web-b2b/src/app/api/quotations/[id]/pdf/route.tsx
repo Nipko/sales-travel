@@ -1,4 +1,6 @@
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { describePolicy, policyState } from '../../../../../lib/fare-policy';
+import { flightDate, flightTime, formatMoney } from '../../../../../lib/flight-format';
 import { NextResponse } from 'next/server';
 import { api } from '../../../../../lib/api';
 import { describeBaggage, hasAnyBaggageInfo } from '../../../../../lib/baggage';
@@ -76,21 +78,18 @@ interface Quotation {
       carryOn: { qty: number; weightKg?: number };
       checked: { qty: number; weightKg?: number };
     };
-    policies?: { changeable: boolean; refundable: boolean };
+    expiresAtSource?: 'provider' | 'platform-policy';
+    policies?: {
+      changeable?: boolean;
+      refundable?: boolean;
+      changeFee?: { amountMinor: number; currency: string };
+      refundFee?: { amountMinor: number; currency: string };
+    };
   };
   customerName: string | null;
   customerEmail: string | null;
   expiresAt: string;
   createdAt: string;
-}
-
-function formatMoney(amountMinor: number, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100);
 }
 
 function formatDate(iso: string): string {
@@ -99,14 +98,6 @@ function formatDate(iso: string): string {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-  });
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-CO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
   });
 }
 
@@ -301,10 +292,10 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
                 </View>
                 <View style={s.flightRoute}>
                   <View style={s.timeBlock}>
-                    <Text style={s.timeText}>{formatTime(first.departureAt)}</Text>
+                    <Text style={s.timeText}>{flightTime(first.departureAt)}</Text>
                     <Text style={s.airportCode}>{first.origin}</Text>
                     <Text style={{ fontSize: 8, color: '#9ca3af' }}>
-                      {formatDate(first.departureAt)}
+                      {flightDate(first.departureAt, 'long')}
                     </Text>
                   </View>
                   <View style={s.durationBlock}>
@@ -313,10 +304,10 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
                     <Text style={s.stopsText}>→</Text>
                   </View>
                   <View style={[s.timeBlock, { alignItems: 'flex-end' }]}>
-                    <Text style={s.timeText}>{formatTime(last.arrivalAt)}</Text>
+                    <Text style={s.timeText}>{flightTime(last.arrivalAt)}</Text>
                     <Text style={s.airportCode}>{last.destination}</Text>
                     <Text style={{ fontSize: 8, color: '#9ca3af' }}>
-                      {formatDate(last.arrivalAt)}
+                      {flightDate(last.arrivalAt, 'long')}
                     </Text>
                   </View>
                 </View>
@@ -353,13 +344,21 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
                 <View style={s.row}>
                   <Text style={s.label}>Cambios</Text>
                   <Text style={s.value}>
-                    {selectedOffer.policies.changeable ? 'Permitidos' : 'No permitidos'}
+                    {describePolicy(
+                      policyState(selectedOffer.policies, 'change'),
+                      'change',
+                      formatMoney,
+                    )}
                   </Text>
                 </View>
                 <View style={s.row}>
                   <Text style={s.label}>Reembolso</Text>
                   <Text style={s.value}>
-                    {selectedOffer.policies.refundable ? 'Reembolsable' : 'No reembolsable'}
+                    {describePolicy(
+                      policyState(selectedOffer.policies, 'refund'),
+                      'refund',
+                      formatMoney,
+                    )}
                   </Text>
                 </View>
               </>
@@ -387,15 +386,19 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
 
         {/* Footer */}
         <View style={s.footer}>
+          {/* Sólo la aerolínea puede garantizar una tarifa hasta una hora. Sin TTL del proveedor
+              —todo el contenido ATPCO de Sabre— el `expiresAt` es nuestro TTL de caché (90 s), y
+              imprimirlo como «Vigente hasta» le prometía al cliente un precio que no existe. */}
           <Text style={s.footerText}>
-            Vigente hasta{' '}
-            {new Date(q.expiresAt).toLocaleDateString('es-CO', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            {q.selectedOffer.expiresAtSource === 'provider'
+              ? `Tarifa vigente hasta ${new Date(q.expiresAt).toLocaleString('es-CO', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}`
+              : 'Precio y disponibilidad sujetos a confirmación al momento de reservar.'}
           </Text>
           <Text style={s.footerText}>
             Generado por {agencyName} · {agencyContact}

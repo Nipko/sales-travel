@@ -1,11 +1,12 @@
 import type { Offer } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
-import type {
-  FlightSearchCriteria,
-  OrderCreateRequest,
-  OrderCreateResult,
-  Passenger,
-  SearchContext,
+import {
+  OrderCreateNotSentError,
+  type FlightSearchCriteria,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type Passenger,
+  type SearchContext,
 } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import adultFixture from './__fixtures__/v5-roundtrip-adult-200.json';
@@ -19,7 +20,6 @@ import {
   SABRE_ASYNC_UPDATE_WAIT_MS_DEFAULT,
   SABRE_CREATE_BOOKING_PATH,
   SABRE_ERROR_POLICY_BY_TOLERANCE,
-  SabreCreateBookingError,
   buildSabreCreateBookingRequest,
 } from './booking/create.request.builder';
 import { SABRE_GET_BOOKING_PATH } from './booking/get.request.builder';
@@ -870,7 +870,7 @@ describe('lo que el contrato exige que salga en el cuerpo de createBooking', () 
       harness.create.createBooking(orderRequest(shopOffer()), CTX, {
         asynchronousUpdateWaitTimeMs: 0,
       }),
-    ).rejects.toThrow(SabreCreateBookingError);
+    ).rejects.toThrow(OrderCreateNotSentError);
     expect(harness.calls).toHaveLength(0);
   });
 
@@ -950,7 +950,7 @@ describe('lo que el contrato exige que salga en el cuerpo de createBooking', () 
         orderRequest(withCarrier(shopOffer(), 'BA'), { passengers: sinTitulo }),
         CTX,
       ),
-    ).rejects.toThrow(SabreCreateBookingError);
+    ).rejects.toThrow(OrderCreateNotSentError);
     // Un rechazo del proveedor podría llegar con un PNR a medias; éste no llega con nada.
     expect(harness.calls).toHaveLength(0);
   });

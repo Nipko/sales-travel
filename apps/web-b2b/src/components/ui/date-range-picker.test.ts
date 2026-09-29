@@ -19,6 +19,7 @@ import {
   pickerHint,
   previewRange,
   rangeSummary,
+  seleccionarDia,
   todayIso,
   tripLength,
   tripLengthLabel,
@@ -435,5 +436,59 @@ describe('aritmética de fechas', () => {
     const nocheVieja = new Date(2026, 11, 31, 22, 0, 0);
 
     expect(todayIso(nocheVieja)).toBe('2026-12-31');
+  });
+});
+
+describe('seleccionarDia: sin «Aplicar», el calendario confirma solo', () => {
+  it('ida y vuelta: el PRIMER día deja borrador y no confirma nada', () => {
+    const { draft, commit } = seleccionarDia(VACIO, '2026-10-14', IDA_VUELTA);
+    expect(draft).toEqual({ start: '2026-10-14', end: null });
+    // Con la ida sola no hay búsqueda posible: no puede escaparse a medias.
+    expect(commit).toBeNull();
+  });
+
+  it('ida y vuelta: el SEGUNDO día confirma el rango entero', () => {
+    const conIda: DateRange = { start: '2026-10-14', end: null };
+    const { commit } = seleccionarDia(conIda, '2026-10-18', IDA_VUELTA);
+    // Es el clic que antes necesitaba «Aplicar» detrás: ahora ya vale.
+    expect(commit).toEqual({ start: '2026-10-14', end: '2026-10-18' });
+  });
+
+  it('un segundo día ANTERIOR a la ida reinicia, no confirma al revés', () => {
+    // Quien se equivocó de mes toca el día correcto; no puede salir un rango invertido.
+    const conIda: DateRange = { start: '2026-10-14', end: null };
+    const { draft, commit } = seleccionarDia(conIda, '2026-10-02', IDA_VUELTA);
+    expect(draft).toEqual({ start: '2026-10-02', end: null });
+    expect(commit).toBeNull();
+  });
+
+  it('con un rango ya completo, tocar un día arranca otro y espera la vuelta', () => {
+    const completo: DateRange = { start: '2026-10-14', end: '2026-10-18' };
+    const { draft, commit } = seleccionarDia(completo, '2026-11-01', IDA_VUELTA);
+    expect(draft).toEqual({ start: '2026-11-01', end: null });
+    expect(commit).toBeNull();
+  });
+
+  it('solo ida: el primer día confirma y no arrastra una vuelta', () => {
+    const { commit } = seleccionarDia(VACIO, '2026-10-14', SOLO_IDA);
+    expect(commit).toEqual({ start: '2026-10-14', end: null });
+  });
+
+  it('un día deshabilitado no confirma NADA, tampoco lo que ya había', () => {
+    // En solo ida el borrador ya es «completo»; un clic en un día pasado no puede confirmarlo
+    // por accidente y cerrar el calendario.
+    const conIda: DateRange = { start: '2026-10-14', end: null };
+    expect(seleccionarDia(conIda, '2026-09-01', SOLO_IDA)).toEqual({ draft: conIda, commit: null });
+    expect(seleccionarDia(VACIO, '2026-09-01', IDA_VUELTA)).toEqual({ draft: VACIO, commit: null });
+  });
+
+  it('el regreso en el mismo día se puede elegir, con dos clics deliberados', () => {
+    // El doble clic accidental lo filtra el componente (`MouseEvent.detail >= 2`); la decisión
+    // pura sigue admitiendo el itinerario de ida y vuelta en el día, que es real en LATAM.
+    const conIda: DateRange = { start: '2026-10-14', end: null };
+    expect(seleccionarDia(conIda, '2026-10-14', IDA_VUELTA).commit).toEqual({
+      start: '2026-10-14',
+      end: '2026-10-14',
+    });
   });
 });

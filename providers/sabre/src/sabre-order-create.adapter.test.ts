@@ -1,5 +1,10 @@
 import type { Offer, Segment } from '@sales-travel/canonical';
-import type { OrderCreateRequest, OrderCreateResult, SearchContext } from '@sales-travel/domain';
+import {
+  OrderCreateNotSentError,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type SearchContext,
+} from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import { SABRE_HOSTS, type SabreConfig } from './config';
@@ -12,7 +17,6 @@ import {
   SABRE_PASSIVE_FLIGHT_STATUS_CODE,
   SABRE_TOLERANCE_BY_USE_CASE,
   SabreOrderCreateAdapter,
-  SabreOrderCreateInputError,
   classifySabrePartialFailure,
   type SabreBookingUseCase,
   type SabreOrderCreateOptions,
@@ -521,7 +525,7 @@ describe('caso de uso y tolerancia a fallo parcial', () => {
       book(request(ndcOffer()), CONFIRMED_RESPONSE, {
         useCase: 'PAQUETE' as SabreBookingUseCase,
       }),
-    ).rejects.toThrow(SabreOrderCreateInputError);
+    ).rejects.toThrow(OrderCreateNotSentError);
   });
 
   it('la decisión vuelve en el resultado y en el provider_raw, para que el domain_event la cite', async () => {

@@ -196,6 +196,9 @@ const SabrePenaltiesInfoSchema = z.object({
         applicability: z.string().optional(),
         changeable: z.boolean().optional(),
         refundable: z.boolean().optional(),
+        /** Máximo por pasajero, suponiendo que se cambian todos los vuelos (`v5.yml:8620`). */
+        amount: z.number().nonnegative().optional(),
+        currency: z.string().optional(),
       }),
     )
     .optional(),
@@ -1226,37 +1229,55 @@ function flightNumberToString(value: number | undefined): string | undefined {
 function resolvePolicies(
   pricing: SabrePricingInformation,
   passengers: readonly SabrePassengerInfo[],
-): { changeable: boolean; refundable: boolean } | null {
+): Offer['policies'] | null {
   const penalties =
     passengers.find((info) => (info.penaltiesInfo?.penalties ?? []).length > 0)?.penaltiesInfo
       ?.penalties ?? pricing.penaltiesInfo?.penalties;
 
   if (penalties && penalties.length > 0) {
-    return {
-      changeable: penaltyVerdict(penalties, 'Exchange', 'changeable') ?? false,
-      refundable: penaltyVerdict(penalties, 'Refund', 'refundable') ?? false,
+    const change = penaltyOf(penalties, 'Exchange', 'changeable');
+    const refund = penaltyOf(penalties, 'Refund', 'refundable');
+    // Un tipo que no viene queda SIN campo: «no informado» no es «no permitido».
+    const policies: NonNullable<Offer['policies']> = {
+      ...(change === null ? {} : { changeable: change.allowed }),
+      ...(refund === null ? {} : { refundable: refund.allowed }),
+      ...(change?.fee === undefined ? {} : { changeFee: change.fee }),
+      ...(refund?.fee === undefined ? {} : { refundFee: refund.fee }),
     };
+    return Object.keys(policies).length > 0 ? policies : null;
   }
 
   const nonRefundable = passengers.find((info) => info.nonRefundable !== undefined)?.nonRefundable;
   if (nonRefundable === undefined) return null;
-  // Sin penalidades sólo sabemos de reembolso. Afirmar `changeable: true` sería inventarlo.
-  return { changeable: false, refundable: !nonRefundable };
+  // Sin penalidades sólo sabemos de reembolso: los cambios quedan «no informados», ni sí ni no.
+  return { refundable: !nonRefundable };
 }
 
-function penaltyVerdict(
-  penalties: ReadonlyArray<{ type?: string; applicability?: string } & Record<string, unknown>>,
+type SabrePenalty = NonNullable<
+  NonNullable<SabrePassengerInfo['penaltiesInfo']>['penalties']
+>[number];
+
+function penaltyOf(
+  penalties: readonly SabrePenalty[],
   type: 'Exchange' | 'Refund',
   flag: 'changeable' | 'refundable',
-): boolean | null {
+): { allowed: boolean; fee?: Money } | null {
   const ofType = penalties.filter((p) => p.type?.toLowerCase() === type.toLowerCase());
   if (ofType.length === 0) return null;
   // "Reembolsable antes de la salida pero no después" es un caso real: el booleano canónico sólo
   // puede expresar uno de los dos, y el que le importa al vendedor que está cotizando es `Before`.
   const before = ofType.find((p) => p.applicability?.toLowerCase() === 'before');
   const chosen = before ?? ofType[0];
-  const value = chosen?.[flag];
-  return typeof value === 'boolean' ? value : null;
+  const allowed = chosen?.[flag];
+  if (typeof allowed !== 'boolean') return null;
+  // El cargo sólo tiene sentido si se permite: sobre una tarifa no reembolsable, el `amount` no es
+  // una multa que se pueda pagar.
+  const currency = normalizeCurrency(chosen?.currency);
+  const fee =
+    allowed && chosen?.amount !== undefined && currency
+      ? Money.fromMajor(chosen.amount, currency)
+      : undefined;
+  return fee === undefined ? { allowed } : { allowed, fee };
 }
 
 /**
