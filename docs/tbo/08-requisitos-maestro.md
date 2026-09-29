@@ -815,7 +815,8 @@ reservas activas. Toda operación por id pasa antes por la fila de `orders` leí
 presupuesto por corrida y reanudación por `hotel_provider_city.synced_at`; upsert y barrido por ciudad en
 transacciones cortas, con guarda de caída máxima; **nunca `DELETE`**; corte ordenado ante `429`; salida `skip` sin
 credenciales y kill-switch `TBO_SYNC_ENABLED`; logs JSON con contadores. Usa el cliente de contenido del ACL, que no
-expone métodos de venta.
+expone métodos de venta. La cuenta sale de la bóveda de Planetour, con `TBO_SYNC_USERNAME`/`TBO_SYNC_PASSWORD` sólo
+como override (D-TBO-04, 2026-09-29).
 
 **Fuente.** p. 51-69, 71 (VERIFICADO-PDF); [05](./05-contenido-estatico-e-inventario.md) §5-§6.
 
@@ -1092,8 +1093,9 @@ El límite existe (`429 LIMIT_EXCEEDED`, p. 9) y su valor no se publica (VERIFIC
 2. Valores por defecto según D-TBO-17 (recomendada: 5 QPS y 4 concurrentes por cuenta), configurables.
 3. **Cupos separados:** ventas (Search, PreBook), dinero (Book, Cancel y el `BookingDetail` de recuperación) y
    fondo (HCN, verificaciones y conciliación). El dinero nunca espera detrás de la búsqueda.
-4. El sync usa otra cuenta (D-TBO-04) con su propio ritmo (1 req/s de partida, una conexión,
-   [05](./05-contenido-estatico-e-inventario.md) §10).
+4. El sync corre en otro proceso con su propio ritmo (1 req/s de partida, una conexión,
+   [05](./05-contenido-estatico-e-inventario.md) §10). Desde D-TBO-04 (2026-09-29) usa la cuenta de Planetour de la
+   bóveda, que puede ser la de venta: su limitador no ve al del api, y lo que evita el choque es el horario (D-TBO-12).
 5. Ante un `429`, el ritmo de esa cuenta baja a la mitad durante 60 s (INFERIDO). Book y Cancel no se reintentan.
 6. Estado en memoria mientras haya un solo contenedor de API; en Redis, **a través de un port**, cuando se escale.
    El `CachePort` actual no tiene operaciones atómicas (`packages/core/src/ports/cache.port.ts:1-6`,
@@ -1363,12 +1365,13 @@ fichas de las decisiones firmadas conservan todas sus opciones como registro y m
 | -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D-TBO-02 | **CERRADA, 2026-09-25** | **(B)** Sin compuerta de valor: se construye todo y el valor se mide en producción                                                                                                                                         | No hay umbral ni decisión de seguir o parar; F4-F6 no esperan ninguna cifra. La medición de §2.3 se hace igual, como información (PR-3.7 de [09](./09-plan-implementacion.md)). D-TBO-01 (A) deja de estar condicionada                                         |
 | D-TBO-03 | **CERRADA, 2026-09-25** | **(A)** La cuenta TBO del consolidador vive en la bóveda de su nodo y se hereda a su red; sin fallback a variables de entorno de plataforma; las cuentas propias de agencias quedan deshabilitadas hasta que responda Q-77 | RF-23, RF-36 CA 1, RF-37; D-TBO-38. `tbo-hotels` no entra en `PLATFORM_DEFAULT_HOTEL_PROVIDERS` y no hay variables de venta `TBO_*` en el despliegue (las `TBO_SYNC_*` del catálogo son de D-TBO-04)                                                            |
+| D-TBO-04 | **CERRADA, 2026-09-29** | **Variante de (A) y (B):** la cuenta de TBO de Planetour en la bóveda (`default`, la de venta) o una dedicada de Planetour con etiqueta `catalogo`; nunca secrets de GitHub Actions                                        | RF-30. El sync descifra la cuenta con `PROVIDER_CREDENTIALS_KEY`; `TBO_SYNC_USERNAME`/`TBO_SYNC_PASSWORD` sólo como override (stack de certificación). Con la `default` comparte cupo con la venta: corre de madrugada a 1 req/s (D-TBO-12)                     |
 | D-TBO-06 | **CERRADA, 2026-09-25** | **(A)** Generalizar la vertical: contrato neutral Zod en `packages/canonical`, puertos en `packages/domain` y `HotelProviderRegistry` espejo del de vuelos                                                                 | RF-35, RF-36, F3. **Con un requisito explícito del founder: "me tiene que mostrar de dónde es"** → RF-40: cada tarifa de la búsqueda combinada lleva su proveedor y la web lo pinta con la política de divulgación que ya existe para vuelos, sin reglas nuevas |
 | D-TBO-07 | **CERRADA, 2026-09-25** | **(A)** Intent `pending` con `BookingReferenceId` antes del Book, por una API pública de intent en `OrdersService`                                                                                                         | RF-19 a RF-29, F4                                                                                                                                                                                                                                               |
 | D-TBO-18 | **CERRADA, 2026-09-28** | **(A)** Opt-in por tenant, encendido y apagado por el superadmin desde el panel de la plataforma (para todos los tenants o para un tenant y su red, con excepciones por tenant), no por variable de entorno                | RF-36 CA 5 y 6; RNF-11. Tabla `provider_enablement` (0048), para todo proveedor de vuelos y hoteles; `*_PROVIDERS_OPT_IN` quedan de legado y `PROVIDERS_DISABLED` de emergencia. [09](./09-plan-implementacion.md) PR-8.2 enciende el piloto desde el panel     |
 
-**Las otras 33 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
-otra cosa.** Son D-TBO-01, D-TBO-04, D-TBO-05, D-TBO-08 a D-TBO-17 y D-TBO-19 a D-TBO-38; así lo pidió el founder el
+**Las otras 32 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
+otra cosa.** Son D-TBO-01, D-TBO-05, D-TBO-08 a D-TBO-17 y D-TBO-19 a D-TBO-38; así lo pidió el founder el
 mismo 2026-09-25. Todas tienen la recomendada en (A). Cambiar una después de que empezó el PR que la aplica cuesta el
 retrabajo que dice su línea "Bloquea"; las fechas hasta las que se puede cambiar sin retrabajo están en
 [09](./09-plan-implementacion.md) §18.
@@ -1400,7 +1403,7 @@ Si TBO objeta alguna en la verificación de portal, el cambio es el que describe
 | D-TBO-01 | ¿En qué orden entra TBO frente a Hotelbeds y RateHawk?          | TBO segundo, generalizando la vertical                             | Todo el plan                 | Abierta; se aplica (A)                                 |
 | D-TBO-02 | ¿Se mide el valor de TBO antes de construir la reserva?         | Sí, compuerta tras el catálogo (no elegida)                        | Nada (bloqueaba F4-F6)       | **CERRADA 2026-09-25: (B)**, sin compuerta             |
 | D-TBO-03 | ¿Con qué cuenta TBO reserva cada agencia?                       | Cuenta del consolidador, heredable; sin fallback de plataforma     | RF-23, RF-36, RF-37          | **CERRADA 2026-09-25: (A)**                            |
-| D-TBO-04 | ¿Qué cuenta usa el sync del catálogo?                           | Una cuenta dedicada                                                | RF-30                        | Abierta; se aplica (A)                                 |
+| D-TBO-04 | ¿Qué cuenta usa el sync del catálogo?                           | Una cuenta dedicada                                                | RF-30                        | **CERRADA 2026-09-29:** la de Planetour en la bóveda   |
 | D-TBO-05 | ¿Cuándo se abre la certificación?                               | En cuanto el ACL y el arnés pasen los 8 casos                      | Calendario de F6             | Abierta; se aplica (A)                                 |
 | D-TBO-06 | ¿Se generaliza la vertical o se hace un módulo aparte?          | Generalizar con registry espejo                                    | RF-35, RF-36, RF-40          | **CERRADA 2026-09-25: (A)**, con el requisito de RF-40 |
 | D-TBO-07 | ¿Las reservas de hotel son órdenes antes del Book?              | Sí                                                                 | RF-19 a RF-29                | **CERRADA 2026-09-25: (A)**                            |
@@ -1518,6 +1521,24 @@ credenciales de plataforma cuando el tenant no tiene cuenta (`despegar-hotels.fa
 fallback); [07](./07-certificacion.md) §2.8 (BYOC deshabilitado hasta la respuesta).
 
 #### D-TBO-04 — ¿Qué cuenta usa el sync del catálogo?
+
+**Estado: CERRADA el 2026-09-29 con una variante de (A) y (B): la cuenta de Planetour en la bóveda.** El founder
+preguntó por qué el sync pedía credenciales en GitHub Actions si las cuentas de proveedor se administran desde el panel
+del superadmin. Queda así:
+
+- El sync lee la cuenta `tbo-hotels` **activa** de Planetour (la raíz `platform`) en la bóveda (`provider_accounts`),
+  cargada desde _Proveedores (GDS)_, y la descifra con `PROVIDER_CREDENTIALS_KEY`, la clave del api. La valida con
+  las mismas reglas que el factory de venta (`parseTboConfig`). No hay secrets de TBO en GitHub Actions.
+- Con una sola cuenta activa, ésa: hoy la `default`, la misma con la que vende la red. Es la consecuencia de (B): el
+  sync comparte cupo con la venta, y por eso corre de 06:17 a 09:17 UTC a 1 req/s (D-TBO-12).
+- Opcional, lo de (A): una segunda cuenta de Planetour con etiqueta `catalogo`, **no heredable** (la red no la usa
+  para vender), que el sync prefiere cuando existe. Con varias activas y ninguna `catalogo` ni `default`, el sync
+  falla nombrando las etiquetas en lugar de elegir una.
+- `TBO_SYNC_USERNAME` y `TBO_SYNC_PASSWORD` quedan sólo como **override** explícito: si están las dos, mandan. Lo usa
+  el stack de certificación, cuya cuenta de test el seed guarda en el consolidador `tbo-cert` y no en la raíz.
+- Sin override ni cuenta activa, el sync sale con 0 ("sin credenciales"), nombrando las dos fuentes.
+
+Implementación: `tools/sync-tbo-hotel-inventory/src/vault.ts` y su README.
 
 Aunque todas las agencias traigan su cuenta, el catálogo necesita una propia ([05](./05-contenido-estatico-e-inventario.md)
 §6.6). El QPS no se publica (p. 9).

@@ -3,10 +3,12 @@ name: Sync TBO Hotel Inventory
 # Catálogo de hoteles de TBO → Postgres (docs/tbo/05 §6; 08 RF-30). Herramienta, imagen y workflow
 # propios, no una extensión del sync de Despegar (D-TBO-12 A): el job que funciona no cambia.
 #
-# Secrets y variables `TBO_SYNC_*`: tools/sync-tbo-hotel-inventory/README.md. La cuenta es la de
-# catálogo, dedicada y de plataforma (D-TBO-04 A), nunca la de ventas del consolidador. Sin
-# `TBO_SYNC_USERNAME` o `TBO_SYNC_PASSWORD` en el `.env` del VPS el job sale con 0, como el de
-# Despegar sin su API key.
+# La cuenta de TBO NO es un secret de GitHub: el contenedor la lee de la bóveda de Planetour (la raíz
+# `platform`), donde la carga el superadmin desde el panel, y la descifra con PROVIDER_CREDENTIALS_KEY,
+# la misma clave del api (D-TBO-04, decisión del 2026-09-29). `TBO_SYNC_USERNAME` y
+# `TBO_SYNC_PASSWORD` quedan sólo como override. Sin override ni cuenta en la bóveda, el contenedor
+# sale con 0, como el sync de Despegar sin su API key: lo decide la herramienta, no este script.
+# Variables `TBO_SYNC_*`: tools/sync-tbo-hotel-inventory/README.md.
 
 on:
   schedule:
@@ -95,17 +97,17 @@ jobs:
               printf '%s' "$v"
             }
             POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
+            # La clave de la bóveda, la misma que usa el api: con ella el contenedor abre la cuenta de
+            # TBO que el superadmin cargó en Planetour. Sin cuenta ni override, el contenedor sale
+            # con 0; con cuenta y sin clave, con 1.
+            PROVIDER_CREDENTIALS_KEY=$(env_get PROVIDER_CREDENTIALS_KEY)
+            export PROVIDER_CREDENTIALS_KEY
             while IFS= read -r line; do
               key=${line%%=*}
               case "$key" in
                 TBO_SYNC_*) export "$key=$(env_get "$key")" ;;
               esac
             done < .env
-
-            if [ -z "${TBO_SYNC_USERNAME:-}" ] || [ -z "${TBO_SYNC_PASSWORD:-}" ]; then
-              echo "TBO_SYNC_USERNAME o TBO_SYNC_PASSWORD no configurados en .env — se omite el sync."
-              exit 0
-            fi
 
             [ "$1" = "-" ] || export TBO_SYNC_COUNTRIES="$1"
             [ "$2" = "-" ] || export TBO_SYNC_STAGES="$2"
@@ -140,6 +142,7 @@ jobs:
               -e PGUSER=postgres \
               -e PGPASSWORD \
               -e PGDATABASE=sales_travel \
+              -e PROVIDER_CREDENTIALS_KEY \
               -e TBO_SYNC_ENABLED \
               -e TBO_SYNC_ENVIRONMENT \
               -e TBO_SYNC_BASE_URL \

@@ -122,6 +122,13 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 
+> Las cuentas de proveedor **no** son secrets de GitHub: se cargan desde el panel del superadmin y quedan cifradas en la
+> bóveda (`provider_accounts`) con `PROVIDER_CREDENTIALS_KEY`. Eso incluye la cuenta de TBO que usa el sync del
+> catálogo (workflow `Sync TBO Hotel Inventory`): el contenedor la lee de la bóveda de Planetour con esa misma clave,
+> que el workflow toma del `.env` del VPS (D-TBO-04, 2026-09-29;
+> [`tools/sync-tbo-hotel-inventory`](../../tools/sync-tbo-hotel-inventory/README.md)). `TBO_SYNC_USERNAME` y
+> `TBO_SYNC_PASSWORD` quedan sólo como override opcional y no hace falta crearlos.
+
 ---
 
 ## 4. Generar el par de claves SSH del usuario `deploy`
@@ -483,9 +490,11 @@ Siempre sobre una lista cerrada: hasta 5 países y 20 ciudades, `CERT_CATALOG_MA
 orden de sus códigos.
 
 - **Cuenta.** La de **test** del stack (`CERT_TBO_USERNAME`, `CERT_TBO_PASSWORD`, `CERT_TBO_BASE_URL`), la misma que el
-  seed guarda en la bóveda; nunca las `TBO_SYNC_*` de producción. Comparte el cupo de peticiones con las búsquedas de
-  los testers (D-TBO-04 A, [Q-93](../../docs/tbo/10-preguntas-para-tbo.md#q-93)): se corre antes de enviar la guía del
-  portal, no mientras TBO la recorre.
+  seed guarda en la bóveda; nunca las `TBO_SYNC_*` de producción. Llega al sync como **override** (`TBO_SYNC_USERNAME`
+  y `TBO_SYNC_PASSWORD` en `catalog.env`), no por la bóveda como en producción: el seed la guarda en el consolidador
+  `tbo-cert` y el sync sólo lee la raíz `platform`, así que `catalog.env` no lleva `PROVIDER_CREDENTIALS_KEY`. Comparte
+  el cupo de peticiones con las búsquedas de los testers (D-TBO-04, [Q-93](../../docs/tbo/10-preguntas-para-tbo.md#q-93)):
+  se corre antes de enviar la guía del portal, no mientras TBO la recorre.
 - **Credenciales.** `render-cert-env.mjs` escribe `catalog.env` con lista cerrada, como `seed.env`. El paso lo copia al
   VPS, crea el contenedor con `--env-file` y lo borra antes de llamar a TBO. El paso de limpieza del final
   (`Remove seed.env and catalog.env`, `if: always()`) lo vuelve a borrar pase lo que pase.

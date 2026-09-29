@@ -7,7 +7,9 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.github/workflows/sync-tbo-hotel-inventory.yml",
         "$TURBO_ROOT$/.github/workflows/deploy.yml",
-        "$TURBO_ROOT$/infrastructure/hostinger/render-cert-env.mjs"
+        "$TURBO_ROOT$/infrastructure/hostinger/render-cert-env.mjs",
+        "$TURBO_ROOT$/apps/api/src/provider-credentials/credentials-cipher.ts",
+        "$TURBO_ROOT$/db/migrations/**"
       ]
     }
   }
