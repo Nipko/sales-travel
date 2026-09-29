@@ -1,7 +1,12 @@
-import { TBO_BASE_URLS } from '@sales-travel/tbo-hotels';
+import { TBO_BASE_URLS, type TboHotelsConfig } from '@sales-travel/tbo-hotels';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DB_ENV_VARIABLES } from './cli.js';
-import { resolveSyncEnv, SYNC_ENV_VARIABLES, type SyncEnv } from './env.js';
+import {
+  resolveSyncEnv,
+  SYNC_ENV_VARIABLES,
+  type SyncCredentialOverride,
+  type SyncEnv,
+} from './env.js';
 
 /**
  * Contrato entre esta herramienta y el `catalog.env` que escribe
@@ -62,6 +67,11 @@ function envFile(text: string | null): SyncEnv {
   return env;
 }
 
+function envAccount(override: SyncCredentialOverride): TboHotelsConfig {
+  if (override.kind !== 'env') throw new Error('esperaba el override por entorno');
+  return override.tbo;
+}
+
 function resolvedFor(mode: string, extra: Readonly<Record<string, string>> = {}) {
   const env = envFile(
     render.renderCertEnv({ ...VALID, CERT_CATALOG_MODE: mode, ...extra }).catalog,
@@ -106,15 +116,25 @@ describe('catalog.env del stack de certificación → resolveSyncEnv', () => {
     expect(resolvedFor('hotels', { CERT_CATALOG_MAX_CALLS: '120' }).settings.maxCalls).toBe(120);
   });
 
-  it('la cuenta de test del stack, literal, contra el entorno de test de TBO', () => {
-    const { tbo } = resolvedFor('hotels');
+  it('la cuenta de test del stack, literal y por override: el sync del stack no lee la bóveda', () => {
+    // La cuenta que siembra tools/seed-tbo-cert-tenant es del consolidador `tbo-cert`, no de la raíz
+    // `platform` que lee el sync (vault.ts): sin el override, el stack se quedaría sin cuenta.
+    const tbo = envAccount(resolvedFor('hotels').override);
     expect(tbo.environment).toBe('test');
     expect(tbo.baseUrl).toBe(TBO_BASE_URLS.test);
     expect(tbo.username?.reveal()).toBe(VALID['CERT_TBO_USERNAME']);
     expect(tbo.password?.reveal()).toBe(PASSWORD);
 
-    const custom = resolvedFor('hotels', { CERT_TBO_BASE_URL: `${TBO_BASE_URLS.test}/` }).tbo;
+    const custom = envAccount(
+      resolvedFor('hotels', { CERT_TBO_BASE_URL: `${TBO_BASE_URLS.test}/` }).override,
+    );
     expect(custom.baseUrl).toBe(TBO_BASE_URLS.test);
+  });
+
+  it('catalog.env no lleva la clave de la bóveda: con el override no hace falta', () => {
+    for (const mode of ['cities', 'hotels']) {
+      expect(Object.keys(resolvedFor(mode).env)).not.toContain('PROVIDER_CREDENTIALS_KEY');
+    }
   });
 
   it('la conexión es la base del stack, con su superusuario', () => {

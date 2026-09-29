@@ -1,9 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import type { TboRateLimiter } from '@sales-travel/tbo-hotels';
 import { describe, expect, it, vi } from 'vitest';
 import { runCli, type CliIo, type DbSession } from './cli.js';
 import type { SyncEnv } from './env.js';
-import { fakeTbo, tboStatus, type FakeTboWorld } from './testing/fake-tbo.js';
+import { fakeTbo, tboStatus, type FakeTbo, type FakeTboWorld } from './testing/fake-tbo.js';
 import { MemoryCatalogStore } from './testing/memory-catalog-store.js';
+import { MemoryCatalogVault, type MemoryAccountInput } from './testing/memory-vault.js';
 
 /**
  * El proceso entero, como lo corre el contenedor: variables de entorno → código de salida y líneas
@@ -37,6 +39,7 @@ interface Run {
   readonly code: number;
   readonly lines: readonly Record<string, unknown>[];
   readonly raw: string;
+  readonly tbo: FakeTbo;
 }
 
 async function cli(io: Partial<CliIo> & { readonly env: SyncEnv }, world = WORLD): Promise<Run> {
@@ -53,6 +56,7 @@ async function cli(io: Partial<CliIo> & { readonly env: SyncEnv }, world = WORLD
     code,
     lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>),
     raw: raw.join('\n'),
+    tbo,
   };
 }
 
@@ -60,20 +64,90 @@ function result(run: Run): Record<string, unknown> | undefined {
   return run.lines.find((line) => line['msg'] === 'tbo.sync.result');
 }
 
+function line(run: Run, msg: string): Record<string, unknown> | undefined {
+  return run.lines.find((entry) => entry['msg'] === msg);
+}
+
+/** El `Authorization` de cada llamada a TBO: todas con la misma cuenta. */
+function authorizations(run: Run): string[] {
+  return [...new Set(run.tbo.calls.map((call) => call.headers['authorization'] ?? ''))];
+}
+
+// La cuenta que el superadmin cargó en Planetour. Con forma reconocible; no es una credencial.
+const VAULT_USERNAME = 'planetour-boveda-cli';
+const VAULT_PASSWORD = 'Pa55 boveda-cli ';
+const VAULT_BASIC = Buffer.from(`${VAULT_USERNAME}:${VAULT_PASSWORD}`).toString('base64');
+const KEY = randomBytes(32);
+const VAULT_ENV: SyncEnv = {
+  PROVIDER_CREDENTIALS_KEY: KEY.toString('base64'),
+  TBO_SYNC_COUNTRIES: 'AR',
+  TBO_SYNC_LOG_LEVEL: 'debug',
+};
+
+function planetourVault(extra: Partial<MemoryAccountInput> = {}): MemoryCatalogVault {
+  return new MemoryCatalogVault(KEY, [
+    { credentials: { username: VAULT_USERNAME, password: VAULT_PASSWORD }, ...extra },
+  ]);
+}
+
+function expectNoSecrets(run: Run): void {
+  expect(run.raw).not.toMatch(/authorization/i);
+  for (const secret of [BASIC, PASSWORD, USERNAME, VAULT_BASIC, VAULT_USERNAME]) {
+    expect(run.raw).not.toContain(secret);
+  }
+  expect(run.raw).not.toContain(VAULT_PASSWORD.trim());
+  expect(run.raw).not.toContain(KEY.toString('base64'));
+}
+
+/**
+ * Una base falsa que sólo contesta la bóveda (`PgCatalogVault`): la raíz `platform`, si la hay, y
+ * ninguna cuenta.
+ */
+function vaultOnlySession(platforms: readonly { id: string; slug: string }[]): DbSession & {
+  readonly sql: string[];
+  readonly end: ReturnType<typeof vi.fn>;
+} {
+  const sql: string[] = [];
+  return {
+    sql,
+    end: vi.fn(() => Promise.resolve()),
+    query: (text: string) => {
+      sql.push(text);
+      const rows = /FROM tenants/.test(text) ? platforms : [];
+      return Promise.resolve({ rows, rowCount: rows.length, command: 'SELECT' } as never);
+    },
+  };
+}
+
 describe('runCli: skip con salida 0', () => {
-  it('sin credenciales avisa y no toca la base', async () => {
+  it('sin credenciales en el entorno ni en la bóveda avisa nombrando las dos, sin llamar a TBO', async () => {
     const connect = vi.fn<(env: SyncEnv) => Promise<DbSession>>();
-    const run = await cli({ env: {}, connect });
+    const run = await cli({ env: {}, connect, vault: new MemoryCatalogVault(KEY) });
     expect(run.code).toBe(0);
     expect(run.lines).toHaveLength(1);
     expect(result(run)).toMatchObject({
       level: 'warn',
       ok: true,
       action: 'skip',
-      reason: 'TBO_SYNC_USERNAME, TBO_SYNC_PASSWORD not set',
+      reason:
+        "TBO_SYNC_USERNAME, TBO_SYNC_PASSWORD not set and no active tbo-hotels account in the vault of 'platform'",
       job: 'sync-tbo-hotel-inventory',
     });
     expect(connect).not.toHaveBeenCalled();
+    expect(run.tbo.calls).toHaveLength(0);
+  });
+
+  it('sin override lee la bóveda en Postgres, con una sola conexión que se cierra', async () => {
+    const session = vaultOnlySession([]);
+    const connect = vi.fn(() => Promise.resolve(session));
+    const run = await cli({ env: {}, connect });
+    expect(run.code).toBe(0);
+    expect(result(run)).toMatchObject({
+      action: 'skip',
+      reason: 'TBO_SYNC_USERNAME, TBO_SYNC_PASSWORD not set and no platform tenant in the database',
+    });
+    expect(connect).toHaveBeenCalledOnce();
+    expect(session.end).toHaveBeenCalledOnce();
   });
 
   it('kill-switch TBO_SYNC_ENABLED=false', async () => {
@@ -121,10 +195,61 @@ describe('runCli: corrida', () => {
     });
     expect(store.content('1000001', 'en')?.source).toBe('listing');
     expect(store.hotel('1000001')?.active).toBe(true);
-    expect(run.raw).not.toMatch(/authorization/i);
-    expect(run.raw).not.toContain(BASIC);
-    expect(run.raw).not.toContain(PASSWORD);
-    expect(run.raw).not.toContain(USERNAME);
+    expect(result(run)).toMatchObject({ credentialSource: 'env' });
+    expect(authorizations(run)).toEqual([`Basic ${BASIC}`]);
+    expectNoSecrets(run);
+  });
+
+  it('sin override, con la cuenta de Planetour de la bóveda; el log dice de dónde salió y nada más', async () => {
+    const store = new MemoryCatalogStore('tbo-hotels');
+    const vault = planetourVault();
+    const run = await cli({ env: VAULT_ENV, store, vault });
+    expect(run.code).toBe(0);
+    expect(authorizations(run)).toEqual([`Basic ${VAULT_BASIC}`]);
+    expect(vault.calls).toEqual(['tbo-hotels']);
+    expect(line(run, 'tbo.sync.credentials')).toMatchObject({
+      level: 'info',
+      credentialSource: 'vault:platform/default',
+      environment: 'test',
+    });
+    expect(line(run, 'tbo.sync.credentials')?.['accountRef']).toEqual(expect.any(String));
+    expect(result(run)).toMatchObject({
+      ok: true,
+      credentialSource: 'vault:platform/default',
+      hotelsUpserted: 1,
+    });
+    expect(store.hotel('1000001')?.active).toBe(true);
+    expectNoSecrets(run);
+  });
+
+  it('el override del entorno le gana a la bóveda, que ni se lee', async () => {
+    const vault = planetourVault();
+    const run = await cli({
+      env: { ...VAULT_ENV, ...ENV },
+      store: new MemoryCatalogStore('tbo-hotels'),
+      vault,
+    });
+    expect(run.code).toBe(0);
+    expect(authorizations(run)).toEqual([`Basic ${BASIC}`]);
+    expect(vault.calls).toEqual([]);
+    expect(line(run, 'tbo.sync.credentials')).toMatchObject({ credentialSource: 'env' });
+    expectNoSecrets(run);
+  });
+
+  it('un override a medias se ignora entero, con aviso, y la corrida sale con la bóveda', async () => {
+    const run = await cli({
+      env: { ...VAULT_ENV, TBO_SYNC_USERNAME: USERNAME },
+      store: new MemoryCatalogStore('tbo-hotels'),
+      vault: planetourVault(),
+    });
+    expect(run.code).toBe(0);
+    expect(line(run, 'tbo.sync.override_ignored')).toMatchObject({
+      level: 'warn',
+      variables: ['TBO_SYNC_USERNAME'],
+      missing: ['TBO_SYNC_PASSWORD'],
+    });
+    expect(authorizations(run)).toEqual([`Basic ${VAULT_BASIC}`]);
+    expectNoSecrets(run);
   });
 
   it('"ok parcial" también sale con 0: la próxima corrida sigue desde ahí', async () => {
@@ -187,6 +312,65 @@ describe('runCli: salida 1', () => {
       errorClass: 'SyncConfigError',
       issues: ['PGHOST:required', 'PGUSER:required', 'PGPASSWORD:required'],
     });
+  });
+
+  it('hay cuenta en la bóveda y falta PROVIDER_CREDENTIALS_KEY: despliegue roto, sin llamar a TBO', async () => {
+    const run = await cli({
+      env: { TBO_SYNC_COUNTRIES: 'AR' },
+      store: new MemoryCatalogStore('tbo-hotels'),
+      vault: planetourVault(),
+    });
+    expect(run.code).toBe(1);
+    expect(result(run)).toMatchObject({
+      ok: false,
+      errorClass: 'SyncConfigError',
+      issues: ['PROVIDER_CREDENTIALS_KEY:required'],
+    });
+    expect(run.tbo.calls).toHaveLength(0);
+  });
+
+  it('la cuenta de la bóveda no abre con esta clave o está incompleta: se nombra la cuenta, no la credencial', async () => {
+    const undecryptable = await cli({
+      env: VAULT_ENV,
+      store: new MemoryCatalogStore('tbo-hotels'),
+      vault: planetourVault({ sealWith: randomBytes(32) }),
+    });
+    expect(undecryptable.code).toBe(1);
+    expect(result(undecryptable)).toMatchObject({
+      errorClass: 'SyncVaultError',
+      code: 'undecryptable',
+      account: 'platform/default',
+    });
+
+    const incomplete = await cli({
+      env: VAULT_ENV,
+      store: new MemoryCatalogStore('tbo-hotels'),
+      vault: planetourVault({ credentials: { username: VAULT_USERNAME } }),
+    });
+    expect(incomplete.code).toBe(1);
+    expect(result(incomplete)).toMatchObject({
+      errorClass: 'SyncVaultError',
+      code: 'incomplete',
+      details: ['password'],
+    });
+    for (const run of [undecryptable, incomplete]) {
+      expect(run.tbo.calls).toHaveLength(0);
+      expectNoSecrets(run);
+    }
+  });
+
+  it('TBO rechaza la cuenta de la bóveda: 1, como con la del entorno', async () => {
+    const run = await cli(
+      { env: VAULT_ENV, store: new MemoryCatalogStore('tbo-hotels'), vault: planetourVault() },
+      {
+        ...WORLD,
+        override: (op) =>
+          op === 'countryList' ? tboStatus(401, 'Access Credentials is incorrect') : undefined,
+      },
+    );
+    expect(run.code).toBe(1);
+    expect(result(run)).toMatchObject({ errorClass: 'SyncAccountError', stage: 'E1' });
+    expectNoSecrets(run);
   });
 
   it('TBO rechaza la cuenta del catálogo', async () => {

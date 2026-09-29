@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DB_ENV_VARIABLES } from './cli.js';
 import { resolveSyncEnv, SYNC_ENV_VARIABLES, SYNC_SECRET_VARIABLES } from './env.js';
+import { VAULT_ENV_VARIABLES } from './vault-crypto.js';
 
 /**
  * Contrato entre la herramienta y su despliegue (09 PR-3.5; 05 §6.6). El contenedor no hereda el
@@ -72,7 +73,7 @@ function cronHours(field: string): number[] {
 describe('variables: env.ts ↔ deploy.yml ↔ workflow', () => {
   it('el workflow pasa al contenedor cada variable que lee la herramienta, y ninguna desconocida', () => {
     const flags = containerEnv();
-    for (const name of [...SYNC_ENV_VARIABLES, ...DB_ENV_VARIABLES]) {
+    for (const name of [...SYNC_ENV_VARIABLES, ...DB_ENV_VARIABLES, ...VAULT_ENV_VARIABLES]) {
       expect(flags.has(name), `falta -e ${name}`).toBe(true);
     }
     const unknown = [...flags.keys()].filter(
@@ -94,6 +95,9 @@ describe('variables: env.ts ↔ deploy.yml ↔ workflow', () => {
     const credentials = { TBO_SYNC_USERNAME: 'catalogo', TBO_SYNC_PASSWORD: 'Pa55-catalogo' };
     const blank = Object.fromEntries(SYNC_ENV_VARIABLES.map((name) => [name, '']));
     expect(resolveSyncEnv({ ...blank, ...credentials })).toEqual(resolveSyncEnv(credentials));
+    // Sin override (producción, con la cuenta en la bóveda): las vacías tampoco cuentan como un
+    // override a medias que avise en cada corrida.
+    expect(resolveSyncEnv(blank)).toEqual(resolveSyncEnv({}));
   });
 
   it('cada TBO_SYNC_* va entre comillas simples: un valor raro no rompe los otros syncs', () => {
@@ -117,16 +121,33 @@ describe('variables: env.ts ↔ deploy.yml ↔ workflow', () => {
     expect(flags.get('PGPASSWORD'), '-e PGPASSWORD=… quedaría visible en ps').toBeUndefined();
   });
 
+  it('la clave de la bóveda es la del api: la escribe deploy.yml desde secrets y el workflow la lee con env_get', () => {
+    const rendered = renderedEnv();
+    const flags = containerEnv();
+    for (const name of VAULT_ENV_VARIABLES) {
+      // La misma línea que lee el api (docker-compose.prod.yml): una clave propia del sync no
+      // abriría lo que el panel cifró.
+      expect(rendered.get(name)).toMatch(new RegExp(`^'?\\$\\{\\{ secrets\\.${name} \\}\\}'?$`));
+      expect(SYNC_WORKFLOW).toContain(`${name}=$(env_get ${name})\n`);
+      expect(SYNC_WORKFLOW).toMatch(new RegExp(`\\bexport ${name}\\n`));
+      expect(flags.get(name), `-e ${name}=… quedaría visible en ps`).toBeUndefined();
+    }
+  });
+
   it('ninguna línea del workflow imprime un valor de credencial', () => {
     expect(SYNC_WORKFLOW).not.toMatch(/set -x|set -o xtrace/);
     const echoes = SYNC_WORKFLOW.split('\n').filter((line) => /\becho\b/.test(line));
     for (const line of echoes) {
-      expect(line).not.toMatch(/\$\{?(TBO_SYNC_|PGPASSWORD|POSTGRES_ADMIN_PASSWORD)/);
+      expect(line).not.toMatch(
+        /\$\{?(TBO_SYNC_|PGPASSWORD|POSTGRES_ADMIN_PASSWORD|PROVIDER_CREDENTIALS_KEY)/,
+      );
     }
   });
 
   it('el README documenta cada variable', () => {
-    for (const name of SYNC_ENV_VARIABLES) expect(README).toContain(`\`${name}\``);
+    for (const name of [...SYNC_ENV_VARIABLES, ...VAULT_ENV_VARIABLES]) {
+      expect(README).toContain(`\`${name}\``);
+    }
   });
 });
 
@@ -147,14 +168,12 @@ describe('imagen y ejecución', () => {
     expect(SYNC_WORKFLOW).toContain(`IMAGE=${image}\n`);
   });
 
-  it('sin credenciales sale con 0 antes de descargar la imagen, como el sync de Despegar', () => {
-    const skip = SYNC_WORKFLOW.indexOf(
-      'if [ -z "${TBO_SYNC_USERNAME:-}" ] || [ -z "${TBO_SYNC_PASSWORD:-}" ]; then',
-    );
-    const pull = SYNC_WORKFLOW.indexOf('docker pull');
-    expect(skip).toBeGreaterThan(-1);
-    expect(SYNC_WORKFLOW.slice(skip, pull)).toContain('exit 0');
-    expect(skip).toBeLessThan(pull);
+  it('el script no exige TBO_SYNC_USERNAME/PASSWORD: si hay cuenta lo decide el contenedor', () => {
+    // La cuenta vive en la bóveda (D-TBO-04, 2026-09-29): un `exit 0` de shell por falta de
+    // `TBO_SYNC_*` dejaría el catálogo sin sincronizar para siempre con la cuenta cargada en el panel.
+    const beforePull = SYNC_WORKFLOW.slice(0, SYNC_WORKFLOW.indexOf('docker pull'));
+    expect(beforePull).not.toMatch(/-z "\$\{?TBO_SYNC_(USERNAME|PASSWORD)/);
+    expect(beforePull).not.toMatch(/\bexit 0\b/);
   });
 
   it('el tope del VPS deja terminar la corrida por defecto y cabe en el timeout del job', () => {

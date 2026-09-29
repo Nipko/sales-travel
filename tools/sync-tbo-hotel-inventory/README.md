@@ -14,9 +14,10 @@ referencia, no un cambio de negocio (05 §6.6).
 - **Imagen:** `ghcr.io/nipko/sales-travel-sync-tbo-hotel-inventory:{sha,latest}`, construida en cada
   push a `main` por la matriz de `.github/workflows/deploy.yml`.
 - **Disparo:** `.github/workflows/sync-tbo-hotel-inventory.yml`, cada hora de 06:17 a 09:17 UTC
-  (01:17-04:17 en Bogotá y Lima) y a mano con `workflow_dispatch`. Hace SSH al VPS, lee el `.env`
-  que escribe el deploy y crea el contenedor en las redes `sales-travel_internal` (Postgres) y
-  `sales-travel_edge` (TBO), con cada variable pasada por `-e`.
+  (01:17-04:17 en Bogotá y Lima) y a mano con `workflow_dispatch`. Hace SSH al VPS, lee del `.env`
+  que escribe el deploy las `TBO_SYNC_*` y `PROVIDER_CREDENTIALS_KEY`, y crea el contenedor en las
+  redes `sales-travel_internal` (Postgres) y `sales-travel_edge` (TBO), con cada variable pasada por
+  `-e` sin valor. Si hay cuenta de TBO lo decide el contenedor, no el script.
 - **Presupuesto:** una corrida completa no cabe en una ejecución (05 §6.7). Cada una se detiene en
   `TBO_SYNC_MAX_CALLS` o `TBO_SYNC_MAX_MINUTES` y la siguiente reanuda por
   `hotel_provider_city.synced_at`. En el VPS hay además un tope duro de 50 minutos que corta con
@@ -25,32 +26,67 @@ referencia, no un cambio de negocio (05 §6.6).
   de Postgres. Un contenedor que siguió vivo tras perder su sesión SSH se detiene en orden al empezar
   la ejecución siguiente.
 
-Códigos de salida: `0` sin credenciales, con `TBO_SYNC_ENABLED=false`, con el lock tomado por otra
-corrida, y al terminar completa u "ok parcial" (presupuesto, racha de `429`, SIGTERM). `1` si la
-configuración o la cuenta no sirven, si falla la base o si la corrida se cortó por una racha de errores.
+Códigos de salida: `0` sin credenciales (ni override ni cuenta en la bóveda), con
+`TBO_SYNC_ENABLED=false`, con el lock tomado por otra corrida, y al terminar completa u "ok parcial"
+(presupuesto, racha de `429`, SIGTERM). `1` si la configuración o la cuenta no sirven (también la de
+la bóveda, o falta la clave para abrirla), si falla la base o si la corrida se cortó por una racha de
+errores.
 
-## Secrets de GitHub Actions
+## De dónde sale la cuenta de TBO
 
-La cuenta es **de catálogo, de plataforma y dedicada al sync** (D-TBO-04 A), nunca la de ventas del
-consolidador: si el sync le comiera el QPS, las búsquedas reales recibirían `429`. Se pide a TBO
-([Q-93](../../docs/tbo/10-preguntas-para-tbo.md#q-93)); la de test, junto con las credenciales de
-certificación ([Q-92](../../docs/tbo/10-preguntas-para-tbo.md#q-92)). **Todavía no están creados:**
-mientras falten, el workflow sale con `0` sin descargar la imagen.
+**De la bóveda, no de GitHub Actions** (D-TBO-04, decisión del founder del 2026-09-29). La cuenta se
+carga una sola vez desde el panel del superadmin, en Planetour (la raíz `platform` de la red):
+_Proveedores (GDS)_ → **TBO Holidays**, con usuario, contraseña, entorno y URL base, en estado
+**Activo** ([docs/platform/13](../../docs/platform/13-validacion-modelo-red.md) §5 paso 6). El api la
+guarda cifrada en `provider_accounts` y el sync la lee de ahí:
 
-| Secret              | Qué poner                                                                         |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `TBO_SYNC_USERNAME` | Usuario de la cuenta de catálogo (también se acepta como variable, como Despegar) |
-| `TBO_SYNC_PASSWORD` | Su contraseña. Sólo como secret                                                   |
+1. **Override por entorno.** Si `TBO_SYNC_USERNAME` y `TBO_SYNC_PASSWORD` están los dos, mandan, con
+   `TBO_SYNC_ENVIRONMENT` y `TBO_SYNC_BASE_URL`; la bóveda ni se lee. Es para el stack de certificación
+   y para una prueba puntual. Con uno solo no hay override: se sigue con la bóveda y el log avisa con
+   `tbo.sync.override_ignored` qué variable quedó sin usar.
+2. **La cuenta `tbo-hotels` activa de la raíz `platform`.** Si hay una sola, ésa. Si hay varias, la de
+   etiqueta `catalogo` (sin distinguir mayúsculas ni tildes) y si no, `default`, que es la que crea el
+   panel. Otra combinación falla con `SyncVaultError` `ambiguous_accounts` y las etiquetas. Una cuenta
+   en **Sandbox** o **Deshabilitada** no cuenta, igual que para el api.
+3. **Ninguna:** sale con `0` y
+   `reason: "TBO_SYNC_USERNAME, TBO_SYNC_PASSWORD not set and no active tbo-hotels account in the vault of '<slug>'"`.
 
-El deploy escribe el `.env` con un heredoc sin comillas, cada `TBO_SYNC_*` entre comillas simples, y
-los tres workflows de sync lo leen con `source`. La contraseña, como cualquier `TBO_SYNC_*`, no puede
-llevar `'`, `$`, `` ` `` ni `\`: el heredoc expande los tres últimos y la comilla cierra el valor.
-Espacios, `"`, `#` y `;&|<>()` sí pueden ir. Si TBO entrega una contraseña con alguno de esos cuatro,
-hay que pedir otra: un `.env` que no se puede leer deja en rojo también el sync de Despegar y el de
-aeropuertos.
+La cuenta se abre como la abre el api: el blob con `PROVIDER_CREDENTIALS_KEY` (el mismo formato,
+probado contra el módulo del api en `vault-crypto.contract.test.ts`), usuario y contraseña sólo del
+blob, `environment` y `baseUrl` de `config`, y todo por `parseTboConfig` del ACL. Una cuenta que el api
+rechazaría (entorno ausente, `http` en live, live sin URL) el sync también la rechaza, con salida `1` y
+`campo:código`. Si cambia la cuenta en el panel, la corrida siguiente ya sale con la nueva: no hay que
+desplegar.
 
-Después de crear o cambiar un secret hay que correr el workflow `Deploy`: es el que reescribe el
-`.env` del VPS.
+El log dice de dónde salió la credencial y nunca la credencial: una línea `tbo.sync.credentials` con
+`credentialSource` (`env` o `vault:<slug>/<etiqueta>`), `environment` y `accountRef` (la huella de la
+cuenta, la misma que usa el api), y `credentialSource` otra vez en `tbo.sync.result`.
+
+**El cupo.** La cuenta `default` de Planetour es la misma con la que vende su red, así que el sync
+comparte con esas búsquedas el QPS de TBO (el limitador es por proceso: el del sync no ve al del api).
+Por eso corre de madrugada y a 1 req/s (D-TBO-12). Si hace falta separarlo, se carga en Planetour una
+segunda cuenta de TBO con etiqueta `catalogo`, **no heredable** (así la red no la hereda para vender:
+a las sucursales `resolve_provider_account` les sigue devolviendo la `default`), y el sync la prefiere
+sin más. Para el propio nodo Planetour las dos serían cuentas propias y esa función no elige entre
+ellas por etiqueta: sirve mientras Planetour no venda desde la raíz. Hoy el panel
+crea siempre la etiqueta `default`: una cuenta `catalogo` se crea por la API (`label` en el cuerpo de
+`POST /api/provider-accounts`, con sesión de superadmin).
+
+| Variable                   | Dónde                                                | Uso                                                                 |
+| -------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
+| `PROVIDER_CREDENTIALS_KEY` | Secret que ya existe (la clave de la bóveda del api) | El workflow la lee del `.env` del VPS y la pasa con `-e`, sin valor |
+| `TBO_SYNC_USERNAME`        | Opcional: secret o variable                          | Override: usuario de TBO. **No hace falta cargarlo**                |
+| `TBO_SYNC_PASSWORD`        | Opcional: sólo secret                                | Override: su contraseña                                             |
+
+`PROVIDER_CREDENTIALS_KEY` no rota sola: el api no admite una clave anterior, así que cambiarla deja
+ilegibles las cuentas guardadas para los dos, y el sync falla con `undecryptable` hasta que se vuelvan
+a cargar desde el panel.
+
+Si se usa el override en producción: el deploy escribe el `.env` con un heredoc sin comillas y cada
+`TBO_SYNC_*` entre comillas simples, así que la contraseña no puede llevar `'`, `$`, `` ` `` ni `\` (el
+heredoc expande los tres últimos y la comilla cierra el valor). Después de crear o cambiar un secret
+hay que correr el workflow `Deploy`, que es el que reescribe el `.env` del VPS. La cuenta de la bóveda
+no tiene ninguna de esas restricciones.
 
 ## Variables de GitHub Actions (opcionales)
 
@@ -59,8 +95,8 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 | Variable                          | Por defecto                  | Uso                                                                      |
 | --------------------------------- | ---------------------------- | ------------------------------------------------------------------------ |
 | `TBO_SYNC_ENABLED`                | `true`                       | Kill-switch: `false` sale con `0` aunque lo demás esté mal               |
-| `TBO_SYNC_ENVIRONMENT`            | `test`                       | `test` o `live`                                                          |
-| `TBO_SYNC_BASE_URL`               | la de test del ACL           | Obligatoria en `live`                                                    |
+| `TBO_SYNC_ENVIRONMENT`            | `test`                       | `test` o `live`. Sólo con el override: la bóveda trae el de su cuenta    |
+| `TBO_SYNC_BASE_URL`               | la de test del ACL           | Obligatoria en `live`. Sólo con el override                              |
 | `TBO_SYNC_COUNTRIES`              | `CO,PE,BR,US,MX,DO,AR,CL,ES` | Lista cerrada de D-TBO-12 A, ISO2                                        |
 | `TBO_SYNC_CITIES`                 | vacía = todas                | `CityCode` de esos países a los que se limitan E3 y E4 (máximo 50)       |
 | `TBO_SYNC_STAGES`                 | `E1,E2,E3,E4,E5,E6`          | Etapas que corren                                                        |
@@ -98,10 +134,21 @@ desde el job `deploy-cert` de `.github/workflows/deploy.yml`, con la cuenta de *
 lista cerrada de países y ciudades. El comando y las comprobaciones están en
 [`infrastructure/hostinger/README.md`](../../infrastructure/hostinger/README.md) §9.4.
 
+Ese job sigue usando el **override**: `render-cert-env.mjs` escribe `TBO_SYNC_USERNAME` y
+`TBO_SYNC_PASSWORD` en `catalog.env` desde `CERT_TBO_USERNAME` y `CERT_TBO_PASSWORD`, la misma cuenta
+de test que el seed cifra en la bóveda del stack. Por la bóveda el sync no llegaría a ella: el seed la
+guarda en el consolidador `tbo-cert`, no en la raíz `platform` que lee el sync, y `catalog.env` no
+lleva `PROVIDER_CREDENTIALS_KEY`. Si algún día se quisiera el mismo camino que en producción, habría
+que cargar en la raíz del stack una cuenta de test activa (mejor `catalogo`, no heredable), pasarle
+la clave al contenedor y quitar las dos variables de `catalog.env`.
+
 ## Primera corrida con la cuenta de test (salida de PR-3.5)
 
-1. Cargar los dos secrets y correr `Deploy`.
-2. `Run workflow` con `countries=CO` y `max_calls=200`. El log termina con una línea
+1. Cargar la cuenta de TBO en Planetour desde el panel, en **Activo**
+   ([docs/platform/13](../../docs/platform/13-validacion-modelo-red.md) §5 paso 6). No hace falta
+   ningún secret ni desplegar.
+2. `Run workflow` con `countries=CO` y `max_calls=200`. El log tiene una línea
+   `tbo.sync.credentials` con `credentialSource: "vault:platform/default"` y termina con una línea
    `tbo.sync.result` con `ok: true` y `outcome: "partial"` si el presupuesto no alcanzó.
 3. Comprobar en el VPS
    (`docker compose exec -T postgres psql -U postgres -d sales_travel`):

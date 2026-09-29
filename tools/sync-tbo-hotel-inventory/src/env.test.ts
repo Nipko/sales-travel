@@ -1,10 +1,15 @@
-import { TBO_BASE_URLS, TBO_HOTELS_PROVIDER_CODE } from '@sales-travel/tbo-hotels';
+import {
+  TBO_BASE_URLS,
+  TBO_HOTELS_PROVIDER_CODE,
+  type TboHotelsConfig,
+} from '@sales-travel/tbo-hotels';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SYNC_COUNTRIES,
   MAX_SYNC_CITIES,
   readLogLevel,
   resolveSyncEnv,
+  type SyncCredentialOverride,
   type SyncEnv,
 } from './env.js';
 import { SyncConfigError } from './errors.js';
@@ -21,6 +26,11 @@ function run(env: SyncEnv): Extract<ReturnType<typeof resolveSyncEnv>, { kind: '
   return resolution;
 }
 
+function envAccount(override: SyncCredentialOverride): TboHotelsConfig {
+  if (override.kind !== 'env') throw new Error('esperaba el override por entorno');
+  return override.tbo;
+}
+
 function configIssues(env: SyncEnv): readonly string[] {
   try {
     resolveSyncEnv(env);
@@ -32,22 +42,7 @@ function configIssues(env: SyncEnv): readonly string[] {
   throw new Error('esperaba SyncConfigError');
 }
 
-describe('resolveSyncEnv: skip antes que validar', () => {
-  it('sin credenciales → skip con los NOMBRES de lo que falta (como el sync de Despegar)', () => {
-    expect(resolveSyncEnv({})).toEqual({
-      kind: 'skip',
-      reason: 'TBO_SYNC_USERNAME, TBO_SYNC_PASSWORD not set',
-    });
-    expect(resolveSyncEnv({ TBO_SYNC_USERNAME: '  ', TBO_SYNC_PASSWORD: PASSWORD })).toEqual({
-      kind: 'skip',
-      reason: 'TBO_SYNC_USERNAME not set',
-    });
-    expect(resolveSyncEnv({ TBO_SYNC_USERNAME: 'x', TBO_SYNC_PASSWORD: '' })).toEqual({
-      kind: 'skip',
-      reason: 'TBO_SYNC_PASSWORD not set',
-    });
-  });
-
+describe('resolveSyncEnv: kill-switch y override', () => {
   it('TBO_SYNC_ENABLED=false es un kill-switch aunque el resto esté roto', () => {
     for (const value of ['false', 'FALSE', '0', 'off', ' no ']) {
       expect(
@@ -56,15 +51,62 @@ describe('resolveSyncEnv: skip antes que validar', () => {
     }
   });
 
+  it('con usuario y contraseña en el entorno, el override manda (la bóveda ni se mira)', () => {
+    const tbo = envAccount(run(BASE).override);
+    expect(tbo.username?.reveal()).toBe('catalogo-plataforma');
+    expect(tbo.password?.reveal()).toBe(PASSWORD);
+  });
+
+  it('sin credenciales en el entorno ya no es skip: la cuenta sale de la bóveda (D-TBO-04, 2026-09-29)', () => {
+    expect(run({}).override).toEqual({
+      kind: 'absent',
+      missing: ['TBO_SYNC_USERNAME', 'TBO_SYNC_PASSWORD'],
+      ignored: [],
+    });
+  });
+
+  it('un override a medias no vale: se sigue con la bóveda y se nombra lo que queda sin usar', () => {
+    expect(run({ TBO_SYNC_USERNAME: '  ', TBO_SYNC_PASSWORD: PASSWORD }).override).toEqual({
+      kind: 'absent',
+      missing: ['TBO_SYNC_USERNAME'],
+      ignored: ['TBO_SYNC_PASSWORD'],
+    });
+    expect(run({ TBO_SYNC_USERNAME: 'x', TBO_SYNC_PASSWORD: '' }).override).toEqual({
+      kind: 'absent',
+      missing: ['TBO_SYNC_PASSWORD'],
+      ignored: ['TBO_SYNC_USERNAME'],
+    });
+  });
+
+  it('sin override, el entorno y la URL no se usan (la cuenta de la bóveda trae los suyos)', () => {
+    // `live` sin URL es un error sólo para el override; aquí la regla la aplica la bóveda.
+    expect(run({ TBO_SYNC_ENVIRONMENT: 'live' }).override).toEqual({
+      kind: 'absent',
+      missing: ['TBO_SYNC_USERNAME', 'TBO_SYNC_PASSWORD'],
+      ignored: ['TBO_SYNC_ENVIRONMENT'],
+    });
+    expect(
+      run({ TBO_SYNC_BASE_URL: 'https://live.example.test/HotelAPI', TBO_SYNC_ENVIRONMENT: ' ' })
+        .override,
+    ).toMatchObject({ kind: 'absent', ignored: ['TBO_SYNC_BASE_URL'] });
+  });
+
+  it('sin override, una variable mal escrita sigue siendo un error, antes de tocar la base', () => {
+    expect(configIssues({ TBO_SYNC_MAX_CALLS: 'muchas' })).toEqual([
+      'TBO_SYNC_MAX_CALLS:invalid_type',
+    ]);
+  });
+
   it('la contraseña no se recorta: un espacio puede ser parte de ella (01 §1.2)', () => {
-    const { tbo } = run({ ...BASE, TBO_SYNC_PASSWORD: ' con espacio ' });
+    const tbo = envAccount(run({ ...BASE, TBO_SYNC_PASSWORD: ' con espacio ' }).override);
     expect(tbo.password?.reveal()).toBe(' con espacio ');
   });
 });
 
 describe('resolveSyncEnv: valores por defecto de 05 §6.4 y §10', () => {
   it('cuenta de test, países de D-TBO-12 A, todas las etapas, 1 req/s, caída máxima 50 %', () => {
-    const { settings, client, tbo } = run(BASE);
+    const { settings, client, override } = run(BASE);
+    const tbo = envAccount(override);
     expect(tbo.environment).toBe('test');
     expect(tbo.baseUrl).toBe(TBO_BASE_URLS.test);
     expect(settings.providerCode).toBe(TBO_HOTELS_PROVIDER_CODE);
@@ -101,7 +143,7 @@ describe('resolveSyncEnv: valores por defecto de 05 §6.4 y §10', () => {
   });
 
   it('las credenciales quedan envueltas: la config no se vuelca con la contraseña', () => {
-    const { tbo } = run(BASE);
+    const tbo = envAccount(run(BASE).override);
     expect(JSON.stringify(tbo)).not.toContain(PASSWORD);
   });
 
@@ -175,12 +217,14 @@ describe('resolveSyncEnv: lo configurado', () => {
   });
 
   it('live con su URL https (el entorno y el nivel de log no distinguen mayúsculas)', () => {
-    const { tbo } = run({
-      ...BASE,
-      TBO_SYNC_ENVIRONMENT: ' LIVE ',
-      TBO_SYNC_LOG_LEVEL: 'DEBUG',
-      TBO_SYNC_BASE_URL: 'https://live.example.test/HotelAPI/',
-    });
+    const tbo = envAccount(
+      run({
+        ...BASE,
+        TBO_SYNC_ENVIRONMENT: ' LIVE ',
+        TBO_SYNC_LOG_LEVEL: 'DEBUG',
+        TBO_SYNC_BASE_URL: 'https://live.example.test/HotelAPI/',
+      }).override,
+    );
     expect(tbo.environment).toBe('live');
     expect(tbo.baseUrl).toBe('https://live.example.test/HotelAPI');
   });

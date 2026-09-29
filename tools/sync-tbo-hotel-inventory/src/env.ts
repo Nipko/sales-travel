@@ -17,17 +17,20 @@ import { PLATFORM_DESTINATION_PROVIDER } from './match-rules.js';
  * comprueba que existan (`tools/sync-hotel-inventory/src/index.ts`), y aquí un número mal escrito
  * no puede convertirse en un presupuesto `NaN` que nunca se agota.
  *
- * La cuenta es la de catálogo, dedicada y de plataforma (D-TBO-04 A), y NUNCA la de ventas del
- * consolidador: si el sync le comiera el QPS, las búsquedas reales recibirían `429`.
+ * La cuenta de TBO sale de la bóveda de Planetour, la raíz `platform`, donde la carga el superadmin
+ * desde el panel (D-TBO-04, decisión del founder del 2026-09-29; `vault.ts`). `TBO_SYNC_USERNAME` y
+ * `TBO_SYNC_PASSWORD` quedan sólo como override explícito (el stack de certificación): con las dos,
+ * mandan sobre la bóveda, junto con `TBO_SYNC_ENVIRONMENT` y `TBO_SYNC_BASE_URL`, que sin ellas no
+ * se usan (la cuenta de la bóveda trae su entorno y su URL).
  *
- * Tres salidas, en este orden:
+ * Salidas, en este orden:
  *
  * 1. `TBO_SYNC_ENABLED=false` → `skip`, aunque lo demás esté mal: el kill-switch no puede depender
  *    de que el resto de la configuración sea válida.
- * 2. Sin usuario o contraseña → `skip` con salida 0, como el sync de Despegar sin su API key: la
- *    cuenta de catálogo es una gestión comercial con TBO (Q-93) y todavía puede no existir.
- * 3. Con credenciales, cualquier otra variable inválida → `SyncConfigError` y salida 1. Los issues
+ * 2. Cualquier variable inválida → `SyncConfigError` y salida 1, antes de tocar la base. Los issues
  *    son `VARIABLE:código`, nunca el valor.
+ * 3. `run`, con el override o sin él. Si no hay override ni cuenta en la bóveda, `cli.ts` sale con 0
+ *    ("sin credenciales"), como el sync de Despegar sin su API key.
  */
 
 /** E6 no llama a TBO: es SQL sobre lo que E3 dejó (05 §6.3), y no gasta presupuesto. */
@@ -141,13 +144,25 @@ export interface SyncClientSettings {
 
 export type SyncEnv = Readonly<Record<string, string | undefined>>;
 
+/**
+ * La cuenta por variables de entorno, que le gana a la bóveda. `absent` dice qué mitad falta y qué
+ * variables de credencial están cargadas pero no se usan: sólo nombres, para el log.
+ */
+export type SyncCredentialOverride =
+  | { readonly kind: 'env'; readonly tbo: TboHotelsConfig }
+  | {
+      readonly kind: 'absent';
+      readonly missing: readonly string[];
+      readonly ignored: readonly string[];
+    };
+
 export type SyncEnvResolution =
   | { readonly kind: 'skip'; readonly reason: string }
   | {
       readonly kind: 'run';
       readonly settings: SyncSettings;
       readonly client: SyncClientSettings;
-      readonly tbo: TboHotelsConfig;
+      readonly override: SyncCredentialOverride;
     };
 
 const HOUR_MS = 3_600_000;
@@ -279,6 +294,14 @@ export const SYNC_ENV_VARIABLES: readonly string[] = Object.freeze([
 /** Credenciales: sólo desde `secrets.*` de GitHub y nunca en la línea de comandos del VPS. */
 export const SYNC_SECRET_VARIABLES: readonly string[] = Object.freeze(['TBO_SYNC_PASSWORD']);
 
+/** Las que sólo cuentan con el override: sin usuario y contraseña, la cuenta es la de la bóveda. */
+const OVERRIDE_VARIABLES = Object.freeze([
+  'TBO_SYNC_USERNAME',
+  'TBO_SYNC_PASSWORD',
+  'TBO_SYNC_ENVIRONMENT',
+  'TBO_SYNC_BASE_URL',
+] as const);
+
 /** `ES` → `es`: el valor de `hotel_content.lang` (0041) y del ACL. */
 function contentLanguages(
   codes: readonly (typeof CONTENT_LANGUAGE_CODES)[number][],
@@ -310,30 +333,23 @@ function renameAclIssue(issue: string): string {
   return [variable, ...rest].join(':');
 }
 
-/** El nivel se lee aparte y sin lanzar: el logger existe antes de validar el resto. */
-export function readLogLevel(env: SyncEnv): SyncLogLevel {
-  const raw = env['TBO_SYNC_LOG_LEVEL']?.trim().toLowerCase();
-  return (SYNC_LOG_LEVELS as readonly string[]).includes(raw ?? '')
-    ? (raw as SyncLogLevel)
-    : 'info';
-}
-
-export function resolveSyncEnv(env: SyncEnv): SyncEnvResolution {
-  const enabled = env['TBO_SYNC_ENABLED']?.trim().toLowerCase();
-  if (enabled !== undefined && FALSE_VALUES.has(enabled)) {
-    return { kind: 'skip', reason: 'TBO_SYNC_ENABLED=false' };
-  }
-
+/**
+ * El override por entorno: usuario y contraseña, los dos, o nada. Con uno solo no hay cuenta que
+ * armar y se sigue con la bóveda; `cli.ts` avisa qué variable quedó sin usar.
+ */
+function resolveOverride(
+  env: SyncEnv,
+  vars: z.output<typeof SyncEnvSchema>,
+): SyncCredentialOverride {
   // La contraseña no se recorta: un espacio puede ser parte de ella (docs/tbo/01 §1.2).
   const missing = [
     (env['TBO_SYNC_USERNAME'] ?? '').trim() === '' ? 'TBO_SYNC_USERNAME' : undefined,
     (env['TBO_SYNC_PASSWORD'] ?? '') === '' ? 'TBO_SYNC_PASSWORD' : undefined,
   ].filter((name): name is string => name !== undefined);
-  if (missing.length > 0) return { kind: 'skip', reason: `${missing.join(', ')} not set` };
-
-  const parsed = SyncEnvSchema.safeParse(env);
-  if (!parsed.success) throw new SyncConfigError(issueRefs(parsed.error));
-  const vars = parsed.data;
+  if (missing.length > 0) {
+    const ignored = OVERRIDE_VARIABLES.filter((name) => (env[name] ?? '').trim() !== '');
+    return { kind: 'absent', missing, ignored };
+  }
 
   let tbo: TboHotelsConfig;
   try {
@@ -352,10 +368,30 @@ export function resolveSyncEnv(env: SyncEnv): SyncEnvResolution {
   if (missingTboCredentials(tbo).includes('baseUrl')) {
     throw new SyncConfigError(['TBO_SYNC_BASE_URL:required']);
   }
+  return { kind: 'env', tbo };
+}
+
+/** El nivel se lee aparte y sin lanzar: el logger existe antes de validar el resto. */
+export function readLogLevel(env: SyncEnv): SyncLogLevel {
+  const raw = env['TBO_SYNC_LOG_LEVEL']?.trim().toLowerCase();
+  return (SYNC_LOG_LEVELS as readonly string[]).includes(raw ?? '')
+    ? (raw as SyncLogLevel)
+    : 'info';
+}
+
+export function resolveSyncEnv(env: SyncEnv): SyncEnvResolution {
+  const enabled = env['TBO_SYNC_ENABLED']?.trim().toLowerCase();
+  if (enabled !== undefined && FALSE_VALUES.has(enabled)) {
+    return { kind: 'skip', reason: 'TBO_SYNC_ENABLED=false' };
+  }
+
+  const parsed = SyncEnvSchema.safeParse(env);
+  if (!parsed.success) throw new SyncConfigError(issueRefs(parsed.error));
+  const vars = parsed.data;
 
   return {
     kind: 'run',
-    tbo,
+    override: resolveOverride(env, vars),
     settings: {
       providerCode: TBO_HOTELS_PROVIDER_CODE,
       destinationSourceProvider: PLATFORM_DESTINATION_PROVIDER,
