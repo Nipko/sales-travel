@@ -74,6 +74,7 @@ export class RequestContextMiddleware implements NestMiddleware {
     // Un token sin `jti` es previo a esta versión: se rechaza. Consecuencia deliberada y
     // por única vez: al desplegar, todas las sesiones vigentes deben volver a loguearse.
     let role: Role | undefined;
+    let platformUser = false;
     if (userId) {
       if (!sessionId) {
         userId = undefined;
@@ -90,6 +91,7 @@ export class RequestContextMiddleware implements NestMiddleware {
             sessionId = undefined;
           } else {
             role = validated.role;
+            platformUser = validated.platformUser === true;
           }
         } catch {
           // Fail-closed: si no podemos comprobar la sesión, el request va sin autenticar.
@@ -108,6 +110,7 @@ export class RequestContextMiddleware implements NestMiddleware {
         requestId,
         sessionId,
         role,
+        platformUser,
         ip: req.ip ?? undefined,
         userAgent: req.headers['user-agent'],
       },

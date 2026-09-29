@@ -22,6 +22,7 @@ import type {
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
@@ -98,6 +99,7 @@ export class HotelsController {
   }
 
   /** El sobre CRECE, no cambia: `hotels` sigue igual y se suman `providers` y el booleano. */
+  @SalesOperation()
   @Post('availability')
   async availability(
     @CurrentUser() userId: string | undefined,
@@ -116,6 +118,7 @@ export class HotelsController {
     return { ...result, showProviderInResults };
   }
 
+  @SalesOperation()
   @Post('detail')
   async detail(
     @CurrentUser() userId: string | undefined,
@@ -146,6 +149,7 @@ export class HotelsController {
    * y se revalida con el contexto de su búsqueda, con snapshot en el servidor (PR-4.5). El cuerpo
    * de Despegar (`choiceId`) sigue yendo a su flujo de siempre, con su respuesta tal cual.
    */
+  @SalesOperation()
   @Post('prebook')
   async prebook(
     @CurrentUser() userId: string | undefined,
@@ -163,6 +167,7 @@ export class HotelsController {
    * consulta `GET /orders/:id`. El cuerpo de Despegar (`prebookId`) sigue con su flujo de siempre y
    * su respuesta tal cual (D-TBO-08 A).
    */
+  @SalesOperation()
   @Post('book')
   async book(
     @CurrentUser() userId: string | undefined,
@@ -186,6 +191,7 @@ export class HotelsController {
 
   // ───────────────────────── Reserva (flujo de Despegar) ─────────────────────────
 
+  @SalesOperation()
   @Get('payments')
   async payments(
     @CurrentUser() userId: string | undefined,
@@ -217,6 +223,7 @@ export class HotelsController {
     });
   }
 
+  @SalesOperation()
   @Post('reservations/:id/recovery')
   async recovery(
     @CurrentUser() userId: string | undefined,

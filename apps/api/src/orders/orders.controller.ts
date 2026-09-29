@@ -32,6 +32,7 @@ import {
 } from './hotel-order-reads.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
 /** Lista blanca HTTP: ningún texto libre ni valor reenviado por el proveedor cruza este borde. */
@@ -90,6 +91,7 @@ export class OrdersController {
     private readonly hotelReads: HotelOrderReadsService,
   ) {}
 
+  @SalesOperation()
   @Post()
   async create(
     @CurrentUser() userId: string | undefined,
@@ -314,6 +316,7 @@ export class OrdersController {
     return result;
   }
 
+  @SalesOperation()
   @Post(':id/services')
   async listServices(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
@@ -324,6 +327,7 @@ export class OrdersController {
     return this.orders.listServices(tenantId, row);
   }
 
+  @SalesOperation()
   @Post(':id/reshop')
   async reshopOrder(
     @CurrentUser() userId: string | undefined,
@@ -339,6 +343,7 @@ export class OrdersController {
     return this.orders.reshopOrder(tenantId, row, body, userId);
   }
 
+  @SalesOperation()
   @Post(':id/pay')
   async payOrder(
     @CurrentUser() userId: string | undefined,

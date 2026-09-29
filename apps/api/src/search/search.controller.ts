@@ -16,6 +16,7 @@ import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 
 /**
@@ -67,6 +68,7 @@ export class SearchController {
   ) {}
 
   /** El sobre CRECE, no cambia: `{ offers, simulated, providers }` sigue igual. */
+  @SalesOperation()
   @Post('flights')
   async flights(
     @CurrentUser() userId: string | undefined,
@@ -92,6 +94,7 @@ export class SearchController {
     return { ...result, showProviderInResults };
   }
 
+  @SalesOperation()
   @Post('offer-price')
   async offerPrice(
     @CurrentUser() userId: string | undefined,

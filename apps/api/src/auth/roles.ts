@@ -45,8 +45,8 @@ export const ADMIN_ROLES = [
 
 /**
  * Administradores de un nodo de la red (sin los roles globales de plataforma, que
- * RolesGuard deja pasar siempre). Es el grupo que gobierna configuración sensible:
- * markup, credenciales BYOC, límites de crédito y movimientos de cartera.
+ * RolesGuard deja pasar salvo en las operaciones de venta). Es el grupo que gobierna
+ * configuración sensible: markup, credenciales BYOC, límites de crédito y movimientos de cartera.
  */
 export const AGENCY_ADMIN_ROLES = [
   'consolidator_admin',
@@ -59,8 +59,22 @@ export const AGENCY_ADMIN_ROLES = [
  * Quienes operan comercialmente: los admins de nodo más el vendedor. Cubre cotizar,
  * reservar y gestionar clientes. Excluye a `cliente_final`, que no debe alcanzar
  * ningún endpoint de gestión.
+ *
+ * Excluye también PLATFORM_ROLES, y en las rutas `@SalesOperation()` RolesGuard la aplica sin
+ * el pase libre de la plataforma: el superadmin cuadra la red pero no vende. Planetour vende por
+ * sus sucursales, con usuarios de esas sucursales.
  */
 export const SELLING_ROLES = [...AGENCY_ADMIN_ROLES, 'vendedor'] as const satisfies readonly Role[];
+
+type MustBeEmpty<T extends never> = T;
+
+/**
+ * Siempre `never`. Deja de compilar si alguien suma un rol de plataforma a SELLING_ROLES: sería
+ * devolverle al superadmin la venta por la puerta de atrás.
+ */
+export type PlatformRoleThatSells = MustBeEmpty<
+  Extract<(typeof SELLING_ROLES)[number], (typeof PLATFORM_ROLES)[number]>
+>;
 
 /**
  * Jerarquía de privilegio. Se usa para impedir que un admin asigne un rol igual o
@@ -83,6 +97,11 @@ export function isPlatformRole(role: Role): boolean {
 
 export function isAdminRole(role: Role): boolean {
   return (ADMIN_ROLES as readonly Role[]).includes(role);
+}
+
+/** ¿Puede operar una ruta de venta? Nunca un rol de plataforma. */
+export function canSell(role: Role): boolean {
+  return (SELLING_ROLES as readonly Role[]).includes(role);
 }
 
 /** ¿`actor` puede otorgar/quitar el rol `target`? Sólo roles estrictamente por debajo suyo. */

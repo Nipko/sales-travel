@@ -13,6 +13,11 @@ export interface RequestContext {
    * surtir efecto de inmediato, no cuando expire el token.
    */
   role?: Role;
+  /**
+   * El usuario tiene un rol de plataforma (superadmin) en algún nodo, sea cual sea el tenant
+   * activo. Resuelto contra la base junto con `role`. RolesGuard no le deja operar ventas.
+   */
+  platformUser?: boolean;
   /** Para el audit log (domain_events.meta). */
   ip?: string;
   userAgent?: string;
