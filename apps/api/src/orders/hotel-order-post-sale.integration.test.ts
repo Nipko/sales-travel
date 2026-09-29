@@ -34,6 +34,7 @@ import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
 import { ProviderAccountChangedError } from './order-create-intent.store.js';
 import { OrdersService } from './orders.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * La post-venta de una orden de hotel con la cuenta que la creó, contra Postgres real (docs/tbo/09
@@ -107,7 +108,7 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

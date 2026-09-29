@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Valida la tabla order_operations (migración 0021): inserción de operaciones de post-venta y
@@ -18,8 +19,9 @@ d('order_operations (post-venta durable)', () => {
 
   beforeAll(async () => {
     const t = await pool.query<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency) VALUES ($1::text,$1::text,'CO','COP') RETURNING id`,
-      [`op-${sfx}`],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, parent_tenant_id)
+       VALUES ($1::text,$1::text,'CO','COP',$2) RETURNING id`,
+      [`op-${sfx}`, await platformRootId(pool)],
     );
     tenantId = t.rows[0]!.id;
     const u = await pool.query<{ id: string }>(

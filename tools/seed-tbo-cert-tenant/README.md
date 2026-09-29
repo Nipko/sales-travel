@@ -7,26 +7,36 @@ PR-7.2). El stack, el despliegue y los registros DNS están en
 
 ## Qué deja en la base
 
-| Qué                 | Cómo                                                                                                                                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tenant `tbo-cert`   | Consolidador raíz, sin hijos, nombre neutro. El factory de TBO sólo opera cuentas de plataforma o de consolidador (D-TBO-03 A).                                                                                                                                        |
-| Contacto de soporte | `support_email` y `support_phone` del tenant: el Book no reserva sin ellos (D-TBO-23 A) y los manda a TBO. Buzón de rol y teléfono ficticio por defecto.                                                                                                               |
-| Usuario `vendedor`  | Rol `vendedor`: busca, reserva y cancela **sin MFA** (07 §7.4). Correo verificado; el stack no envía correo.                                                                                                                                                           |
-| Cuenta `tbo-hotels` | `active`, no heredable, `environment: test`. Usuario y contraseña cifrados con la clave del stack, leídos del entorno del contenedor. Sólo acepta el host de test de TBO: este stack nunca guarda una live.                                                            |
-| TBO habilitado      | Ajuste del tenant en `provider_enablement` (0048), como lo pone el superadmin desde el panel, con su `domain_event`. Si alguien lo apagó en el stack, el despliegue siguiente lo vuelve a encender. La variable legado `HOTEL_PROVIDERS_OPT_IN` del stack se mantiene. |
-| Cartera             | En `CERT_CURRENCY`, recargada hasta `CERT_WALLET_BALANCE` con un `DEPOSIT_PAYMENT` del seed (nunca PAN, D1).                                                                                                                                                           |
-| Regla de markup     | `hotels`, porcentaje `CERT_HOTEL_MARKUP_PERCENT`. Margen bajo a propósito: el tester ve el precio de venta y el piso del `RecommendedSellingRate` actuando (CK-09).                                                                                                    |
-| Clientes del CRM    | Cuatro ficticios (correo `example.com`, sin teléfono), de cuatro nacionalidades, con el documento cifrado como lo guarda el api.                                                                                                                                       |
+| Qué                 | Cómo                                                                                                                                                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tenant `tbo-cert`   | Consolidador hijo de la raíz `platform` de la base, sin hijos, nombre neutro. El factory de TBO sólo opera cuentas de plataforma o de consolidador (D-TBO-03 A), y desde 0050 sólo la plataforma es raíz (D4 A). La raíz es la que ya tenga la base o, en una nueva, `tbo-cert-platform`. |
+| Contacto de soporte | `support_email` y `support_phone` del tenant: el Book no reserva sin ellos (D-TBO-23 A) y los manda a TBO. Buzón de rol y teléfono ficticio por defecto.                                                                                                                                  |
+| Usuario `vendedor`  | Rol `vendedor`: busca, reserva y cancela **sin MFA** (07 §7.4). Correo verificado; el stack no envía correo.                                                                                                                                                                              |
+| Cuenta `tbo-hotels` | `active`, no heredable, `environment: test`. Usuario y contraseña cifrados con la clave del stack, leídos del entorno del contenedor. Sólo acepta el host de test de TBO: este stack nunca guarda una live.                                                                               |
+| TBO habilitado      | Ajuste del tenant en `provider_enablement` (0048), como lo pone el superadmin desde el panel, con su `domain_event`. Si alguien lo apagó en el stack, el despliegue siguiente lo vuelve a encender. La variable legado `HOTEL_PROVIDERS_OPT_IN` del stack se mantiene.                    |
+| Cartera             | En `CERT_CURRENCY`, recargada hasta `CERT_WALLET_BALANCE` con un `DEPOSIT_PAYMENT` del seed (nunca PAN, D1).                                                                                                                                                                              |
+| Regla de markup     | `hotels`, porcentaje `CERT_HOTEL_MARKUP_PERCENT`. Margen bajo a propósito: el tester ve el precio de venta y el piso del `RecommendedSellingRate` actuando (CK-09).                                                                                                                       |
+| Clientes del CRM    | Cuatro ficticios (correo `example.com`, sin teléfono), de cuatro nacionalidades, con el documento cifrado como lo guarda el api.                                                                                                                                                          |
 
 Es **idempotente** y corre en cada despliegue del stack: no duplica clientes ni depósitos, no rota una contraseña que
 no cambió (rotarla cierra las sesiones abiertas) y deja como está lo que ya coincide.
+
+Si `tbo-cert` es el consolidador **raíz** de una versión anterior del seed, lo cuelga de la plataforma con
+`move_tenant_subtree` (0051). Si la base no lo deja mover porque tiene reservas abiertas pagadas con cartera (D6 A),
+no lo fuerza: lo deja como raíz, siembra lo demás y el informe dice `"placement": "legacy-root"`. En el stack no cambia
+nada de lo que usa TBO (la plataforma no tiene cuentas, reglas ni marca que heredarle) y así el despliegue no se pone
+en rojo por las reservas de prueba de TBO. El despliegue siguiente lo reintenta; cuando se cierran, queda
+`"placement": "platform"`.
 
 ## Se niega a sembrar cuando
 
 - la base no se llama `sales_travel_cert` (así no escribe la cuenta de test en producción por error), o el rol no es
   superusuario;
 - hay cuentas de **otros proveedores** en cualquier tenant de la base (RC-07);
-- el slug `tbo-cert` es de un tenant que no es un consolidador raíz, o tiene hijos;
+- el slug `tbo-cert` es de un tenant que no es un consolidador de la plataforma, o tiene hijos;
+- `tbo-cert` es un consolidador raíz de una versión anterior del seed y la jerarquía rechaza colgarlo de la plataforma
+  por otra regla que no sean las reservas abiertas (STH01 de `move_tenant_subtree`, 0051);
+- la base no tiene raíz `platform` y el slug `tbo-cert-platform` es de otro tenant;
 - el correo del vendedor es de un usuario de otra red (no le cambia la contraseña);
 - hay otra cuenta de TBO `active` en el tenant, o la actual ya tiene órdenes y cambió su usuario o su URL (se quedarían
   sin post-venta);

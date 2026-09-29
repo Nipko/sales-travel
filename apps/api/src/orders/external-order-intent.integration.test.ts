@@ -8,6 +8,7 @@ import {
   ProviderBookingRefTakenError,
   type OpenExternalCreateIntentInput,
 } from './external-order-intent.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * API pública del intent contra Postgres real (docs/tbo/09 PR-4.4; 08 RF-19, RF-20).
@@ -44,7 +45,7 @@ d('intent de verticales externas contra Postgres (0038 + 0042)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

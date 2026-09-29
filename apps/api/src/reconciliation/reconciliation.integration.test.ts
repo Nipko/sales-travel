@@ -45,6 +45,7 @@ import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.ser
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { ReconciliationService } from './reconciliation.service.js';
 import { ReconciliationStore } from './reconciliation.store.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * La conciliación contra Postgres real (docs/tbo/09 PR-5.5; migración 0047; 08 RF-28 CA; RNF-06
@@ -114,7 +115,7 @@ d('conciliación contra Postgres (0047)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

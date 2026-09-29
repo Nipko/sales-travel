@@ -10,6 +10,7 @@ import {
   PROVIDER_STATUS_SOURCES,
   type OrderOperationType,
 } from '../database/database.types.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Órdenes de hotel (migración 0042) contra Postgres real.
@@ -77,7 +78,7 @@ d('órdenes de hotel (0042)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'COP', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }
@@ -412,9 +413,9 @@ d('órdenes de hotel (0042)', () => {
     // sentencia, y la FK de la cuenta no puede impedir que se limpie un tenant entero.
     const borrarElTenant = await enTransaccionDeshecha(async (c) => {
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-         VALUES ($1::text, $1::text, 'CO', 'COP', 'agency') RETURNING id`,
-        [`hord-propia-${sfx}`],
+        `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+         VALUES ($1::text, $1::text, 'CO', 'COP', 'agency', $2) RETURNING id`,
+        [`hord-propia-${sfx}`, await platformRootId(c)],
       );
       const tenantId = rows[0]!.id;
       const cuenta = await c.query<{ id: string }>(

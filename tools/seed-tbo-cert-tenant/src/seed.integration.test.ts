@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { parseTboConfig, requireUsableTboConfig } from '@sales-travel/tbo-hotels';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -84,6 +84,37 @@ async function q<R extends pg.QueryResultRow>(text: string, values: unknown[] = 
   return (await client.query<R>(text, values)).rows;
 }
 
+/** La raíz `platform` de la base (única desde 0050). */
+async function platformId(): Promise<string> {
+  const [row] = await q<{ id: string }>(`SELECT id FROM tenants WHERE tenant_type = 'platform'`);
+  if (row === undefined) throw new Error('la base no tiene raíz platform');
+  return row.id;
+}
+
+/**
+ * Un consolidador raíz como el que sembraba el seed antes de 0050. La matriz D4 ya no deja crearlo,
+ * así que se inserta con los triggers apagados sólo en esta transacción (`session_replication_role`,
+ * superusuario) y con el `path` que le ponía 0011.
+ */
+async function legacyRootConsolidator(slug: string): Promise<string> {
+  const id = randomUUID();
+  await client.query('BEGIN');
+  try {
+    await client.query('SET LOCAL session_replication_role = replica');
+    await client.query(
+      `INSERT INTO tenants (id, slug, name, country_code, default_currency, tenant_type, path)
+       VALUES ($1::uuid, $2, 'Legado', 'CO', 'USD', 'consolidator', replace($1::text, '-', '')::ltree)`,
+      [id, slug],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
+  createdTenants.push(id);
+  return id;
+}
+
 async function refusal(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
@@ -139,11 +170,14 @@ d('runSeed contra Postgres', () => {
     }>('SELECT tenant_type, parent_tenant_id, default_currency FROM tenants WHERE id = $1', [
       report.tenantId,
     ]);
+    // Consolidador hijo de la raíz platform de la base (D4 A): la que ya hubiera o una del stack.
     expect(tenant).toEqual({
       tenant_type: 'consolidator',
-      parent_tenant_id: null,
+      parent_tenant_id: report.platformTenantId,
       default_currency: 'USD',
     });
+    expect(report.platformTenantId).toBe(await platformId());
+    expect(['created', 'unchanged']).toContain(report.platform);
 
     // El contacto que el Book lee (BrandingService.resolveSupportContact): sin él, la reserva se
     // rechaza con "Falta el contacto de soporte de la agencia."
@@ -267,6 +301,7 @@ d('runSeed contra Postgres', () => {
   it('una segunda corrida no duplica nada ni rota la contraseña', async () => {
     const report = await runSeed(client, settings(), fakeHasher);
     expect(report).toMatchObject({
+      platform: 'unchanged',
       tenant: 'unchanged',
       vendedor: 'unchanged',
       passwordRotated: false,
@@ -402,9 +437,9 @@ d('runSeed contra Postgres', () => {
 
   it('no le cambia la contraseña a un usuario de otra red', async () => {
     const [other] = await q<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1, 'Otra red', 'CO', 'USD', 'agency') RETURNING id`,
-      [`otra-red-${SUFFIX}`],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1, 'Otra red', 'CO', 'USD', 'agency', $2) RETURNING id`,
+      [`otra-red-${SUFFIX}`, await platformId()],
     );
     createdTenants.push(other!.id);
     const email = `ajeno-${SUFFIX}@example.com`;
@@ -449,15 +484,116 @@ d('runSeed contra Postgres', () => {
     ).toBe('account_in_use');
   });
 
-  it('no siembra sobre un tenant con ese slug que no sea un consolidador raíz', async () => {
+  it('no siembra sobre un tenant con ese slug que no sea un consolidador de la plataforma', async () => {
     const slug = `tbo-cert-it-agency-${SUFFIX}`;
     const [agency] = await q<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1, 'Agencia', 'CO', 'USD', 'agency') RETURNING id`,
-      [slug],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1, 'Agencia', 'CO', 'USD', 'agency', $2) RETURNING id`,
+      [slug, await platformId()],
     );
     createdTenants.push(agency!.id);
     expect(await refusal(runSeed(client, settings({ slug }), fakeHasher))).toBe('tenant_shape');
+  });
+
+  it('el consolidador raíz de una versión anterior del seed pasa a colgar de la plataforma', async () => {
+    const slug = `tbo-cert-it-legacy-${SUFFIX}`;
+    const legacy = await legacyRootConsolidator(slug);
+
+    const report = await runSeed(
+      client,
+      settings({ slug, email: `vendedor-legacy-${SUFFIX}@example.com` }),
+      fakeHasher,
+    );
+    createdUsers.push(report.userId);
+
+    expect(report).toMatchObject({
+      tenantId: legacy,
+      tenant: 'updated',
+      platform: 'unchanged',
+      placement: 'platform',
+    });
+    const [row] = await q<{ parent_tenant_id: string; depth: number }>(
+      'SELECT parent_tenant_id, nlevel(path) AS depth FROM tenants WHERE id = $1',
+      [legacy],
+    );
+    expect(row).toEqual({ parent_tenant_id: await platformId(), depth: 2 });
+    const moved = await q<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM domain_events WHERE event_type = 'tenant.moved' AND aggregate_id = $1`,
+      [legacy],
+    );
+    expect(moved.map((e) => e.payload)).toEqual([
+      expect.objectContaining({ fromParentId: null, toParentId: await platformId() }),
+    ]);
+
+    // La corrida siguiente ya lo encuentra en su lugar.
+    const again = await runSeed(
+      client,
+      settings({ slug, email: `vendedor-legacy-${SUFFIX}@example.com` }),
+      fakeHasher,
+    );
+    expect(again).toMatchObject({ tenant: 'unchanged', placement: 'platform' });
+  });
+
+  it('con reservas abiertas pagadas con cartera no lo mueve, siembra igual y lo reintenta en la corrida siguiente', async () => {
+    const slug = `tbo-cert-it-legacy-held-${SUFFIX}`;
+    const legacy = await legacyRootConsolidator(slug);
+    const [user] = await q<{ id: string }>(`INSERT INTO users (email) VALUES ($1) RETURNING id`, [
+      `legacy-held-${SUFFIX}@example.com`,
+    ]);
+    createdUsers.push(user!.id);
+    const [wallet] = await q<{ id: string }>(
+      `INSERT INTO agency_portfolios (tenant_id, currency) VALUES ($1, 'USD') RETURNING id`,
+      [legacy],
+    );
+    const [order] = await q<{ id: string }>(
+      `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers,
+                           contact_info, total_amount, order_number, status)
+       VALUES ($1, $2, 'tbo-hotels', '{}', '{}', '[]', '{}', 100, 999101, 'confirmed')
+       RETURNING id`,
+      [legacy, user!.id],
+    );
+    await client.query(
+      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
+       VALUES ($1, -100, 'BOOKING_HOLD', $2, $3)`,
+      [wallet!.id, order!.id, user!.id],
+    );
+
+    const heldSettings = settings({ slug, email: `vendedor-legacy-held-${SUFFIX}@example.com` });
+    const blocked = await runSeed(client, heldSettings, fakeHasher);
+    createdUsers.push(blocked.userId);
+
+    // La base no lo deja mover (D6 A) y el seed no lo fuerza, pero el resto queda sembrado: el
+    // despliegue del stack no se pone en rojo por las reservas de prueba de TBO.
+    expect(blocked).toMatchObject({ tenantId: legacy, placement: 'legacy-root' });
+    const [row] = await q<{ parent_tenant_id: string | null }>(
+      'SELECT parent_tenant_id FROM tenants WHERE id = $1',
+      [legacy],
+    );
+    expect(row?.parent_tenant_id).toBeNull();
+    const [account] = await q<{ n: number }>(
+      `SELECT count(*)::int AS n FROM provider_accounts WHERE tenant_id = $1 AND status = 'active'`,
+      [legacy],
+    );
+    expect(account?.n).toBe(1);
+    const noMove = await q(
+      `SELECT 1 FROM domain_events WHERE event_type = 'tenant.moved' AND aggregate_id = $1`,
+      [legacy],
+    );
+    expect(noMove).toHaveLength(0);
+
+    // Liberada la retención, la corrida siguiente lo cuelga de la plataforma.
+    await client.query(
+      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
+       VALUES ($1, 100, 'BOOKING_RELEASED', $2, $3)`,
+      [wallet!.id, order!.id, user!.id],
+    );
+    const retried = await runSeed(client, heldSettings, fakeHasher);
+    expect(retried).toMatchObject({ tenantId: legacy, tenant: 'updated', placement: 'platform' });
+    const [after] = await q<{ parent_tenant_id: string | null }>(
+      'SELECT parent_tenant_id FROM tenants WHERE id = $1',
+      [legacy],
+    );
+    expect(after?.parent_tenant_id).toBe(await platformId());
   });
 
   it('la clave del stack cambió: no sobrescribe una cuenta que ya no puede leer', async () => {

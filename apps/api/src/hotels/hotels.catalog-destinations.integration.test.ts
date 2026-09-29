@@ -29,6 +29,7 @@ import { HotelSearchContextStore } from './hotel-search-context.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
 import { HotelAvailabilityInputSchema } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Destinos desde el catálogo local contra Postgres real (docs/tbo/05 §8.5; 07 U-02).
@@ -223,7 +224,7 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'USD', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

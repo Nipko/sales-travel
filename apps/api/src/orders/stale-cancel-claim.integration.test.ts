@@ -6,6 +6,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * Los claims de cancelación en vuelo contra Postgres real (HARD-1; 0021 y 0037): qué lista el
@@ -47,9 +48,9 @@ d('claims de cancelación vencidos contra Postgres', () => {
 
   async function crearTenant(slug: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type)
-       VALUES ($1::text, $1::text, 'CO', 'USD', 'agency') RETURNING id`,
-      [slug],
+      `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+       VALUES ($1::text, $1::text, 'CO', 'USD', 'agency', $2) RETURNING id`,
+      [slug, await platformRootId(pool)],
     );
     return rows[0]!.id;
   }

@@ -27,6 +27,7 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { OrdersService } from './orders.service.js';
+import { platformRootId } from '../__fixtures__/platform-root.js';
 
 /**
  * La cancelación de una orden de hotel contra Postgres real (docs/tbo/09 PR-5.3; 08 RF-25, RF-38;
@@ -87,7 +88,7 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
        VALUES ($1::text, $1::text, 'CO', 'USD', $2, $3) RETURNING id`,
-      [slug, tipo, padre],
+      [slug, tipo, padre ?? (await platformRootId(pool))],
     );
     return rows[0]!.id;
   }

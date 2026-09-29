@@ -141,6 +141,24 @@ describe('AllExceptionsFilter — motivo máquina', () => {
     });
   });
 
+  it('una regla de la jerarquía violada en la base sale como 409 con motivo, no como 500', () => {
+    const r = respuesta();
+    const err = Object.assign(new Error('sólo la plataforma puede ser raíz: tenant 7970ade5'), {
+      code: 'STH01',
+      constraint: 'tenant_root_must_be_platform',
+    });
+
+    new AllExceptionsFilter().catch(err, r.host);
+
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(cuerpo(r)).toEqual({
+      statusCode: HttpStatus.CONFLICT,
+      error: 'Conflict',
+      message: 'Sólo la plataforma puede ser raíz: el nodo tiene que colgar de un nodo de la red.',
+      reason: 'TENANT_ROOT_MUST_BE_PLATFORM',
+    });
+  });
+
   it('un error que no es HTTP sigue siendo un 500 genérico, sin motivo ni detalle', () => {
     const r = respuesta();
     const err = Object.assign(new Error('relation "orders" does not exist'), {
