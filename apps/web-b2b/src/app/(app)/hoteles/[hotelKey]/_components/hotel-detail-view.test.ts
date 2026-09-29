@@ -246,6 +246,18 @@ describe('staySummary — la estadía cotizada a la vista (D-TBO-14 A)', () => {
     });
   });
 
+  it('D-TBO-15: la moneda elegida en la búsqueda, a la vista; sin ella no se inventa una', () => {
+    const stay = {
+      checkinDate: '2026-10-12',
+      checkoutDate: '2026-10-13',
+      rooms: [{ adults: 1, childrenAges: [] }],
+      guestNationality: 'CO',
+      refundableOnly: false,
+    };
+    expect(staySummary({ ...stay, currency: 'USD' }, (c) => c).currency).toBe('USD');
+    expect(staySummary(stay, (c) => c)).not.toHaveProperty('currency');
+  });
+
   it('fechas del calendario, sin pasar por la zona del navegador', () => {
     expect(formatStayDate('2026-01-01')).toBe('1 ene 2026');
     expect(formatStayDate('mañana')).toBe('mañana');

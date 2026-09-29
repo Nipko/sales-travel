@@ -4,12 +4,15 @@ import { requireUsableTboConfig, type TboHotelsConfig } from './config';
 import { TboConfigError, TboRequestBuildError, TboResponseMappingError } from './errors';
 import { TBO_OPERATIONS } from './http/operations';
 import {
+  TBO_SLOW_NO_HOTELS_FOUND_MS,
   TboHttpClient,
   type TboAccountContext,
   type TboHttpDeps,
   type TboHttpResult,
 } from './http/tbo-http.client';
 import { zodIssueRefs } from './internal/zod-issues';
+import { TBO_HOTELS_PROVIDER_CODE } from './provider-code';
+import { pickTboLogMeta } from './redaction';
 import { buildTboCityListRequest } from './static/city-list.request.builder';
 import { mapTboCityListResponse } from './static/city-list.response.mapper';
 import type {
@@ -33,7 +36,10 @@ import {
   TboHotelDetailsEnvelopeSchema,
 } from './static/response.schema';
 import { buildTboCityHotelsRequest } from './static/tbo-hotel-code-list.request.builder';
-import { mapTboCityHotelsResponse } from './static/tbo-hotel-code-list.response.mapper';
+import {
+  emptyTboCityHotelsMapping,
+  mapTboCityHotelsResponse,
+} from './static/tbo-hotel-code-list.response.mapper';
 
 export type { TboStaticOperation } from './static/observer';
 
@@ -49,8 +55,14 @@ export type { TboStaticOperation } from './static/observer';
  *   1-5, coordenadas validadas, imágenes `https`. El JSON de TBO no sale de aquí (RF-07 CA-6).
  * - **Cupo de fondo.** Las cinco operaciones van al cupo `background` del limitador de la cuenta,
  *   así que una corrida del sync nunca le quita capacidad a una búsqueda o a un Book (01 §7.2).
- * - **Reintentos**: los del cliente HTTP, que en lecturas sólo repite ante 429 o fallos de
- *   transporte y con backoff (06 §4.3 regla 7). Partir un lote de HotelDetails que falla es del sync.
+ * - **Reintentos**: los del cliente HTTP, que en lecturas sólo repite ante 429, 500, cuerpo roto o
+ *   fallos de transporte y con backoff (06 §4.3 regla 7). Partir un lote de HotelDetails que falla
+ *   es del sync.
+ * - **Ciudad sin hoteles**: TBOHotelCodeList la contesta con `Status.Code` 500 "No Hotels Found"
+ *   (producción, 2026-09-29). Si llega antes de `slowNoHotelsFoundMs` es una lista vacía en UNA
+ *   llamada, sin reintento ni `warn`; si tarda eso o más es el plazo interno de TBO vencido y se
+ *   reintenta como el `UPSTREAM` que es: agotados los intentos, la ciudad falla, no queda vacía
+ *   (01 §8.5).
  */
 
 /**
@@ -71,6 +83,12 @@ export interface TboStaticContentOptions {
   readonly timeoutsMs?: Partial<Record<TboStaticOperation, number>>;
   /** `IsDetailedResponse` de TBOHotelCodeList; `true` por defecto hasta cerrar Q-63. */
   readonly detailedCityHotels?: boolean;
+  /**
+   * Desde cuántos ms el "No Hotels Found" de TBOHotelCodeList deja de ser la ciudad sin hoteles y
+   * se reintenta como `UPSTREAM` (01 §8.5). Por defecto `TBO_SLOW_NO_HOTELS_FOUND_MS` (4.500),
+   * elegido con el log del 2026-09-29; se mide por intento, del envío al último byte del cuerpo.
+   */
+  readonly slowNoHotelsFoundMs?: number;
 }
 
 /** Por llamada: la señal de quien corta la corrida y, si hace falta, un plazo o intentos menores. */
@@ -115,12 +133,14 @@ const OptionsSchema = z
       .strict()
       .optional(),
     detailedCityHotels: z.boolean().optional(),
+    slowNoHotelsFoundMs: PositiveMs.optional(),
   })
   .strict();
 
 interface StaticPolicy {
   readonly timeoutsMs: Readonly<Record<TboStaticOperation, number>>;
   readonly detailedCityHotels: boolean;
+  readonly slowNoHotelsFoundMs: number;
 }
 
 /** Opciones inválidas son un error de configuración del despliegue: sólo `ruta:código`. */
@@ -136,6 +156,7 @@ function resolvePolicy(options: TboStaticContentOptions): StaticPolicy {
   return Object.freeze({
     timeoutsMs: Object.freeze(timeoutsMs),
     detailedCityHotels: parsed.data.detailedCityHotels ?? true,
+    slowNoHotelsFoundMs: parsed.data.slowNoHotelsFoundMs ?? TBO_SLOW_NO_HOTELS_FOUND_MS,
   });
 }
 
@@ -211,16 +232,28 @@ export class TboStaticContentClient {
     const body = buildTboCityHotelsRequest(cityCode, {
       detailedResponse: this.#policy.detailedCityHotels,
     });
-    const result = await this.#send('tboHotelCodeList', body, TboCityHotelsEnvelopeSchema, call);
+    const context = {
+      cityCode,
+      ...(query.countryCode === undefined ? {} : { countryCode: query.countryCode }),
+    };
+    const result = await this.#call('tboHotelCodeList', body, TboCityHotelsEnvelopeSchema, call);
+    if (result.outcome === 'NO_AVAILABILITY') {
+      // Un "No Hotels Found" rápido: la ciudad existe y no tiene hoteles (01 §8.5). El lento ya
+      // salió del cliente HTTP como `UPSTREAM`. Una línea `info` con la ciudad y lo que tardó, no
+      // un `warn`: no es un fallo de TBO.
+      const empty = emptyTboCityHotelsMapping(context, this.#mapDeps());
+      this.#info('tbo.static.city_without_hotels', {
+        op: 'tboHotelCodeList',
+        cityCode: empty.cityCode,
+        requestId: result.requestId,
+        tboCode: result.tboCode,
+        durationMs: result.durationMs,
+        attempt: result.attempts,
+      });
+      return { ...empty, ...callMeta(result) };
+    }
     return {
-      ...mapTboCityHotelsResponse(
-        result.data,
-        {
-          cityCode,
-          ...(query.countryCode === undefined ? {} : { countryCode: query.countryCode }),
-        },
-        this.#mapDeps(),
-      ),
+      ...mapTboCityHotelsResponse(result.data, context, this.#mapDeps()),
       ...callMeta(result),
     };
   }
@@ -255,32 +288,20 @@ export class TboStaticContentClient {
   }
 
   /**
-   * La única salida al cable, tipada a las cinco operaciones estáticas: `'book'` o `'search'` no
-   * compilan aquí. Ninguna de las cinco tiene `201` como resultado vacío, así que el cliente HTTP
-   * sólo devuelve éxitos.
+   * La salida al cable de las operaciones sin resultado vacío. De las cinco, sólo TBOHotelCodeList
+   * admite uno (el "No Hotels Found" de una ciudad sin hoteles, 01 §8.5) y lo trata
+   * `listCityHotels`; en las demás un vacío es inalcanzable con la tabla actual.
    */
   async #send<T>(
-    operation: TboStaticOperation,
+    operation: Exclude<TboStaticOperation, 'tboHotelCodeList'>,
     body: unknown,
     responseSchema: ZodType<T, ZodTypeDef, unknown>,
     call: TboStaticCallOptions,
   ): Promise<Extract<TboHttpResult<T>, { outcome: 'SUCCESS' }>> {
-    const configured = this.#policy.timeoutsMs[operation];
-    const timeoutMs =
-      call.timeoutMs !== undefined && Number.isFinite(call.timeoutMs)
-        ? Math.min(configured, call.timeoutMs)
-        : configured;
-    const result = await this.#client.send(operation, body, {
-      responseSchema,
-      timeoutMs,
-      lane: 'background',
-      ...(call.maxAttempts === undefined ? {} : { maxAttempts: call.maxAttempts }),
-      ...(call.signal === undefined ? {} : { signal: call.signal }),
-    });
+    const result = await this.#call(operation, body, responseSchema, call);
     if (result.outcome !== 'SUCCESS') {
-      // Inalcanzable con la tabla actual (`emptyOnNoAvailability` sólo en Search). Si alguien la
-      // cambia, se falla como respuesta ilegible en vez de inventar una lista vacía, que el sync
-      // podría leer como "la ciudad ya no tiene hoteles".
+      // Si alguien cambia la tabla, se falla como respuesta ilegible en vez de inventar una lista
+      // vacía: una lista de ciudades o de códigos vacía se leería como "TBO ya no tiene nada".
       throw new TboResponseMappingError(
         TBO_OPERATIONS[operation].path,
         ['Status.Code:unexpected_no_availability'],
@@ -288,6 +309,42 @@ export class TboStaticContentClient {
       );
     }
     return result;
+  }
+
+  /**
+   * La única salida al cable, tipada a las cinco operaciones estáticas: `'book'` o `'search'` no
+   * compilan aquí.
+   */
+  async #call<T>(
+    operation: TboStaticOperation,
+    body: unknown,
+    responseSchema: ZodType<T, ZodTypeDef, unknown>,
+    call: TboStaticCallOptions,
+  ): Promise<TboHttpResult<T>> {
+    const configured = this.#policy.timeoutsMs[operation];
+    const timeoutMs =
+      call.timeoutMs !== undefined && Number.isFinite(call.timeoutMs)
+        ? Math.min(configured, call.timeoutMs)
+        : configured;
+    return this.#client.send(operation, body, {
+      responseSchema,
+      timeoutMs,
+      lane: 'background',
+      slowNoHotelsFoundMs: this.#policy.slowNoHotelsFoundMs,
+      ...(call.maxAttempts === undefined ? {} : { maxAttempts: call.maxAttempts }),
+      ...(call.signal === undefined ? {} : { signal: call.signal }),
+    });
+  }
+
+  /** Por la lista blanca del log (01 §11.1). La observabilidad nunca cambia el resultado. */
+  #info(message: string, meta: Record<string, unknown>): void {
+    const logger = this.#logger;
+    if (logger === undefined) return;
+    try {
+      logger.info(message, pickTboLogMeta({ provider: TBO_HOTELS_PROVIDER_CODE, ...meta }));
+    } catch {
+      // Se descarta a propósito: no hay a dónde reportar un fallo del propio canal de reporte.
+    }
   }
 
   #mapDeps(): { readonly logger?: LoggerPort; readonly metrics?: MetricsPort } {

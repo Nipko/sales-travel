@@ -60,6 +60,15 @@ export interface TboOperationSpec {
   /** `201 NO_AVAILABILITY` es un resultado vacío y no un error. Sólo en Search (01 §8.3). */
   readonly emptyOnNoAvailability: boolean;
   /**
+   * `Status.Code` 500 con `Description` "No Hotels Found" (sin distinguir mayúsculas ni espacios),
+   * con HTTP 2xx y antes de `TBO_SLOW_NO_HOTELS_FOUND_MS`, es una ciudad sin hoteles: resultado
+   * vacío, no error. Más lento es el plazo interno de TBO vencido y sigue siendo `UPSTREAM`. Sólo
+   * TBOHotelCodeList, que es donde se observó en producción el 2026-09-29 (01 §8.5); cualquier otro
+   * 500 sigue siendo `UPSTREAM`. En Book y Cancel el cliente la ignora aunque alguien la encienda:
+   * allí un 500 es un desenlace incierto, nunca un vacío.
+   */
+  readonly emptyOnNoHotelsFound: boolean;
+  /**
    * `Status.Description` puede ir al log, recortada, porque el request no lleva datos personales.
    * En Book, BookingDetail, Cancel y BookingDetailsbasedondate un 400 podría repetir un dato del
    * huésped (01 §11.1).
@@ -114,6 +123,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['sales'],
     envelope: 'required',
     emptyOnNoAvailability: true,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
   /** p. 19. 23 s (p. 8); segundo intento sólo tras un fallo rápido y dentro de los 23 s (C-24). */
@@ -128,6 +138,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['sales'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
   /** p. 32. 120 s (p. 8). UN intento, siempre: la recuperación es BookingDetail a +120 s (p. 42). */
@@ -142,6 +153,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['money'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: false,
   }),
   /**
@@ -160,6 +172,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background', 'money', 'verification', 'sales'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: false,
   }),
   /** p. 41. 60 s (INFERIDO, Q-09). UN intento, siempre: se concilia con BookingDetail. */
@@ -174,6 +187,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['money'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: false,
   }),
   /** p. 62, casing del PDF (Postman: `BookingDetailsBasedOnDate`). 60 s (INFERIDO). */
@@ -188,6 +202,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: false,
   }),
   /** p. 51, GET. 30 s (INFERIDO). */
@@ -202,6 +217,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
   /** p. 53. 30 s (INFERIDO). */
@@ -216,6 +232,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
   /** p. 54-55, GET y en minúsculas. Devuelve todos los códigos: 180 s (INFERIDO). Sin `Status`. */
@@ -230,9 +247,14 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'optional',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
-  /** p. 65. 60 s (INFERIDO). */
+  /**
+   * p. 65. 60 s (INFERIDO). Una ciudad sin hoteles llega como HTTP 200 con `Status.Code` 500
+   * "No Hotels Found" (producción, 2026-09-29): es la única fila con esa excepción (01 §8.5). El
+   * mismo texto a los ≈ 5 s es un plazo vencido y se reintenta como cualquier 500.
+   */
   tboHotelCodeList: spec({
     path: '/TBOHotelCodeList',
     method: 'POST',
@@ -244,6 +266,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: true,
     logDescription: true,
   }),
   /**
@@ -261,6 +284,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
+    emptyOnNoHotelsFound: false,
     logDescription: true,
   }),
 });

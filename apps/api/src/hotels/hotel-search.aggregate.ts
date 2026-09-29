@@ -76,6 +76,12 @@ export interface HotelProviderOutcome {
   /** Tarifas que respondió y no se muestran por venir en otra moneda. Sólo si hubo alguna. */
   readonly droppedForCurrency?: number;
   /**
+   * En qué monedas vinieron esas tarifas, ordenadas. Viaja junto con `droppedForCurrency`: con esto
+   * la web ofrece repetir la búsqueda en la moneda del proveedor si la agencia puede usarla
+   * (D-TBO-15, selector de moneda).
+   */
+  readonly droppedCurrencies?: readonly string[];
+  /**
    * Parte de sus hoteles no se consultó o falló, y otra parte sí respondió (RF-14 CA-3). `count` y
    * `status` son los de lo que respondió; `reason` dice qué faltó. Sólo presente en `true`.
    */
@@ -254,7 +260,10 @@ export function gateByCurrency(
 }
 
 /** Motivo para el vendedor: sólo códigos de moneda, que no son PII y son el dato accionable. */
-function currencyMismatchReason(droppedCurrencies: readonly string[], expected: string): string {
+export function currencyMismatchReason(
+  droppedCurrencies: readonly string[],
+  expected: string,
+): string {
   return `Cotiza en ${droppedCurrencies.join(', ')} y esta búsqueda es en ${expected}: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.`;
 }
 
@@ -299,6 +308,7 @@ export function respondedOutcome(
           currencyMismatchReason(gate.droppedCurrencies, expected),
         ),
         droppedForCurrency: gate.dropped,
+        droppedCurrencies: gate.droppedCurrencies,
       },
       offers: [],
     };
@@ -311,6 +321,7 @@ export function respondedOutcome(
       count: gate.offers.length,
       reason: partialDropReason(gate.dropped, gate.droppedCurrencies, expected),
       droppedForCurrency: gate.dropped,
+      droppedCurrencies: gate.droppedCurrencies,
     },
     offers: gate.offers,
   };

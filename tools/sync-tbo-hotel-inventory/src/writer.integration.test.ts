@@ -11,7 +11,7 @@ import type { SyncSettings } from './env.js';
 import { JsonLogger } from './log.js';
 import { trigramSimilarity } from './match-rules.js';
 import { runSync } from './sync.js';
-import { fakeTbo, type FakeTboWorld } from './testing/fake-tbo.js';
+import { fakeTbo, tboNoHotelsFound, type FakeTboWorld } from './testing/fake-tbo.js';
 import { PgCatalogStore } from './writer.js';
 
 /**
@@ -302,6 +302,67 @@ d('PgCatalogStore contra Postgres (0041)', () => {
 
     expect(await inventory()).toEqual(before);
     expect(await city('IT-RB')).toEqual(cityBefore);
+  });
+
+  it('"No Hotels Found" (01 §8.5): la ciudad nueva queda vacía y al día; la que tenía hoteles, intacta', async () => {
+    // Un país que ningún otro test de este archivo usa, y sin E5: nada de lo que siembran los otros
+    // casos se toca.
+    await seedCity('700002', 'BO', LONG_AGO);
+    for (const id of ['nhf-1', 'nhf-2']) await seedHotel(TBO, id, '700002');
+    const world: FakeTboWorld = {
+      countries: ['BO'],
+      cities: {
+        BO: [
+          { code: '700001', name: 'Ciudad Sin Hoteles' },
+          { code: '700002', name: 'Ciudad Con Hoteles' },
+        ],
+      },
+      hotels: {},
+      // Las dos contestan como las 16 ciudades de CO del 2026-09-29.
+      override: (op) => (op === 'tboHotelCodeList' ? tboNoHotelsFound() : undefined),
+    };
+    const tbo = fakeTbo(world);
+    const source = new TboStaticContentClient(
+      parseTboConfig({ environment: 'test', username: 'it-user', password: 'it-password' }),
+      { fetch: tbo.fetch, limiter: immediateLimiter, sleep: () => Promise.resolve() },
+    );
+    const logger = new JsonLogger({ level: 'info', sink: () => undefined });
+    const store = new PgCatalogStore(db, { providerCode: TBO });
+    const only = { countries: ['BO'], stages: new Set(['E1', 'E2', 'E3'] as const) };
+    const callsFor = (code: string): number =>
+      tbo.callsTo('tboHotelCodeList').filter((call) => call.body?.['CityCode'] === code).length;
+    const runStartMs = Date.now();
+
+    const first = await runSync(settings(only), { source, store, logger });
+
+    expect(first).toMatchObject({
+      action: 'sync',
+      outcome: 'complete',
+      e3: { cities: 2, citiesEmpty: 1, citiesFailed: 0, sweepAnomalies: 1, hotelsDeactivated: 0 },
+    });
+    expect(first.action === 'sync' && first.errorsByCode).toEqual({});
+    expect(callsFor('700001')).toBe(1);
+    const empty = await city('700001');
+    expect(empty).toMatchObject({
+      country_code: 'BO',
+      hotel_count: 0,
+      centroid_lat: null,
+      centroid_lng: null,
+      last_status_code: 200,
+    });
+    expect(empty?.synced_at?.getTime()).toBeGreaterThanOrEqual(runStartMs - 1_000);
+    // La que tenía hoteles: anomalía, nada barrido y el checkpoint donde estaba.
+    const rows = await inventory();
+    expect(rows.get('nhf-1')?.active).toBe(true);
+    expect(rows.get('nhf-2')?.active).toBe(true);
+    expect((await city('700002'))?.synced_at).toEqual(LONG_AGO);
+
+    // La corrida siguiente lee `hotel_count = 0` de la base: la vacía espera su cadencia (30 días)
+    // y sólo se vuelve a pedir la que quedó pendiente.
+    const second = await runSync(settings(only), { source, store, logger });
+    expect(second).toMatchObject({ e3: { citiesDue: 1, cities: 1, citiesEmpty: 0 } });
+    expect(callsFor('700001')).toBe(1);
+    expect(callsFor('700002')).toBe(2);
   });
 
   it('lock consultivo: una segunda sesión no lo obtiene hasta que la primera lo suelta', async () => {

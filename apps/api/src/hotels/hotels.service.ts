@@ -32,6 +32,7 @@ import {
 } from '../providers/hotel-provider.types.js';
 import { ProviderCallError } from '../providers/provider.types.js';
 import {
+  BreakerRejectionError,
   CircuitBreakerService,
   type ProviderCircuitOptions,
 } from '../search/circuit-breaker.service.js';
@@ -45,6 +46,7 @@ import {
 import {
   SKIP_REASON_TEXT,
   catalogFactsOf,
+  currencyMismatchReason,
   errorOutcome,
   gateByCurrency,
   mergeProviderOffers,
@@ -73,6 +75,13 @@ import {
   type HotelDestination,
 } from './hotel-destination.js';
 import { priceRoompack } from './hotel-pricing.js';
+import {
+  HotelRatesCurrencyMismatchError,
+  assertRulesPriceIn,
+  hotelSearchCurrencyOptions,
+  resolveHotelSearchCurrency,
+  type HotelSearchCurrencyOptions,
+} from './hotel-search-currency.js';
 import {
   HotelSearchContextStore,
   isStorablePackContext,
@@ -178,6 +187,15 @@ function firstPlatformProviderWith<TPort>(
   return undefined;
 }
 
+/**
+ * Clase de un fallo, para el log: el motivo del breaker si fue él quien cortó, o el nombre del
+ * error. Nunca el mensaje, que puede traer texto del proveedor o lo que escribió el vendedor.
+ */
+function failureClassOf(err: unknown): string {
+  if (err instanceof BreakerRejectionError) return `breaker:${err.reason}`;
+  return err instanceof Error ? err.name : typeof err;
+}
+
 /** Clave de un hotel de un proveedor. El separador no puede aparecer en un código de proveedor. */
 function hotelKey(providerCode: string, hotelId: string): string {
   return `${providerCode} ${hotelId}`;
@@ -252,12 +270,14 @@ export class HotelsService {
    *
    * - Si el tenant tiene un proveedor ACTIVO del espacio de ids de la plataforma que sugiere, lo
    *   sirve él, como siempre: sus ids son los que después resuelven el catálogo de cada proveedor,
-   *   también el de los que tienen ids propios, por el mapa de destinos. Si ese proveedor falla,
-   *   la sugerencia falla con él: cambiar de espacio de ids según la salud del momento dejaría al
-   *   vendedor con destinos que, repuesto el proveedor, ya no lo consultan.
-   * - Si no lo tiene (un tenant sólo de TBO, como el de certificación), lo sirve el catálogo local
-   *   de sus proveedores ACTIVOS con ids propios, sin llamar a nadie: cada ciudad sale con un id
-   *   del proveedor (`tbo-hotels:150184`) que la búsqueda resuelve directo a su código de ciudad.
+   *   también el de los que tienen ids propios, por el mapa de destinos. Uno sin credenciales no
+   *   está activo (el registry lo deja ausente) y no cuenta.
+   * - Si no lo tiene (un tenant sólo de TBO, como el de certificación, o producción sin clave de
+   *   Despegar), lo sirve el catálogo local de sus proveedores ACTIVOS con ids propios, sin llamar a
+   *   nadie: cada ciudad sale con un id del proveedor (`tbo-hotels:150184`) que la búsqueda
+   *   resuelve directo a su código de ciudad.
+   * - Si lo tiene pero falla —caído, circuito abierto, kill-switch, credencial rechazada—, el
+   *   catálogo local es la red de seguridad: ver {@link suggestAfterPlatformFailure}.
    * - Sin ninguno de los dos, 503 que lo dice.
    */
   async suggest(
@@ -266,23 +286,81 @@ export class HotelsService {
     locale?: string,
   ): Promise<HotelDestinationSuggestion[]> {
     const { active } = await this.registry.forTenant(tenantId);
-    const platform = firstPlatformProviderWith<HotelSuggestPort>(active, supportsHotelSuggest);
-    if (platform !== undefined) {
-      const { code, adapter, circuit } = platform;
-      return this.breaker.execute(
-        code,
-        () => adapter.suggestDestinations(q, { tenantId }, locale),
-        circuit,
-      );
-    }
-
     const catalogProviders = active
       .filter((p) => p.searchProfile.idSpace === 'provider')
       .map((p) => p.code);
+    const platform = firstPlatformProviderWith<HotelSuggestPort>(active, supportsHotelSuggest);
+    if (platform !== undefined) {
+      const { code, adapter, circuit } = platform;
+      try {
+        // Por el circuito, como siempre: el fallo cuenta, y abierto no se le vuelve a llamar.
+        return await this.breaker.execute(
+          code,
+          () => adapter.suggestDestinations(q, { tenantId }, locale),
+          circuit,
+        );
+      } catch (err) {
+        const fromCatalog = await this.suggestAfterPlatformFailure(
+          code,
+          err,
+          catalogProviders,
+          q,
+          locale,
+        );
+        if (fromCatalog === undefined) throw err;
+        return fromCatalog;
+      }
+    }
+
     if (catalogProviders.length === 0) {
       throw new HotelOperationUnavailableError('sugerencias de destino');
     }
     return this.suggestFromCatalog(catalogProviders, q, locale);
+  }
+
+  /**
+   * Red de seguridad del autocompletado: con el proveedor de la plataforma fallando, las ciudades
+   * del catálogo local de los proveedores activos con ids propios. `undefined` = no hay con qué
+   * reemplazarlo y el llamador relanza el error ORIGINAL, el mismo de antes de esta red.
+   *
+   * Es seguro porque:
+   * - nunca mezcla: o responde el proveedor o responde el catálogo, así que no hay ciudades
+   *   duplicadas ni dos espacios de ids en una misma lista;
+   * - respeta el breaker: el fallo ya se contó en su circuito, y con el circuito abierto o el
+   *   kill-switch no se lo vuelve a llamar, sólo se consulta la base;
+   * - el destino no se guarda en ningún lado —viaja en el formulario de esa búsqueda—: elegir una
+   *   ciudad del catálogo sólo decide ESA búsqueda, que va a los proveedores de ese catálogo. La
+   *   siguiente tecla, repuesto el proveedor, vuelve a sus ids.
+   *
+   * Sólo reemplaza cuando tiene algo que ofrecer: sin proveedores de catálogo, sin coincidencias o
+   * con la base fallando, sale el error de siempre y no una lista vacía que se leería como "esa
+   * ciudad no existe" con el proveedor caído. En el log, sólo códigos, la clase del fallo y el
+   * conteo: ni lo escrito por el vendedor ni texto del proveedor.
+   */
+  private async suggestAfterPlatformFailure(
+    platformCode: string,
+    err: unknown,
+    catalogProviders: readonly string[],
+    q: string,
+    locale: string | undefined,
+  ): Promise<HotelDestinationSuggestion[] | undefined> {
+    if (catalogProviders.length === 0) return undefined;
+    const cause = failureClassOf(err);
+    let suggestions: HotelDestinationSuggestion[];
+    try {
+      suggestions = await this.suggestFromCatalog(catalogProviders, q, locale);
+    } catch {
+      // Sin el error: el mensaje de un driver puede citar los parámetros, y ahí va lo escrito.
+      this.logger.warn(
+        `hotels.suggest.catalog_fallback_failed provider=${platformCode} cause=${cause}`,
+      );
+      return undefined;
+    }
+    if (suggestions.length === 0) return undefined;
+    this.logger.warn(
+      `hotels.suggest.catalog_fallback provider=${platformCode} cause=${cause} catalog=${catalogProviders.join(',')} count=${suggestions.length}`,
+    );
+    return suggestions;
   }
 
   /**
@@ -340,6 +418,15 @@ export class HotelsService {
     return rows.map((row) => catalogSuggestionOf(row, language));
   }
 
+  /**
+   * Las monedas en que la agencia puede buscar hoteles, para el selector de la web (D-TBO-15,
+   * 2026-09-29): la suya, elegida por defecto, y USD.
+   */
+  async searchCurrencies(tenantId: string): Promise<HotelSearchCurrencyOptions> {
+    const { currency } = await this.tenantDefaults(tenantId);
+    return hotelSearchCurrencyOptions(currency);
+  }
+
   async searchAvailability(
     tenantId: string,
     input: HotelAvailabilityInput,
@@ -354,13 +441,19 @@ export class HotelsService {
       throw new ServiceUnavailableException(CATALOG_EMPTY_MESSAGE);
     }
 
+    // La moneda, ANTES de la cuota: una que la agencia no puede usar, o que su markup fijo no
+    // admite, se rechaza sin gastar nada ni llamar a nadie (D-TBO-15). Por eso las reglas del
+    // waterfall se leen acá y no después de buscar.
+    const defaults = await this.tenantDefaults(tenantId);
+    const currency = resolveHotelSearchCurrency(input.currency, defaults.currency);
+    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
+    assertRulesPriceIn(rules, currency, defaults.currency);
+
     // La cuota se comprueba antes de salir a los proveedores, que cobran por consulta. Una
     // búsqueda cuenta UNA vez aunque consulte a varios: todas sus filas comparten grupo.
     await this.telemetry.assertWithinQuota(tenantId);
 
     const { active, skipped, unavailable } = await this.registry.forTenant(tenantId);
-    const defaults = await this.tenantDefaults(tenantId);
-    const currency = input.currency ?? defaults.currency;
 
     const state: FanOutState = {
       outcomes: [
@@ -411,7 +504,6 @@ export class HotelsService {
       (r) => telemetrySlices(r.providers, state.called, state.durations),
     );
 
-    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
     return { ...result, hotels: result.hotels.map((o) => withPricing(o, rules, tenantId)) };
   }
 
@@ -488,8 +580,16 @@ export class HotelsService {
   /**
    * Tarifas de un hotel. Sin `provider`, las da el proveedor del espacio de ids de la plataforma,
    * que es donde viven los ids del listado de hoy.
+   *
+   * Es otra búsqueda, y con la misma moneda que la del listado desde el que se abrió: las mismas
+   * reglas de moneda permitida y de markup fijo, y la misma puerta ({@link gateRatesByCurrency}).
    */
   async getHotelDetail(tenantId: string, input: HotelDetailInput): Promise<HotelOffer> {
+    const defaults = await this.tenantDefaults(tenantId);
+    const currency = resolveHotelSearchCurrency(input.currency, defaults.currency);
+    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
+    assertRulesPriceIn(rules, currency, defaults.currency);
+
     const operation = 'el detalle de tarifas de un hotel';
     const provider =
       input.provider === undefined
@@ -504,14 +604,17 @@ export class HotelsService {
             supportsHotelRatesDetail,
             operation,
           );
-    const defaults = await this.tenantDefaults(tenantId);
     const query: HotelRatesQuery = {
       hotelId: input.hotelId,
       roompackId: input.roompackId,
-      ...this.stayOf(input, input.currency ?? defaults.currency, defaults.countryCode),
+      ...this.stayOf(input, currency, defaults.countryCode),
     };
 
-    const rates = await this.ratesFrom(tenantId, provider, query);
+    const rates = this.gateRatesByCurrency(
+      provider.code,
+      await this.ratesFrom(tenantId, provider, query),
+      currency,
+    );
     // Nombre, dirección y ubicación del proveedor que VENDE estas tarifas, no del hotel de otro
     // proveedor con el que se lo agrupó en el listado (RF-34).
     const offer = provider.searchProfile.contentFromCatalog
@@ -521,8 +624,35 @@ export class HotelsService {
         )
       : rates;
     // El detalle es la pantalla desde la que se reserva: sin el waterfall mostraría el neto.
-    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
     return withPricing(offer, rules, tenantId);
+  }
+
+  /**
+   * La puerta de moneda del detalle, la misma del listado (RF-13; D-TBO-15 A). El detalle no tiene
+   * `providers[]` donde explicar un descarte, así que:
+   *
+   * - todas las tarifas en otra moneda → 409 con el mismo motivo que el listado, que la web
+   *   muestra en la sección de ese proveedor; un hotel sin tarifas no es eso y sale como llegó;
+   * - sólo algunas → salen las cotizables, y el descarte queda en el log con código y conteo.
+   */
+  private gateRatesByCurrency(
+    providerCode: string,
+    rates: HotelOffer,
+    currency: string,
+  ): HotelOffer {
+    const gate = gateByCurrency([rates], currency);
+    if (gate.dropped === 0) return rates;
+    // Sólo códigos y conteos: ni payload del proveedor ni datos del huésped (RNF-07).
+    this.logger.warn(
+      `hotels.detail.currency_mismatch provider=${providerCode} expected=${currency} dropped=${gate.dropped}`,
+    );
+    const [kept] = gate.offers;
+    if (kept === undefined) {
+      throw new HotelRatesCurrencyMismatchError(
+        currencyMismatchReason(gate.droppedCurrencies, currency),
+      );
+    }
+    return kept;
   }
 
   // ───────────────────────── Fan-out ─────────────────────────

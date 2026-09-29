@@ -45,6 +45,10 @@ const rooms = z.array(RoomDistributionSchema).min(1).max(PLATFORM_OCCUPANCY_LIMI
  * Moneda de VENTA de la búsqueda: la puerta de moneda descarta las tarifas que no vengan en ella.
  * Se normaliza acá porque un `'cop'` que pasara tal cual haría descartar todas, que llegan en
  * mayúsculas.
+ *
+ * El esquema sólo exige un código ISO 4217. Cuáles puede elegir la agencia —la suya y USD
+ * (D-TBO-15, selector de moneda)— depende del tenant, así que lo decide el servicio con
+ * `resolveHotelSearchCurrency`, que responde 400 con la lista.
  */
 const saleCurrency = z.string().trim().toUpperCase().pipe(CurrencyCodeSchema);
 

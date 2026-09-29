@@ -29,7 +29,11 @@ import {
   type TboOperationName,
   type TboOperationSpec,
 } from './operations';
-import { classifyTboResponse, type TboEnvelopeOutcome } from './status-envelope';
+import {
+  classifyTboResponse,
+  type TboEnvelopeOutcome,
+  type TboVerdictRules,
+} from './status-envelope';
 
 /**
  * Cliente HTTP de TBO Hotels (docs/tbo/01 §10; 08 RF-02, RF-03, RNF-01, RNF-02, RNF-04 capa 3 y
@@ -135,6 +139,11 @@ export interface TboSendOptions<T> {
    * cancelación que pudo aplicarse (01 §9.3).
    */
   readonly responseSchema?: ZodType<T, ZodTypeDef, unknown>;
+  /**
+   * Umbral del "No Hotels Found" de TBOHotelCodeList (01 §8.5); por defecto
+   * `TBO_SLOW_NO_HOTELS_FOUND_MS`. Las filas sin esa excepción lo ignoran.
+   */
+  readonly slowNoHotelsFoundMs?: number;
 }
 
 interface TboHttpResultBase {
@@ -148,6 +157,11 @@ interface TboHttpResultBase {
   readonly attempts: number;
 }
 
+/**
+ * `NO_AVAILABILITY` es el vacío que la fila admite: el 201 de Search o el 500 "No Hotels Found" de
+ * TBOHotelCodeList que llegó antes de `slowNoHotelsFoundMs` (`tboCode` dice cuál). No es un error,
+ * así que no reintenta ni cuenta para el breaker.
+ */
 export type TboHttpResult<T> =
   | (TboHttpResultBase & { readonly outcome: 'SUCCESS'; readonly data: T })
   | (TboHttpResultBase & { readonly outcome: 'NO_AVAILABILITY' });
@@ -161,6 +175,21 @@ export const TBO_MAX_BACKOFF_MS = 4_000;
  * gasta QPS de la cuenta (INFERIDO).
  */
 export const TBO_MIN_RETRY_WINDOW_MS = 2_000;
+
+/**
+ * Desde aquí, un "No Hotels Found" de TBOHotelCodeList no es la ciudad sin hoteles sino el plazo
+ * interno de TBO vencido: `UPSTREAM`, con el reintento con backoff y el `COUNT` del breaker de
+ * cualquier 500, y `reason: 'slow_no_hotels_found'` en el log (01 §8.5).
+ *
+ * Sale del log de la primera corrida del sync en producción (2026-09-29, 86 respuestas en 20
+ * ciudades, `observed/tbo-hotel-code-list.no-hotels-found-timing.json`): las cuatro ciudades que en
+ * el reintento devolvieron hoteles habían contestado "No Hotels Found" siempre entre 5.084 y
+ * 5.092 ms; en total, 36 respuestas llegaron entre 5.084 y 5.357 ms y las otras 50 entre 93 y
+ * 4.279 ms, sin nada en medio. Con ≈ 93 ms de ida y vuelta, el plazo de TBO ronda los 5,0 s: 4.500
+ * queda por encima de la más lenta de las rápidas y deja ≈ 0,5 s de margen para una red más cercana
+ * a TBO. INFERIDO (Q-08). Se cambia con `slowNoHotelsFoundMs` del cliente de contenido o de `send`.
+ */
+export const TBO_SLOW_NO_HOTELS_FOUND_MS = 4_500;
 
 export function tboBackoffDelayMs(attempt: number, random: () => number = Math.random): number {
   const exponent = Math.max(0, attempt - 1);
@@ -329,6 +358,11 @@ const MONEY_OPERATIONS: ReadonlySet<string> = new Set<TboOperationName>(['book',
 interface CallPlan {
   readonly name: TboOperationName;
   readonly spec: TboOperationSpec;
+  /**
+   * Las columnas de la fila que usa el clasificador. En Book y Cancel, sin la excepción de "No
+   * Hotels Found" aunque la fila la pida: un 500 ahí es incierto y se concilia, nunca un vacío.
+   */
+  readonly verdictRules: TboVerdictRules;
   readonly money: boolean;
   readonly isCancel: boolean;
   readonly lane: TboLane;
@@ -497,6 +531,15 @@ export class TboHttpClient {
     return {
       name: operation,
       spec,
+      verdictRules: {
+        envelope: spec.envelope,
+        emptyOnNoAvailability: spec.emptyOnNoAvailability,
+        emptyOnNoHotelsFound: !money && spec.emptyOnNoHotelsFound,
+        slowNoHotelsFoundMs:
+          options.slowNoHotelsFoundMs !== undefined && Number.isFinite(options.slowNoHotelsFoundMs)
+            ? Math.max(1, Math.floor(options.slowNoHotelsFoundMs))
+            : TBO_SLOW_NO_HOTELS_FOUND_MS,
+      },
       money,
       isCancel: operation === 'cancel',
       lane,
@@ -598,7 +641,12 @@ export class TboHttpClient {
     const verdict =
       res === undefined || text === undefined
         ? undefined
-        : classifyTboResponse({ httpStatus: res.status, bodyText: text, operation: spec });
+        : classifyTboResponse({
+            httpStatus: res.status,
+            bodyText: text,
+            operation: plan.verdictRules,
+            durationMs,
+          });
     const status = verdict === undefined || res === undefined ? 0 : res.status;
     const outcome: TboEnvelopeOutcome | TboFailureKind =
       verdict === undefined ? 'TRANSPORT' : verdict.ok ? verdict.outcome : verdict.kind;
@@ -618,6 +666,7 @@ export class TboHttpClient {
       ...(spec.logDescription && verdict?.description !== undefined
         ? { description: verdict.description }
         : {}),
+      ...(verdict?.ok === false && verdict.reason !== undefined ? { reason: verdict.reason } : {}),
     };
     this.#count('tbo.http.requests', {
       op: plan.name,

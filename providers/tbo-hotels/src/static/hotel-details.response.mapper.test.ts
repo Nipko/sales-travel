@@ -176,6 +176,17 @@ describe('mapTboHotelDetailsResponse: RNF-16 y tolerancia', () => {
     expect(JSON.stringify(mapping)).not.toContain('example1');
   });
 
+  it('Latitude/Longitude no son de HotelDetails: sin evidencia, se registran y manda Map', () => {
+    // Sólo TBOHotelCodeList las trajo en producción (2026-09-29). Si HotelDetails empieza a
+    // mandarlas, el log lo dice y se decide con la respuesta real delante.
+    const mapping = mapDetails([{ ...hotelP59(), Latitude: 1.5, Longitude: 2.5 }]);
+    expect(mapping.hotels[0]?.location).toEqual({ lat: 24.08166, lng: 32.88985 });
+    expect(mapping.diagnostics.unknownKeys).toEqual([
+      'HotelDetails[].Latitude',
+      'HotelDetails[].Longitude',
+    ]);
+  });
+
   it('el contenedor como objeto único (lo que declara la tabla) es una lista de uno', () => {
     const mapping = mapTboHotelDetailsResponse(
       envelope({ Status: { Code: 200 }, HotelDetails: hotelP59() }),

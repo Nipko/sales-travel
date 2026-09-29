@@ -183,6 +183,7 @@ export async function runCli(io: CliIo): Promise<number> {
       ...totals,
       countries: e1.countries,
       cities: e3.cities,
+      citiesEmpty: e3.citiesEmpty,
       citiesFailed: e3.citiesFailed,
       hotelsUpserted: e3.hotelsUpserted,
       hotelsDeactivated: e3.hotelsDeactivated + (e5.status === 'done' ? e5.deactivated : 0),

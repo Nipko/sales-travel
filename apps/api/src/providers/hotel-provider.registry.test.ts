@@ -84,7 +84,10 @@ function registry(
   return new HotelProviderRegistry(factories, port);
 }
 
-/** El factory REAL de Despegar con una bóveda que nunca resuelve: sólo queda el escalón `env`. */
+/**
+ * El factory REAL de Despegar con una bóveda que nunca resuelve: sólo queda el escalón `env`, que
+ * existe sólo si hay `DESPEGAR_API_KEY`.
+ */
 function despegarSinCuenta(): DespegarHotelsProviderFactory {
   const resolve = (): Promise<ResolvedProviderAccount> =>
     Promise.reject(new NotFoundException('sin cuenta'));
@@ -258,6 +261,7 @@ describe('HotelProviderRegistry', () => {
     });
 
     it('Despegar conserva el fallback de plataforma SÓLO porque figura en la lista por defecto', async () => {
+      vi.stubEnv('DESPEGAR_API_KEY', 'plataforma-key');
       const r = registry([despegarSinCuenta()]);
 
       const { active, unavailable } = await r.forTenant(TENANT);
@@ -265,8 +269,66 @@ describe('HotelProviderRegistry', () => {
       expect(unavailable).toEqual([]);
     });
 
+    it('figurar en la lista no alcanza: sin DESPEGAR_API_KEY, Despegar queda ausente sin tocar la red', async () => {
+      // Producción, 2026-09-29: sin clave ni cuentas, seguía activo y cada búsqueda cobraba un 401.
+      vi.stubEnv('DESPEGAR_API_KEY', '');
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const red = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValue(new Error('sin red en los tests'));
+      const r = registry([
+        despegarSinCuenta(),
+        new StubHotelProviderFactory({ code: 'tbo-hotels' }),
+      ]);
+
+      const { active, unavailable } = await r.forTenant(TENANT);
+
+      expect(active.map((p) => p.code)).toEqual(['tbo-hotels']);
+      expect(unavailable).toEqual([
+        {
+          code: 'despegar-hotels',
+          reason: 'no-credentials',
+          detail:
+            'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
+        },
+      ]);
+      // La post-venta de una reserva de Despegar tampoco sale sin clave: 400 que lo dice, no un 401
+      // del proveedor traducido a 502.
+      await expect(r.byCode(TENANT, 'despegar-hotels')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+      expect(red).not.toHaveBeenCalled();
+    });
+
+    it('una cuenta de Despegar sin clave, y sin clave de plataforma, es una cuenta incompleta', async () => {
+      vi.stubEnv('DESPEGAR_API_KEY', '');
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const cuenta: ResolvedProviderAccount = {
+        id: 'acc-despegar',
+        ownerTenantId: TENANT,
+        providerCode: 'despegar-hotels',
+        label: 'default',
+        config: {},
+        credentials: {},
+        inherited: false,
+        updatedAt: new Date('2026-09-01T00:00:00Z'),
+      };
+      const despegar = new DespegarHotelsProviderFactory({
+        resolve: () => Promise.resolve(cuenta),
+      } as unknown as ProviderCredentialsService);
+
+      const { active, unavailable } = await registry([despegar]).forTenant(TENANT);
+
+      expect(active).toEqual([]);
+      expect(unavailable.map((u) => [u.code, u.reason])).toEqual([
+        ['despegar-hotels', 'incomplete-account'],
+      ]);
+      expect(unavailable[0]?.detail).toContain('apiKey');
+    });
+
     it('sacar a Despegar de la lista le quita el fallback: queda ausente con motivo', async () => {
       vi.stubEnv('PLATFORM_DEFAULT_HOTEL_PROVIDERS', '');
+      vi.stubEnv('DESPEGAR_API_KEY', 'plataforma-key');
       const r = registry([despegarSinCuenta()]);
 
       const { active, unavailable } = await r.forTenant(TENANT);

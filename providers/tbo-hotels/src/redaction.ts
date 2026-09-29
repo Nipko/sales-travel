@@ -132,6 +132,9 @@ export const TBO_LOG_FIELDS: ReadonlySet<string> = new Set([
   // aunque no sean datos personales: el log es una lista blanca (docs/tbo/05 §6.6).
   'itemsReceived',
   'itemsMapped',
+  // El `CityCode` de TBO que pidió el sync: un código de catálogo, no un dato de nadie. Lo lleva la
+  // línea de la ciudad sin hoteles (01 §8.5).
+  'cityCode',
   // Resultado de una búsqueda del adapter: nuestro `searchId` y conteos. Nunca los códigos de hotel,
   // las fechas ni la ocupación, y menos la nacionalidad del huésped (02 §5.3 punto 7).
   'searchId',

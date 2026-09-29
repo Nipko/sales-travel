@@ -219,3 +219,32 @@ Una fila de [01](../../../../docs/tbo/01-autenticacion-conectividad-y-errores.md
 archivo. Son **sintéticos**: el PDF no trae ningún ejemplo de error (00 §8.1). Cada uno declara su
 fila en `row` y su origen en `source`; los cuerpos llevan sólo el envelope, porque es lo único que
 se clasifica.
+
+La excepción es `83-500-no-hotels-found.json`, el primero que sale de una respuesta **real**: la
+ciudad sin hoteles de TBOHotelCodeList, vista 86 veces (20 ciudades) en la primera corrida del sync
+en producción contra TBO test (CO, 2026-09-29; 01 §8.5). El log (`tbo.http.error`, lista blanca de 01 §11.1)
+guardó el HTTP (200), el `content-type` (`application/json`), el tamaño (55 bytes), `Status.Code`
+(500) y `Status.Description` ("No Hotels Found"), nunca el cuerpo. El fixture lo reconstruye con
+esos datos en `bodyText`, sin espacios, porque así mide exactamente 55 bytes; el orden de las claves
+no quedó registrado y ningún test depende de él. No lleva datos de nadie: ni la ciudad ni la cuenta.
+
+## `observed/` — claves que TBO manda y el PDF no documenta
+
+| Archivo                                       | Qué se observó                                                                                                                                                                                                         | Qué es construido                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tbo-hotel-code-list.latitude-longitude.json` | En la misma corrida (2026-09-29), cada TBOHotelCodeList con hoteles registró `Hotels[].Latitude` y `Hotels[].Longitude` como claves desconocidas (`tbo.static.unknown_keys`). El PDF sólo documenta `Map` (p. 66, 69). | Todo lo demás. El log guarda NOMBRES de claves, nunca valores ni tipos, así que el fixture trae los dos tipos que el ACL acepta: número (hotel 1010099, el de p. 67 con su `Map`) y string numérico (1010100, con `Map` `"0\|0"`), más `0`/`0` (1010101) y strings vacíos (1010102), que ceden a `Map`. Nombres de hotel sintéticos salvo el de p. 67; coordenadas de Manhattan, la ciudad del ejemplo (`CityCode` 130452, p. 65). Sólo los campos que la lectura de coordenadas necesita. |
+
+Cuando la sonda de certificación capture una respuesta real con esas claves, reemplaza a este
+fixture y fija el tipo verdadero (→ [Q-63](../../../../docs/tbo/10-preguntas-para-tbo.md#q-63)).
+
+## `observed/` — tiempos del log
+
+`tbo-hotel-code-list.no-hotels-found-timing.json` es el log **real** de la misma corrida
+(2026-09-29), sin reconstruir nada: las 86 líneas `tbo.http.error` con "No Hotels Found" agrupadas
+por llamada (20), con el `durationMs` de cada intento, cómo terminó la llamada (`failed` tras 5
+intentos, o `hotels` si la línea siguiente del log es la lista de hoteles de esa ciudad) y, en ésas,
+la cota de lo que tardó la respuesta con hoteles. Cada llamada lleva el prefijo de 8 caracteres de
+nuestro `requestId` para ubicarla en el log; ni la ciudad ni la cuenta, que el log no registra. De
+aquí sale `TBO_SLOW_NO_HOTELS_FOUND_MS` ([01](../../../../docs/tbo/01-autenticacion-conectividad-y-errores.md)
+§8.5): los tests del cliente de contenido y del sync reproducen esas llamadas con un reloj falso, y
+uno de ellos comprueba que el umbral siga separando los dos grupos del log.

@@ -4,7 +4,15 @@ import { throwIfAccountFailure, unreadableItems, type StageContext } from './con
 export interface E3Result {
   readonly status: 'done' | 'skipped';
   readonly citiesDue: number;
+  /** Ciudades que TBO contestó, con hoteles o sin ellos. */
   readonly cities: number;
+  /**
+   * De ésas, las que quedaron con `hotel_count = 0` y su `synced_at`: TBO contestó "No Hotels Found"
+   * o una lista vacía, y la ciudad no tenía hoteles activos. Vuelven con la cadencia de las vacías
+   * (`TBO_SYNC_EMPTY_REFRESH_DAYS`), no en cada corrida (01 §8.5; 05 §6.3).
+   */
+  readonly citiesEmpty: number;
+  /** Ciudades que no se pudieron leer: se vuelven a pedir en la próxima corrida. */
   readonly citiesFailed: number;
   readonly hotelsUpserted: number;
   readonly hotelsDeactivated: number;
@@ -16,10 +24,23 @@ export interface E3Result {
   readonly listingContentsKept: number;
 }
 
+/**
+ * La ciudad quedó registrada como vacía: nada legible en la respuesta, nada descartado por ilegible
+ * (eso no es una ciudad vacía, es una lectura rota) y el checkpoint avanzó (sin anomalía).
+ */
+function isEmptyCity(
+  write: { readonly checkpointAdvanced: boolean; readonly hotelCount: number },
+  received: number,
+  unreadable: number,
+): boolean {
+  return received === 0 && unreadable === 0 && write.checkpointAdvanced && write.hotelCount === 0;
+}
+
 const SKIPPED: E3Result = {
   status: 'skipped',
   citiesDue: 0,
   cities: 0,
+  citiesEmpty: 0,
   citiesFailed: 0,
   hotelsUpserted: 0,
   hotelsDeactivated: 0,
@@ -37,6 +58,12 @@ const SKIPPED: E3Result = {
  * catálogo queda como estaba, su `synced_at` no avanza y la próxima corrida la vuelve a pedir.
  * Una corrida que se corta a mitad (presupuesto, `429` seguidos, SIGTERM) deja intactas las
  * ciudades que no alcanzó (08 RF-30 CA 1).
+ *
+ * Una ciudad sin hoteles NO es un fallo: TBO la contesta con `Status.Code` 500 "No Hotels Found",
+ * que el ACL entrega como lista vacía en una sola llamada (01 §8.5). Si la ciudad no tenía hoteles
+ * activos, queda con `hotel_count = 0` y su `synced_at`, y vuelve con la cadencia de las vacías
+ * (`TBO_SYNC_EMPTY_REFRESH_DAYS`). Si los tenía, la guarda del barrido la trata como anomalía: no
+ * barre nada y la ciudad queda pendiente (05 §6.5).
  *
  * Con `TBO_SYNC_CITIES` sólo se consideran esas ciudades, con la misma cadencia y el mismo orden.
  *
@@ -73,6 +100,7 @@ export async function runCityHotelsStage(
   const due = selectDueCities(candidates, { now, cadence, limit: candidates.length });
 
   let cities = 0;
+  let citiesEmpty = 0;
   let citiesFailed = 0;
   let hotelsUpserted = 0;
   let hotelsDeactivated = 0;
@@ -94,14 +122,16 @@ export async function runCityHotelsStage(
     }
 
     const { hotels, listingContents, diagnostics } = result.value;
+    const unreadable = unreadableItems(diagnostics);
     const write = await ctx.store.writeCityHotels({
       cityCode: city.code,
       hotels,
-      unreadable: unreadableItems(diagnostics),
+      unreadable,
       runStart: ctx.runStart,
       maxDrop: sweepMaxDrop,
     });
     cities += 1;
+    if (isEmptyCity(write, hotels.length, unreadable)) citiesEmpty += 1;
     hotelsUpserted += write.upserted;
     hotelsDeactivated += write.deactivated;
     if (listingContents.length > 0) {
@@ -131,7 +161,7 @@ export async function runCityHotelsStage(
         city: city.code,
         country: city.countryCode,
         missing: write.missing,
-        unreadable: unreadableItems(diagnostics),
+        unreadable,
       });
     }
   }
@@ -140,6 +170,7 @@ export async function runCityHotelsStage(
     status: 'done',
     citiesDue: due.length,
     cities,
+    citiesEmpty,
     citiesFailed,
     hotelsUpserted,
     hotelsDeactivated,

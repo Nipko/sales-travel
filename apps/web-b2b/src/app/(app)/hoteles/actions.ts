@@ -2,6 +2,18 @@
 
 import { api } from '../../../lib/api';
 import { toCountryAlpha2 } from '../../../lib/countries';
+import {
+  SUGGESTIONS_UNAVAILABLE,
+  parseSuggestionItems,
+  suggestionsErrorMessage,
+  suggestionsQuery,
+  type DestinationSuggestionsResult,
+} from './_components/destination-suggestions';
+import {
+  parseCurrencyField,
+  parseSearchCurrencies,
+  type SearchCurrencies,
+} from './_components/search-currency';
 
 /*
  * Espejo del contrato NEUTRAL de hoteles (`packages/canonical/src/hotel-offer.ts`) tal como sale
@@ -198,6 +210,8 @@ export interface HotelProviderOutcome {
   unavailableReason?: 'no-credentials' | 'incomplete-account';
   /** Tarifas que respondió y no se muestran por venir en otra moneda. */
   droppedForCurrency?: number;
+  /** En qué monedas vinieron esas tarifas. Un API anterior al selector de moneda no lo manda. */
+  droppedCurrencies?: string[];
   /** Respondió sólo una parte de sus hoteles: `reason` dice qué faltó. */
   partial?: true;
 }
@@ -213,6 +227,11 @@ export interface HotelSearchCriteriaView {
   /** Una por habitación, en el orden de la búsqueda: el detalle del hotel vuelve a pedirla igual. */
   occupancy: RoomDistribution[];
   refundableOnly: boolean;
+  /**
+   * La moneda que se pidió (D-TBO-15). Ausente: no se eligió ninguna y el API buscó en la de la
+   * agencia. El detalle del hotel vuelve a pedir la misma.
+   */
+  currency?: string;
 }
 
 export interface HotelSearchResult {
@@ -266,14 +285,31 @@ function nightsBetween(checkinDate: string, checkoutDate: string): number {
   return Math.round((toUtc(checkoutDate) - toUtc(checkinDate)) / 86_400_000);
 }
 
-/** Autocomplete de destino (ciudad/hotel). Llamado por el combobox con debounce. */
-export async function suggestDestinationsAction(query: string): Promise<GeoSuggestion[]> {
-  const q = query.trim();
-  if (q.length < 2) return [];
-  const res = await api<{ items: GeoSuggestion[] }>(
-    `/hotels/suggestions?q=${encodeURIComponent(q)}`,
-  );
-  return res.ok ? res.data.items : [];
+/**
+ * Autocomplete de destino (ciudad/hotel). Llamado por el combobox con debounce.
+ *
+ * Una consulta que falló vuelve con `error` y no como lista vacía: vacía quiere decir "no hay
+ * ciudades que coincidan", y el vendedor probaría otro nombre en vez de esperar o avisar.
+ */
+export async function suggestDestinationsAction(
+  query: string,
+): Promise<DestinationSuggestionsResult> {
+  const q = typeof query === 'string' ? suggestionsQuery(query) : undefined;
+  if (q === undefined) return { items: [] };
+  const res = await api<unknown>(`/hotels/suggestions?q=${encodeURIComponent(q)}`);
+  if (!res.ok) return { items: [], error: suggestionsErrorMessage(res.error.status) };
+  const items = parseSuggestionItems(res.data);
+  return items === undefined ? { items: [], error: SUGGESTIONS_UNAVAILABLE } : { items };
+}
+
+/**
+ * Las monedas en que la agencia puede buscar hoteles (D-TBO-15): la suya y USD. `null` si no se
+ * pudieron leer; el formulario busca entonces en la de la agencia, que el API pone sola.
+ */
+export async function hotelSearchCurrenciesAction(): Promise<SearchCurrencies | null> {
+  const res = await api<unknown>('/hotels/currencies');
+  if (!res.ok) return null;
+  return parseSearchCurrencies(res.data) ?? null;
 }
 
 /** Lo mínimo de un cliente del CRM para prellenar la búsqueda: nada de documentos ni contacto. */
@@ -350,6 +386,7 @@ export async function searchHotelsAction(
   const refundableOnly = asString(formData.get('refundableOnly')) === 'on';
   const nationalityRaw = asString(formData.get('guestNationality'));
   const guestNationality = toCountryAlpha2(nationalityRaw);
+  const currencyField = parseCurrencyField(asString(formData.get('currency')));
 
   // --- Validaciones de borde (el API revalida con Zod) ---
   if (!DATE_RE.test(checkinDate)) return fallo('Ingresá una fecha de entrada válida.');
@@ -367,11 +404,14 @@ export async function searchHotelsAction(
   if (guestNationality === undefined) {
     return fallo('No reconocemos esa nacionalidad: elegila de la lista.');
   }
+  if (!currencyField.ok) return fallo('Elegí la moneda de la búsqueda de la lista.');
+  const { currency } = currencyField;
 
   const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms, guestNationality };
   if (hotelIds.length > 0) body.hotelIds = hotelIds;
   if (destinationId !== undefined) body.destinationId = destinationId;
   if (refundableOnly) body.refundableOnly = true;
+  if (currency !== undefined) body.currency = currency;
 
   const res = await api<HotelSearchEnvelope>('/hotels/availability', {
     method: 'POST',
@@ -394,6 +434,7 @@ export async function searchHotelsAction(
       guestNationality,
       occupancy: rooms,
       refundableOnly,
+      ...(currency === undefined ? {} : { currency }),
     },
     receivedAt: Date.now(),
   };

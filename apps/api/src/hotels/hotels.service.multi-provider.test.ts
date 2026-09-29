@@ -380,6 +380,8 @@ describe('búsqueda combinada — puerta de moneda (RF-13)', () => {
         new StubHotelProviderFactory({ code: USD, currency: 'USD' }),
       ],
       catalogo: { [COP]: ['A-1'], [USD]: ['Z-1'] },
+      // Una agencia en COP: puede buscar en COP o en USD (D-TBO-15, selector de moneda).
+      tenant: { default_currency: 'COP', country_code: 'CO' },
     });
   }
 
@@ -424,7 +426,7 @@ describe('búsqueda combinada — puerta de moneda (RF-13)', () => {
 
   it('un pack de Despegar en otra moneda ahora se explica en `providers[]` (cambio declarado)', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    const b = banco();
+    const b = banco({ tenant: { default_currency: 'COP', country_code: 'CO' } });
     const res = await b.service.searchAvailability(TENANT, entrada({ currency: 'COP' }));
 
     // La respuesta grabada de Despegar viene en USD: con una búsqueda en COP no hay nada que

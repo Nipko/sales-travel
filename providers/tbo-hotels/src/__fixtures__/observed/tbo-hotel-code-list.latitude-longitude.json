@@ -1,0 +1,41 @@
+{
+  "Status": { "Code": 200, "Description": "Success" },
+  "Hotels": [
+    {
+      "HotelCode": "1010099",
+      "HotelName": "Holiday Inn Express New York - Manhattan West Side",
+      "HotelRating": "ThreeStar",
+      "CountryCode": "US",
+      "Map": "40.764167|-73.994468",
+      "Latitude": 40.764167,
+      "Longitude": -73.994468
+    },
+    {
+      "HotelCode": "1010100",
+      "HotelName": "Hotel Coordenadas En Texto",
+      "HotelRating": "FourStar",
+      "CountryCode": "US",
+      "Map": "0|0",
+      "Latitude": "40.758",
+      "Longitude": "-73.9855"
+    },
+    {
+      "HotelCode": "1010101",
+      "HotelName": "Hotel Coordenadas En Cero",
+      "HotelRating": "ThreeStar",
+      "CountryCode": "US",
+      "Map": "40.7484|-73.9857",
+      "Latitude": 0,
+      "Longitude": 0
+    },
+    {
+      "HotelCode": "1010102",
+      "HotelName": "Hotel Coordenadas Vacias",
+      "HotelRating": "TwoStar",
+      "CountryCode": "US",
+      "Map": "40.7527|-73.9772",
+      "Latitude": "",
+      "Longitude": ""
+    }
+  ]
+}

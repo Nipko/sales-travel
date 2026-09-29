@@ -285,6 +285,7 @@ function StayLine({ handoff }: { handoff: SearchHandoff }) {
     <p className="text-[11px] text-[var(--color-fg-muted)]">
       <span className="font-medium text-[var(--color-fg)]">{summary.dates}</span> ·{' '}
       {summary.details} · Nacionalidad: {summary.nationality}
+      {summary.currency ? ` · Moneda: ${summary.currency}` : null}
     </p>
   );
 }

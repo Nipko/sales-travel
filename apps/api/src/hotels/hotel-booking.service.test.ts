@@ -437,6 +437,8 @@ interface CarteraFake {
   cupoMinor?: number;
   /** Crédito interno de la agencia (`tenants.credit_limit`), en la moneda de la reserva. */
   internoMinor?: number;
+  /** Moneda de la cartera (y del crédito interno). Por defecto, la de la reserva. */
+  moneda?: string;
 }
 
 interface Fondos {
@@ -471,17 +473,22 @@ function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
       portfolio: {
         balanceMinor: estado.saldoMinor,
         creditLimitMinor: c.cupoMinor ?? 0,
-        currency: amount.currency,
+        currency: c.moneda ?? amount.currency,
         status: 'active',
       },
       ...(policy.inheritedAccount
-        ? { internalCredit: { limitMinor: c.internoMinor ?? 0, currency: amount.currency } }
+        ? {
+            internalCredit: {
+              limitMinor: c.internoMinor ?? 0,
+              currency: c.moneda ?? amount.currency,
+            },
+          }
         : {}),
     });
     if (!decision.ok) {
       throw new BookingHoldRejectedError(decision.reason, {
         amountCurrency: amount.currency,
-        portfolioCurrency: amount.currency,
+        portfolioCurrency: c.moneda ?? amount.currency,
       });
     }
   };
@@ -1976,6 +1983,30 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
     expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
     expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
     expect(b.emit).not.toHaveBeenCalled();
+  });
+
+  it('D-TBO-15: una tarifa en USD con la cartera en COP no mezcla monedas: 409 antes de revalidar, sin PreBook ni Book', async () => {
+    // La búsqueda en USD deja reservar sólo si la cartera de la agencia es en USD: la retención no
+    // convierte, y con saldo de sobra en COP igual se rechaza con el motivo de moneda.
+    const b = await banco({ cartera: { saldoMinor: 10_000_000_000, moneda: 'COP' } });
+
+    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_MISMATCH' });
+    expect((err as BookingHoldRejectedError).message).toContain(
+      'se cobra en USD y la cartera de la agencia está en COP',
+    );
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(
+      AGENCIA,
+      USD(PISO),
+      expect.anything(),
+    );
+    expect(fila(b)).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+    expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
+    expect(b.fondos.estado.saldoMinor).toBe(10_000_000_000);
   });
 
   it('RF-20 CA-1 intacto: un reintento con la misma clave es 409 de duplicado aunque la primera retención gastara el saldo', async () => {

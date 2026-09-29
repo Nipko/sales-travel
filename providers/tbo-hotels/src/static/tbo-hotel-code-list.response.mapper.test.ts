@@ -210,8 +210,8 @@ describe('mapTboCityHotelsResponse: tolerancia (05 §3)', () => {
   });
 
   it('registra el NOMBRE de una clave nueva, nunca su valor', () => {
-    const mapping = mapCity([{ HotelCode: '1', Latitude: '-12.04', GiataId: 'secret-value' }]);
-    expect(mapping.diagnostics.unknownKeys).toEqual(['Hotels[].Latitude', 'Hotels[].GiataId']);
+    const mapping = mapCity([{ HotelCode: '1', Altitude: '2640', GiataId: 'secret-value' }]);
+    expect(mapping.diagnostics.unknownKeys).toEqual(['Hotels[].Altitude', 'Hotels[].GiataId']);
     expect(JSON.stringify(mapping.diagnostics)).not.toContain('secret-value');
   });
 
@@ -228,5 +228,65 @@ describe('mapTboCityHotelsResponse: tolerancia (05 §3)', () => {
     expect(() =>
       mapTboCityHotelsResponse(envelope(P67), { cityCode: '1', countryCode: 'usa' }),
     ).toThrow(TboResponseMappingError);
+  });
+});
+
+describe('mapTboCityHotelsResponse: Latitude/Longitude (producción, 2026-09-29; 05 §2.5)', () => {
+  // Claves observadas en producción; valores y tipos construidos (ver __fixtures__/README.md).
+  const OBSERVED = JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        '..',
+        '__fixtures__',
+        'observed',
+        'tbo-hotel-code-list.latitude-longitude.json',
+      ),
+      'utf8',
+    ),
+  ) as unknown;
+  const mapping = mapTboCityHotelsResponse(envelope(OBSERVED), {
+    cityCode: '130452',
+    countryCode: 'US',
+  });
+
+  it('número o string numérico mandan sobre Map; 0/0 o vacías ceden a Map', () => {
+    expect(mapping.hotels.map((hotel) => [hotel.hotelId, hotel.location])).toEqual([
+      // Números, iguales a su Map (el hotel de p. 67).
+      ['1010099', { lat: 40.764167, lng: -73.994468 }],
+      // Strings numéricos: se usan aunque Map sea "0|0", que ni se consulta.
+      ['1010100', { lat: 40.758, lng: -73.9855 }],
+      // 0/0 es un dato vacío: cae a Map.
+      ['1010101', { lat: 40.7484, lng: -73.9857 }],
+      // Vacías son ausencia: Map, sin nota.
+      ['1010102', { lat: 40.7527, lng: -73.9772 }],
+    ]);
+  });
+
+  it('ya no son claves desconocidas; sólo el 0/0 deja nota', () => {
+    expect(mapping.diagnostics).toMatchObject({
+      received: 4,
+      mapped: 4,
+      rejected: {},
+      notes: { LAT_LNG_ZERO: 1 },
+      unknownKeys: [],
+    });
+  });
+
+  it('una pareja inválida deja su nota y cede a Map; sin Map, sin coordenadas', () => {
+    const mapped = mapCity([
+      { HotelCode: '1', Latitude: '91', Longitude: '10', Map: '4.6|-74.08' },
+      { HotelCode: '2', Latitude: 4.6, Map: '4.61|-74.09' },
+      { HotelCode: '3', Latitude: { deg: 4 }, Longitude: -74, Map: '4.62|-74.1' },
+      { HotelCode: '4', Latitude: 'x', Longitude: 'y' },
+    ]);
+    expect(mapped.hotels.map((hotel) => hotel.location)).toEqual([
+      { lat: 4.6, lng: -74.08 },
+      { lat: 4.61, lng: -74.09 },
+      { lat: 4.62, lng: -74.1 },
+      null,
+    ]);
+    expect(mapped.diagnostics.notes).toEqual({ LAT_LNG_INVALID: 4, FIELD_INVALID: 1 });
+    expect(mapped.diagnostics.unknownKeys).toEqual([]);
   });
 });

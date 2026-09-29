@@ -89,6 +89,14 @@ describe('TBO_OPERATIONS: la tabla de 01 §3.1 y 08 RNF-01', () => {
     expect(NAMES.filter((name) => TBO_OPERATIONS[name].emptyOnNoAvailability)).toEqual(['search']);
   });
 
+  it('sólo TBOHotelCodeList trata el 500 "No Hotels Found" como resultado vacío (01 §8.5)', () => {
+    // Es la única operación donde se observó (producción, 2026-09-29). CityList y HotelDetails no:
+    // sin evidencia, un 500 suyo sigue siendo UPSTREAM.
+    expect(NAMES.filter((name) => TBO_OPERATIONS[name].emptyOnNoHotelsFound)).toEqual([
+      'tboHotelCodeList',
+    ]);
+  });
+
   it('Status.Description no se loguea donde el request lleva datos personales (01 §11.1)', () => {
     expect(NAMES.filter((name) => !TBO_OPERATIONS[name].logDescription).sort()).toEqual([
       'book',

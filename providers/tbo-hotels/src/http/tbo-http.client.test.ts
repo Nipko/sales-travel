@@ -863,6 +863,259 @@ describe('reintentos', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// 01 §8.5: la ciudad sin hoteles de TBOHotelCodeList, tal como llegó en producción (2026-09-29)
+// ---------------------------------------------------------------------------------------------
+
+describe('TBOHotelCodeList: 500 "No Hotels Found" es un resultado vacío, no un error', () => {
+  const observed = FIXTURES.find(([file]) => file === '83-500-no-hotels-found.json')?.[1];
+  if (observed === undefined || 'network' in observed.response) {
+    throw new Error('falta el fixture 83-500-no-hotels-found.json');
+  }
+  const bodyText = observed.response.bodyText ?? '';
+  const noHotelsFound =
+    (status = 200): Responder =>
+    () =>
+      new Response(bodyText, { status, headers: { 'content-type': 'application/json' } });
+
+  it('el fixture es el cuerpo observado: 55 bytes, Code 500, "No Hotels Found"', () => {
+    expect(Buffer.byteLength(bodyText)).toBe(55);
+    expect(JSON.parse(bodyText)).toEqual({
+      Status: { Code: 500, Description: 'No Hotels Found' },
+    });
+  });
+
+  it('UNA llamada con los 5 intentos de la tabla: vacío con su código, sin error para el breaker', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound());
+    const { logger, calls: logs } = spyLogger();
+    const { metrics, calls: measured } = spyMetrics();
+    const sleeps: number[] = [];
+    const result = await client({
+      fetch,
+      logger,
+      metrics,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        return Promise.resolve();
+      },
+    }).send('tboHotelCodeList', { CityCode: '130452', IsDetailedResponse: 'true' });
+
+    // No lanza: no hay `TboApiError` que el breaker cuente (circuito IGNORE) ni que se reintente.
+    expect(result).toMatchObject({
+      outcome: 'NO_AVAILABILITY',
+      status: 200,
+      tboCode: 500,
+      attempts: 1,
+      requestId: REQUEST_ID,
+    });
+    expect(TBO_OPERATIONS.tboHotelCodeList.maxAttempts).toBe(5);
+    expect(calls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    expect(logs.filter((log) => log.level === 'warn' || log.level === 'error')).toEqual([]);
+    expect(logs.map((log) => log.message)).toEqual(['tbo.http.ok']);
+    expect(logs[0]).toMatchObject({
+      level: 'debug',
+      meta: { outcome: 'NO_AVAILABILITY', tboCode: 500, description: 'No Hotels Found' },
+    });
+    expect(JSON.stringify(logs)).not.toMatch(/"circuit"|"retry"/);
+    expect(measured.find((m) => m.name === 'tbo.http.requests')?.tags).toEqual({
+      op: 'tboHotelCodeList',
+      kind: 'NO_AVAILABILITY',
+      tbo_code: '500',
+    });
+  });
+
+  it('otro 500 en la misma operación sigue siendo UPSTREAM: 5 intentos y circuito COUNT', async () => {
+    const { fetch, calls } = spyFetch(
+      json({ Status: { Code: 500, Description: 'Unexpected Error' } }),
+    );
+    const error = await apiError(client({ fetch }).send('tboHotelCodeList', { probe: 1 }));
+    expect(error.kind).toBe('UPSTREAM');
+    expect(error.failure.circuit).toBe('COUNT');
+    expect(calls).toHaveLength(5);
+  });
+
+  it('el mismo cuerpo con HTTP 500 de transporte no es lo observado: UPSTREAM y se reintenta', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound(500));
+    const error = await apiError(client({ fetch }).send('tboHotelCodeList', { probe: 1 }));
+    expect(error).toMatchObject({ kind: 'UPSTREAM', status: 500, tboCode: 500 });
+    expect(calls).toHaveLength(5);
+  });
+
+  it.each(['cityList', 'hotelDetails'] as const)(
+    'en %s, sin evidencia, el mismo cuerpo es UPSTREAM y se reintenta',
+    async (op) => {
+      const { fetch, calls } = spyFetch(noHotelsFound());
+      const error = await apiError(client({ fetch }).send(op, { probe: 1 }));
+      expect(error.kind).toBe('UPSTREAM');
+      expect(calls).toHaveLength(TBO_OPERATIONS[op].maxAttempts);
+    },
+  );
+});
+
+describe('TBOHotelCodeList: un "No Hotels Found" lento es el plazo de TBO vencido (01 §8.5)', () => {
+  const observed = FIXTURES.find(([file]) => file === '83-500-no-hotels-found.json')?.[1];
+  if (observed === undefined || 'network' in observed.response) {
+    throw new Error('falta el fixture 83-500-no-hotels-found.json');
+  }
+  const bodyText = observed.response.bodyText ?? '';
+  const HOTELS = json({
+    Status: { Code: 200, Description: 'Success' },
+    Hotels: [{ HotelCode: '1' }],
+  });
+
+  /** Reloj falso del cliente: cada "No Hotels Found" lo adelanta lo que tardó en el log. */
+  function tbo(): { now: () => number; noHotelsFoundAfter: (ms: number) => Responder } {
+    let clock = 0;
+    return {
+      now: () => clock,
+      noHotelsFoundAfter: (ms) => () => {
+        clock += ms;
+        return new Response(bodyText, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    };
+  }
+
+  it('UPSTREAM con su motivo, backoff y COUNT; el reintento que trae hoteles es un éxito', async () => {
+    // d121e5da en el log: 5.088 y 5.092 ms, y el tercer intento trajo hoteles.
+    const { now, noHotelsFoundAfter } = tbo();
+    const { fetch, calls } = spyFetch(noHotelsFoundAfter(5_088), noHotelsFoundAfter(5_092), HOTELS);
+    const { logger, calls: logs } = spyLogger();
+    const { metrics, calls: measured } = spyMetrics();
+    const sleeps: number[] = [];
+    const result = await client({
+      fetch,
+      now,
+      logger,
+      metrics,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        return Promise.resolve();
+      },
+    }).send('tboHotelCodeList', { CityCode: '130452', IsDetailedResponse: 'true' });
+
+    expect(result).toMatchObject({ outcome: 'SUCCESS', status: 200, tboCode: 200, attempts: 3 });
+    expect(calls).toHaveLength(3);
+    expect(sleeps).toEqual([tboBackoffDelayMs(1, () => 0), tboBackoffDelayMs(2, () => 0)]);
+    const errors = logs.filter((log) => log.message === 'tbo.http.error');
+    expect(errors.map((log) => log.level)).toEqual(['warn', 'warn']);
+    expect(errors.map((log) => log.meta)).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        durationMs: 5_088,
+        kind: 'UPSTREAM',
+        retry: 'RETRY_BACKOFF',
+        circuit: 'COUNT',
+        reason: 'slow_no_hotels_found',
+        tboCode: 500,
+        description: 'No Hotels Found',
+        retryInMs: sleeps[0],
+      }),
+      expect.objectContaining({ attempt: 2, durationMs: 5_092, reason: 'slow_no_hotels_found' }),
+    ]);
+    expect(
+      measured.filter((m) => m.name === 'tbo.http.requests').map((m) => m.tags?.['kind']),
+    ).toEqual(['UPSTREAM', 'UPSTREAM', 'SUCCESS']);
+  });
+
+  it('lento en los 5 intentos: TboApiError UPSTREAM que el breaker cuenta, nunca un vacío', async () => {
+    // 57ed77c7 en el log: los 5 intentos entre 5.089 y 5.357 ms.
+    const { now, noHotelsFoundAfter } = tbo();
+    const { fetch, calls } = spyFetch(
+      ...[5_089, 5_092, 5_094, 5_089, 5_357].map((ms) => noHotelsFoundAfter(ms)),
+    );
+    const { logger, calls: logs } = spyLogger();
+    const error = await apiError(
+      client({ fetch, now, logger }).send('tboHotelCodeList', { CityCode: '130452' }),
+    );
+
+    expect(error).toMatchObject({ kind: 'UPSTREAM', status: 200, tboCode: 500 });
+    expect(error.failure.circuit).toBe('COUNT');
+    expect(calls).toHaveLength(TBO_OPERATIONS.tboHotelCodeList.maxAttempts);
+    const errors = logs.filter((log) => log.message === 'tbo.http.error');
+    expect(errors.map((log) => log.meta?.['reason'])).toEqual(
+      Array.from({ length: 5 }, () => 'slow_no_hotels_found'),
+    );
+    expect(errors.at(-1)?.meta).not.toHaveProperty('retryInMs');
+  });
+
+  it('el umbral es el de la opción de send, si la hay', async () => {
+    const early = tbo();
+    const late = spyFetch(early.noHotelsFoundAfter(5_092));
+    await expect(
+      client({ fetch: late.fetch, now: early.now }).send(
+        'tboHotelCodeList',
+        { probe: 1 },
+        {
+          slowNoHotelsFoundMs: 10_000,
+        },
+      ),
+    ).resolves.toMatchObject({ outcome: 'NO_AVAILABILITY', attempts: 1 });
+
+    const strict = tbo();
+    const quick = spyFetch(strict.noHotelsFoundAfter(200));
+    const error = await apiError(
+      client({ fetch: quick.fetch, now: strict.now }).send(
+        'tboHotelCodeList',
+        { probe: 1 },
+        {
+          slowNoHotelsFoundMs: 200,
+          maxAttempts: 1,
+        },
+      ),
+    );
+    expect(error.kind).toBe('UPSTREAM');
+  });
+
+  it('mide sólo el intercambio HTTP: la espera del cupo y el backoff no vuelven lento un intento', async () => {
+    // El reloj salta 10 s en cada espera del cupo y en cada backoff. Si el intento se midiera
+    // desde antes, el "No Hotels Found" de 100 ms del segundo intento contaría como lento.
+    let clock = 0;
+    const limiter: TboRateLimiter = {
+      acquire: () => {
+        clock += 10_000;
+        return Promise.resolve({ granted: true, permit: { release: () => undefined } });
+      },
+      reportThrottled: () => undefined,
+    };
+    const answer =
+      (ms: number): Responder =>
+      () => {
+        clock += ms;
+        return new Response(bodyText, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+    const { fetch, calls } = spyFetch(answer(5_088), answer(100));
+    const { logger, calls: logs } = spyLogger();
+    const result = await client({
+      fetch,
+      limiter,
+      logger,
+      now: () => clock,
+      sleep: () => {
+        clock += 10_000;
+        return Promise.resolve();
+      },
+    }).send('tboHotelCodeList', { CityCode: '130452' });
+
+    expect(result).toMatchObject({ outcome: 'NO_AVAILABILITY', attempts: 2 });
+    expect(calls).toHaveLength(2);
+    expect(
+      logs
+        .filter((log) => log.message.startsWith('tbo.http.'))
+        .map((log) => [log.message, log.meta?.['durationMs'], log.meta?.['reason']]),
+    ).toEqual([
+      ['tbo.http.error', 5_088, 'slow_no_hotels_found'],
+      ['tbo.http.ok', 100, undefined],
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
 // Dinero: una llamada, siempre (08 RF-02 CA-1). La guarda contra la tabla editada está en
 // `src/money-paths.guard.test.ts`.
 // ---------------------------------------------------------------------------------------------

@@ -37,6 +37,9 @@ import {
  * Sólo Despegar, que es como opera hoy la vertical: sacarlo de aquí dejaría sin hoteles a todo
  * tenant sin cuenta propia. Un proveedor nuevo no entra por defecto: prestar la cuenta de la
  * plataforma significa consultas y reservas facturadas a quien no las pidió.
+ *
+ * Figurar aquí no alcanza: el factory tiene que tener con qué llamar. Sin `DESPEGAR_API_KEY`, el de
+ * Despegar ya lo deja ausente antes de llegar a esta lista.
  */
 const DEFAULT_PLATFORM_HOTEL_PROVIDERS = 'despegar-hotels';
 

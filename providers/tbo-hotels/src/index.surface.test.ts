@@ -388,7 +388,10 @@ const PROBED: readonly ProbedModule[] = [
   {
     name: 'static/tbo-hotel-code-list.response.mapper',
     module: cityHotelsMapper,
-    notPublished: { mapTboCityHotelsResponse: 'recibe el sobre crudo de TBO' },
+    notPublished: {
+      mapTboCityHotelsResponse: 'recibe el sobre crudo de TBO',
+      emptyTboCityHotelsMapping: 'la usa el cliente de contenido ante un "No Hotels Found"',
+    },
   },
   {
     name: 'static/hotel-details.response.mapper',
@@ -417,10 +420,12 @@ const PROBED: readonly ProbedModule[] = [
       TboRatingFieldSchema: RAW_SCHEMA,
       TboListFieldSchema: RAW_SCHEMA,
       TboAttractionsFieldSchema: RAW_SCHEMA,
+      TboCoordinateFieldSchema: RAW_SCHEMA,
       TBO_STATIC_ROOT_KEYS: 'detalle de la detección de claves desconocidas de los mappers',
       TBO_COUNTRY_ITEM_KEYS: 'ídem',
       TBO_CITY_ITEM_KEYS: 'ídem',
       TBO_HOTEL_FIELD_KEYS: 'ídem',
+      TBO_CITY_HOTEL_FIELD_KEYS: 'ídem',
     },
   },
   {
@@ -441,6 +446,7 @@ const PROBED: readonly ProbedModule[] = [
       stripTboControlChars: NORMALIZER,
       normalizeTboStars: NORMALIZER,
       normalizeTboMap: NORMALIZER,
+      normalizeTboLatLng: NORMALIZER,
       normalizeTboCountryCode: NORMALIZER,
       normalizeTboCheckTime: NORMALIZER,
       normalizeTboImageUrl: NORMALIZER,

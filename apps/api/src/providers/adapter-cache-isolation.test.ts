@@ -245,6 +245,8 @@ describe('aislamiento del caché de adapters de hoteles entre tenants', () => {
   });
 
   it('el adapter de la cuenta de plataforma no se mezcla con el de una agencia', async () => {
+    // Sin clave de plataforma no hay escalón `env`: Despegar queda ausente (su factory lo prueba).
+    vi.stubEnv('DESPEGAR_API_KEY', 'plataforma-key');
     let hayCuenta = true;
     const factory = despegarCon(() =>
       hayCuenta

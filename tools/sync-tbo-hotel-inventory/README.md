@@ -110,7 +110,7 @@ Vacía = el valor por defecto de `src/env.ts`, que las valida con Zod al arranca
 | `TBO_SYNC_CODELIST_TIMEOUT_MS`    | `180000`                     | Timeout de `hotelcodelist` (E5)                                          |
 | `TBO_SYNC_DEMAND_REFRESH_HOURS`   | `20`                         | Cada cuánto se refresca una ciudad con demanda                           |
 | `TBO_SYNC_REFRESH_DAYS`           | `7`                          | Cada cuánto se refresca el resto                                         |
-| `TBO_SYNC_EMPTY_REFRESH_DAYS`     | `30`                         | Cada cuánto se refresca una ciudad que dio 0 hoteles                     |
+| `TBO_SYNC_EMPTY_REFRESH_DAYS`     | `30`                         | Cada cuánto se refresca una ciudad que dio 0 hoteles ("No Hotels Found") |
 | `TBO_SYNC_DEMAND_WINDOW_DAYS`     | `14`                         | Ventana de `search_logs` que define la demanda                           |
 | `TBO_SYNC_CONTENT_SCOPE`          | `demand`                     | `demand` o `all`: a qué hoteles les toca HotelDetails (E4)               |
 | `TBO_SYNC_LANGS`                  | `ES,PT,EN`                   | Idiomas de los hoteles con demanda                                       |
@@ -167,3 +167,14 @@ la clave al contenedor y quitar las dos variables de `catalog.env`.
 
 4. Repetir el paso 2: `pendientes` baja y las ciudades ya recorridas conservan su `synced_at`, es
    decir, la corrida siguió donde quedó la anterior.
+
+Una ciudad sin hoteles no es un fallo: TBO la contesta con `Status.Code` 500 "No Hotels Found", el ACL
+la entrega como lista vacía en una sola llamada si llegó en menos de 4.500 ms
+(`TBO_SLOW_NO_HOTELS_FOUND_MS`) y la ciudad queda con `hotel_count = 0` y su `synced_at`, sin volver a
+pedirse hasta `TBO_SYNC_EMPTY_REFRESH_DAYS`. Las líneas de E3 y de `tbo.sync.result` la cuentan en
+`citiesEmpty`, aparte de `citiesFailed`, y cada una deja una línea `info`
+`tbo.static.city_without_hotels` con la ciudad y lo que tardó la llamada. Si el "No Hotels Found"
+tarda 4.500 ms o más, es el plazo interno de TBO vencido: el ACL lo reintenta como un `500` (líneas
+`warn` `tbo.http.error` con `reason: "slow_no_hotels_found"`) y, si no se recupera, la ciudad cuenta
+en `citiesFailed` y se vuelve a pedir en la próxima corrida
+([docs/tbo/01](../../docs/tbo/01-autenticacion-conectividad-y-errores.md) §8.5).

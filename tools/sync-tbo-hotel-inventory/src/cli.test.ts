@@ -180,6 +180,8 @@ describe('runCli: corrida', () => {
       calls: 4,
       countries: ['AR'],
       cities: 1,
+      citiesEmpty: 0,
+      citiesFailed: 0,
       hotelsUpserted: 1,
       // El texto de TBOHotelCodeList queda como respaldo en inglés; sin destinos con demanda
       // todavía (sin mapa de E6), E4 no tiene hoteles que pedir con el alcance por defecto.

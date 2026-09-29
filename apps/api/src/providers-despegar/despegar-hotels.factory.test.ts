@@ -1,12 +1,13 @@
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { DespegarApiError, DespegarHotelsAdapter } from '@sales-travel/despegar-hotels';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { humanizeDespegarError } from '../hotels/despegar-hotels-errors.js';
 import type {
   ProviderCredentialsService,
   ResolvedProviderAccount,
 } from '../provider-credentials/provider-credentials.service.js';
 import type { HotelProviderFactory } from '../providers/hotel-provider.types.js';
+import { ProviderAccountIncompleteError } from '../providers/provider.types.js';
 import { DespegarHotelProviderAdapter } from './despegar-hotel-provider.adapter.js';
 import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
 
@@ -30,6 +31,23 @@ function factoryWith(
   return new DespegarHotelsProviderFactory({ resolve } as unknown as ProviderCredentialsService);
 }
 
+/** Las entradas del caché: dicen si se construyó algún adapter. */
+function cacheDe(factory: DespegarHotelsProviderFactory): Map<string, unknown> {
+  return (factory as unknown as { cache: Map<string, unknown> }).cache;
+}
+
+const PLATAFORMA_KEY = 'plataforma-key';
+
+beforeEach(() => {
+  // Nada del entorno de quien corre los tests: cada caso dice si la plataforma tiene clave.
+  vi.stubEnv('DESPEGAR_API_KEY', '');
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
 describe('DespegarHotelsProviderFactory', () => {
   it('reusa la instancia para credenciales idénticas (cache)', async () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
@@ -48,6 +66,7 @@ describe('DespegarHotelsProviderFactory', () => {
   });
 
   it('cae al fallback de entorno cuando el tenant no resuelve nada', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', PLATAFORMA_KEY);
     const factory = factoryWith(() => Promise.reject(new NotFoundException('none')));
     const a = await factory.forTenant('t1');
     const b = await factory.forTenant('t2');
@@ -55,6 +74,7 @@ describe('DespegarHotelsProviderFactory', () => {
   });
 
   it('usa adapters distintos para BYOC vs fallback env', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', PLATAFORMA_KEY);
     let mode: 'byoc' | 'env' = 'byoc';
     const factory = factoryWith(() =>
       mode === 'env' ? Promise.reject(new NotFoundException('none')) : Promise.resolve(resolved()),
@@ -107,6 +127,7 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
   });
 
   it('`resolveForTenant` entrega el contrato neutral y dice de dónde son las credenciales', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', PLATAFORMA_KEY);
     let cuenta: 'propia' | 'heredada' | 'ninguna' = 'propia';
     const factory = factoryWith(() => {
       if (cuenta === 'ninguna') return Promise.reject(new NotFoundException('none'));
@@ -139,7 +160,7 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
     const segundo = await factory.resolveForTenant('t1');
 
     expect(segundo.adapter).toBe(primero.adapter);
-    expect((factory as unknown as { cache: Map<string, unknown> }).cache.size).toBe(1);
+    expect(cacheDe(factory).size).toBe(1);
   });
 
   it('traduce los errores de Despegar con el mismo texto que el filtro de la vertical', () => {
@@ -153,5 +174,137 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
     expect(factory.humanizeError(err)).toBe(humanizeDespegarError(err.status, err.body));
     expect(factory.humanizeError(new Error('pedido incompleto'))).toBe('pedido incompleto');
     expect(factory.humanizeError('texto suelto')).toBe('texto suelto');
+  });
+});
+
+/**
+ * Producción, 2026-09-29: sin `DESPEGAR_API_KEY` ni cuentas en la bóveda, Despegar seguía activo con
+ * una clave vacía y cada sugerencia y cada búsqueda salían a cobrar un 401. Sin clave, ahora queda
+ * AUSENTE antes de construir nada o de tocar la red; con clave, todo sigue como antes.
+ */
+describe('DespegarHotelsProviderFactory — puerta de credenciales', () => {
+  beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  function sinCuenta(): DespegarHotelsProviderFactory {
+    return factoryWith(() => Promise.reject(new NotFoundException('sin cuenta')));
+  }
+
+  /** Un `fetch` global que responde vacío y deja ver con qué clave salió cada llamada. */
+  function redEspiada(): MockInstance<typeof fetch> {
+    return vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(new Response('{"items":[]}', { status: 200 })));
+  }
+
+  function claveDe(red: MockInstance<typeof fetch>, llamada = 0): unknown {
+    const init = red.mock.calls[llamada]?.[1];
+    return (init?.headers as Record<string, string> | undefined)?.['x-apikey'];
+  }
+
+  it('sin cuenta y sin DESPEGAR_API_KEY: ausente como "sin cuenta", sin construir adapter ni salir a la red', async () => {
+    const red = redEspiada();
+    const factory = sinCuenta();
+
+    const err = await factory.resolveForTenant('t1').catch((e: unknown) => e);
+
+    // `NotFoundException` a secas: el registry la traduce a `no-credentials`. No hay cuenta que
+    // completar, así que NO puede ser la de cuenta incompleta.
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).not.toBeInstanceOf(ProviderAccountIncompleteError);
+    await expect(factory.forTenant('t1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(cacheDe(factory).size).toBe(0);
+    expect(red).not.toHaveBeenCalled();
+  });
+
+  it('una DESPEGAR_API_KEY de sólo espacios cuenta como ausente', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', '   \t ');
+    const factory = sinCuenta();
+
+    await expect(factory.resolveForTenant('t1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(cacheDe(factory).size).toBe(0);
+  });
+
+  it('la falta de clave de la plataforma se avisa UNA vez por proceso, no en cada búsqueda', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const factory = sinCuenta();
+
+    await factory.resolveForTenant('t1').catch(() => undefined);
+    await factory.resolveForTenant('t2').catch(() => undefined);
+    await factory.forTenant('t1').catch(() => undefined);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('DESPEGAR_API_KEY vacía');
+  });
+
+  it('con DESPEGAR_API_KEY, sin cuenta: activo por el escalón de plataforma, con esa clave', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', PLATAFORMA_KEY);
+    const red = redEspiada();
+    const factory = sinCuenta();
+
+    const r = await factory.resolveForTenant('t1');
+    await (await factory.forTenant('t1')).suggest('bogo');
+
+    expect(r.credentialSource).toBe('env');
+    expect(r.adapter).toBeInstanceOf(DespegarHotelProviderAdapter);
+    expect(claveDe(red)).toBe(PLATAFORMA_KEY);
+  });
+
+  it('con la clave de la cuenta en la bóveda: activo aunque la plataforma no tenga, con la de la cuenta', async () => {
+    const red = redEspiada();
+    const factory = factoryWith(() =>
+      Promise.resolve(resolved({ credentials: { apiKey: 'clave-de-la-agencia' } })),
+    );
+
+    const r = await factory.resolveForTenant('t1');
+    await (await factory.forTenant('t1')).suggest('bogo');
+
+    expect(r.credentialSource).toBe('own');
+    expect(claveDe(red)).toBe('clave-de-la-agencia');
+  });
+
+  it('la clave se lee también como `apikey` y sale recortada', async () => {
+    const red = redEspiada();
+    const factory = factoryWith(() =>
+      Promise.resolve(resolved({ credentials: { apikey: '  clave-heredada  ' }, inherited: true })),
+    );
+
+    const r = await factory.resolveForTenant('t1');
+    await (await factory.forTenant('t1')).suggest('bogo');
+
+    expect(r.credentialSource).toBe('inherited');
+    expect(claveDe(red)).toBe('clave-heredada');
+  });
+
+  it('una cuenta sin clave toma la de la plataforma, como antes, y sigue saliendo como suya', async () => {
+    vi.stubEnv('DESPEGAR_API_KEY', PLATAFORMA_KEY);
+    const red = redEspiada();
+    const factory = factoryWith(() => Promise.resolve(resolved({ credentials: { apiKey: ' ' } })));
+
+    const r = await factory.resolveForTenant('t1');
+    await (await factory.forTenant('t1')).suggest('bogo');
+
+    expect(r.credentialSource).toBe('own');
+    expect(claveDe(red)).toBe(PLATAFORMA_KEY);
+  });
+
+  it('una cuenta sin clave y sin clave de plataforma: cuenta incompleta que nombra el campo, sin valores', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const red = redEspiada();
+    const factory = factoryWith(() =>
+      Promise.resolve(resolved({ credentials: { apiKey: '', secreto: 'no-se-loguea' } })),
+    );
+
+    const err = await factory.resolveForTenant('t1').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ProviderAccountIncompleteError);
+    expect((err as ProviderAccountIncompleteError).missingFields).toEqual(['apiKey']);
+    await expect(factory.forTenant('t1')).rejects.toBeInstanceOf(ProviderAccountIncompleteError);
+    expect(cacheDe(factory).size).toBe(0);
+    expect(red).not.toHaveBeenCalled();
+    // Por tenant y cada vez: es una cuenta que ALGUIEN tiene que completar.
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('no-se-loguea');
   });
 });

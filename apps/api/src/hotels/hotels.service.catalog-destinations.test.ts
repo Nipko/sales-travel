@@ -1,8 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { DespegarApiError } from '@sales-travel/despegar-hotels';
 import type { TboFetch } from '@sales-travel/tbo-hotels';
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+  type MockInstance,
+} from 'vitest';
 import type { TenantType } from '../database/database.types.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import type {
@@ -10,6 +20,7 @@ import type {
   ResolvedProviderAccount,
 } from '../provider-credentials/provider-credentials.service.js';
 import type { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
+import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import { TboHotelsProviderFactory } from '../providers-tbo/tbo-hotels.factory.js';
 import type { HotelProviderFactory } from '../providers/hotel-provider.types.js';
 import type { ProviderFlagsPort } from '../providers/provider.types.js';
@@ -36,7 +47,7 @@ import { HotelOperationUnavailableError } from './hotel-provider-errors.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
-import { HotelAvailabilityInputSchema } from './hotels.schemas.js';
+import { HotelAvailabilityInputSchema, HotelDetailInputSchema } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
 
 /**
@@ -138,9 +149,11 @@ function boveda(cuentaTbo: boolean): ProviderCredentialsService {
  * Cómo está Despegar para la agencia:
  * - `certificacion`: `opt-in` y apagado, como en `docker-compose.cert.yml` (no toca ni la bóveda);
  * - `sin-cuenta`: habilitado, pero sin cuenta resoluble (`unavailable`);
- * - `activo`: como en producción.
+ * - `sin-clave`: producción el 2026-09-29 —habilitado por `PLATFORM_DEFAULT_HOTEL_PROVIDERS`, sin
+ *   cuenta en la bóveda y con `DESPEGAR_API_KEY` vacía—, con el factory REAL de Despegar;
+ * - `activo`: como en producción con clave.
  */
-type Despegar = 'certificacion' | 'sin-cuenta' | 'activo';
+type Despegar = 'certificacion' | 'sin-cuenta' | 'sin-clave' | 'activo';
 
 interface Banco {
   service: HotelsService;
@@ -149,6 +162,7 @@ interface Banco {
   fetch: Mock<TboFetch>;
   db: FakeHotelsDb;
   instrument: Mock;
+  breaker: CircuitBreakerService;
 }
 
 function banco(
@@ -157,6 +171,7 @@ function banco(
     cuentaTbo?: boolean;
     flagTbo?: boolean;
     ciudades?: readonly FilaCiudad[];
+    ciudadesFallan?: Error;
     catalogoTbo?: readonly string[];
   } = {},
 ): Banco {
@@ -170,9 +185,11 @@ function banco(
     fakeDespegar.resolveForTenant.mockRejectedValue(new NotFoundException('sin cuenta'));
   }
   const fetch = vi.fn<TboFetch>((_url, init) => Promise.resolve(respuestaSearch(init ?? {})));
+  const cuentas = boveda(opts.cuentaTbo ?? true);
   const factories: HotelProviderFactory[] = [
-    fakeDespegar.factory,
-    new TboHotelsProviderFactory(boveda(opts.cuentaTbo ?? true), fetch),
+    // La bóveda no tiene cuenta de Despegar para nadie: sólo queda su escalón de plataforma.
+    modo === 'sin-clave' ? new DespegarHotelsProviderFactory(cuentas) : fakeDespegar.factory,
+    new TboHotelsProviderFactory(cuentas, fetch),
   ];
   const flags: ProviderFlagsPort = hotelFlags(
     (_tenant, code) => code === TBO && (opts.flagTbo ?? true),
@@ -181,8 +198,10 @@ function banco(
   const db = fakeHotelsDb({
     catalogo: { [TBO]: opts.catalogoTbo ?? CATALOGO_TBO },
     ciudades: opts.ciudades ?? [BOGOTA],
+    ...(opts.ciudadesFallan === undefined ? {} : { ciudadesFallan: opts.ciudadesFallan }),
   });
   const instrument = vi.fn(async (_meta: unknown, run: () => Promise<unknown>) => run());
+  const breaker = new CircuitBreakerService();
   const service = new HotelsService(
     hotelRegistry(factories, flags),
     db.service,
@@ -191,7 +210,7 @@ function banco(
       assertWithinQuota: () => Promise.resolve(),
       instrument,
     } as unknown as SearchTelemetryService,
-    new CircuitBreakerService(),
+    breaker,
     new HotelSearchContextStore(new MemoryCacheAdapter()),
   );
   const controller = new HotelsController(
@@ -203,7 +222,7 @@ function banco(
     {} as HotelBookingService,
     {} as HotelContentService,
   );
-  return { service, controller, despegar, fetch, db, instrument };
+  return { service, controller, despegar, fetch, db, instrument, breaker };
 }
 
 /** `POST /hotels/availability` con el Zod del endpoint, como lo manda la web. */
@@ -222,13 +241,17 @@ function parteDe(res: HotelSearchEnvelope, code: string): HotelProviderOutcome |
   return res.providers.find((p) => p.code === code);
 }
 
+/** Los avisos del log de cada test: ahí queda la red de seguridad de las sugerencias. */
+let warn: MockInstance<Logger['warn']>;
+
 beforeEach(() => {
-  vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
   vi.stubEnv('PROVIDERS_DISABLED', '');
   vi.stubEnv('HOTEL_PROVIDER_CALL_POLICIES', '');
   vi.stubEnv('PLATFORM_DEFAULT_HOTEL_PROVIDERS', DESPEGAR);
+  vi.stubEnv('DESPEGAR_API_KEY', '');
 });
 
 afterEach(() => {
@@ -334,15 +357,161 @@ describe('GET /hotels/suggestions — con Despegar activo, nada cambia', () => {
     expect(res).toBe(await b.despegar.suggest.mock.results[0]?.value);
     expect(b.db.consultasA('hotel_provider_city')).toEqual([]);
   });
+});
 
-  it('si Despegar está apagado por kill-switch la sugerencia falla con él: no cambia de espacio de ids', async () => {
+/** Lo que se escribió en el log de avisos, en una sola cadena. */
+function avisos(): string {
+  return JSON.stringify(warn.mock.calls);
+}
+
+/**
+ * Hasta esta red, un Despegar que fallaba dejaba al vendedor sin ninguna ciudad aunque el catálogo
+ * de TBO tuviera la que buscaba. Ahora el catálogo lo reemplaza, sólo cuando tiene algo que ofrecer,
+ * y sin saltarse el circuito.
+ */
+describe('GET /hotels/suggestions — Despegar falla: el catálogo local como red de seguridad', () => {
+  const caido = (): DespegarApiError =>
+    new DespegarApiError(503, '{"message":"upstream down"}', '/suggestions/hotels');
+
+  it('Despegar caído: las ciudades del catálogo, y el fallo igual cuenta en su circuito', async () => {
+    const b = banco({ despegar: 'activo' });
+    b.despegar.suggest.mockRejectedValue(caido());
+
+    const res = await b.controller.suggestions('user-1', { q: 'Bogotá', locale: 'es_CO' });
+
+    expect(res.items.map((s) => s.id)).toEqual([DESTINO_TBO]);
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(1);
+    expect(b.breaker.snapshot()[DESPEGAR]).toEqual({ state: 'closed', failures: 1 });
+    expect(avisos()).toContain(
+      `hotels.suggest.catalog_fallback provider=${DESPEGAR} cause=DespegarApiError catalog=${TBO} count=1`,
+    );
+    // Ni lo escrito por el vendedor ni el texto del proveedor.
+    expect(avisos()).not.toMatch(/bogot|upstream/i);
+  });
+
+  it('con su circuito abierto, el catálogo responde sin volver a llamar a Despegar', async () => {
+    const b = banco({ despegar: 'activo' });
+    b.despegar.suggest.mockRejectedValue(caido());
+
+    for (let i = 0; i < 5; i += 1) await b.service.suggest(AGENCIA, 'bogo');
+    const res = await b.service.suggest(AGENCIA, 'bogo');
+
+    expect(b.breaker.snapshot()[DESPEGAR]?.state).toBe('open');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(5);
+    expect(res.map((s) => s.id)).toEqual([DESTINO_TBO]);
+    expect(avisos()).toContain('cause=breaker:provider-circuit');
+  });
+
+  it('con Despegar apagado por kill-switch, el catálogo, sin llamarlo', async () => {
     vi.stubEnv('PROVIDERS_DISABLED', DESPEGAR);
     const b = banco({ despegar: 'activo' });
 
+    const res = await b.service.suggest(AGENCIA, 'bogo');
+
+    expect(res.map((s) => s.id)).toEqual([DESTINO_TBO]);
+    expect(b.despegar.suggest).not.toHaveBeenCalled();
+    expect(avisos()).toContain('cause=breaker:kill-switch');
+  });
+
+  it('un rechazo que no es un Error también se clasifica, sin citarlo', async () => {
+    const b = banco({ despegar: 'activo' });
+    b.despegar.suggest.mockRejectedValue('texto crudo del proveedor');
+
+    expect((await b.service.suggest(AGENCIA, 'bogo')).map((s) => s.id)).toEqual([DESTINO_TBO]);
+    expect(avisos()).toContain('cause=string');
+    expect(avisos()).not.toContain('texto crudo');
+  });
+
+  it('sin coincidencias en el catálogo: el error de Despegar, no una lista vacía', async () => {
+    const err = caido();
+    const b = banco({ despegar: 'activo', ciudades: [] });
+    b.despegar.suggest.mockRejectedValue(err);
+
+    // Una lista vacía con Despegar caído se leería como "esa ciudad no existe".
+    await expect(b.service.suggest(AGENCIA, 'bogo')).rejects.toBe(err);
+    expect(b.db.consultasA('hotel_provider_city')).toHaveLength(1);
+    expect(avisos()).not.toContain('catalog_fallback');
+  });
+
+  it('sin proveedores de catálogo activos: el error de siempre, sin tocar la base', async () => {
+    vi.stubEnv('PROVIDERS_DISABLED', DESPEGAR);
+    const b = banco({ despegar: 'activo', flagTbo: false });
+
     const err = await b.service.suggest(AGENCIA, 'bogo').catch((e: unknown) => e);
+
     expect(err).toBeInstanceOf(BreakerRejectionError);
     expect(err).toBeInstanceOf(ServiceUnavailableException);
     expect(b.db.consultasA('hotel_provider_city')).toEqual([]);
+  });
+
+  it('si el catálogo también falla: el error de Despegar, y el log no cita la base', async () => {
+    const err = caido();
+    const b = banco({
+      despegar: 'activo',
+      ciudadesFallan: new Error('conexión perdida consultando "bogo"'),
+    });
+    b.despegar.suggest.mockRejectedValue(err);
+
+    await expect(b.service.suggest(AGENCIA, 'bogo')).rejects.toBe(err);
+    expect(avisos()).toContain(
+      `hotels.suggest.catalog_fallback_failed provider=${DESPEGAR} cause=DespegarApiError`,
+    );
+    expect(avisos()).not.toContain('conexión perdida');
+  });
+});
+
+/**
+ * Producción el 2026-09-29: `DESPEGAR_API_KEY` vacía y ninguna cuenta de Despegar en la bóveda, con
+ * el catálogo de TBO ya sincronizado. Despegar seguía activo con una clave vacía, las sugerencias
+ * se le pedían a él, fallaban, y el vendedor no encontraba ninguna ciudad. Todo con el factory REAL
+ * de Despegar: lo que se prueba es su puerta de credenciales dentro de la vertical.
+ */
+describe('producción sin clave de Despegar: ausente, y la vertical sigue con TBO', () => {
+  it('las sugerencias salen del catálogo de TBO sin salir a Despegar', async () => {
+    const red = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sin red en los tests'));
+    const b = banco({ despegar: 'sin-clave' });
+
+    const res = await b.controller.suggestions('user-1', { q: 'Bogotá', locale: 'es_CO' });
+
+    expect(res.items.map((s) => s.id)).toEqual([DESTINO_TBO]);
+    expect(red).not.toHaveBeenCalled();
+    expect(avisos()).not.toContain('catalog_fallback');
+  });
+
+  it('la búsqueda llama sólo a TBO, y `providers[]` dice que Despegar no tiene credenciales', async () => {
+    const red = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sin red en los tests'));
+    const b = banco({ despegar: 'sin-clave' });
+
+    const res = await buscar(b, DESTINO_TBO);
+
+    expect(red).not.toHaveBeenCalled();
+    expect(b.fetch).toHaveBeenCalledTimes(1);
+    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: CATALOGO_TBO.length });
+    expect(parteDe(res, DESPEGAR)).toMatchObject({
+      status: 'unavailable',
+      unavailableReason: 'no-credentials',
+      reason: expect.stringContaining('Credenciales') as unknown,
+    });
+    expect(b.instrument.mock.calls[0]?.[0]).toMatchObject({ providerCodes: [TBO] });
+  });
+
+  it('el detalle sin proveedor no cae a Despegar sin clave: 503 que nombra la operación', async () => {
+    // La web siempre manda el proveedor de la tarifa; sin él, manda el de la plataforma, que no hay.
+    const red = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sin red en los tests'));
+    const b = banco({ despegar: 'sin-clave' });
+    const input = HotelDetailInputSchema.parse({
+      hotelId: '101',
+      checkinDate: '2026-11-10',
+      checkoutDate: '2026-11-12',
+      rooms: [{ adults: 2, childrenAges: [] }],
+      guestNationality: 'CO',
+    });
+
+    const err = await b.service.getHotelDetail(AGENCIA, input).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HotelOperationUnavailableError);
+    expect((err as HotelOperationUnavailableError).message).toContain('detalle de tarifas');
+    expect(red).not.toHaveBeenCalled();
   });
 });
 

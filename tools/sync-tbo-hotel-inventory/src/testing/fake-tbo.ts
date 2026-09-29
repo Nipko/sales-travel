@@ -84,6 +84,45 @@ export function tboStatus(code: number, description: string): Response {
   return jsonResponse({ Status: { Code: code, Description: description } });
 }
 
+interface ObservedEnvelopeFixture {
+  readonly response: {
+    readonly status: number;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly bodyText: string;
+  };
+}
+
+/**
+ * La ciudad sin hoteles tal como la contestó TBO en producción (2026-09-29): HTTP 200 con
+ * `Status.Code` 500 "No Hotels Found", del fixture del ACL (`envelope/83-500-no-hotels-found.json`).
+ */
+export function tboNoHotelsFound(): Response {
+  const { response } = aclFixture(
+    'envelope/83-500-no-hotels-found.json',
+  ) as ObservedEnvelopeFixture;
+  return new Response(response.bodyText, { status: response.status, headers: response.headers });
+}
+
+interface NoHotelsFoundTimingFixture {
+  readonly calls: readonly {
+    readonly requestId: string;
+    readonly noHotelsFoundMs: readonly number[];
+  }[];
+}
+
+/**
+ * Lo que tardó cada "No Hotels Found" de una llamada del log del 2026-09-29, por el prefijo de su
+ * `requestId` (`observed/tbo-hotel-code-list.no-hotels-found-timing.json` del ACL).
+ */
+export function observedNoHotelsFoundMs(requestId: string): readonly number[] {
+  const { calls } = aclFixture(
+    'observed/tbo-hotel-code-list.no-hotels-found-timing.json',
+  ) as NoHotelsFoundTimingFixture;
+  const call = calls.find((candidate) => candidate.requestId === requestId);
+  if (call === undefined) throw new Error(`la llamada ${requestId} no está en el log`);
+  return call.noHotelsFoundMs;
+}
+
 interface CountryListFixture {
   readonly Status: unknown;
   readonly CountryList: readonly { readonly Code: string; readonly Name: string }[];

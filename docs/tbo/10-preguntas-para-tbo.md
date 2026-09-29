@@ -24,7 +24,8 @@ Fuentes y convención de citas: [00-fuentes.md](./00-fuentes.md) §9. "(p. N)" e
 
 ### 0.2 Estado y cierre
 
-- Todas las preguntas están **abiertas** al 2026-09-23.
+- Todas las preguntas están **abiertas** al 2026-09-23, salvo las marcadas **Parcial**.
+- Una pregunta queda **parcial** cuando lo observado en producción responde una parte: se anota la evidencia con su fecha en la propia pregunta, se ajusta la postura y lo que sigue sin respuesta se pregunta igual. Desde el 2026-09-29 están así [Q-08](#q-08) (la ciudad sin hoteles de `TBOHotelCodeList`) y [Q-63](#q-63) (`Latitude` y `Longitude`), por la primera corrida del sync.
 - Una pregunta se cierra de dos maneras: por **respuesta de TBO** (se anota la fecha, quién respondió y el texto, y se archiva el email en `docs/tbo/evidence/`) o por **sonda** (las sondas PR-01 a PR-11 del arnés, [07](./07-certificacion.md) §6.8, y las capturas de los casos de certificación). La línea "Cierre posible" de cada pregunta dice cuál aplica.
 - Una sonda solo cierra lo que observa en el entorno de test. Lo que depende de live, del contrato comercial o de una política de TBO se pregunta igual.
 - Al cerrar una pregunta se actualiza la postura en el documento de origen y en [08](./08-requisitos-maestro.md). El ID no se reutiliza.
@@ -71,7 +72,7 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 | [Q-05](#q-05) | Casing de los paths y verbos HTTP                                               | Conectividad  | Importante | Abierta | PR-04                    |
 | [Q-06](#q-06) | Basic Auth: juego de caracteres, rotación y allowlist de IP                     | Conectividad  | Importante | Abierta | Solo TBO                 |
 | [Q-07](#q-07) | HTTP de transporte frente a `Status.Code`, y muestras de error reales           | Conectividad  | Importante | Abierta | PR-06                    |
-| [Q-08](#q-08) | Códigos `Status.Code` posibles por método                                       | Conectividad  | Importante | Abierta | PR-07                    |
+| [Q-08](#q-08) | Códigos `Status.Code` posibles por método                                       | Conectividad  | Importante | Parcial | PR-07                    |
 | [Q-09](#q-09) | Timeouts de los métodos sin recomendación                                       | Conectividad  | Menor      | Abierta | Solo TBO                 |
 | [Q-10](#q-10) | Límite de QPS y concurrencia                                                    | Conectividad  | Bloqueante | Abierta | Solo TBO                 |
 | [Q-11](#q-11) | Canal de soporte y logs para `UNEXPECTED_ERROR`                                 | Conectividad  | Importante | Abierta | Solo TBO                 |
@@ -126,7 +127,7 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 | [Q-60](#q-60) | Catálogo global o por cuenta                                                    | Contenido     | Bloqueante | Abierta | Captura en certificación |
 | [Q-61](#q-61) | Vigencia y tamaño de `hotelcodelist`                                            | Contenido     | Menor      | Abierta | Solo TBO                 |
 | [Q-62](#q-62) | `HotelDetails`: lote máximo y códigos inexistentes                              | Contenido     | Importante | Abierta | Solo TBO                 |
-| [Q-63](#q-63) | `TBOHotelCodeList` con `IsDetailedResponse: false` y tipos del request          | Contenido     | Importante | Abierta | Solo TBO                 |
+| [Q-63](#q-63) | `TBOHotelCodeList` con `IsDetailedResponse: false` y tipos del request          | Contenido     | Importante | Parcial | Solo TBO                 |
 | [Q-64](#q-64) | `TBOHotelCodeList`: paginación, completitud y códigos de ciudad                 | Contenido     | Menor      | Abierta | Solo TBO                 |
 | [Q-65](#q-65) | Detalle por habitación (`IsRoomDetailRequired`) y `RoomID`                      | Contenido     | Menor      | Abierta | Solo TBO                 |
 | [Q-66](#q-66) | Idiomas de contenido                                                            | Contenido     | Importante | Abierta | Solo TBO                 |
@@ -269,19 +270,21 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 ### Q-08
 
-**Códigos `Status.Code` posibles por método** · Importante · Abierta · Origen: [01](./01-autenticacion-conectividad-y-errores.md) §8.3, H-07; [03](./03-prebook-y-book.md) §2.12, H-15; [05](./05-contenido-estatico-e-inventario.md) §13.
+**Códigos `Status.Code` posibles por método** · Importante · Parcial · Origen: [01](./01-autenticacion-conectividad-y-errores.md) §8.3, §8.5, H-07; [03](./03-prebook-y-book.md) §2.12, H-15; [05](./05-contenido-estatico-e-inventario.md) §2.5, §13, CE-21.
 
 **Contexto.** La tabla "Response Status" lista 12 códigos (pp. 8–10) sin decir qué método devuelve cuál. El único ejemplo de error es el `201` de Search (p. 18). VERIFICADO-PDF.
 
+**Evidencia (2026-09-29).** Primera corrida del sync en producción con la cuenta de test (`countries=CO`): `TBOHotelCodeList` contesta una ciudad **existente** sin hoteles con HTTP 200 y `{"Status":{"Code":500,"Description":"No Hotels Found"}}` (55 bytes). Pasó en 20 de las 197 ciudades pedidas en el primer intento; 16 lo repitieron en los 5 intentos y 4 devolvieron hoteles en el segundo o el tercero. Los 86 intentos con ese texto forman dos grupos: 36 entre 5.084 y 5.357 ms, entre ellos todos los de esas 4 (de 5.084 a 5.092 ms), y 50 entre 93 y 4.279 ms (42 por debajo de 0,7 s), ninguno de una ciudad que después devolviera hoteles. Las respuestas con hoteles de esas 4 tardaron como mucho entre ≈ 2,7 y 4,8 s, cota por marcas de tiempo ([01](./01-autenticacion-conectividad-y-errores.md) §8.5). Queda respondido el código de una ciudad sin hoteles en `TBOHotelCodeList`; el resto de la pregunta sigue abierto, y la evidencia abre la parte (c).
+
 **Pregunta (EN).**
 
-> The Response Status table lists 12 codes (pp. 8–10) but does not say which method can return which. Please give the list of possible `Status.Code` values for `Search`, `PreBook`, `Book`, `BookingDetail`, `Cancel`, `BookingDetailsbasedondate`, `CountryList`, `CityList`, `TBOHotelCodeList`, `HotelDetails` and `hotelcodelist`. In particular: (a) can `PreBook` return `201`, `207`, `300` or `315`? (b) What do the static methods return for a nonexistent `CountryCode` or `CityCode`, or for an account without permission?
+> The Response Status table lists 12 codes (pp. 8–10) but does not say which method can return which. Please give the list of possible `Status.Code` values for `Search`, `PreBook`, `Book`, `BookingDetail`, `Cancel`, `BookingDetailsbasedondate`, `CountryList`, `CityList`, `TBOHotelCodeList`, `HotelDetails` and `hotelcodelist`. In particular: (a) can `PreBook` return `201`, `207`, `300` or `315`? (b) What do the static methods return for a nonexistent `CountryCode` or `CityCode`, or for an account without permission? (c) In the test environment, `TBOHotelCodeList` answers some cities listed by `CityList` with HTTP 200 and `{"Status":{"Code":500,"Description":"No Hotels Found"}}`. We read it as "this city has no hotels". Is that the intended meaning? For a few cities the same request returned a normal hotel list when retried a few seconds later, and those first answers took about 5 seconds. Can "No Hotels Found" also be returned when an internal timeout expires? If so, how can we tell the two cases apart?
 
-**Por qué la necesitamos.** La política por código ([01](./01-autenticacion-conectividad-y-errores.md) §8.3) y la clasificación del Book ([03](./03-prebook-y-book.md) §3.9) aceptan cualquier código en cualquier operación. Con el reparto real, un código imposible para ese método se convierte en alerta.
+**Por qué la necesitamos.** La política por código ([01](./01-autenticacion-conectividad-y-errores.md) §8.3) y la clasificación del Book ([03](./03-prebook-y-book.md) §3.9) aceptan cualquier código en cualquier operación. Con el reparto real, un código imposible para ese método se convierte en alerta. La parte (c) decide si una ciudad "vacía" puede esperar 30 días (`TBO_SYNC_EMPTY_REFRESH_DAYS`) o hay que volver a pedirla antes.
 
-**Cierre posible.** Sonda PR-07 ([07](./07-certificacion.md) §6.8): PreBook con un `BookingCode` inventado.
+**Cierre posible.** Sonda PR-07 ([07](./07-certificacion.md) §6.8): PreBook con un `BookingCode` inventado. La parte (c) solo la cierra TBO.
 
-**Postura si no responden.** Cualquier código se acepta en cualquier operación; la política depende de la operación; un código fuera de la tabla es `UNKNOWN_CODE` con alerta al operador ([01](./01-autenticacion-conectividad-y-errores.md) §8.3, §8.4).
+**Postura si no responden.** Cualquier código se acepta en cualquier operación; la política depende de la operación; un código fuera de la tabla es `UNKNOWN_CODE` con alerta al operador ([01](./01-autenticacion-conectividad-y-errores.md) §8.3, §8.4). En `TBOHotelCodeList`, el 500 "No Hotels Found" con HTTP 2xx que llega en menos de 4.500 ms (`TBO_SLOW_NO_HOTELS_FOUND_MS`) es una lista vacía en una sola llamada, sin reintento; la ciudad nueva queda con `hotel_count = 0` y vuelve con la cadencia de las vacías, y una ciudad que tenía hoteles nunca se barre con esa respuesta ([05](./05-contenido-estatico-e-inventario.md) §6.3, §6.5). El que tarda 4.500 ms o más se trata como un plazo interno vencido: `UPSTREAM` con reintento, `reason: "slow_no_hotels_found"` en el log y, si no se recupera en los 5 intentos, la ciudad fallida, que se vuelve a pedir en la próxima corrida ([01](./01-autenticacion-conectividad-y-errores.md) §8.5). Si TBO confirma el plazo y su duración, se ajusta el umbral.
 
 ### Q-09
 
@@ -1079,17 +1082,19 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 ### Q-63
 
-**`TBOHotelCodeList` con `IsDetailedResponse: false` y tipos del request** · Importante · Abierta · Origen: [05](./05-contenido-estatico-e-inventario.md) §2.5, §6.3, CE-08.
+**`TBOHotelCodeList` con `IsDetailedResponse: false` y tipos del request** · Importante · Parcial · Origen: [05](./05-contenido-estatico-e-inventario.md) §2.5, §3, §6.3, CE-08, CE-22.
 
 **Contexto.** `TBOHotelCodeList` recibe `CityCode` (Integer) e `IsDetailedResponse` (Boolean), pero el PDF y Postman envían strings (`"130452"`, `"true"`) (p. 65; Postman: `TBOHotelCodeList`). Key Point 2 recomienda `IsDetailedResponse` en 'False' sin decir a qué método aplica (p. 71). No se documenta qué campos llegan con `false`. VERIFICADO-PDF / VERIFICADO-POSTMAN.
 
+**Evidencia (2026-09-29).** En la primera corrida del sync en producción (cuenta de test, `countries=CO`, `IsDetailedResponse: "true"`), las 181 ciudades con hoteles trajeron por hotel `Latitude` y `Longitude`, dos claves que la tabla (p. 66) no lista: el log las registró como desconocidas (`tbo.static.unknown_keys`), por nombre y sin valores. Responde que con `"true"` hay coordenadas propias además de `Map`; no dice su tipo ni qué pasa con `"false"`, así que se agrega la parte (d).
+
 **Pregunta (EN).**
 
-> (a) Which fields does `TBOHotelCodeList` return when `IsDetailedResponse` is false? In particular, are `Map`, `HotelRating` and `CountryCode` included? (b) Does Key Point 2 (p. 71), which recommends 'False', apply to `Search`, to `TBOHotelCodeList`, or to both? (c) Does `TBOHotelCodeList` accept a numeric `CityCode` and a JSON boolean `IsDetailedResponse`, or only the strings used in the PDF and Postman examples (p. 65)?
+> (a) Which fields does `TBOHotelCodeList` return when `IsDetailedResponse` is false? In particular, are `Map`, `HotelRating` and `CountryCode` included? (b) Does Key Point 2 (p. 71), which recommends 'False', apply to `Search`, to `TBOHotelCodeList`, or to both? (c) Does `TBOHotelCodeList` accept a numeric `CityCode` and a JSON boolean `IsDetailedResponse`, or only the strings used in the PDF and Postman examples (p. 65)? (d) With `IsDetailedResponse` "true", every hotel also carries `Latitude` and `Longitude`, which the response table (p. 66) does not list. Are they always present? Are they numbers or strings? If they disagree with `Map`, which one is authoritative? Are they also returned when `IsDetailedResponse` is false?
 
-**Por qué la necesitamos.** Sin `Map`, `HotelRating` y `CountryCode` no hay inventario útil, centroides de ciudad ni deduplicación ([05](./05-contenido-estatico-e-inventario.md) §6.3).
+**Por qué la necesitamos.** Sin `Map`, `HotelRating` y `CountryCode` no hay inventario útil, centroides de ciudad ni deduplicación ([05](./05-contenido-estatico-e-inventario.md) §6.3). Si `Latitude` y `Longitude` llegan también con `false`, esa respuesta más liviana alcanzaría para las coordenadas.
 
-**Postura si no responden.** Etapa E3 con `"IsDetailedResponse": "true"` (string) hasta probar `"false"` en certificación ([05](./05-contenido-estatico-e-inventario.md) §6.3).
+**Postura si no responden.** Etapa E3 con `"IsDetailedResponse": "true"` (string) hasta probar `"false"` en certificación ([05](./05-contenido-estatico-e-inventario.md) §6.3). `Latitude` y `Longitude` se aceptan como número o string numérico y mandan sobre `Map` cuando dan un punto válido; si no, se usa `Map` ([05](./05-contenido-estatico-e-inventario.md) §3).
 
 ### Q-64
 
@@ -1664,7 +1669,7 @@ Q-07.
 The outcome of every call is Status.Code in the response body (pp. 8–10), but the PDF has no error example other than 201 (p. 18), and the Postman collection has no saved responses. (a) Does the HTTP transport status mirror Status.Code (for example HTTP 401, 429 or 500), or is the transport always HTTP 200 with the code in the body? (b) On a Basic Auth failure, do you return HTTP 401 without a JSON body, or a JSON body with Status.Code 401? (c) Could you send one real response body for each of 400, 401, 402, 429, 500, 207, 300, 315, 405 and 479?
 
 Q-08.
-The Response Status table lists 12 codes (pp. 8–10) but does not say which method can return which. Please give the list of possible Status.Code values for Search, PreBook, Book, BookingDetail, Cancel, BookingDetailsbasedondate, CountryList, CityList, TBOHotelCodeList, HotelDetails and hotelcodelist. In particular: (a) can PreBook return 201, 207, 300 or 315? (b) What do the static methods return for a nonexistent CountryCode or CityCode, or for an account without permission?
+The Response Status table lists 12 codes (pp. 8–10) but does not say which method can return which. Please give the list of possible Status.Code values for Search, PreBook, Book, BookingDetail, Cancel, BookingDetailsbasedondate, CountryList, CityList, TBOHotelCodeList, HotelDetails and hotelcodelist. In particular: (a) can PreBook return 201, 207, 300 or 315? (b) What do the static methods return for a nonexistent CountryCode or CityCode, or for an account without permission? (c) In the test environment, TBOHotelCodeList answers some cities listed by CityList with HTTP 200 and {"Status":{"Code":500,"Description":"No Hotels Found"}}. We read it as "this city has no hotels". Is that the intended meaning? For a few cities the same request returned a normal hotel list when retried a few seconds later, and those first answers took about 5 seconds. Can "No Hotels Found" also be returned when an internal timeout expires? If so, how can we tell the two cases apart?
 
 Q-09.
 The timeout table on page 8 only covers Search (5–23 s), PreBook (23 s) and Book (120 s). What timeouts do you recommend for BookingDetail, Cancel, BookingDetailsbasedondate, CountryList, CityList, TBOHotelCodeList, HotelDetails and hotelcodelist?
@@ -1813,7 +1818,7 @@ Q-62.
 For HotelDetails (pp. 56, 58): (a) What is the maximum number of codes per call in Hotelcodes? The Postman request sends 13 codes as one comma-separated string. (b) Does it also accept a JSON array? (c) If one of the codes does not exist, does the whole batch fail, or is only that hotel left out?
 
 Q-63.
-(a) Which fields does TBOHotelCodeList return when IsDetailedResponse is false? In particular, are Map, HotelRating and CountryCode included? (b) Does Key Point 2 (p. 71), which recommends 'False', apply to Search, to TBOHotelCodeList, or to both? (c) Does TBOHotelCodeList accept a numeric CityCode and a JSON boolean IsDetailedResponse, or only the strings used in the PDF and Postman examples (p. 65)?
+(a) Which fields does TBOHotelCodeList return when IsDetailedResponse is false? In particular, are Map, HotelRating and CountryCode included? (b) Does Key Point 2 (p. 71), which recommends 'False', apply to Search, to TBOHotelCodeList, or to both? (c) Does TBOHotelCodeList accept a numeric CityCode and a JSON boolean IsDetailedResponse, or only the strings used in the PDF and Postman examples (p. 65)? (d) With IsDetailedResponse "true", every hotel also carries Latitude and Longitude, which the response table (p. 66) does not list. Are they always present? Are they numbers or strings? If they disagree with Map, which one is authoritative? Are they also returned when IsDetailedResponse is false?
 
 Q-64.
 (a) Does TBOHotelCodeList paginate or truncate the response for large cities? Is there a maximum number of hotels per city? (b) Why does the example omit CityId, which the response table declares (p. 66)? (c) Are CityList[].Code, TBOHotelCodeList.CityCode and HotelDetails[].CityId the same code? Are city codes stable over time, and can a hotel move to a different city code? (d) The tables say Integer, but every example is a string. Which type should we send and expect?

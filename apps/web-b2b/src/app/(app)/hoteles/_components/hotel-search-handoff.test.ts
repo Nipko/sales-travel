@@ -60,6 +60,20 @@ describe('parseStay — la estadía que se vuelve a pedir', () => {
     expect(parseStay({ ...STAY, refundableOnly: 'true' })?.refundableOnly).toBe(false);
     expect(parseStay({ ...STAY, refundableOnly: true })?.refundableOnly).toBe(true);
   });
+
+  it('D-TBO-15: la moneda de la búsqueda viaja con la estadía', () => {
+    expect(parseStay({ ...STAY, currency: 'USD' })).toEqual({ ...STAY, currency: 'USD' });
+  });
+
+  it('sin moneda también vale (la de la agencia, o una guardada antes del selector)', () => {
+    expect(parseStay(STAY)).not.toHaveProperty('currency');
+  });
+
+  it('una moneda que no es un código ISO no se descarta callada: no hay estadía', () => {
+    expect(parseStay({ ...STAY, currency: 'usd' })).toBeUndefined();
+    expect(parseStay({ ...STAY, currency: 'DOLAR' })).toBeUndefined();
+    expect(parseStay({ ...STAY, currency: 840 })).toBeUndefined();
+  });
 });
 
 describe('parseHandoffs — lo guardado, sin confiar en su forma', () => {
@@ -154,5 +168,18 @@ describe('dirección del detalle', () => {
         refundableOnly: false,
       }),
     ).toEqual(STAY);
+  });
+
+  it('con la moneda que se eligió: el detalle pide sus tarifas en la misma', () => {
+    expect(
+      stayOfCriteria({
+        checkinDate: STAY.checkinDate,
+        checkoutDate: STAY.checkoutDate,
+        occupancy: STAY.rooms,
+        guestNationality: 'CO',
+        refundableOnly: false,
+        currency: 'USD',
+      }),
+    ).toEqual({ ...STAY, currency: 'USD' });
   });
 });

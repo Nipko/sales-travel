@@ -213,6 +213,7 @@ describe('respondedOutcome — parte de un proveedor que respondió', () => {
       reason:
         'Cotiza en USD y esta búsqueda es en COP: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.',
       droppedForCurrency: 1,
+      droppedCurrencies: ['USD'],
     });
     // Tampoco aporta sus hoteles sin tarifas: sin nada cotizable, sólo harían ruido.
     expect(r.offers).toEqual([]);
@@ -228,7 +229,24 @@ describe('respondedOutcome — parte de un proveedor que respondió', () => {
       count: 1,
       reason: '1 tarifa en USD no se muestra: esta búsqueda es en COP.',
       droppedForCurrency: 1,
+      droppedCurrencies: ['USD'],
     });
+  });
+
+  it('D-TBO-15: las monedas descartadas viajan ordenadas y sin repetir, para ofrecer cambiar', () => {
+    const offers = [
+      hotel('H-1', [pack('alfa', '1', 'USD'), pack('alfa', '2', 'EUR')]),
+      hotel('H-2', [pack('alfa', '3', 'USD')]),
+    ];
+    const r = respondedOutcome('alfa', gateByCurrency(offers, 'COP'), 'COP');
+    expect(r.outcome.droppedCurrencies).toEqual(['EUR', 'USD']);
+    expect(r.outcome.droppedForCurrency).toBe(3);
+  });
+
+  it('sin descarte no hay monedas descartadas', () => {
+    const offers = [hotel('H-1', [pack('alfa', '1', 'COP')])];
+    const r = respondedOutcome('alfa', gateByCurrency(offers, 'COP'), 'COP');
+    expect(r.outcome).not.toHaveProperty('droppedCurrencies');
   });
 
   it('el motivo parcial va en plural con más de una tarifa', () => {

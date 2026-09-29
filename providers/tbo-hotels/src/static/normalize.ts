@@ -77,6 +77,49 @@ export type TboMapRead =
   | { readonly location: TboGeoPoint; readonly issue?: undefined }
   | { readonly location: null; readonly issue?: 'MAP_INVALID' | 'MAP_ZERO' };
 
+export type TboLatLngRead =
+  | { readonly location: TboGeoPoint; readonly issue?: undefined }
+  | { readonly location: null; readonly issue?: 'LAT_LNG_INVALID' | 'LAT_LNG_ZERO' };
+
+type PointCheck = 'ok' | 'out-of-range' | 'zero';
+
+/** Rango y `0|0`, igual para `Map` que para `Latitude`/`Longitude`. */
+function checkPoint(lat: number, lng: number): PointCheck {
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return 'out-of-range';
+  return lat === 0 && lng === 0 ? 'zero' : 'ok';
+}
+
+/** Un eje: número finito o string con la forma de `Map`. `undefined` si no es ninguno. */
+function readAxis(value: string | number): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  const text = value.trim();
+  return COORDINATE.test(text) ? Number(text) : undefined;
+}
+
+function isBlank(value: string | number | undefined): boolean {
+  return value === undefined || (typeof value === 'string' && value.trim().length === 0);
+}
+
+/**
+ * `Latitude` y `Longitude` de TBOHotelCodeList (sin documentar; producción, 2026-09-29) →
+ * `{lat, lng}`, con número o string numérico en cada eje y las mismas reglas que `Map`: rango válido
+ * y `0|0` es un dato vacío. Los dos ausentes o vacíos son ausencia, sin nota; uno solo, o uno que no
+ * es número, es inválido. El llamador cae a `Map` cuando esto no da un punto.
+ */
+export function normalizeTboLatLng(
+  latitude: string | number | undefined,
+  longitude: string | number | undefined,
+): TboLatLngRead {
+  if (isBlank(latitude) && isBlank(longitude)) return { location: null };
+  const lat = latitude === undefined ? undefined : readAxis(latitude);
+  const lng = longitude === undefined ? undefined : readAxis(longitude);
+  if (lat === undefined || lng === undefined) return { location: null, issue: 'LAT_LNG_INVALID' };
+  const check = checkPoint(lat, lng);
+  if (check === 'out-of-range') return { location: null, issue: 'LAT_LNG_INVALID' };
+  if (check === 'zero') return { location: null, issue: 'LAT_LNG_ZERO' };
+  return { location: { lat, lng } };
+}
+
 /**
  * `Map` es `"lat|lon"` (p. 62, 69) → `{lat, lng}` con rangos válidos. `"0|0"` no es un hotel en el
  * golfo de Guinea sino un dato vacío (INFERIDO, 05 §3): con él, el centroide de la ciudad y el
@@ -98,8 +141,9 @@ export function normalizeTboMap(value: string): TboMapRead {
   }
   const lat = Number(latText);
   const lng = Number(lngText);
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return { location: null, issue: 'MAP_INVALID' };
-  if (lat === 0 && lng === 0) return { location: null, issue: 'MAP_ZERO' };
+  const check = checkPoint(lat, lng);
+  if (check === 'out-of-range') return { location: null, issue: 'MAP_INVALID' };
+  if (check === 'zero') return { location: null, issue: 'MAP_ZERO' };
   return { location: { lat, lng } };
 }
 
