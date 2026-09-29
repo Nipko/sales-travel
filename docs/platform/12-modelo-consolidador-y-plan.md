@@ -1,10 +1,12 @@
 # 12 — Modelo Consolidador (B2B2B / BYOC), Diagnóstico de Gaps y Plan de Implementación
 
-**Versión:** 1.0 (borrador de trabajo)
-**Fecha:** 2026-06-03
+**Versión:** 1.1
+**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-28 (modelo de red validado, §3.0)
 **Propósito:** Tres cosas en un solo documento: (1) incorporar formalmente el **modelo consolidador con credenciales propias (BYOC)** al target de la plataforma; (2) un **diagnóstico honesto** de dónde estamos vs. la visión y vs. el mercado; (3) un **plan secuenciado** para construirlo y pulirlo con UX limpia y mejores prácticas.
 
 > Este doc es la fuente de verdad para el modelo consolidador. El target ya quedó reflejado en `CLAUDE.md`, `docs/discovery/06-documento-maestro.md` §1.1 y `docs/platform/10-mapa-completo-plataforma.md` (entidad TENANT + jerarquía M8.1).
+
+> **Actualización 2026-09-28: el modelo de red está validado y firmado por el founder.** Planetour es la raíz única de tipo `platform`. Vende a nombre propio por sus **sucursales**. Las agencias externas y los consolidadores cuelgan de Planetour. El **superadmin** cuadra la red, pero **no vende**. Lo firmado está en [§3.0](#30-modelo-de-red-validado-2026-09-28) y manda sobre lo que diga en contrario el resto del documento, que se escribió en junio. La auditoría, lo que ya se arregló, lo pendiente y el runbook de producción están en [13 — Validación del modelo de red](./13-validacion-modelo-red.md).
 
 ---
 
@@ -71,6 +73,44 @@ La base técnica es **correcta y disciplinada** (hexagonal, ACL, RLS, minor unit
 
 ## 3. El modelo consolidador — arquitectura objetivo
 
+### 3.0 Modelo de red validado (2026-09-28)
+
+Modelo de negocio del founder, validado contra el código y los datos de producción en la auditoría del 2026-09-28 ([13](./13-validacion-modelo-red.md)).
+
+```
+Planetour S.A.S  (platform, raíz única; superadmin: cuadra la red, no vende)
+├── Sucursal Planetour …      (agency + is_branch; vendedores de Planetour)
+├── Amazon Minimalist         (agency externa; vende a nombre de Planetour)
+│   └── sub-agencia …         (subagency)
+└── Consolidador …            (consolidator; credenciales propias)
+    └── agencia …             (agency)
+        └── sub-agencia …     (subagency)
+```
+
+| Actor                     | Qué es                                                                                                                                                                                                     | Cómo está modelado                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Planetour**             | Mayorista. Provee proveedores, credenciales y contenidos a toda su red.                                                                                                                                    | Tenant slug `platform` ("Planetour S.A.S"), `tenant_type = 'platform'`, raíz única.                    |
+| **Superadmin**            | Superusuario de Planetour. Ve y ajusta ("cuadra") toda la red: nodos, usuarios, credenciales, reglas y habilitación de proveedores. **No vende**, ni siquiera desde una sucursal donde además sea miembro. | Membership `superadmin` en Planetour. Las rutas de venta le responden 403 `PLATFORM_ROLE_CANNOT_SELL`. |
+| **Sucursal**              | Así vende Planetour a nombre propio, con sus propios vendedores.                                                                                                                                           | `agency` hija directa de Planetour con `is_branch = true`. La UI la muestra como "Sucursal".           |
+| **Agencia externa**       | Cuelga de Planetour, vende a nombre de Planetour y hereda sus credenciales. Ejemplo: Amazon Minimalist, que hoy es raíz suelta y se mueve bajo Planetour desde el panel.                                   | `agency` hija de Planetour.                                                                            |
+| **Consolidador**          | Hijo de Planetour con credenciales propias. Provee a su propia jerarquía.                                                                                                                                  | `consolidator` hijo de Planetour. Sólo lo crea el superadmin.                                          |
+| **Agencia / sub-agencia** | Venden dentro de la red de su padre y heredan sus credenciales, salvo que traigan las propias (BYOC).                                                                                                      | `agency` bajo un consolidador; `subagency` bajo una agencia.                                           |
+| **Vendedor**              | Persona que vende en un nodo. No es un tenant.                                                                                                                                                             | Membership `vendedor` en ese nodo.                                                                     |
+
+En esta etapa ser sucursal no cambia ni el pricing ni las carteras: una sucursal se comporta como cualquier agencia hija de Planetour. Con las sucursales queda resuelta la pregunta "¿cómo vende Planetour a nombre propio?" (D1 de la auditoría).
+
+**Decisiones de la red (auditoría del 2026-09-28).** Las cita el código (por ejemplo, "D4 A" en `db/migrations/0050_tenant_hierarchy_rules.sql`). No son las D1–D5 de junio de [§7](#7-riesgos-y-decisiones-abiertas).
+
+| #   | Decisión                                                                    | Elegida                                                                                                                                                                                                                                                                                                                                                                | Dónde se aplica                                                                                  |
+| --- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| D1  | ¿Cómo vende Planetour a nombre propio?                                      | ✅ **Sucursales**: agencias hijas de Planetour con `is_branch`, cada una con sus vendedores. La raíz provee y administra.                                                                                                                                                                                                                                              | Migración 0050; _Gestión de Agencias_.                                                           |
+| D4  | ¿Qué tipo de nodo puede colgar de cuál?                                     | ✅ **A, jerarquía estricta.** Un solo `platform` y es la raíz. Bajo `platform`: `consolidator` y `agency` (las sucursales incluidas). Bajo `consolidator`: `agency`. Bajo `agency`: `subagency`. Máximo 4 niveles. La sucursal sólo cuelga de `platform`.                                                                                                              | Índice único y trigger de 0050, en toda escritura de `tenants`. La API deriva el tipo del padre. |
+| D6  | ¿Qué pasa al mover un nodo de padre?                                        | ✅ **A.** Lo histórico (órdenes, movimientos de cartera) queda como está; desde el cambio rigen las credenciales, reglas y marca del nuevo padre. Se rechazan ciclos, más de 4 niveles y lo que viole D4. Se bloquea si el nodo o su subárbol tiene reservas abiertas pagadas con cartera, o reservas abiertas hechas con una cuenta de un ancestro que deja de serlo. | `move_tenant_subtree` (0051), sólo superadmin; `POST /admin/tenants/:id/move`.                   |
+| D7  | Rol `platform_admin`                                                        | ✅ **B, retirado como rol asignable.** Sigue en el enum por compatibilidad, pero ni la API ni la web lo asignan.                                                                                                                                                                                                                                                       | `ASSIGNABLE_ROLES` y los Zod de la API; aceptar una invitación.                                  |
+| D2  | ¿Planetour cobra margen a un consolidador que vende con su propio contrato? | Abierta. Recomendada: B, fee de plataforma aparte, arranca en 0.                                                                                                                                                                                                                                                                                                       | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
+| D3  | ¿Dónde viven las credenciales de Planetour?                                 | Abierta. Recomendada: A, todas en la bóveda y sin respaldo de variables del servidor.                                                                                                                                                                                                                                                                                  | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
+| D5  | ¿Quién puede "entrar como" otro nodo?                                       | Abierta. Recomendada: A ahora (sólo el superadmin, auditado) y B cuando exista el primer consolidador real.                                                                                                                                                                                                                                                            | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
+
 ### 3.1 Jerarquía de tenants
 
 Hoy `tenants` es plano. Se añade jerarquía con **materialized path** (extensión `ltree`), que da queries jerárquicas O(1) por índice GiST sin recursión:
@@ -86,9 +126,10 @@ CREATE INDEX idx_tenants_path_gist ON tenants USING GIST (path);
 CREATE INDEX idx_tenants_parent ON tenants(parent_tenant_id);
 ```
 
-- `path` se mantiene con trigger en insert/move (re-parent es raro y se hace en transacción).
-- **Niveles:** `platform` (nosotros) → `consolidator` → `agency` → `subagency`. Un vendedor es un **usuario** con membership en un nodo, no un tenant.
-- Profundidad: soportar N niveles técnicamente, limitar a 4 por política de negocio (evita árboles patológicos).
+- `path` se mantiene con trigger en insert. Cambiar de padre por `UPDATE` está bloqueado; se hace sólo con `move_tenant_subtree` (0051), que recalcula el `path` de todo el subárbol en una transacción (D6 A, [§3.0](#30-modelo-de-red-validado-2026-09-28)).
+- **Niveles:** `platform` (Planetour, raíz única) → `consolidator` → `agency` → `subagency`. Bajo `platform` también cuelgan agencias directas, sucursales incluidas (`is_branch`). La matriz exacta es D4 A ([§3.0](#30-modelo-de-red-validado-2026-09-28)) y la impone la base (0050). Un vendedor es un **usuario** con membership en un nodo, no un tenant.
+- Profundidad: máximo 4 niveles por política de negocio (evita árboles patológicos).
+- `tenants.is_branch` (0050): marca la sucursal de Planetour. Sólo puede ser `true` en una `agency` hija directa de `platform`.
 
 ### 3.2 BYOC — credenciales de proveedor por nodo + resolución (núcleo del pedido)
 
@@ -156,6 +197,9 @@ El JWT actual sólo lleva `sub`; el tenant se infiere del "primer membership". P
 - **JWT lleva tenant activo** (`{ sub, tid, role }`) + endpoint de **switch-tenant** para usuarios multi-nodo. Refresh tokens rotatorios.
 - **Roles ampliados:** añadir `consolidator_admin` (gestiona su red, agencias, credenciales, override) y `agency_admin` distinto de `subagency`. Mapear los actuales (`tenant_admin`/`admin`) a la nueva jerarquía con migración.
 - **Visibilidad jerárquica:** un `consolidator_admin` puede ver/administrar sus descendientes; una agencia **no** ve hacia arriba ni lateral. Se implementa en RLS (§3.5) + guards ABAC.
+- **Superadmin (2026-09-28):** administra toda la red pero **no vende**. Las rutas de venta (`@SalesOperation()`: búsquedas, PreBook, Book, órdenes nuevas, pago/emisión, cotizaciones, paquetes y reservas con cartera) responden 403 `PLATFORM_ROLE_CANNOT_SELL` a los roles de plataforma, en cualquier nodo. Planetour vende con usuarios de sus sucursales ([§3.0](#30-modelo-de-red-validado-2026-09-28)).
+- **`platform_admin` retirado (D7 B):** sigue en el enum de roles por compatibilidad, pero ni la API ni la web lo asignan.
+- **Anti-escalada (G-06):** el rango se mide sobre el nodo destino y nadie asigna un rol igual o superior al propio.
 
 ### 3.5 RLS jerárquica
 
@@ -333,17 +377,19 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 
 ## 7. Riesgos y decisiones abiertas
 
-| #   | Riesgo / decisión                                                     | Nota                                                                                                                                                                                  |
-| --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | **Migración de tenancy plana → jerárquica** sobre datos existentes    | Hacer con `path` calculado y `tenant_type='agency'` por defecto; los tenants actuales pasan a ser agencias raíz hasta asignar consolidador.                                           |
-| R2  | BYOC: responsabilidad legal de **quién emite** (BSP/IATA)             | La cuenta de credenciales usada define el emisor; registrar en `domain_events`. Validar con el founder el modelo contractual.                                                         |
-| R3  | Pricing waterfall mal configurado → márgenes negativos o fuga de neto | Simulador what-if + validaciones + visibilidad por rol.                                                                                                                               |
-| R4  | Complejidad de RLS jerárquica → fugas                                 | Tests exhaustivos en CI + fuzz con rotación de nodos.                                                                                                                                 |
-| D1  | ¿Profundidad máxima de jerarquía?                                     | ✅ **Decidido: 4 niveles** (platform/consolidador/agencia/sub-agencia). Implementado en el trigger `tenants_maintain_path` (migración 0011).                                          |
-| D2  | ¿El consolidador puede ver el neto del proveedor de sus agencias?     | ✅ **Decidido: sólo agregados**, no el neto de cada sub que trae credenciales propias. A reflejar en la proyección de pricing por rol (Fase 0 paso 7).                                |
-| D3  | ¿Pagos se liquidan por agencia o centralizado en el consolidador?     | ✅ **Decidido: híbrido** — liquidación **por agencia** cuando trae credenciales de pago propias; **centralizada en el consolidador** para las sub-agencias que heredan. Configurable. |
-| D4  | Orden vs. roadmap de olas existente                                   | ✅ **Decidido: fundación consolidador va ANTES** de los verticales de la Ola 2.                                                                                                       |
-| D5  | ¿Amplitud multi-contenido vs. profundidad NDC primero?                | ✅ **Decidido: amplitud multi-contenido primero** (alineado con la evidencia §4.0: >80% quiere contenido unificado).                                                                  |
+> Las D1–D5 de esta tabla son las de junio. Las decisiones de la red del 2026-09-28 (D1–D7 de la auditoría: sucursales, D4 A, D6 A, D7 B y las abiertas D2, D3 y D5) están en [§3.0](#30-modelo-de-red-validado-2026-09-28).
+
+| #   | Riesgo / decisión                                                     | Nota                                                                                                                                                                                                                                                                          |
+| --- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | **Migración de tenancy plana → jerárquica** sobre datos existentes    | Hecha en 0011 con `tenant_type='agency'` por defecto. Desde 2026-09-28 (D4 A) sólo la plataforma puede ser raíz: 0049 promueve a Planetour y las agencias raíz que queden se mueven bajo Planetour desde el panel ([13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps)). |
+| R2  | BYOC: responsabilidad legal de **quién emite** (BSP/IATA)             | La cuenta de credenciales usada define el emisor; registrar en `domain_events`. Validar con el founder el modelo contractual.                                                                                                                                                 |
+| R3  | Pricing waterfall mal configurado → márgenes negativos o fuga de neto | Simulador what-if + validaciones + visibilidad por rol.                                                                                                                                                                                                                       |
+| R4  | Complejidad de RLS jerárquica → fugas                                 | Tests exhaustivos en CI + fuzz con rotación de nodos.                                                                                                                                                                                                                         |
+| D1  | ¿Profundidad máxima de jerarquía?                                     | ✅ **Decidido: 4 niveles** (platform/consolidador/agencia/sub-agencia). Implementado en el trigger `tenants_maintain_path` (migración 0011).                                                                                                                                  |
+| D2  | ¿El consolidador puede ver el neto del proveedor de sus agencias?     | ✅ **Decidido: sólo agregados**, no el neto de cada sub que trae credenciales propias. A reflejar en la proyección de pricing por rol (Fase 0 paso 7).                                                                                                                        |
+| D3  | ¿Pagos se liquidan por agencia o centralizado en el consolidador?     | ✅ **Decidido: híbrido** — liquidación **por agencia** cuando trae credenciales de pago propias; **centralizada en el consolidador** para las sub-agencias que heredan. Configurable.                                                                                         |
+| D4  | Orden vs. roadmap de olas existente                                   | ✅ **Decidido: fundación consolidador va ANTES** de los verticales de la Ola 2.                                                                                                                                                                                               |
+| D5  | ¿Amplitud multi-contenido vs. profundidad NDC primero?                | ✅ **Decidido: amplitud multi-contenido primero** (alineado con la evidencia §4.0: >80% quiere contenido unificado).                                                                                                                                                          |
 
 ---
 
@@ -352,6 +398,7 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 1. **Validar** §3 (arquitectura), §6 (orden de fases). Decisiones D1–D5 ✅ cerradas (§7).
 2. ✅ **Fase 0, paso 1-2 implementado** en la rama `feat/consolidator-foundation` (ver §9).
 3. ✅ Investigación de mercado incorporada (§4.0 con citas). Pendiente local: profundizar conciliación BSP/ARC y requisitos fiscales LATAM con fuentes locales cuando lleguemos a Fase 1/4.
+4. **Modelo de red (2026-09-28):** llevar la tanda 1 a producción con el runbook de [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), y después la tanda 2: confidencialidad y superadmin operativo, más las decisiones D2, D3 y D5 ([13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2)).
 
 ## 9. Estado de implementación (rama `feat/consolidator-foundation`)
 
@@ -448,3 +495,14 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 - **OrdersService** registra cada operación (éxito o fallo, incl. excepciones del proveedor); `listOperations` y `retryOperation` (hoy reintenta **cancelación** re-ejecutando el void con el PNR de la orden; `pay` no se reintenta porque no guardamos datos de tarjeta — PCI).
 - **Endpoints**: `GET /orders/:id/operations`, `POST /orders/:id/operations/:opId/retry`. **UI**: "Historial de operaciones" en el detalle de la reserva con badges de estado, el error humanizado y botón **Reintentar** en cancelaciones fallidas. Test de integración (CI).
 - **Pendiente (evolución):** **worker durable** (Temporal/BullMQ) para reintentos automáticos y la **saga de reserva** con compensación; reembolso y reemisión/cambios como flujos NDC propios.
+
+## §9 — Modelo de red: Planetour, sucursales y superadmin (rama `feat/network-model`, 2026-09-28)
+
+Primera tanda del modelo de [§3.0](#30-modelo-de-red-validado-2026-09-28). Sin desplegar al escribir esto; el runbook está en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps).
+
+- **Base** (0049–0051): Planetour pasa a `platform`; una sola plataforma y sin padre; `tenants.is_branch`; trigger con la matriz D4 A en toda escritura de `tenants`; `move_tenant_subtree` (D6 A) con evento `tenant.moved`. Errores propios (STH01 regla de la jerarquía, STH02 movimiento bloqueado) que la API devuelve como 409 con motivo.
+- **API de nodos**: el tipo del hijo sale del padre y el padre por defecto es Planetour; `platform` nunca se crea por API; consolidador y sucursal, sólo el superadmin bajo Planetour. `PATCH /admin/tenants/:id` (estado, sucursal, tipo) y `POST /admin/tenants/:id/move`, sólo superadmin y auditados. Sin escalada de roles (G-06) y sin `platform_admin` asignable (D7 B).
+- **El superadmin no vende**: 403 `PLATFORM_ROLE_CANNOT_SELL` en las rutas `@SalesOperation()`, con un test que falla si una ruta de venta queda sin marcar. La web le quita la venta del menú.
+- **`seed-superadmin`** arreglado (G-04): promueve sin renombrar, no toca contraseñas existentes, idempotente y auditado.
+- **Panel**: _Gestión de Agencias_ es el árbol de la red, con alta, mover, suspender/activar y marcar sucursal; _Mi Red_ toma como raíz la plataforma.
+- **Pendiente** (tanda 2): el neto del proveedor (G-02), el simulador de reglas (G-01), las carteras, "entrar como" (G-17), el reporte de comisiones (G-16), el CRM y las decisiones D2, D3 y D5. Detalle en [13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2).

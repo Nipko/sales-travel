@@ -318,10 +318,13 @@ docker compose exec -T postgres psql -U postgres -d sales_travel -c \
 **Después:**
 
 - Cuelga `amazon-minimalist` de Planetour. Hoy es una raíz suelta y no hereda las credenciales de Planetour; la
-  migración 0050 lo avisa con un `WARNING` al desplegar. Se hace como superadmin con
-  `POST /admin/tenants/<id de amazon-minimalist>/move` y `{"parentTenantId": "<tenantId de la salida>"}`, hasta que el
-  panel tenga el botón.
+  migración 0050 lo avisa con un `WARNING` en el log de `postgres`. Se hace como superadmin desde _Gestión de
+  Agencias_ → **Mover bajo Planetour S.A.S** (por API: `POST /admin/tenants/<id de amazon-minimalist>/move` con
+  `{"parentTenantId": "<tenantId de la salida>"}`).
 - Crea las sucursales de Planetour y sus vendedores.
+
+El paso a paso completo, con las comprobaciones, está en el runbook de
+[`docs/platform/13`](../../docs/platform/13-validacion-modelo-red.md#5-runbook-del-vps) §5.
 
 ### 7.2 Con una cuenta nueva
 

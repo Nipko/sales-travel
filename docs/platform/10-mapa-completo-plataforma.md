@@ -124,7 +124,7 @@ SALES-TRAVEL PLATFORM
 │   └── M7.8 Tenant lifecycle (onboarding, suspensión, baja)
 │
 ├── 👥 M8 — Roles, Permisos y Equipos
-│   ├── M8.1 Jerarquía: superadmin → platform_admin → consolidador → agencia → sub-agencia → vendedor → cliente final
+│   ├── M8.1 Jerarquía (D4 A, doc 12 §3.0, máx. 4 niveles): Planetour (platform) → consolidadores, agencias y sucursales; consolidador → agencias; agencia → sub-agencias. En cada nodo: vendedor → cliente final. El superadmin de Planetour cuadra la red y no vende; platform_admin retirado (D7 B)
 │   ├── M8.2 RBAC granular (acciones por recurso)
 │   ├── M8.3 ABAC (reglas dinámicas: "vendedor solo ve sus clientes")
 │   ├── M8.4 Equipos / squads dentro de agencia
@@ -245,8 +245,8 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 
 ```
 RBAC (rol → conjunto de permisos):
-  - superadmin           → todo
-  - platform_admin       → gestión multi-tenant, billing, soporte
+  - superadmin           → toda la red, salvo vender (Planetour vende por sus sucursales; doc 12 §3.0)
+  - platform_admin       → retirado como rol asignable (D7 B, 2026-09-28); queda en el enum por compatibilidad
   - tenant_admin         → su tenant: usuarios, branding, pricing, reportes
   - tenant_supervisor    → ver todas las cotizaciones/reservas del tenant
   - tenant_seller        → solo sus clientes/cotizaciones/reservas
@@ -300,8 +300,9 @@ ABAC (políticas dinámicas evaluadas en runtime):
 TENANT
   id (uuid, pk)
   slug (unique)                    -- "agencia-acme"
-  parent_tenant_id (fk, nullable)  -- null = consolidador raíz; jerarquía B2B2B
-  tenant_type (platform|consolidator|agency|subagency)
+  parent_tenant_id (fk, nullable)  -- null sólo para la raíz platform (Planetour, D4 A); jerarquía B2B2B
+  tenant_type (platform|consolidator|agency|subagency)  -- qué cuelga de qué: D4 A (doc 12 §3.0, migración 0050)
+  is_branch (bool)                 -- sucursal de Planetour: agency hija directa de platform
   path (ltree)                     -- materialized path para queries jerárquicas
   legal_name
   display_name
