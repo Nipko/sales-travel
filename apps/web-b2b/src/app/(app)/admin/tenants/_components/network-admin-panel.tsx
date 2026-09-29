@@ -13,6 +13,7 @@ import {
   Search,
   Store,
   TriangleAlert,
+  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -459,11 +460,18 @@ function NodeRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:shrink-0">
+      <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:flex-nowrap">
         <Button asChild variant="ghost" size="sm">
           <Link href={`/admin/tenants/${node.id}`}>
             <Plug aria-hidden="true" />
             Proveedores
+            <span className="sr-only"> de {node.name}</span>
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link href={`/admin/tenants/${node.id}/carteras`}>
+            <Wallet aria-hidden="true" />
+            Carteras
             <span className="sr-only"> de {node.name}</span>
           </Link>
         </Button>

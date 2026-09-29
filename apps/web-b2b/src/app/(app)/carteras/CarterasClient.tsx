@@ -1,712 +1,384 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { Check, Clock, Info, RefreshCw, Send, Wallet as WalletIcon, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { SectionTabPanel, SectionTabs, useTabsId } from '../../../components/wallets/section-tabs';
+import { DepositReportDialog } from '../../../components/wallets/wallet-dialogs';
+import {
+  CurrencyFilter,
+  DepositReportList,
+  EmptyState,
+  MovementList,
+  ToneNotice,
+  WalletCard,
+} from '../../../components/wallets/wallet-ui';
+import { Button } from '../../../components/ui/button';
 import { useConfirm } from '../../../components/ui/dialog';
+import { heldOrdersOf, type HeldOrder } from '../../../lib/held-orders';
 import { orderProviderLabel } from '../../../lib/order-vertical';
 import { PORTFOLIO_ISSUANCE, PORTFOLIO_REJECTION } from '../../../lib/portfolio-workflow';
-import { toast } from 'sonner';
+import { readJson } from '../../../lib/read-json';
+import { canReleaseHolds, canReportDeposits } from '../../../lib/wallet-access';
 import {
-  Wallet,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Calendar,
-  DollarSign,
-  Clock,
-  Check,
-  X,
-  Plus,
-  AlertCircle,
-  FileText,
-  Search,
-  Building2,
-  Sparkles,
-  Info,
-} from 'lucide-react';
+  loadAgencyMovements,
+  loadAgencyReports,
+  loadAgencyWallets,
+  submitDepositReport,
+} from '../../../lib/wallet-client';
+import { depositReportHelp, type DepositReportBody } from '../../../lib/wallet-forms';
+import {
+  formatMinor,
+  movementsIn,
+  sortDepositReports,
+  walletCurrencies,
+  walletEditable,
+  type AgencyWallets,
+  type DepositReport,
+  type WalletMovement,
+} from '../../../lib/wallets';
 
-interface Portfolio {
-  id: string;
-  tenantId: string;
-  creditLimitMinor: number;
-  balanceMinor: number;
-  currency: string;
-  status: string;
-}
-
-interface PortfolioTransaction {
-  id: string;
-  portfolioId: string;
-  amountMinor: number;
-  transactionType: string;
-  referenceId: string | null;
-  notes: string | null;
-  createdBy: string;
-  createdAt: string;
-}
-
-interface Order {
-  id: string;
-  status: string;
-  orderNumber: number;
-  totalAmount: number;
-  currency: string;
-  provider: string;
-  /** Lleva `vertical` desde el intent de cada vertical: de ahí sale "Hoteles", "Autos"… */
-  searchCriteria?: unknown;
-  passengers: any;
-  contactInfo: any;
-  createdAt: string;
-}
+type Tab = 'movements' | 'reports' | 'holds';
 
 interface CarterasClientProps {
-  initialPortfolio: Portfolio;
-  initialTransactions: PortfolioTransaction[];
-  initialOrders: Order[];
+  initialWallets: AgencyWallets | null;
+  walletsError: string | null;
+  initialMovements: WalletMovement[] | null;
+  initialReports: DepositReport[] | null;
+  initialHeldOrders: HeldOrder[];
   role?: string;
 }
 
-function apiErrorDetail(value: unknown): string {
-  if (typeof value !== 'object' || value === null) return 'Intente nuevamente';
+function errorText(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return 'Intentá de nuevo.';
   const body = value as Record<string, unknown>;
-  const message = body['message'];
-  if (typeof message === 'string' && message.length > 0) return message;
-  if (Array.isArray(message)) {
-    const messages = message.filter((item): item is string => typeof item === 'string');
-    if (messages.length > 0) return messages.join('. ');
-  }
-  return typeof body['error'] === 'string' && body['error'].length > 0
-    ? body['error']
-    : 'Intente nuevamente';
+  const text = body['error'] ?? body['message'];
+  return typeof text === 'string' && text.trim() !== '' ? text : 'Intentá de nuevo.';
 }
 
+/**
+ * Cartera B2B, vista desde la agencia (decisión del founder del 2026-09-29, opción A): sus carteras
+ * por moneda, sus movimientos y el estado de los depósitos que informó. No carga saldo ni cambia su
+ * cupo: eso lo registra quien la financia. Sí informa depósitos (quedan pendientes) y libera las
+ * reservas retenidas que cancela con el proveedor.
+ */
 export function CarterasClient({
-  initialPortfolio,
-  initialTransactions,
-  initialOrders,
+  initialWallets,
+  walletsError,
+  initialMovements,
+  initialReports,
+  initialHeldOrders,
   role,
 }: CarterasClientProps) {
   const [confirmAction, confirmDialog] = useConfirm();
-  const [portfolio, setPortfolio] = useState<Portfolio>(initialPortfolio);
-  const [transactions, setTransactions] = useState<PortfolioTransaction[]>(initialTransactions);
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [wallets, setWallets] = useState(initialWallets);
+  const [movements, setMovements] = useState(initialMovements);
+  const [reports, setReports] = useState(initialReports);
+  const [heldOrders, setHeldOrders] = useState(initialHeldOrders);
+  const [tab, setTab] = useState<Tab>('movements');
+  const [currency, setCurrency] = useState('all');
+  const [reporting, setReporting] = useState(false);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
+  const tabsId = useTabsId();
 
-  // Modals and UI states
-  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
-  const [depositAmount, setDepositAmount] = useState('');
-  const [depositNotes, setDepositNotes] = useState('');
-  const [isDepositSubmitting, setIsDepositSubmitting] = useState(false);
-  // Se conserva ante una respuesta incierta; cambiar el contenido o completar la acción genera
-  // una clave nueva y evita reciclarla para otro movimiento.
-  const depositIdempotencyKey = useRef<string | null>(null);
+  const portfolios = useMemo(() => wallets?.portfolios ?? [], [wallets]);
+  const financierName = wallets?.financier?.name ?? null;
+  const financier = financierName ?? 'Planetour';
+  // Una cartera en una moneda retirada de ISO 4217 se muestra, pero ya no recibe depósitos.
+  const reportable = useMemo(() => portfolios.filter(walletEditable), [portfolios]);
+  const canReport = canReportDeposits(role) && reportable.length > 0;
+  const canRelease = canReleaseHolds(role);
 
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-  const [creditLimitInput, setCreditLimitInput] = useState('');
-
-  const [activeSubTab, setActiveSubTab] = useState<'transactions' | 'pending-approvals'>(
-    'transactions',
+  const currencies = useMemo(() => walletCurrencies(portfolios), [portfolios]);
+  const visibleMovements = useMemo(
+    () => (movements === null ? [] : movementsIn(movements, currency)),
+    [movements, currency],
   );
+  const sortedReports = useMemo(
+    () => (reports === null ? [] : sortDepositReports(reports)),
+    [reports],
+  );
+  const pendingReports = sortedReports.filter((r) => r.status === 'pending').length;
 
-  const isAdmin = role === 'superadmin' || role === 'tenant_admin' || role === 'admin';
+  const reload = useCallback(async () => {
+    const [w, m, r] = await Promise.all([
+      loadAgencyWallets(),
+      loadAgencyMovements(),
+      loadAgencyReports(),
+    ]);
+    if (w.ok) setWallets(w.data);
+    if (m.ok) setMovements(m.data);
+    if (r.ok) setReports(r.data);
+    return w.ok && m.ok && r.ok;
+  }, []);
 
-  // Format currency
-  const formatCurrency = (minor: number, currency = 'COP') => {
-    const amount = minor / 100;
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const closeReport = useCallback(() => setReporting(false), []);
 
-  const handleDepositSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isDepositSubmitting) return;
-    const amountVal = parseFloat(depositAmount);
-    if (isNaN(amountVal) || amountVal <= 0) {
-      toast.error('Monto de recarga inválido');
-      return;
-    }
-
-    const amountMinor = Math.round(amountVal * 100);
-    const requestKey = depositIdempotencyKey.current ?? crypto.randomUUID();
-    depositIdempotencyKey.current = requestKey;
-    setIsDepositSubmitting(true);
-
-    try {
-      const res = await fetch('/api/portfolios/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
-        body: JSON.stringify({ amountMinor, notes: depositNotes }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setPortfolio(data.portfolio);
-        setTransactions((current) =>
-          current.some((transaction) => transaction.id === data.transaction.id)
-            ? current
-            : [data.transaction, ...current],
-        );
-        depositIdempotencyKey.current = null;
-        setIsDepositModalOpen(false);
-        setDepositAmount('');
-        setDepositNotes('');
-      } else {
-        // La misma clave se reutiliza si el usuario reintenta sin cambiar el contenido.
-        toast.error('Error al realizar depósito');
-      }
-    } catch {
-      // Resultado incierto: conservar la clave hace que el siguiente clic consulte/reproduzca el
-      // mismo asiento en vez de acreditar otra vez si el primer request sí llegó al API.
-      toast.error('No se pudo confirmar la recarga. Reintentá sin cambiar los datos.');
-    } finally {
-      setIsDepositSubmitting(false);
-    }
-  };
-
-  const handleLimitSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const limitVal = parseFloat(creditLimitInput);
-    if (isNaN(limitVal) || limitVal < 0) {
-      toast.error('Límite de crédito inválido');
-      return;
-    }
-
-    const creditLimitMinor = Math.round(limitVal * 100);
-
-    const res = await fetch('/api/portfolios', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creditLimitMinor }),
+  async function sendReport(body: DepositReportBody, key: string): Promise<string | undefined> {
+    const res = await submitDepositReport(body, key);
+    if (!res.ok) return res.message;
+    setReporting(false);
+    setReports((current) =>
+      current === null ? [res.data] : [res.data, ...current.filter((r) => r.id !== res.data.id)],
+    );
+    setTab('reports');
+    toast.success('Depósito informado.', {
+      description: `Queda pendiente hasta que ${financier} lo apruebe.`,
     });
+    return undefined;
+  }
 
-    if (res.ok) {
-      const data = await res.json();
-      setPortfolio(data.portfolio);
-      setIsLimitModalOpen(false);
-      setCreditLimitInput('');
-    } else {
-      toast.error('Error al actualizar límite de crédito');
-    }
-  };
-
-  const handleRejectOrder = async (orderId: string) => {
+  async function releaseHold(order: HeldOrder) {
     const ok = await confirmAction({
-      title: 'Cancelar reserva',
+      title: 'Cancelar la reserva y liberar el saldo',
       description: PORTFOLIO_REJECTION.description,
       confirmLabel: PORTFOLIO_REJECTION.confirmLabel,
     });
     if (!ok) return;
-
-    const res = await fetch(`/api/portfolios/orders/${orderId}/reject`, {
-      method: 'POST',
-    });
-
-    if (res.ok) {
-      toast.success(PORTFOLIO_REJECTION.success);
-      // Refresh state
-      const ordersRes = await fetch('/api/orders');
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        setOrders(ordersData.orders || []);
-      }
-      const portfolioRes = await fetch('/api/portfolios');
-      if (portfolioRes.ok) {
-        const portfolioData = await portfolioRes.json();
-        setPortfolio(portfolioData.portfolio);
-      }
-      const txsRes = await fetch('/api/portfolios/transactions');
-      if (txsRes.ok) {
-        const txsData = await txsRes.json();
-        setTransactions(txsData.transactions || []);
-      }
-    } else {
-      const err: unknown = await res.json();
-      toast.error(`No se canceló la reserva: ${apiErrorDetail(err)}`);
-    }
-  };
-
-  const pendingApprovals = orders.filter((o) => o.status === 'pending');
-
-  const getPassengersNames = (paxJSON: any) => {
+    setReleasingId(order.id);
     try {
-      const paxs = typeof paxJSON === 'string' ? JSON.parse(paxJSON) : paxJSON;
-      if (Array.isArray(paxs)) {
-        return paxs.map((p) => `${p.firstName} ${p.lastName}`).join(', ');
+      const res = await fetch(`/api/portfolios/orders/${encodeURIComponent(order.id)}/reject`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const read = await readJson<unknown>(res);
+        toast.error(`No se canceló la reserva: ${read.ok ? errorText(read.data) : read.message}`);
+        return;
       }
+      toast.success(PORTFOLIO_REJECTION.success);
+      const ordersRes = await fetch('/api/orders', { cache: 'no-store' });
+      const orders = await readJson<unknown>(ordersRes);
+      if (ordersRes.ok && orders.ok) setHeldOrders(heldOrdersOf(orders.data));
+      await reload();
     } catch {
-      // ignore
+      toast.error(
+        'No pudimos confirmar la cancelación. Revisá la reserva en Mis Reservas antes de reintentar.',
+      );
+    } finally {
+      setReleasingId(null);
     }
-    return 'Pasajeros';
-  };
-
-  const getTransactionBadge = (type: string) => {
-    switch (type) {
-      case 'DEPOSIT_PAYMENT':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-      case 'BOOKING_CHARGE':
-        return 'bg-red-50 text-red-700 border-red-100';
-      case 'BOOKING_HOLD':
-        return 'bg-amber-50 text-amber-700 border-amber-100';
-      case 'BOOKING_RELEASED':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-      case 'BOOKING_REJECTED':
-        return 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]';
-      default:
-        return 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]';
-    }
-  };
-
-  const getTransactionLabel = (type: string) => {
-    switch (type) {
-      case 'DEPOSIT_PAYMENT':
-        return 'Recarga de Saldo';
-      case 'BOOKING_CHARGE':
-        return 'Compra PNR';
-      case 'BOOKING_HOLD':
-        return 'Retención PNR';
-      case 'BOOKING_RELEASED':
-        return 'Liberación PNR';
-      case 'BOOKING_REJECTED':
-        return 'Retención Devuelta';
-      default:
-        return 'Ajuste de Cartera';
-    }
-  };
+  }
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8 space-y-8 animate-fade-in">
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-5 sm:py-8">
       {confirmDialog}
-      {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[10px] font-bold text-[var(--color-primary)] uppercase tracking-wider">
-            <Wallet className="size-3" />
-            Carteras B2B
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-fg)] mt-1.5">
-            Cartera & Líneas de Crédito
+
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
+            Cartera B2B
           </h1>
-          <p className="text-xs text-[var(--color-fg-muted)]">
-            Consulte su saldo disponible, realice recargas contables y revise reservas con retención
-            preventiva.
+          <p className="mt-1 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
+            Tus carteras, una por moneda. Cada reserva se retiene en la cartera de la moneda de su
+            tarifa, con tu saldo más el cupo que te da {financier}. El cupo, los depósitos y los
+            ajustes los registra {financier}; vos le informás tus depósitos desde acá.
           </p>
         </div>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <button
-              onClick={() => {
-                setCreditLimitInput((portfolio.creditLimitMinor / 100).toString());
-                setIsLimitModalOpen(true);
-              }}
-              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-xs font-bold text-[var(--color-fg-muted)] shadow-sm hover:bg-[var(--color-surface-muted)] transition"
-            >
-              Configurar Crédito
-            </button>
-          )}
-          <button
-            onClick={() => {
-              depositIdempotencyKey.current = null;
-              setIsDepositModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2.5 text-xs font-bold text-white shadow-md hover:-translate-y-0.5 transition-all duration-200"
-          >
-            <Plus className="size-4" />
-            Recargar Saldo
-          </button>
-        </div>
+        {canReport ? (
+          <Button className="w-full sm:w-auto" onClick={() => setReporting(true)}>
+            <Send aria-hidden="true" />
+            Informar depósito
+          </Button>
+        ) : null}
       </header>
 
-      {/* Account Balance visual card details */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Main account balance card */}
-        <div className="md:col-span-1 bg-gradient-to-br from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white rounded-2xl p-6 shadow-lg border border-slate-800 flex flex-col justify-between min-h-[170px] relative overflow-hidden">
-          <div className="absolute right-0 bottom-0 translate-x-4 translate-y-4 opacity-10 text-white pointer-events-none">
-            <Wallet className="size-36" />
-          </div>
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-300">
-              Saldo Neto de Cartera
-            </span>
-            <p className="text-3xl font-extrabold tracking-tight font-mono">
-              {formatCurrency(portfolio.balanceMinor, portfolio.currency)}
-            </p>
-          </div>
-          <div className="flex justify-between items-center text-[10px] text-slate-300 pt-6 border-t border-white/10 mt-4">
-            <span>Estado Cuenta:</span>
-            <span className="inline-flex items-center gap-1.5 font-bold uppercase text-emerald-400">
-              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              {portfolio.status}
-            </span>
-          </div>
-        </div>
-
-        {/* Credit limit card */}
-        <div className="md:col-span-1 bg-white border border-[var(--color-border)]/45 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[170px]">
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-              Límite de Crédito Autorizado
-            </span>
-            <p className="text-3xl font-extrabold tracking-tight text-[var(--color-fg)] font-mono">
-              {formatCurrency(portfolio.creditLimitMinor, portfolio.currency)}
-            </p>
-          </div>
-          <div className="flex justify-between items-center text-[10px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)] mt-4">
-            <span>Respaldo B2B:</span>
-            <span className="font-bold text-[var(--color-fg-muted)]">Cupo Adicional</span>
-          </div>
-        </div>
-
-        {/* Total available credit card */}
-        <div className="md:col-span-1 bg-white border border-[var(--color-border)]/45 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[170px]">
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-              Poder de Compra (Crédito + Saldo)
-            </span>
-            <p className="text-3xl font-extrabold tracking-tight text-[var(--color-primary)] font-mono">
-              {formatCurrency(
-                portfolio.balanceMinor + portfolio.creditLimitMinor,
-                portfolio.currency,
-              )}
-            </p>
-          </div>
-          <div className="flex justify-between items-center text-[10px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)] mt-4">
-            <span>Capacidad Total:</span>
-            <span className="font-bold text-[var(--color-fg-muted)]">Disponibilidad Inmediata</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Board */}
-      <div className="space-y-4">
-        {/* Navigation Tab */}
-        <div className="flex border-b border-[var(--color-border)]">
-          <button
-            onClick={() => setActiveSubTab('transactions')}
-            className={`px-5 py-3 text-xs font-bold -mb-px border-b-2 transition-all ${
-              activeSubTab === 'transactions'
-                ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-extrabold'
-                : 'border-transparent text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]'
-            }`}
+      {walletsError !== null && wallets === null ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center"
+        >
+          <p className="text-sm font-medium text-[var(--color-fg)]">{walletsError}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-4"
+            onClick={() =>
+              void reload().then((ok) => {
+                if (!ok) toast.error('Todavía no pudimos leer las carteras.');
+              })
+            }
           >
-            Historial de Transacciones
-          </button>
-          <button
-            onClick={() => setActiveSubTab('pending-approvals')}
-            className={`relative px-5 py-3 text-xs font-bold -mb-px border-b-2 transition-all ${
-              activeSubTab === 'pending-approvals'
-                ? 'border-[var(--color-primary)] text-[var(--color-primary)] font-extrabold'
-                : 'border-transparent text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]'
-            }`}
-          >
-            Reservas retenidas (Cartera)
-            {pendingApprovals.length > 0 && (
-              <span className="absolute top-2 right-1 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[8px] font-extrabold text-white animate-bounce">
-                {pendingApprovals.length}
-              </span>
-            )}
-          </button>
+            <RefreshCw aria-hidden="true" />
+            Reintentar
+          </Button>
         </div>
+      ) : portfolios.length === 0 ? (
+        <EmptyState
+          icon={<WalletIcon className="size-6" />}
+          title="Tu agencia todavía no tiene carteras."
+        >
+          Sin una cartera no se puede reservar. Pedile a {financier} que te habilite la moneda en la
+          que vendés (por ejemplo COP o USD) y el cupo que te corresponda.
+        </EmptyState>
+      ) : (
+        <section aria-labelledby="agency-wallets-title" className="space-y-3">
+          <h2 id="agency-wallets-title" className="sr-only">
+            Carteras por moneda
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {portfolios.map((wallet) => (
+              <WalletCard key={wallet.id} wallet={wallet} />
+            ))}
+          </div>
+          <p className="flex items-start gap-1.5 text-xs text-[var(--color-fg-muted)]">
+            <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+            ¿Necesitás otra moneda o más cupo? Pedíselo a {financier}: sólo quien financia a tu
+            agencia puede cambiarlos.
+          </p>
+        </section>
+      )}
 
-        {/* Tab contents */}
-        {activeSubTab === 'transactions' ? (
-          <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl overflow-hidden shadow-sm">
-            {transactions.length === 0 ? (
-              <div className="px-6 py-14 text-center">
-                <Clock className="size-8 text-slate-300 mx-auto" />
-                <p className="text-xs text-[var(--color-fg-subtle)] font-medium mt-3">
-                  No se registran transacciones contables en su cartera todavía.
-                </p>
-              </div>
+      <div className="mt-8">
+        <SectionTabs<Tab>
+          idPrefix={tabsId}
+          label="Detalle de las carteras"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'movements', label: 'Movimientos' },
+            {
+              id: 'reports',
+              label: 'Depósitos informados',
+              shortLabel: 'Depósitos',
+              count: pendingReports,
+              countLabel: pendingReports === 1 ? 'pendiente' : 'pendientes',
+            },
+            {
+              id: 'holds',
+              label: 'Reservas retenidas',
+              shortLabel: 'Retenidas',
+              count: heldOrders.length,
+              countLabel: heldOrders.length === 1 ? 'reserva retenida' : 'reservas retenidas',
+            },
+          ]}
+        />
+
+        <SectionTabPanel id="movements" idPrefix={tabsId} hidden={tab !== 'movements'}>
+          <div className="space-y-3">
+            <CurrencyFilter
+              currencies={currencies}
+              value={currency}
+              onChange={setCurrency}
+              legend="Moneda de los movimientos"
+            />
+            {movements === null ? (
+              <ToneNotice tone="danger" role="alert">
+                No pudimos cargar los movimientos. Recargá la página.
+              </ToneNotice>
             ) : (
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]/55 bg-[var(--color-surface-muted)] text-[9px] uppercase tracking-widest font-bold text-[var(--color-fg-subtle)]">
-                      <th className="px-6 py-3.5 font-bold">Fecha / Hora</th>
-                      <th className="px-6 py-3.5 font-bold">Tipo Movimiento</th>
-                      <th className="px-6 py-3.5 font-bold">Valor</th>
-                      <th className="px-6 py-3.5 font-bold">Referencia / PNR</th>
-                      <th className="px-6 py-3.5 font-bold">Notas / Detalle</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((tx) => {
-                      const isNegative = tx.amountMinor < 0;
-                      return (
-                        <tr
-                          key={tx.id}
-                          className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-muted)]/40 transition"
-                        >
-                          <td className="px-6 py-4 text-[var(--color-fg-subtle)]">
-                            {new Date(tx.createdAt).toLocaleString('es-CO')}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center border rounded-md px-2 py-0.5 text-[9px] font-bold ${getTransactionBadge(
-                                tx.transactionType,
-                              )}`}
-                            >
-                              {getTransactionLabel(tx.transactionType)}
-                            </span>
-                          </td>
-                          <td
-                            className={`px-6 py-4 font-mono font-bold ${
-                              isNegative ? 'text-red-600' : 'text-emerald-600'
-                            }`}
-                          >
-                            {isNegative ? '-' : '+'}
-                            {formatCurrency(Math.abs(tx.amountMinor), portfolio.currency)}
-                          </td>
-                          <td className="px-6 py-4 font-mono font-bold text-[var(--color-fg-muted)]">
-                            {tx.referenceId ? tx.referenceId.slice(0, 8).toUpperCase() : 'N/A'}
-                          </td>
-                          <td className="px-6 py-4 text-[var(--color-fg-muted)] italic">
-                            {tx.notes ?? '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <MovementList
+                movements={visibleMovements}
+                showCurrency={currency === 'all' && currencies.length > 1}
+                emptyTitle="Sin movimientos todavía."
+                emptyText="Los depósitos, los ajustes y las retenciones por reservas aparecen acá."
+              />
             )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* RLS message */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 flex gap-3">
-              <Info className="size-5 shrink-0" />
-              <div>
-                <p className="font-bold">Operaciones verificadas con el proveedor</p>
-                <p className="mt-0.5 leading-relaxed">
-                  {PORTFOLIO_ISSUANCE.description} {PORTFOLIO_REJECTION.description}
-                </p>
-              </div>
-            </div>
+        </SectionTabPanel>
 
-            {pendingApprovals.length === 0 ? (
-              <div className="bg-white border border-[var(--color-border)]/45 rounded-2xl py-14 text-center shadow-sm">
-                <Check className="size-8 text-emerald-500 bg-emerald-50 p-1.5 rounded-full mx-auto" />
-                <p className="text-xs text-[var(--color-fg-subtle)] font-semibold mt-3">
-                  No hay reservas pendientes de aprobación en este momento.
-                </p>
-              </div>
+        <SectionTabPanel id="reports" idPrefix={tabsId} hidden={tab !== 'reports'}>
+          {reports === null ? (
+            <ToneNotice tone="danger" role="alert">
+              No pudimos cargar los depósitos informados. Recargá la página.
+            </ToneNotice>
+          ) : (
+            <DepositReportList
+              reports={sortedReports}
+              emptyTitle="No informaste depósitos."
+              emptyText={
+                canReport
+                  ? `Cuando transfieras, informalo con "Informar depósito". ${depositReportHelp(financierName)}`
+                  : depositReportHelp(financierName)
+              }
+            />
+          )}
+        </SectionTabPanel>
+
+        <SectionTabPanel id="holds" idPrefix={tabsId} hidden={tab !== 'holds'}>
+          <div className="space-y-3">
+            <ToneNotice tone="neutral">
+              {PORTFOLIO_ISSUANCE.description} {PORTFOLIO_REJECTION.description}
+            </ToneNotice>
+            {heldOrders.length === 0 ? (
+              <EmptyState icon={<Check className="size-6" />} title="No hay reservas retenidas." />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pendingApprovals.map((o) => (
-                  <div
+              <ul className="grid gap-3 md:grid-cols-2">
+                {heldOrders.map((o) => (
+                  <li
                     key={o.id}
-                    className="bg-white border border-[var(--color-border)]/45 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between"
+                    className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)]"
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2.5">
-                        <span className="font-mono font-bold text-[10px] bg-[var(--color-surface-muted)] px-2 py-0.5 rounded text-[var(--color-fg-muted)]">
-                          Reserva #{o.orderNumber}
-                        </span>
-                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
-                          <Clock className="size-3" />
-                          Retención pendiente
-                        </span>
-                      </div>
-
-                      <div className="text-xs space-y-2 text-[var(--color-fg-muted)]">
-                        <div className="flex justify-between">
-                          <span className="text-[var(--color-fg-subtle)]">Pasajeros:</span>
-                          <span className="font-bold text-[var(--color-fg)] text-right shrink-0">
-                            {getPassengersNames(o.passengers)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[var(--color-fg-subtle)]">
-                            Vertical / Proveedor:
-                          </span>
-                          <span className="font-semibold text-[var(--color-fg)] uppercase">
-                            {orderProviderLabel(o)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center bg-[var(--color-surface-muted)] p-2.5 rounded-xl border border-[var(--color-border)] mt-2">
-                          <span className="text-[var(--color-fg-subtle)] font-semibold">
-                            Valor Hold:
-                          </span>
-                          <span className="font-extrabold text-[var(--color-primary)] font-mono text-sm">
-                            {formatCurrency(o.totalAmount, o.currency)}
-                          </span>
-                        </div>
-                      </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--color-fg)]">
+                        {o.orderNumber !== null ? `Reserva #${o.orderNumber}` : 'Reserva'}
+                      </h3>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
+                        <Clock aria-hidden="true" className="size-3" />
+                        Retención pendiente de emisión
+                      </span>
                     </div>
-
-                    <div className="flex items-center gap-2.5 pt-2">
-                      <button
-                        onClick={() => handleRejectOrder(o.id)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 border border-[var(--color-border)] text-[var(--color-fg-muted)] bg-white hover:bg-[var(--color-surface-muted)] rounded-xl py-2 text-xs font-bold shadow-sm transition"
-                      >
-                        <X className="size-3.5" />
-                        Cancelar / Liberar
-                      </button>
-                      <button
-                        type="button"
+                    <dl className="space-y-1.5 text-xs">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-[var(--color-fg-muted)]">Pasajeros</dt>
+                        <dd className="text-right text-[var(--color-fg)]">{o.passengerNames}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-[var(--color-fg-muted)]">Producto</dt>
+                        <dd className="text-right text-[var(--color-fg)]">
+                          {orderProviderLabel(o)}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-[var(--color-fg-muted)]">Retenido</dt>
+                        <dd className="text-right font-semibold tabular-nums text-[var(--color-fg)]">
+                          {formatMinor(o.totalAmountMinor, o.currency, 2)}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="mt-auto flex flex-col gap-2 sm:flex-row">
+                      {canRelease ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="flex-1"
+                          disabled={releasingId === o.id}
+                          onClick={() => void releaseHold(o)}
+                        >
+                          {releasingId === o.id ? (
+                            <RefreshCw aria-hidden="true" className="animate-spin" />
+                          ) : (
+                            <X aria-hidden="true" />
+                          )}
+                          Cancelar y liberar
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
                         disabled={!PORTFOLIO_ISSUANCE.enabled}
                         title={PORTFOLIO_ISSUANCE.description}
-                        className="flex-1 inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] py-2 text-xs font-bold text-[var(--color-fg-subtle)] opacity-80"
                       >
-                        <Check className="size-3.5" />
+                        <Check aria-hidden="true" />
                         {PORTFOLIO_ISSUANCE.label}
-                      </button>
+                      </Button>
                     </div>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
-        )}
+        </SectionTabPanel>
       </div>
 
-      {/* Recarga de Saldo Modal */}
-      {isDepositModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl border border-[var(--color-border)] overflow-hidden shadow-2xl animate-scale-up">
-            <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
-                Recargar Saldo
-              </h2>
-              <button
-                disabled={isDepositSubmitting}
-                onClick={() => {
-                  depositIdempotencyKey.current = null;
-                  setIsDepositModalOpen(false);
-                }}
-                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-            <form onSubmit={handleDepositSubmit} className="p-6 space-y-4 text-xs">
-              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-emerald-800 flex gap-2">
-                <Sparkles className="size-4 shrink-0" />
-                <p className="text-[10px] leading-relaxed">
-                  Ingrese el monto de la transferencia bancaria o recarga que ha sido validada. El
-                  saldo se cargará inmediatamente.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
-                  Monto Recarga (COP)
-                </label>
-                <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] font-bold">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    required
-                    min="1000"
-                    placeholder="Ej: 500000"
-                    value={depositAmount}
-                    onChange={(e) => {
-                      depositIdempotencyKey.current = null;
-                      setDepositAmount(e.target.value);
-                    }}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-[var(--color-fg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
-                  Detalle / Comprobante / Notas
-                </label>
-                <textarea
-                  value={depositNotes}
-                  onChange={(e) => {
-                    depositIdempotencyKey.current = null;
-                    setDepositNotes(e.target.value);
-                  }}
-                  placeholder="Ej: Transferencia Bancolombia #54223"
-                  className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-3 py-2.5 rounded-xl text-xs mt-1.5 h-20 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
-                <button
-                  type="button"
-                  disabled={isDepositSubmitting}
-                  onClick={() => {
-                    depositIdempotencyKey.current = null;
-                    setIsDepositModalOpen(false);
-                  }}
-                  className="px-4 py-2.5 border border-[var(--color-border)] text-[var(--color-fg-subtle)] font-bold hover:bg-[var(--color-surface-muted)] rounded-xl"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDepositSubmitting}
-                  className="px-5 py-2.5 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-white font-bold shadow-md hover:-translate-y-0.5 rounded-xl transition disabled:cursor-wait disabled:opacity-60"
-                >
-                  {isDepositSubmitting ? 'Acreditando…' : 'Acreditar Saldo'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Configurar Crédito Modal */}
-      {isLimitModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl border border-[var(--color-border)] overflow-hidden shadow-2xl animate-scale-up">
-            <div className="bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-dark)] text-white px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
-                Configurar Crédito
-              </h2>
-              <button
-                onClick={() => setIsLimitModalOpen(false)}
-                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-            <form onSubmit={handleLimitSubmit} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-[10px] font-bold text-[var(--color-fg-subtle)] uppercase tracking-wider">
-                  Límite de Crédito Autorizado (COP)
-                </label>
-                <div className="relative mt-1.5">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] font-bold">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    placeholder="Ej: 2000000"
-                    value={creditLimitInput}
-                    onChange={(e) => setCreditLimitInput(e.target.value)}
-                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] pl-7 pr-3 py-2.5 rounded-xl text-xs font-bold text-[var(--color-fg)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] focus:bg-white font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
-                <button
-                  type="button"
-                  onClick={() => setIsLimitModalOpen(false)}
-                  className="px-4 py-2.5 border border-[var(--color-border)] text-[var(--color-fg-subtle)] font-bold hover:bg-[var(--color-surface-muted)] rounded-xl"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] text-white font-bold shadow-md hover:-translate-y-0.5 rounded-xl transition"
-                >
-                  Actualizar Cupo
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {reporting ? (
+        <DepositReportDialog
+          wallets={reportable}
+          financierName={financierName}
+          onSubmit={sendReport}
+          onClose={closeReport}
+        />
+      ) : null}
     </div>
   );
 }

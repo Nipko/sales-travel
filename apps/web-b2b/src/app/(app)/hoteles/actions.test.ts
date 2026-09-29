@@ -6,6 +6,7 @@ vi.mock('../../../lib/api', () => ({ api: apiMock }));
 import {
   customerForHotelSearchAction,
   hotelSearchCurrenciesAction,
+  hotelSearchWalletsAction,
   searchHotelsAction,
   suggestDestinationsAction,
   type HotelSearchResult,
@@ -200,6 +201,42 @@ describe('hotelSearchCurrenciesAction — las monedas del selector', () => {
     expect(await hotelSearchCurrenciesAction()).toBeNull();
     apiMock.mockResolvedValue({ ok: true, data: { currencies: 'USD' } });
     expect(await hotelSearchCurrenciesAction()).toBeNull();
+  });
+});
+
+describe('hotelSearchWalletsAction — las carteras para el aviso temprano', () => {
+  it('sólo las monedas con cartera, las que operan y a quién pedirle', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: {
+        portfolios: [
+          {
+            id: '20000000-0000-4000-8000-000000000001',
+            tenantId: '10000000-0000-4000-8000-000000000001',
+            currency: 'COP',
+            exponent: 2,
+            creditLimitMinor: 0,
+            balanceMinor: 0,
+            status: 'active',
+          },
+        ],
+        financier: { tenantId: '10000000-0000-4000-8000-000000000002', name: 'Andino' },
+      },
+    });
+    expect(await hotelSearchWalletsAction()).toEqual({
+      enabled: ['COP'],
+      operating: ['COP'],
+      suspended: [],
+      financierName: 'Andino',
+    });
+    expect(apiMock.mock.calls[0]?.[0]).toBe('/portfolios');
+  });
+
+  it('si no se pudieron leer: null, y no se avisa nada', async () => {
+    apiMock.mockResolvedValue({ ok: false, error: { status: 503, message: 'x' } });
+    expect(await hotelSearchWalletsAction()).toBeNull();
+    apiMock.mockResolvedValue({ ok: true, data: { portfolio: {} } });
+    expect(await hotelSearchWalletsAction()).toBeNull();
   });
 });
 

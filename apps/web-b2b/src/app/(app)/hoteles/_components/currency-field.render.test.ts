@@ -45,4 +45,20 @@ describe('CurrencyField', () => {
     expect(out).toMatch(/<select[^>]*\sdisabled=""/);
     expect(out).toContain('No pudimos leer las monedas: se busca en la de la agencia.');
   });
+
+  it('el aviso de cartera se anuncia junto al campo y no bloquea buscar', () => {
+    const notice =
+      'Tu agencia no tiene cartera en USD: podés cotizar, pero no reservar. Pedile a Planetour que la habilite.';
+    const out = html({
+      options: { defaultCurrency: 'COP', currencies: ['COP', 'USD'] },
+      value: 'USD',
+      onChange: noop,
+      walletNotice: notice,
+    });
+    const id = /<select[^>]*id="([^"]+)"/.exec(out)?.[1];
+    expect(out).toContain(`aria-describedby="${id}-message ${id}-wallet"`);
+    expect(out).toMatch(new RegExp(`id="${id}-wallet" role="status"`));
+    expect(out).toContain(notice);
+    expect(out).not.toMatch(/<select[^>]*\sdisabled=""/);
+  });
 });

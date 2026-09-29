@@ -14,6 +14,8 @@ import {
   parseSearchCurrencies,
   type SearchCurrencies,
 } from './_components/search-currency';
+import { searchWalletsOf, type SearchWallets } from './_components/search-wallet';
+import { parseAgencyWallets } from '../../../lib/wallets';
 
 /*
  * Espejo del contrato NEUTRAL de hoteles (`packages/canonical/src/hotel-offer.ts`) tal como sale
@@ -310,6 +312,17 @@ export async function hotelSearchCurrenciesAction(): Promise<SearchCurrencies | 
   const res = await api<unknown>('/hotels/currencies');
   if (!res.ok) return null;
   return parseSearchCurrencies(res.data) ?? null;
+}
+
+/**
+ * En qué monedas tiene cartera la agencia, para avisar en la búsqueda si no va a poder reservar en
+ * la elegida. `null` si no se pudieron leer: entonces no se avisa y deciden el PreBook y el Book.
+ */
+export async function hotelSearchWalletsAction(): Promise<SearchWallets | null> {
+  const res = await api<unknown>('/portfolios');
+  if (!res.ok) return null;
+  const wallets = parseAgencyWallets(res.data);
+  return wallets === undefined ? null : searchWalletsOf(wallets);
 }
 
 /** Lo mínimo de un cliente del CRM para prellenar la búsqueda: nada de documentos ni contacto. */

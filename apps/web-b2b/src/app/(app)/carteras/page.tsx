@@ -1,5 +1,12 @@
 import { api } from '../../../lib/api';
+import { heldOrdersOf } from '../../../lib/held-orders';
 import { getActiveTenant } from '../../../lib/session';
+import {
+  parseAgencyWallets,
+  parseDepositReports,
+  parseMovements,
+  type AgencyWallets,
+} from '../../../lib/wallets';
 import { CarterasClient } from './CarterasClient';
 
 interface Membership {
@@ -7,42 +14,50 @@ interface Membership {
   role: string;
 }
 
+const UNREADABLE = 'No pudimos leer las carteras de tu agencia. Recargá la página.';
+
+/**
+ * Cartera B2B: lo que la agencia ve de sus carteras (una por moneda), sus movimientos, los depósitos
+ * que informó y las reservas con saldo retenido. Sólo lectura, salvo informar un depósito y liberar
+ * una retención: el cupo, los depósitos y los ajustes los registra quien la financia.
+ */
 export default async function CarterasPage() {
-  const [portfolioRes, transactionsRes, ordersRes, membershipsRes] = await Promise.all([
-    api<{ portfolio: any }>('/portfolios'),
-    api<{ transactions: any[] }>('/portfolios/transactions'),
-    api<{ orders: any[] }>('/orders'),
+  const [walletsRes, movementsRes, reportsRes, ordersRes, membershipsRes] = await Promise.all([
+    api<unknown>('/portfolios'),
+    api<unknown>('/portfolios/transactions'),
+    api<unknown>('/portfolios/deposit-reports'),
+    api<unknown>('/orders'),
     api<Membership[]>('/me/memberships'),
   ]);
 
-  const portfolio = portfolioRes.ok
-    ? portfolioRes.data.portfolio
-    : {
-        id: '',
-        tenantId: '',
-        creditLimitMinor: 0,
-        balanceMinor: 0,
-        currency: 'COP',
-        status: 'active',
-      };
+  // Sin carteras legibles se dice que no se pudieron leer: nunca una cartera en cero inventada.
+  let wallets: AgencyWallets | null = null;
+  let walletsError: string | null = null;
+  if (walletsRes.ok) {
+    wallets = parseAgencyWallets(walletsRes.data) ?? null;
+    if (wallets === null) walletsError = UNREADABLE;
+  } else {
+    walletsError = walletsRes.error.message || UNREADABLE;
+  }
 
-  const transactions = transactionsRes.ok ? transactionsRes.data.transactions : [];
-  const orders = ordersRes.ok ? ordersRes.data.orders : [];
+  const movements = movementsRes.ok ? (parseMovements(movementsRes.data) ?? null) : null;
+  const reports = reportsRes.ok ? (parseDepositReports(reportsRes.data) ?? null) : null;
+  const heldOrders = ordersRes.ok ? heldOrdersOf(ordersRes.data) : [];
+
   const memberships = membershipsRes.ok ? membershipsRes.data : [];
-
   const activeTenantId = await getActiveTenant();
-  const activeTenant = activeTenantId
+  const active = activeTenantId
     ? (memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0])
     : memberships[0];
 
-  const role = activeTenant?.role;
-
   return (
     <CarterasClient
-      initialPortfolio={portfolio}
-      initialTransactions={transactions}
-      initialOrders={orders}
-      role={role}
+      initialWallets={wallets}
+      walletsError={walletsError}
+      initialMovements={movements}
+      initialReports={reports}
+      initialHeldOrders={heldOrders}
+      role={active?.role}
     />
   );
 }
