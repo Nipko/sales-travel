@@ -5,6 +5,7 @@ import { useId, useState } from 'react';
 import type { Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
 import { providerTagFor } from '../../../../lib/provider-disclosure';
+import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { airlineName } from './airline-names';
 import { FareFamilyMatrix } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
@@ -311,17 +312,16 @@ export function FlightRow({
   const isRoundtrip = itineraries.length > 1;
   const hasMultipleFares = group.offers.length > 1;
   // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
-  const sellMinor = cheapest.pricing?.finalMinor ?? cheapest.total.amountMinor;
-  const hasMarkup = (cheapest.pricing?.ownMarkupMinor ?? 0) > 0;
+  const venta = saleBreakdown(cheapest);
   const familySummary = fareFamilySummary(cheapest);
 
   return (
     <article
       className={cn(
-        'overflow-hidden rounded-xl border bg-[var(--color-surface)] transition-colors',
+        'overflow-hidden rounded-2xl border bg-[var(--color-surface)] transition-all duration-200',
         expanded
           ? 'border-[var(--color-primary)]/45 shadow-[var(--shadow-md)]'
-          : 'border-[var(--color-border)] shadow-[var(--shadow-xs)] hover:border-[var(--color-border-strong)]',
+          : 'border-[var(--color-border)] shadow-[var(--shadow-xs)] hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-md)]',
       )}
     >
       {/* Toda la cabecera abre el detalle. Sin `focus:outline-none`: el anillo global de
@@ -376,11 +376,13 @@ export function FlightRow({
                 {hasMultipleFares ? 'Desde' : 'Total'}
               </p>
               <p className="text-xl font-bold leading-tight tabular-nums text-[var(--color-fg)]">
-                {formatMoney(sellMinor, cheapest.total.currency)}
+                {formatMoney(venta.sellMinor, venta.currency)}
               </p>
-              {hasMarkup ? (
+              {/* El costo de la AGENCIA, nunca el neto del proveedor: para una sub-agencia la
+                  diferencia entre los dos es el margen del consolidador. */}
+              {venta.ownMarginMinor !== undefined && venta.costMinor !== undefined ? (
                 <p className="mt-0.5 text-xs tabular-nums text-[var(--color-fg-muted)]">
-                  neto {formatMoney(cheapest.total.amountMinor, cheapest.total.currency)} + markup
+                  tu costo {formatMoney(venta.costMinor, venta.currency)}
                 </p>
               ) : null}
               {/* La única puerta a "Guardar cotización" es abrir esta tarjeta, así que la

@@ -611,14 +611,57 @@ describe('segmentos e itinerarios', () => {
 });
 
 describe('políticas y datos del proveedor', () => {
-  it('sin `penaltiesInfo` sólo se afirma lo que dice `nonRefundable`', () => {
+  it('sin `penaltiesInfo` sólo se afirma lo que dice `nonRefundable`: los cambios quedan sin informar', () => {
     const offer = onlyOffer(run(clone(adultFixture)));
-    expect(offer.policies).toEqual({ changeable: false, refundable: false });
+    expect(offer.policies).toEqual({ refundable: false });
   });
 
-  it('con `penaltiesInfo` gana la aplicabilidad `Before`', () => {
+  it('con `penaltiesInfo` gana la aplicabilidad `Before` y el cargo 0 viaja como «sin cargo»', () => {
     const offer = onlyOffer(run(clone(familyFixture)));
-    expect(offer.policies).toEqual({ changeable: true, refundable: true });
+    expect(offer.policies).toEqual({
+      changeable: true,
+      refundable: true,
+      changeFee: { amountMinor: 0, currency: 'EUR' },
+      refundFee: { amountMinor: 0, currency: 'EUR' },
+    });
+  });
+
+  it('una tarifa reembolsable CON multa lleva el cargo: no es un ✓ limpio', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    firstPricing(payload)['penaltiesInfo'] = {
+      penalties: [
+        { type: 'Refund', applicability: 'Before', refundable: true, amount: 150, currency: 'usd' },
+        {
+          type: 'Exchange',
+          applicability: 'Before',
+          changeable: true,
+          amount: 80,
+          currency: 'USD',
+        },
+      ],
+    };
+    expect(onlyOffer(run(payload)).policies).toEqual({
+      changeable: true,
+      refundable: true,
+      changeFee: { amountMinor: 8000, currency: 'USD' },
+      refundFee: { amountMinor: 15000, currency: 'USD' },
+    });
+  });
+
+  it('un tipo de penalidad que no llega queda sin informar, y una no permitida no lleva cargo', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    firstPricing(payload)['penaltiesInfo'] = {
+      penalties: [
+        {
+          type: 'Refund',
+          applicability: 'Before',
+          refundable: false,
+          amount: 999,
+          currency: 'USD',
+        },
+      ],
+    };
+    expect(onlyOffer(run(payload)).policies).toEqual({ refundable: false });
   });
 
   it('`penaltiesInfo` de la rama NDC (nivel pricingInformation) también se lee', () => {

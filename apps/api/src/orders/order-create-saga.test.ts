@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
-import type {
-  OrderCancelResult,
-  OrderCreateRequest,
-  OrderCreateResult,
-  OrderView,
-  Passenger,
-  SearchContext,
+import {
+  OrderCreateNotSentError,
+  type OrderCancelResult,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type OrderView,
+  type Passenger,
+  type SearchContext,
 } from '@sales-travel/domain';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
@@ -643,6 +644,34 @@ describe('saga de creación — intent durable antes del proveedor', () => {
     });
     expect(b.audit.first(ORDER_EVENTS.createFailed)?.aggregateId).toBe('order-1');
     expect(b.audit.dump()).not.toContain(DOCUMENTO);
+  });
+
+  it('un rechazo ANTES de la red libera la cotización y dice qué campo corregir', async () => {
+    // El builder rechazó el nombre sin llamar a nadie: no hay reserva que conciliar. Antes esto
+    // salía como «No vuelvas a reservar» y la cotización quedaba bloqueada para siempre.
+    const b = banco({
+      createThrows: new OrderCreateNotSentError(
+        'la reserva no cumple el contrato de Sabre (travelers.0.givenName:invalid_string)',
+      ),
+    });
+
+    let thrown: unknown;
+    try {
+      await b.orders.createOrder(TENANT, USER, dto());
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(BadRequestException);
+    const response = (thrown as BadRequestException).getResponse();
+    expect(response).toMatchObject({ retryForbidden: false });
+    expect(JSON.stringify(response)).toContain('pasajero 1: nombre');
+    expect(JSON.stringify(response)).not.toContain('reconciliationRequired');
+    expect(b.fila()).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.audit.first(ORDER_EVENTS.createFailed)?.payload).toMatchObject({
+      uncertain: false,
+      reason: 'rejected-before-send',
+    });
   });
 
   it('si el proveedor responde pero falla el CAS, devuelve intent + PNR y no intenta cerrar', async () => {

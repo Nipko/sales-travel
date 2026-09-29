@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Logger, NotFoundException } from '@nestjs/common';
+import { OrderCreateNotSentError } from '@sales-travel/domain';
 import {
   SabreApiError,
   SabreFlightCheckRequestError,
@@ -436,9 +437,11 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
       contactInfo: { email: 'a@b.test', phone: '+573000000000' },
     } as never;
 
-    await expect(adapter.createOrder(request, ctx)).rejects.toBeInstanceOf(
-      SabreOrderCreateInputError,
-    );
+    // «No salió a la red» es un contrato del PUERTO, no de Sabre: el saga lo lee para liberar la
+    // cotización en vez de bloquearla como resultado incierto. La causa de Sabre viaja dentro.
+    const thrown = await adapter.createOrder(request, ctx).catch((err: unknown) => err);
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    expect((thrown as Error).cause).toBeInstanceOf(SabreOrderCreateInputError);
   });
 
   it('retrieveForDisplay llega al builder de getBooking: un localizador inválido lo dice', async () => {

@@ -280,11 +280,15 @@ function isAllowance(value: unknown): boolean {
   );
 }
 
+/** Cada campo es opcional: ausente = «no informado» (ver `lib/fare-policy.ts`). */
 function isPolicies(value: unknown): boolean {
+  const isBoolean = (candidate: unknown) => typeof candidate === 'boolean';
   return (
     isRecord(value) &&
-    typeof value['changeable'] === 'boolean' &&
-    typeof value['refundable'] === 'boolean'
+    isOptional(value['changeable'], isBoolean) &&
+    isOptional(value['refundable'], isBoolean) &&
+    isOptional(value['changeFee'], isMoney) &&
+    isOptional(value['refundFee'], isMoney)
   );
 }
 

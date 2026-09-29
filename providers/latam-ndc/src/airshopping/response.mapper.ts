@@ -563,28 +563,32 @@ function extractOfferBaggage(
   };
 }
 
+/**
+ * Un nodo de restricción AUSENTE es «no informado», no «no permitido»: el PDF lo imprimía como
+ * «No reembolsable» sobre un dato que LATAM no mandó. Sólo un nodo presente decide.
+ */
 function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies'] {
-  let changeable = false;
-  let refundable = false;
+  let changeable: boolean | undefined;
+  let refundable: boolean | undefined;
+
+  const allowed = (node: Record<string, unknown> | undefined): boolean | undefined => {
+    if (node === undefined) return undefined;
+    const ind = node.AllowedModificationInd;
+    return ind === true || ind === 'true';
+  };
 
   for (const item of offerItems) {
-    const changeNode = item.ChangeRestrictions as Record<string, unknown> | undefined;
-    if (
-      changeNode?.AllowedModificationInd === true ||
-      changeNode?.AllowedModificationInd === 'true'
-    ) {
-      changeable = true;
-    }
-    const cancelNode = item.CancelRestrictions as Record<string, unknown> | undefined;
-    if (
-      cancelNode?.AllowedModificationInd === true ||
-      cancelNode?.AllowedModificationInd === 'true'
-    ) {
-      refundable = true;
-    }
+    const change = allowed(item.ChangeRestrictions as Record<string, unknown> | undefined);
+    if (change !== undefined) changeable = (changeable ?? false) || change;
+    const cancel = allowed(item.CancelRestrictions as Record<string, unknown> | undefined);
+    if (cancel !== undefined) refundable = (refundable ?? false) || cancel;
   }
 
-  return { changeable, refundable };
+  if (changeable === undefined && refundable === undefined) return undefined;
+  return {
+    ...(changeable === undefined ? {} : { changeable }),
+    ...(refundable === undefined ? {} : { refundable }),
+  };
 }
 
 // ---- helpers ----

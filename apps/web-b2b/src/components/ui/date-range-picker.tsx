@@ -267,6 +267,29 @@ export function tripLengthLabel(range: DateRange): string | null {
   return `${length.nights} ${length.nights === 1 ? 'noche' : 'noches'}`;
 }
 
+/**
+ * Lo que produce tocar un día: el borrador nuevo y, si la selección quedó COMPLETA, el rango a
+ * confirmar ya — sin botón «Aplicar».
+ *
+ * El «Aplicar» era un paso que no decidía nada: con la ida y la vuelta elegidas no hay otra cosa
+ * que el vendedor pueda querer, así que el botón sólo añadía un clic a cada búsqueda y la duda de
+ * si las fechas «habían quedado». Ahora el segundo día cierra el calendario con el rango puesto,
+ * y en solo ida lo cierra el primero.
+ *
+ * Lo que NO cambia: un rango a medias (ida sin vuelta) sigue siendo borrador, y cerrar el
+ * calendario en ese estado lo descarta sin tocar lo que ya estaba confirmado.
+ */
+export function seleccionarDia(
+  current: DateRange,
+  day: IsoDate,
+  rules: RangeRules,
+): { readonly draft: DateRange; readonly commit: DateRange | null } {
+  if (isDisabledDay(day, rules)) return { draft: current, commit: null };
+  const draft = nextRange(current, day, rules);
+  if (!canApply(draft, rules)) return { draft, commit: null };
+  return { draft, commit: rules.mode === 'oneway' ? { start: draft.start, end: null } : draft };
+}
+
 export function canApply(range: DateRange, rules: RangeRules): boolean {
   if (range.start === null) return false;
   return rules.mode === 'oneway' ? true : range.end !== null;
@@ -558,10 +581,20 @@ export function DateRangePicker({
     if (day > lastVisibleDay) setCursor(firstOfMonth(addMonths(day, -(MONTHS_VISIBLE - 1))));
   }
 
-  function selectDay(day: IsoDate) {
-    if (isDisabledDay(day, rules)) return;
-    setDraft((current) => nextRange(current, day, rules));
+  /**
+   * `clicks` es `MouseEvent.detail`. El segundo clic de un DOBLE clic se ignora: con ida y vuelta,
+   * el doble clic sobre la fecha de ida —un gesto común para «elegir esto»— cerraría el
+   * calendario con un regreso el MISMO día que nadie pidió. Un regreso en el día sigue siendo
+   * posible, pero como dos clics deliberados, no como un reflejo.
+   */
+  function selectDay(day: IsoDate, clicks = 1) {
+    if (clicks >= 2) return;
+    const { draft: next, commit } = seleccionarDia(draft, day, rules);
+    setDraft(next);
     setFocusedDay(day);
+    if (commit === null) return;
+    onChange(commit);
+    closePicker(true);
   }
 
   function handleDayKeyDown(event: React.KeyboardEvent<HTMLTableCellElement>, day: IsoDate) {
@@ -578,12 +611,6 @@ export function DateRangePicker({
     const next = focusAfterKey(day, event.key, rules);
     setFocusedDay(next);
     ensureVisible(next);
-  }
-
-  function applyDraft() {
-    if (!canApply(draft, rules)) return;
-    onChange(mode === 'oneway' ? { start: draft.start, end: null } : draft);
-    closePicker(true);
   }
 
   function clearDraft() {
@@ -771,14 +798,6 @@ export function DateRangePicker({
                 >
                   Borrar
                 </button>
-                <button
-                  type="button"
-                  onClick={applyDraft}
-                  disabled={!canApply(draft, rules)}
-                  className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:pointer-events-none disabled:opacity-40"
-                >
-                  Aplicar
-                </button>
               </div>
             </div>
           </div>
@@ -878,7 +897,7 @@ interface MonthTableProps {
   readonly counter: string | null;
   readonly today: IsoDate;
   readonly dayCellId: (day: IsoDate) => string;
-  readonly onSelect: (day: IsoDate) => void;
+  readonly onSelect: (day: IsoDate, clicks?: number) => void;
   readonly onHover: (day: IsoDate | null) => void;
   readonly onKeyDown: (event: React.KeyboardEvent<HTMLTableCellElement>, day: IsoDate) => void;
 }
@@ -978,7 +997,8 @@ interface DayCellProps {
   readonly counter: string | null;
   readonly weekIndex: number;
   readonly dayIndex: number;
-  readonly onSelect: (day: IsoDate) => void;
+  /** `clicks` = `MouseEvent.detail`: el segundo clic de un doble clic se ignora. */
+  readonly onSelect: (day: IsoDate, clicks?: number) => void;
   readonly onHover: (day: IsoDate | null) => void;
   readonly onKeyDown: (event: React.KeyboardEvent<HTMLTableCellElement>, day: IsoDate) => void;
 }
@@ -1026,7 +1046,7 @@ function DayCell({
       aria-current={isToday ? 'date' : undefined}
       aria-label={dayAriaLabel(day, painted, rules)}
       tabIndex={focused && !disabled ? 0 : -1}
-      onClick={() => onSelect(day)}
+      onClick={(event) => onSelect(day, event.detail)}
       onKeyDown={(event) => onKeyDown(event, day)}
       onMouseEnter={() => onHover(disabled ? null : day)}
       className={cn(

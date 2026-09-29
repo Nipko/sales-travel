@@ -191,6 +191,24 @@ export interface OrderCreateResult {
   compensation?: { cancellableItemIds: string[] };
 }
 
+/**
+ * La creación se rechazó ANTES de salir a la red: el proveedor no recibió nada, así que no puede
+ * existir una reserva a medias que conciliar.
+ *
+ * Es la única excepción que NO se trata como «resultado incierto». Sin esta distinción, un nombre
+ * con un espacio al final o un pasaporte con guiones —que el builder rechaza sin llamar a nadie—
+ * dejaban la cotización bloqueada con «No vuelvas a reservar» para siempre.
+ *
+ * `message` nunca lleva valores del pasajero, sólo la ruta del campo y el motivo: acaba en la
+ * pantalla del vendedor y en `domain_events`.
+ */
+export class OrderCreateNotSentError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'OrderCreateNotSentError';
+  }
+}
+
 export interface OrderCreatePort {
   createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult>;
 }
