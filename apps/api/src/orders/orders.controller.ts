@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -162,6 +163,13 @@ export class OrdersController {
     if (!order) throw new NotFoundException();
     const to = this.contactEmail(order);
     if (!to) throw new NotFoundException('La reserva no tiene email de contacto');
+    // Sólo hay algo que confirmar si la reserva existe del lado del proveedor. Una pendiente,
+    // fallida o cancelada no se «reenvía»: se le mentiría al cliente con su total.
+    if (order.status !== 'confirmed' && order.status !== 'ticketed') {
+      throw new ConflictException(
+        'Sólo se puede enviar la confirmación de una reserva confirmada o emitida.',
+      );
+    }
     const sent = await this.sendConfirmationEmail(tenantId, order);
     return { sent, to };
   }
@@ -186,6 +194,7 @@ export class OrdersController {
       totalAmount: order.total_amount,
       currency: order.currency,
       brand: await this.branding.resolve(tenantId),
+      ticketed: order.status === 'ticketed',
     });
     return this.mailer.sendToTenant(tenantId, {
       to,

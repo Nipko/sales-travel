@@ -120,8 +120,19 @@ export function orderConfirmationEmailHtml(input: {
   totalAmount: number;
   currency: string;
   brand?: EmailBrand | null;
+  /**
+   * `true` sólo con billete emitido. Una reserva sin billete NO está confirmada para el pasajero:
+   * la tarifa puede caerse antes de emitir, y «¡Tu reserva está confirmada!» es la promesa que se
+   * descubre rota en el mostrador.
+   */
+  ticketed?: boolean;
 }): { subject: string; html: string; text: string } {
   const sc = obj(input.searchCriteria);
+  const ticketed = input.ticketed === true;
+  const intro = ticketed
+    ? '¡Tu billete está emitido! Estos son los detalles:'
+    : 'Tu reserva está hecha y el billete todavía no se emitió: la tarifa y los asientos se garantizan al emitir. Estos son los detalles:';
+  const titulo = ticketed ? 'Billete emitido' : 'Reserva registrada';
   const route = `${s(sc['origin'])} → ${s(sc['destination'])}`;
   const dates = s(sc['returnDate'])
     ? `${s(sc['departureDate'])} – ${s(sc['returnDate'])}`
@@ -137,7 +148,7 @@ export function orderConfirmationEmailHtml(input: {
     .join(', ');
 
   const body = `
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">¡Tu reserva está confirmada! Estos son los detalles:</p>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${intro}</p>
     ${
       input.pnr
         ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;margin-bottom:18px">
@@ -158,8 +169,8 @@ export function orderConfirmationEmailHtml(input: {
     <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guardá este correo. Para cambios o consultas, respondé a tu agencia.</p>`;
 
   return {
-    subject: `Reserva confirmada #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
-    html: layout('Reserva confirmada', body, input.brand),
+    subject: `${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
+    html: layout(titulo, body, input.brand),
     text: `Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
   };
 }

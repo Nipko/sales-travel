@@ -78,7 +78,13 @@ export interface Offer {
     carryOn?: { qty: number; weightKg?: number };
     checked?: { qty: number; weightKg?: number };
   };
-  policies?: { changeable: boolean; refundable: boolean };
+  /** Cada campo ausente = «no informado». El cargo es por pasajero: ver `lib/fare-policy.ts`. */
+  policies?: {
+    changeable?: boolean;
+    refundable?: boolean;
+    changeFee?: Money;
+    refundFee?: Money;
+  };
   fetchedAt: string;
   expiresAt: string;
 }

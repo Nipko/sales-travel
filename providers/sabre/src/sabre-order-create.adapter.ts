@@ -1,16 +1,18 @@
 import type { LoggerPort } from '@sales-travel/core';
 import type { Itinerary, Offer, Segment } from '@sales-travel/canonical';
-import type {
-  BookingContactInfo,
-  OrderCreatePort,
-  OrderCreateRequest,
-  OrderCreateResult,
-  OrderItemKind,
-  Passenger,
-  SearchContext,
+import {
+  OrderCreateNotSentError,
+  type BookingContactInfo,
+  type OrderCreatePort,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type OrderItemKind,
+  type Passenger,
+  type SearchContext,
 } from '@sales-travel/domain';
 import {
   SABRE_CREATE_BOOKING_PATH,
+  SabreCreateBookingError,
   buildSabreCreateBookingRequest,
   type SabreAgencyInput,
   type SabreBookingProductInput,
@@ -256,7 +258,21 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     ctx: SearchContext,
     options: SabreOrderCreateOptions = {},
   ): Promise<SabreOrderCreateOutcome> {
-    const plan = this.plan(request, options);
+    // Todo lo que puede rechazar la petición va ANTES de la red, y se rechaza con el error que el
+    // saga lee como «no salió»: una excepción después del POST es un resultado incierto.
+    let plan: SabreCreateBookingPlan;
+    let useCase: SabreBookingUseCase;
+    let tolerance: readonly SabrePartialFailureDomain[];
+    try {
+      plan = this.plan(request, options);
+      useCase = options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE;
+      tolerance = toleranceOf(useCase);
+    } catch (err) {
+      if (err instanceof SabreOrderCreateInputError || err instanceof SabreCreateBookingError) {
+        throw new OrderCreateNotSentError(err.message, { cause: err });
+      }
+      throw err;
+    }
 
     // Sin `idempotent`. No es que sobre: es que decirlo sería mentir sobre lo que pasa si hay un
     // timeout. Un `ERR.2SG.GATEWAY.TIMEOUT` en createBooking no dice si el PNR se creó, y quien
@@ -269,8 +285,6 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
 
     const mapped: SabreCreateBookingMapped = mapSabreCreateBookingResponse(result.data);
     const advisories = plan.advisories.map(describeAdvisory);
-    const useCase = options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE;
-    const tolerance = toleranceOf(useCase);
     const failures = classifySabrePartialFailure(mapped.order, tolerance);
 
     this.log(mapped.order.outcome === 'CONFIRMED' ? 'debug' : 'warn', 'sabre.createBooking', {
@@ -498,6 +512,19 @@ function opcional<K extends string>(key: K, value: string | undefined): Record<K
 }
 
 /**
+ * Lo que el vendedor teclea, en la forma que el contrato acepta. El builder rechaza un espacio al
+ * final del nombre o un pasaporte escrito «AB-123.456», y ese rechazo no le dice nada al cliente:
+ * son el mismo nombre y el mismo documento. Se normaliza la FORMA, nunca el contenido.
+ */
+function nombreLimpio(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function numeroDocumentoLimpio(value: string): string {
+  return value.replace(/[\s.-]/g, '');
+}
+
+/**
  * El bloque `identityDocuments`, o NADA.
  *
  * Sabre rechazaba la reserva con `MANDATORY_DATA_MISSING` sobre `identityDocuments[0]` sin decir
@@ -527,7 +554,7 @@ function opcional<K extends string>(key: K, value: string | undefined): Record<K
  */
 function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityDocumentInput[] } {
   const doc = passenger.identityDoc;
-  const numero = doc.number?.trim();
+  const numero = numeroDocumentoLimpio(doc.number);
   const vencimiento = doc.expiryDate?.trim();
 
   // Con número hay que poder componer el DOCS entero. Sin vencimiento, no se manda nada.
@@ -542,7 +569,7 @@ function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityD
     identityDocuments: [
       {
         documentType: DOCUMENT_TYPE_BY_DOMAIN_TYPE[doc.type],
-        documentNumber: doc.number,
+        documentNumber: numero,
         issuingCountryCode: doc.issuingCountryCode,
         // 22 de los 26 documentos ATPCO reales lo llevan, y en TODOS los pasaportes vale lo
         // mismo que `issuingCountryCode` (12/12 comprobados: NG/NG, US/US…). No es una
@@ -555,8 +582,8 @@ function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityD
         citizenshipCountryCode: passenger.citizenshipCountryCode,
         // El TITULAR, dentro del documento. Parece redundante —el traveler ya los lleva— y no lo
         // es: 26/26 de los documentos ATPCO reales los llevan.
-        givenName: passenger.givenName,
-        surname: passenger.surname,
+        givenName: nombreLimpio(passenger.givenName),
+        surname: nombreLimpio(passenger.surname),
         birthDate: passenger.birthdate,
         gender: genderOf(passenger),
         ...opcional('expiryDate', doc.expiryDate),
@@ -569,8 +596,8 @@ function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityD
 function travelerOf(passenger: Passenger, boundProviderPaxId?: string): SabreTravelerInput {
   const providerPaxId = boundProviderPaxId ?? passenger.providerPaxId;
   return {
-    givenName: passenger.givenName,
-    surname: passenger.surname,
+    givenName: nombreLimpio(passenger.givenName),
+    surname: nombreLimpio(passenger.surname),
     birthDate: passenger.birthdate,
     gender: genderOf(passenger),
     passengerCode: PASSENGER_CODE_BY_PAX_TYPE[passenger.paxType],

@@ -214,10 +214,21 @@ export const OfferSchema = z.object({
     })
     .optional(),
 
+  /**
+   * Cada campo es OPCIONAL por la misma razón que `baggage`: ausente = «el proveedor no lo
+   * informó». Rellenar el hueco con `false` imprimía «No permitidos» en el PDF sobre un dato que
+   * no teníamos, y con `true` prometía un reembolso.
+   *
+   * `refundable: true` NO quiere decir «sin coste»: LATAM LIGHT es reembolsable CON multa. El
+   * cargo viaja aparte, por pasajero y en la moneda que lo informa la aerolínea. Ausente = no
+   * informado; `amountMinor: 0` = sin cargo.
+   */
   policies: z
     .object({
-      changeable: z.boolean(),
-      refundable: z.boolean(),
+      changeable: z.boolean().optional(),
+      refundable: z.boolean().optional(),
+      changeFee: MoneySchema.optional(),
+      refundFee: MoneySchema.optional(),
     })
     .optional(),
 

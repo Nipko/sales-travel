@@ -1,5 +1,8 @@
 'use client';
 
+import { describePolicy, policyState } from '../../../../lib/fare-policy';
+import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import { flightDate, flightTime, formatMoney } from '../../../../lib/flight-format';
 import {
   ArrowLeft,
   ArrowRight,
@@ -67,23 +70,6 @@ interface Quotation {
   notes: string | null;
   expiresAt: string;
   createdAt: string;
-}
-
-function formatMoney(amountMinor: number, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100);
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-CO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
 }
 
 function formatDate(iso: string): string {
@@ -493,6 +479,7 @@ export default function QuotationDetailPage() {
     searchCriteria.paxCount.infants;
   const fareComponents = fareComponentsForDisplay(selectedOffer);
   const fareSummary = fareFamilySummary(selectedOffer);
+  const venta = saleBreakdown(selectedOffer);
   const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
   const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
 
@@ -584,11 +571,11 @@ export default function QuotationDetailPage() {
                       <div className="flex items-center gap-4">
                         <div>
                           <p className="font-mono text-base font-semibold tabular-nums text-[var(--color-fg)]">
-                            {formatTime(first.departureAt)}
+                            {flightTime(first.departureAt)}
                           </p>
                           <p className="text-xs text-[var(--color-fg-muted)]">{first.origin}</p>
                           <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {formatDate(first.departureAt)}
+                            {flightDate(first.departureAt)}
                           </p>
                         </div>
                         <div className="flex flex-1 flex-col items-center gap-0.5">
@@ -608,11 +595,11 @@ export default function QuotationDetailPage() {
                         </div>
                         <div className="text-right">
                           <p className="font-mono text-base font-semibold tabular-nums text-[var(--color-fg)]">
-                            {formatTime(last.arrivalAt)}
+                            {flightTime(last.arrivalAt)}
                           </p>
                           <p className="text-xs text-[var(--color-fg-muted)]">{last.destination}</p>
                           <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {formatDate(last.arrivalAt)}
+                            {flightDate(last.arrivalAt)}
                           </p>
                         </div>
                       </div>
@@ -663,14 +650,14 @@ export default function QuotationDetailPage() {
                                       {seg.origin}
                                     </span>
                                     <span className="text-[var(--color-fg-subtle)]">
-                                      {formatTime(seg.departureAt)}
+                                      {flightTime(seg.departureAt)}
                                     </span>
                                     <ArrowRight className="size-3 text-[var(--color-fg-subtle)]" />
                                     <span className="font-mono font-medium text-[var(--color-fg)]">
                                       {seg.destination}
                                     </span>
                                     <span className="text-[var(--color-fg-subtle)]">
-                                      {formatTime(seg.arrivalAt)}
+                                      {flightTime(seg.arrivalAt)}
                                     </span>
                                   </div>
                                   <span className="text-[10px] text-[var(--color-fg-subtle)]">
@@ -726,7 +713,11 @@ export default function QuotationDetailPage() {
                           Cambios
                         </p>
                         <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {selectedOffer.policies.changeable ? 'Sí' : 'No'}
+                          {describePolicy(
+                            policyState(selectedOffer.policies, 'change'),
+                            'change',
+                            formatMoney,
+                          )}
                         </p>
                       </div>
                       <div className="text-center">
@@ -734,7 +725,11 @@ export default function QuotationDetailPage() {
                           Reembolso
                         </p>
                         <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {selectedOffer.policies.refundable ? 'Sí' : 'No'}
+                          {describePolicy(
+                            policyState(selectedOffer.policies, 'refund'),
+                            'refund',
+                            formatMoney,
+                          )}
                         </p>
                       </div>
                     </>
@@ -861,39 +856,26 @@ export default function QuotationDetailPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
                   <span>Base</span>
-                  <span>
-                    {formatMoney(
-                      selectedOffer.baseFare.amountMinor,
-                      selectedOffer.baseFare.currency,
-                    )}
-                  </span>
+                  <span>{formatMoney(venta.baseMinor, venta.currency)}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
                   <span>Impuestos</span>
-                  <span>
-                    {formatMoney(selectedOffer.taxes.amountMinor, selectedOffer.taxes.currency)}
-                  </span>
+                  <span>{formatMoney(venta.taxesMinor, venta.currency)}</span>
                 </div>
-                {(selectedOffer.pricing?.ownMarkupMinor ?? 0) > 0 && (
-                  <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                    <span>Markup</span>
-                    <span className="text-emerald-600">
-                      {formatMoney(
-                        selectedOffer.pricing!.ownMarkupMinor,
-                        selectedOffer.total.currency,
-                      )}
-                    </span>
-                  </div>
-                )}
                 <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-2 text-sm font-semibold text-[var(--color-fg)]">
                   <span>Total</span>
                   <span className="font-mono tabular-nums">
-                    {formatMoney(
-                      selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor,
-                      selectedOffer.total.currency,
-                    )}
+                    {formatMoney(venta.sellMinor, venta.currency)}
                   </span>
                 </div>
+                {/* Sólo para el vendedor: lo que paga su agencia y lo que gana. El neto del
+                    proveedor no se enseña (ver lib/sale-breakdown.ts). */}
+                {venta.ownMarginMinor !== undefined && venta.costMinor !== undefined && (
+                  <div className="flex items-center justify-between pt-1 text-[11px] text-[var(--color-fg-subtle)]">
+                    <span>Tu costo {formatMoney(venta.costMinor, venta.currency)}</span>
+                    <span>Margen {formatMoney(venta.ownMarginMinor, venta.currency)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[var(--color-fg-subtle)]">

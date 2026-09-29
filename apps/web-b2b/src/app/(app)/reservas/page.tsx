@@ -1,5 +1,6 @@
 'use client';
 
+import { flightTime } from '../../../lib/flight-format';
 import {
   AlertTriangle,
   Car,
@@ -163,13 +164,6 @@ const PAX_LABEL: Record<string, string> = {
   DRIVER: 'Conductor',
 };
 
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-CO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
 function fmtDuration(min: number): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 }
@@ -1368,8 +1362,8 @@ function OrderDetailModal({
                         className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 py-0.5 text-xs"
                       >
                         <span className="font-mono text-[var(--color-fg)]">
-                          {seg.origin} {fmtTime(seg.departureAt)} → {seg.destination}{' '}
-                          {fmtTime(seg.arrivalAt)}
+                          {seg.origin} {flightTime(seg.departureAt)} → {seg.destination}{' '}
+                          {flightTime(seg.arrivalAt)}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)]">
                           {seg.carrier}
