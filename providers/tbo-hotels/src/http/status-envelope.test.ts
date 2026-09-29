@@ -6,6 +6,7 @@ import {
   classifyTboResponse,
   type TboEnvelopeVerdict,
 } from './status-envelope';
+import { TBO_SLOW_NO_HOTELS_FOUND_MS } from './tbo-http.client';
 
 /**
  * El clasificador a solas. Las filas completas de 01 §8.3-§8.4 se prueban por la puerta pública del
@@ -16,13 +17,20 @@ import {
 const SEARCH = TBO_OPERATIONS.search;
 const PREBOOK = TBO_OPERATIONS.prebook;
 
+/** Por defecto, una respuesta que llegó al instante; el umbral de 01 §8.5 es el del cliente. */
 function classify(
   body: unknown,
   httpStatus = 200,
   operation: typeof SEARCH = SEARCH,
+  durationMs = 0,
 ): TboEnvelopeVerdict {
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body);
-  return classifyTboResponse({ httpStatus, bodyText, operation });
+  return classifyTboResponse({
+    httpStatus,
+    bodyText,
+    operation: { ...operation, slowNoHotelsFoundMs: TBO_SLOW_NO_HOTELS_FOUND_MS },
+    durationMs,
+  });
 }
 
 describe('la tabla de códigos (01 §8.2)', () => {
@@ -236,6 +244,44 @@ describe('TBOHotelCodeList: 500 "No Hotels Found" es la ciudad sin hoteles (01 �
       ok: false,
       kind: 'UPSTREAM',
     });
+  });
+
+  it('a 1 ms del umbral es la ciudad vacía; desde el umbral, el plazo de TBO vencido', () => {
+    const body = noHotels('No Hotels Found');
+    expect(classify(body, 200, CITY_HOTELS, TBO_SLOW_NO_HOTELS_FOUND_MS - 1)).toMatchObject({
+      ok: true,
+      outcome: 'NO_AVAILABILITY',
+    });
+    for (const durationMs of [TBO_SLOW_NO_HOTELS_FOUND_MS, 5_092]) {
+      expect(classify(body, 200, CITY_HOTELS, durationMs)).toEqual({
+        ok: false,
+        kind: 'UPSTREAM',
+        reason: 'slow_no_hotels_found',
+        tboCode: 500,
+        casingVariant: false,
+        description: 'No Hotels Found',
+      });
+    }
+  });
+
+  it('una duración que no es un número no prueba que la ciudad esté vacía', () => {
+    expect(classify(noHotels('No Hotels Found'), 200, CITY_HOTELS, Number.NaN)).toMatchObject({
+      ok: false,
+      kind: 'UPSTREAM',
+      reason: 'slow_no_hotels_found',
+    });
+  });
+
+  it('el motivo sólo marca el "No Hotels Found" que la fila admitía: ningún otro 500 lo lleva', () => {
+    const slow = TBO_SLOW_NO_HOTELS_FOUND_MS + 1;
+    for (const verdict of [
+      classify(noHotels('Unexpected Error'), 200, CITY_HOTELS, slow),
+      classify(noHotels('No Hotels Found'), 502, CITY_HOTELS, slow),
+      classify(noHotels('No Hotels Found'), 200, TBO_OPERATIONS.cityList, slow),
+    ]) {
+      expect(verdict).toMatchObject({ ok: false, kind: 'UPSTREAM' });
+      expect(verdict).not.toHaveProperty('reason');
+    }
   });
 });
 

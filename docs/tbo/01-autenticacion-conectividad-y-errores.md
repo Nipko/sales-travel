@@ -478,12 +478,14 @@ Notas sobre las columnas:
 | `479`         | `CANCEL_FAIL`          | Error de negocio del Cancel                                                                                                    | `CANCEL_FAILED`                     | `IGNORE`                                                | **Nunca.** Se consulta BookingDetail para registrar el estado real ([04](./04-post-venta-detalle-cancelacion-y-conciliacion.md)) | 502                                                                 | "TBO no pudo cancelar la reserva. Revisá su estado en el detalle antes de volver a intentar; si sigue activa, contactá a soporte."                                                                                                                                                                                                                  |
 | `429`         | `LIMIT_EXCEEDED`       | Error de capacidad                                                                                                             | `THROTTLED`                         | `IGNORE`: se lo pasa al limitador (§7.2), no al breaker | Lecturas: sí (§10.4). Book y Cancel: nunca                                                                                       | 503                                                                 | "TBO está limitando la cantidad de consultas. Probá de nuevo en unos segundos."                                                                                                                                                                                                                                                                     |
 | `500`         | `UNEXPECTED_ERROR`     | Error del proveedor                                                                                                            | `UPSTREAM`                          | `COUNT`                                                 | Lecturas: sí (§10.4). Book y Cancel: nunca, el estado queda `UNVERIFIED`                                                         | 502                                                                 | "TBO tuvo un problema interno. Probá de nuevo en unos minutos." Además, se guardan RQ y RS para soporte (§11.2), porque p. 9 exige "complete logs"                                                                                                                                                                                                  |
-| `500`         | `UNEXPECTED_ERROR`     | **TBOHotelCodeList, HTTP 2xx y "No Hotels Found":** la ciudad sin hoteles. Lista vacía, **no se lanza** error (§8.5)           | — (vacío `NO_AVAILABILITY`, §8.5)   | No cuenta: no hay error                                 | No                                                                                                                               | — (solo el sync)                                                    | —                                                                                                                                                                                                                                                                                                                                                   |
+| `500`         | `UNEXPECTED_ERROR`     | **TBOHotelCodeList, HTTP 2xx, "No Hotels Found" en < 4.500 ms:** la ciudad sin hoteles. Lista vacía, **sin** error (§8.5)      | — (vacío `NO_AVAILABILITY`, §8.5)   | No cuenta: no hay error                                 | No                                                                                                                               | — (solo el sync)                                                    | —                                                                                                                                                                                                                                                                                                                                                   |
+| `500`         | `UNEXPECTED_ERROR`     | **TBOHotelCodeList, HTTP 2xx, "No Hotels Found" en 4.500 ms o más:** el plazo interno de TBO vencido (INFERIDO, §8.5)          | `UPSTREAM` (`slow_no_hotels_found`) | `COUNT`                                                 | Sí, como el 500 (§10.4). Agotados los intentos, la ciudad queda fallida, no vacía                                                | — (solo el sync)                                                    | —                                                                                                                                                                                                                                                                                                                                                   |
 
 Toda la columna "¿Error o resultado?" y las siguientes son **Postura** apoyada en la tabla del contrato. El reparto
 de códigos por método (405 en Book, 479 en Cancel, etc.) es **INFERIDO**: el PDF no dice qué códigos devuelve
 cada método → [Q-08](./10-preguntas-para-tbo.md#q-08). Las excepciones son el 201 en Search, que sí tiene ejemplo (p. 18,
-**VERIFICADO-PDF**), y el 500 "No Hotels Found" de TBOHotelCodeList, observado en producción el 2026-09-29 (§8.5).
+**VERIFICADO-PDF**), y el 500 "No Hotels Found" de TBOHotelCodeList, observado en producción el 2026-09-29 (§8.5); que
+el lento sea un plazo vencido es **INFERIDO** del mismo log.
 
 ### 8.4 Resultados que no están en la tabla
 
@@ -535,14 +537,26 @@ significa nada** hasta leer `Status.Code`.
 - **TBOHotelCodeList, 500 "No Hotels Found"**: una ciudad sin hoteles llega como HTTP 200 con
   `{"Status":{"Code":500,"Description":"No Hotels Found"}}` (55 bytes) y nada más. Hasta el 2026-09-29 el cliente lo
   leía como `UPSTREAM`: 5 intentos, suma al breaker, `warn` y la ciudad quedaba fallida y se volvía a pedir en cada
-  corrida. Desde entonces es un **resultado vacío** en esa operación y solo con HTTP 2xx: una llamada, sin reintento,
-  sin error que el breaker cuente y una línea `info` con la ciudad (`tbo.static.city_without_hotels`). Es la única
-  rama que compara
-  `Description` (§8.6), sin distinguir mayúsculas ni espacios; cualquier otro 500 sigue siendo `UPSTREAM`. La columna
+  corrida. Desde entonces, en esa operación y solo con HTTP 2xx, **decide lo que tardó el intento**, del envío al
+  último byte del cuerpo:
+
+  - **menos de `TBO_SLOW_NO_HOTELS_FOUND_MS` (4.500 ms)**: la ciudad sin hoteles. **Resultado vacío** en una llamada,
+    sin reintento, sin error que el breaker cuente y con una línea `info` de la ciudad
+    (`tbo.static.city_without_hotels`);
+  - **4.500 ms o más**: el plazo interno de TBO vencido, no una ciudad vacía (**INFERIDO**, evidencia más abajo). Es el
+    `UPSTREAM` del 500, con su política: reintento con backoff hasta los 5 intentos de la fila, `COUNT` para el
+    breaker y una línea `warn` `tbo.http.error` con `reason: "slow_no_hotels_found"`. Si un reintento trae hoteles,
+    se leen como cualquier respuesta; si trae un "No Hotels Found" rápido, la ciudad queda vacía; si los 5 son lentos,
+    la llamada lanza `TboApiError` `UPSTREAM` y el sync deja la ciudad **fallida** (se vuelve a pedir en la próxima
+    corrida), nunca vacía.
+
+  El umbral se cambia con la opción `slowNoHotelsFoundMs` de `TboStaticContentClient` (entero positivo, con Zod como
+  sus demás opciones) o de `send`; sin ella vale la constante. Es la única rama que compara `Description` (§8.6), sin distinguir
+  mayúsculas ni espacios; cualquier otro 500 sigue siendo `UPSTREAM`, sin `reason`. La columna
   `emptyOnNoHotelsFound` de `TBO_OPERATIONS` la enciende solo en `tboHotelCodeList`, y el cliente la ignora en Book y
   Cancel aunque alguien la encienda: allí un 500 es incierto, nunca un vacío (`money-paths.guard.test.ts`). CityList y
   HotelDetails no la tienen: no hay evidencia. Qué hace el sync con la ciudad vacía está en
-  [05](./05-contenido-estatico-e-inventario.md) §6.5.
+  [05](./05-contenido-estatico-e-inventario.md) §6.3 y §6.5.
 
 **Códigos observados por operación** en la primera corrida del sync en producción, con la cuenta de test de TBO y
 `countries=CO`, `max_calls=200` (2026-09-29; log del workflow `Sync TBO inventory → Postgres`, líneas de la lista
@@ -554,20 +568,35 @@ blanca de §11.1, nunca cuerpos):
 | `CityList`         | Éxito, 210 ciudades de CO                                                                                                                    | Éxito                                                                                               |
 | `hotelcodelist`    | Éxito, 307.640 códigos                                                                                                                       | Éxito                                                                                               |
 | `TBOHotelCodeList` | Éxito en 181 ciudades (15.344 hoteles), con `Latitude` y `Longitude` por hotel                                                               | Éxito; las coordenadas se leen antes que `Map` ([05](./05-contenido-estatico-e-inventario.md) §2.5) |
-| `TBOHotelCodeList` | HTTP 200, `application/json`, 55 bytes, `Status.Code` 500, "No Hotels Found": 20 ciudades en el primer intento                               | Resultado vacío (este apartado). Antes del cambio: `UPSTREAM`, 16 ciudades fallidas tras 5 intentos |
+| `TBOHotelCodeList` | HTTP 200, `application/json`, 55 bytes, `Status.Code` 500, "No Hotels Found": 20 ciudades en el primer intento                               | Vacío si llegó en < 4.500 ms; si no, `UPSTREAM` con reintento. Antes: `UPSTREAM`, 16 fallidas       |
 | `HotelDetails`     | No se llamó: E4 quedó `skipped`                                                                                                              | —                                                                                                   |
 | Venta y post-venta | No se llamaron                                                                                                                               | —                                                                                                   |
 
-**Lo que el mismo log deja abierto.** De esas 20 ciudades, 4 devolvieron hoteles en un reintento (2 en el segundo
-intento, 2 en el tercero): el "No Hotels Found" no siempre fue definitivo. Todos los "No Hotels Found" de esas cuatro
-tardaron ≈ 5,09 s, igual que todos los intentos de 5 de las 16 que fallaron siempre (36 de los 86 intentos con ese
-texto), mientras que los otros 50 tardaron entre ≈ 0,1 y 4,3 s (42 de ellos por debajo de 0,7 s). Ninguna respuesta
-con hoteles pasó de ≈ 3,7 s, cota tomada de las marcas de tiempo entre ciudades, porque el log no guarda la duración
-de los éxitos. **INFERIDO:** TBO podría contestar "No Hotels Found" cuando se le vence un plazo interno de ≈ 5 s. Aun
-así, este cambio no reintenta, como pide su requisito: una ciudad que tenía hoteles nunca se barre con esa respuesta
-(queda pendiente como anomalía), pero una ciudad nueva que la reciba queda con `hotel_count = 0` hasta
-`TBO_SYNC_EMPTY_REFRESH_DAYS`. La línea `info` lleva `durationMs` para vigilarlo; si el "No Hotels Found" de ≈ 5 s
-merece otro trato es una decisión pendiente → [Q-08](./10-preguntas-para-tbo.md#q-08).
+**El umbral, del mismo log.** Las 86 líneas `tbo.http.error` con ese texto están, por llamada y con la duración de
+cada intento, en `providers/tbo-hotels/src/__fixtures__/observed/tbo-hotel-code-list.no-hotels-found-timing.json`. De
+las 20 ciudades, 4 devolvieron hoteles en un reintento (2 en el segundo intento, 2 en el tercero): el "No Hotels
+Found" no siempre fue definitivo. Las 86 respuestas forman dos grupos, sin nada entre 4.279 y 5.084 ms:
+
+- **36 lentas, de 5.084 a 5.357 ms**: los 6 "No Hotels Found" de las cuatro que se recuperaron (todos entre 5.084 y
+  5.092 ms), los 25 de las 5 ciudades que contestaron así en los 5 intentos y 5 de otras dos que alternaron. Los
+  intentos 1 a 4 caen entre 5.084 y 5.119 ms; los quintos, entre 5.256 y 5.357 ms.
+- **50 rápidas, de 93 a 4.279 ms**, 42 de ellas por debajo de 0,7 s. Ninguna es de una ciudad que después devolviera
+  hoteles.
+
+El log no guarda la duración de un éxito; por las marcas de tiempo, la respuesta con hoteles de cada una de las cuatro
+tardó como mucho entre ≈ 2,7 y 4,8 s, y la de las demás ciudades, como mucho ≈ 3,7 s. **INFERIDO:** TBO contesta "No
+Hotels Found" cuando se le vence un plazo interno de ≈ 5 s: 5.084 ms menos los ≈ 93 ms de la respuesta más rápida (la
+ida y vuelta) da ≈ 5,0 s, y los intentos 1 a 4 del grupo lento caen todos en 35 ms (5.084-5.119).
+`TBO_SLOW_NO_HOTELS_FOUND_MS` = 4.500 queda por encima de la más lenta de las rápidas (4.279 ms) y ≈ 0,5 s por debajo
+del plazo, margen para una red más cercana a TBO que la del runner. Aplicada a las 20 llamadas del log, la regla deja
+11 ciudades vacías en una llamada, 4 con sus hoteles y 5 fallidas que se vuelven a pedir; sin umbral, las 20 quedaban
+vacías, 4 de ellas con hoteles de verdad (`tbo-static-content.client.test.ts` repite la cuenta).
+
+Lo que no resuelve: una ciudad vacía de verdad cuyo "No Hotels Found" tarde 4,5 s o más queda fallida en vez de vacía
+y se vuelve a pedir en cada corrida, y una ciudad con hoteles a la que TBO le conteste "No Hotels Found" rápido sigue
+quedando vacía hasta `TBO_SYNC_EMPTY_REFRESH_DAYS` (si ya tenía hoteles, no se barre: es la anomalía de
+[05](./05-contenido-estatico-e-inventario.md) §6.5). La línea `info` y la `warn` llevan `durationMs` para vigilar
+ambos casos; qué significa el texto y cuál es el plazo interno → [Q-08](./10-preguntas-para-tbo.md#q-08).
 
 ### 8.6 `Status.Description` no es parte del contrato
 
@@ -827,7 +856,8 @@ export const TBO_OPERATIONS = {
      aplica a `hotelcodelist`, §8.1);
    - `Code 200` → éxito;
    - `Code 201` en `search` → éxito vacío;
-   - `Code 500` con `Description` "No Hotels Found" en `tboHotelCodeList` → éxito vacío (§8.5);
+   - `Code 500` con `Description` "No Hotels Found" en `tboHotelCodeList` → éxito vacío si el intento tardó menos de
+     `slowNoHotelsFoundMs` (4.500 ms por defecto); si no, `UPSTREAM` con `reason: "slow_no_hotels_found"` (§8.5);
    - código de la tabla → `TboApiError(kind)`;
    - otro código → `UNKNOWN_CODE`.
 6. **HTTP no-2xx:**
@@ -858,7 +888,7 @@ La respuesta no se exige con `Content-Type` `application/json`: se juzga por el 
 | **Cancel**                | **0**                      | —                                                                                                                                                 | **Siempre.** Una segunda cancelación no se repite sin reconciliar                                                 |
 | BookingDetail             | 2 en job, 1 en interactivo | `THROTTLED`, `UPSTREAM`, `TRANSPORT`, `MALFORMED_RESPONSE`                                                                                        | `NO_RETRY`                                                                                                        |
 | BookingDetailsbasedondate | 2                          | Igual que BookingDetail                                                                                                                           | `NO_RETRY`                                                                                                        |
-| Estáticos                 | 4 (2 en `hotelcodelist`)   | Igual que BookingDetail                                                                                                                           | `NO_RETRY`; el 500 "No Hotels Found" de TBOHotelCodeList, que no es un fallo (§8.5)                               |
+| Estáticos                 | 4 (2 en `hotelcodelist`)   | Igual que BookingDetail; en TBOHotelCodeList, además, el "No Hotels Found" de 4.500 ms o más (`UPSTREAM`, §8.5)                                   | `NO_RETRY`; el 500 "No Hotels Found" rápido de TBOHotelCodeList, que no es un fallo (§8.5)                        |
 
 No se reintenta nunca `CLIENT_BUG`, `CREDENTIALS_INVALID`, `ACCOUNT_BLOCKED`, `INSUFFICIENT_BALANCE`, los códigos de
 negocio, `UNKNOWN_CODE` ni `TboResponseMappingError`. La decisión de repetir un **flujo** (buscar de nuevo, un

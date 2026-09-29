@@ -236,3 +236,15 @@ no quedó registrado y ningún test depende de él. No lleva datos de nadie: ni 
 
 Cuando la sonda de certificación capture una respuesta real con esas claves, reemplaza a este
 fixture y fija el tipo verdadero (→ [Q-63](../../../../docs/tbo/10-preguntas-para-tbo.md#q-63)).
+
+## `observed/` — tiempos del log
+
+`tbo-hotel-code-list.no-hotels-found-timing.json` es el log **real** de la misma corrida
+(2026-09-29), sin reconstruir nada: las 86 líneas `tbo.http.error` con "No Hotels Found" agrupadas
+por llamada (20), con el `durationMs` de cada intento, cómo terminó la llamada (`failed` tras 5
+intentos, o `hotels` si la línea siguiente del log es la lista de hoteles de esa ciudad) y, en ésas,
+la cota de lo que tardó la respuesta con hoteles. Cada llamada lleva el prefijo de 8 caracteres de
+nuestro `requestId` para ubicarla en el log; ni la ciudad ni la cuenta, que el log no registra. De
+aquí sale `TBO_SLOW_NO_HOTELS_FOUND_MS` ([01](../../../../docs/tbo/01-autenticacion-conectividad-y-errores.md)
+§8.5): los tests del cliente de contenido y del sync reproducen esas llamadas con un reloj falso, y
+uno de ellos comprueba que el umbral siga separando los dos grupos del log.

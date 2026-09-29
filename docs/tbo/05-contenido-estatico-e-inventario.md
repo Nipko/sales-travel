@@ -288,11 +288,15 @@ Notas:
 cifras en [01](./01-autenticacion-conectividad-y-errores.md) §8.5):
 
 - **Ciudad sin hoteles.** TBO no manda un 200 con `Hotels` vacío: manda HTTP 200 con
-  `{"Status":{"Code":500,"Description":"No Hotels Found"}}` (55 bytes). El ACL lo lee como **lista vacía en una sola
-  llamada**, sin reintento ni `warn` y sin error para el breaker; cualquier otro 500 sigue siendo `UPSTREAM`. En el
-  primer intento contestaron así 20 de las 197 ciudades que se alcanzaron a pedir; 16 lo repitieron en los 5 intentos
-  y 4 devolvieron hoteles en un reintento, con primeras respuestas de ≈ 5 s que hacen pensar en un plazo interno
-  vencido (INFERIDO → [Q-08](./10-preguntas-para-tbo.md#q-08)). Qué hace el sync: §6.3 y §6.5.
+  `{"Status":{"Code":500,"Description":"No Hotels Found"}}` (55 bytes). En el primer intento contestaron así 20 de
+  las 197 ciudades que se alcanzaron a pedir; 16 lo repitieron en los 5 intentos y 4 devolvieron hoteles en un
+  reintento. Los "No Hotels Found" de esas cuatro tardaron siempre entre 5.084 y 5.092 ms; los de las ciudades que
+  nunca devolvieron hoteles, en su mayoría cientos de ms. Por eso el ACL decide por lo que tardó el intento: en
+  **menos de 4.500 ms** (`TBO_SLOW_NO_HOTELS_FOUND_MS`) es una **lista vacía en una sola llamada**, sin reintento ni
+  `warn` y sin error para el breaker; en **4.500 ms o más** es el plazo interno de TBO vencido (INFERIDO →
+  [Q-08](./10-preguntas-para-tbo.md#q-08)) y se reintenta como el `UPSTREAM` del 500, marcado en el log con
+  `reason: "slow_no_hotels_found"`. Cualquier otro 500 sigue siendo `UPSTREAM`. Cifras y elección del umbral en
+  [01](./01-autenticacion-conectividad-y-errores.md) §8.5; qué hace el sync, §6.3 y §6.5.
 - **Coordenadas.** Cada hotel trae `Latitude` y `Longitude`, que ni la tabla ni el ejemplo documentan (pp. 66-69).
   El log registra nombres de claves, no valores, así que no se sabe su tipo: el ACL acepta número o string numérico,
   las usa si dan un punto válido y, si no, cae a `Map` (§3) → [Q-63](./10-preguntas-para-tbo.md#q-63). `HotelDetails`
@@ -615,12 +619,17 @@ Decisiones dentro de las etapas:
   `Attractions`, pero no tiene parámetro de idioma (p. 65): probablemente vienen en inglés (INFERIDO). Se guardan
   como `hotel_content` con `lang = 'en'` y `source = 'TBOHotelCodeList'` solo si todavía no hay contenido EN de
   `HotelDetails`. Así el detalle tiene texto desde el primer día, aunque sin imágenes.
-- **Ciudad sin hoteles en E3** (desde el 2026-09-29, §2.5): el "No Hotels Found" llega al sync como lista vacía y
-  la ciudad **no es fallida**. Si no tenía hoteles activos, queda con `hotel_count = 0`, `last_status_code = 200` y su
-  `synced_at`, y vuelve con la cadencia de las vacías (`TBO_SYNC_EMPTY_REFRESH_DAYS`, 30 días por defecto; con
-  demanda manda la diaria) en vez de pedirse en cada corrida. Si tenía hoteles, es la anomalía `empty-response` de
-  §6.5: no se barre nada y queda pendiente. El resumen de E3 y la línea `tbo.sync.result` cuentan `citiesEmpty`
-  aparte de `citiesFailed`, y una racha de ciudades vacías no corta la corrida (no son errores).
+- **Ciudad sin hoteles en E3** (desde el 2026-09-29, §2.5): el "No Hotels Found" rápido (menos de 4.500 ms) llega
+  al sync como lista vacía y la ciudad **no es fallida**. Si no tenía hoteles activos, queda con `hotel_count = 0`,
+  `last_status_code = 200` y su `synced_at`, y vuelve con la cadencia de las vacías (`TBO_SYNC_EMPTY_REFRESH_DAYS`, 30
+  días por defecto; con demanda manda la diaria) en vez de pedirse en cada corrida. Si tenía hoteles, es la anomalía
+  `empty-response` de §6.5: no se barre nada y queda pendiente. El resumen de E3 y la línea `tbo.sync.result`
+  cuentan `citiesEmpty` aparte de `citiesFailed`, y una racha de ciudades vacías no corta la corrida (no son errores).
+- **"No Hotels Found" lento en E3** (4.500 ms o más, §2.5): no es una ciudad vacía. El cliente HTTP lo reintenta con
+  backoff dentro de la misma llamada; si un intento trae hoteles, se escriben como los de cualquier ciudad. Si los 5
+  intentos son lentos, la llamada falla con `UPSTREAM`: la ciudad cuenta en `citiesFailed` y en `errorsByCode`, suma
+  a la racha de errores, queda con `last_status_code = 500` y sin `synced_at` nuevo, y se vuelve a pedir en la
+  próxima corrida.
 - **Prioridad de ciudades en E3:** (1) las mapeadas a destinos con búsquedas recientes (`search_logs.criteria`
   guarda `destinationId`, `apps/api/src/hotels/hotels.service.ts:97-102`, `db/migrations/0032_search_logs.sql:27`);
   (2) las que nunca se sincronizaron; (3) las más antiguas por `synced_at`.
@@ -660,6 +669,7 @@ provider_city_code = $city AND last_seen_at < $runStart`.
    respuesta vacía o con `Status.Code` distinto de 200 nunca barre. El "No Hotels Found" de una ciudad (§2.5) es una
    respuesta vacía: en una ciudad nueva o que ya estaba vacía la deja con `hotel_count = 0` y el checkpoint al día; en
    una que tenía hoteles es anomalía, porque ese texto también llegó en ciudades que en el reintento sí tenían hoteles.
+   El lento ni siquiera llega aquí: es un fallo y la ciudad no se escribe (§6.3).
 
 Nunca se hace `DELETE` de filas TBO. Las bajas son lógicas, y `resolveCityHotelIds` (o su sucesor por proveedor)
 filtra `active = true` ([06](./06-seams-integracion-repo.md)). Un hotel inactivo conserva su contenido para
@@ -705,10 +715,11 @@ llamadas = 1 (CountryList)
 Ejemplo **hipotético**, solo para dimensionar: 10 países con 3.000 ciudades en total, 40.000 hoteles, lote de 10
 y 3 idiomas dan ≈ 3.000 + 12.000 = 15.000 llamadas. A 1 req/s son ≈ 4,2 horas: de ahí el presupuesto por corrida
 y la prioridad por demanda. La primera corrida de E3 revela cuántas ciudades tienen `hotel_count = 0`, que pasan a
-cadencia mensual. En CO (2026-09-29, 200 llamadas) fueron 16 de las 197 ciudades pedidas, todavía como fallidas:
-con el tratamiento de §6.3 cada una cuesta una llamada por mes, no una por corrida. El presupuesto
-(`TBO_SYNC_MAX_CALLS`) cuenta llamadas del sync y no intentos HTTP: los 5 intentos de cada una de esas ciudades
-gastaron tiempo y QPS (≈ 9-34 s por ciudad con el backoff), no presupuesto.
+cadencia mensual. En CO (2026-09-29, 200 llamadas) 20 de las 197 ciudades pedidas contestaron "No Hotels Found", y
+16 quedaron fallidas tras 5 intentos. Con el umbral de §2.5, esas 20 quedan en 11 vacías, que cuestan una llamada por
+mes y no una por corrida, 4 con sus hoteles y 5 fallidas, que se vuelven a pedir en cada corrida hasta que TBO
+conteste a tiempo. El presupuesto (`TBO_SYNC_MAX_CALLS`) cuenta llamadas del sync y no intentos HTTP: los 5 intentos
+de una ciudad lenta gastan tiempo y QPS (≈ 33 s por ciudad: 5 respuestas de ≈ 5,1 s más el backoff), no presupuesto.
 
 ---
 
@@ -1095,7 +1106,7 @@ construir.
 | CE-18 | `CityList` sin coordenadas, región ni IATA, e incluye aldeas                                                                                                                                                                                                     | p. 54                     | Centroide desde hoteles; cadencia menor para ciudades sin hoteles                                                                                                                                                                                                                                 | no                                                                                                                                                                                                            |
 | CE-19 | No se sabe si el catálogo depende de la cuenta                                                                                                                                                                                                                   | pp. 13, 54-55, 65         | §11                                                                                                                                                                                                                                                                                               | → [Q-60](./10-preguntas-para-tbo.md#q-60)                                                                                                                                                                     |
 | CE-20 | Base URL de test en `http://` pese a "should be secured with HTTPS"; Basic Auth por http viaja en claro                                                                                                                                                          | p. 7; Postman; Cert       | Ver [01](./01-autenticacion-conectividad-y-errores.md). El sync nunca manda credenciales live por http                                                                                                                                                                                            | → [Q-03](./10-preguntas-para-tbo.md#q-03)                                                                                                                                                                     |
-| CE-21 | Una ciudad sin hoteles llega como `Status.Code` 500 "No Hotels Found" (el código de `UNEXPECTED_ERROR`), no como un 200 con `Hotels` vacío; en 4 ciudades ese texto se volvió lista con hoteles al reintentar                                                    | producción, 2026-09-29    | Lista vacía sin reintento solo en `TBOHotelCodeList` (§2.5); nunca barre una ciudad que tenía hoteles (§6.5)                                                                                                                                                                                      | → [Q-08](./10-preguntas-para-tbo.md#q-08)                                                                                                                                                                     |
+| CE-21 | Una ciudad sin hoteles llega como `Status.Code` 500 "No Hotels Found" (el código de `UNEXPECTED_ERROR`), no como un 200 con `Hotels` vacío; en 4 ciudades ese texto, siempre a los ≈ 5,09 s, se volvió lista con hoteles al reintentar                           | producción, 2026-09-29    | Lista vacía sin reintento solo en `TBOHotelCodeList` y si llegó en < 4.500 ms; más lento, `UPSTREAM` con reintento y la ciudad fallida si no se recupera (§2.5, §6.3); nunca barre una ciudad que tenía hoteles (§6.5)                                                                            | → [Q-08](./10-preguntas-para-tbo.md#q-08)                                                                                                                                                                     |
 | CE-22 | `TBOHotelCodeList` manda `Latitude` y `Longitude` por hotel, que el PDF no documenta (solo `Map`)                                                                                                                                                                | pp. 66-69; producción     | Número o string numérico; mandan sobre `Map` si dan un punto válido (§3)                                                                                                                                                                                                                          | → [Q-63](./10-preguntas-para-tbo.md#q-63)                                                                                                                                                                     |
 
 ---
@@ -1139,7 +1150,8 @@ Las consolida [10](./10-preguntas-para-tbo.md). Cada una se entiende sin este do
     y `hotelcodelist`?
 13. Errores (pp. 8-10): ¿qué `Status.Code` y qué código HTTP devuelven los métodos estáticos ante un `CountryCode`
     o `CityCode` inexistente, o una cuenta sin permiso? Una ciudad **existente** sin hoteles ya se vio en producción
-    (500 "No Hotels Found", §2.5); falta saber si ese texto puede salir también de un plazo interno vencido.
+    (500 "No Hotels Found", §2.5); falta saber si ese texto puede salir también de un plazo interno vencido, como
+    sugieren los ≈ 5,09 s de las ciudades que en el reintento devolvieron hoteles, y cuánto dura ese plazo.
 14. Códigos de ciudad (pp. 54, 62, 65): ¿`CityList[].Code`, `TBOHotelCodeList.CityCode` y `HotelDetails[].CityId`
     son el mismo código? ¿Son estables en el tiempo? ¿Un hotel puede cambiar de ciudad?
 15. Mapeo (no aparece en pp. 51-69): ¿TBO entrega GIATA ID u otro código de mapeo de hoteles que podamos usar para

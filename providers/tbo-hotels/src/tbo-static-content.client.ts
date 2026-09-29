@@ -4,6 +4,7 @@ import { requireUsableTboConfig, type TboHotelsConfig } from './config';
 import { TboConfigError, TboRequestBuildError, TboResponseMappingError } from './errors';
 import { TBO_OPERATIONS } from './http/operations';
 import {
+  TBO_SLOW_NO_HOTELS_FOUND_MS,
   TboHttpClient,
   type TboAccountContext,
   type TboHttpDeps,
@@ -54,10 +55,14 @@ export type { TboStaticOperation } from './static/observer';
  *   1-5, coordenadas validadas, imágenes `https`. El JSON de TBO no sale de aquí (RF-07 CA-6).
  * - **Cupo de fondo.** Las cinco operaciones van al cupo `background` del limitador de la cuenta,
  *   así que una corrida del sync nunca le quita capacidad a una búsqueda o a un Book (01 §7.2).
- * - **Reintentos**: los del cliente HTTP, que en lecturas sólo repite ante 429 o fallos de
- *   transporte y con backoff (06 §4.3 regla 7). Partir un lote de HotelDetails que falla es del sync.
+ * - **Reintentos**: los del cliente HTTP, que en lecturas sólo repite ante 429, 500, cuerpo roto o
+ *   fallos de transporte y con backoff (06 §4.3 regla 7). Partir un lote de HotelDetails que falla
+ *   es del sync.
  * - **Ciudad sin hoteles**: TBOHotelCodeList la contesta con `Status.Code` 500 "No Hotels Found"
- *   (producción, 2026-09-29). Es una lista vacía en UNA llamada, sin reintento ni `warn` (01 §8.5).
+ *   (producción, 2026-09-29). Si llega antes de `slowNoHotelsFoundMs` es una lista vacía en UNA
+ *   llamada, sin reintento ni `warn`; si tarda eso o más es el plazo interno de TBO vencido y se
+ *   reintenta como el `UPSTREAM` que es: agotados los intentos, la ciudad falla, no queda vacía
+ *   (01 §8.5).
  */
 
 /**
@@ -78,6 +83,12 @@ export interface TboStaticContentOptions {
   readonly timeoutsMs?: Partial<Record<TboStaticOperation, number>>;
   /** `IsDetailedResponse` de TBOHotelCodeList; `true` por defecto hasta cerrar Q-63. */
   readonly detailedCityHotels?: boolean;
+  /**
+   * Desde cuántos ms el "No Hotels Found" de TBOHotelCodeList deja de ser la ciudad sin hoteles y
+   * se reintenta como `UPSTREAM` (01 §8.5). Por defecto `TBO_SLOW_NO_HOTELS_FOUND_MS` (4.500),
+   * elegido con el log del 2026-09-29; se mide por intento, del envío al último byte del cuerpo.
+   */
+  readonly slowNoHotelsFoundMs?: number;
 }
 
 /** Por llamada: la señal de quien corta la corrida y, si hace falta, un plazo o intentos menores. */
@@ -122,12 +133,14 @@ const OptionsSchema = z
       .strict()
       .optional(),
     detailedCityHotels: z.boolean().optional(),
+    slowNoHotelsFoundMs: PositiveMs.optional(),
   })
   .strict();
 
 interface StaticPolicy {
   readonly timeoutsMs: Readonly<Record<TboStaticOperation, number>>;
   readonly detailedCityHotels: boolean;
+  readonly slowNoHotelsFoundMs: number;
 }
 
 /** Opciones inválidas son un error de configuración del despliegue: sólo `ruta:código`. */
@@ -143,6 +156,7 @@ function resolvePolicy(options: TboStaticContentOptions): StaticPolicy {
   return Object.freeze({
     timeoutsMs: Object.freeze(timeoutsMs),
     detailedCityHotels: parsed.data.detailedCityHotels ?? true,
+    slowNoHotelsFoundMs: parsed.data.slowNoHotelsFoundMs ?? TBO_SLOW_NO_HOTELS_FOUND_MS,
   });
 }
 
@@ -224,8 +238,9 @@ export class TboStaticContentClient {
     };
     const result = await this.#call('tboHotelCodeList', body, TboCityHotelsEnvelopeSchema, call);
     if (result.outcome === 'NO_AVAILABILITY') {
-      // "No Hotels Found": la ciudad existe y no tiene hoteles (01 §8.5). Una línea `info` con la
-      // ciudad y lo que tardó, no un `warn`: no es un fallo de TBO.
+      // Un "No Hotels Found" rápido: la ciudad existe y no tiene hoteles (01 §8.5). El lento ya
+      // salió del cliente HTTP como `UPSTREAM`. Una línea `info` con la ciudad y lo que tardó, no
+      // un `warn`: no es un fallo de TBO.
       const empty = emptyTboCityHotelsMapping(context, this.#mapDeps());
       this.#info('tbo.static.city_without_hotels', {
         op: 'tboHotelCodeList',
@@ -315,6 +330,7 @@ export class TboStaticContentClient {
       responseSchema,
       timeoutMs,
       lane: 'background',
+      slowNoHotelsFoundMs: this.#policy.slowNoHotelsFoundMs,
       ...(call.maxAttempts === undefined ? {} : { maxAttempts: call.maxAttempts }),
       ...(call.signal === undefined ? {} : { signal: call.signal }),
     });

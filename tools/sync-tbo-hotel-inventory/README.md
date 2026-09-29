@@ -169,8 +169,12 @@ la clave al contenedor y quitar las dos variables de `catalog.env`.
    decir, la corrida siguió donde quedó la anterior.
 
 Una ciudad sin hoteles no es un fallo: TBO la contesta con `Status.Code` 500 "No Hotels Found", el ACL
-la entrega como lista vacía en una sola llamada y la ciudad queda con `hotel_count = 0` y su
-`synced_at`, sin volver a pedirse hasta `TBO_SYNC_EMPTY_REFRESH_DAYS`. Las líneas de E3 y de
-`tbo.sync.result` la cuentan en `citiesEmpty`, aparte de `citiesFailed`, y cada una deja una línea
-`info` `tbo.static.city_without_hotels` con la ciudad y lo que tardó la llamada
+la entrega como lista vacía en una sola llamada si llegó en menos de 4.500 ms
+(`TBO_SLOW_NO_HOTELS_FOUND_MS`) y la ciudad queda con `hotel_count = 0` y su `synced_at`, sin volver a
+pedirse hasta `TBO_SYNC_EMPTY_REFRESH_DAYS`. Las líneas de E3 y de `tbo.sync.result` la cuentan en
+`citiesEmpty`, aparte de `citiesFailed`, y cada una deja una línea `info`
+`tbo.static.city_without_hotels` con la ciudad y lo que tardó la llamada. Si el "No Hotels Found"
+tarda 4.500 ms o más, es el plazo interno de TBO vencido: el ACL lo reintenta como un `500` (líneas
+`warn` `tbo.http.error` con `reason: "slow_no_hotels_found"`) y, si no se recupera, la ciudad cuenta
+en `citiesFailed` y se vuelve a pedir en la próxima corrida
 ([docs/tbo/01](../../docs/tbo/01-autenticacion-conectividad-y-errores.md) §8.5).

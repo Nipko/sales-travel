@@ -232,7 +232,8 @@ fuera de Search) se traduce a `failure.kind`;
 un código desconocido es `UNKNOWN_CODE`; un 2xx vacío, no JSON o sin `Status` es `MALFORMED_RESPONSE` (salvo
 `hotelcodelist`); un HTTP no-2xx con envelope válido se clasifica por el cuerpo. **Ninguna rama compara
 `Status.Description`**, salvo la ciudad sin hoteles de `TBOHotelCodeList`: un 500 "No Hotels Found" con HTTP 2xx es
-lista vacía, observado en producción el 2026-09-29 ([01](./01-autenticacion-conectividad-y-errores.md) §8.5).
+lista vacía, observado en producción el 2026-09-29, si llegó en menos de 4.500 ms; más lento es un plazo interno de TBO
+vencido y sigue siendo `UPSTREAM`, con su reintento ([01](./01-autenticacion-conectividad-y-errores.md) §8.5).
 
 **Fuente.** Tabla de códigos (p. 8-10); `Status` (p. 13, 42); ejemplo `201` (p. 18); `hotelcodelist` sin `Status`
 (p. 55). VERIFICADO-PDF.

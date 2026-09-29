@@ -61,10 +61,11 @@ export interface TboOperationSpec {
   readonly emptyOnNoAvailability: boolean;
   /**
    * `Status.Code` 500 con `Description` "No Hotels Found" (sin distinguir mayúsculas ni espacios),
-   * con HTTP 2xx, es una ciudad sin hoteles: resultado vacío, no error. Sólo TBOHotelCodeList, que
-   * es donde se observó en producción el 2026-09-29 (01 §8.5); cualquier otro 500 sigue siendo
-   * `UPSTREAM`. En Book y Cancel el cliente la ignora aunque alguien la encienda: allí un 500 es un
-   * desenlace incierto, nunca un vacío.
+   * con HTTP 2xx y antes de `TBO_SLOW_NO_HOTELS_FOUND_MS`, es una ciudad sin hoteles: resultado
+   * vacío, no error. Más lento es el plazo interno de TBO vencido y sigue siendo `UPSTREAM`. Sólo
+   * TBOHotelCodeList, que es donde se observó en producción el 2026-09-29 (01 §8.5); cualquier otro
+   * 500 sigue siendo `UPSTREAM`. En Book y Cancel el cliente la ignora aunque alguien la encienda:
+   * allí un 500 es un desenlace incierto, nunca un vacío.
    */
   readonly emptyOnNoHotelsFound: boolean;
   /**
@@ -251,7 +252,8 @@ export const TBO_OPERATIONS = Object.freeze({
   }),
   /**
    * p. 65. 60 s (INFERIDO). Una ciudad sin hoteles llega como HTTP 200 con `Status.Code` 500
-   * "No Hotels Found" (producción, 2026-09-29): es la única fila con esa excepción (01 §8.5).
+   * "No Hotels Found" (producción, 2026-09-29): es la única fila con esa excepción (01 §8.5). El
+   * mismo texto a los ≈ 5 s es un plazo vencido y se reintenta como cualquier 500.
    */
   tboHotelCodeList: spec({
     path: '/TBOHotelCodeList',

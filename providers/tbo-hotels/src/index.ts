@@ -71,6 +71,7 @@ export {
   TBO_MAX_BACKOFF_MS,
   TBO_MIN_BACKOFF_MS,
   TBO_MIN_RETRY_WINDOW_MS,
+  TBO_SLOW_NO_HOTELS_FOUND_MS,
   TboHttpClient,
   tboAccountRef,
   tboBackoffDelayMs,

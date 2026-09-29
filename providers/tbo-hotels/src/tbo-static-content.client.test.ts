@@ -14,7 +14,11 @@ import {
 } from './errors';
 import { TBO_OPERATIONS, type TboLane } from './http/operations';
 import type { TboRateLimiter } from './http/limiter';
-import type { TboFetch, TboHttpDeps } from './http/tbo-http.client';
+import {
+  TBO_SLOW_NO_HOTELS_FOUND_MS,
+  type TboFetch,
+  type TboHttpDeps,
+} from './http/tbo-http.client';
 import {
   TBO_STATIC_TIMEOUTS_MS,
   TboStaticContentClient,
@@ -378,6 +382,192 @@ describe('TboStaticContentClient: la ciudad sin hoteles y las coordenadas (produ
   });
 });
 
+describe('TboStaticContentClient: un "No Hotels Found" lento se reintenta (01 §8.5; log del 2026-09-29)', () => {
+  const observed = JSON.parse(
+    readFileSync(
+      join(__dirname, '__fixtures__', 'envelope', '83-500-no-hotels-found.json'),
+      'utf8',
+    ),
+  ) as { response: { bodyText: string } };
+
+  /** Las 20 llamadas del log con "No Hotels Found", con lo que tardó cada intento. */
+  interface ObservedCall {
+    readonly requestId: string;
+    readonly noHotelsFoundMs: readonly number[];
+    readonly then: 'failed' | 'hotels';
+    readonly hotelsAtMostMs?: number;
+  }
+  const timing = JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        '__fixtures__',
+        'observed',
+        'tbo-hotel-code-list.no-hotels-found-timing.json',
+      ),
+      'utf8',
+    ),
+  ) as { calls: readonly ObservedCall[] };
+
+  function observedCall(requestId: string): ObservedCall {
+    const call = timing.calls.find((candidate) => candidate.requestId === requestId);
+    if (call === undefined) throw new Error(`no está la llamada ${requestId} en el log`);
+    return call;
+  }
+
+  /**
+   * TBOHotelCodeList contesta como en el log: cada intento registrado es un "No Hotels Found" que
+   * adelanta el reloj del cliente lo que tardó; el siguiente, si la llamada terminó con hoteles, es
+   * la lista del ejemplo de p. 67. Pedir un intento que el log no tiene es un error del test.
+   */
+  function replay(
+    call: ObservedCall,
+    options: TboStaticContentOptions = {},
+  ): Harness & { readonly served: () => number } {
+    let clock = 0;
+    let served = 0;
+    const h = harness(
+      {
+        ...ROUTES,
+        [TBO_OPERATIONS.tboHotelCodeList.path]: () => {
+          const ms = call.noHotelsFoundMs[served];
+          served += 1;
+          if (ms !== undefined) {
+            clock += ms;
+            return new Response(observed.response.bodyText, {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          if (call.then !== 'hotels') throw new Error(`${call.requestId}: el log no tiene más`);
+          clock += call.hotelsAtMostMs ?? 0;
+          return json(fixture('tbo-hotel-code-list.p67.json'));
+        },
+      },
+      options,
+      { now: () => clock },
+    );
+    return { ...h, served: () => served };
+  }
+
+  function parsedLogs(
+    h: Harness,
+  ): { level: string; message: string; meta: Record<string, unknown> }[] {
+    return h.logs.map(
+      (line) =>
+        JSON.parse(line) as { level: string; message: string; meta: Record<string, unknown> },
+    );
+  }
+
+  it('rápido, aun el más lento de los rápidos (4.279 ms): la ciudad vacía en UNA llamada', async () => {
+    const h = replay(observedCall('4a18fcdf'));
+    const result = await h.client.listCityHotels('130452', { countryCode: 'US' });
+
+    expect(h.served()).toBe(1);
+    expect(result).toMatchObject({ hotels: [], attempts: 1 });
+    const logs = parsedLogs(h);
+    expect(logs.filter((log) => log.message === 'tbo.http.error')).toEqual([]);
+    expect(
+      logs.find((log) => log.message === 'tbo.static.city_without_hotels')?.meta,
+    ).toMatchObject({ cityCode: '130452', attempt: 1 });
+  });
+
+  it('lento (5.088 y 5.092 ms): se reintenta con backoff y el tercer intento trae los hoteles', async () => {
+    const h = replay(observedCall('d121e5da'));
+    const result = await h.client.listCityHotels('130452', { countryCode: 'US' });
+
+    expect(h.served()).toBe(3);
+    expect(result.attempts).toBe(3);
+    expect(result.hotels.map((hotel) => hotel.hotelId)).toEqual(['1010099']);
+    const logs = parsedLogs(h);
+    expect(logs.filter((log) => log.message === 'tbo.http.error')).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        meta: expect.objectContaining({
+          attempt: 1,
+          durationMs: 5_088,
+          kind: 'UPSTREAM',
+          retry: 'RETRY_BACKOFF',
+          circuit: 'COUNT',
+          reason: 'slow_no_hotels_found',
+        }) as unknown,
+      }),
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          attempt: 2,
+          durationMs: 5_092,
+          reason: 'slow_no_hotels_found',
+        }) as unknown,
+      }),
+    ]);
+    expect(logs.map((log) => log.message)).not.toContain('tbo.static.city_without_hotels');
+  });
+
+  it('lento en los 5 intentos: TboApiError UPSTREAM, nunca una lista vacía', async () => {
+    const h = replay(observedCall('57ed77c7'));
+    const error = await h.client.listCityHotels('130452').catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(TboApiError);
+    expect(error).toMatchObject({ kind: 'UPSTREAM', status: 200, tboCode: 500 });
+    expect((error as TboApiError).failure.circuit).toBe('COUNT');
+    expect(h.served()).toBe(TBO_OPERATIONS.tboHotelCodeList.maxAttempts);
+    expect(h.logs.join('\n')).not.toContain('tbo.static.city_without_hotels');
+  });
+
+  it('el umbral es una opción del cliente: con 6 s, el mismo "No Hotels Found" es la ciudad vacía', async () => {
+    const h = replay(observedCall('57ed77c7'), { slowNoHotelsFoundMs: 6_000 });
+    await expect(h.client.listCityHotels('130452')).resolves.toMatchObject({
+      hotels: [],
+      attempts: 1,
+    });
+    expect(h.served()).toBe(1);
+  });
+
+  it('las 20 llamadas del log con el umbral: 11 vacías, 4 con hoteles y 5 fallidas', async () => {
+    const outcomes: Record<string, string[]> = { empty: [], hotels: [], failed: [] };
+    for (const call of timing.calls) {
+      const h = replay(call);
+      const outcome = await h.client.listCityHotels('130452').then(
+        (result) => (result.hotels.length > 0 ? 'hotels' : 'empty'),
+        (err: unknown) => {
+          if (err instanceof TboApiError && err.kind === 'UPSTREAM') return 'failed';
+          throw err;
+        },
+      );
+      outcomes[outcome]?.push(call.requestId);
+    }
+
+    // Las cuatro que en el log devolvieron hoteles, los devuelven; antes quedaban vacías.
+    expect(outcomes['hotels']).toEqual(
+      timing.calls.filter((call) => call.then === 'hotels').map((call) => call.requestId),
+    );
+    // Las cinco que contestaron a los ≈ 5,09 s en los 5 intentos quedan fallidas, no vacías.
+    expect(outcomes['failed']).toEqual([
+      '8e8495bc',
+      '0409db89',
+      '66e997d9',
+      '57ed77c7',
+      '24eef3e4',
+    ]);
+    expect(outcomes['empty']).toHaveLength(11);
+  });
+
+  it('el umbral separa los dos grupos del log, con margen a los dos lados', () => {
+    const all = timing.calls.flatMap((call) => call.noHotelsFoundMs);
+    const recovered = timing.calls
+      .filter((call) => call.then === 'hotels')
+      .flatMap((call) => call.noHotelsFoundMs);
+    expect(all).toHaveLength(86);
+    // Todo "No Hotels Found" de una ciudad que después devolvió hoteles es lento.
+    expect(Math.min(...recovered)).toBeGreaterThanOrEqual(TBO_SLOW_NO_HOTELS_FOUND_MS);
+    // Entre la más lenta de las rápidas y la más rápida del grupo de ≈ 5,09 s no hay nada.
+    const fast = all.filter((ms) => ms < TBO_SLOW_NO_HOTELS_FOUND_MS);
+    const slow = all.filter((ms) => ms >= TBO_SLOW_NO_HOTELS_FOUND_MS);
+    expect([fast.length, Math.max(...fast)]).toEqual([50, 4_279]);
+    expect([slow.length, Math.min(...slow)]).toEqual([36, 5_084]);
+  });
+});
+
 describe('TboStaticContentClient: construcción', () => {
   it('sin credenciales usables no existe', () => {
     expect(() => new TboStaticContentClient(parseTboConfig({ environment: 'test' }))).toThrow(
@@ -389,6 +579,8 @@ describe('TboStaticContentClient: construcción', () => {
     { timeoutsMs: { hotelDetails: 0 } },
     { timeoutsMs: { search: 1_000 } },
     { detailedCityHotels: 'true' },
+    { slowNoHotelsFoundMs: 0 },
+    { slowNoHotelsFoundMs: 4_500.5 },
     { extra: true },
   ])('opciones inválidas son un TboConfigError con ruta:código (%j)', (options) => {
     let caught: unknown;
