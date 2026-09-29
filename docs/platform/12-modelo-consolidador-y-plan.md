@@ -1,12 +1,14 @@
 # 12 — Modelo Consolidador (B2B2B / BYOC), Diagnóstico de Gaps y Plan de Implementación
 
-**Versión:** 1.1
-**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-28 (modelo de red validado, §3.0)
+**Versión:** 1.2
+**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)); 2026-09-28 (modelo de red validado, §3.0)
 **Propósito:** Tres cosas en un solo documento: (1) incorporar formalmente el **modelo consolidador con credenciales propias (BYOC)** al target de la plataforma; (2) un **diagnóstico honesto** de dónde estamos vs. la visión y vs. el mercado; (3) un **plan secuenciado** para construirlo y pulirlo con UX limpia y mejores prácticas.
 
 > Este doc es la fuente de verdad para el modelo consolidador. El target ya quedó reflejado en `CLAUDE.md`, `docs/discovery/06-documento-maestro.md` §1.1 y `docs/platform/10-mapa-completo-plataforma.md` (entidad TENANT + jerarquía M8.1).
 
 > **Actualización 2026-09-28: el modelo de red está validado y firmado por el founder.** Planetour es la raíz única de tipo `platform`. Vende a nombre propio por sus **sucursales**. Las agencias externas y los consolidadores cuelgan de Planetour. El **superadmin** cuadra la red, pero **no vende**. Lo firmado está en [§3.0](#30-modelo-de-red-validado-2026-09-28) y manda sobre lo que diga en contrario el resto del documento, que se escribió en junio. La auditoría, lo que ya se arregló, lo pendiente y el runbook de producción están en [13 — Validación del modelo de red](./13-validacion-modelo-red.md).
+
+> **Actualización 2026-09-29: carteras por moneda.** La cartera de cada agencia la establece **quien la financia** (opción A del founder): Planetour, por su superadmin, para lo que cuelga de la plataforma; el consolidador para sus agencias; la agencia para sus sub-agencias. Hay una cartera por moneda, con su cupo. La agencia sólo ve sus carteras e informa depósitos, que quedan pendientes hasta que quien la financia los aprueba. Una reserva se retiene en la cartera de la moneda de la tarifa, y sin ella se rechaza (en hoteles, antes de llamar al proveedor). Cierra la brecha crítica de carteras de la auditoría. Detalle en [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29) y [13 §4.1](./13-validacion-modelo-red.md#41-confidencialidad); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), pasos 7 a 9.
 
 ---
 
@@ -38,7 +40,7 @@
 | Búsqueda de vuelos LATAM NDC                 | ✅ Funcional  | `providers/latam-ndc`, real + modo mock. AirShopping/OfferPrice/OrderCreate/OrderManage/OrderChange/ServiceList/OrderReshop. |
 | Cotizaciones (CRUD + expiración)             | ✅ Funcional  | `quotations`.                                                                                                                |
 | Órdenes (crear/listar/cancelar/pagar/reshop) | ✅ Funcional  | `orders`, contra el provider.                                                                                                |
-| Carteras / crédito B2B                       | ✅ Funcional  | `agency_portfolios` + `portfolio_transactions`, límites de crédito, hold→aprobación.                                         |
+| Carteras / crédito B2B                       | ✅ Funcional  | Una cartera por tenant y moneda (0052). Cupo, depósitos y ajustes los fija quien financia al nodo (§10).                     |
 | CRM clientes (pasajeros)                     | ✅ Funcional  | `customers` con documentos/pasaporte.                                                                                        |
 | Admin superadmin (tenants/usuarios)          | ✅ Funcional  | Panel en `web-b2b/admin`.                                                                                                    |
 | Arquitectura hexagonal + ACL + canonical     | ✅ Buena base | `packages/canonical`, `packages/domain` (4 ports), `packages/core` (15 ports, sólo interfaces).                              |
@@ -110,6 +112,8 @@ En esta etapa ser sucursal no cambia ni el pricing ni las carteras: una sucursal
 | D2  | ¿Planetour cobra margen a un consolidador que vende con su propio contrato? | Abierta. Recomendada: B, fee de plataforma aparte, arranca en 0.                                                                                                                                                                                                                                                                                                       | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
 | D3  | ¿Dónde viven las credenciales de Planetour?                                 | Abierta. Recomendada: A, todas en la bóveda y sin respaldo de variables del servidor.                                                                                                                                                                                                                                                                                  | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
 | D5  | ¿Quién puede "entrar como" otro nodo?                                       | Abierta. Recomendada: A ahora (sólo el superadmin, auditado) y B cuando exista el primer consolidador real.                                                                                                                                                                                                                                                            | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
+
+**Carteras: ¿quién establece la cartera de cada agencia?** ✅ **A, quien la financia** (founder, 2026-09-29). Quien financia es el ancestro más cercano de tipo plataforma, consolidador o agencia: Planetour, por su superadmin, para lo que cuelga de la plataforma; el consolidador para sus agencias; la agencia para sus sub-agencias. El superadmin puede con cualquier nodo. Quien financia fija las monedas (una cartera por moneda), el cupo, el estado y los depósitos y ajustes, con motivo y auditados. La agencia sólo ve sus carteras e informa depósitos, que quedan pendientes. Se retiene en la cartera de la moneda de la tarifa y, sin ella, la reserva se rechaza (en hoteles, antes de llamar al proveedor). Se aplica en 0052 y 0053, en `/tenants/:tenantId/portfolios` y en _Gestión de Agencias_ y _Mi Red_ → _Carteras_ ([§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)).
 
 ### 3.1 Jerarquía de tenants
 
@@ -264,13 +268,13 @@ Hallazgos de la investigación profunda (103 agentes, 21 fuentes, verificación 
 
 ### 4.3 Pagos y fondos
 
-| Gap                                                                    | Prioridad | Por qué                                                                         |
-| ---------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------- |
-| **Gateway real** (Stripe + MP) hosted checkout (SAQ-A)                 | **P0**    | Hoy no se cobra. Bloquea operación.                                             |
-| **Wallet / depósitos de agencia** con extracto y conciliación de saldo | **P0**    | Carteras existen pero faltan recarga real, estados de cuenta, y reconciliación. |
-| Split payments / payout por nodo (consolidador↔agencia)               | P1        | Reparto de márgenes en la red.                                                  |
-| Métodos locales (PIX, PSE, Yape/Plin, Boleto)                          | P1        | Conversión en LATAM.                                                            |
-| Antifraude / 3DS                                                       | P2        | Riesgo a escala.                                                                |
+| Gap                                                                    | Prioridad | Por qué                                                                   |
+| ---------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------- |
+| **Gateway real** (Stripe + MP) hosted checkout (SAQ-A)                 | **P0**    | Hoy no se cobra. Bloquea operación.                                       |
+| **Wallet / depósitos de agencia** con extracto y conciliación de saldo | **P0**    | Carteras por moneda (§10). Faltan recarga real, extractos y conciliación. |
+| Split payments / payout por nodo (consolidador↔agencia)               | P1        | Reparto de márgenes en la red.                                            |
+| Métodos locales (PIX, PSE, Yape/Plin, Boleto)                          | P1        | Conversión en LATAM.                                                      |
+| Antifraude / 3DS                                                       | P2        | Riesgo a escala.                                                          |
 
 ### 4.4 Mid/Back-office y finanzas
 
@@ -398,7 +402,7 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 1. **Validar** §3 (arquitectura), §6 (orden de fases). Decisiones D1–D5 ✅ cerradas (§7).
 2. ✅ **Fase 0, paso 1-2 implementado** en la rama `feat/consolidator-foundation` (ver §9).
 3. ✅ Investigación de mercado incorporada (§4.0 con citas). Pendiente local: profundizar conciliación BSP/ARC y requisitos fiscales LATAM con fuentes locales cuando lleguemos a Fase 1/4.
-4. **Modelo de red (2026-09-28):** llevar la tanda 1 a producción con el runbook de [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), y después la tanda 2: confidencialidad y superadmin operativo, más las decisiones D2, D3 y D5 ([13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2)).
+4. **Modelo de red (2026-09-28):** la tanda 1 está en producción desde el merge de #6. De la tanda 2 ya están las carteras por moneda ([§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)), que se despliegan con los pasos 7 a 9 del runbook de [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps). Falta el resto: G-02 (el neto del proveedor, la otra crítica), G-01, G-17, G-16, el CRM y las decisiones D2, D3 y D5 ([13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2)).
 
 ## 9. Estado de implementación (rama `feat/consolidator-foundation`)
 
@@ -498,11 +502,39 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 
 ## §9 — Modelo de red: Planetour, sucursales y superadmin (rama `feat/network-model`, 2026-09-28)
 
-Primera tanda del modelo de [§3.0](#30-modelo-de-red-validado-2026-09-28). Sin desplegar al escribir esto; el runbook está en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps).
+Primera tanda del modelo de [§3.0](#30-modelo-de-red-validado-2026-09-28). Se desplegó con el merge de #6 (`fb25713`); el runbook está en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), pasos 1 a 6.
 
 - **Base** (0049–0051): Planetour pasa a `platform`; una sola plataforma y sin padre; `tenants.is_branch`; trigger con la matriz D4 A en toda escritura de `tenants`; `move_tenant_subtree` (D6 A) con evento `tenant.moved`. Errores propios (STH01 regla de la jerarquía, STH02 movimiento bloqueado) que la API devuelve como 409 con motivo.
 - **API de nodos**: el tipo del hijo sale del padre y el padre por defecto es Planetour; `platform` nunca se crea por API; consolidador y sucursal, sólo el superadmin bajo Planetour. `PATCH /admin/tenants/:id` (estado, sucursal, tipo) y `POST /admin/tenants/:id/move`, sólo superadmin y auditados. Sin escalada de roles (G-06) y sin `platform_admin` asignable (D7 B).
 - **El superadmin no vende**: 403 `PLATFORM_ROLE_CANNOT_SELL` en las rutas `@SalesOperation()`, con un test que falla si una ruta de venta queda sin marcar. La web le quita la venta del menú.
 - **`seed-superadmin`** arreglado (G-04): promueve sin renombrar, no toca contraseñas existentes, idempotente y auditado.
 - **Panel**: _Gestión de Agencias_ es el árbol de la red, con alta, mover, suspender/activar y marcar sucursal; _Mi Red_ toma como raíz la plataforma.
-- **Pendiente** (tanda 2): el neto del proveedor (G-02), el simulador de reglas (G-01), las carteras, "entrar como" (G-17), el reporte de comisiones (G-16), el CRM y las decisiones D2, D3 y D5. Detalle en [13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2).
+- **Pendiente** (tanda 2): el neto del proveedor (G-02), el simulador de reglas (G-01), "entrar como" (G-17), el reporte de comisiones (G-16), el CRM y las decisiones D2, D3 y D5. Detalle en [13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2). Las carteras, que también eran de la tanda 2, están resueltas en [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29).
+
+## §10 — Carteras por moneda y quién las establece (2026-09-29)
+
+Rama `feat/wallets-per-currency`, desde `main` 5de126d. Sin desplegar al escribir esto; el runbook está en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), pasos 7 a 9. Cierra la brecha crítica de carteras de la auditoría del 2026-09-28: cualquier admin se registraba depósitos, retiros y su propio cupo.
+
+**La decisión (founder, 2026-09-29, opción A).** La cartera de cada agencia la establece quien la financia: su ancestro más cercano de tipo plataforma, consolidador o agencia. A lo que cuelga de Planetour (agencias, sucursales y consolidadores) lo financia Planetour, y eso lo opera su superadmin. A las agencias de un consolidador las financia el consolidador, con sus admins o el superadmin, y a las sub-agencias, su agencia. La raíz Planetour sólo la gestiona el superadmin. Quien financia define en qué monedas opera la agencia (una cartera por moneda), el cupo de cada cartera y los depósitos y ajustes, con motivo, quién y cuándo, auditados en `domain_events`. La agencia sólo ve sus carteras e informa depósitos.
+
+- **Base** ([0052](../../db/migrations/0052_wallets_per_currency.sql), [0053](../../db/migrations/0053_tenant_credit_limit_to_wallets.sql)):
+  - `agency_portfolios` pasa a ser única por `(tenant_id, currency)`, conservando las filas que había. La moneda y el nodo de una cartera no cambian.
+  - `tenant_financier_id` y `can_finance_tenant` dicen quién financia a cada nodo y si el usuario del request puede hacerlo.
+  - Unos triggers dejan el cupo, el estado, los depósitos y los ajustes sólo a quien financia, con el asiento firmado por el usuario que actúa y con la hora de la base.
+  - El libro es de sólo agregar para `app_user`, y la aplicación no borra carteras.
+  - `portfolio_deposit_reports` tiene RLS y una sola transición (`pending` → `approved` o `rejected`), y la base deja el `domain_event` de cada paso.
+  - Errores propios: STW01 (regla de las carteras) da 409, y 42501 con `portfolio_financier_required` (o las reglas de autoría del asiento y de la resolución) da 403.
+  - 0053 pasa `tenants.credit_limit` (0007) al cupo de la cartera en la moneda por defecto del nodo, y la columna queda fuera de uso.
+- **API** (`apps/api/src/portfolios/`):
+  - Quien financia trabaja en `/tenants/:tenantId/portfolios`: habilitar moneda, cupo, suspender o reactivar, depósitos y ajustes con `Idempotency-Key`, y aprobar o rechazar depósitos informados. Todo corre con `withRequestContext({ userId, tenantId: nodo dueño })`, con Zod y motivo obligatorio (al aprobar un depósito informado es opcional), y en la misma transacción que su `domain_event`.
+  - La agencia, en `/portfolios`, lee sus carteras, movimientos e informes, e informa depósitos. `deposit`, `withdraw` y `credit-limit` responden 403 `PORTFOLIO_FINANCIER_REQUIRED`.
+- **Retención:**
+  - Toda retención (el hotel antes del Book, y vuelos o autos confirmados por `hold-booking`) va a la cartera de la agencia en la moneda de la tarifa, con el tope del saldo más el cupo y sin convertir.
+  - Sin cartera en esa moneda, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED`, sin abrir una implícita. Con la cartera suspendida, `PORTFOLIO_INACTIVE`, y sin fondos, `PORTFOLIO_FUNDS_INSUFFICIENT`. En hoteles, antes de llamar al proveedor.
+  - El PreBook de hoteles devuelve `funding` para avisar antes de cargar huéspedes. `tenants.credit_limit` ya no se lee.
+- **Web:**
+  - _Gestión de Agencias_ → nodo → _Carteras_ para el superadmin y _Mi Red_ → agencia → _Carteras_ para quien financia: carteras por moneda, habilitar moneda, cupo, suspender o reactivar, depósitos y ajustes con confirmación, aprobar o rechazar depósitos informados, y el historial.
+  - _Cartera B2B_ ya no deposita, retira ni fija el cupo: la agencia ve sus carteras y movimientos, e informa depósitos con **Informar depósito**.
+  - La búsqueda de hoteles avisa si la agencia no tiene cartera activa en la moneda elegida.
+- **Tests:** base, API y retención corren como `app_user` contra Postgres en el CI (`wallets-rls`, `wallet-financing`, `holds-per-currency`). Incluyen el que pedía la auditoría: el admin de una agencia no puede tocar su cupo.
+- **Pendiente:** la conciliación del saldo contra el libro, la recarga real y los extractos ([§4.3](#43-pagos-y-fondos)), un test de dos aprobaciones a la vez, prohibir en la base que una agencia abra carteras vacías, borrar `tenants.credit_limit` y las monedas sin dos decimales. Detalle en [13 §4.4](./13-validacion-modelo-red.md#44-después-de-la-tanda-2). El registro de la decisión para TBO es D-TBO-21 en [tbo/08](../tbo/08-requisitos-maestro.md#d-tbo-21--cómo-se-cobra-y-cómo-se-controla-el-crédito-limit).

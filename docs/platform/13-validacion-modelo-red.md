@@ -1,8 +1,8 @@
 # 13 — Validación del modelo de red: Planetour, sucursales, consolidadores y superadmin
 
-**Versión:** 1.0
-**Fecha:** 2026-09-28
-**Rama:** `feat/network-model`, desde `main` 19c6e3f (lo que corre en producción)
+**Versión:** 1.1
+**Fecha:** 2026-09-28 · **Actualizado:** 2026-09-29 (carteras por moneda: [§4.1](#41-confidencialidad) punto 3 y [§5](#5-runbook-del-vps) pasos 7 a 9)
+**Ramas:** tanda 1 en `feat/network-model`, desde `main` 19c6e3f, mergeada con #6 (`fb25713`). Carteras por moneda en `feat/wallets-per-currency`, desde `main` 5de126d.
 **Propósito:** Dejar por escrito cuatro cosas: (1) la auditoría del modelo de red del 2026-09-28, resumida; (2) qué quedó arreglado en la primera tanda; (3) qué queda para la siguiente, con las decisiones abiertas; (4) el runbook para ponerlo en producción.
 
 > El modelo firmado está en [12 §3.0](./12-modelo-consolidador-y-plan.md#30-modelo-de-red-validado-2026-09-28). Este documento es el expediente de cómo se validó y qué falta. Las decisiones D1–D7 de aquí son las de la auditoría, no las D1–D5 de junio de [12 §7](./12-modelo-consolidador-y-plan.md#7-riesgos-y-decisiones-abiertas).
@@ -13,8 +13,9 @@
 
 1. **La base estaba bien, el modelo no.** La jerarquía de 4 niveles, la herencia de credenciales (cuenta propia o la del ancestro más cercano), la cascada de márgenes y el aislamiento entre agencias hermanas funcionaban. Lo que faltaba era la estructura: Planetour figuraba como una agencia más, la red no se podía armar desde el panel, un admin podía darse roles por encima del suyo y el superadmin no existía en producción.
 2. **La tanda 1 arregla la estructura.** Planetour pasa a ser la raíz `platform` y la base impone qué nodo puede colgar de cuál (D4 A). Existen las sucursales. El superadmin arma, mueve y suspende nodos desde _Gestión de Agencias_ (D6 A). Nadie puede asignar un rol igual o superior al propio, y `platform_admin` dejó de asignarse (D7 B). El superadmin no vende. `seed-superadmin` ya no rompe datos. Ver §3.
-3. **La tanda 2 es la confidencialidad y el superadmin operativo.** Hoy una agencia ve el neto del proveedor (G-02) y los márgenes de sus ancestros (G-01), y administra su propia cartera. El superadmin no puede "entrar como" otro nodo (G-17), el reporte de comisiones es inventado (G-16) y nadie ve las oportunidades asignadas del CRM. Faltan tres decisiones: D2, D3 y D5. Ver §4.
-4. **Nada de esto está desplegado.** El runbook de §5 lo lleva a producción en seis pasos. El último deja cargada la cuenta TBO en Planetour.
+3. **La tanda 2 es la confidencialidad y el superadmin operativo.** Hoy una agencia ve el neto del proveedor (G-02) y los márgenes de sus ancestros (G-01). El superadmin no puede "entrar como" otro nodo (G-17), el reporte de comisiones es inventado (G-16) y nadie ve las oportunidades asignadas del CRM. Faltan tres decisiones: D2, D3 y D5. Ver §4.
+4. **Las carteras ya están resueltas (2026-09-29).** Eran la otra brecha crítica. El founder eligió la opción A: la cartera de cada agencia la establece quien la financia, con una cartera por moneda y su cupo. La agencia sólo ve sus carteras e informa depósitos, y una reserva se retiene en la cartera de la moneda de la tarifa. Ver §4.1 punto 3.
+5. **Despliegue.** La tanda 1 salió a producción con el merge de #6 (`fb25713`); sus pasos son los 1 a 6 del runbook de §5, y el último deja cargada la cuenta TBO en Planetour. Las carteras siguen sin desplegar en `feat/wallets-per-currency`. Los pasos 7 a 9 las llevan a producción, le dan a una sucursal una cartera en USD con cupo y prueban una reserva de TBO en test.
 
 ---
 
@@ -44,21 +45,21 @@
 | Planetour vende a nombre propio                     | parcial | ✓ por sus sucursales     | TBO, cuando se cargue la cuenta (§5 paso 6).                                           |
 | Planetour provee a su red                           | parcial | ✓                        | G-02: sus agencias ven el neto del proveedor.                                          |
 | Consolidador con credenciales propias               | parcial | ✓ se crea desde el panel | D2: Planetour le suma su margen aunque venda con su propio contrato.                   |
-| Agencia bajo Planetour o bajo un consolidador       | parcial | parcial                  | G-02 y G-01: ve el neto y los márgenes de sus ancestros. Carteras: administra la suya. |
+| Agencia bajo Planetour o bajo un consolidador       | parcial | parcial                  | G-02 y G-01: ve el neto y los márgenes de sus ancestros. Carteras: resuelto (§4.1).    |
 | Aislamiento entre agencias                          | ✓       | ✓                        | —                                                                                      |
-| Superadmin ve la red                                | parcial | parcial                  | G-17: no ve reservas, clientes, carteras ni reportes de otros nodos.                   |
+| Superadmin ve la red                                | parcial | parcial                  | G-17: no ve reservas, clientes ni reportes de otros nodos. Las carteras, sí (§4.1).    |
 | Superadmin ajusta la configuración de un nodo       | ✓       | ✓                        | —                                                                                      |
 | Superadmin corrige la estructura                    | ✗       | ✓                        | Cambiar el tipo de un nodo sólo por API (`PATCH /admin/tenants/:id`), no desde la web. |
-| Superadmin corrige la operación (carteras, cuentas) | ✗       | ✗                        | Carteras ajenas, desactivar una credencial sin volver a escribir su secreto.           |
+| Superadmin corrige la operación (carteras, cuentas) | ✗       | ✗                        | Desactivar una credencial sin volver a escribir su secreto. Carteras: resuelto (§4.1). |
 
 ### 2.4 Brechas y su estado
 
 **Críticas**
 
-| ID       | Brecha                                                                                                         | Estado  |
-| -------- | -------------------------------------------------------------------------------------------------------------- | ------- |
-| G-02     | El neto del proveedor llega a la agencia (búsqueda, revalidación, PreBook y órdenes) y la tarjeta dice "neto". | Tanda 2 |
-| Carteras | Cualquier admin registra depósitos, retiros y su propio cupo de crédito, sin aprobación del ancestro.          | Tanda 2 |
+| ID       | Brecha                                                                                                         | Estado                                                                            |
+| -------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| G-02     | El neto del proveedor llega a la agencia (búsqueda, revalidación, PreBook y órdenes) y la tarjeta dice "neto". | Tanda 2                                                                           |
+| Carteras | Cualquier admin registra depósitos, retiros y su propio cupo de crédito, sin aprobación del ancestro.          | Resuelta en `feat/wallets-per-currency` (0052, 0053), sin desplegar. §4.1 punto 3 |
 
 **Altas**
 
@@ -142,6 +143,19 @@ Una sucursal es una `agency` con `is_branch = true` y cuelga directamente de la 
 
 ## 4. Qué queda para la tanda 2
 
+### 4.0 Estado al 2026-09-29
+
+| Tema                                     | Estado                                                                                    |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Carteras (crítica)                       | ✅ Resuelta en `feat/wallets-per-currency`, sin desplegar: §4.1 punto 3 y §5 pasos 7 a 9. |
+| G-02, el neto del proveedor (crítica)    | Pendiente, y es lo que sigue: §4.1 punto 1.                                               |
+| G-01, el simulador de reglas             | Pendiente: §4.1 punto 2.                                                                  |
+| G-17, "entrar como"                      | Pendiente, con el alcance que fije D5: §4.2 punto 1.                                      |
+| G-16, el reporte de comisiones           | Pendiente: §4.2 punto 2.                                                                  |
+| CRM, oportunidades asignadas             | Pendiente: §4.2 punto 3.                                                                  |
+| Decisiones D2, D3 y D5                   | Abiertas: §4.3.                                                                           |
+| Lo que las carteras dejaron para después | Conciliación del saldo, recarga real y limpieza de datos viejos: §4.4.                    |
+
 ### 4.1 Confidencialidad
 
 Va antes de que una agencia externa venda con márgenes de Planetour o con un proveedor que consuma su crédito.
@@ -152,7 +166,15 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
    - "Neto" pasa a decir "costo".
    - Aplica a vuelos, hoteles, autos y el detalle de órdenes.
 2. **G-01, el simulador de reglas.** Sólo para admins. Cada uno ve los pasos de su nodo hacia abajo; el superadmin ve todo.
-3. **Carteras.** Depósito, retiro y cupo de crédito los ejecuta sólo el admin del ancestro que financia, o el superadmin, sobre el nodo destino. La agencia registra un depósito "pendiente" que el ancestro aprueba. Test: el admin de una agencia recibe 403 al tocar su cupo.
+3. **Carteras. Resuelta el 2026-09-29** con la opción A del founder: la cartera de cada agencia la establece **quien la financia**. Son cuatro commits en `feat/wallets-per-currency`: `6ad61d7` (base), `ce9181e` (API), `16dc410` (retención) y `43d9d34` (web). Todavía no está desplegada (§5 pasos 7 a 9).
+   - **Quién financia a quién.** Es el ancestro más cercano de tipo plataforma, consolidador o agencia (`tenant_financier_id`, [0052](../../db/migrations/0052_wallets_per_currency.sql)). A las agencias, sucursales y consolidadores que cuelgan de Planetour los financia Planetour, y eso lo opera su superadmin. A las agencias de un consolidador las financia el consolidador (sus `consolidator_admin`, `tenant_admin`, `agency_admin` o `admin`), y a las sub-agencias, su agencia. El superadmin puede con cualquier nodo, la raíz incluida, y es el único que gestiona la de Planetour. Fuera de ese caso nadie gestiona la cartera de su propio nodo, y un ancestro que está por encima del que financia tampoco: el consolidador no toca la de una sub-agencia de su agencia (`can_finance_tenant`).
+   - **Una cartera por moneda.** `agency_portfolios` pasa a ser única por tenant y moneda. Las filas que había quedan como la cartera de su moneda, y la moneda y el nodo de una cartera ya no cambian. Sólo se habilitan monedas ISO 4217 con dos decimales, porque `Money` asume centavos.
+   - **Qué hace quien financia.** Habilita monedas con su cupo inicial, fija el cupo, suspende o reactiva una cartera, y registra depósitos y ajustes con signo. Cada cambio pide motivo (Zod) y deja su `domain_event` en la misma transacción: `portfolio.created`, `portfolio.credit_limit.changed`, `portfolio.status.changed`, `portfolio.deposit.recorded` y `portfolio.adjustment.recorded`. Los depósitos y los ajustes llevan `Idempotency-Key`. En la web, el superadmin lo hace desde _Gestión de Agencias_ → nodo → _Carteras_ y el consolidador o la agencia, desde _Mi Red_ → agencia → _Carteras_. El API es `/tenants/:tenantId/portfolios`.
+   - **Qué hace la agencia.** En _Cartera B2B_ ve sus carteras por moneda, sus movimientos y sus informes. Un admin de la agencia puede **informar un depósito**, que queda pendiente y no suma saldo hasta que quien la financia lo aprueba (se acredita un `DEPOSIT_PAYMENT` en la misma transacción) o lo rechaza con motivo. Esos pasos los audita la base (`portfolio.deposit_report.submitted`, `approved` y `rejected`). `POST /portfolios/deposit`, `POST /portfolios/withdraw` y `PATCH /portfolios/credit-limit` responden 403 `PORTFOLIO_FINANCIER_REQUIRED` con el motivo.
+   - **La base lo impone.** Si quien escribe no es quien financia al nodo, el cupo, el estado, los depósitos y los ajustes los rechaza un trigger. No frena a un rol que se salta la RLS, como las migraciones, los seeds y el `psql` del operador. Sale un 42501 con la regla `portfolio_financier_required` (o `portfolio_entry_author` y `deposit_report_resolver`, si se firma a nombre de otro usuario), que la API devuelve como 403. Las demás reglas (moneda inmutable, un informe se resuelve una sola vez) salen como STW01 y la API las devuelve como 409 con motivo. Además, el libro de movimientos es de sólo agregar para `app_user`, y la aplicación no borra carteras. Los tests corren como `app_user` (`wallets-rls`, `wallet-financing` y `holds-per-currency`), incluido el que pedía la auditoría: el admin de una agencia no puede tocar su cupo.
+   - **La retención.** Cualquier reserva que retiene cartera (el hotel antes del Book, y un vuelo o un auto confirmados por `POST /portfolios/hold-booking`) lo hace en la cartera de la agencia en la moneda de la tarifa. El tope es el saldo más el cupo, y no se convierte. Sin cartera en esa moneda, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` ("La agencia no tiene cartera en USD: pedile a quien te financia que la habilite"), sin abrir una cartera implícita. Con la cartera suspendida sale `PORTFOLIO_INACTIVE`, y sin saldo ni cupo, `PORTFOLIO_FUNDS_INSUFFICIENT`. En hoteles los tres rechazos llegan antes de llamar al proveedor, y el PreBook y la búsqueda avisan antes de cargar huéspedes. La API ya no crea una cartera COP con cupo 0 la primera vez que alguien la mira.
+   - **El crédito interno de 0007.** [0053](../../db/migrations/0053_tenant_credit_limit_to_wallets.sql) pasa `tenants.credit_limit` al cupo de la cartera en la moneda por defecto del nodo, y la API deja de leerlo. Queda un solo tope por cartera, que fija quien financia.
+   - Lo que quedó para después está en §4.4.
 
 ### 4.2 Superadmin operativo
 
@@ -181,11 +203,19 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
 - B. A, y además el consolidador ve en sólo lectura las reservas y carteras de su red.
 - C. El consolidador también puede operar como sus agencias.
 - **Recomendación: A ahora, y B** cuando exista el primer consolidador real.
+- Las carteras ya no dependen de D5: el consolidador ve y gestiona las de sus agencias porque es quien las financia (§4.1 punto 3). D5 decide el resto: reservas, clientes y reportes.
 
 ### 4.4 Después de la tanda 2
 
 - G-10 (post-venta de vuelos con la credencial de la venta), G-15 (moneda de las reglas fijas), G-13 (alcance de las reglas para consolidadores) y G-14 (override por agencia hija).
 - Las medias pendientes de §2.4.
+- **Lo que las carteras dejaron para después:**
+  - **Conciliación del saldo contra el libro.** `balance_minor` no está atado a la suma de `portfolio_transactions`. Hoy sólo lo mueven las retenciones y liberaciones de la API, pero la base no frena un `UPDATE` directo del saldo como `app_user`. Cerrarlo pide el invariante "saldo = suma del libro", que los datos y los tests de hoy no cumplen. Es el P0 de [12 §4.3](./12-modelo-consolidador-y-plan.md#43-pagos-y-fondos).
+  - **Recarga real y extractos.** Un depósito lo verifica a mano quien financia, contra su banco, y no hay pasarela ni estado de cuenta descargable.
+  - **Dos aprobaciones a la vez.** El servicio bloquea el informe antes de acreditar, así que la segunda aprobación encuentra el informe resuelto y responde 409 `DEPOSIT_REPORT_NOT_PENDING`. Falta un test con dos sesiones contra el Postgres del CI; el doble local (PGlite) tiene una sola.
+  - **Carteras vacías.** La base todavía deja que una agencia abra una cartera sin cupo ni saldo, porque la API las abría así, en COP, hasta este cambio. Como ya no las abre, una migración puede prohibirlo.
+  - **`tenants.credit_limit`.** Queda fuera de uso desde 0053, pero con su dato. Se puede borrar en una migración posterior.
+  - **Monedas sin dos decimales** (CLP, JPY, KWD…). No se habilitan hasta que `Money` lleve el exponente ISO 4217.
 - **Alta pública.** Con `ALLOW_PUBLIC_SIGNUP=true`, `POST /auth/register` crea una agencia raíz y ahora la base la rechaza con 409. Está apagada por defecto. Hay que colgarla de la plataforma o quitarla.
 - **Cambio de tipo desde la web.** La API lo permite (`PATCH /admin/tenants/:id` con `tenantType`, dentro de D4); el panel todavía no.
 - **Cachés tras un movimiento.** La habilitación de proveedores se cachea 10 s por réplica: justo después de mover un nodo puede verse la herencia anterior durante ese lapso.
@@ -196,7 +226,9 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
 
 Orden obligatorio. Cada paso dice cómo comprobar que salió bien. Los comandos se corren como `deploy` en el VPS, desde `/opt/sales-travel`, y ninguno imprime secretos.
 
-**Antes de empezar:**
+Los pasos 1 a 6 son la tanda 1 (`feat/network-model`, desplegada con #6). Los pasos 7 a 9 son las carteras por moneda (`feat/wallets-per-currency`) y suponen hechos los anteriores: Planetour como `platform`, tu cuenta como superadmin, una sucursal con su vendedor y la cuenta TBO cargada en Planetour.
+
+**Antes de empezar (pasos 1 a 6):**
 
 - El PR de `feat/network-model` tiene el CI en verde, incluidos los tests de integración contra Postgres real.
 - Hay un backup reciente de la base ([`infrastructure/hostinger/README.md`](../../infrastructure/hostinger/README.md) §6, "Backup de Postgres").
@@ -271,7 +303,7 @@ Si el panel dice que el movimiento está bloqueado por reservas abiertas pagadas
 Lo que Amazon gana y lo que todavía no conviene darle:
 
 - Hereda de Planetour sus cuentas heredables (hoy sólo puede ser la de Sabre de certificación, si está marcada heredable), sus reglas, su marca y sus ajustes de habilitación de proveedores. LATAM y AgentCars le siguen llegando, como hasta ahora, de las variables del servidor.
-- Hasta la tanda 2, ve el neto del proveedor y administra su propia cartera. No cargues en Planetour reglas de margen que quieras ocultarle, y no le habilites TBO (paso 6).
+- Hasta la tanda 2 ve el neto del proveedor (G-02), y hasta el paso 7 administra su propia cartera. No cargues en Planetour reglas de margen que quieras ocultarle, y no le habilites TBO (paso 6).
 - **Sabre de certificación.** Sabre se llama siempre (política `always`). Si la cuenta de Planetour está `active` y es heredable, desde el movimiento cada búsqueda de vuelos de Amazon sale también a Sabre CERT, con tarifas y PNR de prueba, igual que ya pasa en Planetour y pasará en sus sucursales. Antes de mover, revísala: `SELECT status, is_inheritable, config->>'environment' AS entorno FROM provider_accounts WHERE provider_code = 'sabre'`. Si no quieres eso para Amazon, en _Proveedores de la plataforma_ → Sabre agrega una excepción **Deshabilitado** para Amazon Minimalist, con motivo, antes de pulsar **Mover**.
 
 ### Paso 5 — Crear una sucursal y su vendedor
@@ -295,9 +327,124 @@ Ahora Planetour es `platform` y puede ser dueño de una cuenta TBO. Sus sucursal
    - **Activo:** la cuenta resuelve para Planetour y su red. En producción, úsalo sólo con las credenciales _live_ que TBO entrega después de certificar ([docs/tbo/07 §2.8](../tbo/07-certificacion.md#28-fase-5--production-process-form-y-credenciales-live)), con el entorno **Producción**.
 3. TBO es `opt-in`: una cuenta activa no alcanza, y nadie lo ve hasta que lo habilitas.
    - En _Proveedores de la plataforma_ → TBO Holidays, agrega una excepción **Habilitado** para cada sucursal, con motivo.
-   - **No** lo habilites con _Todos los tenants_ ni en el nodo Planetour: se heredaría a toda la red, Amazon incluida. TBO reserva con `PaymentMode: Limit`, contra el crédito o saldo del titular de la cuenta (Planetour), y hasta la tanda 2 una agencia externa administra su propia cartera.
+   - **No** lo habilites con _Todos los tenants_ ni en el nodo Planetour: se heredaría a toda la red, Amazon incluida. TBO reserva con `PaymentMode: Limit`, contra el crédito o saldo del titular de la cuenta (Planetour). Hasta el paso 7, una agencia externa administra su propia cartera y se puede dar el cupo que quiera. Desde el paso 7 el cupo lo fija Planetour, pero G-02 (el neto del proveedor) sigue abierto.
 4. La búsqueda de TBO usa el catálogo local. Sin el sync, la sucursal no encuentra hoteles aunque TBO esté habilitado. El sync usa **esta misma cuenta de Planetour**: la lee de la bóveda con `PROVIDER_CREDENTIALS_KEY`, la clave que ya usa el api (D-TBO-04, decisión del 2026-09-29). **No hace falta cargar `TBO_SYNC_USERNAME` ni `TBO_SYNC_PASSWORD` en GitHub Actions** ni desplegar: con la cuenta en **Activo**, la corrida siguiente del workflow _Sync TBO Hotel Inventory_ (cada hora de 06:17 a 09:17 UTC, o a mano con _Run workflow_) sale con ella, y su log dice `credentialSource: "vault:platform/default"`. Con la cuenta en Sandbox el sync no corre y lo dice (`no active tbo-hotels account in the vault of 'platform'`). Las `TBO_SYNC_*` de usuario y contraseña quedan sólo como override (el stack de certificación): si alguna vez se cargaron en GitHub, bórralas y corre **Deploy**, porque mientras estén mandan sobre la bóveda y el log dice `credentialSource: "env"`. Ver [`tools/sync-tbo-hotel-inventory`](../../tools/sync-tbo-hotel-inventory/README.md).
 5. Comprueba, con la cuenta en **Activo** y el catálogo sincronizado:
    - en _Proveedores (GDS)_ de la sucursal, TBO figura como heredado de Planetour;
    - con el vendedor de la sucursal, _Hoteles_ devuelve resultados de TBO;
    - con un usuario de Amazon, TBO no aparece.
+
+### Paso 7 — Deploy de las carteras por moneda (0052 y 0053)
+
+**Antes de mergear:**
+
+- El PR de `feat/wallets-per-currency` tiene el CI en verde, incluidos los tests de integración que corren como `app_user` contra Postgres real (`wallets-rls`, `wallet-financing` y `holds-per-currency`).
+- Hay un backup reciente de la base, como en el paso 1.
+- Guarda cómo están hoy las carteras y el crédito interno, para compararlos después:
+
+  ```bash
+  docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+    "SELECT t.slug, t.tenant_type, t.is_branch, t.default_currency, t.credit_limit, ap.currency, ap.credit_limit_minor, ap.balance_minor, ap.status FROM tenants t LEFT JOIN agency_portfolios ap ON ap.tenant_id = t.id ORDER BY t.path, ap.currency"
+  ```
+
+  Esperado: las carteras que existan están en `COP` con cupo y saldo 0, y `credit_limit` es 0 en todos los nodos, así que 0053 no cambia nada. Si algún nodo tiene `credit_limit` mayor que 0, 0053 lo pasa al cupo de su cartera en `default_currency`, y si no tiene cartera en esa moneda, la abre.
+
+**Qué cambia al desplegar:**
+
+- La agencia ya no se fija el cupo ni se registra depósitos o retiros. _Cartera B2B_ muestra sus carteras y movimientos, sin depósito, retiro ni cupo, y ofrece **Informar depósito** a sus admins. Las rutas viejas responden 403 `PORTFOLIO_FINANCIER_REQUIRED`.
+- La API ya no abre una cartera COP la primera vez que alguien mira _Cartera B2B_. Un nodo que nunca la abrió no tiene carteras y lo ve así ("Tu agencia todavía no tiene carteras"): hasta que quien lo financia le habilite una moneda, no reserva hoteles. Con las carteras en 0/0 tampoco podía antes.
+- Un hotel se retiene en la cartera de la moneda de la tarifa. Vuelos y autos no cambian en la web, que no les retiene cartera: sólo lo hace `POST /portfolios/hold-booking`, y ahora con la misma regla.
+- 0052 cambia las restricciones de `agency_portfolios` con un lock exclusivo breve. Una retención que llegue en ese momento espera a que termine.
+- Entre el fin de 0052 y el arranque del api nuevo, el api viejo sigue atendiendo unos segundos. En ese lapso puede responder error al abrir por primera vez la cartera de un nodo, porque su `ON CONFLICT (tenant_id)` ya no tiene índice, o al registrar un depósito, porque la guarda de 0052 lo rechaza. La transacción se deshace y no deja nada a medias.
+
+**Deploy y comprobación:**
+
+1. El founder mergea el PR a `main`. El workflow **Deploy** construye las imágenes, aplica 0052 y 0053 y hace el smoke test. Cada migración corre en su transacción: si 0052 encuentra carteras con moneda, cupo o estado inválidos, falla y se deshace entera, y el `HINT` trae la consulta para encontrarlas.
+2. Repite la consulta de arriba. Esperado: las mismas carteras, con el mismo cupo, saldo y estado, porque 0052 no crea ni borra ninguna. Sólo cambia si algún nodo tenía `credit_limit`.
+3. Revisa los avisos de 0053 en el log de `postgres` (el contenedor `migrate` no los imprime):
+
+   ```bash
+   docker compose logs postgres | grep 'REVISAR: '
+   ```
+
+   Esperado: nada. "tiene un cupo de … que no fijó quien la financia" es un cupo que se había puesto la propia agencia: se conserva, y lo revisas en su _Carteras_ (paso 8) para confirmarlo o bajarlo con motivo. "su moneda por defecto (…) no es válida" es un crédito interno que no se pudo pasar: corrige la moneda del nodo y fija el cupo desde el panel.
+
+4. Lo que movió 0053 quedó auditado, con actor vacío y la migración como origen:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT occurred_at, event_type, tenant_id, payload FROM domain_events WHERE payload->>'source' = 'migration:0053_tenant_credit_limit_to_wallets'"
+   ```
+
+   Esperado: ninguna fila si todos los `credit_limit` eran 0.
+
+5. Con un admin de Amazon Minimalist (o de otra agencia), _Cartera B2B_ ya no ofrece depositar, retirar ni cambiar el cupo. Si tiene cartera, ofrece **Informar depósito**.
+
+### Paso 8 — Cartera en USD con cupo para una sucursal
+
+TBO cotiza en la moneda de la cuenta, USD en la de test, y la retención no convierte: sin una cartera en USD, la sucursal no reserva TBO. A una sucursal la financia Planetour, así que se la da el superadmin.
+
+1. Con tu cuenta de superadmin, ve a _Gestión de Agencias_ y en la fila de la sucursal pulsa **Carteras**.
+2. Pulsa **Habilitar moneda** y completa:
+
+   - **Moneda:** USD, que aparece entre las frecuentes;
+   - **Cupo inicial (USD):** lo que la sucursal puede deber a Planetour en USD, en unidades mayores. Para la prueba del paso 9 alcanza con cubrir una noche, por ejemplo `1000`;
+   - **Motivo:** por ejemplo "Reservas TBO de prueba en la sucursal".
+
+   Pulsa **Habilitar USD**. Si la sucursal ya tenía una cartera COP en 0/0, déjala: es otra cartera y no estorba.
+
+3. Comprueba:
+
+   - la tarjeta USD muestra saldo 0, un cupo de 1.000 USD y el estado _Activa_;
+   - el cambio quedó auditado con tu usuario y tu motivo:
+
+     ```bash
+     docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+       "SELECT e.occurred_at, u.email AS actor, t.slug, e.event_type, e.payload FROM domain_events e JOIN tenants t ON t.id = e.tenant_id LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.event_type LIKE 'portfolio.%' ORDER BY e.occurred_at DESC LIMIT 5"
+     ```
+
+     Esperado: `portfolio.created` con el slug de la sucursal y un `payload` con `"currency": "USD"`, `"creditLimitMinor": 100000`, tu motivo y `"source": "api"`;
+
+   - con un usuario de la sucursal, _Cartera B2B_ muestra la cartera USD con su cupo y sin botones de depósito, retiro ni cupo.
+
+**Cupo o depósito.** Con cupo, la sucursal reserva a crédito y su saldo queda en negativo por lo que retiene. Si prefieres que opere sólo con saldo, deja el cupo en 0 y registra un **Depósito** (con motivo) en la tarjeta USD. Una cartera no se borra: para cerrarla, pulsa **Suspender** o baja el **Cupo** a 0, y queda con su historial.
+
+### Paso 9 — Reserva TBO de prueba en la sucursal
+
+Se reserva de verdad contra el entorno de **test** de TBO, con la cuenta de Planetour. No es plata real y no es la certificación: los casos de certificación corren en su propio stack ([`infrastructure/hostinger/README.md` §9](../../infrastructure/hostinger/README.md#9-stack-de-certificación-de-tbo)), que siembra su cartera con [`seed-tbo-cert-tenant`](../../tools/seed-tbo-cert-tenant/README.md).
+
+**Antes de empezar:**
+
+- La cuenta TBO de Planetour está en **Activo** con el entorno **Test (certificación)**. Es la excepción al paso 6, que pide Activo sólo con la cuenta live: mientras esté así, todo lo que se reserve con TBO va al entorno de test.
+- En _Proveedores de la plataforma_ → TBO Holidays, la sucursal tiene TBO **Habilitado**. Si además está habilitado con _Todos los tenants_, cualquier agencia a la que le des una cartera en USD reservaría contra el entorno de test.
+- El catálogo de TBO ya está sincronizado para el país del destino (paso 6.4).
+- La sucursal tiene email y teléfono de soporte en formato internacional (por ejemplo `+57 300 123 4567`) en _Mi Agencia_ → Marca, propios o heredados de Planetour. Es el contacto que viaja a TBO; sin él, el Book responde `AGENCY_CONTACT_MISSING`.
+
+**La prueba:**
+
+1. Entra con el **vendedor** de la sucursal (el superadmin no vende) y abre _Hoteles_. Elige un destino del catálogo, fechas con al menos unas semanas de anticipación, la ocupación, la nacionalidad y la moneda **USD**. Bajo el selector de moneda no tiene que aparecer "Tu agencia no tiene cartera en USD".
+2. Busca, abre un hotel de TBO y elige una habitación con **cancelación gratuita**, para cancelarla sin cargo al final.
+3. En el checkout, el PreBook no tiene que mostrar el aviso de la cartera. Carga huéspedes de prueba y pulsa **Confirmar reserva**. La reserva queda confirmada (si TBO tarda, pasa unos segundos por "Verificando con el proveedor…") y aparece en _Mis Reservas_.
+4. Comprueba la retención. En _Cartera B2B_ de la sucursal, la cartera USD muestra la retención de la reserva, y la COP no se movió. Por consola:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT pt.created_at, ap.currency, pt.transaction_type, pt.amount_minor, ap.balance_minor AS saldo_actual FROM portfolio_transactions pt JOIN agency_portfolios ap ON ap.id = pt.portfolio_id JOIN tenants t ON t.id = ap.tenant_id WHERE t.slug = '<slug de la sucursal>' ORDER BY pt.created_at DESC LIMIT 5"
+   ```
+
+   Esperado: un `BOOKING_HOLD` en `USD` con `amount_minor` negativo (menos el precio de venta, en centavos) y `saldo_actual` en ese mismo valor.
+
+5. Cancela. En _Mis Reservas_ abre la reserva y pulsa **Cancelar reserva**. Cuando quede cancelada, la consulta anterior muestra un `BOOKING_RELEASED` por el mismo monto en positivo y el saldo vuelve a 0. Si la cancelación queda "en curso", la retención se mantiene hasta que se verifique: es lo esperado (D-TBO-25).
+6. Opcional, el rechazo. En _Carteras_ de la sucursal, **Suspender** la cartera USD con motivo y repite con el vendedor los puntos 1 a 3 de esta prueba. Bajo el selector de moneda aparece "La cartera USD de tu agencia está suspendida". El checkout avisa que no se puede retener y no deja cargar huéspedes, y el Book no sale a TBO. Después pulsa **Reactivar**, también con motivo.
+
+**Al terminar.** Mientras la cuenta de Planetour sea la de test, una reserva de TBO confirmada no es una habitación real. Si la sucursal ya atiende clientes, en _Proveedores de la plataforma_ → TBO Holidays pasa su ajuste de **Habilitado** a **Heredar** (TBO es `opt-in` y, sin habilitarlo en Planetour ni para todos, queda apagado) o a **Deshabilitado**, hasta cargar la cuenta live (paso 6.2). La cartera USD puede quedar como está.
+
+**Si algo no sale:**
+
+| Síntoma                                                                          | Qué revisar                                                                                        |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| La búsqueda en USD no trae hoteles de TBO                                        | TBO habilitado para la sucursal, cuenta en Activo y catálogo sincronizado (paso 6).                |
+| "La agencia no tiene cartera en USD: pedile a quien te financia que la habilite" | El paso 8 no quedó hecho en esa sucursal.                                                          |
+| "no tiene saldo ni cupo suficiente para esta reserva"                            | Sube el **Cupo** de la cartera USD, o registra un **Depósito**, o elige una habitación más barata. |
+| "La cartera en USD de la agencia está suspendida"                                | **Reactivar** en la tarjeta USD.                                                                   |
+| "Falta el contacto de soporte de la agencia" (`AGENCY_CONTACT_MISSING`)          | Email y teléfono internacional en _Mi Agencia_ → Marca de la sucursal o de Planetour.              |
