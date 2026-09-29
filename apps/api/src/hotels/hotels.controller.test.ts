@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
+import type { PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
 import type { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
@@ -153,6 +154,10 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
     pricing,
     breaker,
     { emit: () => Promise.resolve() } as unknown as AuditService,
+    {
+      previewBookingHold: (_tenantId: string, amount: { currency: string }) =>
+        Promise.resolve({ status: 'ok', currency: amount.currency }),
+    } as unknown as PortfoliosService,
   );
   const resolve = vi.fn((_userId: string) => Promise.resolve(TENANT));
   const disclosure = {

@@ -119,7 +119,8 @@ export function BookingConfirm({
 
       <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
         <Wallet aria-hidden="true" className="mt-px size-3 shrink-0" />
-        Se retiene del saldo o crédito de la agencia en Carteras. No se piden datos de tarjeta.
+        Se retiene de la cartera de la agencia en la moneda de la tarifa (su saldo más su cupo). No
+        se piden datos de tarjeta.
       </p>
 
       <div className="space-y-2 border-t border-[var(--color-border)] pt-3">

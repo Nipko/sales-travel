@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import type { Money } from '@sales-travel/canonical';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { DB } from '../database/database.types.js';
+import type { DB, DepositReportStatus } from '../database/database.types.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
@@ -16,34 +16,43 @@ import {
 } from './booking-hold.ledger.js';
 import {
   BookingHoldRejectedError,
+  bookingHoldMessage,
   decideBookingHold,
-  internalCreditMinor,
+  type BookingHoldDecision,
   type BookingHoldFacts,
-  type BookingHoldPolicy,
+  type BookingHoldPreview,
   type BookingHoldRejection,
 } from './booking-hold.js';
+import {
+  PortfolioConflictError,
+  rethrowPortfolioError,
+  walletNotEnabled,
+} from './portfolio-errors.js';
+import type { SubmitDepositReportDto } from './portfolios.schemas.js';
+import {
+  depositReportById,
+  findWallet,
+  listDepositReports,
+  listMovements,
+  listWallets,
+  walletView,
+  type DepositReportView,
+  type PortfolioRow,
+  type PortfolioTransactionRow,
+  type WalletMovementView,
+  type WalletView,
+} from './wallet-store.js';
 
-export interface PortfolioRow {
-  id: string;
-  tenant_id: string;
-  credit_limit_minor: number;
-  balance_minor: number;
-  currency: string;
-  status: string;
-  created_at: Date;
-  updated_at: Date;
-}
+export type { PortfolioRow, PortfolioTransactionRow } from './wallet-store.js';
 
-export interface PortfolioTransactionRow {
-  id: string;
-  portfolio_id: string;
-  amount_minor: number;
-  transaction_type: string;
-  reference_id: string | null;
-  idempotency_key: string | null;
-  notes: string | null;
-  created_by: string;
-  created_at: Date;
+/** Las carteras de la agencia y quién se las financia (a quién pedirle cupo o una moneda). */
+export interface AgencyWalletsView {
+  portfolios: WalletView[];
+  /**
+   * `null` para la raíz de la red o un nodo legado sin padre: sus carteras las gestiona el
+   * superadmin.
+   */
+  financier: { tenantId: string; name: string } | null;
 }
 
 /** Lo que una reserva retenida admite desde la cartera. */
@@ -57,6 +66,12 @@ interface BookingActionCapabilities {
 export type { BookingHoldRelease } from './booking-hold.ledger.js';
 
 const HOLD_BEFORE_BOOK_NOTES = 'Retención de saldo antes de reservar con el proveedor';
+const HOLD_CONFIRMED_NOTES = 'Retención preventiva de saldo por reserva pendiente de emisión';
+
+interface HeldOnWallet {
+  portfolio: PortfolioRow;
+  transaction: PortfolioTransactionRow;
+}
 
 export interface HoldBookingExpectations {
   /**
@@ -80,13 +95,6 @@ function assertSafePositiveMinor(amountMinor: number, label: string): void {
   }
 }
 
-function canonicalUuid(value: string, label: string): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new BadRequestException(`${label} must be a valid UUID`);
-  }
-  return value.toLowerCase();
-}
-
 /** El monto de una retención, validado y con la moneda normalizada. */
 function holdAmount(amount: Money): Money {
   assertSafePositiveMinor(amount.amountMinor, 'Booking amount');
@@ -97,17 +105,34 @@ function holdAmount(amount: Money): Money {
   return { amountMinor: amount.amountMinor, currency };
 }
 
-function holdRejection(
-  reason: BookingHoldRejection,
-  facts: BookingHoldFacts,
-): BookingHoldRejectedError {
-  return new BookingHoldRejectedError(reason, {
-    amountCurrency: facts.amount.currency,
-    portfolioCurrency: facts.portfolio.currency,
-  });
+function holdRejection(reason: BookingHoldRejection, amount: Money): BookingHoldRejectedError {
+  return new BookingHoldRejectedError(reason, { amountCurrency: amount.currency });
 }
 
-type FinancialMutationType = 'DEPOSIT_PAYMENT' | 'MANUAL_ADJUSTMENT';
+/** Lo que la decisión necesita de la cartera de la agencia en la moneda de la reserva. */
+function holdFacts(portfolio: PortfolioRow | undefined, amount: Money): BookingHoldFacts {
+  if (portfolio === undefined) return { amount, portfolio: null };
+  return {
+    amount,
+    portfolio: {
+      balanceMinor: Number(portfolio.balance_minor),
+      creditLimitMinor: Number(portfolio.credit_limit_minor),
+      currency: normalizeCurrency(portfolio.currency) ?? '',
+      status: portfolio.status,
+    },
+  };
+}
+
+/** Un depósito informado anterior con la misma Idempotency-Key, para comparar con el reenvío. */
+interface PriorDepositReport {
+  id: string;
+  currency: string;
+  amount_minor: number | string;
+  reference: string;
+  deposited_on: string | null;
+  notes: string | null;
+  reported_by: string;
+}
 
 @Injectable()
 export class PortfoliosService {
@@ -124,259 +149,157 @@ export class PortfoliosService {
     this.holds = new BookingHoldLedger(db);
   }
 
-  async getPortfolio(tenantId: string): Promise<PortfolioRow> {
+  // ─────────────────────── Lo que ve y hace la agencia (Cartera B2B) ───────────────────────
+
+  /**
+   * Las carteras de la agencia, una por moneda, y quién la financia. Sólo lee: una agencia sin
+   * carteras no tiene ninguna hasta que quien la financia le habilite una moneda.
+   */
+  async overview(tenantId: string): Promise<AgencyWalletsView> {
     return this.db.withTenant(tenantId, async (trx) => {
-      return this.getOrCreatePortfolio(trx, tenantId);
+      const wallets = await listWallets(trx, tenantId);
+      // `tenants` no tiene RLS; tenant_financier_id devuelve sólo el id del ancestro.
+      const financier = await sql<{ id: string; name: string }>`
+        SELECT f.id, f.name FROM tenants f WHERE f.id = tenant_financier_id(${tenantId}::uuid)
+      `.execute(trx);
+      const row = financier.rows[0];
+      return {
+        portfolios: wallets.map(walletView),
+        financier: row === undefined ? null : { tenantId: row.id, name: row.name },
+      };
     });
   }
 
-  async updateCreditLimit(tenantId: string, limitMinor: number): Promise<PortfolioRow> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const row = await trx
-        .updateTable('agency_portfolios')
-        .set({ credit_limit_minor: limitMinor })
-        .where('tenant_id', '=', tenantId)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      return row as unknown as PortfolioRow;
-    });
+  /** Los movimientos de las carteras de la agencia, o de la de una moneda. */
+  async listTransactions(tenantId: string, currency?: string): Promise<WalletMovementView[]> {
+    return this.db.withTenant(tenantId, (trx) => listMovements(trx, tenantId, currency));
   }
 
-  async deposit(
+  /** Los depósitos que informó la agencia, pendientes y resueltos. */
+  async listDepositReports(
     tenantId: string,
-    amountMinor: number,
-    createdBy: string,
+    status?: DepositReportStatus,
+  ): Promise<DepositReportView[]> {
+    return this.db.withTenant(tenantId, (trx) =>
+      listDepositReports(trx, tenantId, status === undefined ? {} : { status }),
+    );
+  }
+
+  /**
+   * La agencia informa un depósito sobre su cartera de esa moneda. Nace pendiente y no mueve el
+   * saldo: lo acredita quien la financia al aprobarlo (WalletFinancingService). El rastro
+   * (`portfolio.deposit_report.submitted`) lo deja la base en la misma transacción.
+   *
+   * Corre con el usuario que informa y el tenant de la agencia: la RLS de 0052 exige los dos. Un
+   * reenvío con la misma Idempotency-Key devuelve el mismo informe; con otros datos, 409.
+   *
+   * @throws PortfolioConflictError `PORTFOLIO_CURRENCY_NOT_ENABLED` si no hay cartera en esa moneda.
+   */
+  async submitDepositReport(
+    actorUserId: string,
+    tenantId: string,
+    input: SubmitDepositReportDto,
     idempotencyKey: string,
-    notes?: string,
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
-    assertSafePositiveMinor(amountMinor, 'Deposit amount');
-    const key = canonicalUuid(idempotencyKey, 'Idempotency-Key');
-    return this.runIdempotentBalanceMutation({
-      tenantId,
-      amountMinor,
-      createdBy,
-      idempotencyKey: key,
-      transactionType: 'DEPOSIT_PAYMENT',
-      notes: notes ?? 'Recarga de saldo por transferencia',
-    });
-  }
+  ): Promise<DepositReportView> {
+    const submit = () =>
+      this.db.withRequestContext({ userId: actorUserId, tenantId }, async (trx) => {
+        const prior = await this.priorDepositReport(trx, tenantId, idempotencyKey);
+        if (prior) return this.replayDepositReport(trx, tenantId, prior, actorUserId, input);
 
-  async withdraw(
-    tenantId: string,
-    amountMinor: number,
-    createdBy: string,
-    idempotencyKey: string,
-    notes?: string,
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
-    assertSafePositiveMinor(amountMinor, 'Withdrawal amount');
-    const key = canonicalUuid(idempotencyKey, 'Idempotency-Key');
-    return this.runIdempotentBalanceMutation({
-      tenantId,
-      amountMinor,
-      createdBy,
-      idempotencyKey: key,
-      transactionType: 'MANUAL_ADJUSTMENT',
-      notes: notes ?? 'Retiro o ajuste manual de saldo',
-    });
-  }
-
-  async getTransactions(tenantId: string): Promise<PortfolioTransactionRow[]> {
-    return this.db.withTenant(tenantId, async (trx) => {
-      const portfolio = await this.getOrCreatePortfolio(trx, tenantId);
-      const rows = await trx
-        .selectFrom('portfolio_transactions')
-        .selectAll()
-        .where('portfolio_id', '=', portfolio.id)
-        .orderBy('created_at', 'desc')
-        .execute();
-      return rows as unknown as PortfolioTransactionRow[];
-    });
-  }
-
-  /** Obtiene/crea la cartera usando el MISMO trx del llamador, incluso bajo primer acceso doble. */
-  private async getOrCreatePortfolio(
-    trx: Transaction<DB>,
-    tenantId: string,
-  ): Promise<PortfolioRow> {
-    const existing = await trx
-      .selectFrom('agency_portfolios')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    if (existing) return existing as unknown as PortfolioRow;
-
-    const inserted = await trx
-      .insertInto('agency_portfolios')
-      .values({
-        tenant_id: tenantId,
-        credit_limit_minor: 0,
-        balance_minor: 0,
-        currency: 'COP',
-        status: 'active',
-      })
-      .onConflict((conflict) => conflict.column('tenant_id').doNothing())
-      .returningAll()
-      .executeTakeFirst();
-    if (inserted) return inserted as unknown as PortfolioRow;
-
-    // ON CONFLICT espera el commit competidor; esta segunda sentencia ya ve la fila ganadora.
-    const concurrent = await trx
-      .selectFrom('agency_portfolios')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirstOrThrow();
-    return concurrent as unknown as PortfolioRow;
-  }
-
-  private assertIdempotentMutationMatches(
-    transaction: PortfolioTransactionRow,
-    expected: {
-      transactionType: FinancialMutationType;
-      signedAmountMinor: number;
-      createdBy: string;
-      notes: string;
-    },
-  ): void {
-    const storedAmount = Number(transaction.amount_minor);
-    if (
-      transaction.transaction_type !== expected.transactionType ||
-      !Number.isSafeInteger(storedAmount) ||
-      storedAmount !== expected.signedAmountMinor ||
-      transaction.created_by !== expected.createdBy ||
-      transaction.notes !== expected.notes
-    ) {
-      throw new ConflictException(
-        'Idempotency-Key ya fue usada con una operación o contenido diferente.',
-      );
-    }
-  }
-
-  private async replayIdempotentBalanceMutation(input: {
-    tenantId: string;
-    idempotencyKey: string;
-    transactionType: FinancialMutationType;
-    signedAmountMinor: number;
-    createdBy: string;
-    notes: string;
-  }): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow } | null> {
-    return this.db.withTenant(input.tenantId, async (trx) => {
-      const portfolio = await trx
-        .selectFrom('agency_portfolios')
-        .selectAll()
-        .where('tenant_id', '=', input.tenantId)
-        .executeTakeFirst();
-      if (!portfolio) return null;
-      const transaction = await trx
-        .selectFrom('portfolio_transactions')
-        .selectAll()
-        .where('portfolio_id', '=', portfolio.id)
-        .where('idempotency_key', '=', input.idempotencyKey)
-        .executeTakeFirst();
-      if (!transaction) return null;
-
-      const row = transaction as unknown as PortfolioTransactionRow;
-      this.assertIdempotentMutationMatches(row, input);
-      return { portfolio: portfolio as unknown as PortfolioRow, transaction: row };
-    });
-  }
-
-  private async runIdempotentBalanceMutation(input: {
-    tenantId: string;
-    amountMinor: number;
-    createdBy: string;
-    idempotencyKey: string;
-    transactionType: FinancialMutationType;
-    notes: string;
-  }): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
-    const signedAmountMinor =
-      input.transactionType === 'DEPOSIT_PAYMENT' ? input.amountMinor : -input.amountMinor;
-    const replayInput = { ...input, signedAmountMinor };
+        const wallet = await findWallet(trx, tenantId, input.currency);
+        if (!wallet) throw walletNotEnabled(input.currency);
+        const inserted = await trx
+          .insertInto('portfolio_deposit_reports')
+          .values({
+            tenant_id: tenantId,
+            portfolio_id: wallet.id,
+            amount_minor: input.amountMinor,
+            currency: wallet.currency,
+            reference: input.reference,
+            deposited_on: input.depositedOn,
+            notes: input.notes,
+            idempotency_key: idempotencyKey,
+            reported_by: actorUserId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        return this.reportOrFail(trx, tenantId, inserted.id);
+      });
 
     try {
-      return await this.db.withTenant(input.tenantId, async (trx) => {
-        const portfolio = await this.getOrCreatePortfolio(trx, input.tenantId);
-        const prior = await trx
-          .selectFrom('portfolio_transactions')
-          .selectAll()
-          .where('portfolio_id', '=', portfolio.id)
-          .where('idempotency_key', '=', input.idempotencyKey)
-          .executeTakeFirst();
-        if (prior) {
-          const row = prior as unknown as PortfolioTransactionRow;
-          this.assertIdempotentMutationMatches(row, replayInput);
-          return { portfolio, transaction: row };
-        }
-
-        // La clave se reclama antes de tocar saldo. Cualquier fallo posterior revierte ambos.
-        const transaction = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: portfolio.id,
-            amount_minor: signedAmountMinor,
-            transaction_type: input.transactionType,
-            idempotency_key: input.idempotencyKey,
-            notes: input.notes,
-            created_by: input.createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        const balanceExpression =
-          input.transactionType === 'DEPOSIT_PAYMENT'
-            ? sql<number>`balance_minor + ${input.amountMinor}`
-            : sql<number>`balance_minor - ${input.amountMinor}`;
-        const safeBalanceExpression =
-          input.transactionType === 'DEPOSIT_PAYMENT'
-            ? sql<number>`balance_minor::numeric + ${input.amountMinor}`
-            : sql<number>`balance_minor::numeric - ${input.amountMinor}`;
-        let update = trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: balanceExpression })
-          .where('id', '=', portfolio.id)
-          // No permitimos que BIGINT se convierta después en un Number redondeado en la API.
-          .where(
-            sql<boolean>`(${safeBalanceExpression}) BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          );
-        if (input.transactionType === 'MANUAL_ADJUSTMENT') {
-          // El predicado se reevalúa después de adquirir el lock de fila: no existe TOCTOU.
-          update = update
-            .where('status', '=', 'active')
-            .where(
-              sql<boolean>`balance_minor::numeric + credit_limit_minor::numeric >= ${input.amountMinor}`,
-            );
-        }
-
-        const updatedPortfolio = await update.returningAll().executeTakeFirst();
-        if (!updatedPortfolio) {
-          if (input.transactionType === 'MANUAL_ADJUSTMENT') {
-            throw new BadRequestException(
-              'Insufficient credit limit and portfolio balance, or portfolio is not active',
-            );
-          }
-          throw new BadRequestException('Portfolio balance exceeds the safe integer range');
-        }
-
-        return {
-          portfolio: updatedPortfolio as unknown as PortfolioRow,
-          transaction: transaction as unknown as PortfolioTransactionRow,
-        };
-      });
+      return await submit();
     } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      // El competidor pudo haber hecho COMMIT mientras esta inserción esperaba el índice.
-      const replay = await this.replayIdempotentBalanceMutation(replayInput);
-      if (replay) return replay;
-      throw error;
+      // Otro envío con la misma clave confirmó mientras este insertaba: se responde con el suyo.
+      if (isUniqueViolation(error)) return submit().catch(rethrowPortfolioError);
+      return rethrowPortfolioError(error);
     }
   }
 
-  // Flujo de Aprobación de Reserva
+  private async priorDepositReport(
+    trx: Transaction<DB>,
+    tenantId: string,
+    idempotencyKey: string,
+  ): Promise<PriorDepositReport | undefined> {
+    return trx
+      .selectFrom('portfolio_deposit_reports')
+      .select([
+        'id',
+        'currency',
+        'amount_minor',
+        'reference',
+        sql<string | null>`to_char(deposited_on, 'YYYY-MM-DD')`.as('deposited_on'),
+        'notes',
+        'reported_by',
+      ])
+      .where('tenant_id', '=', tenantId)
+      .where('idempotency_key', '=', idempotencyKey)
+      .executeTakeFirst();
+  }
+
+  private async replayDepositReport(
+    trx: Transaction<DB>,
+    tenantId: string,
+    prior: PriorDepositReport,
+    actorUserId: string,
+    input: SubmitDepositReportDto,
+  ): Promise<DepositReportView> {
+    const same =
+      prior.reported_by === actorUserId &&
+      prior.currency === input.currency &&
+      Number(prior.amount_minor) === input.amountMinor &&
+      prior.reference === input.reference &&
+      prior.deposited_on === input.depositedOn &&
+      prior.notes === input.notes;
+    if (!same) throw new PortfolioConflictError('PORTFOLIO_IDEMPOTENCY_KEY_REUSED');
+    return this.reportOrFail(trx, tenantId, prior.id);
+  }
+
+  private async reportOrFail(
+    trx: Transaction<DB>,
+    tenantId: string,
+    reportId: string,
+  ): Promise<DepositReportView> {
+    const report = await depositReportById(trx, tenantId, reportId);
+    if (!report) throw new Error(`deposit report ${reportId} not readable after write`);
+    return report;
+  }
+
+  /**
+   * Retiene el total de una reserva ya confirmada y no emitida (vuelos y autos, `POST
+   * /portfolios/hold-booking`), con las mismas reglas que la retención previa al Book de un hotel:
+   * la cartera de la moneda de la orden, activa, y su saldo más el cupo que fija quien financia.
+   *
+   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   * @throws BadRequestException si la orden no es una reserva confirmada de este tenant, o no dice
+   *   lo que el cliente esperaba.
+   * @throws ConflictException si la orden ya tiene una retención.
+   */
   async holdBooking(
     tenantId: string,
     orderId: string,
     createdBy: string,
     expected: HoldBookingExpectations = {},
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
+  ): Promise<HeldOnWallet> {
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
         // La orden, su monto y su moneda se leen bajo el tenant y dentro de la MISMA transacción
@@ -422,63 +345,16 @@ export class PortfoliosService {
           }
         }
 
-        const portfolio = await this.getOrCreatePortfolio(trx, tenantId);
-        const portfolioCurrency = normalizeCurrency(portfolio.currency);
-        if (!portfolioCurrency || portfolioCurrency !== orderCurrency) {
-          throw new BadRequestException(
-            `La cartera está en ${portfolioCurrency ?? 'una moneda inválida'} y la reserva en ` +
-              `${orderCurrency}. No se pueden mezclar monedas en una retención.`,
-          );
-        }
-        if (portfolio.status !== 'active') {
-          throw new BadRequestException(
-            'La cartera no está activa. No se creó ninguna retención de saldo.',
-          );
-        }
-
-        // El índice parcial único reclama primero el orderId. Si dos requests compiten, el
-        // perdedor falla aquí y toda su transacción se revierte sin un segundo débito.
-        const transaction = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: portfolio.id,
-            amount_minor: -amountMinor,
-            transaction_type: 'BOOKING_HOLD',
-            // PostgreSQL devuelve UUID en representación canónica minúscula. No persistimos el
-            // casing/control textual que llegó por HTTP.
-            reference_id: order.id,
-            notes: 'Retención preventiva de saldo por reserva pendiente de emisión',
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        // La suficiencia se evalúa en el UPDATE que descuenta, después de adquirir el lock de la
-        // fila. Así dos reservas distintas tampoco pueden gastar el mismo saldo simultáneamente.
-        const heldBalance = sql<number>`balance_minor - ${amountMinor}`;
-        const updatedPortfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: heldBalance })
-          .where('id', '=', portfolio.id)
-          .where('status', '=', 'active')
-          .where(
-            sql<boolean>`balance_minor::numeric + credit_limit_minor::numeric >= ${amountMinor}`,
-          )
-          .where(
-            sql<boolean>`balance_minor::numeric - ${amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returningAll()
-          .executeTakeFirst();
-        if (!updatedPortfolio) {
-          throw new BadRequestException(
-            'Saldo insuficiente para reservar. Recargue saldo o solicite límite de crédito.',
-          );
-        }
-
-        return {
-          portfolio: updatedPortfolio as unknown as PortfolioRow,
-          transaction: transaction as unknown as PortfolioTransactionRow,
-        };
+        // `order.id` y no `orderId`: PostgreSQL lo devuelve en su forma canónica, y el asiento no
+        // guarda el casing que llegó por HTTP.
+        return this.retainOnWallet(
+          trx,
+          tenantId,
+          order.id,
+          { amountMinor, currency: orderCurrency },
+          createdBy,
+          HOLD_CONFIRMED_NOTES,
+        );
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -493,24 +369,42 @@ export class PortfoliosService {
   // ─────────────── Retención antes de reservar (docs/tbo/08 RF-23; D-TBO-21 A) ───────────────
 
   /**
-   * ¿Alcanza la cartera para retener `amount`? Lee sin bloquear y ANTES de abrir la orden, para que
-   * una agencia sin saldo o sin crédito interno no llegue a llamar al proveedor (RF-23 CA-1). No
-   * reemplaza a {@link holdBookingIntent}, que vuelve a decidir con la cartera bloqueada.
+   * ¿Alcanza la cartera de la moneda de `amount` para retenerlo? Lee sin bloquear y ANTES de abrir
+   * la orden, para que una agencia sin cartera en esa moneda, sin saldo o sin cupo no llegue a
+   * llamar al proveedor (RF-23 CA-1). No reemplaza a {@link holdBookingIntent}, que vuelve a decidir
+   * con la cartera bloqueada.
    *
    * @throws BookingHoldRejectedError si no alcanza.
    */
-  async assertBookingHoldAffordable(
-    tenantId: string,
-    amount: Money,
-    policy: BookingHoldPolicy,
-  ): Promise<void> {
+  async assertBookingHoldAffordable(tenantId: string, amount: Money): Promise<void> {
     const target = holdAmount(amount);
-    await this.db.withTenant(tenantId, async (trx) => {
-      const portfolio = await this.getOrCreatePortfolio(trx, tenantId);
-      const facts = await this.holdFacts(trx, tenantId, portfolio, target, policy);
-      const decision = decideBookingHold(facts);
-      if (!decision.ok) throw holdRejection(decision.reason, facts);
-    });
+    const decision = await this.readHoldDecision(tenantId, target);
+    if (!decision.ok) throw holdRejection(decision.reason, target);
+  }
+
+  /**
+   * El aviso del PreBook: la misma decisión que {@link assertBookingHoldAffordable}, devuelta en vez
+   * de lanzada, para que el vendedor sepa ANTES de cargar huéspedes que la agencia no tiene cartera
+   * en la moneda de la tarifa, que está suspendida o que no le alcanza. Sólo lee y no promete nada:
+   * la reserva vuelve a decidir con la cartera bloqueada.
+   */
+  async previewBookingHold(tenantId: string, amount: Money): Promise<BookingHoldPreview> {
+    const target = holdAmount(amount);
+    const decision = await this.readHoldDecision(tenantId, target);
+    if (decision.ok) return { status: 'ok', currency: target.currency };
+    return {
+      status: 'blocked',
+      currency: target.currency,
+      reason: decision.reason,
+      message: bookingHoldMessage(decision.reason, target.currency),
+    };
+  }
+
+  /** La decisión sobre la cartera de la moneda de `target`, leída sin bloquearla. */
+  private async readHoldDecision(tenantId: string, target: Money): Promise<BookingHoldDecision> {
+    return this.db.withTenant(tenantId, async (trx) =>
+      decideBookingHold(holdFacts(await findWallet(trx, tenantId, target.currency), target)),
+    );
   }
 
   /**
@@ -524,7 +418,7 @@ export class PortfoliosService {
    * sólo el control de que la saga retiene lo que cree. La cartera se bloquea ANTES de decidir, así
    * que dos reservas de la misma agencia no gastan el mismo saldo.
    *
-   * @throws BookingHoldRejectedError si la cartera o el crédito interno no alcanzan.
+   * @throws BookingHoldRejectedError si no hay cartera en esa moneda o no alcanza.
    * @throws BadRequestException si la orden no es un intent abierto de este tenant.
    * @throws ConflictException si la orden ya tiene una retención.
    */
@@ -533,8 +427,7 @@ export class PortfoliosService {
     orderId: string,
     createdBy: string,
     expected: Money,
-    policy: BookingHoldPolicy,
-  ): Promise<{ portfolio: PortfolioRow; transaction: PortfolioTransactionRow }> {
+  ): Promise<HeldOnWallet> {
     const target = holdAmount(expected);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
@@ -581,49 +474,14 @@ export class PortfoliosService {
           );
         }
 
-        const created = await this.getOrCreatePortfolio(trx, tenantId);
-        const portfolio = (await trx
-          .selectFrom('agency_portfolios')
-          .selectAll()
-          .where('id', '=', created.id)
-          .forUpdate()
-          .executeTakeFirstOrThrow()) as unknown as PortfolioRow;
-        const facts = await this.holdFacts(trx, tenantId, portfolio, target, policy);
-        const decision = decideBookingHold(facts);
-        if (!decision.ok) throw holdRejection(decision.reason, facts);
-
-        const transaction = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: portfolio.id,
-            amount_minor: -amountMinor,
-            transaction_type: 'BOOKING_HOLD',
-            reference_id: order.id,
-            notes: HOLD_BEFORE_BOOK_NOTES,
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra
-        // ruta escribió el saldo sin tomar el mismo bloqueo.
-        const updatedPortfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: sql<number>`balance_minor - ${amountMinor}` })
-          .where('id', '=', portfolio.id)
-          .where('status', '=', 'active')
-          .where(sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${amountMinor}`)
-          .where(
-            sql<boolean>`balance_minor::numeric - ${amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returningAll()
-          .executeTakeFirst();
-        if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', facts);
-
-        return {
-          portfolio: updatedPortfolio as unknown as PortfolioRow,
-          transaction: transaction as unknown as PortfolioTransactionRow,
-        };
+        return this.retainOnWallet(
+          trx,
+          tenantId,
+          order.id,
+          target,
+          createdBy,
+          HOLD_BEFORE_BOOK_NOTES,
+        );
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -633,6 +491,64 @@ export class PortfoliosService {
       }
       throw error;
     }
+  }
+
+  /**
+   * El asiento `BOOKING_HOLD` y el débito, dentro de la transacción que ya bloqueó la orden. Una
+   * cartera por moneda: se usa la de la moneda de la reserva, nunca otra, y sin ella no se abre una
+   * implícita. La cartera se bloquea ANTES de decidir, así que dos reservas de la misma agencia no
+   * gastan el mismo saldo. El índice único por orden (0039) frena una segunda retención con 23505,
+   * que traduce quien llama.
+   *
+   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   */
+  private async retainOnWallet(
+    trx: Transaction<DB>,
+    tenantId: string,
+    orderId: string,
+    target: Money,
+    createdBy: string,
+    notes: string,
+  ): Promise<HeldOnWallet> {
+    const portfolio = await findWallet(trx, tenantId, target.currency, { forUpdate: true });
+    if (!portfolio) throw holdRejection('PORTFOLIO_CURRENCY_NOT_ENABLED', target);
+    const decision = decideBookingHold(holdFacts(portfolio, target));
+    if (!decision.ok) throw holdRejection(decision.reason, target);
+
+    const transaction = await trx
+      .insertInto('portfolio_transactions')
+      .values({
+        portfolio_id: portfolio.id,
+        amount_minor: -target.amountMinor,
+        transaction_type: 'BOOKING_HOLD',
+        reference_id: orderId,
+        notes,
+        created_by: createdBy,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra ruta
+    // escribió el saldo sin tomar el mismo bloqueo.
+    const updatedPortfolio = await trx
+      .updateTable('agency_portfolios')
+      .set({ balance_minor: sql<number>`balance_minor - ${target.amountMinor}` })
+      .where('id', '=', portfolio.id)
+      .where('status', '=', 'active')
+      .where(
+        sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${target.amountMinor}`,
+      )
+      .where(
+        sql<boolean>`balance_minor::numeric - ${target.amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
+      )
+      .returningAll()
+      .executeTakeFirst();
+    if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', target);
+
+    return {
+      portfolio: updatedPortfolio as unknown as PortfolioRow,
+      transaction: transaction as unknown as PortfolioTransactionRow,
+    };
   }
 
   /**
@@ -666,42 +582,6 @@ export class PortfoliosService {
     createdBy: string,
   ): Promise<BookingHoldRelease> {
     return this.holds.releaseCancelled(tenantId, orderId, createdBy);
-  }
-
-  /**
-   * Lo que la decisión necesita: la cartera y, con una cuenta heredada, el crédito interno del
-   * tenant. `tenants` no tiene RLS; el tenant es siempre el de la transacción.
-   */
-  private async holdFacts(
-    trx: Transaction<DB>,
-    tenantId: string,
-    portfolio: PortfolioRow,
-    amount: Money,
-    policy: BookingHoldPolicy,
-  ): Promise<BookingHoldFacts> {
-    const facts: BookingHoldFacts = {
-      amount,
-      portfolio: {
-        balanceMinor: Number(portfolio.balance_minor),
-        creditLimitMinor: Number(portfolio.credit_limit_minor),
-        currency: normalizeCurrency(portfolio.currency),
-        status: portfolio.status,
-      },
-    };
-    if (!policy.inheritedAccount) return facts;
-
-    const tenant = await trx
-      .selectFrom('tenants')
-      .select(['credit_limit', 'default_currency'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    return {
-      ...facts,
-      internalCredit: {
-        limitMinor: internalCreditMinor(tenant?.credit_limit),
-        currency: normalizeCurrency(tenant?.default_currency),
-      },
-    };
   }
 
   async approveBooking(

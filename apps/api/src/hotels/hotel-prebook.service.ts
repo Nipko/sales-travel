@@ -3,6 +3,8 @@ import type { HotelRoompack, Money } from '@sales-travel/canonical';
 import type { HotelRateConditionCategory, HotelRateSignal } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
+import type { BookingHoldPreview } from '../portfolios/booking-hold.js';
+import { PortfoliosService } from '../portfolios/portfolios.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
@@ -18,7 +20,7 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { providerAccountIssueEvent } from './hotel-account-issues.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
-import { priceRoompack } from './hotel-pricing.js';
+import { priceRoompack, saleTotalOf } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
 import {
   HotelSearchContextStore,
@@ -58,6 +60,13 @@ export interface HotelPrebookResponse {
   /** Si no es `UNCHANGED`, se muestra antes de seguir (RF-15 CA-3). */
   readonly repricing: HotelPrebookRepricing;
   readonly warnings: readonly string[];
+  /**
+   * Si la cartera de la agencia en la moneda de la tarifa cubriría hoy el precio de venta (RF-23):
+   * la web no deja cargar huéspedes para una reserva que se va a rechazar. Es un aviso, no una
+   * promesa: el Book vuelve a decidir con la cartera bloqueada. Sin saldo ni cupo. Ausente si no se
+   * pudo leer la cartera: el PreBook no se cae por eso.
+   */
+  readonly funding?: BookingHoldPreview;
 }
 
 const OPERATION = 'la revalidación de una tarifa de su búsqueda (se revalida con su flujo propio)';
@@ -93,6 +102,9 @@ function repricingOf(comparison: HotelRepriceComparison): HotelPrebookRepricing 
  * 6. **Precio de venta** con el waterfall `hotels` y el piso del proveedor sobre el neto y el piso
  *    DEL PreBook (RF-12).
  * 7. **Snapshot aceptable** por `prebookRef`, y `HotelOfferRepriced` si C1 no dio `UNCHANGED`.
+ * 8. **Aviso de cartera** (RF-23): si la agencia no tiene cartera en la moneda de la tarifa, la
+ *    tiene suspendida o no le alcanza para el precio de venta, se dice ya, antes de que el vendedor
+ *    cargue huéspedes. No rechaza el PreBook: el que rechaza, sin llamar al proveedor, es el Book.
  */
 @Injectable()
 export class HotelPrebookService {
@@ -105,6 +117,7 @@ export class HotelPrebookService {
     private readonly pricing: PricingService,
     private readonly breaker: CircuitBreakerService,
     private readonly audit: AuditService,
+    private readonly portfolios: PortfoliosService,
   ) {}
 
   async prebook(
@@ -211,6 +224,7 @@ export class HotelPrebookService {
       });
     }
 
+    const funding = await this.fundingOf(tenantId, code, roompack);
     return {
       prebookRef,
       providerCode: code,
@@ -221,7 +235,29 @@ export class HotelPrebookService {
       signals: [...found.result.signals],
       repricing,
       warnings: [...found.result.warnings],
+      ...(funding === undefined ? {} : { funding }),
     };
+  }
+
+  /**
+   * El aviso de cartera sobre el precio de VENTA revalidado, que es lo que el Book retiene. Si la
+   * cartera no se puede leer, el PreBook sale igual sin el aviso: el Book decide de todos modos.
+   */
+  private async fundingOf(
+    tenantId: string,
+    providerCode: string,
+    roompack: HotelRoompack,
+  ): Promise<BookingHoldPreview | undefined> {
+    try {
+      return await this.portfolios.previewBookingHold(tenantId, saleTotalOf(roompack));
+    } catch (err) {
+      // Sin el mensaje: el de la base puede citar ids del tenant.
+      const errorName = err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
+      this.logger.warn(
+        `hotels.prebook.funding_check_failed provider=${providerCode} error=${errorName}`,
+      );
+      return undefined;
+    }
   }
 
   /**

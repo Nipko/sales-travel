@@ -1,5 +1,6 @@
 import type { Money } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
+import { PORTFOLIO_TITLES } from './funding-view';
 import {
   AT_PROPERTY_FIELD,
   AT_PROPERTY_REQUIRED,
@@ -213,14 +214,6 @@ const ACCOUNT: Readonly<Record<string, string>> = {
   UNSUPPORTED_CURRENCY: 'La cuenta del proveedor cotiza en una moneda que no podemos mostrar.',
 };
 
-/** De la cartera de la agencia: se resuelve cargando saldo y se vuelve a confirmar. */
-const PORTFOLIO: Readonly<Record<string, string>> = {
-  PORTFOLIO_FUNDS_INSUFFICIENT: 'La agencia no tiene saldo para esta reserva.',
-  INTERNAL_CREDIT_INSUFFICIENT: 'La agencia no tiene saldo para esta reserva.',
-  PORTFOLIO_INACTIVE: 'La cartera de la agencia no está activa.',
-  PORTFOLIO_CURRENCY_MISMATCH: 'La cartera de la agencia está en otra moneda.',
-};
-
 /**
  * El proveedor no respondió al revalidar (antes del Book, así que no hay reserva): se puede
  * volver a confirmar en unos segundos.
@@ -347,11 +340,13 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
       retry: false,
     };
   }
-  if (reason !== undefined && PORTFOLIO[reason]) {
+  // De la cartera de la agencia en la moneda de la tarifa: la resuelve quien la financia (habilita
+  // la moneda, la reactiva, aprueba un depósito o sube el cupo) y se vuelve a confirmar.
+  if (reason !== undefined && PORTFOLIO_TITLES[reason]) {
     return {
       kind: 'rejected',
-      title: PORTFOLIO[reason],
-      message: message ?? 'Revisá la cartera de la agencia en Carteras.',
+      title: PORTFOLIO_TITLES[reason],
+      message: message ?? 'Revisá la cartera de la agencia en Cartera B2B.',
       retry: true,
       action: 'portfolios',
     };

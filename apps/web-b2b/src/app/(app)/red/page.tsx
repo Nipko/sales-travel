@@ -18,8 +18,10 @@ import {
   Trash2,
   UserPlus,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useViewer } from '../../../components/layout/viewer-context';
 import { NodeKindBadge, NodeKindPicker } from '../../../components/network/node-kind';
@@ -55,6 +57,7 @@ import {
   type ProviderSection,
 } from '../../../lib/provider-forms';
 import { providerAccountSaveError } from '../../../lib/provider-account-errors';
+import { canManageWalletsFromNetwork } from '../../../lib/wallet-access';
 import {
   buildForest,
   createActionLabel,
@@ -308,6 +311,15 @@ export default function RedPage() {
                 <Users className="size-3.5" />
                 Usuarios
               </Button>
+              {canManageWalletsFromNetwork(tenants, t, { superadmin }) ? (
+                <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                  <Link href={`/red/${t.id}/carteras`}>
+                    <Wallet className="size-3.5" aria-hidden="true" />
+                    Carteras
+                    <span className="sr-only"> de {t.name}</span>
+                  </Link>
+                </Button>
+              ) : null}
               {childKinds.length > 0 ? (
                 <Button
                   variant="secondary"

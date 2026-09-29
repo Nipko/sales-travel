@@ -3,6 +3,7 @@ import { formatMoney } from '../../_components/hotel-format';
 import { saleTotal } from '../../_components/hotel-rate-view';
 import type { RateSelection } from '../../_components/hotel-rate-selection';
 import { OFFER_WARNING_REMAINING_MS, type OfferExpiryState } from '../../_components/offer-expiry';
+import { FUNDING_GATE_REASON, parseFunding, type PrebookFunding } from './funding-view';
 
 /*
  * El paso 1 del checkout sin React (U-09 a U-11): la respuesta del PreBook neutral leída sin
@@ -56,6 +57,11 @@ export interface HotelPrebook {
   /** Vocabulario cerrado (`PACKAGE_WITH_FLIGHT_ONLY`, `NO_NAME_CHANGE`, `MARKET_RESTRICTION`). */
   readonly signals: readonly string[];
   readonly repricing: HotelPrebookRepricing;
+  /**
+   * Si la cartera de la agencia en la moneda de la tarifa cubre el precio de venta (RF-23). Sin él
+   * no se sabe, y decide el Book.
+   */
+  readonly funding?: PrebookFunding;
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -186,6 +192,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
   if (typeof price !== 'string' || !DIRECTIONS.has(price) || changes === undefined) {
     return undefined;
   }
+  const funding = parseFunding(value['funding']);
   return {
     prebookRef,
     providerCode,
@@ -199,6 +206,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
       price: price as HotelPriceDirection,
       changes,
     },
+    ...(funding === undefined ? {} : { funding }),
   };
 }
 
@@ -437,12 +445,16 @@ export interface ContinueGate {
   readonly reason?: string;
 }
 
-/** Qué falta para pasar a los huéspedes, en el orden en que el vendedor lo resuelve. */
+/**
+ * Qué falta para pasar a los huéspedes, en el orden en que el vendedor lo resuelve. Una cartera que
+ * no cubre la tarifa frena acá y no en el Book: cargar los huéspedes sería en vano.
+ */
 export function continueGate(input: {
   readonly expired: boolean;
   readonly blocked: boolean;
   readonly change: Pick<PriceChangeView, 'requiresAcceptance'> | undefined;
   readonly accepted: boolean;
+  readonly funding?: PrebookFunding;
 }): ContinueGate {
   if (input.expired) {
     return { ok: false, reason: 'La tarifa venció: volvé al hotel para buscarla de nuevo.' };
@@ -450,6 +462,7 @@ export function continueGate(input: {
   if (input.blocked) {
     return { ok: false, reason: 'Esta tarifa no se puede reservar como hotel suelto.' };
   }
+  if (input.funding?.status === 'blocked') return { ok: false, reason: FUNDING_GATE_REASON };
   if (input.change?.requiresAcceptance === true && !input.accepted) {
     return { ok: false, reason: 'Aceptá los cambios de la tarifa para continuar.' };
   }

@@ -99,6 +99,26 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
     expect(parsed).not.toHaveProperty('warnings');
   });
 
+  it('trae el aviso de cartera del API; sin él, la tarifa se lee igual y decide el Book', () => {
+    const message =
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.';
+    expect(
+      parsePrebook(
+        apiResponse({
+          funding: {
+            status: 'blocked',
+            currency: 'USD',
+            reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+            message,
+          },
+        }),
+      )?.funding,
+    ).toEqual({ status: 'blocked', reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED', message });
+    const sinAviso = parsePrebook(apiResponse());
+    expect(sinAviso?.prebookRef).toBe(PREBOOK_REF);
+    expect(sinAviso).not.toHaveProperty('funding');
+  });
+
   it('sin `prebookRef` válido, sin precio o con otro vocabulario no hay tarifa que aceptar', () => {
     expect(parsePrebook(apiResponse({ prebookRef: undefined }))).toBeUndefined();
     expect(parsePrebook(apiResponse({ prebookRef: 'abc' }))).toBeUndefined();
@@ -302,6 +322,46 @@ describe('continueGate — qué falta para seguir', () => {
     expect(continueGate({ expired: false, blocked: false, change, accepted: true })).toEqual({
       ok: true,
     });
+  });
+
+  it('la cartera que no cubre la tarifa frena antes de los huéspedes, aunque todo lo demás esté bien', () => {
+    const blocked = {
+      status: 'blocked',
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'x',
+    } as const;
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: blocked,
+      }),
+    ).toEqual({
+      ok: false,
+      reason:
+        'Resolvé la cartera de la agencia antes de cargar los huéspedes: esta reserva se rechazaría.',
+    });
+    // Vencida o "sólo con aéreo" se dice primero: con esas, la cartera no cambia nada.
+    expect(
+      continueGate({
+        expired: true,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: blocked,
+      }).reason,
+    ).toMatch(/venció/);
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: { status: 'ok' },
+      }).ok,
+    ).toBe(true);
   });
 
   it('sin cambio o con una baja, sigue', () => {

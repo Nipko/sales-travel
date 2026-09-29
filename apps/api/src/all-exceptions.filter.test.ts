@@ -159,6 +159,23 @@ describe('AllExceptionsFilter — motivo máquina', () => {
     });
   });
 
+  it('una cartera que toca quien no la financia sale de la base como 403 con motivo, no como 500', () => {
+    const r = respuesta();
+    const err = Object.assign(new Error('sólo quien financia al nodo: cartera 7970ade5'), {
+      code: '42501',
+      constraint: 'portfolio_financier_required',
+    });
+
+    new AllExceptionsFilter().catch(err, r.host);
+
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
+    expect(cuerpo(r)).toMatchObject({
+      statusCode: HttpStatus.FORBIDDEN,
+      reason: 'PORTFOLIO_FINANCIER_REQUIRED',
+    });
+    expect(String(cuerpo(r)['message'])).not.toContain('7970ade5');
+  });
+
   it('un error que no es HTTP sigue siendo un 500 genérico, sin motivo ni detalle', () => {
     const r = respuesta();
     const err = Object.assign(new Error('relation "orders" does not exist'), {

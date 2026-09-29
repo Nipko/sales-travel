@@ -244,6 +244,23 @@ describe('classifyBookResponse — errores', () => {
     ).toMatchObject({ kind: 'rejected', retry: true, action: 'portfolios' });
   });
 
+  it('sin cartera en la moneda de la tarifa o con la cartera suspendida: el motivo del API y a Cartera B2B', () => {
+    const message =
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.';
+    expect(
+      classifyBookResponse(...apiError(409, { reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED', message })),
+    ).toEqual({
+      kind: 'rejected',
+      title: 'No se puede reservar en esta moneda.',
+      message,
+      retry: true,
+      action: 'portfolios',
+    });
+    expect(
+      classifyBookResponse(...apiError(409, { reason: 'PORTFOLIO_INACTIVE', message: 'x' })),
+    ).toMatchObject({ title: 'La cartera de la agencia está suspendida.', action: 'portfolios' });
+  });
+
   it('sin contacto de soporte de la agencia: a Mi Agencia', () => {
     expect(
       classifyBookResponse(

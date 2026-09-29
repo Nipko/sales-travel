@@ -1,18 +1,11 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { agencyWalletPlan } from '../../../lib/wallet-proxy';
+import { forwardWalletPlan, walletProxyRequest } from '../../../lib/wallet-proxy-route';
 
-export async function GET() {
-  const res = await api<any>('/portfolios');
-  if (!res.ok) return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  return NextResponse.json(res.data);
-}
-
-export async function PATCH(req: Request) {
-  const body = await req.json();
-  const res = await api<any>('/portfolios/credit-limit', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  return NextResponse.json(res.data);
+/**
+ * Las carteras de la agencia activa (Cartera B2B), sólo para leer: el cupo, los depósitos y los
+ * ajustes los registra quien la financia (decisión del founder del 2026-09-29, opción A).
+ */
+export async function GET(req: Request): Promise<NextResponse> {
+  return forwardWalletPlan(agencyWalletPlan(await walletProxyRequest(req)));
 }

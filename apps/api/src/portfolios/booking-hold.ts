@@ -6,54 +6,38 @@ import type { Money } from '@sales-travel/canonical';
  * (docs/tbo/08 RF-23; D-TBO-21 A). Las reglas son funciones puras; `PortfoliosService` las ejecuta
  * dentro de la transacción que bloquea la cartera.
  *
- * Por qué hay dos controles:
+ * El tope es UNO: el saldo más el cupo de la cartera de la agencia en la moneda de la tarifa. Ese
+ * cupo lo fija quien la financia (su consolidador, su agencia o Planetour; db/migrations/0052), no
+ * la agencia, así que también acota lo que una agencia puede deber con la cuenta de proveedor que
+ * hereda de su red. Hasta 0053 había un segundo tope, el crédito interno del tenant
+ * (`tenants.credit_limit`), que pasó al cupo de la cartera y ya no se lee.
  *
- * - **La cartera** (`agency_portfolios`): saldo más cupo de crédito de la agencia que vende. Es la
- *   retención que ya existía, ahora sobre la orden abierta y no sobre una confirmada.
- * - **El crédito interno** (`tenants.credit_limit`), sólo si la cuenta del proveedor no es de quien
- *   vende. El proveedor ve UNA cuenta aunque la hereden muchas agencias (03 §7.4): sin un tope por
- *   agencia, una sola puede agotar el crédito de su consolidador. La agencia edita el cupo de su
- *   cartera (`PATCH /portfolios/credit-limit`), no este límite; por eso el cupo efectivo es el
- *   MENOR de los dos.
+ * Una cartera por moneda: la retención usa la de la moneda de la tarifa y nunca convierte. Sin
+ * cartera en esa moneda no se reserva, y no se abre una implícita.
  */
-
-/** Lo que la retención tiene que saber de la cuenta con que se va a reservar. */
-export interface BookingHoldPolicy {
-  /**
-   * La cuenta del proveedor no es de la agencia que vende: la heredó de un ancestro o es la de la
-   * plataforma. Con `true`, el crédito interno de la agencia acota lo que puede deber.
-   */
-  readonly inheritedAccount: boolean;
-}
 
 /** Motivos de rechazo, en el vocabulario que la web lee (`reason`). */
 export type BookingHoldRejection =
+  | 'PORTFOLIO_CURRENCY_NOT_ENABLED'
   | 'PORTFOLIO_INACTIVE'
-  | 'PORTFOLIO_CURRENCY_MISMATCH'
-  | 'INTERNAL_CREDIT_INSUFFICIENT'
   | 'PORTFOLIO_FUNDS_INSUFFICIENT';
 
 export interface BookingHoldFacts {
   /** Precio de venta de la reserva, entero positivo en unidades menores. */
   readonly amount: Money;
+  /** La cartera de la agencia en la moneda de la reserva; `null` si no tiene. */
   readonly portfolio: {
     readonly balanceMinor: number;
     readonly creditLimitMinor: number;
-    /** `null`: la cartera tiene una moneda inválida. */
-    readonly currency: string | null;
+    readonly currency: string;
     readonly status: string;
-  };
-  /** Sólo con cuenta heredada. `currency: null` = el tenant no tiene una moneda válida. */
-  readonly internalCredit?: {
-    readonly limitMinor: number;
-    readonly currency: string | null;
-  };
+  } | null;
 }
 
 export type BookingHoldDecision =
   | {
       readonly ok: true;
-      /** Cupo de crédito con que se evalúa el débito: el de la cartera o el interno, el menor. */
+      /** Cupo de crédito con que se evalúa el débito. */
       readonly creditMinor: number;
     }
   | { readonly ok: false; readonly reason: BookingHoldRejection };
@@ -64,81 +48,69 @@ function credit(value: number): number {
 }
 
 /**
- * ¿Se puede retener el precio de venta? Primero lo que no depende del monto (cartera activa y en la
- * moneda de la reserva), después el cupo.
- *
- * El crédito interno está en la moneda del tenant: si no es la de la reserva no se convierte, vale
- * cero y sólo cuenta el saldo. Cuando el tope que no alcanza es el interno se dice así, aunque la
- * cartera tampoco alcance: subir el cupo de la cartera no lo resolvería, y es la agencia la que
- * tiene que pedirle crédito a su red.
+ * ¿Se puede retener el precio de venta? Primero lo que no depende del monto (hay cartera en esa
+ * moneda y está activa), después el saldo más el cupo. Una cartera en otra moneda cuenta como
+ * ninguna: la retención no convierte.
  */
 export function decideBookingHold(facts: BookingHoldFacts): BookingHoldDecision {
   const { amount, portfolio } = facts;
+  if (portfolio === null || portfolio.currency !== amount.currency) {
+    return { ok: false, reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED' };
+  }
   if (portfolio.status !== 'active') return { ok: false, reason: 'PORTFOLIO_INACTIVE' };
-  if (portfolio.currency === null || portfolio.currency !== amount.currency) {
-    return { ok: false, reason: 'PORTFOLIO_CURRENCY_MISMATCH' };
-  }
 
-  const portfolioCredit = credit(portfolio.creditLimitMinor);
-  if (facts.internalCredit === undefined) {
-    return portfolio.balanceMinor + portfolioCredit >= amount.amountMinor
-      ? { ok: true, creditMinor: portfolioCredit }
-      : { ok: false, reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' };
-  }
-
-  const internal =
-    facts.internalCredit.currency === amount.currency ? credit(facts.internalCredit.limitMinor) : 0;
-  const creditMinor = Math.min(portfolioCredit, internal);
-  if (portfolio.balanceMinor + creditMinor >= amount.amountMinor) return { ok: true, creditMinor };
-  return {
-    ok: false,
-    reason:
-      internal <= portfolioCredit ? 'INTERNAL_CREDIT_INSUFFICIENT' : 'PORTFOLIO_FUNDS_INSUFFICIENT',
-  };
+  const creditMinor = credit(portfolio.creditLimitMinor);
+  return portfolio.balanceMinor + creditMinor >= amount.amountMinor
+    ? { ok: true, creditMinor }
+    : { ok: false, reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' };
 }
 
 /**
- * `tenants.credit_limit` (unidades MAYORES, NUMERIC(14,2)) en unidades menores, con la misma regla
- * de dos decimales que `Money`. Lo que no es un número finito y no negativo vale cero.
+ * Lo que la retención le adelanta al vendedor ANTES de cargar huéspedes (el PreBook de un hotel):
+ * si la cartera de la moneda de la tarifa la cubriría ahora. Es una lectura sin bloqueo, así que no
+ * promete nada: la reserva vuelve a decidir con la cartera bloqueada. Nunca lleva el saldo ni el
+ * cupo, por lo mismo que {@link BookingHoldRejectedError}.
  */
-export function internalCreditMinor(creditLimit: unknown): number {
-  const text = typeof creditLimit === 'number' ? String(creditLimit) : creditLimit;
-  if (typeof text !== 'string' || !/^\d{1,12}(\.\d{1,2})?$/.test(text.trim())) return 0;
-  const [whole = '0', cents = ''] = text.trim().split('.');
-  return Number(whole) * 100 + Number(cents.padEnd(2, '0'));
-}
+export type BookingHoldPreview =
+  | { readonly status: 'ok'; readonly currency: string }
+  | {
+      readonly status: 'blocked';
+      readonly currency: string;
+      readonly reason: BookingHoldRejection;
+      readonly message: string;
+    };
 
 interface RejectionContext {
   readonly amountCurrency: string;
-  readonly portfolioCurrency: string | null;
 }
 
 const MESSAGES: Readonly<Record<BookingHoldRejection, (ctx: RejectionContext) => string>> = {
-  PORTFOLIO_INACTIVE: () =>
-    'La cartera de la agencia no está activa, así que no se puede retener el saldo para reservar. Pedile a tu administrador que la revise.',
-  PORTFOLIO_CURRENCY_MISMATCH: (ctx) =>
-    `Esta reserva se cobra en ${ctx.amountCurrency} y la cartera de la agencia está en ${
-      ctx.portfolioCurrency ?? 'otra moneda'
-    }: sin una cartera en esa moneda no se puede retener el saldo para reservar.`,
-  INTERNAL_CREDIT_INSUFFICIENT: () =>
-    'La agencia no tiene saldo en la cartera ni crédito interno suficiente para reservar con la cuenta de su red. Cargá saldo en Carteras o pedile a tu consolidador que te asigne crédito.',
-  PORTFOLIO_FUNDS_INSUFFICIENT: () =>
-    'La cartera de la agencia no tiene saldo ni crédito suficiente para esta reserva. Cargá saldo en Carteras para reservar.',
+  PORTFOLIO_CURRENCY_NOT_ENABLED: (ctx) =>
+    `La agencia no tiene cartera en ${ctx.amountCurrency}: pedile a quien te financia que la habilite.`,
+  PORTFOLIO_INACTIVE: (ctx) =>
+    `La cartera en ${ctx.amountCurrency} de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pedile a quien te financia que la reactive.`,
+  PORTFOLIO_FUNDS_INSUFFICIENT: (ctx) =>
+    `La cartera en ${ctx.amountCurrency} de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informá un depósito en Cartera B2B o pedile más cupo a quien te financia.`,
 };
+
+/** Lo que ve el vendedor por un rechazo, el mismo texto en el aviso previo y en la reserva. */
+export function bookingHoldMessage(reason: BookingHoldRejection, amountCurrency: string): string {
+  return MESSAGES[reason]({ amountCurrency });
+}
 
 /**
  * La cartera no puede retener el precio de venta: no se reserva y no se llama al proveedor (RF-23
- * CA-1). 409 como el `300` del proveedor, con el motivo para que la web ofrezca cargar saldo.
+ * CA-1). 409 como el `300` del proveedor, con el motivo para que la web lleve a Cartera B2B.
  *
- * Nunca lleva el saldo ni el cupo: la agencia los ve en Carteras, y el de la cuenta del proveedor,
- * que es de su consolidador, no lo conocemos.
+ * Nunca lleva el saldo ni el cupo: la agencia los ve en Cartera B2B, y el de la cuenta del
+ * proveedor, que es de su red, no lo conocemos.
  */
 export class BookingHoldRejectedError extends ConflictException {
   constructor(
     readonly reason: BookingHoldRejection,
     ctx: RejectionContext,
   ) {
-    super(MESSAGES[reason](ctx));
+    super(bookingHoldMessage(reason, ctx.amountCurrency));
     this.name = 'BookingHoldRejectedError';
   }
 }

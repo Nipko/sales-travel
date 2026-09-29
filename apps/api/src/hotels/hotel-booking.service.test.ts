@@ -25,8 +25,9 @@ import {
 import { ORDER_EVENTS } from '../orders/order-events.js';
 import {
   BookingHoldRejectedError,
+  bookingHoldMessage,
   decideBookingHold,
-  type BookingHoldPolicy,
+  type BookingHoldPreview,
 } from '../portfolios/booking-hold.js';
 import type { BookingHoldRelease, PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
@@ -434,31 +435,26 @@ function conBook(adapter: StubHotelAdapter, cuenta = CUENTA): PuertoBook {
 /** La cartera de la agencia que vende, como la ve la retención (RF-23). */
 interface CarteraFake {
   saldoMinor: number;
+  /** El cupo que le fija quien la financia. */
   cupoMinor?: number;
-  /** Crédito interno de la agencia (`tenants.credit_limit`), en la moneda de la reserva. */
-  internoMinor?: number;
-  /** Moneda de la cartera (y del crédito interno). Por defecto, la de la reserva. */
+  /**
+   * La única moneda en que la agencia tiene cartera. Por defecto, la de la reserva. En otra moneda,
+   * para la reserva es como no tener cartera: la retención no convierte.
+   */
   moneda?: string;
 }
 
 interface Fondos {
   service: PortfoliosService;
   estado: { saldoMinor: number; retenciones: Map<string, number> };
-  assertBookingHoldAffordable: Mock<
-    (tenantId: string, amount: Money, policy: BookingHoldPolicy) => Promise<void>
-  >;
+  assertBookingHoldAffordable: Mock<(tenantId: string, amount: Money) => Promise<void>>;
   holdBookingIntent: Mock<
-    (
-      tenantId: string,
-      orderId: string,
-      createdBy: string,
-      expected: Money,
-      policy: BookingHoldPolicy,
-    ) => Promise<unknown>
+    (tenantId: string, orderId: string, createdBy: string, expected: Money) => Promise<unknown>
   >;
   releaseFailedBookingHold: Mock<
     (tenantId: string, orderId: string, createdBy: string) => Promise<BookingHoldRelease>
   >;
+  previewBookingHold: Mock<(tenantId: string, amount: Money) => Promise<BookingHoldPreview>>;
 }
 
 /**
@@ -467,49 +463,51 @@ interface Fondos {
  */
 function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
   const estado = { saldoMinor: c.saldoMinor, retenciones: new Map<string, number>() };
-  const decidir = (amount: Money, policy: BookingHoldPolicy): void => {
-    const decision = decideBookingHold({
+  const decision = (amount: Money) => {
+    const moneda = c.moneda ?? amount.currency;
+    return decideBookingHold({
       amount,
-      portfolio: {
-        balanceMinor: estado.saldoMinor,
-        creditLimitMinor: c.cupoMinor ?? 0,
-        currency: c.moneda ?? amount.currency,
-        status: 'active',
-      },
-      ...(policy.inheritedAccount
-        ? {
-            internalCredit: {
-              limitMinor: c.internoMinor ?? 0,
-              currency: c.moneda ?? amount.currency,
-            },
-          }
-        : {}),
+      // Como PortfoliosService: la cartera de la moneda de la reserva, o ninguna.
+      portfolio:
+        moneda === amount.currency
+          ? {
+              balanceMinor: estado.saldoMinor,
+              creditLimitMinor: c.cupoMinor ?? 0,
+              currency: moneda,
+              status: 'active',
+            }
+          : null,
     });
-    if (!decision.ok) {
-      throw new BookingHoldRejectedError(decision.reason, {
-        amountCurrency: amount.currency,
-        portfolioCurrency: c.moneda ?? amount.currency,
-      });
-    }
+  };
+  const decidir = (amount: Money): void => {
+    const d = decision(amount);
+    if (!d.ok) throw new BookingHoldRejectedError(d.reason, { amountCurrency: amount.currency });
   };
   const fondos = {
+    previewBookingHold: vi.fn((_tenantId: string, amount: Money) => {
+      const d = decision(amount);
+      return Promise.resolve<BookingHoldPreview>(
+        d.ok
+          ? { status: 'ok', currency: amount.currency }
+          : {
+              status: 'blocked',
+              currency: amount.currency,
+              reason: d.reason,
+              message: bookingHoldMessage(d.reason, amount.currency),
+            },
+      );
+    }),
     assertBookingHoldAffordable: vi.fn(
-      (_tenantId: string, amount: Money, policy: BookingHoldPolicy) =>
+      (_tenantId: string, amount: Money) =>
         new Promise<void>((resolve) => {
-          decidir(amount, policy);
+          decidir(amount);
           resolve();
         }),
     ),
     holdBookingIntent: vi.fn(
-      (
-        _tenantId: string,
-        orderId: string,
-        _createdBy: string,
-        expected: Money,
-        policy: BookingHoldPolicy,
-      ) =>
+      (_tenantId: string, orderId: string, _createdBy: string, expected: Money) =>
         new Promise<unknown>((resolve) => {
-          decidir(expected, policy);
+          decidir(expected);
           estado.saldoMinor -= expected.amountMinor;
           estado.retenciones.set(orderId, expected.amountMinor);
           resolve({});
@@ -1942,7 +1940,7 @@ describe('la consolidación con CAS: nunca pisa otro camino, nunca repite el Boo
   });
 });
 
-// ───────────────────────── Cobro `Limit`: retención y crédito interno (RF-23) ─────────────────────────
+// ───────────────────────── Cobro `Limit`: retención en la cartera (RF-23) ─────────────────────────
 
 const SUBAGENCIA_HEREDADA = {
   credentialSource: 'inherited',
@@ -1957,22 +1955,19 @@ function rechazoDeCuenta(issue: HotelProviderAccountIssue, code: string): Rechaz
   );
 }
 
-describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserva, y el proveedor no se entera', () => {
-  it('la sub-agencia con la cuenta heredada y sin crédito interno: 409, orden cerrada sin envío, ni PreBook ni Book', async () => {
+describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y el proveedor no se entera', () => {
+  it('la sub-agencia con la cuenta heredada, sin saldo ni cupo: 409, orden cerrada sin envío, ni PreBook ni Book', async () => {
     const b = await banco({
       ...SUBAGENCIA_HEREDADA,
-      // La cartera declara cupo, pero la agencia se lo pone sola: sin crédito de su red no alcanza.
-      cartera: { saldoMinor: 0, cupoMinor: 10_000_000, internoMinor: 0 },
+      cartera: { saldoMinor: 0, cupoMinor: PISO - 1 },
     });
 
     const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
 
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
-    expect(err).toMatchObject({ reason: 'INTERNAL_CREDIT_INSUFFICIENT' });
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
     expect((err as BookingHoldRejectedError).getStatus()).toBe(HttpStatus.CONFLICT);
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO), {
-      inheritedAccount: true,
-    });
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
     // La clave queda libre: con saldo cargado, el mismo formulario se puede reenviar.
     expect(fila(b)).toMatchObject({
       status: 'failed',
@@ -1985,23 +1980,19 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
     expect(b.emit).not.toHaveBeenCalled();
   });
 
-  it('D-TBO-15: una tarifa en USD con la cartera en COP no mezcla monedas: 409 antes de revalidar, sin PreBook ni Book', async () => {
-    // La búsqueda en USD deja reservar sólo si la cartera de la agencia es en USD: la retención no
-    // convierte, y con saldo de sobra en COP igual se rechaza con el motivo de moneda.
+  it('D-TBO-15: una tarifa en USD sin cartera en USD no usa la de COP: 409 antes de revalidar, sin PreBook ni Book', async () => {
+    // La búsqueda en USD deja reservar sólo si la agencia tiene cartera en USD: la retención no
+    // convierte, y con saldo de sobra en COP igual se rechaza, diciendo a quién pedírsela.
     const b = await banco({ cartera: { saldoMinor: 10_000_000_000, moneda: 'COP' } });
 
     const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
 
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
-    expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_MISMATCH' });
-    expect((err as BookingHoldRejectedError).message).toContain(
-      'se cobra en USD y la cartera de la agencia está en COP',
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED' });
+    expect((err as BookingHoldRejectedError).message).toBe(
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
     );
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(
-      AGENCIA,
-      USD(PISO),
-      expect.anything(),
-    );
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
     expect(fila(b)).toMatchObject({ status: 'failed', create_request_key: null });
     expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
     expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
@@ -2027,10 +2018,10 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
     await b.inflight.whenIdle();
   });
 
-  it('con crédito interno para el precio, la misma sub-agencia reserva', async () => {
+  it('con el cupo que le fija quien la financia, la misma sub-agencia reserva con la cuenta heredada', async () => {
     const b = await banco({
       ...SUBAGENCIA_HEREDADA,
-      cartera: { saldoMinor: 0, cupoMinor: 10_000_000, internoMinor: PISO },
+      cartera: { saldoMinor: 0, cupoMinor: PISO },
     });
 
     const res = await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
@@ -2039,15 +2030,13 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
     expect(b.fondos.estado.saldoMinor).toBe(-PISO);
   });
 
-  it('con la cuenta propia manda la cartera, sin crédito interno', async () => {
+  it('con la cuenta propia manda la misma cartera', async () => {
     const b = await banco({ cartera: { saldoMinor: PISO - 1 } });
 
     const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
 
     expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO), {
-      inheritedAccount: false,
-    });
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
     expect(fila(b)['status']).toBe('failed');
     expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
   });
@@ -2071,7 +2060,6 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
       fila(b)['id'],
       USUARIO,
       USD(PISO),
-      { inheritedAccount: true },
     );
     const [c2] = b.puerto.prebookWithContext.mock.invocationCallOrder;
     const [retencion] = b.fondos.holdBookingIntent.mock.invocationCallOrder;
@@ -2101,10 +2089,7 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin saldo o sin crédito interno no se reserv
   it('si la retención no alcanza después de C2 (otra reserva gastó el saldo), la orden se cierra sin envío y no hay Book', async () => {
     const b = await banco({ cartera: { saldoMinor: 1_000_000 } });
     b.fondos.holdBookingIntent.mockRejectedValueOnce(
-      new BookingHoldRejectedError('PORTFOLIO_FUNDS_INSUFFICIENT', {
-        amountCurrency: 'USD',
-        portfolioCurrency: 'USD',
-      }),
+      new BookingHoldRejectedError('PORTFOLIO_FUNDS_INSUFFICIENT', { amountCurrency: 'USD' }),
     );
 
     const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
@@ -2232,7 +2217,6 @@ describe('RF-23 CA-2: la retención sigue a la orden', () => {
     const b = await banco({ emit, cartera: { saldoMinor: 1_000_000 } });
     const rechazada = new BookingHoldRejectedError('PORTFOLIO_FUNDS_INSUFFICIENT', {
       amountCurrency: 'USD',
-      portfolioCurrency: 'USD',
     });
     b.fondos.holdBookingIntent.mockRejectedValueOnce(rechazada);
     b.fondos.releaseFailedBookingHold.mockRejectedValueOnce(new Error('base caída'));
@@ -2570,7 +2554,10 @@ interface BancoTbo {
   fondos: Fondos;
 }
 
-function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo {
+function bancoTbo(
+  prebookC2: () => unknown = () => prebookVendible(),
+  cartera?: CarteraFake,
+): BancoTbo {
   let prebooks = 0;
   const fetch = vi.fn<TboFetch>((url, init) => {
     avanzarReloj();
@@ -2631,7 +2618,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     queue.asService(),
     hcn as unknown as HcnTrackingService,
   );
-  const fondos = carteraDe();
+  const fondos = carteraDe(cartera);
   const hotels = new HotelsService(
     registry,
     fakeHotelsDb().service,
@@ -2647,6 +2634,7 @@ function bancoTbo(prebookC2: () => unknown = () => prebookVendible()): BancoTbo 
     pricing,
     breaker,
     audit,
+    fondos.service,
   );
   const bookings = new HotelBookingService(
     registry,
@@ -2692,7 +2680,9 @@ const HUESPEDES_TBO: HotelBookingRoomGuests[] = [
   },
 ];
 
-async function prebookTbo(b: BancoTbo): Promise<{ prebookRef: string; total: Money }> {
+async function prebookTbo(
+  b: BancoTbo,
+): Promise<{ prebookRef: string; total: Money; funding?: BookingHoldPreview }> {
   const searchId = busquedaDe(await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO));
   const res = await b.prebooks.prebook(
     AGENCIA,
@@ -2705,6 +2695,7 @@ async function prebookTbo(b: BancoTbo): Promise<{ prebookRef: string; total: Mon
       amountMinor: res.roompack.pricing?.finalMinor ?? res.roompack.price.total.amountMinor,
       currency: res.roompack.price.total.currency,
     },
+    ...(res.funding === undefined ? {} : { funding: res.funding }),
   };
 }
 
@@ -2766,6 +2757,43 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       provider_order_id: 'YOSUR8',
       provider_account_id: CUENTA.accountId,
     });
+  });
+
+  it('RF-23: sin cartera en la moneda de la tarifa, el PreBook lo avisa y el Book se rechaza sin salir a TBO', async () => {
+    // Con saldo de sobra en COP: la tarifa es en USD y la retención no convierte.
+    const b = bancoTbo(undefined, { saldoMinor: 10_000_000_000, moneda: 'COP' });
+    const { prebookRef, total, funding } = await prebookTbo(b);
+    expect(total.currency).toBe('USD');
+    expect(funding).toEqual({
+      status: 'blocked',
+      currency: 'USD',
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    });
+    const prebooksDelVendedor = cuerpos(b.fetch, '/PreBook').length;
+
+    const err: unknown = await b.bookings
+      .book(AGENCIA, USUARIO, CLAVE, {
+        providerCode: TBO,
+        prebookRef,
+        acceptedTotal: total,
+        atPropertyAcknowledged: true,
+        rooms: HUESPEDES_TBO,
+        contact: CONTACTO_HUESPED,
+      })
+      .catch((e: unknown) => e);
+
+    // El mismo motivo y el mismo texto que el aviso: el vendedor no ve dos versiones.
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    });
+    // Ni el PreBook de C2 ni el Book salieron: TBO no se enteró.
+    expect(cuerpos(b.fetch, '/PreBook')).toHaveLength(prebooksDelVendedor);
+    expect(cuerpos(b.fetch, '/Book')).toHaveLength(0);
+    expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
+    expect(b.memory.rows()[0]).toMatchObject({ status: 'failed', create_request_key: null });
   });
 
   it('un 207 del Book: la orden queda `failed` con la clave libre y el mensaje de TBO en español', async () => {

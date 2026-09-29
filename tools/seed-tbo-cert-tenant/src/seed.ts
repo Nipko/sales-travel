@@ -590,13 +590,15 @@ async function enableTbo(db: Queryable, tenantId: string): Promise<Change> {
 interface WalletRow {
   id: string;
   balance_minor: number | string;
-  currency: string;
   status: string;
 }
 
 /**
  * Cartera con saldo ficticio (07 §7.3.4), para que el checkout `Limit` retenga sin pedir tarjeta.
  * Nunca PAN (D1).
+ *
+ * Es la cartera en `CERT_CURRENCY`: desde 0052 hay una por moneda y la moneda de una cartera no
+ * cambia, así que otra `CERT_CURRENCY` abre otra cartera y la anterior queda con sus movimientos.
  *
  * "Recargar hasta" y no "sumar": cada despliegue deja el saldo en el objetivo sin duplicarlo, y
  * las retenciones de las reservas de TBO no lo agotan entre corridas. La recarga es un
@@ -612,35 +614,20 @@ async function topUpWallet(
   await db.query(
     `INSERT INTO agency_portfolios (tenant_id, credit_limit_minor, balance_minor, currency, status)
      VALUES ($1, 0, 0, $2, 'active')
-     ON CONFLICT (tenant_id) DO NOTHING`,
+     ON CONFLICT (tenant_id, currency) DO NOTHING`,
     [tenantId, currency],
   );
   const wallet = await one<WalletRow>(
     db,
-    'SELECT id, balance_minor, currency, status FROM agency_portfolios WHERE tenant_id = $1 FOR UPDATE',
-    [tenantId],
+    `SELECT id, balance_minor, status FROM agency_portfolios
+      WHERE tenant_id = $1 AND currency = $2
+      FOR UPDATE`,
+    [tenantId, currency],
   );
   if (wallet === undefined) throw new Error('la cartera del tenant de certificación no existe');
 
-  if (wallet.currency !== currency) {
-    const bookings = await count(
-      db,
-      `SELECT count(*)::int AS n FROM portfolio_transactions
-        WHERE portfolio_id = $1 AND transaction_type LIKE 'BOOKING%'`,
-      [wallet.id],
-    );
-    if (bookings > 0) {
-      throw new SeedRefusedError(
-        'wallet_currency_in_use',
-        `la cartera está en ${wallet.currency} y ya tiene movimientos de reservas: pasarla a ${currency} mezclaría monedas en un saldo. Vuelve a CERT_CURRENCY=${wallet.currency} o recrea la base`,
-      );
-    }
-  }
-  if (wallet.currency !== currency || wallet.status !== 'active') {
-    await db.query(`UPDATE agency_portfolios SET currency = $2, status = 'active' WHERE id = $1`, [
-      wallet.id,
-      currency,
-    ]);
+  if (wallet.status !== 'active') {
+    await db.query(`UPDATE agency_portfolios SET status = 'active' WHERE id = $1`, [wallet.id]);
   }
 
   const balance = Number(wallet.balance_minor);

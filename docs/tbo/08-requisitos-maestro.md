@@ -34,6 +34,14 @@ estado: borrador
 > tenant y su red, y lo apaga para la agencia que haga falta, sin redesplegar
 > ([ficha](#d-tbo-18--en-qué-búsquedas-se-consulta-tbo); [Registro de decisiones](#registro-de-decisiones)). Las rutas
 > que cita esta revisión son de la rama `feat/tbo-hotels` al 2026-09-28, sin número de línea.
+>
+> **Revisión del 2026-09-29.** El founder cerró D-TBO-04 (el sync usa la cuenta de Planetour guardada en la bóveda) y
+> D-TBO-15 (A, con selector de moneda). También eligió la opción A para las carteras: la cartera de cada agencia la
+> establece quien la financia, con una cartera por moneda y su cupo. Con eso cierra D-TBO-21 (A): antes del Book se
+> retiene el precio de venta en la cartera de la agencia en la moneda de la tarifa, y el límite interno es el cupo de
+> esa cartera. Sin cartera en esa moneda, el Book se rechaza sin llamar a TBO
+> ([ficha](#d-tbo-21--cómo-se-cobra-y-cómo-se-controla-el-crédito-limit)). Las rutas que cita esta revisión son de la
+> rama `feat/wallets-per-currency` al 2026-09-29, sin número de línea.
 
 ---
 
@@ -675,6 +683,16 @@ la cuenta sin mostrar su saldo a la sub-agencia.
 **Fuente.** `300 INSUFFICIENT_BALANCE` (p. 9) y `Limit` (p. 33), VERIFICADO-PDF; que `Limit` consuma el crédito del
 titular es INFERIDO ([03](./03-prebook-y-book.md) §7.4). `tenants.credit_limit`
 (`db/migrations/0007_tenant_business_rules.sql:5`), VERIFICADO-CODIGO.
+
+**Estado (2026-09-29).** El límite interno es el cupo de la cartera de la agencia en la moneda de la tarifa, que
+fija quien la financia: `tenants.credit_limit` pasó a ese cupo en 0053 y ya no se lee. El tope de la retención es el
+saldo más ese cupo, con cuenta propia o heredada. Con D-TBO-21 cerrada, el límite de una sub-agencia lo fija su
+agencia, el de una agencia lo fija su consolidador o Planetour, y ninguna agencia toca el suyo
+(`db/migrations/0052_wallets_per_currency.sql`, `can_finance_tenant`). El CA 1 lo cubren
+`apps/api/src/hotels/hotel-booking.service.test.ts` (el Book rechazado no sale a TBO) y
+`apps/api/src/portfolios/holds-per-currency.integration.test.ts` (la retención por moneda, como `app_user`). El cobro
+al viajero con checkout alojado sigue sin construir, porque no hay pasarela de pagos (Fase 1 de
+[platform/12](../platform/12-modelo-consolidador-y-plan.md) §6).
 
 **CA.**
 
@@ -1363,18 +1381,19 @@ fichas de las decisiones firmadas conservan todas sus opciones como registro y m
 
 ### Registro de decisiones
 
-| Decisión | Estado                  | Opción elegida                                                                                                                                                                                                                                                 | Qué fija                                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-TBO-02 | **CERRADA, 2026-09-25** | **(B)** Sin compuerta de valor: se construye todo y el valor se mide en producción                                                                                                                                                                             | No hay umbral ni decisión de seguir o parar; F4-F6 no esperan ninguna cifra. La medición de §2.3 se hace igual, como información (PR-3.7 de [09](./09-plan-implementacion.md)). D-TBO-01 (A) deja de estar condicionada                                                                                                                                                                                           |
-| D-TBO-03 | **CERRADA, 2026-09-25** | **(A)** La cuenta TBO del consolidador vive en la bóveda de su nodo y se hereda a su red; sin fallback a variables de entorno de plataforma; las cuentas propias de agencias quedan deshabilitadas hasta que responda Q-77                                     | RF-23, RF-36 CA 1, RF-37; D-TBO-38. `tbo-hotels` no entra en `PLATFORM_DEFAULT_HOTEL_PROVIDERS` y no hay variables de venta `TBO_*` en el despliegue (las `TBO_SYNC_*` del catálogo son de D-TBO-04)                                                                                                                                                                                                              |
-| D-TBO-04 | **CERRADA, 2026-09-29** | **Variante de (A) y (B):** la cuenta de TBO de Planetour en la bóveda (`default`, la de venta) o una dedicada de Planetour con etiqueta `catalogo`; nunca secrets de GitHub Actions                                                                            | RF-30. El sync descifra la cuenta con `PROVIDER_CREDENTIALS_KEY`; `TBO_SYNC_USERNAME`/`TBO_SYNC_PASSWORD` sólo como override (stack de certificación). Con la `default` comparte cupo con la venta: corre de madrugada a 1 req/s (D-TBO-12)                                                                                                                                                                       |
-| D-TBO-06 | **CERRADA, 2026-09-25** | **(A)** Generalizar la vertical: contrato neutral Zod en `packages/canonical`, puertos en `packages/domain` y `HotelProviderRegistry` espejo del de vuelos                                                                                                     | RF-35, RF-36, F3. **Con un requisito explícito del founder: "me tiene que mostrar de dónde es"** → RF-40: cada tarifa de la búsqueda combinada lleva su proveedor y la web lo pinta con la política de divulgación que ya existe para vuelos, sin reglas nuevas                                                                                                                                                   |
-| D-TBO-07 | **CERRADA, 2026-09-25** | **(A)** Intent `pending` con `BookingReferenceId` antes del Book, por una API pública de intent en `OrdersService`                                                                                                                                             | RF-19 a RF-29, F4                                                                                                                                                                                                                                                                                                                                                                                                 |
-| D-TBO-15 | **CERRADA, 2026-09-29** | **(A)** con selector de moneda en la búsqueda de hoteles: la de la agencia, elegida por defecto, o USD, sin conversión. Las tarifas en otra moneda no se muestran y el aviso ofrece repetir la búsqueda en la moneda del proveedor si la agencia la puede usar | RF-07, RF-13. `GET /hotels/currencies`; `/hotels/availability` y `/hotels/detail` responden 400 a otra moneda y 409 a un markup fijo en otra moneda (`markup_rules` no tiene moneda); el detalle busca en la misma moneda y con la misma puerta; PreBook, Book y orden heredan la de la tarifa; la retención de cartera rechaza una moneda distinta de la de la cartera (`PORTFOLIO_CURRENCY_MISMATCH`, D-TBO-21) |
-| D-TBO-18 | **CERRADA, 2026-09-28** | **(A)** Opt-in por tenant, encendido y apagado por el superadmin desde el panel de la plataforma (para todos los tenants o para un tenant y su red, con excepciones por tenant), no por variable de entorno                                                    | RF-36 CA 5 y 6; RNF-11. Tabla `provider_enablement` (0048), para todo proveedor de vuelos y hoteles; `*_PROVIDERS_OPT_IN` quedan de legado y `PROVIDERS_DISABLED` de emergencia. [09](./09-plan-implementacion.md) PR-8.2 enciende el piloto desde el panel                                                                                                                                                       |
+| Decisión | Estado                  | Opción elegida                                                                                                                                                                                                                                                 | Qué fija                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-TBO-02 | **CERRADA, 2026-09-25** | **(B)** Sin compuerta de valor: se construye todo y el valor se mide en producción                                                                                                                                                                             | No hay umbral ni decisión de seguir o parar; F4-F6 no esperan ninguna cifra. La medición de §2.3 se hace igual, como información (PR-3.7 de [09](./09-plan-implementacion.md)). D-TBO-01 (A) deja de estar condicionada                                                                                                                                                                                                                                                                      |
+| D-TBO-03 | **CERRADA, 2026-09-25** | **(A)** La cuenta TBO del consolidador vive en la bóveda de su nodo y se hereda a su red; sin fallback a variables de entorno de plataforma; las cuentas propias de agencias quedan deshabilitadas hasta que responda Q-77                                     | RF-23, RF-36 CA 1, RF-37; D-TBO-38. `tbo-hotels` no entra en `PLATFORM_DEFAULT_HOTEL_PROVIDERS` y no hay variables de venta `TBO_*` en el despliegue (las `TBO_SYNC_*` del catálogo son de D-TBO-04)                                                                                                                                                                                                                                                                                         |
+| D-TBO-04 | **CERRADA, 2026-09-29** | **Variante de (A) y (B):** la cuenta de TBO de Planetour en la bóveda (`default`, la de venta) o una dedicada de Planetour con etiqueta `catalogo`; nunca secrets de GitHub Actions                                                                            | RF-30. El sync descifra la cuenta con `PROVIDER_CREDENTIALS_KEY`; `TBO_SYNC_USERNAME`/`TBO_SYNC_PASSWORD` sólo como override (stack de certificación). Con la `default` comparte cupo con la venta: corre de madrugada a 1 req/s (D-TBO-12)                                                                                                                                                                                                                                                  |
+| D-TBO-06 | **CERRADA, 2026-09-25** | **(A)** Generalizar la vertical: contrato neutral Zod en `packages/canonical`, puertos en `packages/domain` y `HotelProviderRegistry` espejo del de vuelos                                                                                                     | RF-35, RF-36, F3. **Con un requisito explícito del founder: "me tiene que mostrar de dónde es"** → RF-40: cada tarifa de la búsqueda combinada lleva su proveedor y la web lo pinta con la política de divulgación que ya existe para vuelos, sin reglas nuevas                                                                                                                                                                                                                              |
+| D-TBO-07 | **CERRADA, 2026-09-25** | **(A)** Intent `pending` con `BookingReferenceId` antes del Book, por una API pública de intent en `OrdersService`                                                                                                                                             | RF-19 a RF-29, F4                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D-TBO-15 | **CERRADA, 2026-09-29** | **(A)** con selector de moneda en la búsqueda de hoteles: la de la agencia, elegida por defecto, o USD, sin conversión. Las tarifas en otra moneda no se muestran y el aviso ofrece repetir la búsqueda en la moneda del proveedor si la agencia la puede usar | RF-07, RF-13. `GET /hotels/currencies`; `/hotels/availability` y `/hotels/detail` responden 400 a otra moneda y 409 a un markup fijo en otra moneda (`markup_rules` no tiene moneda); el detalle busca en la misma moneda y con la misma puerta; PreBook, Book y orden heredan la de la tarifa; la retención usa la cartera de la agencia en la moneda de la tarifa y, sin ella, rechaza antes del proveedor con `PORTFOLIO_CURRENCY_NOT_ENABLED` (D-TBO-21; carteras por moneda desde 0052) |
+| D-TBO-18 | **CERRADA, 2026-09-28** | **(A)** Opt-in por tenant, encendido y apagado por el superadmin desde el panel de la plataforma (para todos los tenants o para un tenant y su red, con excepciones por tenant), no por variable de entorno                                                    | RF-36 CA 5 y 6; RNF-11. Tabla `provider_enablement` (0048), para todo proveedor de vuelos y hoteles; `*_PROVIDERS_OPT_IN` quedan de legado y `PROVIDERS_DISABLED` de emergencia. [09](./09-plan-implementacion.md) PR-8.2 enciende el piloto desde el panel                                                                                                                                                                                                                                  |
+| D-TBO-21 | **CERRADA, 2026-09-29** | **(A)** con carteras por moneda que establece quien financia a la agencia (opción A del founder para las carteras): la retención antes del Book usa la cartera de la moneda de la tarifa, y el límite interno es su cupo                                       | RF-23. `agency_portfolios` única por tenant y moneda (0052); cupo, estado, depósitos y ajustes sólo los escribe quien financia al nodo (`can_finance_tenant`) y la agencia informa depósitos que quedan pendientes; sin cartera en la moneda de la tarifa, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` antes de llamar a TBO; `tenants.credit_limit` pasó al cupo en 0053. El cobro al viajero con checkout alojado, la otra mitad de (A), no se decidió aparte y espera la pasarela de pagos       |
 
-**Las otras 31 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
-otra cosa.** Son D-TBO-01, D-TBO-05, D-TBO-08 a D-TBO-14, D-TBO-16, D-TBO-17 y D-TBO-19 a D-TBO-38; así lo
+**Las otras 30 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
+otra cosa.** Son D-TBO-01, D-TBO-05, D-TBO-08 a D-TBO-14, D-TBO-16, D-TBO-17, D-TBO-19, D-TBO-20 y D-TBO-22 a D-TBO-38; así lo
 pidió el founder el mismo 2026-09-25. Todas tienen la recomendada en (A). Cambiar una después de que empezó el PR que
 la aplica cuesta el retrabajo que dice su línea "Bloquea"; las fechas hasta las que se puede cambiar sin retrabajo
 están en [09](./09-plan-implementacion.md) §18.
@@ -1423,7 +1442,7 @@ Si TBO objeta alguna en la verificación de portal, el cambio es el que describe
 | D-TBO-18 | ¿En qué búsquedas se consulta TBO?                              | Opt-in hasta conocer el costo por búsqueda                         | RF-36                        | **CERRADA 2026-09-28: (A)**, encendido por superadmin  |
 | D-TBO-19 | ¿Cuándo ve el vendedor las políticas de cancelación?            | Al abrir un hotel, "sujetas a confirmación"                        | RF-05, RF-11                 | Abierta; se aplica (A)                                 |
 | D-TBO-20 | ¿Qué pasa si el precio cambia antes de reservar?                | Revalidar siempre; si baja, avisar                                 | RF-15, RF-20                 | Abierta; se aplica (A)                                 |
-| D-TBO-21 | ¿Cómo se cobra y se controla el crédito `Limit`?                | Retención antes del Book y límite por sub-agencia                  | RF-23                        | Abierta; se aplica (A)                                 |
+| D-TBO-21 | ¿Cómo se cobra y se controla el crédito `Limit`?                | Retención antes del Book y límite por sub-agencia                  | RF-23                        | **CERRADA 2026-09-29: (A)**, con carteras por moneda   |
 | D-TBO-22 | ¿Se venden sueltas las tarifas "solo con aéreo"?                | No                                                                 | RF-17                        | Abierta; se aplica (A)                                 |
 | D-TBO-23 | ¿Qué datos de huéspedes y contacto van a TBO?                   | Contacto de la agencia y nombres en ASCII                          | RF-18                        | Abierta; se aplica (A)                                 |
 | D-TBO-24 | ¿Qué pasa con un Book incierto que no aparece?                  | Bloqueado hasta evidencia fuerte                                   | RF-21, RF-28                 | Abierta; se aplica (A)                                 |
@@ -1756,10 +1775,11 @@ busca en la moneda de su agencia, elegida por defecto, o en USD, y nada se convi
 - `markup_rules.value_minor` no tiene moneda: un markup fijo se carga en la de la agencia. Con uno distinto de cero,
   buscar en otra moneda es un 409 que lo explica, en vez de sumar 50.000 COP como si fueran 50.000 USD. Los
   porcentajes valen en cualquier moneda.
-- La cartera de la agencia tiene una sola moneda (`agency_portfolios`, única por tenant, COP al crearse). Reservar
-  una tarifa en USD con la cartera en COP se rechaza antes del Book con `PORTFOLIO_CURRENCY_MISMATCH` (D-TBO-21): no
-  se mezclan monedas, pero una agencia con la cartera en COP todavía no puede reservar en USD. Carteras por moneda
-  quedan como decisión aparte.
+- La agencia tiene una cartera por moneda (`agency_portfolios`, única por tenant y moneda desde 0052), y las monedas
+  en que opera las habilita quien la financia (decisión del founder del 2026-09-29, opción A). La retención usa la
+  cartera de la moneda de la tarifa y no convierte: sin cartera en esa moneda, el Book se rechaza antes de llamar al
+  proveedor con `PORTFOLIO_CURRENCY_NOT_ENABLED` ("La agencia no tiene cartera en USD: pedile a quien te financia
+  que la habilite"). El PreBook ya lo avisa (`funding`), así que la web no deja cargar huéspedes en vano.
 
 La moneda la fija el perfil de la cuenta (p. 13), y con BYOC cada agencia puede tener otra. `Money` asume siempre 2
 decimales (`packages/canonical/src/money.ts:41-46`, VERIFICADO-CODIGO).
@@ -1903,13 +1923,42 @@ coincide (p. 33).
 
 #### D-TBO-21 — ¿Cómo se cobra y cómo se controla el crédito `Limit`?
 
+**Estado: CERRADA el 2026-09-29 con la opción (A), con carteras por moneda.** En producción cada agencia tenía una
+sola cartera, en COP y con cupo 0, y ella misma podía fijarse el cupo y registrarse depósitos. Una tarifa de TBO en
+USD no se podía reservar, porque la retención rechazaba la moneda, y el cupo, que hace de límite interno, lo decidía
+la propia agencia. El founder eligió que la cartera de cada agencia la establezca **quien la financia**. Queda así:
+
+- **Quién financia.** El ancestro inmediato que financia (`tenant_financier_id`, 0052): Planetour, operado por su
+  superadmin, para sus agencias, sucursales y consolidadores; el consolidador para sus agencias; la agencia para sus
+  sub-agencias. El superadmin puede con cualquier nodo. Ninguna agencia gestiona su propia cartera.
+- **Qué fija.** En qué monedas opera la agencia (una cartera por moneda), el cupo de cada cartera, su estado, y los
+  depósitos y ajustes, siempre con motivo y con su `domain_event`. Lo hace desde _Gestión de Agencias_ → nodo →
+  _Carteras_ si es el superadmin, o desde _Mi Red_ → agencia → _Carteras_ si es el consolidador o la agencia
+  (`/tenants/:tenantId/portfolios`). La base lo vuelve a exigir en cada escritura.
+- **Qué hace la agencia.** En _Cartera B2B_ ve sus carteras y movimientos, e informa un depósito, que queda pendiente
+  hasta que quien la financia lo aprueba o lo rechaza (`portfolio_deposit_reports`). Las rutas viejas para depositar,
+  retirar o fijar el cupo responden 403 `PORTFOLIO_FINANCIER_REQUIRED`.
+- **La retención** (RF-23) se toma en la cartera de la agencia en la moneda de la tarifa, con el tope del saldo más el
+  cupo, y no convierte. Sin cartera en esa moneda es un 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` ("La agencia no tiene
+  cartera en USD: pedile a quien te financia que la habilite"); con la cartera suspendida, `PORTFOLIO_INACTIVE`; sin
+  saldo ni cupo, `PORTFOLIO_FUNDS_INSUFFICIENT`. En los tres casos no se llama a TBO, y el PreBook ya lo avisa
+  (`funding`). El límite interno del tenant (`tenants.credit_limit`) pasó al cupo en 0053 y ya no se lee.
+- **Lo que no cambia.** El cobro al viajero con checkout alojado, la otra mitad de (A), queda como está descrito y se
+  construye con la pasarela de pagos. La saga sigue en BullMQ (D9).
+
+Implementación: `db/migrations/0052_wallets_per_currency.sql`, `0053_tenant_credit_limit_to_wallets.sql`,
+`apps/api/src/portfolios/` (`wallet-financing.service.ts`, `booking-hold.ts`) y
+[platform/13](../platform/13-validacion-modelo-red.md) §4.1 punto 3. El runbook para darle a una sucursal una cartera
+en USD con cupo y probar una reserva de TBO en test es el de platform/13 §5, pasos 7 a 9.
+
 `Limit` consume el crédito de la cuenta titular (INFERIDO). TBO ve una sola cuenta aunque la hereden muchas
 sub-agencias ([03](./03-prebook-y-book.md) §7.4). El cobro tiene que caber en los 30 minutos de Search a Book (p. 8).
 
-- **(A) Recomendada. Antes del Book se retiene el precio de venta en la cartera o el crédito de la agencia que vende;
-  si el viajero paga, el checkout alojado se autoriza antes del Book con un link que vence antes del minuto 27; las
-  sub-agencias que heredan la cuenta tienen un límite interno que se controla antes de cada Book.** La agencia sin
-  saldo ni crédito interno no puede reservar TBO, y el viajero que paga tarde tiene que volver a cotizar.
+- **(A) Recomendada y elegida el 2026-09-29, con carteras por moneda. Antes del Book se retiene el precio de venta en
+  la cartera o el crédito de la agencia que vende; si el viajero paga, el checkout alojado se autoriza antes del Book
+  con un link que vence antes del minuto 27; las sub-agencias que heredan la cuenta tienen un límite interno que se
+  controla antes de cada Book.** La agencia sin saldo ni crédito interno no puede reservar TBO, y el viajero que paga
+  tarde tiene que volver a cotizar.
   Consecuencias: reutiliza la retención de cartera que ya existe (RF-23).
 - **(B) Book primero, cobro después.** Más rápido. Consecuencias: el titular de la cuenta TBO financia las reservas
   que la agencia o el viajero no paguen.

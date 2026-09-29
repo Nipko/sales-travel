@@ -5,6 +5,7 @@ import { startTransition, useActionState, useEffect, useRef, useState } from 're
 import { cn } from '../../../lib/cn';
 import {
   hotelSearchCurrenciesAction,
+  hotelSearchWalletsAction,
   searchHotelsAction,
   type HotelProviderOutcome,
   type HotelSearchResult,
@@ -29,6 +30,7 @@ import {
   queryWithCurrency,
   type SearchCurrencies,
 } from './_components/search-currency';
+import { searchWalletNotice, type SearchWallets } from './_components/search-wallet';
 
 const INITIAL: HotelSearchResult = {
   ok: false,
@@ -150,6 +152,22 @@ export default function HotelesPage() {
       cancelled = true;
     };
   }, []);
+
+  // Las carteras de la agencia, para avisar antes de elegir un hotel si no va a poder reservar en
+  // la moneda elegida (una reserva se retiene en la cartera de la moneda de su tarifa).
+  const [searchWallets, setSearchWallets] = useState<SearchWallets | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    hotelSearchWalletsAction()
+      .catch(() => null)
+      .then((wallets) => {
+        if (!cancelled) setSearchWallets(wallets);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const walletNotice = searchWalletNotice(searchWallets, currency);
 
   function chooseCurrency(next: string) {
     setCurrency(next);
@@ -287,7 +305,12 @@ export default function HotelesPage() {
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_minmax(0,1fr)_auto] xl:items-start">
           <NationalityField />
 
-          <CurrencyField options={currencyOptions} value={currency} onChange={chooseCurrency} />
+          <CurrencyField
+            options={currencyOptions}
+            value={currency}
+            onChange={chooseCurrency}
+            walletNotice={walletNotice}
+          />
 
           <div className="space-y-1.5">
             <label htmlFor="hotelIds" className="block text-xs font-medium text-[var(--color-fg)]">

@@ -173,7 +173,7 @@ d('jerarquía de tenants (0049, 0050, 0051) contra Postgres', () => {
   async function hold(tenantId: string, orderId: string, userId: string): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO agency_portfolios (tenant_id, currency) VALUES ($1, 'COP')
-       ON CONFLICT (tenant_id) DO UPDATE SET currency = EXCLUDED.currency
+       ON CONFLICT (tenant_id, currency) DO UPDATE SET currency = EXCLUDED.currency
        RETURNING id`,
       [tenantId],
     );

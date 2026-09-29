@@ -29,6 +29,7 @@ import {
   KillSwitchNotice,
   ProviderIdentity,
 } from '../../../_components/provider-enablement-ui';
+import { NodeSectionNav } from './node-section-nav';
 
 type PanelState =
   | { readonly status: 'loading' }
@@ -117,6 +118,8 @@ export function TenantProvidersPanel({ tenantId }: { tenantId: string }) {
           <ArrowRight aria-hidden="true" className="size-3.5" />
         </Link>
       </header>
+
+      <NodeSectionNav tenantId={tenantId} current="providers" />
 
       <section aria-labelledby="tenant-providers-title">
         <h2
