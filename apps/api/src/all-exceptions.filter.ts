@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { tenantHierarchyHttpError } from './database/tenant-hierarchy-errors.js';
+import { portfolioHttpError } from './portfolios/portfolio-errors.js';
 
 /**
  * Forma de un motivo máquina (`OFFER_NOT_IN_SEARCH`, `SEARCH_CONTEXT_EXPIRED`): mayúsculas,
@@ -77,12 +78,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('AllExceptionsFilter');
 
   catch(exception: unknown, host: ArgumentsHost): void {
-    // Las reglas de la jerarquía de tenants las valida la base con SQLSTATE propio (0050, 0051):
-    // un nodo en un lugar que la matriz no admite es un 409 con motivo, no un 500.
+    // Las reglas de la jerarquía de tenants (0050, 0051) y las de las carteras (0052) las valida la
+    // base con SQLSTATE propio: un nodo en un lugar que la matriz no admite, o una cartera que toca
+    // quien no la financia, es un 409 o un 403 con motivo, no un 500.
     if (!(exception instanceof HttpException)) {
-      const hierarchy = tenantHierarchyHttpError(exception);
-      if (hierarchy !== undefined) {
-        this.catch(hierarchy, host);
+      const translated = tenantHierarchyHttpError(exception) ?? portfolioHttpError(exception);
+      if (translated !== undefined) {
+        this.catch(translated, host);
         return;
       }
     }

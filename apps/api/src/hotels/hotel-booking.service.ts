@@ -21,7 +21,6 @@ import {
 } from '../orders/order-create-intent.store.js';
 import { ORDER_EVENTS } from '../orders/order-events.js';
 import type { OrderRow } from '../orders/orders.service.js';
-import type { BookingHoldPolicy } from '../portfolios/booking-hold.js';
 import { PortfoliosService } from '../portfolios/portfolios.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { withProviderPayloadScope } from '../provider-payloads/provider-payload-scope.js';
@@ -291,14 +290,6 @@ function errorName(err: unknown): string {
   return err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
 }
 
-/**
- * Con una cuenta que no es de la agencia (heredada o de la plataforma), el proveedor carga la
- * reserva al crédito de otro, y la agencia tiene además su límite interno (RF-23; D-TBO-21 A).
- */
-function holdPolicyOf(provider: ResolvedHotelProvider): BookingHoldPolicy {
-  return { inheritedAccount: provider.credentialSource !== 'own' };
-}
-
 /** Lo que liberar una retención necesita saber de la reserva, haya o no saga en curso. */
 interface HoldRef {
   readonly tenantId: string;
@@ -464,7 +455,6 @@ export class HotelBookingService {
           input,
           bookingReference,
           contact,
-          holdPolicy: holdPolicyOf(provider),
         }),
       );
     } catch (err) {
@@ -537,20 +527,16 @@ export class HotelBookingService {
     readonly input: HotelBookInput;
     readonly bookingReference: string;
     readonly contact: HotelBookingContact;
-    readonly holdPolicy: BookingHoldPolicy;
   }): Promise<BookRun> {
     const { tenantId, provider, adapter, intent, snapshot, input } = c;
     const ctx: SearchContext = { tenantId, requestId: intent.id };
 
-    // RF-23 CA-1: sin saldo ni crédito para lo que se mostró no se le pregunta nada al proveedor.
+    // RF-23 CA-1: sin cartera en la moneda de la tarifa, o sin saldo ni cupo en ella para lo que se
+    // mostró, no se le pregunta nada al proveedor.
     // Va después de abrir la orden y no antes para que un reintento con la misma clave siga siendo
     // un 409 de duplicado aunque la primera retención ya haya gastado el saldo. Es una lectura: la
     // retención que vale se toma con la cartera bloqueada, después de C2.
-    await this.portfolios.assertBookingHoldAffordable(
-      tenantId,
-      saleTotalOf(snapshot.roompack),
-      c.holdPolicy,
-    );
+    await this.portfolios.assertBookingHoldAffordable(tenantId, saleTotalOf(snapshot.roompack));
 
     let found: HotelPrebookWithContext;
     try {
@@ -650,13 +636,7 @@ export class HotelBookingService {
     // D-TBO-21 A: el precio de venta que la orden ya dice, retenido antes del Book. Con `Limit` el
     // proveedor lo carga al crédito de la cuenta en cuanto confirma, y una reserva cuyo cobro no
     // alcanza tiene que fallar aquí, sin salir.
-    await this.portfolios.holdBookingIntent(
-      tenantId,
-      intent.id,
-      c.userId,
-      revalidatedTotal,
-      c.holdPolicy,
-    );
+    await this.portfolios.holdBookingIntent(tenantId, intent.id, c.userId, revalidatedTotal);
 
     // Antes de llamar, no después: si el Book no responde, esto demuestra que salió un intento.
     await this.audit.emit({

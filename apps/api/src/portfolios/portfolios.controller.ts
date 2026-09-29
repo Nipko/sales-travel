@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -8,54 +7,56 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-
-const MAX_MINOR = 1_000_000_000_000; // 10^12 — tope de cordura
-
-function assertPositiveAmount(amountMinor: unknown): number {
-  if (
-    typeof amountMinor !== 'number' ||
-    !Number.isInteger(amountMinor) ||
-    amountMinor <= 0 ||
-    amountMinor > MAX_MINOR
-  ) {
-    throw new BadRequestException('amountMinor must be a positive integer');
-  }
-  return amountMinor;
-}
-
-function assertUuid(value: unknown, label: string): string {
-  if (
-    typeof value !== 'string' ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  ) {
-    throw new BadRequestException(`${label} must be a valid UUID`);
-  }
-  return value.toLowerCase();
-}
-
-function assertCurrency(currency: unknown): string {
-  if (typeof currency !== 'string') {
-    throw new BadRequestException('currency must be a 3-letter ISO code');
-  }
-  const normalized = currency.trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(normalized)) {
-    throw new BadRequestException('currency must be a 3-letter ISO code');
-  }
-  return normalized;
-}
-import { DatabaseService } from '../database/database.service.js';
-import { ActiveTenantService } from '../request-context/active-tenant.service.js';
-import {
-  PortfoliosService,
-  type PortfolioRow,
-  type PortfolioTransactionRow,
-} from './portfolios.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
+import { DatabaseService } from '../database/database.service.js';
+import { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { PortfolioForbiddenError } from './portfolio-errors.js';
+import {
+  DepositReportsQuerySchema,
+  HoldBookingSchema,
+  IdempotencyKeySchema,
+  OrderIdParamSchema,
+  SubmitDepositReportSchema,
+  TransactionsQuerySchema,
+  type DepositReportsQuery,
+  type HoldBookingDto,
+  type SubmitDepositReportDto,
+  type TransactionsQuery,
+} from './portfolios.schemas.js';
+import { PortfoliosService, type AgencyWalletsView } from './portfolios.service.js';
+import {
+  movementView,
+  walletView,
+  type DepositReportView,
+  type WalletMovementView,
+  type WalletView,
+} from './wallet-store.js';
 
+/**
+ * Por qué la agencia ya no mueve su propia cartera (decisión del founder del 2026-09-29, opción A;
+ * brecha crítica de la auditoría del 2026-09-28): el cupo, los depósitos y los ajustes los registra
+ * quien la financia. Las rutas viejas responden 403 con el motivo en vez de desaparecer, para que
+ * quien las siga llamando sepa qué hacer.
+ */
+const NOT_THE_AGENCY = {
+  deposit:
+    'Tu agencia no registra depósitos en su cartera: informalo en Cartera B2B y quien te financia lo aprueba.',
+  withdraw:
+    'Tu agencia no registra retiros ni ajustes en su cartera: los registra quien te financia.',
+  creditLimit:
+    'El cupo de la cartera lo fija quien financia a tu agencia: pedíselo a tu consolidador, a tu agencia o a Planetour.',
+} as const;
+
+/**
+ * La cartera vista desde la agencia (Cartera B2B): sus carteras (una por moneda), sus movimientos y
+ * los depósitos que informa. Y la retención de una reserva confirmada, que sigue siendo suya.
+ */
 @Roles(...SELLING_ROLES)
 @Controller('portfolios')
 export class PortfoliosController {
@@ -66,169 +67,123 @@ export class PortfoliosController {
   ) {}
 
   @Get()
-  async get(@CurrentUser() userId: string | undefined) {
+  async get(@CurrentUser() userId: string | undefined): Promise<AgencyWalletsView> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const portfolio = await this.portfolios.getPortfolio(tenantId);
-    return { portfolio: this.serializePortfolio(portfolio) };
+    return this.portfolios.overview(tenantId);
   }
 
   @Get('transactions')
-  async listTransactions(@CurrentUser() userId: string | undefined) {
+  async listTransactions(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(TransactionsQuerySchema)) query: TransactionsQuery,
+  ): Promise<{ transactions: WalletMovementView[] }> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const txs = await this.portfolios.getTransactions(tenantId);
-    return { transactions: txs.map((tx) => this.serializeTransaction(tx)) };
+    return { transactions: await this.portfolios.listTransactions(tenantId, query.currency) };
   }
 
-  @Roles(...AGENCY_ADMIN_ROLES)
-  @Post('deposit')
-  async deposit(
+  @Get('deposit-reports')
+  async listDepositReports(
     @CurrentUser() userId: string | undefined,
-    @Body() body: { amountMinor: number; notes?: string },
+    @Query(new ZodValidationPipe(DepositReportsQuerySchema)) query: DepositReportsQuery,
+  ): Promise<{ reports: DepositReportView[] }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    return { reports: await this.portfolios.listDepositReports(tenantId, query.status) };
+  }
+
+  /**
+   * La agencia informa un depósito (transferencia, consignación). Queda pendiente y no suma saldo
+   * hasta que quien la financia lo aprueba. Lo informa un admin de la agencia.
+   */
+  @Roles(...AGENCY_ADMIN_ROLES)
+  @Post('deposit-reports')
+  async submitDepositReport(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(SubmitDepositReportSchema)) body: SubmitDepositReportDto,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ) {
+  ): Promise<{ report: DepositReportView }> {
     if (!userId) throw new ForbiddenException();
-    const tenantId = await this.activeTenant.resolve(userId);
-    await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
-    const amount = assertPositiveAmount(body.amountMinor);
-    const key = assertUuid(idempotencyKey, 'Idempotency-Key');
-    const { portfolio, transaction } = await this.portfolios.deposit(
-      tenantId,
-      amount,
-      userId,
-      key,
-      body.notes,
-    );
-    return {
-      portfolio: this.serializePortfolio(portfolio),
-      transaction: this.serializeTransaction(transaction),
-    };
-  }
-
-  @Roles(...AGENCY_ADMIN_ROLES)
-  @Post('withdraw')
-  async withdraw(
-    @CurrentUser() userId: string | undefined,
-    @Body() body: { amountMinor: number; notes?: string },
-    @Headers('idempotency-key') idempotencyKey?: string,
-  ) {
-    if (!userId) throw new ForbiddenException();
-    const tenantId = await this.activeTenant.resolve(userId);
-    await this.assertAdminMembership(userId, tenantId); // operación financiera → admin
-    const amount = assertPositiveAmount(body.amountMinor);
-    const key = assertUuid(idempotencyKey, 'Idempotency-Key');
-    const { portfolio, transaction } = await this.portfolios.withdraw(
-      tenantId,
-      amount,
-      userId,
-      key,
-      body.notes,
-    );
-    return {
-      portfolio: this.serializePortfolio(portfolio),
-      transaction: this.serializeTransaction(transaction),
-    };
-  }
-
-  @Roles(...AGENCY_ADMIN_ROLES)
-  @Patch('credit-limit')
-  async updateLimit(
-    @CurrentUser() userId: string | undefined,
-    @Body() body: { creditLimitMinor: number },
-  ) {
-    if (!userId) throw new ForbiddenException();
+    const key = new ZodValidationPipe(IdempotencyKeySchema).transform(idempotencyKey);
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
-
-    if (
-      typeof body.creditLimitMinor !== 'number' ||
-      !Number.isInteger(body.creditLimitMinor) ||
-      body.creditLimitMinor < 0 ||
-      body.creditLimitMinor > MAX_MINOR
-    ) {
-      throw new BadRequestException('creditLimitMinor must be a non-negative integer');
-    }
-    const portfolio = await this.portfolios.updateCreditLimit(tenantId, body.creditLimitMinor);
-    return { portfolio: this.serializePortfolio(portfolio) };
+    return {
+      report: await this.portfolios.submitDepositReport(userId, tenantId, body, key),
+    };
   }
 
+  @Post('deposit')
+  deposit(): never {
+    throw new PortfolioForbiddenError('PORTFOLIO_FINANCIER_REQUIRED', NOT_THE_AGENCY.deposit);
+  }
+
+  @Post('withdraw')
+  withdraw(): never {
+    throw new PortfolioForbiddenError('PORTFOLIO_FINANCIER_REQUIRED', NOT_THE_AGENCY.withdraw);
+  }
+
+  @Patch('credit-limit')
+  updateLimit(): never {
+    throw new PortfolioForbiddenError('PORTFOLIO_FINANCIER_REQUIRED', NOT_THE_AGENCY.creditLimit);
+  }
+
+  /** Retiene saldo por una reserva confirmada (vuelos y autos), en la cartera de su moneda. */
   @SalesOperation()
   @Post('hold-booking')
   async hold(
     @CurrentUser() userId: string | undefined,
-    @Body() body: { orderId: string; amountMinor?: number; currency?: string },
-  ) {
+    @Body(new ZodValidationPipe(HoldBookingSchema)) body: HoldBookingDto,
+  ): Promise<{ portfolio: WalletView; transaction: WalletMovementView }> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const orderId = assertUuid(body.orderId, 'orderId');
     const expected = {
-      ...(body.amountMinor === undefined
-        ? {}
-        : { amountMinor: assertPositiveAmount(body.amountMinor) }),
-      ...(body.currency === undefined ? {} : { currency: assertCurrency(body.currency) }),
+      ...(body.amountMinor === undefined ? {} : { amountMinor: body.amountMinor }),
+      ...(body.currency === undefined ? {} : { currency: body.currency }),
     };
     const { portfolio, transaction } = await this.portfolios.holdBooking(
       tenantId,
-      orderId,
+      body.orderId,
       userId,
       expected,
     );
     return {
-      portfolio: this.serializePortfolio(portfolio),
-      transaction: this.serializeTransaction(transaction),
+      portfolio: walletView(portfolio),
+      transaction: movementView(transaction, portfolio.currency),
     };
   }
 
   @SalesOperation()
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/approve')
-  async approve(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
+  async approve(
+    @CurrentUser() userId: string | undefined,
+    @Param('orderId', new ZodValidationPipe(OrderIdParamSchema)) orderId: string,
+  ) {
     if (!userId) throw new ForbiddenException();
-    const canonicalOrderId = assertUuid(orderId, 'orderId');
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
-    return this.portfolios.approveBooking(tenantId, canonicalOrderId);
+    return this.portfolios.approveBooking(tenantId, orderId);
   }
 
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post('orders/:orderId/reject')
-  async reject(@CurrentUser() userId: string | undefined, @Param('orderId') orderId: string) {
+  async reject(
+    @CurrentUser() userId: string | undefined,
+    @Param('orderId', new ZodValidationPipe(OrderIdParamSchema)) orderId: string,
+  ) {
     if (!userId) throw new ForbiddenException();
-    const canonicalOrderId = assertUuid(orderId, 'orderId');
     const tenantId = await this.activeTenant.resolve(userId);
     await this.assertAdminMembership(userId, tenantId);
 
-    return this.portfolios.rejectBooking(tenantId, canonicalOrderId, userId);
+    return this.portfolios.rejectBooking(tenantId, orderId, userId);
   }
 
-  private serializePortfolio(p: PortfolioRow) {
-    return {
-      id: p.id,
-      tenantId: p.tenant_id,
-      creditLimitMinor: Number(p.credit_limit_minor),
-      balanceMinor: Number(p.balance_minor),
-      currency: p.currency,
-      status: p.status,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-    };
-  }
-
-  private serializeTransaction(tx: PortfolioTransactionRow) {
-    return {
-      id: tx.id,
-      portfolioId: tx.portfolio_id,
-      amountMinor: Number(tx.amount_minor),
-      transactionType: tx.transaction_type,
-      referenceId: tx.reference_id,
-      notes: tx.notes,
-      createdBy: tx.created_by,
-      createdAt: tx.created_at,
-    };
-  }
-
+  /**
+   * Un admin con membership activa EN la agencia activa. RolesGuard deja pasar a los roles de
+   * plataforma aunque operen sobre la agencia sin ser miembros; esta comprobación, no.
+   */
   private async assertAdminMembership(userId: string, tenantId: string): Promise<void> {
     return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       const row = await trx

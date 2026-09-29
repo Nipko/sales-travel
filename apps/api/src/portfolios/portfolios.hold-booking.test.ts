@@ -4,6 +4,7 @@ import type { DatabaseService } from '../database/database.service.js';
 import type { OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
+import { BookingHoldRejectedError } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -282,7 +283,7 @@ describe('PortfoliosService.holdBooking', () => {
     }
   });
 
-  it('no convierte USD en COP: una cartera en otra moneda falla antes del débito', async () => {
+  it('retiene en la cartera de la moneda de la orden: sin cartera en USD no usa la de COP', async () => {
     const h = harness({
       order: {
         id: ORDER,
@@ -293,10 +294,24 @@ describe('PortfoliosService.holdBooking', () => {
       },
     });
 
-    await expect(h.service.holdBooking(TENANT, ORDER, USER)).rejects.toThrow(
-      /cartera está en COP y la reserva en USD/i,
+    const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED' });
+    expect((err as BookingHoldRejectedError).message).toBe(
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
     );
     expect(h.state.portfolio?.balance_minor).toBe(500_000);
+    expect(h.state.transactions).toHaveLength(0);
+  });
+
+  it('sin ninguna cartera no abre una implícita en COP: rechaza sin escribir', async () => {
+    const h = harness({ portfolio: null });
+
+    await expect(h.service.holdBooking(TENANT, ORDER, USER)).rejects.toMatchObject({
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+    });
+    expect(h.state.portfolio).toBeNull();
     expect(h.state.transactions).toHaveLength(0);
   });
 

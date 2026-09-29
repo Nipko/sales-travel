@@ -235,6 +235,7 @@ const ENTRADAS: [string, Clase][] = [
     'GET /packages/:id',
     'GET /portfolios',
     'GET /portfolios/transactions',
+    'GET /portfolios/deposit-reports',
   ),
   ...noVenta(
     'post-venta: reenvía la confirmación de una reserva ya hecha',
@@ -249,10 +250,23 @@ const ENTRADAS: [string, Clase][] = [
     'POST /portfolios/orders/:orderId/reject',
   ),
   ...noVenta(
-    'administración de la cartera',
+    'la agencia y su cartera: informa depósitos; las rutas viejas de movimientos responden 403',
+    'POST /portfolios/deposit-reports',
     'POST /portfolios/deposit',
     'POST /portfolios/withdraw',
     'PATCH /portfolios/credit-limit',
+  ),
+  ...noVenta(
+    'quien financia a un nodo gestiona sus carteras: monedas, cupo, depósitos, ajustes e informes',
+    'GET /tenants/:tenantId/portfolios',
+    'POST /tenants/:tenantId/portfolios',
+    'PATCH /tenants/:tenantId/portfolios/:portfolioId',
+    'POST /tenants/:tenantId/portfolios/:portfolioId/deposits',
+    'POST /tenants/:tenantId/portfolios/:portfolioId/adjustments',
+    'GET /tenants/:tenantId/portfolios/transactions',
+    'GET /tenants/:tenantId/portfolios/deposit-reports',
+    'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve',
+    'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
   ),
 ];
 

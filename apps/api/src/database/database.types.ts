@@ -56,9 +56,8 @@ export interface TenantsTable {
    * `default_currency` (NUMERIC(14,2), que `pg` devuelve como texto). 0 = sin crédito.
    *
    * FUERA DE USO desde 0053: su valor pasó al cupo de la cartera en `default_currency`
-   * (`agency_portfolios.credit_limit_minor`), que fija quien financia al nodo. Se conserva como dato.
-   * `PortfoliosService.holdFacts` todavía lo combina con el cupo (el menor de los dos): hay que
-   * retirarlo de ahí.
+   * (`agency_portfolios.credit_limit_minor`), que fija quien financia al nodo. Se conserva como dato;
+   * la API ya no lo lee (la retención usa sólo el cupo de la cartera).
    */
   credit_limit: Generated<string>;
   created_at: Generated<Timestamp>;

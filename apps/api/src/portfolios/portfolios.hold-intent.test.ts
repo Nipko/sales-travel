@@ -21,8 +21,6 @@ const USUARIO = '33333333-3333-4333-8333-333333333333';
 const CARTERA = '44444444-4444-4444-8444-444444444444';
 const NOW = new Date('2026-09-26T12:00:00.000Z');
 
-const HEREDADA = { inheritedAccount: true } as const;
-const PROPIA = { inheritedAccount: false } as const;
 const USD = (amountMinor: number) => ({ amountMinor, currency: 'USD' });
 
 interface Estado {
@@ -212,42 +210,40 @@ async function rechazo(p: Promise<unknown>): Promise<unknown> {
 }
 
 describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin escribir', () => {
-  it('RF-23 CA-1: sub-agencia con cuenta heredada y sin crédito interno → rechazo, aunque su cartera declare cupo', async () => {
-    const b = banco({
-      portfolio: { ...banco().estado.portfolio, balance_minor: 0, credit_limit_minor: 9_000_000 },
-    });
+  it('sin cartera en la moneda de la tarifa → rechazo con motivo, sin abrir una ni escribir', async () => {
+    const b = banco({ portfolio: { ...banco().estado.portfolio, currency: 'COP' } });
 
-    const err = await rechazo(
-      b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012), HEREDADA),
-    );
+    const err = await rechazo(b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012)));
 
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
-    expect((err as BookingHoldRejectedError).reason).toBe('INTERNAL_CREDIT_INSUFFICIENT');
+    expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_CURRENCY_NOT_ENABLED');
+    expect((err as BookingHoldRejectedError).message).toBe(
+      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+    );
     expect(b.estado.transactions).toHaveLength(0);
-    expect(b.estado.portfolio.balance_minor).toBe(0);
   });
 
-  it('con crédito interno suficiente pasa, y no retiene nada', async () => {
-    const b = banco({
-      portfolio: { ...banco().estado.portfolio, balance_minor: 0, credit_limit_minor: 9_000_000 },
-      tenant: { id: SUBAGENCIA, credit_limit: '340.12', default_currency: 'usd' },
-    });
-
-    await expect(
-      b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012), HEREDADA),
-    ).resolves.toBeUndefined();
-    expect(b.estado.transactions).toHaveLength(0);
-    expect(b.estado.portfolio.balance_minor).toBe(0);
-  });
-
-  it('con la cuenta propia no se lee el crédito interno: manda la cartera', async () => {
+  it('el cupo que fija quien financia alcanza, y no retiene nada', async () => {
     const b = banco({
       portfolio: { ...banco().estado.portfolio, balance_minor: 0, credit_limit_minor: 34_012 },
     });
 
     await expect(
-      b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012), PROPIA),
+      b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012)),
     ).resolves.toBeUndefined();
+    expect(b.estado.transactions).toHaveLength(0);
+    expect(b.estado.portfolio.balance_minor).toBe(0);
+  });
+
+  it('ya no lee el crédito interno de 0007: sólo manda la cartera', async () => {
+    const b = banco({
+      portfolio: { ...banco().estado.portfolio, balance_minor: 0, credit_limit_minor: 34_011 },
+      tenant: { id: SUBAGENCIA, credit_limit: '1000000.00', default_currency: 'USD' },
+    });
+
+    const err = await rechazo(b.service.assertBookingHoldAffordable(SUBAGENCIA, USD(34_012)));
+
+    expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_FUNDS_INSUFFICIENT');
     expect(b.estado.tenantReads).toBe(0);
   });
 
@@ -258,9 +254,9 @@ describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin 
   ])('%s → 400 sin tocar la base', async (_caso, amount) => {
     const b = banco();
 
-    await expect(
-      b.service.assertBookingHoldAffordable(SUBAGENCIA, amount, PROPIA),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(b.service.assertBookingHoldAffordable(SUBAGENCIA, amount)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(b.estado.tenantReads).toBe(0);
   });
 });
@@ -274,7 +270,6 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
       ORDEN,
       USUARIO,
       USD(34_012),
-      PROPIA,
     );
 
     expect(transaction).toMatchObject({
@@ -289,35 +284,37 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
     expect(b.estado.locks).toEqual(['orders', 'agency_portfolios']);
   });
 
-  it('RF-23 CA-1: con la cuenta heredada, el crédito interno acota lo que se retiene', async () => {
+  it('el cupo de la cartera acota lo que se retiene, también con una cuenta heredada', async () => {
     const b = banco({
-      portfolio: {
-        ...banco().estado.portfolio,
-        balance_minor: 10_000,
-        credit_limit_minor: 9_000_000,
-      },
-      tenant: { id: SUBAGENCIA, credit_limit: '240.11', default_currency: 'USD' },
+      portfolio: { ...banco().estado.portfolio, balance_minor: 10_000, credit_limit_minor: 24_011 },
+      tenant: { id: SUBAGENCIA, credit_limit: '1000000.00', default_currency: 'USD' },
     });
 
-    const err = await rechazo(
-      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), HEREDADA),
-    );
+    const err = await rechazo(b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)));
 
-    expect((err as BookingHoldRejectedError).reason).toBe('INTERNAL_CREDIT_INSUFFICIENT');
+    expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_FUNDS_INSUFFICIENT');
     expect(b.estado.transactions).toHaveLength(0);
     expect(b.estado.portfolio.balance_minor).toBe(10_000);
 
-    b.estado.tenant.credit_limit = '240.12';
-    await b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), HEREDADA);
+    b.estado.portfolio.credit_limit_minor = 24_012;
+    await b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012));
     expect(b.estado.portfolio.balance_minor).toBe(10_000 - 34_012);
+  });
+
+  it('sin cartera en la moneda de la orden no retiene ni deja el asiento', async () => {
+    const b = banco({ portfolio: { ...banco().estado.portfolio, currency: 'COP' } });
+
+    const err = await rechazo(b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)));
+
+    expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_CURRENCY_NOT_ENABLED');
+    expect(b.estado.transactions).toHaveLength(0);
+    expect(b.estado.portfolio.balance_minor).toBe(100_000);
   });
 
   it('la cartera sin saldo ni cupo no retiene y no deja el asiento', async () => {
     const b = banco({ portfolio: { ...banco().estado.portfolio, balance_minor: 34_011 } });
 
-    const err = await rechazo(
-      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), PROPIA),
-    );
+    const err = await rechazo(b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)));
 
     expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_FUNDS_INSUFFICIENT');
     expect(b.estado.transactions).toHaveLength(0);
@@ -333,7 +330,7 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
     const b = banco({ order: { ...base, ...cambio } });
 
     await expect(
-      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), PROPIA),
+      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)),
     ).rejects.toThrow(/Sólo una reserva abierta/);
     expect(b.estado.transactions).toHaveLength(0);
   });
@@ -341,9 +338,9 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
   it('la orden de otro tenant no existe para este (RLS)', async () => {
     const b = banco();
 
-    await expect(
-      b.service.holdBookingIntent(OTRA, ORDEN, USUARIO, USD(34_012), PROPIA),
-    ).rejects.toThrow(/No se encontró la reserva/);
+    await expect(b.service.holdBookingIntent(OTRA, ORDEN, USUARIO, USD(34_012))).rejects.toThrow(
+      /No se encontró la reserva/,
+    );
   });
 
   it('retiene lo que la orden dice: si la saga espera otro total, no retiene nada', async () => {
@@ -351,7 +348,7 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
 
     for (const esperado of [USD(34_000), { amountMinor: 34_012, currency: 'EUR' }]) {
       await expect(
-        b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, esperado, PROPIA),
+        b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, esperado),
       ).rejects.toThrow(/El total de la reserva cambió/);
     }
     expect(b.estado.transactions).toHaveLength(0);
@@ -361,8 +358,8 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
     const b = banco();
 
     const resultados = await Promise.allSettled([
-      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), PROPIA),
-      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012), PROPIA),
+      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)),
+      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)),
     ]);
 
     expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
