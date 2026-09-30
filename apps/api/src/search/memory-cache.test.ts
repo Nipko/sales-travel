@@ -177,6 +177,47 @@ describe('MemoryCacheAdapter', () => {
     });
   });
 
+  describe('barrido de lo vencido al escribir', () => {
+    it('una escritura pasado el minuto quita lo vencido aunque nadie lo vuelva a leer', async () => {
+      for (let i = 0; i < 300; i++) await cache.set(`sesion:${i}`, i, 30);
+      await cache.set('viva', 'v', 3_600);
+
+      vi.advanceTimersByTime(60_000);
+      await cache.set('otra', 'v', 60);
+
+      expect([...storeOf(cache).keys()].sort()).toEqual(['otra', 'viva']);
+    });
+
+    it('dentro del minuto no recorre la caché en cada escritura', async () => {
+      await cache.set('corta', 'v', 1);
+      vi.advanceTimersByTime(59_999);
+
+      await cache.set('otra', 'v', 60);
+
+      // Vencida pero todavía en el store: se va en el próximo barrido o al leerla.
+      expect(storeOf(cache).has('corta')).toBe(true);
+      await expect(cache.get('corta')).resolves.toBeNull();
+    });
+  });
+
+  describe('techo propio de una instancia', () => {
+    class CacheChica extends MemoryCacheAdapter {
+      protected override readonly maxEntries = 10;
+    }
+
+    it('una subclase baja el techo y desaloja el 10 % más viejo al llenarse', async () => {
+      const chica = new CacheChica();
+      for (let i = 0; i < 10; i++) await chica.set(`k:${i}`, i, 3_600);
+
+      await chica.set('k:nueva', 'v', 3_600);
+
+      expect(storeOf(chica).size).toBe(10);
+      await expect(chica.get('k:0')).resolves.toBeNull();
+      await expect(chica.get('k:1')).resolves.toBe(1);
+      await expect(chica.get('k:nueva')).resolves.toBe('v');
+    });
+  });
+
   describe(`eviction al llegar a ${MAX_ENTRIES}`, () => {
     it('purga primero lo vencido y no descarta nada vivo si con eso alcanza', async () => {
       for (let i = 0; i < MAX_ENTRIES; i++) await cache.set(`vieja:${i}`, i, 1);

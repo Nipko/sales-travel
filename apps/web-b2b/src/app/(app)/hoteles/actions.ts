@@ -15,6 +15,12 @@ import {
   parseSearchCurrencies,
   type SearchCurrencies,
 } from './_components/search-currency';
+import {
+  moreFailureReason,
+  parseSearchPaging,
+  type HotelSearchPaging,
+  type MoreHotelsResult,
+} from './_components/hotel-paging';
 import { searchWalletsOf, type SearchWallets } from './_components/search-wallet';
 import { parseAgencyWallets } from '../../../lib/wallets';
 
@@ -265,17 +271,23 @@ export interface HotelSearchResult {
    */
   nonRefundableBlocked?: boolean;
   criteria?: HotelSearchCriteriaView;
+  /**
+   * Cuántos hoteles del destino se consultaron y cómo pedir el tramo siguiente (docs/tbo/02 §4.4).
+   * Sólo en las búsquedas por destino; un API anterior a los tramos no lo manda.
+   */
+  paging?: HotelSearchPaging;
   /** Cuándo llegó la respuesta (epoch en ms): cambia en cada búsqueda aunque el resultado sea igual. */
   receivedAt?: number;
   error?: string;
 }
 
-/** Sobre del endpoint. `providers` y el booleano son ADITIVOS: `{ hotels }` no cambió. */
+/** Sobre del endpoint. `providers`, el booleano y `paging` son ADITIVOS: `{ hotels }` no cambió. */
 interface HotelSearchEnvelope {
   hotels: HotelOffer[];
   providers?: HotelProviderOutcome[];
   showProviderInResults?: boolean;
   nonRefundableRates?: 'allowed' | 'blocked';
+  paging?: unknown;
 }
 
 /** Salida de error del formulario, con el sobre completo para no olvidar ningún campo. */
@@ -469,10 +481,12 @@ export async function searchHotelsAction(
   });
 
   if (!res.ok) return fallo(res.error.message);
+  const paging = parseSearchPaging(res.data.paging);
   return {
     ok: true,
     hotels: res.data.hotels,
     providers: res.data.providers ?? [],
+    ...(paging === undefined ? {} : { paging }),
     // `=== true`, como vuelos: cualquier otra cosa (ausente, null, texto) es oculto.
     showProviderInResults: res.data.showProviderInResults === true,
     ...(res.data.nonRefundableRates === 'blocked' ? { nonRefundableBlocked: true } : {}),
@@ -490,5 +504,62 @@ export async function searchHotelsAction(
       ...(hotelIds.length === 0 ? {} : { hotelIdsCount: hotelIds.length }),
     },
     receivedAt: Date.now(),
+  };
+}
+
+/** El número de tramo más alto que acepta el API (`HOTEL_SEARCH_MAX_PAGE_NUMBER`). */
+const MAX_PAGE_NUMBER = 999;
+
+/**
+ * El tramo siguiente de una búsqueda por destino (docs/tbo/02 §4.4): sólo la búsqueda y el número
+ * de tramo, que el API guardó con el primero. Es otra consulta a los proveedores y cuenta en la
+ * cuota de la agencia, así que sólo sale cuando el vendedor la pide.
+ */
+export async function loadMoreHotelsAction(
+  sessionId: string,
+  page: number,
+): Promise<MoreHotelsResult> {
+  if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) {
+    return {
+      ok: false,
+      hotels: [],
+      providers: [],
+      reason: 'expired',
+      error: 'Esta búsqueda ya no está vigente. Vuelve a buscar para ver más hoteles.',
+    };
+  }
+  if (!Number.isSafeInteger(page) || page < 1 || page > MAX_PAGE_NUMBER) {
+    return { ok: false, hotels: [], providers: [], error: 'No pudimos pedir más hoteles.' };
+  }
+
+  const res = await api<HotelSearchEnvelope>('/hotels/availability/more', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, page }),
+  });
+  if (!res.ok) {
+    const reason = moreFailureReason(res.error.reason);
+    const details = res.error.details as { nextPage?: unknown; paging?: unknown } | undefined;
+    const nextPage =
+      typeof details?.nextPage === 'number' && Number.isSafeInteger(details.nextPage)
+        ? details.nextPage
+        : undefined;
+    // Con SEARCH_PAGE_NOT_NEXT, cuánto se consultó de verdad: la pantalla se pone al día.
+    const paging = reason === 'not-next' ? parseSearchPaging(details?.paging) : undefined;
+    return {
+      ok: false,
+      hotels: [],
+      providers: [],
+      error: res.error.message,
+      ...(reason === undefined ? {} : { reason }),
+      ...(nextPage === undefined ? {} : { nextPage }),
+      ...(paging === undefined ? {} : { paging }),
+    };
+  }
+  const paging = parseSearchPaging(res.data.paging);
+  return {
+    ok: true,
+    hotels: res.data.hotels,
+    providers: res.data.providers ?? [],
+    ...(paging === undefined ? {} : { paging }),
   };
 }

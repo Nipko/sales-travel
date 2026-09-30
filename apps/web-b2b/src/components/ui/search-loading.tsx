@@ -25,6 +25,42 @@ export const SEARCH_LOADING_MESSAGES = [
  */
 export const SEARCH_MESSAGE_MS = 2500;
 
+/**
+ * Tres mensajes que se turnan en un renglón fijo, uno encima del otro: nada se corre. Fuera del
+ * árbol accesible (los resume la región viva de quien los usa) y, con «reducir movimiento», sólo
+ * el primero y quieto. `search-message` está pensada para TRES mensajes.
+ */
+export function SearchMessages({
+  messages = SEARCH_LOADING_MESSAGES,
+  className,
+}: {
+  messages?: readonly [string, string, string];
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        'relative h-4 overflow-hidden text-xs leading-4 text-[var(--color-fg-subtle)]',
+        className,
+      )}
+    >
+      {messages.map((message, index) => (
+        <span
+          key={message}
+          style={searchMessageStyle(index)}
+          className={cn(
+            'absolute inset-0 truncate motion-safe:animate-search-message',
+            index > 0 && 'motion-reduce:hidden',
+          )}
+        >
+          {message}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** El retraso de cada mensaje dentro del ciclo: el segundo arranca cuando se va el primero. */
 export function searchMessageStyle(index: number): CSSProperties {
   return {
@@ -110,23 +146,7 @@ export function SearchLoading({
               <span className="text-[var(--color-fg-muted)]">{echo || subject}</span>
             </p>
             {/* Un renglón fijo: los mensajes se turnan encima unos de otros y nada se corre. */}
-            <div
-              aria-hidden="true"
-              className="relative mt-0.5 h-4 overflow-hidden text-xs leading-4 text-[var(--color-fg-subtle)]"
-            >
-              {SEARCH_LOADING_MESSAGES.map((message, index) => (
-                <span
-                  key={message}
-                  style={searchMessageStyle(index)}
-                  className={cn(
-                    'absolute inset-0 truncate motion-safe:animate-search-message',
-                    index > 0 && 'motion-reduce:hidden',
-                  )}
-                >
-                  {message}
-                </span>
-              ))}
-            </div>
+            <SearchMessages className="mt-0.5" />
             <span
               aria-hidden="true"
               className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--color-primary)]/10 motion-reduce:hidden"
