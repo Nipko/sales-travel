@@ -341,7 +341,7 @@ La relación entre `Status.Code` y el código HTTP, y la forma del cuerpo de err
 tarifas de hotel que no se reembolsan. Quedó registrado como
 [D-TBO-39](./08-requisitos-maestro.md#d-tbo-39--cómo-se-venden-las-tarifas-no-reembolsables), con el requisito
 [RF-41](./08-requisitos-maestro.md#rf-41--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-permiso-por-agencia).
-Commits `5956426` (resultados) y `415ef53` (API, checkout, post-venta y permiso), en la rama `feat/hotels-redesign`.
+Commits `ac65ac3` (resultados) y `ec2832b` (API, checkout, post-venta y permiso), en la rama `feat/hotels-redesign`.
 El modelo del permiso, visto desde la red, está en
 [platform/12 §11](../platform/12-modelo-consolidador-y-plan.md#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29).
 

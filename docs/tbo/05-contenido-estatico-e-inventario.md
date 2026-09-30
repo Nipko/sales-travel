@@ -1014,8 +1014,8 @@ Motivo: producción tenía el catálogo de Colombia entero en `hotel_inventory` 
 búsqueda por ciudad, además, sólo servía en los países de `TBO_SYNC_COUNTRIES` con datos (hoy sólo CO). El founder
 aprobó el 2026-09-29, con el mockup del rediseño de resultados, esta estrategia: (1) fotos bajo demanda sin bloquear
 la búsqueda; (2) precarga por demanda; (3) cobertura global de ciudades; (4) imágenes por un proxy propio con caché;
-(5) con varios proveedores, la mejor foto del mismo hotel. Commits `c9fe724` (API, sync y proxy), `5956426`
-(resultados) y `15f2e04` (ficha del hotel), en la rama `feat/hotels-redesign`. Cómo se opera en el VPS:
+(5) con varios proveedores, la mejor foto del mismo hotel. Commits `d0781b8` (API, sync y proxy), `ac65ac3`
+(resultados) y `2bb7806` (ficha del hotel), en la rama `feat/hotels-redesign`. Cómo se opera en el VPS:
 [platform/13 §5](../platform/13-validacion-modelo-red.md#5-runbook-del-vps), pasos 10 a 12.
 
 **Catálogo y cobertura**
@@ -1096,7 +1096,7 @@ funciones `SECURITY DEFINER` de 0054, que validan cada campo y aplican las regla
 `listing` nunca sobre `details`, HTML de lista blanca, imágenes `https`, nunca desactivar ni mover un hotel activo).
 Quién puede disparar la escritura lo decide el API: la cuenta de TBO de la agencia, su `opt-in` y el circuito.
 
-**Pantalla de resultados.** El mismo commit de la web (`5956426`) rediseñó la pantalla con lo que aprobó el founder:
+**Pantalla de resultados.** El mismo commit de la web (`ac65ac3`) rediseñó la pantalla con lo que aprobó el founder:
 barra de la búsqueda (destino, fechas, noches, huéspedes, moneda, "Editar búsqueda"); filtros del lado del cliente
 (precio total máximo, "Solo reembolsables", estrellas, régimen y, con la divulgación encendida, proveedor), en una
 hoja en el teléfono; estado vacío que propone qué ampliar; orden (recomendados, menor y mayor precio, más estrellas)
