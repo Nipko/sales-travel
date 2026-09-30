@@ -68,9 +68,10 @@ describe('AgentCarsAdapter — requests GET', () => {
     expect(u).toContain('suggest.agentcars.com');
     expect(u).toContain('query=miami');
     expect(u).toContain('lang=es');
+    expect(u).not.toContain('access-token');
   });
 
-  it('getMatrix() arma GET con los query params y el token en cabecera', async () => {
+  it('getMatrix() arma GET con los query params y el token en la URL, como documenta la guía', async () => {
     const { calls } = stubFetch([]);
     const adapter = new AgentCarsAdapter(cfg);
     await adapter.getMatrix({
@@ -91,8 +92,8 @@ describe('AgentCarsAdapter — requests GET', () => {
     const u = url(calls);
     expect(calls[0]?.init.method).toBe('GET');
     expect(u).toContain('https://api.dev.agentcars.com/v2/sites/get-matrix?');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(u).toContain('pickUpLocation=MIA');
     expect(u).toContain('dropOffLocation=MIA');
     expect(u).toContain('pickUpDate=2026-07-01');
@@ -147,8 +148,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/get-selection?');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(u).toContain('companyCode=ZE');
     expect(u).toContain('sippCode=ECMR');
     expect(u).toContain('ccrc=token-ccrc');
@@ -161,8 +162,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/find-offices?');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(u).toContain('distance=25');
     expect(u).toContain('source=CO');
     expect(u).toContain('lat=25.79');
@@ -186,8 +187,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/rates?');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(u).toContain('country=US');
     expect(u).toContain('source=CO');
     expect(u).toContain('language=es');
@@ -200,8 +201,8 @@ describe('AgentCarsAdapter — requests GET', () => {
 
     const u = url(calls);
     expect(u).toContain('/get-rate-information?');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(u).toContain('uniqid=sess-1');
     expect(u).toContain('paymentType=ppd');
     expect(u).toContain('rateType=best');
@@ -243,8 +244,8 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
     expect(u).toContain('/confirmation');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(init.body).toBeInstanceOf(FormData);
 
     // age numérico se serializa como string en FormData
@@ -316,8 +317,8 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
     const { url: u, init } = calls[0] ?? { url: '', init: {} };
     expect(init.method).toBe('POST');
     expect(u).toContain('/my-reservation');
-    expect(header(calls, 'access-token')).toBe('tok-123');
-    expect(u).not.toContain('access-token');
+    expect(new URL(u).searchParams.get('access-token')).toBe('tok-123');
+    expect(header(calls, 'access-token')).toBeUndefined();
     expect(field(init, 'lastName')).toBe('García');
     expect(field(init, 'confirmationCode')).toBe('ABC123');
     expect(field(init, 'language')).toBe('es');
@@ -406,5 +407,141 @@ describe('URL base de la cuenta → raíz de la API (…/v2/sites)', () => {
     expect(err.status).toBe(404);
     expect(err.path).toBe('/rates');
     expect(err.endpoint).toBe('https://api.agentcars.com/v2/sites/rates');
+  });
+});
+
+describe('Guía v2.0 de AgentCars (revisada el 2026-09-30)', () => {
+  const search = {
+    pickUpLocation: 'BOG',
+    dropOffLocation: 'BOG',
+    pickUpDate: '2026-10-22',
+    dropOffDate: '2026-10-29',
+    pickUpHour: '1000',
+    dropOffHour: '1000',
+    rateType: 'best',
+    country: 'CO',
+  };
+
+  async function apiError(p: Promise<unknown>): Promise<AgentCarsApiError> {
+    const err = await p.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    if (!(err instanceof AgentCarsApiError)) throw new Error('esperaba un AgentCarsApiError');
+    return err;
+  }
+
+  it('getMatrix y getSelection mandan pickUpAddress/dropOffAddress = NA (obligatorios)', async () => {
+    const { calls } = stubFetch({});
+    const adapter = new AgentCarsAdapter(cfg);
+    await adapter.getMatrix(search);
+    const params = new URL(url(calls)).searchParams;
+    expect(params.get('pickUpAddress')).toBe('NA');
+    expect(params.get('dropOffAddress')).toBe('NA');
+  });
+
+  it('"sin tarifas" deja la búsqueda vacía: 412 de hoy y 200 con code 13000 desde el 2026-10-13', async () => {
+    const adapter = new AgentCarsAdapter(cfg);
+    stubFetch(
+      {
+        error:
+          "We don't have rates avaliable for the selected location. Please select another location ciu",
+      },
+      412,
+    );
+    await expect(adapter.getMatrix(search)).resolves.toEqual([]);
+    stubFetch({
+      success: false,
+      error: "We don't have rates available for the selected location or Time.",
+      message: "We don't have rates available for the selected location or Time.",
+      code: 13000,
+      data: [],
+    });
+    await expect(adapter.getMatrix(search)).resolves.toEqual([]);
+  });
+
+  it('un error con HTTP 200 no se lee como un auto: validación de hoy y 422 desde el 2026-10-13', async () => {
+    const adapter = new AgentCarsAdapter(cfg);
+    stubFetch({ error: { pickUpDate: ['the date should be minimal today'] } });
+    const old = await apiError(adapter.getMatrix(search));
+    expect(old.status).toBe(200);
+    expect(old.body).toContain('the date should be minimal today');
+
+    stubFetch(
+      {
+        success: false,
+        error: 'Error Loading data',
+        message: 'Error Loading data',
+        code: 13001,
+        data: { dropOffLocation: ['Dropoff Location cannot be blank.'] },
+      },
+      422,
+    );
+    expect((await apiError(adapter.getMatrix(search))).status).toBe(422);
+  });
+
+  it('getSelection sin tarifas (code 13000) es un error, no una selección vacía', async () => {
+    stubFetch({ success: false, error: 'x', message: 'x', code: 13000, data: [] });
+    const adapter = new AgentCarsAdapter(cfg);
+    const err = await apiError(
+      adapter.getSelection({ ...search, companyCode: 'ZE', sippCode: 'ECAR' }),
+    );
+    expect(err.path).toBe('/get-selection');
+  });
+
+  it('una cancelación rechazada con 200 {"error"} no se da por hecha', async () => {
+    stubFetch({ error: 'Reservation already cancelled' });
+    const adapter = new AgentCarsAdapter(cfg);
+    await apiError(adapter.cancel({ lastName: 'Test', confirmationCode: 'ABC' }));
+  });
+
+  it('confirmación: manda el rateIdentifier y no da por hecha una respuesta sin código', async () => {
+    const adapter = new AgentCarsAdapter(cfg);
+    const req = {
+      uniqid: 'u1',
+      paymentType: 'ppd' as const,
+      rateType: '3',
+      companyCode: 'ZE',
+      sippCode: 'ECAR',
+      pickUpLocation: 'BOG',
+      dropOffLocation: 'BOG',
+      pickUpDate: '2026-10-22',
+      dropOffDate: '2026-10-29',
+      pickUpHour: '1000',
+      dropOffHour: '1000',
+      pickUpAddress: 'NA',
+      dropOffAddress: 'NA',
+      firstName: 'Ana',
+      lastName: 'Test',
+      age: 30,
+      email: 'ana@example.com',
+      realBase: Money.fromMajor(100, 'USD'),
+      realTax: Money.fromMajor(10, 'USD'),
+      total: Money.fromMajor(110, 'USD'),
+      rateIdentifier: '9NWXS',
+    };
+    const { calls } = stubFetch({ confirmationCode: 'H123', status: 'Active' });
+    await adapter.confirm(req);
+    expect(field(calls[0]?.init, 'rateIdentifier')).toBe('9NWXS');
+
+    stubFetch({ status: 'Active' });
+    const err = await apiError(adapter.confirm(req));
+    expect(err.body).toContain('sin código de confirmación');
+  });
+
+  it('un host que no existe deja el motivo real (ENOTFOUND y el host), no sólo "fetch failed"', async () => {
+    const cause = Object.assign(new Error('getaddrinfo ENOTFOUND api.dev.agencars.com'), {
+      code: 'ENOTFOUND',
+      hostname: 'api.dev.agencars.com',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('fetch failed', { cause }))),
+    );
+    const adapter = new AgentCarsAdapter({ ...cfg, baseUrl: 'https://api.dev.agencars.com' });
+    const err = await apiError(adapter.getMatrix(search));
+    expect(err.status).toBe(0);
+    expect(err.body).toBe('fetch failed (ENOTFOUND api.dev.agencars.com)');
+    expect(err.endpoint).toBe('https://api.dev.agencars.com/v2/sites/get-matrix');
   });
 });

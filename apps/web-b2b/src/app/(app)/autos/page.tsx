@@ -68,7 +68,11 @@ async function openRate(
     ok: true,
     selected: {
       offer,
-      selection: res.selection,
+      // La selección no trae el rateIdentifier: es el de la oferta de la matriz, y la confirmación
+      // lo pide.
+      selection: offer.rateIdentifier
+        ? { ...res.selection, rateIdentifier: offer.rateIdentifier }
+        : res.selection,
       rateDetail: detail?.ok && detail.detail ? detail.detail : null,
       at: Date.now(),
     },

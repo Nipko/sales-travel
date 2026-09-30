@@ -29,6 +29,7 @@ export function buildConfirmationBody(req: ConfirmCarRequest): FormBody {
   };
 
   if (req.ccrc) body['ccrc'] = req.ccrc;
+  if (req.rateIdentifier) body['rateIdentifier'] = req.rateIdentifier;
   if (req.cdCode) body['cdCode'] = req.cdCode;
   if (req.pcCode) body['pcCode'] = req.pcCode;
   if (req.flightNumber) body['flight_number'] = req.flightNumber;
