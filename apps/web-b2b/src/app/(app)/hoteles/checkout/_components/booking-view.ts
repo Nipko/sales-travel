@@ -1,6 +1,6 @@
 import type { Money } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
-import { PORTFOLIO_TITLES } from './funding-view';
+import { NETWORK_DETAIL, PORTFOLIO_TITLES, isNetworkFundingReason } from './funding-view';
 import {
   AT_PROPERTY_FIELD,
   AT_PROPERTY_REQUIRED,
@@ -211,6 +211,9 @@ const RESEARCH: Readonly<Record<string, string>> = {
   PACKAGE_ONLY_RATE: 'Esta tarifa sólo se vende en un paquete con aéreo.',
   OFFER_NOT_IN_SEARCH: 'Hay que volver a buscar la tarifa.',
   SEARCH_ACCOUNT_CHANGED: 'Cambió la cuenta del proveedor.',
+  // La cuenta con que se cotizó ya no se resuelve para el nodo (0060): sin saber quién le paga al
+  // proveedor no se sabe hasta dónde retener. Se busca la tarifa con la cuenta de hoy.
+  PORTFOLIO_HOLD_ACCOUNT_CHANGED: 'La cuenta del proveedor cambió.',
   GUEST_NATIONALITY_MISSING: 'Falta la nacionalidad del pasajero principal.',
   REQUEST_NOT_ELIGIBLE: 'El proveedor no admite esta búsqueda.',
 };
@@ -358,6 +361,26 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
       title: ACCOUNT[reason],
       message: message ?? 'Avisale a quien administra la cuenta del proveedor.',
       retry: false,
+    };
+  }
+  // De un nivel de la red que financia a la agencia (0060): el vendedor no lo resuelve en su
+  // Cartera B2B, sino quien lo financia. No se retuvo nada, así que después se vuelve a confirmar.
+  if (reason !== undefined && isNetworkFundingReason(reason) && PORTFOLIO_TITLES[reason]) {
+    return {
+      kind: 'rejected',
+      title: PORTFOLIO_TITLES[reason],
+      message: message ?? NETWORK_DETAIL,
+      retry: true,
+    };
+  }
+  // Las carteras de la red siguieron ocupadas por otras reservas: no se retuvo nada ni salió nada
+  // hacia el proveedor, y en unos segundos se puede volver a confirmar.
+  if (reason === 'PORTFOLIO_HOLD_BUSY') {
+    return {
+      kind: 'rejected',
+      title: 'Las carteras están ocupadas con otras reservas.',
+      message: message ?? 'No se retuvo saldo. Probá de nuevo en unos segundos.',
+      retry: true,
     };
   }
   // De la cartera de la agencia en la moneda de la tarifa: la resuelve quien la financia (habilita

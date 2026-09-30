@@ -1,10 +1,13 @@
 import { BadRequestException, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { PortfolioForbiddenError } from './portfolio-errors.js';
 import { PortfoliosController } from './portfolios.controller.js';
-import type { PortfoliosService } from './portfolios.service.js';
+import type { BookingHoldOutcome, PortfoliosService } from './portfolios.service.js';
+import { OWN_PROVIDER_ACCOUNT_MESSAGE } from './booking-hold.js';
 import { WalletFinancingController } from './wallet-financing.controller.js';
 import type { WalletFinancingService } from './wallet-financing.service.js';
 
@@ -15,7 +18,8 @@ const WALLET = '44444444-4444-4444-8444-444444444444';
 const KEY = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
 const NOW = new Date('2026-09-29T12:00:00.000Z');
 
-function harness(role = 'tenant_admin') {
+/** `null`: sin membership activa en la agencia (p. ej. un rol de plataforma operándola). */
+function harness(role: string | null = 'tenant_admin') {
   const portfolio = {
     id: WALLET,
     tenant_id: TENANT,
@@ -38,11 +42,20 @@ function harness(role = 'tenant_admin') {
     created_at: NOW,
   };
   const service = {
-    holdBooking: vi.fn(() => Promise.resolve({ portfolio, transaction })),
+    holdBooking: vi.fn(
+      (): Promise<BookingHoldOutcome> =>
+        Promise.resolve({
+          status: 'held',
+          portfolio,
+          transaction,
+        } as unknown as BookingHoldOutcome),
+    ),
     submitDepositReport: vi.fn(() => Promise.resolve({ id: 'r-1' })),
     overview: vi.fn(() => Promise.resolve({ portfolios: [], financier: null })),
     approveBooking: vi.fn(() => Promise.resolve({ success: false, message: 'blocked' })),
     rejectBooking: vi.fn(() => Promise.resolve({ success: true, message: 'released' })),
+    listTransactions: vi.fn(() => Promise.resolve([])),
+    listNetworkHolds: vi.fn(() => Promise.resolve({ items: [], totals: [] })),
   };
   const activeTenant = {
     resolve: vi.fn(() => Promise.resolve(TENANT)),
@@ -50,7 +63,9 @@ function harness(role = 'tenant_admin') {
   const membershipQuery: Record<string, ReturnType<typeof vi.fn>> = {};
   membershipQuery.select = vi.fn(() => membershipQuery);
   membershipQuery.where = vi.fn(() => membershipQuery);
-  membershipQuery.executeTakeFirst = vi.fn(() => Promise.resolve({ role }));
+  membershipQuery.executeTakeFirst = vi.fn(() =>
+    Promise.resolve(role === null ? undefined : { role }),
+  );
   const db = {
     withRequestContext: <T>(
       _context: unknown,
@@ -137,6 +152,41 @@ describe('PortfoliosController.submitDepositReport', () => {
   });
 });
 
+describe('PortfoliosController: las ventas de la red, sólo para quien administra el nodo', () => {
+  it('GET /portfolios/network-holds exige un rol de admin, también en la membership', async () => {
+    const handler: unknown = Object.getOwnPropertyDescriptor(
+      PortfoliosController.prototype,
+      'listNetworkHolds',
+    )?.value;
+    expect(Reflect.getMetadata(ROLES_KEY, handler as object)).toEqual([...AGENCY_ADMIN_ROLES]);
+    const admin = harness();
+    await admin.controller.listNetworkHolds(USER, {});
+    expect(admin.service.listNetworkHolds).toHaveBeenCalledWith(TENANT, {});
+
+    for (const role of ['vendedor', null]) {
+      const h = harness(role);
+      await expect(h.controller.listNetworkHolds(USER, {})).rejects.toThrow(/admin|member/);
+      expect(h.service.listNetworkHolds).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    ['tenant_admin', true],
+    ['consolidator_admin', true],
+    ['vendedor', false],
+    [null, false],
+  ] as const)(
+    'GET /portfolios/transactions como %s: datos de la reserva de la red = %s',
+    async (role, includeNetwork) => {
+      const h = harness(role);
+
+      await h.controller.listTransactions(USER, { currency: 'USD' });
+
+      expect(h.service.listTransactions).toHaveBeenCalledWith(TENANT, 'USD', { includeNetwork });
+    },
+  );
+});
+
 describe('PortfoliosController.hold', () => {
   it('pasa la orden y las expectativas al servicio y devuelve la cartera con su exponente', async () => {
     const h = harness();
@@ -151,6 +201,7 @@ describe('PortfoliosController.hold', () => {
       amountMinor: 125_000,
       currency: 'COP',
     });
+    if (!response.retained) throw new Error('esperaba la retención');
     expect(response.portfolio).toMatchObject({
       balanceMinor: 375_000,
       currency: 'COP',
@@ -170,6 +221,19 @@ describe('PortfoliosController.hold', () => {
     await h.controller.hold(USER, { orderId: ORDER });
 
     expect(h.service.holdBooking).toHaveBeenCalledWith(TENANT, ORDER, USER, {});
+  });
+
+  it('con la cuenta propia de la agencia no retiene nada y lo dice, sin cartera ni asiento', async () => {
+    const h = harness();
+    h.service.holdBooking.mockResolvedValueOnce({ status: 'own-account' });
+
+    const response = await h.controller.hold(USER, { orderId: ORDER });
+
+    expect(response).toEqual({
+      retained: false,
+      reason: 'OWN_PROVIDER_ACCOUNT',
+      message: OWN_PROVIDER_ACCOUNT_MESSAGE,
+    });
   });
 });
 

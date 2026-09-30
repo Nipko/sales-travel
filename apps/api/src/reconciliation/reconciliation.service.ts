@@ -32,6 +32,7 @@ import {
   type DiscrepancySeverity,
   type ReconciliationDiscrepancyKind,
 } from '../orders/order-events.js';
+import { WalletHoldStateConflictError } from '../portfolios/booking-hold.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
 import { withProviderPayloadScope } from '../provider-payloads/provider-payload-scope.js';
@@ -55,7 +56,9 @@ import {
   type ReconciliationWindow,
 } from './reconciliation.plan.js';
 import {
+  MISALIGNED_HOLDS_LIMIT,
   ReconciliationStore,
+  type MisalignedHold,
   type ReconciliationItemInput,
   type ReconciliationItemRow,
   type ReconciliationRunRow,
@@ -194,6 +197,11 @@ export interface ReconciliationRunReport {
   readonly findings: Readonly<Record<string, number>>;
   readonly outcomes: Readonly<Record<string, number>>;
   readonly held: Readonly<Record<string, number>>;
+  /**
+   * Paso R-W: las retenciones de cartera desalineadas que la corrida cerró, por resultado
+   * (`released`, `captured`, `conflict`, `error`…). Ausente si no había ninguna.
+   */
+  readonly holds?: Readonly<Record<string, number>>;
   readonly errorClass?: string;
 }
 
@@ -323,6 +331,15 @@ function externalDetails(b: HotelBookingSummary): Record<string, unknown> {
     ...(b.agencyName === undefined ? {} : { agencyName: b.agencyName }),
     ...(b.providerRecordId === undefined ? {} : { providerRecordId: b.providerRecordId }),
   };
+}
+
+/** Lo que el paso R-W necesita de la corrida, también de una que no terminó. */
+interface WalletRun {
+  readonly runId: string;
+  readonly ownerTenantId: string;
+  readonly providerCode: string;
+  readonly accountId: string;
+  readonly requestedBy?: string;
 }
 
 const HUMAN_ACTIONS: ReadonlySet<HotelOrderAction> = new Set([
@@ -575,7 +592,18 @@ export class ReconciliationService implements OnApplicationBootstrap {
     const bookings: HotelBookingSummary[] = [];
     let orders: ReconciliationOrder[] = [];
     let uncovered = 0;
+    let network: string[] = [];
+    const walletRun: WalletRun = {
+      runId,
+      ownerTenantId: input.ownerTenantId,
+      providerCode: input.providerCode,
+      accountId: input.accountId,
+      ...(input.requestedBy === undefined ? {} : { requestedBy: input.requestedBy }),
+    };
     try {
+      // Antes que el proveedor: la red es sólo de la base, y el paso R-W la necesita también cuando
+      // la cuenta no se puede usar (incompleta, no permitida, sin reservas por fecha).
+      network = await this.store.networkOf(input.ownerTenantId);
       const provider = await this.registry.forAccount(input.ownerTenantId, {
         provider: input.providerCode,
         accountId: input.accountId,
@@ -585,7 +613,6 @@ export class ReconciliationService implements OnApplicationBootstrap {
         throw new ReconciliationNotSupportedError(provider.code);
       }
 
-      const network = await this.store.networkOf(input.ownerTenantId);
       const checkoutFrom = addDays(utcDay(now), -1);
       for (const tenantId of network) {
         orders.push(...(await this.store.listAnchors(tenantId, { ...query, checkoutFrom })));
@@ -629,13 +656,16 @@ export class ReconciliationService implements OnApplicationBootstrap {
     } catch (err) {
       const status = isInvalidWindow(err) ? 'invalid' : 'failed';
       const errorClass = errorClassOf(err);
+      // Las retenciones desalineadas son sólo de la base: se cierran aunque el proveedor no haya
+      // respondido.
+      const holds = await this.settleMisalignedHolds(walletRun, network);
       await this.store.finishRun(input.ownerTenantId, runId, {
         status,
         windows,
         rowsRead: bookings.length,
         rowsMatched: 0,
         discrepancies: 0,
-        summary: { uncovered },
+        summary: { uncovered, ...(holds === undefined ? {} : { holds }) },
         errorClass,
       });
       this.logger.warn(
@@ -648,7 +678,15 @@ export class ReconciliationService implements OnApplicationBootstrap {
       ) {
         throw err;
       }
-      return { runId, status, ...empty, windows, rowsRead: bookings.length, errorClass };
+      return {
+        runId,
+        status,
+        ...empty,
+        windows,
+        rowsRead: bookings.length,
+        ...(holds === undefined ? {} : { holds }),
+        errorClass,
+      };
     }
 
     const plan = planReconciliation({ now, windows, bookings, orders });
@@ -679,6 +717,9 @@ export class ReconciliationService implements OnApplicationBootstrap {
       increment(outcomes, outcome);
     }
     const discrepancies = plan.findings.filter((f) => f.kind !== 'settle').length;
+    // Después de ejecutar: lo que la corrida cerró recién (R5, R3/R4/R7) ya liberó o capturó su
+    // retención, y lo que quedó desalineado de antes se cierra acá.
+    const holds = await this.settleMisalignedHolds(walletRun, network);
     await this.store.finishRun(input.ownerTenantId, runId, {
       status: 'completed',
       windows,
@@ -692,6 +733,7 @@ export class ReconciliationService implements OnApplicationBootstrap {
         ambiguous: plan.ambiguous,
         uncovered,
         referenceEvidence: plan.referenceEvidence,
+        ...(holds === undefined ? {} : { holds }),
       },
     });
     this.logger.log(
@@ -707,7 +749,101 @@ export class ReconciliationService implements OnApplicationBootstrap {
       findings,
       outcomes,
       held,
+      ...(holds === undefined ? {} : { holds }),
     };
+  }
+
+  // ───────────────────────── Retenciones desalineadas (R-W) ─────────────────────────
+
+  /**
+   * Paso R-W (0060): en cada tenant de la red de la cuenta, cierra las retenciones de cartera que no
+   * dicen lo que dice su orden con `wallet_hold_settle` —la base captura, libera todos los niveles
+   * de la red o marca el conflicto, sobre lo que se retuvo—. Cubre también las hechas con cuentas
+   * del mismo dueño y proveedor que ya no están activas: el barrido no las agenda, y sin esto su
+   * retención quedaría congelada en toda la red. Un conflicto o un error se escala en la orden
+   * (`OrderEscalated`) y la corrida sigue: nunca falla por esto. Devuelve cuántas cerró por
+   * resultado, o `undefined` si no había ninguna.
+   */
+  private async settleMisalignedHolds(
+    run: WalletRun,
+    network: readonly string[],
+  ): Promise<Record<string, number> | undefined> {
+    if (network.length === 0) return undefined;
+    const counts: Record<string, number> = {};
+    let retired: string[] = [];
+    try {
+      retired = await this.store.inactiveOwnAccountIds(run.ownerTenantId, run.providerCode);
+    } catch (err) {
+      increment(counts, 'error');
+      this.logger.warn(
+        `reconciliation.holds_retired_unlisted run=${run.runId} error=${errorName(err)}`,
+      );
+    }
+    const accountIds = [run.accountId, ...retired.filter((id) => id !== run.accountId)];
+    for (const tenantId of network) {
+      let misaligned: MisalignedHold[];
+      try {
+        misaligned = await this.store.listMisalignedHolds(tenantId, {
+          provider: run.providerCode,
+          accountIds,
+          limit: MISALIGNED_HOLDS_LIMIT,
+        });
+      } catch (err) {
+        increment(counts, 'error');
+        this.logger.warn(`reconciliation.holds_unlisted run=${run.runId} error=${errorName(err)}`);
+        continue;
+      }
+      for (const hold of misaligned) {
+        await this.settleMisalignedHold(run, tenantId, hold, counts);
+      }
+    }
+    return Object.keys(counts).length === 0 ? undefined : counts;
+  }
+
+  private async settleMisalignedHold(
+    run: WalletRun,
+    tenantId: string,
+    hold: MisalignedHold,
+    counts: Record<string, number>,
+  ): Promise<void> {
+    const actor = run.requestedBy ?? hold.createdBy;
+    let reason: 'portfolio-hold-state-conflict' | 'portfolio-hold-release-failed';
+    let failure: string | undefined;
+    try {
+      const outcome = await this.holds.settle(tenantId, hold.orderId, actor);
+      increment(counts, outcome);
+      if (outcome !== 'conflict') return;
+      reason = 'portfolio-hold-state-conflict';
+    } catch (err) {
+      increment(counts, 'error');
+      reason = 'portfolio-hold-release-failed';
+      failure = errorName(err);
+    }
+    this.logger.warn(
+      `reconciliation.hold_unsettled reason=${reason} provider=${run.providerCode} order=${hold.orderId} run=${run.runId}${failure === undefined ? '' : ` error=${failure}`}`,
+    );
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.escalated,
+        tenantId,
+        actorUserId: actor,
+        aggregateType: 'order',
+        aggregateId: hold.orderId,
+        payload: {
+          provider: run.providerCode,
+          vertical: 'hotels',
+          source: 'reconciliation',
+          runId: run.runId,
+          reason,
+          queued: false,
+          ...(failure === undefined ? {} : { errorName: failure }),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `reconciliation.hold_escalation_unsaved order=${hold.orderId} error=${errorName(err)}`,
+      );
+    }
   }
 
   // ───────────────────────── Cada divergencia ─────────────────────────
@@ -1400,7 +1536,10 @@ export class ReconciliationService implements OnApplicationBootstrap {
         aggregateId: target.orderId,
         payload: {
           ...this.eventBase(run, target),
-          reason: 'portfolio-hold-release-failed',
+          reason:
+            err instanceof WalletHoldStateConflictError
+              ? 'portfolio-hold-state-conflict'
+              : 'portfolio-hold-release-failed',
           queued: false,
           errorName: errorName(err),
         },

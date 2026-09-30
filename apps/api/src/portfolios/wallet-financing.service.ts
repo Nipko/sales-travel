@@ -3,17 +3,18 @@ import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, DepositReportStatus, PortfolioStatus } from '../database/database.types.js';
-import { isUniqueViolation } from './booking-hold.ledger.js';
 import {
   PortfolioConflictError,
   PortfolioForbiddenError,
   PortfolioNotFoundError,
+  isUniqueViolation,
   rethrowPortfolioError,
   walletAlreadyEnabled,
 } from './portfolio-errors.js';
 import type {
   ApproveDepositReportDto,
   EnableWalletDto,
+  NetworkHoldsQuery,
   RecordAdjustmentDto,
   RecordDepositDto,
   RejectDepositReportDto,
@@ -24,11 +25,13 @@ import {
   depositReportById,
   listDepositReports,
   listMovements,
+  listNetworkHolds,
   listWallets,
   movementView,
   walletById,
   walletView,
   type DepositReportView,
+  type NetworkHoldsView,
   type PortfolioRow,
   type PortfolioTransactionRow,
   type WalletMovementView,
@@ -284,7 +287,22 @@ export class WalletFinancingService {
     tenantId: string,
     currency?: string,
   ): Promise<WalletMovementView[]> {
-    return this.run(actorUserId, tenantId, (trx) => listMovements(trx, tenantId, currency));
+    // Esta vista es sólo de admins de quien financia (el controller y `run` lo exigen).
+    return this.run(actorUserId, tenantId, (trx) =>
+      listMovements(trx, tenantId, currency, { includeNetwork: true }),
+    );
+  }
+
+  /**
+   * Las reservas de la red del nodo retenidas en sus carteras (0060). Corre con el tenant del nodo:
+   * la RLS de `wallet_hold_levels` muestra sus niveles, no los de quien financia.
+   */
+  async listNetworkHolds(
+    actorUserId: string,
+    tenantId: string,
+    query: NetworkHoldsQuery,
+  ): Promise<NetworkHoldsView> {
+    return this.run(actorUserId, tenantId, (trx) => listNetworkHolds(trx, tenantId, query));
   }
 
   async listDepositReports(

@@ -8,40 +8,40 @@ import { FlightProviderRegistry } from '../providers/flight-provider.registry.js
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   BookingHoldLedger,
-  RELEASE_AFTER_CANCEL_NOTES,
-  RELEASE_AFTER_FAILURE_NOTES,
-  isUniqueViolation,
   type BookingHoldRelease,
   type BookingWithHold,
 } from './booking-hold.ledger.js';
 import {
   BookingHoldRejectedError,
   bookingHoldMessage,
-  decideBookingHold,
-  type BookingHoldDecision,
-  type BookingHoldFacts,
+  isNetworkRejection,
   type BookingHoldPreview,
-  type BookingHoldRejection,
+  type BookingHoldQuote,
 } from './booking-hold.js';
 import {
   PortfolioConflictError,
+  isUniqueViolation,
   rethrowPortfolioError,
   walletNotEnabled,
 } from './portfolio-errors.js';
-import type { SubmitDepositReportDto } from './portfolios.schemas.js';
+import type { NetworkHoldsQuery, SubmitDepositReportDto } from './portfolios.schemas.js';
 import {
   depositReportById,
   findWallet,
   listDepositReports,
   listMovements,
+  listNetworkHolds,
   listWallets,
   walletView,
   type DepositReportView,
+  type NetworkHoldsView,
   type PortfolioRow,
   type PortfolioTransactionRow,
+  type MovementsOptions,
   type WalletMovementView,
   type WalletView,
 } from './wallet-store.js';
+import { WalletHoldStore, translateWalletHoldError } from './wallet-hold.store.js';
 
 export type { PortfolioRow, PortfolioTransactionRow } from './wallet-store.js';
 
@@ -53,6 +53,14 @@ export interface AgencyWalletsView {
    * superadmin.
    */
   financier: { tenantId: string; name: string } | null;
+  /**
+   * Los proveedores en que el nodo tiene su PROPIA cuenta activa en la bóveda (la que
+   * `resolve_provider_account` le resuelve antes que cualquier heredada), todos, también los que no
+   * reservan (el correo). Una reserva que graba esa cuenta en la orden (hoy, hoteles de TBO) no
+   * retiene de ninguna cartera (decisión del founder del 2026-09-30): la web decide con qué
+   * proveedores vale y deja de avisar que falta una. Sólo códigos, sin cuentas ni credenciales.
+   */
+  ownProviderAccounts: string[];
 }
 
 /** Lo que una reserva retenida admite desde la cartera. */
@@ -65,13 +73,18 @@ interface BookingActionCapabilities {
 
 export type { BookingHoldRelease } from './booking-hold.ledger.js';
 
-const HOLD_BEFORE_BOOK_NOTES = 'Retención de saldo antes de reservar con el proveedor';
-const HOLD_CONFIRMED_NOTES = 'Retención preventiva de saldo por reserva pendiente de emisión';
-
-interface HeldOnWallet {
-  portfolio: PortfolioRow;
-  transaction: PortfolioTransactionRow;
-}
+/**
+ * Lo que dejó una retención: la cartera del nodo que vende y su asiento, o nada si la reserva es con
+ * la cuenta propia del nodo (O = T; decisión del founder del 2026-09-30, opción B): no se retuvo en
+ * ninguna cartera y no hizo falta tener una en esa moneda.
+ */
+export type BookingHoldOutcome =
+  | {
+      readonly status: 'held';
+      readonly portfolio: PortfolioRow;
+      readonly transaction: PortfolioTransactionRow;
+    }
+  | { readonly status: 'own-account' };
 
 export interface HoldBookingExpectations {
   /**
@@ -82,6 +95,11 @@ export interface HoldBookingExpectations {
   /** Misma regla que `amountMinor`: nunca selecciona la moneda que se carga. */
   readonly currency?: string;
 }
+
+const CONFIRMED_ONLY = 'Sólo una reserva confirmada y no emitida puede retener saldo de cartera.';
+const OPEN_INTENT_ONLY =
+  'Sólo una reserva abierta, antes de enviarse al proveedor, puede retener saldo de cartera.';
+const ALREADY_HELD = 'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.';
 
 function normalizeCurrency(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -105,22 +123,11 @@ function holdAmount(amount: Money): Money {
   return { amountMinor: amount.amountMinor, currency };
 }
 
-function holdRejection(reason: BookingHoldRejection, amount: Money): BookingHoldRejectedError {
-  return new BookingHoldRejectedError(reason, { amountCurrency: amount.currency });
-}
-
-/** Lo que la decisión necesita de la cartera de la agencia en la moneda de la reserva. */
-function holdFacts(portfolio: PortfolioRow | undefined, amount: Money): BookingHoldFacts {
-  if (portfolio === undefined) return { amount, portfolio: null };
-  return {
-    amount,
-    portfolio: {
-      balanceMinor: Number(portfolio.balance_minor),
-      creditLimitMinor: Number(portfolio.credit_limit_minor),
-      currency: normalizeCurrency(portfolio.currency) ?? '',
-      status: portfolio.status,
-    },
-  };
+/** Lo que la orden dice, leído con la fila bloqueada, para validar antes de retener. */
+interface LockedOrder {
+  readonly id: string;
+  readonly amountMinor: number;
+  readonly currency: string;
 }
 
 /** Un depósito informado anterior con la misma Idempotency-Key, para comparar con el reenvío. */
@@ -137,6 +144,7 @@ interface PriorDepositReport {
 @Injectable()
 export class PortfoliosService {
   private readonly holds: BookingHoldLedger;
+  private readonly walletHolds: WalletHoldStore;
 
   constructor(
     private readonly db: DatabaseService,
@@ -144,16 +152,18 @@ export class PortfoliosService {
     private readonly orders: OrdersService,
     private readonly hotelProviders: HotelProviderRegistry,
   ) {
-    // Se construye acá y no se inyecta, como el intent de `OrdersService`: comparte la base y la
+    // Se construyen acá y no se inyectan, como el intent de `OrdersService`: comparten la base y la
     // firma pública del servicio no cambia.
     this.holds = new BookingHoldLedger(db);
+    this.walletHolds = new WalletHoldStore(db);
   }
 
   // ─────────────────────── Lo que ve y hace la agencia (Cartera B2B) ───────────────────────
 
   /**
-   * Las carteras de la agencia, una por moneda, y quién la financia. Sólo lee: una agencia sin
-   * carteras no tiene ninguna hasta que quien la financia le habilite una moneda.
+   * Las carteras de la agencia, una por moneda, quién la financia y con qué proveedores reserva con
+   * su cuenta propia (esas reservas no retienen). Sólo lee: una agencia sin carteras no tiene
+   * ninguna hasta que quien la financia le habilite una moneda.
    */
   async overview(tenantId: string): Promise<AgencyWalletsView> {
     return this.db.withTenant(tenantId, async (trx) => {
@@ -162,17 +172,42 @@ export class PortfoliosService {
       const financier = await sql<{ id: string; name: string }>`
         SELECT f.id, f.name FROM tenants f WHERE f.id = tenant_financier_id(${tenantId}::uuid)
       `.execute(trx);
+      // La RLS de provider_accounts deja ver sólo las del tenant: nunca las de un ancestro.
+      const own = await trx
+        .selectFrom('provider_accounts')
+        .select('provider_code')
+        .distinct()
+        .where('tenant_id', '=', tenantId)
+        .where('status', '=', 'active')
+        .orderBy('provider_code')
+        .execute();
       const row = financier.rows[0];
       return {
         portfolios: wallets.map(walletView),
         financier: row === undefined ? null : { tenantId: row.id, name: row.name },
+        ownProviderAccounts: own.map((a) => a.provider_code),
       };
     });
   }
 
-  /** Los movimientos de las carteras de la agencia, o de la de una moneda. */
-  async listTransactions(tenantId: string, currency?: string): Promise<WalletMovementView[]> {
-    return this.db.withTenant(tenantId, (trx) => listMovements(trx, tenantId, currency));
+  /**
+   * Los movimientos de las carteras de la agencia, o de la de una moneda. Los datos de las reservas
+   * de la red (agencia de origen, número) sólo con `includeNetwork`, para quien administra el nodo.
+   */
+  async listTransactions(
+    tenantId: string,
+    currency?: string,
+    options: MovementsOptions = { includeNetwork: false },
+  ): Promise<WalletMovementView[]> {
+    return this.db.withTenant(tenantId, (trx) => listMovements(trx, tenantId, currency, options));
+  }
+
+  /**
+   * Lo que la red del nodo tiene retenido o cobrado en sus carteras, al costo de su nivel
+   * (`NETWORK_HOLD`, 0060). Sin vendedores, pasajeros ni precio de venta.
+   */
+  async listNetworkHolds(tenantId: string, query: NetworkHoldsQuery): Promise<NetworkHoldsView> {
+    return this.db.withTenant(tenantId, (trx) => listNetworkHolds(trx, tenantId, query));
   }
 
   /** Los depósitos que informó la agencia, pendientes y resueltos. */
@@ -287,268 +322,260 @@ export class PortfoliosService {
   /**
    * Retiene el total de una reserva ya confirmada y no emitida (vuelos y autos, `POST
    * /portfolios/hold-booking`), con las mismas reglas que la retención previa al Book de un hotel:
-   * la cartera de la moneda de la orden, activa, y su saldo más el cupo que fija quien financia.
+   * la cartera de la moneda de la orden, activa, y su saldo más el cupo que fija quien financia; y,
+   * desde 0060, la cartera de cada nivel de su red hasta el dueño de la credencial (vuelos y autos no
+   * guardan la cuenta en la orden: la base toma la que la bóveda le resuelve al nodo para el
+   * proveedor, o la raíz con credenciales de entorno). La retención nace cobrada: la reserva ya
+   * existe. Como la orden no guarda con qué cuenta se reservó, la del propio nodo que hoy le resuelve
+   * la bóveda no la exime: retiene en su cartera, como antes de 0060. Sólo la plataforma, dueña de
+   * todo lo que se le resuelve, queda sin retener (`own-account`).
    *
-   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   * @throws BookingHoldRejectedError si la cartera propia o la de un nivel de la red no alcanza.
    * @throws BadRequestException si la orden no es una reserva confirmada de este tenant, o no dice
    *   lo que el cliente esperaba.
    * @throws ConflictException si la orden ya tiene una retención.
+   * @throws PortfolioHoldBusyError si la red siguió contenida después de los reintentos.
    */
   async holdBooking(
     tenantId: string,
     orderId: string,
     createdBy: string,
     expected: HoldBookingExpectations = {},
-  ): Promise<HeldOnWallet> {
+  ): Promise<BookingHoldOutcome> {
+    let currency: string | undefined;
     try {
-      return await this.db.withTenant(tenantId, async (trx) => {
+      return await this.walletHolds.run(tenantId, async (trx) => {
         // La orden, su monto y su moneda se leen bajo el tenant y dentro de la MISMA transacción
         // que toma el hold. Ningún campo financiero del request participa en el débito.
-        const order = await trx
-          .selectFrom('orders')
-          .select(['id', 'status', 'total_amount', 'currency'])
-          .where('id', '=', orderId)
-          .where('tenant_id', '=', tenantId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!order) {
-          throw new BadRequestException(
-            'No se encontró la reserva. No se modificó el saldo de la cartera.',
-          );
-        }
-        if (order.status !== 'confirmed') {
-          throw new BadRequestException(
-            'Sólo una reserva confirmada y no emitida puede retener saldo de cartera.',
-          );
-        }
-
-        const amountMinor = Number(order.total_amount);
-        const orderCurrency = normalizeCurrency(order.currency);
-        if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !orderCurrency) {
-          throw new BadRequestException(
-            'La reserva no tiene un total y una moneda válidos para crear la retención.',
-          );
-        }
+        const order = await this.lockOrder(trx, tenantId, orderId, (row) =>
+          row.status === 'confirmed' ? undefined : CONFIRMED_ONLY,
+        );
+        currency = order.currency;
 
         // Los valores opcionales del cliente son un control optimista, no una fuente de verdad.
-        if (expected.amountMinor !== undefined && expected.amountMinor !== amountMinor) {
+        if (expected.amountMinor !== undefined && expected.amountMinor !== order.amountMinor) {
           throw new BadRequestException(
             'El total de la reserva cambió. Actualice la reserva antes de retener saldo.',
           );
         }
         if (expected.currency !== undefined) {
           const expectedCurrency = normalizeCurrency(expected.currency);
-          if (!expectedCurrency || expectedCurrency !== orderCurrency) {
+          if (!expectedCurrency || expectedCurrency !== order.currency) {
             throw new BadRequestException(
               'La moneda de la reserva cambió. Actualice la reserva antes de retener saldo.',
             );
           }
         }
 
-        // `order.id` y no `orderId`: PostgreSQL lo devuelve en su forma canónica, y el asiento no
-        // guarda el casing que llegó por HTTP.
-        return this.retainOnWallet(
-          trx,
-          tenantId,
-          order.id,
-          { amountMinor, currency: orderCurrency },
-          createdBy,
-          HOLD_CONFIRMED_NOTES,
-        );
+        return this.retainOnWallets(trx, tenantId, order, createdBy);
       });
     } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ConflictException(
-          'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.',
-        );
-      }
-      throw error;
+      throw await this.holdFailure(tenantId, orderId, error, currency, CONFIRMED_ONLY);
     }
   }
 
   // ─────────────── Retención antes de reservar (docs/tbo/08 RF-23; D-TBO-21 A) ───────────────
 
   /**
-   * ¿Alcanza la cartera de la moneda de `amount` para retenerlo? Lee sin bloquear y ANTES de abrir
-   * la orden, para que una agencia sin cartera en esa moneda, sin saldo o sin cupo no llegue a
-   * llamar al proveedor (RF-23 CA-1). No reemplaza a {@link holdBookingIntent}, que vuelve a decidir
-   * con la cartera bloqueada.
+   * ¿Alcanzan la cartera del nodo en la moneda de la tarifa y las de su red para retener la venta?
+   * Lee sin bloquear y ANTES de llamar al proveedor, para que una agencia sin cartera en esa
+   * moneda, sin saldo ni cupo, o con un nivel de su red que no la cubre, no llegue a llamarlo
+   * (RF-23 CA-1). No reemplaza a {@link holdBookingIntent}, que vuelve a decidir con las carteras
+   * bloqueadas. Si la base no puede evaluarlo (una cuenta que ya no se resuelve), sigue: decide la
+   * reserva. Con la cuenta propia del nodo no hay nada que cubrir: sigue sin mirar carteras.
+   *
+   * Con `reportOrderId` (la orden ya abierta), un rechazo de la red deja el aviso al nivel que
+   * bloqueó (`portfolio.network_hold.blocked`).
    *
    * @throws BookingHoldRejectedError si no alcanza.
    */
-  async assertBookingHoldAffordable(tenantId: string, amount: Money): Promise<void> {
-    const target = holdAmount(amount);
-    const decision = await this.readHoldDecision(tenantId, target);
-    if (!decision.ok) throw holdRejection(decision.reason, target);
+  async assertBookingHoldAffordable(
+    tenantId: string,
+    quote: BookingHoldQuote,
+    opts: { readonly reportOrderId?: string } = {},
+  ): Promise<void> {
+    const preview = await this.previewBookingHold(tenantId, quote);
+    if (preview?.status !== 'blocked') return;
+    if (isNetworkRejection(preview.reason) && opts.reportOrderId !== undefined) {
+      await this.walletHolds.reportBlock(tenantId, opts.reportOrderId);
+    }
+    throw new BookingHoldRejectedError(preview.reason, { amountCurrency: preview.currency });
   }
 
   /**
    * El aviso del PreBook: la misma decisión que {@link assertBookingHoldAffordable}, devuelta en vez
-   * de lanzada, para que el vendedor sepa ANTES de cargar huéspedes que la agencia no tiene cartera
-   * en la moneda de la tarifa, que está suspendida o que no le alcanza. Sólo lee y no promete nada:
-   * la reserva vuelve a decidir con la cartera bloqueada.
+   * de lanzada, para que el vendedor sepa ANTES de cargar huéspedes que la agencia o su red no
+   * pueden retener la tarifa. Sólo lee y no promete nada: la reserva vuelve a decidir con las
+   * carteras bloqueadas. `undefined` si la base no lo puede evaluar; `own-account` si se reserva con
+   * la cuenta propia del nodo, que no retiene nada (la web no avisa nada por la cartera).
+   *
+   * Con `reportNetworkBlock` (el PreBook), un bloqueo de la red deja además el aviso al nivel que
+   * bloquea, sin orden: la web frena al vendedor acá y el Book, que lo avisaría, no llega a correr.
    */
-  async previewBookingHold(tenantId: string, amount: Money): Promise<BookingHoldPreview> {
-    const target = holdAmount(amount);
-    const decision = await this.readHoldDecision(tenantId, target);
-    if (decision.ok) return { status: 'ok', currency: target.currency };
+  async previewBookingHold(
+    tenantId: string,
+    quote: BookingHoldQuote,
+    opts: { readonly reportNetworkBlock?: boolean } = {},
+  ): Promise<BookingHoldPreview | undefined> {
+    const amount = holdAmount(quote.amount);
+    const decision = await this.db.withTenant(tenantId, (trx) =>
+      this.walletHolds.preview(trx, { ...quote, amount }),
+    );
+    if (decision === undefined) return undefined;
+    if (decision.status === 'ok') return { status: 'ok', currency: amount.currency };
+    if (decision.status === 'exempt') return { status: 'own-account', currency: amount.currency };
+    if (opts.reportNetworkBlock === true && isNetworkRejection(decision.reason)) {
+      await this.walletHolds.reportPreviewBlock(tenantId, { ...quote, amount });
+    }
     return {
       status: 'blocked',
-      currency: target.currency,
+      currency: amount.currency,
       reason: decision.reason,
-      message: bookingHoldMessage(decision.reason, target.currency),
+      message: bookingHoldMessage(decision.reason, amount.currency),
     };
-  }
-
-  /** La decisión sobre la cartera de la moneda de `target`, leída sin bloquearla. */
-  private async readHoldDecision(tenantId: string, target: Money): Promise<BookingHoldDecision> {
-    return this.db.withTenant(tenantId, async (trx) =>
-      decideBookingHold(holdFacts(await findWallet(trx, tenantId, target.currency), target)),
-    );
   }
 
   /**
    * Retiene el precio de venta sobre la orden ABIERTA, antes de llamar al proveedor (RF-23;
-   * D-TBO-21 A). Es la retención de {@link holdBooking} —mismo asiento `BOOKING_HOLD`, mismo índice
-   * único por orden, mismo débito—, sobre el intent en vez de sobre una reserva confirmada: con un
+   * D-TBO-21 A), en la cartera del nodo y en la de cada nivel de su red hasta el dueño de la
+   * credencial (0060). Es la retención de {@link holdBooking} —mismo asiento `BOOKING_HOLD` en la
+   * cartera propia, mismo débito—, sobre el intent en vez de sobre una reserva confirmada: con un
    * proveedor que cobra al crédito de una cuenta, la plata tiene que estar comprometida cuando sale
    * la reserva, no después.
    *
    * El monto y la moneda se leen de la orden bajo el tenant y en la misma transacción; `expected` es
-   * sólo el control de que la saga retiene lo que cree. La cartera se bloquea ANTES de decidir, así
-   * que dos reservas de la misma agencia no gastan el mismo saldo.
+   * sólo el control de que la saga retiene lo que cree. Las carteras se bloquean ANTES de decidir
+   * (la propia primero, después la red por nivel), así que dos reservas no gastan el mismo saldo.
+   * Con la cuenta propia del nodo (la de la orden) no se retiene nada: `own-account`, y la reserva
+   * sigue aunque el nodo no tenga cartera en esa moneda.
    *
-   * @throws BookingHoldRejectedError si no hay cartera en esa moneda o no alcanza.
+   * @throws BookingHoldRejectedError si la cartera propia o la de un nivel de la red no alcanza.
    * @throws BadRequestException si la orden no es un intent abierto de este tenant.
    * @throws ConflictException si la orden ya tiene una retención.
+   * @throws PortfolioHoldAccountChangedError si la cuenta de la orden ya no se resuelve.
+   * @throws PortfolioHoldBusyError si la red siguió contenida después de los reintentos.
    */
   async holdBookingIntent(
     tenantId: string,
     orderId: string,
     createdBy: string,
     expected: Money,
-  ): Promise<HeldOnWallet> {
+  ): Promise<BookingHoldOutcome> {
     const target = holdAmount(expected);
     try {
-      return await this.db.withTenant(tenantId, async (trx) => {
-        const order = await trx
-          .selectFrom('orders')
-          .select([
-            'id',
-            'status',
-            'total_amount',
-            'currency',
-            'provider_raw',
-            'create_request_key',
-          ])
-          .where('id', '=', orderId)
-          .where('tenant_id', '=', tenantId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!order) {
-          throw new BadRequestException(
-            'No se encontró la reserva. No se modificó el saldo de la cartera.',
-          );
-        }
+      return await this.walletHolds.run(tenantId, async (trx) => {
         // Una orden con desenlace ya lo tiene, y una sin clave no es una creación en curso.
-        if (
-          order.status !== 'pending' ||
-          order.provider_raw !== null ||
-          order.create_request_key === null
-        ) {
-          throw new BadRequestException(
-            'Sólo una reserva abierta, antes de enviarse al proveedor, puede retener saldo de cartera.',
-          );
-        }
-
-        const amountMinor = Number(order.total_amount);
-        const orderCurrency = normalizeCurrency(order.currency);
-        if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !orderCurrency) {
-          throw new BadRequestException(
-            'La reserva no tiene un total y una moneda válidos para crear la retención.',
-          );
-        }
-        if (amountMinor !== target.amountMinor || orderCurrency !== target.currency) {
+        const order = await this.lockOrder(trx, tenantId, orderId, (row) =>
+          row.status !== 'pending' || row.provider_raw !== null || row.create_request_key === null
+            ? OPEN_INTENT_ONLY
+            : undefined,
+        );
+        if (order.amountMinor !== target.amountMinor || order.currency !== target.currency) {
           throw new BadRequestException(
             'El total de la reserva cambió. No se retuvo saldo de la cartera.',
           );
         }
-
-        return this.retainOnWallet(
-          trx,
-          tenantId,
-          order.id,
-          target,
-          createdBy,
-          HOLD_BEFORE_BOOK_NOTES,
-        );
+        return this.retainOnWallets(trx, tenantId, order, createdBy);
       });
     } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ConflictException(
-          'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.',
-        );
-      }
-      throw error;
+      throw await this.holdFailure(tenantId, orderId, error, target.currency, OPEN_INTENT_ONLY);
     }
   }
 
   /**
-   * El asiento `BOOKING_HOLD` y el débito, dentro de la transacción que ya bloqueó la orden. Una
-   * cartera por moneda: se usa la de la moneda de la reserva, nunca otra, y sin ella no se abre una
-   * implícita. La cartera se bloquea ANTES de decidir, así que dos reservas de la misma agencia no
-   * gastan el mismo saldo. El índice único por orden (0039) frena una segunda retención con 23505,
-   * que traduce quien llama.
-   *
-   * @throws BookingHoldRejectedError sin cartera en esa moneda, suspendida o sin saldo ni cupo.
+   * La orden del tenant, bloqueada, con su total y su moneda validados. `refuse` dice por qué su
+   * estado no admite la retención de esa vía.
    */
-  private async retainOnWallet(
+  private async lockOrder(
     trx: Transaction<DB>,
     tenantId: string,
     orderId: string,
-    target: Money,
-    createdBy: string,
-    notes: string,
-  ): Promise<HeldOnWallet> {
-    const portfolio = await findWallet(trx, tenantId, target.currency, { forUpdate: true });
-    if (!portfolio) throw holdRejection('PORTFOLIO_CURRENCY_NOT_ENABLED', target);
-    const decision = decideBookingHold(holdFacts(portfolio, target));
-    if (!decision.ok) throw holdRejection(decision.reason, target);
-
-    const transaction = await trx
-      .insertInto('portfolio_transactions')
-      .values({
-        portfolio_id: portfolio.id,
-        amount_minor: -target.amountMinor,
-        transaction_type: 'BOOKING_HOLD',
-        reference_id: orderId,
-        notes,
-        created_by: createdBy,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    // La fila está bloqueada y la decisión ya se tomó; el predicado repite el cupo por si otra ruta
-    // escribió el saldo sin tomar el mismo bloqueo.
-    const updatedPortfolio = await trx
-      .updateTable('agency_portfolios')
-      .set({ balance_minor: sql<number>`balance_minor - ${target.amountMinor}` })
-      .where('id', '=', portfolio.id)
-      .where('status', '=', 'active')
-      .where(
-        sql<boolean>`balance_minor::numeric + ${decision.creditMinor} >= ${target.amountMinor}`,
-      )
-      .where(
-        sql<boolean>`balance_minor::numeric - ${target.amountMinor} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-      )
-      .returningAll()
+    refuse: (row: {
+      status: string;
+      provider_raw: unknown;
+      create_request_key: string | null;
+    }) => string | undefined,
+  ): Promise<LockedOrder> {
+    const order = await trx
+      .selectFrom('orders')
+      .select(['id', 'status', 'total_amount', 'currency', 'provider_raw', 'create_request_key'])
+      .where('id', '=', orderId)
+      .where('tenant_id', '=', tenantId)
+      .forUpdate()
       .executeTakeFirst();
-    if (!updatedPortfolio) throw holdRejection('PORTFOLIO_FUNDS_INSUFFICIENT', target);
+    if (!order) {
+      throw new BadRequestException(
+        'No se encontró la reserva. No se modificó el saldo de la cartera.',
+      );
+    }
+    const refused = refuse(order);
+    if (refused !== undefined) throw new BadRequestException(refused);
 
+    const amountMinor = Number(order.total_amount);
+    const currency = normalizeCurrency(order.currency);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !currency) {
+      throw new BadRequestException(
+        'La reserva no tiene un total y una moneda válidos para crear la retención.',
+      );
+    }
+    // `order.id` y no `orderId`: PostgreSQL lo devuelve en su forma canónica.
+    return { id: order.id, amountMinor, currency };
+  }
+
+  /**
+   * La retención por `wallet_hold_retain`, dentro de la transacción que ya bloqueó la orden, y lo
+   * que quedó en la cartera propia. La base decide la cadena, los montos, el orden de los bloqueos y
+   * si la cuenta es la propia del nodo (entonces no retiene nada); la respuesta sólo lleva datos del
+   * nodo que vende.
+   */
+  private async retainOnWallets(
+    trx: Transaction<DB>,
+    tenantId: string,
+    order: LockedOrder,
+    createdBy: string,
+  ): Promise<BookingHoldOutcome> {
+    const retained = await this.walletHolds.retain(trx, order.id, createdBy);
+    if (retained.status === 'exempt') return { status: 'own-account' };
+    const portfolio = await trx
+      .selectFrom('agency_portfolios')
+      .selectAll()
+      .where('id', '=', retained.ownPortfolioId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    const transaction = await trx
+      .selectFrom('portfolio_transactions')
+      .selectAll()
+      .where('id', '=', retained.ownTransactionId)
+      .where('portfolio_id', '=', retained.ownPortfolioId)
+      .executeTakeFirst();
+    if (!portfolio || !transaction) {
+      throw new Error('la retención propia no se puede leer después de escribirla');
+    }
     return {
-      portfolio: updatedPortfolio as unknown as PortfolioRow,
+      status: 'held',
+      portfolio: portfolio as unknown as PortfolioRow,
       transaction: transaction as unknown as PortfolioTransactionRow,
     };
+  }
+
+  /**
+   * El error HTTP de una retención que no se hizo. Un rechazo de la red deja, además, el aviso al
+   * nivel que bloqueó, en su propia transacción (la de la retención ya se revirtió).
+   */
+  private async holdFailure(
+    tenantId: string,
+    orderId: string,
+    error: unknown,
+    currency: string | undefined,
+    notHoldableMessage: string,
+  ): Promise<unknown> {
+    // El índice de 0039 frena una segunda retención que se colara por otra ruta.
+    if (isUniqueViolation(error)) return new ConflictException(ALREADY_HELD);
+    const translated = translateWalletHoldError(error, currency, notHoldableMessage) ?? error;
+    if (translated instanceof BookingHoldRejectedError && isNetworkRejection(translated.reason)) {
+      await this.walletHolds.reportBlock(tenantId, orderId);
+    }
+    return translated;
   }
 
   /**
@@ -660,11 +687,13 @@ export class PortfoliosService {
       }
     }
 
-    await this.holds.release(
+    // Libera todos los niveles de la red de una vez, sobre lo que se retuvo. Si la cancelación de
+    // arriba ya lo hizo (un vuelo), devuelve `already-released` sin acreditar otra vez.
+    await this.holds.settleExpected(
       tenantId,
-      booking,
+      orderId,
       actorUserId ?? booking.hold.createdBy,
-      failed ? RELEASE_AFTER_FAILURE_NOTES : RELEASE_AFTER_CANCEL_NOTES,
+      failed ? 'failed' : 'cancelled',
     );
 
     return {

@@ -12,6 +12,7 @@ import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.ser
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { ORDER_EVENTS } from '../orders/order-events.js';
+import { WalletHoldStateConflictError } from '../portfolios/booking-hold.js';
 import {
   StubHotelAdapter,
   StubHotelProviderFactory,
@@ -24,6 +25,7 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
   MemoryReconciliationBank,
   emptyTracking,
+  type MemoryAccount,
   type MemoryOrder,
 } from './__fixtures__/memory-reconciliation.js';
 import {
@@ -165,7 +167,12 @@ function orden(extra: Partial<MemoryOrder> & Pick<MemoryOrder, 'tenantId'>): Mem
 
 function banco(
   orders: MemoryOrder[],
-  opts: { queueAccepts?: boolean; flags?: ProviderFlagsPort } = {},
+  opts: {
+    queueAccepts?: boolean;
+    flags?: ProviderFlagsPort;
+    /** Cuentas además de las dos activas de siempre (p. ej. una ya desactivada). */
+    accounts?: MemoryAccount[];
+  } = {},
 ) {
   const mem = new MemoryReconciliationBank(
     [
@@ -179,6 +186,7 @@ function banco(
     [
       { id: CUENTA, tenantId: CONSOLIDADOR, providerCode: PROVEEDOR, active: true },
       { id: CUENTA_AJENA, tenantId: OTRO, providerCode: PROVEEDOR, active: true },
+      ...(opts.accounts ?? []),
     ],
   );
   const proveedor = new Proveedor();
@@ -919,6 +927,243 @@ describe('R3, R4 y R7 se confirman leyendo la reserva antes de tocar nada (PV-33
     expect(b.mem.holdsReleased).toEqual([{ tenantId: AGENCIA_A, orderId: o.id, as: 'cancelled' }]);
     // Cerrada, el paso que quedaba de la verificación de la cancelación ya no se ejecuta.
     expect(b.mem.trackingOf(o.id).cancelNextAt).toBeNull();
+  });
+});
+
+describe('R-W: las retenciones de cartera desalineadas se cierran al terminar la corrida (0060)', () => {
+  const VENDEDOR = '50000000-0000-4000-8000-000000000005';
+
+  /** Una orden de la cuenta sin fila en el listado: la corrida no la toca, sólo su retención. */
+  function red(extra: { status: MemoryOrder['status']; hold: 'held' | 'captured' }) {
+    const o = orden({ tenantId: AGENCIA_A, status: extra.status, checkout: '2026-01-01' });
+    const ajena = orden({
+      tenantId: AGENCIA_AJENA,
+      accountId: CUENTA_AJENA,
+      status: 'failed',
+      checkout: '2026-01-01',
+    });
+    const b = banco([o, ajena]);
+    b.mem.holdGroups.push(
+      { orderId: o.id, status: extra.hold, createdBy: VENDEDOR },
+      { orderId: ajena.id, status: 'held', createdBy: VENDEDOR },
+    );
+    return { b, o, ajena };
+  }
+
+  /** Un intent incierto que R5 cierra como fallido, con su prueba de la misma cuenta. */
+  function intentQueR5Cierra() {
+    const prueba = orden({ tenantId: AGENCIA_B, providerOrderId: 'LOCOK1' });
+    const intent = orden({
+      tenantId: AGENCIA_A,
+      status: 'pending',
+      providerOrderId: null,
+      providerRawNull: true,
+      createdAt: Date.parse('2026-09-24T15:00:00Z'),
+      createRequestKey: 'idem-intent',
+    });
+    const b = banco([prueba, intent]);
+    b.mem.tracking.set(intent.id, emptyTracking({ subStatus: 'create-not-found-yet' }));
+    b.adapter.filas = [fila('LOCOK1', { bookingReference: prueba.bookingReference! })];
+    return { b, intent };
+  }
+
+  it('una retención abierta con la orden `failed` se libera en todos sus niveles, firmada por quien retuvo', async () => {
+    const { b, o, ajena } = red({ status: 'failed', hold: 'held' });
+
+    const report = await correr(b);
+
+    expect(report.status).toBe('completed');
+    expect(b.mem.holdSettles).toEqual([
+      { tenantId: AGENCIA_A, orderId: o.id, actor: VENDEDOR, outcome: 'released' },
+    ]);
+    expect(report.holds).toEqual({ released: 1 });
+    expect(b.mem.runs[0]?.summary).toMatchObject({ holds: { released: 1 } });
+    // La de otra red, con otra cuenta, no es de esta corrida.
+    expect(b.mem.holdGroups.find((g) => g.orderId === ajena.id)?.status).toBe('held');
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toEqual([]);
+  });
+
+  it('una retenida con la orden ya confirmada se captura', async () => {
+    const { b } = red({ status: 'confirmed', hold: 'held' });
+
+    const report = await correr(b);
+
+    expect(report.holds).toEqual({ captured: 1 });
+    expect(b.mem.holdGroups[0]?.status).toBe('captured');
+  });
+
+  it('una corrida pedida por una persona firma con esa persona', async () => {
+    const { b, o } = red({ status: 'cancelled', hold: 'captured' });
+
+    await b.service.reconcileAccount({
+      ownerTenantId: CONSOLIDADOR,
+      accountId: CUENTA,
+      providerCode: PROVEEDOR,
+      trigger: 'forced',
+      requestedBy: OPERADOR,
+      now: NOW,
+    });
+
+    expect(b.mem.holdSettles).toEqual([
+      { tenantId: AGENCIA_A, orderId: o.id, actor: OPERADOR, outcome: 'released' },
+    ]);
+  });
+
+  it('una cobrada con la orden `failed` queda en conflicto y se escala en la orden, sin datos de nadie', async () => {
+    const { b, o } = red({ status: 'failed', hold: 'captured' });
+
+    const report = await correr(b);
+
+    expect(report.holds).toEqual({ conflict: 1 });
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toEqual([
+      {
+        eventType: ORDER_EVENTS.escalated,
+        tenantId: AGENCIA_A,
+        actorUserId: VENDEDOR,
+        aggregateType: 'order',
+        aggregateId: o.id,
+        payload: {
+          provider: PROVEEDOR,
+          vertical: 'hotels',
+          source: 'reconciliation',
+          runId: report.runId,
+          reason: 'portfolio-hold-state-conflict',
+          queued: false,
+        },
+      },
+    ]);
+    expect(b.audit.dump()).not.toMatch(new RegExp(PII.join('|')));
+  });
+
+  it('si el cierre falla se escala y la corrida termina igual', async () => {
+    const { b, o } = red({ status: 'failed', hold: 'held' });
+    b.mem.holdFailure = new Error('base caída');
+
+    const report = await correr(b);
+
+    expect(report.status).toBe('completed');
+    expect(report.holds).toEqual({ error: 1 });
+    expect(b.audit.first(ORDER_EVENTS.escalated)).toMatchObject({
+      tenantId: AGENCIA_A,
+      aggregateId: o.id,
+      payload: { reason: 'portfolio-hold-release-failed', errorName: 'Error' },
+    });
+  });
+
+  it('si no se pueden listar en un tenant, se cuenta y sigue con los demás', async () => {
+    const { b } = red({ status: 'failed', hold: 'held' });
+    b.mem.holdListFailure = new Error('base caída');
+
+    const report = await correr(b);
+
+    expect(report.status).toBe('completed');
+    // Uno por tenant de la red del dueño: el consolidador y sus dos agencias.
+    expect(report.holds).toEqual({ error: 3 });
+    expect(b.mem.holdSettles).toEqual([]);
+  });
+
+  it('aunque el proveedor no responda: son sólo de la base', async () => {
+    const { b, o } = red({ status: 'failed', hold: 'held' });
+    b.adapter.falla = new Error('proveedor caído');
+
+    const report = await correr(b);
+
+    expect(report.status).toBe('failed');
+    expect(report.holds).toEqual({ released: 1 });
+    expect(b.mem.runs[0]?.summary).toMatchObject({ holds: { released: 1 } });
+    expect(b.mem.holdSettles[0]?.orderId).toBe(o.id);
+  });
+
+  it('sin retenciones desalineadas no aparece nada en el informe', async () => {
+    const { b } = red({ status: 'confirmed', hold: 'captured' });
+
+    const report = await correr(b);
+
+    expect(report).not.toHaveProperty('holds');
+    expect(b.mem.runs[0]?.summary).not.toHaveProperty('holds');
+  });
+
+  it('lo que la corrida cerró recién (R5) ya liberó su retención: R-W no la vuelve a tocar', async () => {
+    const { b, intent } = intentQueR5Cierra();
+    b.mem.holdGroups.push({ orderId: intent.id, status: 'held', createdBy: VENDEDOR });
+
+    const report = await correr(b);
+
+    expect(b.mem.holdsReleased).toEqual([
+      { tenantId: AGENCIA_A, orderId: intent.id, as: 'failed' },
+    ]);
+    expect(b.mem.holdSettles).toEqual([]);
+    expect(report).not.toHaveProperty('holds');
+  });
+
+  it('aunque la cuenta no se pueda usar (incompleta, no permitida): la red sale de la base', async () => {
+    const { b, o } = red({ status: 'failed', hold: 'held' });
+    vi.spyOn(b.proveedor, 'resolveForAccount').mockRejectedValue(
+      new NotFoundException('la cuenta no se resuelve'),
+    );
+
+    const report = await correr(b);
+
+    expect(report.status).toBe('failed');
+    expect(report.holds).toEqual({ released: 1 });
+    expect(b.mem.holdSettles.map((x) => x.orderId)).toEqual([o.id]);
+  });
+
+  it('las hechas con una cuenta del dueño que ya no está activa las cierra la corrida de la vigente', async () => {
+    const VIEJA = '10000000-0000-4000-8000-0000000000f0';
+    const VIEJA_AJENA = '20000000-0000-4000-8000-0000000000f0';
+    const conVieja = orden({
+      tenantId: AGENCIA_B,
+      accountId: VIEJA,
+      status: 'cancelled',
+      checkout: '2026-01-01',
+    });
+    const ajenaVieja = orden({
+      tenantId: AGENCIA_AJENA,
+      accountId: VIEJA_AJENA,
+      status: 'failed',
+      checkout: '2026-01-01',
+    });
+    const b = banco([conVieja, ajenaVieja], {
+      accounts: [
+        { id: VIEJA, tenantId: CONSOLIDADOR, providerCode: PROVEEDOR, active: false },
+        { id: VIEJA_AJENA, tenantId: OTRO, providerCode: PROVEEDOR, active: false },
+      ],
+    });
+    b.mem.holdGroups.push(
+      { orderId: conVieja.id, status: 'captured', createdBy: VENDEDOR },
+      { orderId: ajenaVieja.id, status: 'held', createdBy: VENDEDOR },
+    );
+
+    const report = await correr(b);
+
+    expect(report.holds).toEqual({ released: 1 });
+    expect(b.mem.holdSettles).toEqual([
+      { tenantId: AGENCIA_B, orderId: conVieja.id, actor: VENDEDOR, outcome: 'released' },
+    ]);
+    // La cuenta retirada de otro dueño no es de esta corrida.
+    expect(b.mem.holdGroups.find((g) => g.orderId === ajenaVieja.id)?.status).toBe('held');
+  });
+
+  it('si no se pueden listar las cuentas retiradas, cierra las de la cuenta vigente y lo cuenta', async () => {
+    const { b, o } = red({ status: 'failed', hold: 'held' });
+    b.mem.inactiveAccountsFailure = new Error('base caída');
+
+    const report = await correr(b);
+
+    expect(report.holds).toEqual({ error: 1, released: 1 });
+    expect(b.mem.holdSettles.map((x) => x.orderId)).toEqual([o.id]);
+  });
+
+  it('una liberación de R5 que encuentra la retención en conflicto se escala como conflicto', async () => {
+    const { b } = intentQueR5Cierra();
+    b.mem.holdFailure = new WalletHoldStateConflictError();
+
+    await correr(b);
+
+    expect(b.audit.first(ORDER_EVENTS.escalated)?.payload).toMatchObject({
+      reason: 'portfolio-hold-state-conflict',
+    });
   });
 });
 

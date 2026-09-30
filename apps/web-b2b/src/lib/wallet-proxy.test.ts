@@ -136,6 +136,34 @@ describe('walletFinancingPlan — lo que manda quien financia', () => {
     ).toMatchObject({ ok: false, status: 400 });
   });
 
+  it('lee las reservas de la red del nodo, por moneda y por estado (0060)', () => {
+    expect(walletFinancingPlan(NODE, req('GET', ['network-holds']))).toEqual({
+      ok: true,
+      method: 'GET',
+      path: `${base}/network-holds`,
+    });
+    expect(
+      walletFinancingPlan(
+        NODE,
+        req('GET', ['network-holds'], undefined, { search: 'currency=USD&status=conflict' }),
+      ),
+    ).toMatchObject({ ok: true, path: `${base}/network-holds?currency=USD&status=conflict` });
+    expect(
+      walletFinancingPlan(
+        NODE,
+        req('GET', ['network-holds'], undefined, { search: 'status=pending' }),
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(walletFinancingPlan(NODE, req('POST', ['network-holds'], {}))).toMatchObject({
+      ok: false,
+      status: 405,
+    });
+    expect(walletFinancingPlan(NODE, req('GET', ['network-holds', WALLET]))).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
   it('rutas que no existen o ids rotos: 404, sin llegar al API', () => {
     for (const plan of [
       walletFinancingPlan('../admin', req('GET')),
@@ -159,6 +187,26 @@ describe('agencyWalletPlan — lo que manda la agencia', () => {
     });
     expect(agencyWalletPlan(req('GET', ['deposit-reports']))).toMatchObject({
       path: '/portfolios/deposit-reports',
+    });
+  });
+
+  it('lee las reservas de su red, sólo con filtros conocidos y sin escribir', () => {
+    expect(agencyWalletPlan(req('GET', ['network-holds']))).toEqual({
+      ok: true,
+      method: 'GET',
+      path: '/portfolios/network-holds',
+    });
+    expect(
+      agencyWalletPlan(
+        req('GET', ['network-holds'], undefined, { search: 'status=held&currency=COP' }),
+      ),
+    ).toMatchObject({ path: '/portfolios/network-holds?currency=COP&status=held' });
+    expect(
+      agencyWalletPlan(req('GET', ['network-holds'], undefined, { search: 'currency=cop' })),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(agencyWalletPlan(req('POST', ['network-holds'], {}))).toMatchObject({
+      ok: false,
+      status: 405,
     });
   });
 

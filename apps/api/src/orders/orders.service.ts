@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -32,6 +33,7 @@ import type {
 } from '../database/database.types.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
+import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -272,6 +274,7 @@ export interface OrderRow {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
   private readonly intents: OrderCreateIntentStore;
 
   constructor(
@@ -288,6 +291,11 @@ export class OrdersService {
     @Optional() private readonly hotelReads?: HotelOrderReadsService,
     /** La cancelación de las órdenes de hotel (PR-5.3). Opcional por el mismo motivo. */
     @Optional() private readonly hotelCancellations?: HotelOrderCancellationService,
+    /**
+     * La retención de cartera de la orden (0060), que se libera al cancelar un vuelo o un auto.
+     * Opcional por el mismo motivo: en la app siempre está (`OrdersModule` la provee).
+     */
+    @Optional() private readonly holds?: BookingHoldLedger,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -1288,10 +1296,67 @@ export class OrdersService {
     );
 
     if (result.success) {
+      if (finalizedOrder?.status === 'cancelled') {
+        await this.settleWalletHold(
+          tenantId,
+          id,
+          existing.provider,
+          actorUserId ?? existing.user_id,
+        );
+      }
       return { result, order: finalizedOrder };
     }
 
     return { result };
+  }
+
+  /**
+   * Una cancelación de vuelo o de auto confirmada por el proveedor libera la retención de cartera
+   * de la orden, la del nodo y la de cada nivel de su red (0060), como el rechazo desde Carteras.
+   * Antes sólo la liberaba ese rechazo. Best-effort: la cancelación ya ocurrió y no se deshace; si
+   * la liberación falla o la retención está en conflicto, se escala y la retoma el rechazo.
+   */
+  private async settleWalletHold(
+    tenantId: string,
+    orderId: string,
+    provider: string,
+    actorUserId: string,
+  ): Promise<void> {
+    if (this.holds === undefined) return;
+    let reason: 'portfolio-hold-state-conflict' | 'portfolio-hold-release-failed' | undefined;
+    let failure: string | undefined;
+    try {
+      const outcome = await this.holds.settle(tenantId, orderId, actorUserId);
+      if (outcome === 'conflict') reason = 'portfolio-hold-state-conflict';
+    } catch (err) {
+      reason = 'portfolio-hold-release-failed';
+      failure = err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
+    }
+    if (reason === undefined) return;
+
+    this.logger.warn(
+      `orders.cancel.hold_${reason === 'portfolio-hold-state-conflict' ? 'conflict' : 'release_failed'} provider=${provider} order=${orderId}${failure === undefined ? '' : ` error=${failure}`}`,
+    );
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.escalated,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: orderId,
+        payload: {
+          provider,
+          reason,
+          queued: false,
+          ...(failure === undefined ? {} : { errorName: failure }),
+        },
+      });
+    } catch {
+      // La cancelación ya está confirmada: que falte el aviso no la vuelve un error.
+      this.logger.warn(
+        `orders.cancel.hold_escalation_unsaved provider=${provider} order=${orderId}`,
+      );
+    }
   }
 
   /** El servicio de cancelación de hoteles, si la orden es de un proveedor de hoteles. */

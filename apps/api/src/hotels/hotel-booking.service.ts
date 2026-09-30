@@ -74,7 +74,7 @@ import {
   HotelPrebookSnapshotStore,
   type HotelPrebookSnapshot,
 } from './hotel-prebook-snapshot.store.js';
-import { priceRoompack, saleTotalOf } from './hotel-pricing.js';
+import { hotelHoldQuoteOf, priceRoompack, saleTotalOf } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
 import {
   HotelSearchAccountChangedError,
@@ -393,10 +393,12 @@ interface HoldRef {
  * 2. **Orden `pending`** con la clave, la referencia de reserva y la cuenta, comprometida antes de
  *    llamar (D-TBO-07 A). Una clave repetida es 409 `duplicateRequest` sin tocar al proveedor.
  * 3. **Cartera** (RF-23 CA-1): la de la agencia en la moneda de la tarifa, activa, con saldo más
- *    el cupo que le fija quien la financia para el precio mostrado; con cuenta propia o heredada,
- *    el mismo tope (el crédito interno de 0007 pasó a ese cupo en 0053). Sin cartera en esa moneda
- *    (`PORTFOLIO_CURRENCY_NOT_ENABLED`), suspendida o sin saldo, la orden se cierra como no enviada
- *    y el proveedor no se entera. El PreBook ya se lo avisó al vendedor (`funding`).
+ *    el cupo que le fija quien la financia para el precio mostrado (el crédito interno de 0007 pasó
+ *    a ese cupo en 0053), y la de cada nivel de su red hasta el dueño de la cuenta (0060). Sin
+ *    cartera en esa moneda (`PORTFOLIO_CURRENCY_NOT_ENABLED`), suspendida o sin saldo, la orden se
+ *    cierra como no enviada y el proveedor no se entera. El PreBook ya se lo avisó al vendedor
+ *    (`funding`). Con la cuenta PROPIA de la agencia no se retiene nada ni hace falta cartera
+ *    (decisión del founder del 2026-09-30): lo decide la base con la cuenta de la búsqueda.
  * 4. **PreBook de revalidación (C2)** contra lo aceptado y precio de venta con la cascada y el
  *    piso. Si sube o cambian las condiciones, la orden se cierra como no enviada y 409 con los
  *    valores nuevos; si baja, se sigue con el nuevo y se avisa.
@@ -646,11 +648,17 @@ export class HotelBookingService {
     const ctx: SearchContext = { tenantId, requestId: intent.id };
 
     // RF-23 CA-1: sin cartera en la moneda de la tarifa, o sin saldo ni cupo en ella para lo que se
-    // mostró, no se le pregunta nada al proveedor.
+    // mostró —la propia o la de un nivel de la red que la financia hasta el dueño de la cuenta
+    // (0060)—, no se le pregunta nada al proveedor.
     // Va después de abrir la orden y no antes para que un reintento con la misma clave siga siendo
     // un 409 de duplicado aunque la primera retención ya haya gastado el saldo. Es una lectura: la
-    // retención que vale se toma con la cartera bloqueada, después de C2.
-    await this.portfolios.assertBookingHoldAffordable(tenantId, saleTotalOf(snapshot.roompack));
+    // retención que vale se toma con las carteras bloqueadas, después de C2. Con la orden abierta,
+    // un rechazo de la red le avisa al nivel que bloqueó.
+    await this.portfolios.assertBookingHoldAffordable(
+      tenantId,
+      hotelHoldQuoteOf(snapshot.roompack, provider.code, snapshot.account.accountId),
+      { reportOrderId: intent.id },
+    );
 
     let found: HotelPrebookWithContext;
     try {
@@ -765,7 +773,8 @@ export class HotelBookingService {
 
     // D-TBO-21 A: el precio de venta que la orden ya dice, retenido antes del Book. Con `Limit` el
     // proveedor lo carga al crédito de la cuenta en cuanto confirma, y una reserva cuyo cobro no
-    // alcanza tiene que fallar aquí, sin salir.
+    // alcanza tiene que fallar aquí, sin salir. Con la cuenta propia de la agencia la base no
+    // retiene nada (`own-account`): le cobra el proveedor a ella, con su contrato.
     await this.portfolios.holdBookingIntent(tenantId, intent.id, c.userId, revalidatedTotal);
 
     if (nonRefundable !== undefined && c.acknowledgement !== undefined) {

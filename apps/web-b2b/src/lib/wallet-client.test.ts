@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   approveDepositReport,
+  loadAgencyNetworkHolds,
   loadAgencyWallets,
+  loadFinancedNetworkHolds,
   loadFinancedWallets,
   recordEntry,
   refreshAfterFailure,
@@ -95,6 +97,56 @@ describe('lecturas', () => {
     respond(403, { error: '' });
     const res = await loadFinancedWallets(NODE);
     expect(res.ok ? '' : res.message).toMatch(/Sólo quien financia/);
+  });
+
+  it('las reservas de la red, validadas, por el proxy de cada vista', async () => {
+    const hold = {
+      levelId: '60000000-0000-4000-8000-000000000001',
+      currency: 'USD',
+      exponent: 2,
+      amountMinor: 113_400,
+      status: 'held',
+      originTenantId: NODE,
+      originTenantName: 'Agencia Sur',
+      orderNumber: 1042,
+      createdAt: '2026-09-29T12:00:00.000Z',
+      updatedAt: '2026-09-29T12:00:00.000Z',
+    };
+    const fetchMock = respond(200, { items: [hold], totals: [] });
+    const own = await loadAgencyNetworkHolds();
+    expect(own.ok && own.data.items[0]?.originTenantName).toBe('Agencia Sur');
+    // La página reciente y, aparte, las retenidas y las en revisión: la página las puede cortar.
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/portfolios/network-holds',
+      '/api/portfolios/network-holds?status=held',
+      '/api/portfolios/network-holds?status=conflict',
+    ]);
+    // La misma reserva en las tres respuestas se muestra una vez.
+    expect(own.ok && own.data.items).toHaveLength(1);
+    await loadFinancedNetworkHolds(NODE);
+    expect(fetchMock.mock.calls.slice(3).map((c) => c[0])).toEqual([
+      `/api/tenants/${NODE}/portfolios/network-holds`,
+      `/api/tenants/${NODE}/portfolios/network-holds?status=held`,
+      `/api/tenants/${NODE}/portfolios/network-holds?status=conflict`,
+    ]);
+  });
+
+  it('si no se pueden leer las abiertas de la red, no hay vista que cuente de menos', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        url.includes('status=conflict')
+          ? new Response(JSON.stringify({ error: 'Falló.' }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' },
+            })
+          : new Response(JSON.stringify({ items: [], totals: [] }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await loadAgencyNetworkHolds()).toMatchObject({ ok: false, message: 'Falló.' });
   });
 
   it('una forma rota no se pinta', async () => {

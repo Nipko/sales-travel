@@ -10,6 +10,7 @@ import { formatMoney } from '../../_components/hotel-format';
 import { OwnMarginLine, stayLabel } from '../../_components/hotel-rate-item';
 import type { AtHotelCharge, HotelRateRow } from '../../_components/hotel-rate-view';
 import type { BookGate } from './booking-view';
+import { paymentNote } from './funding-view';
 import { NonRefundableAck } from './non-refundable-notice';
 import type { PrebookNonRefundable } from './non-refundable-view';
 
@@ -20,7 +21,8 @@ import type { PrebookNonRefundable } from './non-refundable-view';
  * (el servidor rechaza el Book sin esa confirmación). Una tarifa no reembolsable lleva su casilla
  * OBLIGATORIA con el 100 % exacto y el recordatorio de revisar nombres y fechas (pedido del
  * 2026-09-29, punto c): sin ella el servidor tampoco reserva. Se paga con el saldo o el crédito de
- * la agencia: no hay campos de tarjeta en ninguna parte del checkout (D1).
+ * la agencia, o con su propia cuenta en el proveedor, que no retiene de ninguna cartera (2026-09-30):
+ * no hay campos de tarjeta en ninguna parte del checkout (D1).
  */
 
 export function BookingConfirm({
@@ -36,6 +38,7 @@ export function BookingConfirm({
   nonRefundableAcknowledged,
   onNonRefundableAcknowledgedChange,
   nonRefundableError,
+  ownAccount = false,
   gate,
   onConfirm,
   onBack,
@@ -54,6 +57,8 @@ export function BookingConfirm({
   nonRefundableAcknowledged: boolean;
   onNonRefundableAcknowledgedChange: (acknowledged: boolean) => void;
   nonRefundableError: string | undefined;
+  /** Se reserva con la cuenta propia de la agencia en el proveedor (el PreBook lo dijo). */
+  ownAccount?: boolean;
   gate: BookGate;
   onConfirm: () => void;
   onBack: () => void;
@@ -141,8 +146,7 @@ export function BookingConfirm({
 
       <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
         <Wallet aria-hidden="true" className="mt-px size-3 shrink-0" />
-        Se retiene de la cartera de la agencia en la moneda de la tarifa (su saldo más su cupo). No
-        se piden datos de tarjeta.
+        {paymentNote(ownAccount)}
       </p>
 
       <div className="space-y-2 border-t border-[var(--color-border)] pt-3">

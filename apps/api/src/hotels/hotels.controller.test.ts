@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { ForbiddenException, Logger, RequestMethod } from '@nestjs/common';
 import {
   EXCEPTION_FILTERS_METADATA,
+  GUARDS_METADATA,
   HTTP_CODE_METADATA,
   METHOD_METADATA,
   PATH_METADATA,
@@ -25,6 +26,10 @@ import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import type { SearchTelemetryService } from '../search/search-telemetry.service.js';
+import {
+  SELLER_RATE_LIMIT_KEY,
+  SellerRateLimitGuard,
+} from '../throttler/seller-rate-limit.guard.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   FakeDespegarHotelsAdapter,
@@ -170,8 +175,8 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
     breaker,
     { emit: () => Promise.resolve() } as unknown as AuditService,
     {
-      previewBookingHold: (_tenantId: string, amount: { currency: string }) =>
-        Promise.resolve({ status: 'ok', currency: amount.currency }),
+      previewBookingHold: (_tenantId: string, quote: { amount: { currency: string } }) =>
+        Promise.resolve({ status: 'ok', currency: quote.amount.currency }),
     } as unknown as PortfoliosService,
     permisos as unknown as BookingPermissionsService,
   );
@@ -871,5 +876,23 @@ describe('PR-4.6: POST /hotels/book con el cuerpo neutral reserva con orden detr
     expect(parsed.success).toBe(true);
     expect(parsed.success && isNeutralHotelBook(parsed.data)).toBe(false);
     expect(parsed.success && 'providerCode' in parsed.data).toBe(false);
+  });
+});
+
+describe('los topes por vendedor de la reserva (0060: la cartera del consolidador es un recurso compartido)', () => {
+  it.each([
+    ['prebook', 'hotels-prebook', 60],
+    ['book', 'hotels-book', 30],
+  ] as const)('POST /hotels/%s: cupo %s de %i por minuto por vendedor', (ruta, bucket, limite) => {
+    const handler = HotelsController.prototype[ruta];
+
+    expect(Reflect.getMetadata(SELLER_RATE_LIMIT_KEY, handler)).toEqual({
+      bucket,
+      limit: limite,
+      ttlMs: 60_000,
+    });
+    expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toContain(SellerRateLimitGuard);
+    // Sin tope por IP propio: detrás de web-b2b sería uno solo para toda la plataforma.
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', handler)).toBeUndefined();
   });
 });

@@ -20,6 +20,7 @@ import {
   approveDepositReport,
   enableWallet,
   loadFinancedMovements,
+  loadFinancedNetworkHolds,
   loadFinancedReports,
   loadFinancedWallets,
   recordEntry,
@@ -30,13 +31,19 @@ import {
 } from '../../lib/wallet-client';
 import { savedMessage, type EntryKind } from '../../lib/wallet-forms';
 import {
+  financesNetwork,
+  hasNetworkHolds,
   movementsIn,
+  networkHoldCurrencies,
+  networkHoldsEmpty,
+  networkHoldsIn,
   pendingReportsLabel,
   sortDepositReports,
   walletCurrencies,
   walletEditable,
   type DepositReport,
   type FinancedWallets,
+  type NetworkHolds,
   type Wallet,
   type WalletMovement,
 } from '../../lib/wallets';
@@ -53,6 +60,9 @@ import {
   DepositReportList,
   EmptyState,
   MovementList,
+  NetworkHoldList,
+  NetworkHoldTotals,
+  NetworkHoldsTruncated,
   ToneNotice,
   WalletCard,
   WalletsSkeleton,
@@ -102,6 +112,7 @@ export function WalletFinancingPanel({
   const [overview, setOverview] = useState<Loadable<FinancedWallets>>({ status: 'loading' });
   const [movements, setMovements] = useState<Loadable<WalletMovement[]>>({ status: 'loading' });
   const [reports, setReports] = useState<Loadable<DepositReport[]>>({ status: 'loading' });
+  const [networkHolds, setNetworkHolds] = useState<Loadable<NetworkHolds>>({ status: 'loading' });
   const [currency, setCurrency] = useState('all');
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
@@ -117,11 +128,16 @@ export function WalletFinancingPanel({
         setOverview({ status: 'loading' });
         setMovements({ status: 'loading' });
         setReports({ status: 'loading' });
+        setNetworkHolds({ status: 'loading' });
       }
-      const [o, m, r] = await Promise.all([
+      // Las reservas de la red van con lo demás aunque el nodo no tenga red (una sub-agencia): el
+      // tipo del nodo llega con las carteras, y esperarlo sumaría una vuelta. Sin nada de su red en
+      // sus carteras la sección no se muestra (ver `showsNetworkHolds`).
+      const [o, m, r, n] = await Promise.all([
         loadFinancedWallets(tenantId),
         loadFinancedMovements(tenantId),
         loadFinancedReports(tenantId),
+        loadFinancedNetworkHolds(tenantId),
       ]);
       if (mode === 'saved' && !(o.ok && m.ok && r.ok)) {
         toast.error(
@@ -131,6 +147,7 @@ export function WalletFinancingPanel({
       if (!quiet || o.ok) setOverview(loaded(o));
       if (!quiet || m.ok) setMovements(loaded(m));
       if (!quiet || r.ok) setReports(loaded(r));
+      if (!quiet || n.ok) setNetworkHolds(loaded(n));
     },
     [tenantId],
   );
@@ -143,6 +160,7 @@ export function WalletFinancingPanel({
 
   const view = overview.status === 'ready' ? overview.data : undefined;
   const nodeName = view?.tenant.name ?? 'el nodo';
+  const nodeFinancesNetwork = view !== undefined && financesNetwork(view.tenant);
 
   /**
    * Corre una escritura; si sale bien, cierra el diálogo, avisa y relee. Si falla por un conflicto
@@ -328,6 +346,10 @@ export function WalletFinancingPanel({
             )}
           </section>
 
+          {showsNetworkHolds(nodeFinancesNetwork, networkHolds) ? (
+            <FinancedNetworkHolds nodeName={overview.data.tenant.name} holds={networkHolds} />
+          ) : null}
+
           <section aria-labelledby="movements-title" className="space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 id="movements-title" className="text-sm font-semibold text-[var(--color-fg)]">
@@ -363,12 +385,91 @@ export function WalletFinancingPanel({
           dialog={dialog}
           view={view}
           nodeName={nodeName}
+          financesNetwork={nodeFinancesNetwork}
           tenantId={tenantId}
           write={write}
           onClose={closeDialog}
         />
       ) : null}
     </div>
+  );
+}
+
+const NO_NETWORK_HOLDS: NetworkHolds = { items: [], totals: [] };
+
+/**
+ * La sección de la red sólo si el nodo es de un tipo que financia y hay algo de su red en sus
+ * carteras (o no se pudo leer, y eso se dice). Una agencia sin sub-agencias, o una red que siempre
+ * reserva con la cuenta propia del nodo, no retiene nada en ellas: no hay nada que explicar.
+ */
+export function showsNetworkHolds(
+  nodeFinancesNetwork: boolean,
+  holds: Loadable<NetworkHolds>,
+): boolean {
+  if (!nodeFinancesNetwork) return false;
+  if (holds.status === 'error') return true;
+  return holds.status === 'ready' && hasNetworkHolds(holds.data);
+}
+
+/**
+ * Las reservas de la red del nodo retenidas en sus carteras (0060), como las ve el nodo: quien lo
+ * financia entiende por qué baja su disponible sin entrar como él. Sólo agencia de origen, número de
+ * reserva, el costo de su nivel y el estado; nunca el vendedor ni el precio de venta.
+ */
+export function FinancedNetworkHolds({
+  nodeName,
+  holds,
+}: {
+  nodeName: string;
+  holds: Loadable<NetworkHolds>;
+}) {
+  const [currency, setCurrency] = useState('all');
+  const data = holds.status === 'ready' ? holds.data : NO_NETWORK_HOLDS;
+  const currencies = useMemo(() => networkHoldCurrencies(data), [data]);
+  // Si al releer la moneda elegida ya no está, se vuelve a todas.
+  const shown = currencies.includes(currency) ? currency : 'all';
+  const visible = useMemo(() => networkHoldsIn(data, shown), [data, shown]);
+  return (
+    <section aria-labelledby="network-holds-title" className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 id="network-holds-title" className="text-sm font-semibold text-[var(--color-fg)]">
+            Reservas de su red
+          </h2>
+          <p className="mt-1 max-w-prose text-xs leading-relaxed text-[var(--color-fg-muted)]">
+            Lo que la red de {nodeName} tiene retenido o cobrado en sus carteras, al costo de su
+            nivel.
+          </p>
+        </div>
+        <CurrencyFilter
+          currencies={currencies}
+          value={shown}
+          onChange={setCurrency}
+          legend="Moneda de las reservas de su red"
+        />
+      </div>
+      {holds.status === 'loading' ? (
+        <div className="h-24 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+      ) : holds.status === 'error' ? (
+        <ToneNotice tone="danger" role="alert">
+          {holds.message}
+        </ToneNotice>
+      ) : (
+        <>
+          <NetworkHoldTotals totals={visible.totals} />
+          <NetworkHoldsTruncated holds={data} />
+          <NetworkHoldList
+            holds={visible.items}
+            showCurrency={shown === 'all' && currencies.length > 1}
+            {...networkHoldsEmpty(
+              data,
+              'Todavía no hay reservas de su red en sus carteras.',
+              `Cuando una reserva de la red de ${nodeName} retenga saldo en sus carteras, aparece acá con la agencia, el número de reserva y en qué quedó.`,
+            )}
+          />
+        </>
+      )}
+    </section>
   );
 }
 
@@ -418,6 +519,7 @@ function FinancingDialog({
   dialog,
   view,
   nodeName,
+  financesNetwork: network,
   tenantId,
   write,
   onClose,
@@ -425,6 +527,8 @@ function FinancingDialog({
   dialog: Dialog;
   view: FinancedWallets;
   nodeName: string;
+  /** La cartera del nodo también retiene las reservas de su red (0060): los diálogos lo avisan. */
+  financesNetwork: boolean;
   tenantId: string;
   write: <T>(
     action: () => Promise<WalletResult<T>>,
@@ -437,6 +541,7 @@ function FinancingDialog({
       return (
         <EnableWalletDialog
           nodeName={nodeName}
+          financesNetwork={network}
           available={view.availableCurrencies}
           defaultCurrency={view.tenant.defaultCurrency}
           onClose={onClose}
@@ -453,6 +558,7 @@ function FinancingDialog({
         <CreditLimitDialog
           wallet={dialog.wallet}
           nodeName={nodeName}
+          financesNetwork={network}
           onClose={onClose}
           onSubmit={(body) =>
             write(
@@ -467,6 +573,7 @@ function FinancingDialog({
         <WalletStatusDialog
           wallet={dialog.wallet}
           nodeName={nodeName}
+          financesNetwork={network}
           to={dialog.to}
           onClose={onClose}
           onSubmit={(body) =>
@@ -487,6 +594,7 @@ function FinancingDialog({
           kind={dialog.entry}
           wallet={dialog.wallet}
           nodeName={nodeName}
+          financesNetwork={network}
           onClose={onClose}
           onSubmit={(body, key) =>
             write(

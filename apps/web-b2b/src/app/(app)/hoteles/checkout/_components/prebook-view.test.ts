@@ -119,6 +119,22 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
     expect(sinAviso).not.toHaveProperty('funding');
   });
 
+  it('con la cuenta propia de la agencia el aviso dice own-account y no frena nada', () => {
+    const prebook = parsePrebook(
+      apiResponse({ funding: { status: 'own-account', currency: 'USD' } }),
+    );
+    expect(prebook?.funding).toEqual({ status: 'own-account' });
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: { status: 'own-account' },
+      }),
+    ).toEqual({ ok: true });
+  });
+
   it('sin `prebookRef` válido, sin precio o con otro vocabulario no hay tarifa que aceptar', () => {
     expect(parsePrebook(apiResponse({ prebookRef: undefined }))).toBeUndefined();
     expect(parsePrebook(apiResponse({ prebookRef: 'abc' }))).toBeUndefined();
@@ -362,6 +378,21 @@ describe('continueGate — qué falta para seguir', () => {
         funding: { status: 'ok' },
       }).ok,
     ).toBe(true);
+  });
+
+  it('si lo que no cubre es un nivel de la red, dice que hable con quien lo financia', () => {
+    const gate = continueGate({
+      expired: false,
+      blocked: false,
+      change: undefined,
+      accepted: false,
+      funding: { status: 'blocked', reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE', message: 'x' },
+    });
+    expect(gate).toEqual({
+      ok: false,
+      reason:
+        'Hablá con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
+    });
   });
 
   it('sin cambio o con una baja, sigue', () => {

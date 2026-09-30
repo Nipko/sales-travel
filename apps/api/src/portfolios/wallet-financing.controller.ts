@@ -19,6 +19,7 @@ import {
   DepositReportsQuerySchema,
   EnableWalletSchema,
   IdempotencyKeySchema,
+  NetworkHoldsQuerySchema,
   PortfolioIdParamSchema,
   RecordAdjustmentSchema,
   RecordDepositSchema,
@@ -29,6 +30,7 @@ import {
   type ApproveDepositReportDto,
   type DepositReportsQuery,
   type EnableWalletDto,
+  type NetworkHoldsQuery,
   type RecordAdjustmentDto,
   type RecordDepositDto,
   type RejectDepositReportDto,
@@ -41,7 +43,12 @@ import {
   type ResolvedDepositReport,
   type WalletEntryResult,
 } from './wallet-financing.service.js';
-import type { DepositReportView, WalletMovementView, WalletView } from './wallet-store.js';
+import type {
+  DepositReportView,
+  NetworkHoldsView,
+  WalletMovementView,
+  WalletView,
+} from './wallet-store.js';
 
 /**
  * Las carteras de un nodo, gestionadas por quien lo financia: el superadmin desde Gestión de
@@ -84,6 +91,16 @@ export class WalletFinancingController {
     return {
       transactions: await this.financing.listMovements(actor(userId), tenantId, query.currency),
     };
+  }
+
+  /** Las reservas de la red del nodo retenidas en sus carteras (0060), como las ve el nodo. */
+  @Get('network-holds')
+  async listNetworkHolds(
+    @CurrentUser() userId: string | undefined,
+    @Param('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Query(new ZodValidationPipe(NetworkHoldsQuerySchema)) query: NetworkHoldsQuery,
+  ): Promise<NetworkHoldsView> {
+    return this.financing.listNetworkHolds(actor(userId), tenantId, query);
   }
 
   @Get('deposit-reports')

@@ -11,9 +11,11 @@ import type { OrderRow, OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
-import { BookingHoldRejectedError } from './booking-hold.js';
+import { BookingHoldRejectedError, type BookingHoldQuote } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 import { WalletFinancingService } from './wallet-financing.service.js';
+import { clearWalletHoldsOfTenants, seedWallet } from './__fixtures__/wallet-hold-seed.js';
+import { held } from './__fixtures__/held-outcome.js';
 
 /**
  * La retención usa la cartera de la MONEDA de la tarifa (decisión del founder del 2026-09-29,
@@ -24,7 +26,10 @@ import { WalletFinancingService } from './wallet-financing.service.js';
  * Book de un hotel (sobre el intent abierto) y para la de una reserva confirmada de autos o vuelos.
  *
  * Los cupos, depósitos y estados los pone quien financia por `WalletFinancingService`, como en
- * producción; el superusuario sólo monta la red, mira y desmonta.
+ * producción; el superusuario sólo monta la red, mira y desmonta. Desde 0060 la agencia reserva con
+ * credenciales de entorno (el dueño es la raíz), así que el consolidador que la financia retiene
+ * también, en la misma moneda: sus carteras las abre el superusuario con cupo de sobra, y lo que
+ * este test mira es la cartera de la agencia.
  *
  * Se salta sin credenciales de app_user (APP_USER_PASSWORD), como wallets-rls.
  */
@@ -32,6 +37,9 @@ const hasDb = Boolean(process.env['PGHOST'] && process.env['APP_USER_PASSWORD'])
 const d = hasDb ? describe : describe.skip;
 
 const money = (amountMinor: number, currency: string) => ({ amountMinor, currency });
+
+/** El neto de cada reserva de este test: el que la base usa para el costo del consolidador. */
+const netOf = (totalMinor: number) => Math.floor(totalMinor * 0.9);
 
 d('la retención elige la cartera por la moneda de la tarifa (API como app_user)', () => {
   const sfx = randomBytes(4).toString('hex');
@@ -114,6 +122,33 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
     );
   }
 
+  /** Lo que el aviso previo recibe de una tarifa de hotel de este test. */
+  function quote(amount: { amountMinor: number; currency: string }): BookingHoldQuote {
+    return {
+      amount,
+      netMinor: netOf(amount.amountMinor),
+      vertical: 'hotels',
+      providerCode: `it-hpc-hotels-${sfx}`,
+      providerAccountId: null,
+    };
+  }
+
+  /** Las retenciones de la red en las carteras del consolidador, por moneda. */
+  async function networkEntries(): Promise<Record<string, string[]>> {
+    const { rows } = await admin.query<{ currency: string; entries: string[] }>(
+      `SELECT p.currency,
+              COALESCE(array_agg(t.transaction_type ORDER BY t.created_at, t.id)
+                         FILTER (WHERE t.id IS NOT NULL), '{}') AS entries
+         FROM agency_portfolios p
+         LEFT JOIN portfolio_transactions t ON t.portfolio_id = p.id
+        WHERE p.tenant_id = $1
+        GROUP BY p.currency
+        ORDER BY p.currency`,
+      [consolidator],
+    );
+    return Object.fromEntries(rows.map((r) => [r.currency, r.entries]));
+  }
+
   async function openIntent(
     vertical: 'hotels' | 'cars',
     totalMinor: number,
@@ -125,7 +160,10 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
       vertical,
       idempotencyKey: randomUUID(),
       searchCriteria: { ref: `R-${sfx}-${n}` },
-      selectedOffer: { offerRef: `offer-${sfx}-${n}` },
+      selectedOffer: {
+        offerRef: `offer-${sfx}-${n}`,
+        pricing: { netMinor: netOf(totalMinor), currency },
+      },
       passengers: [{ room: 0 }],
       contactInfo: { email: `pasajero-${sfx}@example.test` },
       totalAmountMinor: totalMinor,
@@ -163,6 +201,10 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
     agency = await tenant('a', 'agency', consolidator);
     financier = await user('ca', consolidator, 'consolidator_admin');
     seller = await user('vend', agency, 'vendedor');
+    // El nivel de la red que financia a la agencia, con cupo de sobra en las monedas del test.
+    for (const currency of ['COP', 'USD', 'EUR']) {
+      await seedWallet(admin, consolidator, { currency, creditLimitMinor: 1_000_000_000_00 });
+    }
 
     // Como producción: la cartera COP 0/0 que abría la API sola.
     const cop = await admin.query<{ id: string }>(
@@ -189,6 +231,8 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
   });
 
   afterAll(async () => {
+    // Las retenciones son ON DELETE RESTRICT: se borran antes que las órdenes y los tenants.
+    await clearWalletHoldsOfTenants(admin, tenants);
     const { rows } = await admin.query<{ id: string }>(
       'SELECT id FROM tenants WHERE id = ANY($1::uuid[]) ORDER BY nlevel(path) DESC',
       [tenants],
@@ -202,19 +246,23 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
   it('el aviso del PreBook mira la cartera de la moneda de la tarifa, sin escribir', async () => {
     const before = await wallets();
 
-    await expect(portfolios.previewBookingHold(agency, money(340_12, 'USD'))).resolves.toEqual({
+    await expect(
+      portfolios.previewBookingHold(agency, quote(money(340_12, 'USD'))),
+    ).resolves.toEqual({
       status: 'ok',
       currency: 'USD',
     });
     // Sobra plata en COP, pero la tarifa en USD pasa el cupo en USD: no se mezclan.
     await expect(
-      portfolios.previewBookingHold(agency, money(500_01, 'USD')),
+      portfolios.previewBookingHold(agency, quote(money(500_01, 'USD'))),
     ).resolves.toMatchObject({
       status: 'blocked',
       reason: 'PORTFOLIO_FUNDS_INSUFFICIENT',
       currency: 'USD',
     });
-    await expect(portfolios.previewBookingHold(agency, money(100_00, 'EUR'))).resolves.toEqual({
+    await expect(
+      portfolios.previewBookingHold(agency, quote(money(100_00, 'EUR'))),
+    ).resolves.toEqual({
       status: 'blocked',
       currency: 'EUR',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
@@ -226,12 +274,9 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
   it('un hotel en USD retiene en la cartera USD, con el cupo, y la de COP no se toca', async () => {
     const intent = await openIntent('hotels', 340_12, 'USD');
 
-    await portfolios.assertBookingHoldAffordable(agency, money(340_12, 'USD'));
-    const { portfolio, transaction } = await portfolios.holdBookingIntent(
-      agency,
-      intent.id,
-      seller,
-      money(340_12, 'USD'),
+    await portfolios.assertBookingHoldAffordable(agency, quote(money(340_12, 'USD')));
+    const { portfolio, transaction } = held(
+      await portfolios.holdBookingIntent(agency, intent.id, seller, money(340_12, 'USD')),
     );
 
     expect(portfolio).toMatchObject({ id: usdWallet, currency: 'USD' });
@@ -245,6 +290,8 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
       COP: { balance: 200_000_00, entries: ['DEPOSIT_PAYMENT'] },
       USD: { balance: -340_12, entries: ['BOOKING_HOLD'] },
     });
+    // 0060: quien financia a la agencia retiene su costo en la misma moneda, no en otra.
+    expect(await networkEntries()).toEqual({ COP: [], EUR: [], USD: ['NETWORK_HOLD'] });
 
     // CA-2: el proveedor no la hizo → se libera en la MISMA cartera.
     await intents.settleExternalCreateIntent(agency, intent, {
@@ -258,15 +305,18 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
       COP: { balance: 200_000_00, entries: ['DEPOSIT_PAYMENT'] },
       USD: { balance: 0, entries: ['BOOKING_HOLD', 'BOOKING_RELEASED'] },
     });
+    expect((await networkEntries())['USD']).toEqual(['NETWORK_HOLD', 'NETWORK_RELEASED']);
   });
 
   it('una reserva de autos confirmada en COP retiene en la cartera COP, y la de USD no se toca', async () => {
     const order = await confirmedCar(150_000_00, 'COP');
 
-    const { portfolio, transaction } = await portfolios.holdBooking(agency, order.id, seller, {
-      amountMinor: 150_000_00,
-      currency: 'COP',
-    });
+    const { portfolio, transaction } = held(
+      await portfolios.holdBooking(agency, order.id, seller, {
+        amountMinor: 150_000_00,
+        currency: 'COP',
+      }),
+    );
 
     expect(portfolio).toMatchObject({ id: copWallet, currency: 'COP' });
     expect(transaction).toMatchObject({ portfolio_id: copWallet, reference_id: order.id });
@@ -290,7 +340,7 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
     const before = await wallets();
 
     expect(
-      await reasonOf(portfolios.assertBookingHoldAffordable(agency, money(100_00, 'EUR'))),
+      await reasonOf(portfolios.assertBookingHoldAffordable(agency, quote(money(100_00, 'EUR')))),
     ).toBe('PORTFOLIO_CURRENCY_NOT_ENABLED');
     expect(
       await reasonOf(portfolios.holdBookingIntent(agency, hotel.id, seller, money(100_00, 'EUR'))),
@@ -311,7 +361,7 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
 
     const next = await openIntent('hotels', 100_00, 'USD');
     await expect(
-      portfolios.previewBookingHold(agency, money(100_00, 'USD')),
+      portfolios.previewBookingHold(agency, quote(money(100_00, 'USD'))),
     ).resolves.toMatchObject({ status: 'blocked', reason: 'PORTFOLIO_INACTIVE' });
     expect(
       await reasonOf(portfolios.holdBookingIntent(agency, next.id, seller, money(100_00, 'USD'))),

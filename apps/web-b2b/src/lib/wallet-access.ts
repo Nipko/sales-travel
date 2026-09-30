@@ -76,3 +76,11 @@ export function canReportDeposits(role: string | undefined): boolean {
 export function canReleaseHolds(role: string | undefined): boolean {
   return canReportDeposits(role);
 }
+
+/**
+ * Las reservas de la red retenidas en las carteras del nodo (0060) son ventas de otras agencias:
+ * las ve quien administra el nodo, como exige el API en `GET /portfolios/network-holds`.
+ */
+export function canViewNetworkHolds(role: string | undefined): boolean {
+  return canReportDeposits(role);
+}

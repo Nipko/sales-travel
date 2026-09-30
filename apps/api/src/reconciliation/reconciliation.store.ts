@@ -9,6 +9,7 @@ import type {
   ReconciliationItemAction,
   ReconciliationRunStatus,
   ReconciliationRunTrigger,
+  WalletHoldStatus,
 } from '../database/database.types.js';
 import type { DiscrepancySeverity, ReconciliationDiscrepancyKind } from '../orders/order-events.js';
 import type { ReconciliationOrder, ReconciliationWindow } from './reconciliation.plan.js';
@@ -91,6 +92,31 @@ export interface ReconciliationItemRow {
 export interface AccountOrdersQuery {
   readonly provider: string;
   readonly accountId: string;
+}
+
+/** Cuántas retenciones desalineadas se cierran por tenant y por corrida, como mucho. */
+export const MISALIGNED_HOLDS_LIMIT = 200;
+
+/**
+ * Las retenciones de qué cuentas cierra una corrida: la suya y las del mismo dueño y proveedor que
+ * ya no están activas, que no tienen corrida propia.
+ */
+export interface MisalignedHoldsQuery {
+  readonly provider: string;
+  readonly accountIds: readonly string[];
+  readonly limit: number;
+}
+
+/**
+ * Una retención de cartera (0060) que no dice lo que dice su orden: abierta con la orden cerrada
+ * (`failed` o `cancelled`), o retenida con la orden ya confirmada. La cierra `wallet_hold_settle`.
+ */
+export interface MisalignedHold {
+  readonly orderId: string;
+  readonly holdStatus: WalletHoldStatus;
+  readonly orderStatus: OrderStatus;
+  /** Quien retuvo: firma el cierre si la corrida no la pidió una persona. */
+  readonly createdBy: string;
 }
 
 interface OrderRow {
@@ -251,6 +277,74 @@ export class ReconciliationStore {
       }
       return [...found.values()];
     });
+  }
+
+  /**
+   * Las cuentas del dueño para el proveedor que ya no están activas (desactivadas o reemplazadas).
+   * El barrido sólo agenda cuentas activas, así que las retenciones hechas con éstas las cierra la
+   * corrida de otra cuenta del mismo dueño.
+   */
+  async inactiveOwnAccountIds(ownerTenantId: string, provider: string): Promise<string[]> {
+    const rows = await this.db.withTenant(ownerTenantId, (trx) =>
+      trx
+        .selectFrom('provider_accounts')
+        .select('id')
+        .where('tenant_id', '=', ownerTenantId)
+        .where('provider_code', '=', provider)
+        .where('status', '<>', 'active')
+        .orderBy('id')
+        .execute(),
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Las retenciones de cartera desalineadas de las órdenes que el tenant hizo con las cuentas (paso
+   * R-W): abiertas con la orden `failed` o `cancelled`, o retenidas con la orden `confirmed` o
+   * `ticketed`. Una saga, una verificación o una cancelación que cerró la orden pero no llegó a
+   * cerrar la retención deja la plata congelada en toda la red hasta que alguien la mire.
+   */
+  async listMisalignedHolds(
+    tenantId: string,
+    query: MisalignedHoldsQuery,
+  ): Promise<MisalignedHold[]> {
+    if (query.accountIds.length === 0) return [];
+    const rows = await this.db.withTenant(tenantId, (trx) =>
+      trx
+        .selectFrom('wallet_hold_groups as g')
+        .innerJoin('orders as o', 'o.id', 'g.order_id')
+        .select([
+          'g.order_id',
+          'g.status as hold_status',
+          'o.status as order_status',
+          'g.created_by',
+        ])
+        .where('g.origin_tenant_id', '=', tenantId)
+        .where('o.tenant_id', '=', tenantId)
+        .where('g.provider_code', '=', query.provider)
+        .where('g.provider_account_id', 'in', [...query.accountIds])
+        .where((eb) =>
+          eb.or([
+            eb.and([
+              eb('g.status', 'in', ['held', 'captured']),
+              eb('o.status', 'in', ['failed', 'cancelled']),
+            ]),
+            eb.and([eb('g.status', '=', 'held'), eb('o.status', 'in', ['confirmed', 'ticketed'])]),
+          ]),
+        )
+        .orderBy('g.created_at')
+        .orderBy('g.id')
+        .limit(query.limit)
+        // Sólo abiertas (el WHERE): nunca `exempt`, que no retuvo nada.
+        .$narrowType<{ hold_status: WalletHoldStatus }>()
+        .execute(),
+    );
+    return rows.map((r) => ({
+      orderId: r.order_id,
+      holdStatus: r.hold_status,
+      orderStatus: r.order_status,
+      createdBy: r.created_by,
+    }));
   }
 
   /**

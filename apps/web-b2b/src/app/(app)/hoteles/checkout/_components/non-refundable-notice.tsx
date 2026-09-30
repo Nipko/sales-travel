@@ -24,15 +24,18 @@ const BOX = 'rounded-lg border border-[var(--color-warning)]/70 bg-[var(--color-
 export function NonRefundableNotice({
   nonRefundable,
   headingLevel = 2,
+  ownAccount = false,
   children,
 }: {
   nonRefundable: PrebookNonRefundable;
   headingLevel?: 2 | 3;
+  /** Se reserva con la cuenta propia de la agencia: el 100 % lo cobra el proveedor en ella. */
+  ownAccount?: boolean;
   /** Lo que el contexto suma debajo: quién lo aceptó y cuándo, en una orden. */
   children?: ReactNode;
 }) {
   const titleId = useId();
-  const view = nonRefundableNoticeView(nonRefundable);
+  const view = nonRefundableNoticeView(nonRefundable, { ownAccount });
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
   return (
     <section

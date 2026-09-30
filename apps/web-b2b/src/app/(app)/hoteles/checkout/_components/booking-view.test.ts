@@ -301,6 +301,55 @@ describe('classifyBookResponse — errores', () => {
     ).toMatchObject({ title: 'La cartera de la agencia está suspendida.', action: 'portfolios' });
   });
 
+  it.each([
+    ['PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED', 'La red que te financia no opera en esta moneda.'],
+    ['PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE', 'La red que te financia no cubre esta reserva.'],
+    ['PORTFOLIO_NETWORK_COST_UNAVAILABLE', 'No se pudo calcular el costo para quien te financia.'],
+  ])(
+    'un nivel de la red no cubre (%s): se rechaza con reintento y sin enlace a Cartera B2B',
+    (reason, title) => {
+      const message = 'Tu red no tiene cupo disponible en USD para esta reserva.';
+      expect(classifyBookResponse(...apiError(409, { reason, message }))).toEqual({
+        kind: 'rejected',
+        title,
+        message,
+        retry: true,
+      });
+      const outcome = classifyBookResponse(...apiError(409, { reason }));
+      expect(outcome).toMatchObject({
+        kind: 'rejected',
+        message: 'Hablá con quien te financia antes de volver a intentarlo.',
+      });
+      expect(outcome).not.toHaveProperty('action');
+      expect(keepsAttempt(outcome)).toBe(false);
+    },
+  );
+
+  it('las carteras de la red ocupadas: nada se retuvo ni salió, se reintenta en unos segundos', () => {
+    const message =
+      'Tu red está procesando otras reservas en este momento y no se retuvo saldo. Probá de nuevo en unos segundos.';
+    expect(
+      classifyBookResponse(...apiError(409, { reason: 'PORTFOLIO_HOLD_BUSY', message })),
+    ).toEqual({
+      kind: 'rejected',
+      title: 'Las carteras están ocupadas con otras reservas.',
+      message,
+      retry: true,
+    });
+  });
+
+  it('la cuenta del proveedor con que se cotizó ya no está en la red: volver a buscar la tarifa', () => {
+    expect(
+      classifyBookResponse(
+        ...apiError(409, { reason: 'PORTFOLIO_HOLD_ACCOUNT_CHANGED', message: 'Volvé a buscar.' }),
+      ),
+    ).toEqual({
+      kind: 'research',
+      title: 'La cuenta del proveedor cambió.',
+      message: 'Volvé a buscar.',
+    });
+  });
+
   it('sin contacto de soporte de la agencia: a Mi Agencia', () => {
     expect(
       classifyBookResponse(

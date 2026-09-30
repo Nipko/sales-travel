@@ -16,16 +16,19 @@ import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { OWN_PROVIDER_ACCOUNT_MESSAGE } from './booking-hold.js';
 import { PortfolioForbiddenError } from './portfolio-errors.js';
 import {
   DepositReportsQuerySchema,
   HoldBookingSchema,
   IdempotencyKeySchema,
+  NetworkHoldsQuerySchema,
   OrderIdParamSchema,
   SubmitDepositReportSchema,
   TransactionsQuerySchema,
   type DepositReportsQuery,
   type HoldBookingDto,
+  type NetworkHoldsQuery,
   type SubmitDepositReportDto,
   type TransactionsQuery,
 } from './portfolios.schemas.js';
@@ -34,9 +37,25 @@ import {
   movementView,
   walletView,
   type DepositReportView,
+  type NetworkHoldsView,
   type WalletMovementView,
   type WalletView,
 } from './wallet-store.js';
+
+/** Lo que responde `POST /portfolios/hold-booking`. */
+export type HoldBookingResponse =
+  | { retained: true; portfolio: WalletView; transaction: WalletMovementView }
+  | { retained: false; reason: 'OWN_PROVIDER_ACCOUNT'; message: string };
+
+/** Los roles de membership que administran un nodo (los de `assertAdminMembership`). */
+const ADMIN_MEMBERSHIP_ROLES: readonly string[] = [
+  'superadmin',
+  'platform_admin',
+  'consolidator_admin',
+  'tenant_admin',
+  'agency_admin',
+  'admin',
+];
 
 /**
  * Por qué la agencia ya no mueve su propia cartera (decisión del founder del 2026-09-29, opción A;
@@ -73,6 +92,11 @@ export class PortfoliosController {
     return this.portfolios.overview(tenantId);
   }
 
+  /**
+   * Los movimientos de las carteras. Todo el personal ve el monto y el tipo de los asientos de la red
+   * (explican su saldo disponible); de qué agencia y qué reserva son, sólo quien administra el nodo,
+   * como las reservas de la red y su rastro de auditoría.
+   */
   @Get('transactions')
   async listTransactions(
     @CurrentUser() userId: string | undefined,
@@ -80,7 +104,30 @@ export class PortfoliosController {
   ): Promise<{ transactions: WalletMovementView[] }> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    return { transactions: await this.portfolios.listTransactions(tenantId, query.currency) };
+    const role = await this.membershipRole(userId, tenantId);
+    const includeNetwork = role !== undefined && ADMIN_MEMBERSHIP_ROLES.includes(role);
+    return {
+      transactions: await this.portfolios.listTransactions(tenantId, query.currency, {
+        includeNetwork,
+      }),
+    };
+  }
+
+  /**
+   * Lo que las reservas de la red del nodo retienen o cobraron en sus carteras (0060), al costo de
+   * su nivel: la agencia de origen y el número de reserva, nunca el vendedor ni el precio de venta.
+   * Sólo para quien administra el nodo: son ventas de otras agencias.
+   */
+  @Roles(...AGENCY_ADMIN_ROLES)
+  @Get('network-holds')
+  async listNetworkHolds(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(NetworkHoldsQuerySchema)) query: NetworkHoldsQuery,
+  ): Promise<NetworkHoldsView> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    await this.assertAdminMembership(userId, tenantId);
+    return this.portfolios.listNetworkHolds(tenantId, query);
   }
 
   @Get('deposit-reports')
@@ -128,28 +175,37 @@ export class PortfoliosController {
     throw new PortfolioForbiddenError('PORTFOLIO_FINANCIER_REQUIRED', NOT_THE_AGENCY.creditLimit);
   }
 
-  /** Retiene saldo por una reserva confirmada (vuelos y autos), en la cartera de su moneda. */
+  /**
+   * Retiene saldo por una reserva confirmada (vuelos y autos), en la cartera de su moneda y en la de
+   * cada nivel de su red. La orden no guarda con qué cuenta se reservó, así que una cuenta propia
+   * del nodo no la exime; sólo una venta de la plataforma, dueña de todo lo que se le resuelve, no
+   * retiene nada (decisión del founder del 2026-09-30): `retained: false` con el motivo, sin cartera
+   * ni asiento.
+   */
   @SalesOperation()
   @Post('hold-booking')
   async hold(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(HoldBookingSchema)) body: HoldBookingDto,
-  ): Promise<{ portfolio: WalletView; transaction: WalletMovementView }> {
+  ): Promise<HoldBookingResponse> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const expected = {
       ...(body.amountMinor === undefined ? {} : { amountMinor: body.amountMinor }),
       ...(body.currency === undefined ? {} : { currency: body.currency }),
     };
-    const { portfolio, transaction } = await this.portfolios.holdBooking(
-      tenantId,
-      body.orderId,
-      userId,
-      expected,
-    );
+    const outcome = await this.portfolios.holdBooking(tenantId, body.orderId, userId, expected);
+    if (outcome.status === 'own-account') {
+      return {
+        retained: false,
+        reason: 'OWN_PROVIDER_ACCOUNT',
+        message: OWN_PROVIDER_ACCOUNT_MESSAGE,
+      };
+    }
     return {
-      portfolio: walletView(portfolio),
-      transaction: movementView(transaction, portfolio.currency),
+      retained: true,
+      portfolio: walletView(outcome.portfolio),
+      transaction: movementView(outcome.transaction, outcome.portfolio.currency),
     };
   }
 
@@ -185,6 +241,15 @@ export class PortfoliosController {
    * plataforma aunque operen sobre la agencia sin ser miembros; esta comprobación, no.
    */
   private async assertAdminMembership(userId: string, tenantId: string): Promise<void> {
+    const role = await this.membershipRole(userId, tenantId);
+    if (role === undefined) throw new ForbiddenException('not a member of this tenant');
+    if (!ADMIN_MEMBERSHIP_ROLES.includes(role)) {
+      throw new ForbiddenException('admin role required');
+    }
+  }
+
+  /** El rol de la membership activa del usuario EN la agencia activa, o `undefined`. */
+  private async membershipRole(userId: string, tenantId: string): Promise<string | undefined> {
     return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
       const row = await trx
         .selectFrom('memberships')
@@ -193,18 +258,7 @@ export class PortfoliosController {
         .where('tenant_id', '=', tenantId)
         .where('status', '=', 'active')
         .executeTakeFirst();
-      if (!row) throw new ForbiddenException('not a member of this tenant');
-      const adminRoles = [
-        'superadmin',
-        'platform_admin',
-        'consolidator_admin',
-        'tenant_admin',
-        'agency_admin',
-        'admin',
-      ];
-      if (!adminRoles.includes(row.role)) {
-        throw new ForbiddenException('admin role required');
-      }
+      return row?.role;
     });
   }
 }

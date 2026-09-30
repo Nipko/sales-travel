@@ -10,6 +10,12 @@
 
 export type WalletStatus = 'active' | 'suspended' | 'overlimit';
 export type DepositReportStatus = 'pending' | 'approved' | 'rejected';
+/**
+ * Dónde está una retención de la red en la cartera de quien financia (db/migrations/0060):
+ * retenida, cobrada al confirmarse la reserva, liberada, o en revisión (figuró confirmada y después
+ * no realizada: la concilia una persona).
+ */
+export type NetworkHoldStatus = 'held' | 'captured' | 'released' | 'conflict';
 
 export interface Wallet {
   readonly id: string;
@@ -36,9 +42,64 @@ export interface WalletMovement {
   readonly transactionType: string;
   readonly referenceId: string | null;
   readonly notes: string | null;
+  /** Nunca en los asientos de la red: los firma un vendedor de otro nodo. */
   readonly createdByName: string | null;
+  /**
+   * De qué reserva de la red es un asiento `NETWORK_*`. Sólo lo manda el API a quien administra el
+   * nodo; `null` en los demás asientos y para el resto del personal.
+   */
+  readonly network: WalletMovementNetwork | null;
   readonly createdAt: string;
 }
+
+/** La reserva de la red detrás de un asiento `NETWORK_*`: de qué agencia y qué número. */
+export interface WalletMovementNetwork {
+  readonly originTenantId: string;
+  /** `null` si el API no pudo leer el nombre: se muestra "Una agencia de tu red". */
+  readonly originTenantName: string | null;
+  readonly orderNumber: number | null;
+  readonly status: NetworkHoldStatus;
+}
+
+/**
+ * Una reserva de la red retenida en una cartera del nodo, al costo de su nivel (0060). Nunca trae
+ * quién vendió, los pasajeros ni el precio de venta: son de otra agencia.
+ */
+export interface NetworkHold {
+  readonly levelId: string;
+  readonly currency: string;
+  readonly exponent: number | null;
+  /** Lo que retiene la cartera del nodo: el costo de su nivel, siempre positivo. */
+  readonly amountMinor: number;
+  readonly status: NetworkHoldStatus;
+  readonly originTenantId: string;
+  readonly originTenantName: string | null;
+  readonly orderNumber: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** Por moneda: lo retenido (retenido o en revisión) y lo cobrado por la red. */
+export interface NetworkHoldTotal {
+  readonly currency: string;
+  readonly exponent: number | null;
+  readonly heldMinor: number;
+  readonly chargedMinor: number;
+}
+
+/** `GET /portfolios/network-holds` y `GET /tenants/:id/portfolios/network-holds`. */
+export interface NetworkHolds {
+  readonly items: readonly NetworkHold[];
+  readonly totals: readonly NetworkHoldTotal[];
+  /**
+   * Alguna de las listas llegó al tope del API ({@link NETWORK_HOLDS_PAGE}): la lista no tiene
+   * todas las reservas, aunque los totales sí las suman.
+   */
+  readonly truncated?: boolean;
+}
+
+/** El tope de cada listado de `network-holds` en el API (`NETWORK_HOLDS_LIMIT`). */
+export const NETWORK_HOLDS_PAGE = 200;
 
 export interface DepositReport {
   readonly id: string;
@@ -63,6 +124,31 @@ export interface AgencyWallets {
   readonly portfolios: readonly Wallet[];
   /** A quién pedirle una moneda, cupo o que apruebe un depósito. `null`: lo gestiona Planetour. */
   readonly financier: { readonly tenantId: string; readonly name: string } | null;
+  /**
+   * Los proveedores en que la agencia tiene su propia cuenta, todos (también el correo). Sólo
+   * códigos de proveedor. Cuáles importan para la cartera lo dice {@link reservesWithOwnAccounts}.
+   */
+  readonly ownProviderAccounts: readonly string[];
+}
+
+/**
+ * Los proveedores cuyas reservas retienen cartera y graban en la orden la cuenta con que se
+ * reservaron: los de hoteles que reservan por el Book neutral con órdenes (hoy sólo TBO; Despegar
+ * no retiene, docs/platform/12 §14.8). Con la cuenta propia en ellos la reserva no retiene nada
+ * (decisión del founder del 2026-09-30). Vuelos y autos no graban la cuenta, así que la propia no
+ * los exime. Uno nuevo que retenga se suma acá; si falta, la web sólo avisa de más y decide la base.
+ */
+export const PROVIDERS_WITH_WALLET_HOLD: readonly string[] = ['tbo-hotels'];
+
+/**
+ * ¿La agencia reserva con su propia cuenta en todos los proveedores que retienen cartera? Entonces
+ * sus reservas no retienen de ninguna y no hace falta avisarle que le falta una. Una cuenta que no
+ * reserva (el correo) o la de un proveedor que no retiene no cuentan.
+ */
+export function reservesWithOwnAccounts(
+  wallets: Pick<AgencyWallets, 'ownProviderAccounts'>,
+): boolean {
+  return PROVIDERS_WITH_WALLET_HOLD.every((code) => wallets.ownProviderAccounts.includes(code));
 }
 
 /** El nodo cuyas carteras gestiona quien lo financia. */
@@ -121,6 +207,9 @@ function exponentOf(value: unknown): number | null | undefined {
   return n !== undefined && n >= 0 && n <= 4 ? n : undefined;
 }
 
+/** Un código de proveedor como los de la bóveda (`tbo-hotels`, `latam-ndc`). */
+const PROVIDER_CODE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
 /** Un listado: se descartan los elementos con forma rota, no el listado entero. */
 function listOf<T>(value: unknown, parse: (item: unknown) => T | undefined): T[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -160,6 +249,43 @@ export function parseWallet(value: unknown): Wallet | undefined {
   };
 }
 
+const NETWORK_HOLD_STATUSES: readonly NetworkHoldStatus[] = [
+  'held',
+  'captured',
+  'released',
+  'conflict',
+];
+
+function isNetworkHoldStatus(value: unknown): value is NetworkHoldStatus {
+  return typeof value === 'string' && (NETWORK_HOLD_STATUSES as readonly string[]).includes(value);
+}
+
+/** Los asientos que la red deja en la cartera de quien la financia (0060). */
+const NETWORK_ENTRY_TYPES: readonly string[] = ['NETWORK_HOLD', 'NETWORK_RELEASED'];
+
+export function isNetworkMovement(movement: Pick<WalletMovement, 'transactionType'>): boolean {
+  return NETWORK_ENTRY_TYPES.includes(movement.transactionType);
+}
+
+/** Un número de reserva: entero positivo, o `null`. Un número roto no tira el asiento. */
+function orderNumberOf(value: unknown): number | null {
+  const n = safeInt(value);
+  return n !== undefined && n > 0 ? n : null;
+}
+
+function parseMovementNetwork(value: unknown): WalletMovementNetwork | null {
+  const r = asRecord(value);
+  const originTenantId = r?.['originTenantId'];
+  const status = r?.['status'];
+  if (r === undefined || !isUuid(originTenantId) || !isNetworkHoldStatus(status)) return null;
+  return {
+    originTenantId: originTenantId.toLowerCase(),
+    originTenantName: nullableStr(r['originTenantName']),
+    orderNumber: orderNumberOf(r['orderNumber']),
+    status,
+  };
+}
+
 export function parseMovement(value: unknown): WalletMovement | undefined {
   const r = asRecord(value);
   if (r === undefined) return undefined;
@@ -176,6 +302,9 @@ export function parseMovement(value: unknown): WalletMovement | undefined {
   if (amountMinor === undefined || transactionType === undefined || createdAt === undefined) {
     return undefined;
   }
+  // Un asiento de la red nunca muestra quién lo firmó, aunque el API lo mandara: es un vendedor de
+  // otro nodo. Y la reserva de la red sólo va en esos asientos.
+  const fromNetwork = isNetworkMovement({ transactionType });
   return {
     id: id.toLowerCase(),
     portfolioId: portfolioId.toLowerCase(),
@@ -183,10 +312,69 @@ export function parseMovement(value: unknown): WalletMovement | undefined {
     exponent,
     amountMinor,
     transactionType,
-    referenceId: nullableStr(r['referenceId']),
+    referenceId: fromNetwork ? null : nullableStr(r['referenceId']),
     notes: nullableStr(r['notes']),
-    createdByName: nullableStr(r['createdByName']),
+    createdByName: fromNetwork ? null : nullableStr(r['createdByName']),
+    network: fromNetwork ? parseMovementNetwork(r['network']) : null,
     createdAt,
+  };
+}
+
+export function parseNetworkHold(value: unknown): NetworkHold | undefined {
+  const r = asRecord(value);
+  if (r === undefined) return undefined;
+  const levelId = r['levelId'];
+  const currency = r['currency'];
+  const exponent = exponentOf(r['exponent']);
+  const amountMinor = safeInt(r['amountMinor']);
+  const status = r['status'];
+  const originTenantId = r['originTenantId'];
+  const createdAt = str(r['createdAt']);
+  if (!isUuid(levelId) || !isCurrencyCode(currency) || exponent === undefined) return undefined;
+  if (amountMinor === undefined || amountMinor <= 0 || !isNetworkHoldStatus(status)) {
+    return undefined;
+  }
+  if (!isUuid(originTenantId) || createdAt === undefined) return undefined;
+  return {
+    levelId: levelId.toLowerCase(),
+    currency,
+    exponent,
+    amountMinor,
+    status,
+    originTenantId: originTenantId.toLowerCase(),
+    originTenantName: nullableStr(r['originTenantName']),
+    orderNumber: orderNumberOf(r['orderNumber']),
+    createdAt,
+    updatedAt: str(r['updatedAt']) ?? createdAt,
+  };
+}
+
+function parseNetworkHoldTotal(value: unknown): NetworkHoldTotal | undefined {
+  const r = asRecord(value);
+  if (r === undefined) return undefined;
+  const currency = r['currency'];
+  const exponent = exponentOf(r['exponent']);
+  const heldMinor = safeInt(r['heldMinor']);
+  const chargedMinor = safeInt(r['chargedMinor']);
+  if (!isCurrencyCode(currency) || exponent === undefined) return undefined;
+  if (heldMinor === undefined || heldMinor < 0 || chargedMinor === undefined || chargedMinor < 0) {
+    return undefined;
+  }
+  return { currency, exponent, heldMinor, chargedMinor };
+}
+
+/**
+ * Las reservas de la red del nodo. Sin listado de reservas no hay vista; sin totales legibles, la
+ * lista se muestra igual y los totales no (nunca un total en cero inventado).
+ */
+export function parseNetworkHolds(value: unknown): NetworkHolds | undefined {
+  const r = asRecord(value);
+  const items = listOf(r?.['items'], parseNetworkHold);
+  if (items === undefined) return undefined;
+  const totals = listOf(r?.['totals'], parseNetworkHoldTotal) ?? [];
+  return {
+    items,
+    totals: [...totals].sort((a, b) => a.currency.localeCompare(b.currency)),
   };
 }
 
@@ -241,12 +429,18 @@ export function parseAgencyWallets(value: unknown): AgencyWallets | undefined {
   const f = asRecord(r['financier']);
   const financierId = f?.['tenantId'];
   const financierName = str(f?.['name']);
+  // Sin el dato (un API anterior), ninguna: la búsqueda avisa como siempre y decide el PreBook.
+  const own =
+    listOf(r['ownProviderAccounts'], (c) =>
+      typeof c === 'string' && PROVIDER_CODE_RE.test(c) ? c : undefined,
+    ) ?? [];
   return {
     portfolios: sortWallets(portfolios),
     financier:
       isUuid(financierId) && financierName !== undefined && financierName.trim() !== ''
         ? { tenantId: financierId.toLowerCase(), name: financierName }
         : null,
+    ownProviderAccounts: [...new Set(own)].sort(),
   };
 }
 
@@ -422,20 +616,169 @@ const MOVEMENT_LABEL: Readonly<Record<string, string>> = {
   BOOKING_HOLD: 'Retención por reserva',
   BOOKING_RELEASED: 'Retención liberada',
   BOOKING_CHARGE: 'Cargo por emisión',
+  NETWORK_HOLD: 'Retención de tu red',
+  NETWORK_RELEASED: 'Retención de tu red liberada',
 };
 
 export function movementLabel(type: string): string {
   return MOVEMENT_LABEL[type] ?? 'Movimiento';
 }
 
+/** Lo que queda retenido por una reserva, propia o de la red, va en su propio tono. */
+const HOLD_ENTRY_TYPES: readonly string[] = ['BOOKING_HOLD', 'NETWORK_HOLD'];
+
 /** El tono del monto: lo que suma, lo que resta y lo que queda retenido por una reserva. */
 export function movementTone(
   movement: Pick<WalletMovement, 'amountMinor' | 'transactionType'>,
 ): Tone {
-  if (movement.transactionType === 'BOOKING_HOLD') return 'warning';
+  if (HOLD_ENTRY_TYPES.includes(movement.transactionType)) return 'warning';
   if (movement.amountMinor > 0) return 'success';
   if (movement.amountMinor < 0) return 'danger';
   return 'neutral';
+}
+
+// ───────────────────────────── Reservas de la red ─────────────────────────────
+
+/**
+ * Cobrada es neutral y no "éxito": para quien financia es saldo que se fue. En revisión es peligro
+ * porque la retención quedó como cargo de una reserva que no se hizo y la tiene que conciliar una
+ * persona.
+ */
+const NETWORK_HOLD_STATUS: Readonly<Record<NetworkHoldStatus, { label: string; tone: Tone }>> = {
+  held: { label: 'Retenida', tone: 'warning' },
+  captured: { label: 'Cobrada', tone: 'neutral' },
+  released: { label: 'Liberada', tone: 'success' },
+  conflict: { label: 'En revisión', tone: 'danger' },
+};
+
+export function networkHoldStatus(status: NetworkHoldStatus): { label: string; tone: Tone } {
+  return NETWORK_HOLD_STATUS[status];
+}
+
+/** "Agencia Sur · Reserva #1042": de dónde viene, sin quién la vendió. */
+export function networkOriginLabel(
+  origin: Pick<NetworkHold, 'originTenantName' | 'orderNumber'>,
+): string {
+  const agency = origin.originTenantName ?? 'Una agencia de tu red';
+  return origin.orderNumber === null ? agency : `${agency} · Reserva #${origin.orderNumber}`;
+}
+
+/** Las que todavía ocupan saldo o piden atención: retenidas o en revisión. */
+export function openNetworkHolds(items: readonly Pick<NetworkHold, 'status'>[]): number {
+  return items.filter((h) => h.status === 'held' || h.status === 'conflict').length;
+}
+
+const ATTENTION_ORDER: Readonly<Record<NetworkHoldStatus, number>> = {
+  conflict: 0,
+  held: 1,
+  captured: 2,
+  released: 2,
+};
+
+function newerFirst(a: NetworkHold, b: NetworkHold): number {
+  const byDate = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  if (Number.isFinite(byDate) && byDate !== 0) return byDate;
+  return b.levelId.localeCompare(a.levelId);
+}
+
+/**
+ * Lo que se muestra de las reservas de la red: la página reciente del API más las retenidas y las
+ * en revisión pedidas aparte (`?status=held`, `?status=conflict`). El API corta cada listado en
+ * {@link NETWORK_HOLDS_PAGE} por fecha y sin mirar el estado, así que con una red que vende las
+ * cobradas llenan la página y las abiertas más viejas —las que concilia una persona— quedarían
+ * fuera de la lista y del contador mientras siguen sumando en los totales.
+ *
+ * Primero las en revisión, después las retenidas y al final el resto, cada grupo de la más nueva a
+ * la más vieja. Una reserva que vino en dos listas queda con su versión más reciente. Los totales
+ * son los de la página reciente: el API los suma sobre todas.
+ */
+export function combineNetworkHolds(
+  recent: NetworkHolds,
+  open: readonly NetworkHolds[],
+): NetworkHolds {
+  const byLevel = new Map<string, NetworkHold>();
+  for (const hold of [...recent.items, ...open.flatMap((o) => o.items)]) {
+    const seen = byLevel.get(hold.levelId);
+    if (seen === undefined || Date.parse(hold.updatedAt) > Date.parse(seen.updatedAt)) {
+      byLevel.set(hold.levelId, hold);
+    }
+  }
+  const items = [...byLevel.values()].sort(
+    (a, b) => ATTENTION_ORDER[a.status] - ATTENTION_ORDER[b.status] || newerFirst(a, b),
+  );
+  const truncated = [recent, ...open].some(
+    (list) => list.truncated === true || list.items.length >= NETWORK_HOLDS_PAGE,
+  );
+  return { items, totals: recent.totals, truncated };
+}
+
+/** Las reservas de la red de una moneda, o todas con `'all'`. */
+export function networkHoldsIn(holds: NetworkHolds, currency: string): NetworkHolds {
+  if (currency === 'all') return holds;
+  return {
+    items: holds.items.filter((h) => h.currency === currency),
+    totals: holds.totals.filter((t) => t.currency === currency),
+    ...(holds.truncated === undefined ? {} : { truncated: holds.truncated }),
+  };
+}
+
+/**
+ * El vacío de la lista de la red. Con la lista cortada, una moneda sin filas no es una red sin
+ * reservas: sus totales vienen de reservas más viejas que la página, y las abiertas ya se pidieron
+ * aparte, así que lo que falta está cobrado.
+ */
+export function networkHoldsEmpty(
+  holds: Pick<NetworkHolds, 'truncated'>,
+  emptyTitle: string,
+  emptyText: string,
+): { emptyTitle: string; emptyText: string } {
+  if (holds.truncated !== true) return { emptyTitle, emptyText };
+  return {
+    emptyTitle: 'No hay reservas recientes en esta moneda.',
+    emptyText: 'Lo que suman los totales es de reservas más viejas, ya cobradas.',
+  };
+}
+
+/** ¿Hay algo de la red en las carteras del nodo, en la lista o en los totales? */
+export function hasNetworkHolds(holds: NetworkHolds | null | undefined): boolean {
+  if (holds === null || holds === undefined) return false;
+  return holds.items.length > 0 || holds.totals.length > 0;
+}
+
+/** Las monedas de las reservas de la red y de sus totales, para filtrarlas. */
+export function networkHoldCurrencies(holds: NetworkHolds): string[] {
+  return [
+    ...new Set([...holds.items.map((h) => h.currency), ...holds.totals.map((t) => t.currency)]),
+  ].sort();
+}
+
+/**
+ * ¿El nodo financia a otros, y por eso su cartera retiene por las reservas de su red? Espejo de los
+ * tipos que financian en 0052 salvo la plataforma, que nunca retiene por la red (0060): los
+ * consolidadores y las agencias, sucursales incluidas. Una sub-agencia no tiene red debajo.
+ */
+export function financesNetwork(node: { readonly tenantType: string }): boolean {
+  return node.tenantType === 'consolidator' || node.tenantType === 'agency';
+}
+
+function sameId(value: unknown, wanted: string): boolean {
+  return typeof value === 'string' && value.toLowerCase() === wanted;
+}
+
+/**
+ * ¿El nodo `tenantId` financia a una red, según `GET /tenants/network`? Tiene que ser de un tipo
+ * que financia y tener al menos un nodo colgando de él: una agencia sin sub-agencias no tiene red
+ * que retenga en sus carteras. Ese listado trae los nodos que el usuario administra y lo que
+ * cuelga de ellos: si el nodo no está, el usuario no lo administra y tampoco vería su red.
+ */
+export function nodeFinancesNetwork(network: unknown, tenantId: string): boolean {
+  const tenants = asRecord(network)?.['tenants'];
+  if (!Array.isArray(tenants)) return false;
+  const wanted = tenantId.toLowerCase();
+  const nodes = tenants.map(asRecord);
+  const tenantType = nodes.find((t) => sameId(t?.['id'], wanted))?.['tenantType'];
+  if (typeof tenantType !== 'string' || !financesNetwork({ tenantType })) return false;
+  return nodes.some((t) => sameId(t?.['parentTenantId'], wanted));
 }
 
 const REPORT_STATUS: Readonly<Record<DepositReportStatus, { label: string; tone: Tone }>> = {

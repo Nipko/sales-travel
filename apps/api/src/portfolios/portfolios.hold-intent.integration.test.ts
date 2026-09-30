@@ -7,9 +7,11 @@ import { ExternalOrderIntentService } from '../orders/external-order-intent.serv
 import type { OrderRow, OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
-import { BookingHoldRejectedError } from './booking-hold.js';
+import { BookingHoldRejectedError, type BookingHoldQuote } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
+import { held } from './__fixtures__/held-outcome.js';
+import { clearWalletHoldsOfTenants } from './__fixtures__/wallet-hold-seed.js';
 
 /**
  * Retención antes del Book contra Postgres real (docs/tbo/09 PR-4.8; 08 RF-23 CA 1 y 2).
@@ -21,8 +23,10 @@ import { platformRootId } from '../__fixtures__/platform-root.js';
  * cae sobre el intent abierto que deja `ExternalOrderIntentService` y que el índice de 0039 frena
  * la segunda.
  *
- * La red es la del caso: un consolidador y una agencia suya que reserva con su cuenta heredada, con
- * una cartera en USD. El cupo lo pone el test como superusuario, en lugar de quien financia.
+ * La red es la del caso: un consolidador y una agencia suya que reserva con la cuenta que hereda de
+ * él, con una cartera en USD. El dueño de la credencial es el consolidador, así que por encima de la
+ * agencia no retiene nadie (0060): la cascada la prueban `network-holds*.integration.test.ts`. El
+ * cupo lo pone el test como superusuario, en lugar de quien financia.
  *
  * Se SALTA sin PGHOST.
  */
@@ -48,6 +52,18 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
   let consolidador: string;
   let agencia: string;
   let usuario: string;
+  let cuenta: string;
+
+  /** Lo que el aviso previo recibe: la venta, el neto y la cuenta heredada del consolidador. */
+  function cotizacion(amount: { amountMinor: number; currency: string }): BookingHoldQuote {
+    return {
+      amount,
+      netMinor: 30_000,
+      vertical: 'hotels',
+      providerCode: PROVEEDOR,
+      providerAccountId: cuenta,
+    };
+  }
 
   async function crearTenant(slug: string, tipo: string, padre: string | null): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
@@ -71,7 +87,7 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
       totalAmountMinor: totalMinor,
       currency,
       providerBookingRef: `STH${sfx.toUpperCase()}${String(n).padStart(9, '0')}`,
-      providerAccountId: null,
+      providerAccountId: cuenta,
     });
   }
 
@@ -109,6 +125,17 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
     usuario = u.rows[0]!.id;
     consolidador = await crearTenant(`hold-c-${sfx}`, 'consolidator', null);
     agencia = await crearTenant(`hold-a-${sfx}`, 'agency', consolidador);
+    // Quien firma la retención tiene que ser de la red de la reserva (0060).
+    await pool.query(
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+      [agencia, usuario],
+    );
+    const acc = await pool.query<{ id: string }>(
+      `INSERT INTO provider_accounts (tenant_id, provider_code, label, credentials_enc, is_inheritable, status)
+       VALUES ($1, $2, 'default', '\\x00'::bytea, true, 'active') RETURNING id`,
+      [consolidador, PROVEEDOR],
+    );
+    cuenta = acc.rows[0]!.id;
     // El crédito interno de 0007 ya no participa: aunque sea enorme, no suma cupo.
     await pool.query(`UPDATE tenants SET credit_limit = 1000000 WHERE id = $1`, [agencia]);
     await pool.query(
@@ -119,6 +146,8 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
   });
 
   afterAll(async () => {
+    // Las retenciones son ON DELETE RESTRICT: se borran antes que las órdenes y los tenants.
+    await clearWalletHoldsOfTenants(pool, [agencia, consolidador]);
     for (const id of [agencia, consolidador]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
@@ -131,7 +160,7 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
     const intent = await abrirIntent(34_012);
 
     const previo = await portfolios
-      .assertBookingHoldAffordable(agencia, USD(34_012))
+      .assertBookingHoldAffordable(agencia, cotizacion(USD(34_012)))
       .catch((e: unknown) => e);
     const retencion = await portfolios
       .holdBookingIntent(agencia, intent.id, usuario, USD(34_012))
@@ -148,7 +177,7 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
     const intent = await abrirIntent(34_012, 'EUR');
 
     const previo = await portfolios
-      .assertBookingHoldAffordable(agencia, { amountMinor: 34_012, currency: 'EUR' })
+      .assertBookingHoldAffordable(agencia, cotizacion({ amountMinor: 34_012, currency: 'EUR' }))
       .catch((e: unknown) => e);
     const retencion = await portfolios
       .holdBookingIntent(agencia, intent.id, usuario, { amountMinor: 34_012, currency: 'EUR' })
@@ -174,12 +203,9 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
     ).rejects.toBeInstanceOf(BookingHoldRejectedError);
 
     await cupo(34_012);
-    await portfolios.assertBookingHoldAffordable(agencia, USD(34_012));
-    const { transaction } = await portfolios.holdBookingIntent(
-      agencia,
-      intent.id,
-      usuario,
-      USD(34_012),
+    await portfolios.assertBookingHoldAffordable(agencia, cotizacion(USD(34_012)));
+    const { transaction } = held(
+      await portfolios.holdBookingIntent(agencia, intent.id, usuario, USD(34_012)),
     );
 
     expect(transaction).toMatchObject({

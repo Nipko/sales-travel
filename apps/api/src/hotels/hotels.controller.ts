@@ -32,6 +32,7 @@ import type { NonRefundableRatesPermission } from '../database/database.types.js
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import { SellerRateLimit } from '../throttler/seller-rate-limit.guard.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
@@ -216,7 +217,11 @@ export class HotelsController {
    * y se revalida con el contexto de su búsqueda, con snapshot en el servidor (PR-4.5). El cuerpo
    * de Despegar (`choiceId`) sigue yendo a su flujo de siempre, con su respuesta tal cual.
    */
+  // Cada PreBook lee las carteras de la red y cada Book bloquea la del nivel más alto: un tope por
+  // vendedor acota el abuso sobre la cartera caliente de un consolidador (0060). Por vendedor y no
+  // por IP: web-b2b llama desde su servidor, así que por IP sería un único cupo para todos.
   @SalesOperation()
+  @SellerRateLimit({ bucket: 'hotels-prebook', limit: 60, ttlMs: 60_000 })
   @Post('prebook')
   async prebook(
     @CurrentUser() userId: string | undefined,
@@ -236,6 +241,7 @@ export class HotelsController {
    * su respuesta tal cual (D-TBO-08 A).
    */
   @SalesOperation()
+  @SellerRateLimit({ bucket: 'hotels-book', limit: 30, ttlMs: 60_000 })
   @Post('book')
   async book(
     @CurrentUser() userId: string | undefined,

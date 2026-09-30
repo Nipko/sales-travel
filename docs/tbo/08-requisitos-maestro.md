@@ -695,13 +695,16 @@ titular es INFERIDO ([03](./03-prebook-y-book.md) §7.4). `tenants.credit_limit`
 
 **Estado (2026-09-29).** El límite interno es el cupo de la cartera de la agencia en la moneda de la tarifa, que
 fija quien la financia: `tenants.credit_limit` pasó a ese cupo en 0053 y ya no se lee. El tope de la retención es el
-saldo más ese cupo, con cuenta propia o heredada. Con D-TBO-21 cerrada, el límite de una sub-agencia lo fija su
-agencia, el de una agencia lo fija su consolidador o Planetour, y ninguna agencia toca el suyo
-(`db/migrations/0052_wallets_per_currency.sql`, `can_finance_tenant`). El CA 1 lo cubren
+saldo más ese cupo, con la cuenta heredada; con la propia no se retiene (decisión del founder del 2026-09-30,
+opción B). Con D-TBO-21 cerrada, el límite de una sub-agencia lo fija su agencia, el de una agencia lo fija su
+consolidador o Planetour, y ninguna agencia toca el suyo (`db/migrations/0052_wallets_per_currency.sql`,
+`can_finance_tenant`). El CA 1 lo cubren
 `apps/api/src/hotels/hotel-booking.service.test.ts` (el Book rechazado no sale a TBO) y
 `apps/api/src/portfolios/holds-per-currency.integration.test.ts` (la retención por moneda, como `app_user`). El cobro
 al viajero con checkout alojado sigue sin construir, porque no hay pasarela de pagos (Fase 1 de
-[platform/12](../platform/12-modelo-consolidador-y-plan.md) §6).
+[platform/12](../platform/12-modelo-consolidador-y-plan.md) §6). Desde 0060 el límite de una sub-agencia que hereda
+la cuenta de más arriba lo acotan también su agencia y su consolidador: cada nivel entre ella y el dueño de la cuenta
+retiene su costo, y si uno no alcanza, el Book se rechaza sin llamar a TBO (D-TBO-21, cascada).
 
 **CA.**
 
@@ -2003,6 +2006,28 @@ la propia agencia. El founder eligió que la cartera de cada agencia la establez
   (`funding`). El límite interno del tenant (`tenants.credit_limit`) pasó al cupo en 0053 y ya no se lee.
 - **Lo que no cambia.** El cobro al viajero con checkout alojado, la otra mitad de (A), queda como está descrito y se
   construye con la pasarela de pagos. La saga sigue en BullMQ (D9).
+- **La cascada (0060; "opción 1" del founder, 2026-09-29).** El cupo que una agencia le da a su sub-agencia ya no
+  queda sin tope a lo largo de la red:
+
+  - La agencia que vende (T) sigue reteniendo el precio de venta en su cartera, como arriba.
+  - Retiene además cada nivel que la financia, hasta el dueño de la cuenta TBO con que se reserva (O) y sin incluirlo,
+    por su costo: el neto más los markups de los niveles de arriba. O es el dueño de `orders.provider_account_id`.
+    Ejemplo: una sub-agencia que hereda la cuenta de Planetour retiene la venta, y su agencia y su consolidador
+    retienen cada uno su costo.
+  - Si un nivel no alcanza, no se retiene en ninguno y no se llama a TBO: 409 `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`,
+    `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` o `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. El PreBook ya lo avisa (`funding`).
+  - Liberar recorre lo retenido y devuelve el 100 % en todos los niveles, como hoy, también con penalidad: quien
+    financia cada nivel la registra con un ajuste manual (decisión del founder del 2026-09-30, opción A; el
+    procedimiento está en platform/13 §5).
+  - **O = T.** Si el que vende es el dueño de la cuenta (un consolidador con su propia cuenta TBO), no retiene nadie,
+    ni él ni su red, y no necesita cartera en la moneda de la tarifa (decisión del founder del 2026-09-30, opción B).
+    El PreBook lo dice (`funding: own-account`) y no hay aviso de cartera. Sus agencias, que heredan esa cuenta,
+    siguen reteniendo su cadena por debajo de él.
+  - Con la red de hoy (todos los nodos de nivel 2 o menos) nadie de la red retiene de más. Lo único que cambia es que
+    quien reserva con su propia cuenta TBO, como Planetour, deja de retener.
+
+  Detalle en [platform/12](../platform/12-modelo-consolidador-y-plan.md) §14; el despliegue es el paso 14 de
+  [platform/13](../platform/13-validacion-modelo-red.md) §5.
 
 Implementación: `db/migrations/0052_wallets_per_currency.sql`, `0053_tenant_credit_limit_to_wallets.sql`,
 `apps/api/src/portfolios/` (`wallet-financing.service.ts`, `booking-hold.ts`) y
