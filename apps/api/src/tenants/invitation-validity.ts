@@ -62,7 +62,7 @@ export class InvitationNoLongerValidError extends BadRequestException {
   readonly reason = 'INVITATION_NO_LONGER_VALID';
 
   constructor() {
-    super('Esta invitación ya no es válida, pedí una nueva.');
+    super('Esta invitación ya no es válida, pide una nueva.');
     this.name = 'InvitationNoLongerValidError';
   }
 }

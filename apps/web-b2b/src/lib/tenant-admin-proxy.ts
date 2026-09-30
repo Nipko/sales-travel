@@ -135,7 +135,7 @@ export function membershipImpactTarget(query: {
   } else if (role !== null && status === null && ROLE_FORMAT.test(role)) {
     params.set('role', role);
   } else {
-    return { ok: false, error: 'Indicá qué cambio simular: suspender o un rol.' };
+    return { ok: false, error: 'Indica qué cambio simular: suspender o un rol.' };
   }
   return { ok: true, path: `/admin/memberships/impact?${params.toString()}` };
 }

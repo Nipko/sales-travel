@@ -11,8 +11,8 @@ export function acceptInvitationError(
 ): string {
   if (error.status === 400) {
     return error.reason === 'INVITATION_NO_LONGER_VALID'
-      ? 'Esta invitación ya no es válida, pedí una nueva.'
-      : 'La invitación ya se usó, venció o fue revocada. Pedile a tu administrador que te mande una nueva.';
+      ? 'Esta invitación ya no es válida, pide una nueva.'
+      : 'La invitación ya se usó, venció o fue revocada. Pídele a tu administrador que te envíe una nueva.';
   }
   return error.message;
 }

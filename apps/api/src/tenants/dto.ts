@@ -68,7 +68,7 @@ export const MembershipImpactQuerySchema = z
   })
   .strict()
   .refine((q) => (q.status === undefined) !== (q.role === undefined), {
-    message: 'indicá status o role, uno solo',
+    message: 'indica status o role, uno solo',
   });
 export type MembershipImpactQuery = z.infer<typeof MembershipImpactQuerySchema>;
 

@@ -92,6 +92,6 @@ describe('invitationDefect: una invitación vale mientras su invitador la pueda 
     const err = new InvitationNoLongerValidError();
     expect(err.getStatus()).toBe(400);
     expect(err.reason).toBe('INVITATION_NO_LONGER_VALID');
-    expect(err.message).toBe('Esta invitación ya no es válida, pedí una nueva.');
+    expect(err.message).toBe('Esta invitación ya no es válida, pide una nueva.');
   });
 });

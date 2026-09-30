@@ -169,7 +169,7 @@ export class AdminController {
   ): Promise<{ invitationsToRevoke: number }> {
     if (!userId) throw new UnauthorizedException();
     if (query.userId === userId) {
-      throw new ForbiddenException('no podés cambiar tu propia membership');
+      throw new ForbiddenException('no puedes cambiar tu propia membership');
     }
 
     const actorRole = await this.actorRoleOver(userId, query.tenantId);

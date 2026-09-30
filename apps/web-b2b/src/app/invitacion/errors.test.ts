@@ -6,10 +6,10 @@ describe('acceptInvitationError: por qué no se pudo aceptar', () => {
     expect(
       acceptInvitationError({
         status: 400,
-        message: 'Esta invitación ya no es válida, pedí una nueva.',
+        message: 'Esta invitación ya no es válida, pide una nueva.',
         reason: 'INVITATION_NO_LONGER_VALID',
       }),
-    ).toBe('Esta invitación ya no es válida, pedí una nueva.');
+    ).toBe('Esta invitación ya no es válida, pide una nueva.');
   });
 
   it('otro 400: usada, vencida o revocada', () => {
