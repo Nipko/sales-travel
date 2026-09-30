@@ -54,6 +54,24 @@ export const SetUserStatusSchema = z.object({
 });
 export type SetUserStatusDto = z.infer<typeof SetUserStatusSchema>;
 
+/**
+ * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET
+ * /admin/memberships/impact): suspenderla o darle otro rol. Uno de los dos: la pantalla pregunta por
+ * el cambio que está por confirmar.
+ */
+export const MembershipImpactQuerySchema = z
+  .object({
+    userId: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    status: z.enum(['active', 'suspended']).optional(),
+    role: AssignableRoleSchema.optional(),
+  })
+  .strict()
+  .refine((q) => (q.status === undefined) !== (q.role === undefined), {
+    message: 'indica status o role, uno solo',
+  });
+export type MembershipImpactQuery = z.infer<typeof MembershipImpactQuerySchema>;
+
 /** El `id` de la ruta. En minúsculas, como lo devuelve Postgres y como queda en la auditoría. */
 export const TenantIdParamSchema = z
   .string()

@@ -1,4 +1,4 @@
-import { lastAccessLabel, lockedUntilLabel } from './tenant-admin-format';
+import { lastAccessLabel, lockedUntilLabel, relativeTime } from './tenant-admin-format';
 
 /**
  * El equipo de un nodo en "Equipo": quién es cada miembro, si tiene 2FA, cuándo entró por última
@@ -141,6 +141,43 @@ export function parseInvitations(value: unknown): PendingInvitation[] | undefine
   });
 }
 
+/**
+ * Quién mandó una invitación y cuándo: "Invitado por ana@agencia.co · hace 2 días". Deja ver de un
+ * vistazo las que mandó alguien que ya no está en el equipo.
+ */
+export function invitationOrigin(
+  invitation: Pick<PendingInvitation, 'invitedByEmail' | 'createdAt'>,
+  now: number,
+): string {
+  const who = `Invitado por ${invitation.invitedByEmail ?? 'un usuario eliminado'}`;
+  const when = relativeTime(invitation.createdAt, now);
+  return when === undefined ? who : `${who} · ${when}`;
+}
+
+/** Lo que arrastraría un cambio sobre una membership (`GET /admin/memberships/impact`). */
+export interface MembershipImpact {
+  readonly invitationsToRevoke: number;
+}
+
+export function parseMembershipImpact(value: unknown): MembershipImpact | undefined {
+  const n = asRecord(value)?.['invitationsToRevoke'];
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0
+    ? { invitationsToRevoke: n }
+    : undefined;
+}
+
+/**
+ * La frase de una confirmación sobre las invitaciones que el cambio revoca: las que el miembro
+ * envió y ya no podría enviar. `null` = no pudimos saber cuántas; se avisa igual, sin número.
+ */
+export function revokedInvitationsNotice(count: number | null): string {
+  if (count === null) return ' Si envió invitaciones que ya no podría enviar, se revocan.';
+  if (count === 0) return '';
+  return count === 1
+    ? ' Se revocará 1 invitación que envió.'
+    : ` Se revocarán ${count} invitaciones que envió.`;
+}
+
 export type MfaState = 'active' | 'pending' | 'not-required' | 'unknown';
 
 /**
@@ -275,21 +312,61 @@ export function grantableRoles<T extends { readonly value: string }>(
   return roles.filter((r) => roleRank(r.value) < actor.rank);
 }
 
-/** La confirmación de un cambio de rol, con lo que implica (el 2FA obligatorio incluido). */
+export interface ConfirmCopy {
+  readonly title: string;
+  readonly description: string;
+  readonly confirmLabel: string;
+}
+
+/** ¿Pasar de `from` a `to` le quita rango? Sólo entonces puede dejar invitaciones sin respaldo. */
+export function demotes(from: string, to: string): boolean {
+  return roleRank(to) < roleRank(from);
+}
+
+/**
+ * La confirmación de un cambio de rol, con lo que implica: el 2FA obligatorio y, al degradar, las
+ * invitaciones que se revocan (`invitationsToRevoke`, ver {@link revokedInvitationsNotice}).
+ */
 export function roleChangeCopy(
   member: Pick<NetworkMember, 'name' | 'email' | 'role' | 'mfaEnabled'>,
   to: string,
   labelOf: (role: string) => string,
-): { readonly title: string; readonly description: string; readonly confirmLabel: string } {
+  invitationsToRevoke: number | null = 0,
+): ConfirmCopy {
   const promotes = roleRank(to) > roleRank(member.role);
   const mfa =
     requiresMfa(to) && member.mfaEnabled !== true
       ? ' Su nuevo rol exige verificación en dos pasos: al próximo ingreso tiene que activarla antes de seguir.'
       : '';
+  const invitations = demotes(member.role, to) ? revokedInvitationsNotice(invitationsToRevoke) : '';
   return {
     title: `${promotes ? 'Promover' : 'Cambiar el rol de'} ${who(member)}`,
-    description: `Pasa de ${labelOf(member.role)} a ${labelOf(to)} en este nodo.${mfa}`,
+    description: `Pasa de ${labelOf(member.role)} a ${labelOf(to)} en este nodo.${mfa}${invitations}`,
     confirmLabel: promotes ? `Promover a ${labelOf(to)}` : 'Cambiar rol',
+  };
+}
+
+/**
+ * La confirmación de suspender o reactivar la membership de este nodo. Suspender corta sólo este
+ * nodo (y cierra las sesiones que tenía abiertas en él): si trabaja en otros, ahí sigue.
+ */
+export function statusChangeCopy(
+  member: Pick<NetworkMember, 'name' | 'email'>,
+  status: 'active' | 'suspended',
+  invitationsToRevoke: number | null = 0,
+): ConfirmCopy {
+  const name = who(member);
+  if (status === 'active') {
+    return {
+      title: `Reactivar a ${name}`,
+      description: 'Vuelve a tener acceso a este nodo.',
+      confirmLabel: 'Reactivar',
+    };
+  }
+  return {
+    title: `Suspender a ${name}`,
+    description: `Pierde el acceso a este nodo de inmediato y se cierran sus sesiones abiertas en él. Si trabaja en otros nodos, ahí sigue operando.${revokedInvitationsNotice(invitationsToRevoke)}`,
+    confirmLabel: 'Suspender',
   };
 }
 

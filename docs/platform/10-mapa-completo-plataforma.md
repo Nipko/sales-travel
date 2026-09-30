@@ -724,6 +724,8 @@ Implementados en la Ola 1 (auth premium, 2026-09-29):
 POST   /auth/login                       -- { email, password, trustedDeviceToken? } → sesión | desafío MFA | 409 SEATS_FULL
 POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
 POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
+POST   /auth/switch-tenant               -- { tenantId } reemplaza la sesión · 409 SEATS_FULL · 403 TENANT_SUSPENDED
+GET    /me/memberships                   -- agencias del usuario: logo, operable y motivo, isDefault (la del próximo login)
 GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
 POST   /auth/logout                      -- { reason?: 'idle' }
 GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all
@@ -734,6 +736,16 @@ GET    /tenants/:id/seats                -- uso del cupo y conectados del subár
 POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
+```
+
+Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_scoped_revocation.sql`, detalle en [12 §12](./12-modelo-consolidador-y-plan.md)):
+
+```
+PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations
+PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
+PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes
+GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
+POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
 ```
 
 ### Tenant

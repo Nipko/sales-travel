@@ -1,10 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { isTokenExpired, loginUrlFor, requestedPathOf } from './app/login/login-redirect';
+import {
+  isTokenExpired,
+  loginUrlFor,
+  requestedPathOf,
+  tokenTenantId,
+} from './app/login/login-redirect';
 import { SAFE_NEXT_FALLBACK, safeNextPath } from './lib/safe-next';
 import {
   COOKIES_CLEARED_ON_LOGOUT,
   REQUESTED_PATH_HEADER,
   SESSION_COOKIE,
+  TENANT_COOKIE,
+  tenantCookieOptions,
 } from './lib/session-cookies';
 
 /**
@@ -43,6 +50,19 @@ function nextTarget(req: NextRequest): URL {
   return target.origin === base.origin ? target : new URL(SAFE_NEXT_FALLBACK, base);
 }
 
+/**
+ * `st_tenant` sigue al `tid` de la sesión: es lo que viaja como `x-tenant-id`, y el cupo de puestos y
+ * el rol se cuentan por la sesión. Si se despegan, el panel muestra una agencia y la API opera con
+ * otra (descarta un `x-tenant-id` de otro cupo y usa el `tid`, ver SessionService.validate). Pasaba con una
+ * cookie vieja o sin cookie, cuando el layout elegía por su cuenta la primera membership.
+ *
+ * Devuelve el `tid` si la cookie hay que corregirla, o `null`.
+ */
+function staleTenantCookie(req: NextRequest, token: string): string | null {
+  const tid = tokenTenantId(token);
+  return tid && req.cookies.get(TENANT_COOKIE)?.value !== tid ? tid : null;
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get(SESSION_COOKIE)?.value || null;
@@ -70,10 +90,19 @@ export function middleware(req: NextRequest) {
     return expired ? clearSessionCookies(res) : res;
   }
 
+  // La cookie de tenant se corrige en el pedido (antes de copiar sus cabeceras, así la ve el render
+  // de este mismo pedido) y en la respuesta.
+  const tid = staleTenantCookie(req, token);
+  if (tid) req.cookies.set(TENANT_COOKIE, tid);
+
   // Siempre se pisa: un valor que mande el navegador no llega al layout.
   const headers = new Headers(req.headers);
   headers.set(REQUESTED_PATH_HEADER, requestedPathOf(req.nextUrl));
-  return NextResponse.next({ request: { headers } });
+  const res = NextResponse.next({ request: { headers } });
+  if (tid) {
+    res.cookies.set(TENANT_COOKIE, tid, tenantCookieOptions(process.env.NODE_ENV === 'production'));
+  }
+  return res;
 }
 
 export const config = {

@@ -3,6 +3,8 @@
 import { Menu, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { DrawerAgencyButton } from './agency-switcher';
 import { SidebarContent } from './sidebar';
 
 interface MobileNavProps {
@@ -94,40 +96,49 @@ export function MobileNav({ role, tenantName, tenantSlug, logoUrl }: MobileNavPr
         <Menu className="size-5" />
       </button>
 
-      {open ? (
-        <div className="lg:hidden fixed inset-0 z-50">
-          {/* Fondo: cierra al tocar. aria-hidden porque el botón de cerrar ya cubre la acción. */}
-          <div
-            className="absolute inset-0 bg-black/50 animate-fade-in"
-            onClick={close}
-            aria-hidden="true"
-          />
+      {/* En un portal a <body>: el botón vive en el <header>, que tiene `backdrop-filter`, y eso lo
+          vuelve el bloque contenedor de todo `position: fixed` de adentro. El drawer quedaba
+          encerrado en los 56 px del header, con el menú desbordado sobre la página. */}
+      {open
+        ? createPortal(
+            <div className="lg:hidden fixed inset-0 z-50">
+              {/* Fondo: cierra al tocar. aria-hidden porque el botón de cerrar ya cubre la acción. */}
+              <div
+                className="absolute inset-0 bg-black/50 animate-fade-in"
+                onClick={close}
+                aria-hidden="true"
+              />
 
-          <div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Navegación principal"
-            className="absolute inset-y-0 left-0 flex w-[17rem] max-w-[85vw] flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300 shadow-[var(--shadow-xl)]"
-          >
-            <button
-              type="button"
-              onClick={close}
-              aria-label="Cerrar menú de navegación"
-              className="absolute right-3 top-4 z-10 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <X className="size-4" />
-            </button>
+              <div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Navegación principal"
+                className="absolute inset-y-0 left-0 flex w-[17rem] max-w-[85vw] flex-col border-r border-slate-800/60 bg-[var(--color-navy-dark)] text-slate-300 shadow-[var(--shadow-xl)]"
+              >
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label="Cerrar menú de navegación"
+                  className="absolute right-3 top-4 z-10 inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X className="size-4" />
+                </button>
 
-            <SidebarContent
-              role={role}
-              tenantName={tenantName}
-              tenantSlug={tenantSlug}
-              logoUrl={logoUrl}
-            />
-          </div>
-        </div>
-      ) : null}
+                <SidebarContent
+                  role={role}
+                  tenantName={tenantName}
+                  tenantSlug={tenantSlug}
+                  logoUrl={logoUrl}
+                  // Cerrar el drawer antes de abrir el selector: dos modales apilados atrapan el foco
+                  // uno contra el otro.
+                  brandAccessory={<DrawerAgencyButton onBeforeOpen={close} />}
+                />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

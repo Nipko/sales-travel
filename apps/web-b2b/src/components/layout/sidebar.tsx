@@ -2,16 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  accountNav,
-  adminNav,
-  managementNav,
-  operationsNav,
-  superAdminNav,
-  type NavItem,
-} from '../../lib/nav';
+import type { ReactNode } from 'react';
+import { navSections, type NavItem } from '../../lib/nav';
 import { cn } from '../../lib/cn';
-import { navForViewer } from '../../lib/viewer';
 import { BrandMark } from './brand-mark';
 import { useViewer } from './viewer-context';
 
@@ -21,6 +14,8 @@ interface SidebarProps {
   /** Identificador del tenant. Se muestra bajo el nombre: es dato real, no una etiqueta fija. */
   tenantSlug?: string;
   logoUrl?: string;
+  /** Debajo de la marca: el drawer móvil pone ahí el cambio de agencia. */
+  brandAccessory?: ReactNode;
 }
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -61,22 +56,16 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
  * no se duplique y no se desincronice. Bajo 1024px el aside está oculto y, hasta ahora,
  * no había ninguna alternativa: la app se quedaba sin navegación.
  */
-export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: SidebarProps) {
+export function SidebarContent({
+  role,
+  tenantName,
+  tenantSlug,
+  logoUrl,
+  brandAccessory,
+}: SidebarProps) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-
-  // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos en su menú (lib/viewer.ts).
-  const operations = navForViewer(operationsNav, useViewer());
-
-  const isSuperAdmin = role === 'superadmin';
-  const isAdmin = [
-    'superadmin',
-    'platform_admin',
-    'consolidator_admin',
-    'tenant_admin',
-    'agency_admin',
-    'admin',
-  ].includes(role ?? '');
+  const sections = navSections(role, useViewer());
 
   return (
     <>
@@ -109,81 +98,24 @@ export function SidebarContent({ role, tenantName, tenantSlug, logoUrl }: Sideba
         </span>
       </Link>
 
+      {brandAccessory}
+
       {/* Navigation Links */}
       <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3.5 py-6">
-        {/* OPERACIONES DIARIAS */}
-        <div className="space-y-1.5">
-          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            Operaciones
-          </p>
-          <ul className="space-y-1">
-            {operations.map((item) => (
-              <li key={item.href}>
-                <NavLink item={item} active={isActive(item.href)} />
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* GESTIÓN */}
-        <div className="space-y-1.5">
-          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            Gestión
-          </p>
-          <ul className="space-y-1">
-            {managementNav.map((item) => (
-              <li key={item.href}>
-                <NavLink item={item} active={isActive(item.href)} />
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* ADMINISTRACIÓN */}
-        {isAdmin && (
-          <div className="space-y-1.5">
+        {sections.map((section) => (
+          <div key={section.label} className="space-y-1.5">
             <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-              Administración
+              {section.label}
             </p>
             <ul className="space-y-1">
-              {adminNav.map((item) => (
+              {section.items.map((item) => (
                 <li key={item.href}>
                   <NavLink item={item} active={isActive(item.href)} />
                 </li>
               ))}
             </ul>
           </div>
-        )}
-
-        {/* MI CUENTA — visible para todos: la seguridad de la propia cuenta no es admin */}
-        <div className="space-y-1.5">
-          <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            Mi cuenta
-          </p>
-          <ul className="space-y-1">
-            {accountNav.map((item) => (
-              <li key={item.href}>
-                <NavLink item={item} active={isActive(item.href)} />
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* AGENCIAS SUPER ADMIN */}
-        {isSuperAdmin && (
-          <div className="space-y-1.5">
-            <p className="px-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-              Super Admin
-            </p>
-            <ul className="space-y-1">
-              {superAdminNav.map((item) => (
-                <li key={item.href}>
-                  <NavLink item={item} active={isActive(item.href)} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        ))}
       </nav>
 
       {/* Footer info */}

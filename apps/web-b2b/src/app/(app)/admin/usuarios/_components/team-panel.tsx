@@ -11,15 +11,19 @@ import { readJson } from '../../../../../lib/read-json';
 import {
   loadInvitations,
   loadMembers,
+  loadMembershipImpact,
   revokeInvitation,
   runMemberAction,
+  type MembershipChange,
 } from '../../../../../lib/tenant-admin-seats-client';
 import {
+  demotes,
   grantableRoles,
   memberActionCopy,
   memberActionDoneMessage,
   memberName,
   roleChangeCopy,
+  statusChangeCopy,
   type MemberAction,
   type NetworkMember,
   type PendingInvitation,
@@ -28,6 +32,7 @@ import {
 import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/tenant-network';
 import { MemberList, type MemberRowError } from './member-list';
 import { INVITABLE_ROLES, roleLabel } from './roles';
+import { InvitationList } from './invitation-list';
 import { SeatsCard, useSeatsView } from './seats-ui';
 
 /**
@@ -58,6 +63,18 @@ const inputClass =
 
 const selectClass =
   'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+
+/** " Se revocaron N invitaciones que envió." para el aviso de éxito, según lo que devolvió el API. */
+function revokedSuffix(body: unknown): string {
+  const n =
+    typeof body === 'object' && body !== null
+      ? (body as Record<string, unknown>)['revokedInvitations']
+      : undefined;
+  if (typeof n !== 'number' || n <= 0) return '';
+  return n === 1
+    ? ' Se revocó 1 invitación que envió.'
+    : ` Se revocaron ${n} invitaciones que envió.`;
+}
 
 function Alert({
   tone,
@@ -177,14 +194,28 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
     setMemberError({ userId: member.userId, message });
   }
 
+  /**
+   * Cuántas invitaciones revocaría el cambio, para decirlo en la confirmación. `null` si no se pudo
+   * saber: se confirma igual y el aviso lo dice sin número.
+   */
+  async function invitationsToRevoke(
+    member: NetworkMember,
+    change: MembershipChange,
+  ): Promise<number | null> {
+    setBusyUserId(member.userId);
+    try {
+      const res = await loadMembershipImpact(tenantId, member.userId, change);
+      return res.ok ? res.data.invitationsToRevoke : null;
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
   async function setStatus(member: NetworkMember, status: 'active' | 'suspended') {
     const suspending = status === 'suspended';
+    const revoking = suspending ? await invitationsToRevoke(member, { status }) : 0;
     const ok = await confirm({
-      title: suspending ? `Suspender a ${memberName(member)}` : `Reactivar a ${memberName(member)}`,
-      description: suspending
-        ? 'Se le corta el acceso a este nodo de inmediato y se cierran sus sesiones abiertas.'
-        : 'Vuelve a tener acceso a este nodo.',
-      confirmLabel: suspending ? 'Suspender' : 'Reactivar',
+      ...statusChangeCopy(member, status, revoking),
       destructive: suspending,
     });
     if (!ok) return;
@@ -206,9 +237,10 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
         );
         return;
       }
+      const done = await readJson<unknown>(res);
       toast.success(
         suspending
-          ? `${memberName(member)} quedó suspendido en este nodo.`
+          ? `${memberName(member)} quedó suspendido en este nodo.${revokedSuffix(done.ok ? done.data : undefined)}`
           : `${memberName(member)} volvió a tener acceso.`,
       );
       await Promise.all([load(true), reloadSeats(true)]);
@@ -221,7 +253,11 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
 
   async function changeRole(member: NetworkMember, role: string) {
     if (role === member.role) return;
-    const ok = await confirm({ ...roleChangeCopy(member, role, roleLabel), destructive: false });
+    const revoking = demotes(member.role, role) ? await invitationsToRevoke(member, { role }) : 0;
+    const ok = await confirm({
+      ...roleChangeCopy(member, role, roleLabel, revoking),
+      destructive: false,
+    });
     if (!ok) return;
     setActionError('');
     setMemberError(null);
@@ -237,7 +273,10 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
         failOn(member, (read.ok ? read.data.error : undefined) ?? 'No pudimos cambiar el rol.');
         return;
       }
-      toast.success(`${memberName(member)} ahora es ${roleLabel(role)}.`);
+      const done = await readJson<unknown>(res);
+      toast.success(
+        `${memberName(member)} ahora es ${roleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
+      );
       await load(true);
     } catch {
       failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
@@ -409,40 +448,7 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
       {invitations.status === 'error' ? (
         <Alert tone="error">{invitations.message}</Alert>
       ) : invitations.status === 'ready' && invitations.items.length > 0 ? (
-        <section
-          aria-labelledby="invitations-title"
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
-        >
-          <div className="border-b border-[var(--color-border)] px-4 py-2.5">
-            <h2 id="invitations-title" className="text-sm font-semibold text-[var(--color-fg)]">
-              Invitaciones pendientes ({invitations.items.length})
-            </h2>
-          </div>
-          <ul className="divide-y divide-[var(--color-border)]">
-            {invitations.items.map((i) => (
-              <li
-                key={i.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-[var(--color-fg)]">{i.email}</p>
-                  <p className="text-xs text-[var(--color-fg-muted)]">
-                    {roleLabel(i.role)} · vence {new Date(i.expiresAt).toLocaleDateString('es-CO')}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void revoke(i)}
-                  aria-label={`Revocar la invitación a ${i.email}`}
-                >
-                  <X aria-hidden="true" />
-                  Revocar
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <InvitationList items={invitations.items} onRevoke={(i) => void revoke(i)} />
       ) : null}
 
       {tenantId !== '' ? (
