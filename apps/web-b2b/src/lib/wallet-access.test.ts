@@ -3,6 +3,7 @@ import {
   canManageWalletsFromNetwork,
   canReleaseHolds,
   canReportDeposits,
+  canViewNetworkHolds,
   walletFinancierOf,
 } from './wallet-access';
 
@@ -87,5 +88,13 @@ describe('roles de la agencia en Cartera B2B', () => {
     expect(canReportDeposits('vendedor')).toBe(false);
     expect(canReleaseHolds('vendedor')).toBe(false);
     expect(canReportDeposits(undefined)).toBe(false);
+  });
+
+  it('las reservas de la red (ventas de otras agencias) sólo las ven los admins, como en el API', () => {
+    for (const role of ['tenant_admin', 'agency_admin', 'admin', 'consolidator_admin']) {
+      expect(canViewNetworkHolds(role)).toBe(true);
+    }
+    expect(canViewNetworkHolds('vendedor')).toBe(false);
+    expect(canViewNetworkHolds(undefined)).toBe(false);
   });
 });

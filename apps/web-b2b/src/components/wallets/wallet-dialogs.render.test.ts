@@ -132,6 +132,38 @@ describe('diálogos de quien financia', () => {
     expect(labelsOf(html)).toEqual(['Motivo']);
   });
 
+  it('suspender la cartera de quien financia a una red avisa que también frena a su red', () => {
+    const html = (financesNetwork: boolean) =>
+      renderToStaticMarkup(
+        createElement(WalletStatusDialog, {
+          wallet: USD,
+          nodeName: 'Consolidador Andino',
+          financesNetwork,
+          to: 'suspended',
+          onSubmit: submit,
+          onClose: noop,
+        }),
+      );
+    expect(html(true)).toContain(
+      'También frena las reservas en USD de la red de Consolidador Andino',
+    );
+    expect(html(false)).not.toContain('También frena');
+  });
+
+  it('habilitar una moneda a quien financia a una red dice que también la habilita para ella', () => {
+    const html = renderToStaticMarkup(
+      createElement(EnableWalletDialog, {
+        nodeName: 'Consolidador Andino',
+        financesNetwork: true,
+        available: ['EUR', 'USD'],
+        defaultCurrency: 'USD',
+        onSubmit: submit,
+        onClose: noop,
+      }),
+    );
+    expect(html).toContain('También habilita, hasta su disponible, las reservas en esa moneda');
+  });
+
   it('rechazar un informe muestra monto y referencia y pide el motivo', () => {
     const html = renderToStaticMarkup(
       createElement(RejectReportDialog, {

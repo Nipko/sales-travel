@@ -3,7 +3,7 @@ import { formatMoney } from '../../_components/hotel-format';
 import { saleTotal } from '../../_components/hotel-rate-view';
 import type { RateSelection } from '../../_components/hotel-rate-selection';
 import { OFFER_WARNING_REMAINING_MS, type OfferExpiryState } from '../../_components/offer-expiry';
-import { FUNDING_GATE_REASON, parseFunding, type PrebookFunding } from './funding-view';
+import { fundingGateReason, parseFunding, type PrebookFunding } from './funding-view';
 
 /*
  * El paso 1 del checkout sin React (U-09 a U-11): la respuesta del PreBook neutral leída sin
@@ -447,7 +447,8 @@ export interface ContinueGate {
 
 /**
  * Qué falta para pasar a los huéspedes, en el orden en que el vendedor lo resuelve. Una cartera que
- * no cubre la tarifa frena acá y no en el Book: cargar los huéspedes sería en vano.
+ * no cubre la tarifa, la de la agencia o la de un nivel de su red, frena acá y no en el Book:
+ * cargar los huéspedes sería en vano.
  */
 export function continueGate(input: {
   readonly expired: boolean;
@@ -462,7 +463,9 @@ export function continueGate(input: {
   if (input.blocked) {
     return { ok: false, reason: 'Esta tarifa no se puede reservar como hotel suelto.' };
   }
-  if (input.funding?.status === 'blocked') return { ok: false, reason: FUNDING_GATE_REASON };
+  if (input.funding?.status === 'blocked') {
+    return { ok: false, reason: fundingGateReason(input.funding) };
+  }
   if (input.change?.requiresAcceptance === true && !input.accepted) {
     return { ok: false, reason: 'Aceptá los cambios de la tarifa para continuar.' };
   }

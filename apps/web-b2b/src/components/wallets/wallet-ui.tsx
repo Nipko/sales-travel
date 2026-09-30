@@ -1,18 +1,25 @@
-import { Clock, Inbox } from 'lucide-react';
+import { Clock, Inbox, Info, Network } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import {
+  NETWORK_HOLDS_PAGE,
   currencyName,
   formatDateTime,
   formatDay,
   formatMinor,
   formatSignedMinor,
+  isNetworkMovement,
   movementLabel,
   movementTone,
+  networkHoldStatus,
+  networkOriginLabel,
   reportStatus,
   walletNotice,
   walletStatus,
   type DepositReport,
+  type NetworkHold,
+  type NetworkHolds,
+  type NetworkHoldTotal,
   type Tone,
   type Wallet,
   type WalletMovement,
@@ -223,6 +230,15 @@ export function CurrencyFilter({
   );
 }
 
+/**
+ * Quién o qué explica un movimiento, debajo de su nota. Un asiento de la red dice de qué agencia y
+ * qué reserva viene, y nunca quién la vendió: es un vendedor de otro nodo.
+ */
+function movementSource(m: WalletMovement): string | null {
+  if (!isNetworkMovement(m)) return m.createdByName;
+  return m.network === null ? null : networkOriginLabel(m.network);
+}
+
 /** Los movimientos, del más nuevo al más viejo. Una lista y no una tabla: se lee igual en el móvil. */
 export function MovementList({
   movements,
@@ -248,16 +264,30 @@ export function MovementList({
         const tone = movementTone(m);
         const meta = [
           formatDateTime(m.createdAt),
-          m.createdByName,
+          movementSource(m),
           showCurrency ? m.currency : null,
         ].filter((part): part is string => part !== null && part !== '');
+        // Dónde quedó la retención de la red ahora (cobrada, liberada…): el asiento es del momento
+        // en que se retuvo. En la liberación no suma nada, siempre diría "Liberada".
+        const networkStatus =
+          m.transactionType === 'NETWORK_HOLD' && m.network !== null
+            ? networkHoldStatus(m.network.status)
+            : undefined;
         return (
           <li
             key={m.id}
             className="flex flex-col gap-1.5 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
           >
             <div className="min-w-0 space-y-1">
-              <ToneBadge tone={tone}>{movementLabel(m.transactionType)}</ToneBadge>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ToneBadge tone={tone}>{movementLabel(m.transactionType)}</ToneBadge>
+                {networkStatus !== undefined ? (
+                  <ToneBadge tone={networkStatus.tone}>
+                    <span className="sr-only">Estado de la reserva de tu red: </span>
+                    {networkStatus.label}
+                  </ToneBadge>
+                ) : null}
+              </div>
               {m.notes !== null ? (
                 <p className="break-words text-sm text-[var(--color-fg)]">{m.notes}</p>
               ) : null}
@@ -266,6 +296,136 @@ export function MovementList({
             <p className="shrink-0 text-sm font-semibold tabular-nums text-[var(--color-fg)] sm:text-right">
               {formatSignedMinor(m.amountMinor, m.currency, m.exponent)}
             </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Lo que la red tiene tomado de las carteras del nodo, una tarjeta por moneda. Lo retenido (con lo
+ * que está en revisión, que tampoco volvió) va en grande, como el disponible de la cartera: es lo
+ * que hoy le resta saldo para reservar; lo cobrado ya salió y va al lado, más chico. En una fila y
+ * no apilado: en el móvil las tarjetas van una debajo de otra y no pueden empujar la lista fuera
+ * de la pantalla.
+ */
+export function NetworkHoldTotals({
+  totals,
+  headingLevel = 3,
+}: {
+  totals: readonly NetworkHoldTotal[];
+  headingLevel?: 3 | 4;
+}) {
+  if (totals.length === 0) return null;
+  const Heading = `h${headingLevel}` as const;
+  return (
+    <ul aria-label="Totales por moneda" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {totals.map((t) => {
+        const money = (minor: number) => formatMinor(minor, t.currency, t.exponent);
+        return (
+          <li
+            key={t.currency}
+            className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)]"
+          >
+            <Heading className="text-sm font-semibold text-[var(--color-fg)]">
+              {t.currency}
+              <span className="sr-only"> · reservas de la red</span>
+            </Heading>
+            <dl className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 text-xs">
+              <div className="min-w-0">
+                <dt className="text-[var(--color-fg-muted)]">Retenido o en revisión</dt>
+                <dd className="mt-0.5 break-words text-xl font-semibold tracking-tight tabular-nums text-[var(--color-fg)]">
+                  {money(t.heldMinor)}
+                </dd>
+              </div>
+              <div className="min-w-0 text-right">
+                <dt className="text-[var(--color-fg-muted)]">Cobrado</dt>
+                <dd className="mt-0.5 break-words font-medium tabular-nums text-[var(--color-fg)]">
+                  {money(t.chargedMinor)}
+                </dd>
+              </div>
+            </dl>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Aviso de que la lista de la red no tiene todas las reservas que suman los totales. */
+export function NetworkHoldsTruncated({ holds }: { holds: Pick<NetworkHolds, 'truncated'> }) {
+  if (holds.truncated !== true) return null;
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-[var(--color-fg-muted)]">
+      <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      La lista muestra las {NETWORK_HOLDS_PAGE} reservas más recientes y las que siguen retenidas o
+      en revisión; los totales suman todas.
+    </p>
+  );
+}
+
+/**
+ * Las reservas de la red en las carteras del nodo, en el orden que llegan: primero las que piden
+ * atención (ver `combineNetworkHolds`). Cada una dice de qué agencia y qué reserva viene, cuánto
+ * retuvo la cartera (el costo de este nivel, nunca el precio de venta) y en qué quedó. Nunca quién
+ * la vendió ni sus pasajeros: son de otra agencia.
+ */
+export function NetworkHoldList({
+  holds,
+  showCurrency,
+  emptyTitle,
+  emptyText,
+  headingLevel = 3,
+}: {
+  holds: readonly NetworkHold[];
+  showCurrency: boolean;
+  emptyTitle: string;
+  emptyText?: string;
+  headingLevel?: 3 | 4;
+}) {
+  if (holds.length === 0) {
+    return (
+      <EmptyState icon={<Network className="size-6" />} title={emptyTitle}>
+        {emptyText}
+      </EmptyState>
+    );
+  }
+  const Heading = `h${headingLevel}` as const;
+  return (
+    <ul className="divide-y divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]">
+      {holds.map((h) => {
+        const status = networkHoldStatus(h.status);
+        const meta = [
+          h.orderNumber !== null ? `Reserva #${h.orderNumber}` : null,
+          formatDateTime(h.createdAt),
+          showCurrency ? h.currency : null,
+        ].filter((part): part is string => part !== null && part !== '');
+        return (
+          <li
+            key={h.levelId}
+            className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+          >
+            <div className="min-w-0 space-y-1">
+              <Heading className="break-words text-sm font-medium text-[var(--color-fg)]">
+                {h.originTenantName ?? 'Una agencia de tu red'}
+              </Heading>
+              <p className="text-[11px] text-[var(--color-fg-muted)]">{meta.join(' · ')}</p>
+            </div>
+            <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end sm:gap-1.5">
+              <p
+                className={cn(
+                  'text-sm font-semibold tabular-nums',
+                  // Liberada ya no ocupa saldo: el monto queda de registro, en segundo plano.
+                  h.status === 'released'
+                    ? 'text-[var(--color-fg-muted)]'
+                    : 'text-[var(--color-fg)]',
+                )}
+              >
+                {formatMinor(h.amountMinor, h.currency, h.exponent)}
+              </p>
+              <ToneBadge tone={status.tone}>{status.label}</ToneBadge>
+            </div>
           </li>
         );
       })}

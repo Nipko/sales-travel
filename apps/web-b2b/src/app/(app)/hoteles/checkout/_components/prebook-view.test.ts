@@ -364,6 +364,21 @@ describe('continueGate — qué falta para seguir', () => {
     ).toBe(true);
   });
 
+  it('si lo que no cubre es un nivel de la red, dice que hable con quien lo financia', () => {
+    const gate = continueGate({
+      expired: false,
+      blocked: false,
+      change: undefined,
+      accepted: false,
+      funding: { status: 'blocked', reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE', message: 'x' },
+    });
+    expect(gate).toEqual({
+      ok: false,
+      reason:
+        'Hablá con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
+    });
+  });
+
   it('sin cambio o con una baja, sigue', () => {
     expect(
       continueGate({ expired: false, blocked: false, change: undefined, accepted: false }).ok,

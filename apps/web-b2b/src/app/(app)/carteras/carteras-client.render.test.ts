@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AgencyWallets, Wallet } from '../../../lib/wallets';
+import type { AgencyWallets, NetworkHolds, Wallet } from '../../../lib/wallets';
 import { CarterasClient } from './CarterasClient';
 
 /*
@@ -25,6 +25,37 @@ const USD: Wallet = {
 const WALLETS: AgencyWallets = {
   portfolios: [USD],
   financier: { tenantId: '10000000-0000-4000-8000-000000000009', name: 'Consolidador Andino' },
+};
+
+/** Una sub-agencia retenida y otra en revisión, en la cartera USD de quien las financia. */
+const NETWORK: NetworkHolds = {
+  items: [
+    {
+      levelId: '60000000-0000-4000-8000-000000000001',
+      currency: 'USD',
+      exponent: 2,
+      amountMinor: 113_400,
+      status: 'held',
+      originTenantId: '10000000-0000-4000-8000-00000000000a',
+      originTenantName: 'Agencia Sur',
+      orderNumber: 1042,
+      createdAt: '2026-09-29T12:00:00.000Z',
+      updatedAt: '2026-09-29T12:00:00.000Z',
+    },
+    {
+      levelId: '60000000-0000-4000-8000-000000000002',
+      currency: 'USD',
+      exponent: 2,
+      amountMinor: 105_000,
+      status: 'conflict',
+      originTenantId: '10000000-0000-4000-8000-00000000000b',
+      originTenantName: 'Sub-agencia Norte',
+      orderNumber: 1043,
+      createdAt: '2026-09-29T11:00:00.000Z',
+      updatedAt: '2026-09-29T11:30:00.000Z',
+    },
+  ],
+  totals: [{ currency: 'USD', exponent: 2, heldMinor: 218_400, chargedMinor: 0 }],
 };
 
 function html(props: Partial<Parameters<typeof CarterasClient>[0]> = {}): string {
@@ -76,5 +107,84 @@ describe('CarterasClient', () => {
     const panel = /<div role="tabpanel"[^>]*>/.exec(out)?.[0] ?? '';
     expect(panel).toContain('tabindex="0"');
     expect(panel).toContain('focus-visible:ring-2');
+  });
+
+  it('una agencia sin red no ve la pestaña de su red', () => {
+    const out = html({ initialNetworkHolds: NETWORK });
+    expect(out).not.toContain('Reservas de tu red');
+    expect(out).not.toContain('al costo de tu nivel');
+  });
+});
+
+describe('CarterasClient — reservas de tu red (0060)', () => {
+  it('quien financia a una red tiene su pestaña, con las abiertas contadas y dichas en voz', () => {
+    const out = html({ financesNetwork: true, initialNetworkHolds: NETWORK });
+    expect(out).toMatch(/role="tab"[^>]*>.*Reservas de tu red/);
+    expect(out).toContain('reservas de tu red retenidas o en revisión');
+    expect([...out.matchAll(/role="tabpanel"/g)]).toHaveLength(4);
+    expect(out).toContain('Las reservas de tu red también pueden retener en tus carteras');
+  });
+
+  it('la pestaña: el subtítulo, los totales por moneda y cada reserva con su agencia y su estado', () => {
+    const out = html({
+      financesNetwork: true,
+      initialNetworkHolds: NETWORK,
+      initialTab: 'network',
+    });
+    expect(out).toContain(
+      'Lo que tu red tiene retenido o cobrado en tus carteras, al costo de tu nivel.',
+    );
+    expect(out).toContain('aria-label="Totales por moneda"');
+    expect(out).toMatch(/US\$\s?2\.184/);
+    expect(out).toContain('Agencia Sur');
+    expect(out).toContain('Reserva #1042');
+    expect(out).toContain('Retenida');
+    expect(out).toContain('En revisión');
+  });
+
+  it('nunca muestra quién vendió ni el precio de venta de la red', () => {
+    const out = html({
+      financesNetwork: true,
+      initialNetworkHolds: NETWORK,
+      initialTab: 'network',
+    });
+    expect(out).not.toMatch(/Vendedor|Pasajeros|Precio de venta/);
+  });
+
+  it('sin reservas de la red, el estado vacío', () => {
+    const out = html({
+      financesNetwork: true,
+      initialNetworkHolds: { items: [], totals: [] },
+      initialTab: 'network',
+    });
+    expect(out).toContain('Todavía no hay reservas de tu red en tus carteras.');
+    expect(out).not.toContain('Totales por moneda');
+  });
+
+  it('si no se pudieron leer, lo dice en vez de mostrar una red vacía', () => {
+    const out = html({ financesNetwork: true, initialNetworkHolds: null, initialTab: 'network' });
+    expect(out).toContain('No pudimos cargar las reservas de tu red. Recargá la página.');
+    expect(out).not.toContain('Todavía no hay reservas de tu red');
+  });
+
+  it('con la lista cortada por el API, lo dice y una moneda sin filas no se dice red vacía', () => {
+    const out = html({
+      financesNetwork: true,
+      initialNetworkHolds: { ...NETWORK, truncated: true },
+      initialTab: 'network',
+    });
+    expect(out).toContain('La lista muestra las 200 reservas más recientes');
+    const empty = html({
+      financesNetwork: true,
+      initialNetworkHolds: { items: [], totals: NETWORK.totals, truncated: true },
+      initialTab: 'network',
+    });
+    expect(empty).toContain('No hay reservas recientes en esta moneda.');
+    expect(empty).not.toContain('Todavía no hay reservas de tu red');
+  });
+
+  it('sin red, pedir la pestaña de la red abre los movimientos', () => {
+    const out = html({ initialTab: 'network' });
+    expect(out).toContain('Sin movimientos todavía.');
   });
 });

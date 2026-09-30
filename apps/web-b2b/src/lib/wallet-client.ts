@@ -7,16 +7,19 @@ import type {
   EntryKind,
 } from './wallet-forms';
 import {
+  combineNetworkHolds,
   parseAgencyWallets,
   parseDepositReport,
   parseDepositReports,
   parseFinancedWallets,
   parseMovement,
   parseMovements,
+  parseNetworkHolds,
   parseWallet,
   type AgencyWallets,
   type DepositReport,
   type FinancedWallets,
+  type NetworkHolds,
   type Wallet,
   type WalletMovement,
 } from './wallets';
@@ -159,6 +162,23 @@ function resolvedOf(value: unknown): ResolvedReport | undefined {
   return report === undefined || portfolio === undefined ? undefined : { report, portfolio };
 }
 
+/**
+ * Las reservas de la red: la página reciente y, aparte, todas las retenidas y las en revisión, que
+ * la página reciente puede dejar afuera (ver {@link combineNetworkHolds}). Si una de las tres no se
+ * puede leer, no hay vista: una lista sin las abiertas contaría de menos.
+ */
+async function loadNetworkHolds(url: string): Promise<WalletResult<NetworkHolds>> {
+  const [recent, held, conflict] = await Promise.all([
+    call(url, {}, parseNetworkHolds),
+    call(`${url}?status=held`, {}, parseNetworkHolds),
+    call(`${url}?status=conflict`, {}, parseNetworkHolds),
+  ]);
+  if (!recent.ok) return recent;
+  if (!held.ok) return held;
+  if (!conflict.ok) return conflict;
+  return { ok: true, data: combineNetworkHolds(recent.data, [held.data, conflict.data]) };
+}
+
 // ───────────────────────────── Quien financia ─────────────────────────────
 
 function base(tenantId: string): string {
@@ -178,6 +198,11 @@ export function loadFinancedMovements(
 
 export function loadFinancedReports(tenantId: string): Promise<WalletResult<DepositReport[]>> {
   return call(`${base(tenantId)}/deposit-reports`, {}, parseDepositReports);
+}
+
+/** Las reservas de la red del nodo retenidas en sus carteras, como las ve el nodo (0060). */
+export function loadFinancedNetworkHolds(tenantId: string): Promise<WalletResult<NetworkHolds>> {
+  return loadNetworkHolds(`${base(tenantId)}/network-holds`);
 }
 
 export function enableWallet(
@@ -257,6 +282,11 @@ export function loadAgencyMovements(currency?: string): Promise<WalletResult<Wal
 
 export function loadAgencyReports(): Promise<WalletResult<DepositReport[]>> {
   return call('/api/portfolios/deposit-reports', {}, parseDepositReports);
+}
+
+/** Lo que la red de la agencia activa tiene retenido o cobrado en sus carteras (0060). */
+export function loadAgencyNetworkHolds(): Promise<WalletResult<NetworkHolds>> {
+  return loadNetworkHolds('/api/portfolios/network-holds');
 }
 
 export function submitDepositReport(

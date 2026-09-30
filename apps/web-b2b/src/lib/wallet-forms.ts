@@ -360,12 +360,51 @@ export interface ActionSummary {
   readonly lines: readonly SummaryLine[];
   /** Lo que hay que leer antes de confirmar (un disponible negativo, una suspensión). */
   readonly warning?: string;
+  /** Lo que el cambio le hace a la red del nodo, si financia a una (0060). */
+  readonly network?: NetworkNote;
   readonly confirmLabel: string;
   readonly destructive: boolean;
 }
 
+/** Lo que un cambio en la cartera del nodo le hace a su red: la frena o la habilita. */
+export interface NetworkNote {
+  readonly text: string;
+  readonly tone: 'warning' | 'neutral';
+}
+
 function money(wallet: Pick<Wallet, 'currency' | 'exponent'>, minor: number): string {
   return formatMinor(minor, wallet.currency, wallet.exponent);
+}
+
+/**
+ * Desde 0060 la cartera de un nodo que financia a una red también retiene, al costo de su nivel,
+ * cada reserva de esa red hecha con una cuenta de proveedor de un nivel superior. Suspenderla,
+ * achicar su disponible o no tenerla frena también esas ventas, aunque el diálogo hable del nodo.
+ * Condicional: una red que reserva con la cuenta propia del nodo no retiene en ella.
+ */
+export function networkNote(
+  effect: 'stops' | 'limits' | 'enables',
+  nodeName: string,
+  currency: string | null,
+): NetworkNote {
+  const inCurrency = currency === null ? 'en esa moneda' : `en ${currency}`;
+  switch (effect) {
+    case 'stops':
+      return {
+        tone: 'warning',
+        text: `También frena las reservas ${inCurrency} de la red de ${nodeName} que usan cuentas de proveedor de un nivel superior: esta cartera las retiene.`,
+      };
+    case 'limits':
+      return {
+        tone: 'warning',
+        text: `El disponible de ${nodeName} ${inCurrency} también cubre las reservas de su red que usan cuentas de proveedor de un nivel superior: si no alcanza, esas reservas se rechazan.`,
+      };
+    case 'enables':
+      return {
+        tone: 'neutral',
+        text: `También habilita, hasta su disponible, las reservas ${inCurrency} de la red de ${nodeName} que usan cuentas de proveedor de un nivel superior.`,
+      };
+  }
 }
 
 /** Lo que se confirma al registrar un depósito o un ajuste: el saldo antes y después. */
@@ -374,6 +413,7 @@ export function entrySummary(
   wallet: Wallet,
   nodeName: string,
   amountMinor: number,
+  financesNetwork = false,
 ): ActionSummary {
   const balanceAfter = wallet.balanceMinor + amountMinor;
   const availableAfter = balanceAfter + wallet.creditLimitMinor;
@@ -400,6 +440,9 @@ export function entrySummary(
           warning: `El disponible queda en ${money(wallet, availableAfter)}: ${nodeName} no podrá reservar en ${wallet.currency} hasta cubrirlo.`,
         }
       : {}),
+    ...(financesNetwork && debit
+      ? { network: networkNote('limits', nodeName, wallet.currency) }
+      : {}),
     confirmLabel:
       kind === 'deposit' ? `Acreditar ${amount}` : `${debit ? 'Debitar' : 'Acreditar'} ${amount}`,
     destructive: debit,
@@ -411,6 +454,7 @@ export function creditLimitSummary(
   wallet: Wallet,
   nodeName: string,
   creditLimitMinor: number,
+  financesNetwork = false,
 ): ActionSummary {
   const availableAfter = wallet.balanceMinor + creditLimitMinor;
   const lowers = creditLimitMinor < wallet.creditLimitMinor;
@@ -429,6 +473,7 @@ export function creditLimitSummary(
           warning: `Con este cupo el disponible queda en ${money(wallet, availableAfter)}: ${nodeName} no podrá reservar en ${wallet.currency} hasta cubrirlo.`,
         }
       : {}),
+    ...(financesNetwork ? { network: networkNote('limits', nodeName, wallet.currency) } : {}),
     confirmLabel: 'Fijar cupo',
     destructive: lowers && availableAfter < 0,
   };
@@ -439,12 +484,14 @@ export function walletStatusSummary(
   wallet: Wallet,
   nodeName: string,
   to: 'active' | 'suspended',
+  financesNetwork = false,
 ): ActionSummary {
   if (to === 'suspended') {
     return {
       title: `Suspender la cartera ${wallet.currency}`,
       description: `Mientras esté suspendida, ${nodeName} no puede reservar en ${wallet.currency}. El saldo, el cupo y los movimientos se conservan, y las reservas ya retenidas siguen su curso.`,
       lines: [],
+      ...(financesNetwork ? { network: networkNote('stops', nodeName, wallet.currency) } : {}),
       confirmLabel: 'Suspender cartera',
       destructive: true,
     };
@@ -453,6 +500,7 @@ export function walletStatusSummary(
     title: `Reactivar la cartera ${wallet.currency}`,
     description: `${nodeName} vuelve a poder reservar en ${wallet.currency} con su saldo más su cupo.`,
     lines: [{ label: 'Disponible para reservar', value: money(wallet, wallet.availableMinor) }],
+    ...(financesNetwork ? { network: networkNote('enables', nodeName, wallet.currency) } : {}),
     confirmLabel: 'Reactivar cartera',
     destructive: false,
   };
@@ -460,10 +508,12 @@ export function walletStatusSummary(
 
 export function enableWalletSummary(
   nodeName: string,
-): Pick<ActionSummary, 'title' | 'description'> {
+  financesNetwork = false,
+): Pick<ActionSummary, 'title' | 'description' | 'network'> {
   return {
     title: 'Habilitar una moneda',
     description: `Abre una cartera nueva para ${nodeName}: podrá reservar tarifas en esa moneda con el saldo que le deposites más el cupo que le des.`,
+    ...(financesNetwork ? { network: networkNote('enables', nodeName, null) } : {}),
   };
 }
 

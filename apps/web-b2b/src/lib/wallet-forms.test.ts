@@ -6,6 +6,7 @@ import {
   depositDateError,
   depositReportHelp,
   enableCurrencyOptions,
+  enableWalletSummary,
   entrySummary,
   initialEnableCurrency,
   minorToInput,
@@ -278,6 +279,37 @@ describe('confirmaciones', () => {
     expect(walletStatusSummary(USD, 'Agencia Sur', 'active').description).toMatch(
       /vuelve a poder reservar en USD/,
     );
+  });
+
+  it('si el nodo financia a una red, suspender, el cupo, un débito y habilitar la nombran (0060)', () => {
+    const stops = walletStatusSummary(USD, 'Consolidador Andino', 'suspended', true).network;
+    expect(stops).toEqual({
+      tone: 'warning',
+      text: 'También frena las reservas en USD de la red de Consolidador Andino que usan cuentas de proveedor de un nivel superior: esta cartera las retiene.',
+    });
+    expect(creditLimitSummary(USD, 'Consolidador Andino', 0, true).network?.text).toMatch(
+      /cubre las reservas de su red .* se rechazan/,
+    );
+    expect(entrySummary('adjustment', USD, 'Consolidador Andino', -1_000, true).network?.tone).toBe(
+      'warning',
+    );
+    // Un crédito no le quita nada a la red.
+    expect(
+      entrySummary('deposit', USD, 'Consolidador Andino', 1_000, true).network,
+    ).toBeUndefined();
+    expect(walletStatusSummary(USD, 'Consolidador Andino', 'active', true).network?.tone).toBe(
+      'neutral',
+    );
+    expect(enableWalletSummary('Consolidador Andino', true).network?.text).toMatch(
+      /^También habilita, hasta su disponible, las reservas en esa moneda/,
+    );
+  });
+
+  it('sin red, los diálogos hablan sólo del nodo', () => {
+    expect(walletStatusSummary(USD, 'Agencia Sur', 'suspended').network).toBeUndefined();
+    expect(creditLimitSummary(USD, 'Agencia Sur', 0).network).toBeUndefined();
+    expect(entrySummary('adjustment', USD, 'Agencia Sur', -1_000).network).toBeUndefined();
+    expect(enableWalletSummary('Agencia Sur').network).toBeUndefined();
   });
 
   it('aprobar dice cuánto se acredita; rechazar, que no se acredita nada', () => {

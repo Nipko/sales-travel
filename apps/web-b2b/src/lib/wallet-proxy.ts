@@ -97,15 +97,35 @@ function statusQuery(search: URLSearchParams): string | undefined | null {
   return s === 'pending' || s === 'approved' || s === 'rejected' ? s : null;
 }
 
-function listPlan(
-  base: string,
-  kind: 'transactions' | 'deposit-reports',
-  search: URLSearchParams,
-): WalletProxyPlan {
+/** `?status=held`: los estados de una retención de la red (0060). */
+function networkStatusQuery(search: URLSearchParams): string | undefined | null {
+  const s = search.get('status');
+  if (s === null || s === '') return undefined;
+  return s === 'held' || s === 'captured' || s === 'released' || s === 'conflict' ? s : null;
+}
+
+type ListKind = 'transactions' | 'deposit-reports' | 'network-holds';
+
+function isListKind(value: string | undefined): value is ListKind {
+  return value === 'transactions' || value === 'deposit-reports' || value === 'network-holds';
+}
+
+function listPlan(base: string, kind: ListKind, search: URLSearchParams): WalletProxyPlan {
   if (kind === 'transactions') {
     const currency = currencyQuery(search);
     if (currency === null) return { ok: false, status: 400, error: 'Moneda inválida.' };
     return { ok: true, method: 'GET', path: withQuery(`${base}/transactions`, { currency }) };
+  }
+  if (kind === 'network-holds') {
+    const currency = currencyQuery(search);
+    if (currency === null) return { ok: false, status: 400, error: 'Moneda inválida.' };
+    const status = networkStatusQuery(search);
+    if (status === null) return { ok: false, status: 400, error: 'Estado inválido.' };
+    return {
+      ok: true,
+      method: 'GET',
+      path: withQuery(`${base}/network-holds`, { currency, status }),
+    };
   }
   const status = statusQuery(search);
   if (status === null) return { ok: false, status: 400, error: 'Estado inválido.' };
@@ -135,7 +155,7 @@ export function walletFinancingPlan(tenantId: string, req: WalletProxyRequest): 
   }
 
   // Listados
-  if ((first === 'transactions' || first === 'deposit-reports') && second === undefined) {
+  if (isListKind(first) && second === undefined) {
     return req.method === 'GET' ? listPlan(base, first, req.search) : BAD_METHOD;
   }
 
@@ -173,14 +193,17 @@ export function walletFinancingPlan(tenantId: string, req: WalletProxyRequest): 
   return { ok: true, method: 'POST', path: `${walletPath}/${second}`, body, idempotencyKey };
 }
 
-/** Lo que manda la agencia sobre sus propias carteras: leer e informar depósitos. */
+/**
+ * Lo que manda la agencia sobre sus propias carteras: leer (también las reservas de su red, 0060) e
+ * informar depósitos.
+ */
 export function agencyWalletPlan(req: WalletProxyRequest): WalletProxyPlan {
   const [first, second] = req.segments;
   if (second !== undefined) return NOT_FOUND;
   if (first === undefined) {
     return req.method === 'GET' ? { ok: true, method: 'GET', path: '/portfolios' } : BAD_METHOD;
   }
-  if (first === 'transactions') {
+  if (first === 'transactions' || first === 'network-holds') {
     return req.method === 'GET' ? listPlan('/portfolios', first, req.search) : BAD_METHOD;
   }
   if (first !== 'deposit-reports') return NOT_FOUND;

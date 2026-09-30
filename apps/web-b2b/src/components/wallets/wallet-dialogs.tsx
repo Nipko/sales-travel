@@ -127,7 +127,11 @@ function FormDialog({
   );
 }
 
-function SummaryList({ summary }: { summary: Pick<ActionSummary, 'lines' | 'warning'> }) {
+function SummaryList({
+  summary,
+}: {
+  summary: Pick<ActionSummary, 'lines' | 'warning' | 'network'>;
+}) {
   return (
     <div className="space-y-3">
       {summary.lines.length > 0 ? (
@@ -144,6 +148,9 @@ function SummaryList({ summary }: { summary: Pick<ActionSummary, 'lines' | 'warn
       ) : null}
       {summary.warning !== undefined ? (
         <ToneNotice tone="warning">{summary.warning}</ToneNotice>
+      ) : null}
+      {summary.network !== undefined ? (
+        <ToneNotice tone={summary.network.tone}>{summary.network.text}</ToneNotice>
       ) : null}
     </div>
   );
@@ -245,12 +252,15 @@ function useSaving() {
 
 export function EnableWalletDialog({
   nodeName,
+  financesNetwork = false,
   available,
   defaultCurrency,
   onSubmit,
   onClose,
 }: {
   nodeName: string;
+  /** El nodo financia a una red: su cartera también retiene las reservas de ella (0060). */
+  financesNetwork?: boolean;
   available: readonly string[];
   /** La moneda por defecto del nodo: se ofrece primero y, si no tiene cartera en ella, elegida. */
   defaultCurrency: string;
@@ -264,7 +274,7 @@ export function EnableWalletDialog({
   }));
   const [errors, setErrors] = useState<FieldErrors<keyof EnableWalletDraft>>({});
   const { busy, error, run } = useSaving();
-  const copy = enableWalletSummary(nodeName);
+  const copy = enableWalletSummary(nodeName, financesNetwork);
   const options = enableCurrencyOptions(available, defaultCurrency);
   const set = (patch: Partial<EnableWalletDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -336,6 +346,9 @@ export function EnableWalletDialog({
         error={errors.reason}
         placeholder="Ej.: empieza a vender hoteles en USD según el contrato del 29/09."
       />
+      {copy.network !== undefined ? (
+        <ToneNotice tone={copy.network.tone}>{copy.network.text}</ToneNotice>
+      ) : null}
     </FormDialog>
   );
 }
@@ -343,11 +356,13 @@ export function EnableWalletDialog({
 export function CreditLimitDialog({
   wallet,
   nodeName,
+  financesNetwork = false,
   onSubmit,
   onClose,
 }: {
   wallet: Wallet;
   nodeName: string;
+  financesNetwork?: boolean;
   onSubmit: Submit<CreditLimitBody>;
   onClose: () => void;
 }) {
@@ -359,7 +374,12 @@ export function CreditLimitDialog({
   const { busy, error, run, setError } = useSaving();
 
   if (confirming !== null) {
-    const summary = creditLimitSummary(wallet, nodeName, confirming.creditLimitMinor);
+    const summary = creditLimitSummary(
+      wallet,
+      nodeName,
+      confirming.creditLimitMinor,
+      financesNetwork,
+    );
     return (
       <FormDialog
         title={summary.title}
@@ -422,12 +442,14 @@ export function CreditLimitDialog({
 export function WalletStatusDialog({
   wallet,
   nodeName,
+  financesNetwork = false,
   to,
   onSubmit,
   onClose,
 }: {
   wallet: Wallet;
   nodeName: string;
+  financesNetwork?: boolean;
   to: 'active' | 'suspended';
   onSubmit: Submit<{ status: 'active' | 'suspended'; reason: string }>;
   onClose: () => void;
@@ -435,7 +457,7 @@ export function WalletStatusDialog({
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | undefined>();
   const { busy, error, run } = useSaving();
-  const summary = walletStatusSummary(wallet, nodeName, to);
+  const summary = walletStatusSummary(wallet, nodeName, to, financesNetwork);
 
   function submit() {
     const checked = validateReason(reason);
@@ -494,12 +516,14 @@ export function EntryDialog({
   kind,
   wallet,
   nodeName,
+  financesNetwork = false,
   onSubmit,
   onClose,
 }: {
   kind: EntryKind;
   wallet: Wallet;
   nodeName: string;
+  financesNetwork?: boolean;
   onSubmit: (body: EntryBody, idempotencyKey: string) => Promise<string | undefined>;
   onClose: () => void;
 }) {
@@ -520,7 +544,7 @@ export function EntryDialog({
     };
 
   if (confirming !== null) {
-    const summary = entrySummary(kind, wallet, nodeName, confirming.amountMinor);
+    const summary = entrySummary(kind, wallet, nodeName, confirming.amountMinor, financesNetwork);
     return (
       <FormDialog
         title={summary.title}
