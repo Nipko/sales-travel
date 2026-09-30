@@ -289,8 +289,19 @@ jobs:
               # Sin cortar conexiones, y no hace nada si la configuración no cambió. Si falla, Caddy
               # sigue con la configuración que tenía (el reload es atómico) y en disco vuelve la
               # anterior, para que un reinicio no cargue la que no cargó ahora.
-              if ! docker compose --env-file .env exec -T caddy \
-                caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile < /dev/null; then
+              # Hasta cinco intentos: si `up` acaba de recrear Caddy (imagen nueva), su API de admin
+              # puede no estar escuchando todavía, y ese rechazo no dice nada del archivo.
+              reloaded=false
+              for attempt in 1 2 3 4 5; do
+                if docker compose --env-file .env exec -T caddy \
+                  caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile < /dev/null; then
+                  reloaded=true
+                  break
+                fi
+                echo "caddy reload: intento $attempt de 5 falló"
+                sleep 3
+              done
+              if [ "$reloaded" != true ]; then
                 if [ -f Caddyfile.prev ]; then cat Caddyfile.prev > Caddyfile; fi
                 echo "::error::caddy reload falló: se devolvió el Caddyfile anterior. Ver docker compose logs caddy."
                 exit 1

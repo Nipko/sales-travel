@@ -683,9 +683,10 @@ Ahora el job `deploy` de [`deploy.yml`](../../.github/workflows/deploy.yml):
    `cat Caddyfile.next > Caddyfile`, que conserva el inodo. También **antes de `up`**: si el `pull` trajo otra imagen de
    Caddy, `up` recrea el contenedor, y así arranca con el archivo que se acaba de validar en esa imagen.
 4. Tras `up`, si el contenedor ya ve el archivo nuevo, `caddy reload` lo aplica sin cortar conexiones (y no hace nada
-   si la configuración no cambió). Si el reload falla, Caddy sigue con la configuración que tenía (el reload es
-   atómico), el paso devuelve `Caddyfile.prev` al disco para que un reinicio no cargue lo que no cargó, y queda en rojo
-   con un `::error::`.
+   si la configuración no cambió). Lo intenta hasta cinco veces, cada 3 s: si `up` acaba de recrear Caddy, su API de
+   admin puede no estar escuchando todavía. Si los cinco fallan, Caddy sigue con la configuración que tenía (el reload
+   es atómico), el paso devuelve `Caddyfile.prev` al disco para que un reinicio no cargue lo que no cargó, y queda en
+   rojo con un `::error::`.
 5. Si el contenedor no ve el archivo nuevo, porque monta un inodo que un rsync anterior ya reemplazó, lo recrea (unos
    segundos sin servir; los certificados siguen en el volumen `caddy_data`) y lo avisa con un `::warning::`. Eso pasa
    una vez: en el primer despliegue con este paso.
@@ -704,21 +705,51 @@ quedarse con el viejo. El próximo despliegue lo detecta y recrea Caddy.
 
 ### 10.4 Verificar después del despliegue
 
+Primero, en el run de _Deploy_ (paso _Pull & up_): sin `::error::`. El primer despliegue con este cambio deja además
+el `::warning::` "Caddy montaba un Caddyfile viejo" (§10.3, punto 5); en los siguientes ya no debería aparecer.
+
 ```bash
 cd /opt/sales-travel
 
-# 1. Caddy corre con la configuración nueva: los rangos de Cloudflare y CF-Connecting-IP.
+# 1. Caddy ve el MISMO archivo que está en disco (no un inodo viejo que dejó un rsync).
+docker compose exec -T caddy cat /etc/caddy/Caddyfile | cmp - Caddyfile && echo "OK: Caddy ve ./Caddyfile"
+
+# 2. Y lo cargó: la configuración EN USO (API de admin de Caddy) tiene CF-Connecting-IP y los rangos de Cloudflare.
 docker compose exec -T caddy wget -qO- http://localhost:2019/config/apps/http/servers \
   | grep -o '"client_ip_headers":\[[^]]*\]'
 # → "client_ip_headers":["CF-Connecting-IP"]
+docker compose exec -T caddy wget -qO- http://localhost:2019/config/apps/http/servers \
+  | grep -o '"trusted_proxies":{[^}]*}'
+# → los 22 rangos de §10.2 y "source":"static"
 
-# 2. Las sesiones nuevas guardan IPs de usuarios, no de Docker (172.x) ni del borde de Cloudflare.
+# 3. X-Edge-Peer-IP trae la IP del usuario (root; tráfico HTTP plano de la red de Docker). Mientras corre (30 s),
+#    abrí https://app.planetour.cloud en tu navegador. Muestra IPs de otros usuarios: no guardar la salida.
+#    El grep deja afuera x-internal-proxy (el secreto).
+sudo timeout 30 tcpdump -i any -l -A -s0 'tcp dst port 3001 or tcp dst port 3000' 2>/dev/null \
+  | grep -iE --line-buffered '^(x-edge-peer-ip|x-client-ip):'
+# → X-Edge-Peer-Ip: <tu IP>   (Caddy → panel y Caddy → api)
+# → X-Client-Ip: <tu IP>      (panel → api, por la red interna)
+
+# 4. Las sesiones nuevas guardan IPs de usuarios, no de Docker (172.x) ni del borde de Cloudflare.
 docker compose exec -T postgres psql -U postgres -d sales_travel -c \
   "SELECT issued_at, host(ip) AS ip, left(user_agent, 40) AS navegador FROM sessions ORDER BY issued_at DESC LIMIT 10"
 ```
 
 Y desde tu equipo: la IP con la que te ve Cloudflare (`curl -s https://app.planetour.cloud/cdn-cgi/trace | grep ^ip=`)
-tiene que ser la de tu sesión más reciente en el paso 2 y en _Seguridad_, después de volver a entrar al panel.
+tiene que ser la del paso 3, la de tu sesión más reciente en el paso 4 y la de _Seguridad_, después de volver a entrar
+al panel.
+
+Opcional, el cupo por cliente: desde tu equipo, 11 POST vacíos al login (el throttler cuenta antes de validar el cuerpo,
+así que no hace falta ninguna credencial). El 11.º tiene que dar `429`, y en ese mismo minuto el panel tiene que dejar
+entrar desde otra red (el móvil con datos, sin Wi-Fi). Antes de este cambio el 429 le llegaba a todos.
+
+```bash
+for i in $(seq 1 11); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.planetour.cloud/api/auth/login \
+    -H 'content-type: application/json' -d '{}'
+done
+# → diez 400 y un 429
+```
 
 - Si aparece una IP que está dentro de la lista de §10.2 (el borde de Cloudflare: 104.16.x–104.27.x, 172.64.x–172.71.x,
   162.158.x–162.159.x…; compararla con la lista, no a ojo), Caddy no la está resolviendo: el Caddyfile en uso no es el

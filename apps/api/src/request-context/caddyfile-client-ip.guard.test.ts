@@ -245,6 +245,18 @@ describe('deploy.yml aplica el Caddyfile sin esperar a que se recree Caddy', () 
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
   });
 
+  it('reintenta el reload antes de darlo por fallido (un Caddy recién recreado no escucha aún)', () => {
+    const deploy = DEPLOY.replace(/\r\n/g, '\n');
+    const loop = /for attempt in [\d ]+; do\n([\s\S]*?)\n\s*done\n/.exec(deploy);
+    expect(loop, 'el reload va dentro de un bucle de reintentos').not.toBeNull();
+    expect(loop?.[1]).toContain('caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile');
+    expect(loop?.[1]).toContain('break');
+    // El rollback va DESPUÉS del bucle, no en el primer intento fallido.
+    expect(deploy.indexOf('cat Caddyfile.prev > Caddyfile')).toBeGreaterThan(
+      (loop?.index ?? 0) + (loop?.[0].length ?? 0),
+    );
+  });
+
   it('un Caddyfile.prev de otro despliegue no se devuelve nunca', () => {
     expect(DEPLOY.indexOf('rm -f Caddyfile.prev')).toBeGreaterThanOrEqual(0);
     expect(DEPLOY.indexOf('rm -f Caddyfile.prev')).toBeLessThan(
