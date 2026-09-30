@@ -340,7 +340,7 @@ export function priceChangeView(
         ? changes
         : priceUp
           ? {}
-          : { changes: 'El proveedor actualizó las condiciones: revisalas abajo.' }),
+          : { changes: 'El proveedor actualizó las condiciones: revísalas abajo.' }),
       requiresAcceptance: true,
       acceptLabel: !priceUp
         ? `Revisé las condiciones nuevas y acepto seguir con ${after}.`
@@ -392,26 +392,26 @@ const SIGNAL_NOTICES: Readonly<Record<string, Omit<SignalNotice, 'code'>>> = {
   PACKAGE_WITH_FLIGHT_ONLY: {
     tone: 'danger',
     title: 'Esta tarifa sólo se vende en un paquete con aéreo.',
-    detail: 'No se puede reservar como hotel suelto. Volvé al hotel y elegí otra tarifa.',
+    detail: 'No se puede reservar como hotel suelto. Vuelve al hotel y elige otra tarifa.',
   },
   NO_NAME_CHANGE: {
     tone: 'warning',
     title: 'No admite cambio de nombre.',
     detail:
-      'Cargá los nombres de los huéspedes tal como figuran en su documento: después de reservar no se pueden corregir.',
+      'Carga los nombres de los huéspedes tal como figuran en su documento: después de reservar no se pueden corregir.',
   },
   MARKET_RESTRICTION: {
     tone: 'warning',
     title: 'Tiene restricciones según el país del huésped.',
     detail:
-      'Revisá las condiciones del hotel antes de seguir: la tarifa puede no valer para este pasajero.',
+      'Revisa las condiciones del hotel antes de seguir: la tarifa puede no valer para este pasajero.',
   },
 };
 
 const UNKNOWN_SIGNAL: Omit<SignalNotice, 'code'> = {
   tone: 'warning',
   title: 'Esta tarifa tiene una restricción.',
-  detail: 'Revisá las condiciones del hotel antes de seguir.',
+  detail: 'Revisa las condiciones del hotel antes de seguir.',
 };
 
 /** Las señales críticas, arriba y fuera del colapsable (docs/tbo/03 §2.4), la que bloquea primero. */
@@ -432,7 +432,7 @@ export function checkoutExpiryNotice(
     return {
       tone: 'expired',
       title: 'La tarifa venció.',
-      detail: 'El proveedor ya no la mantiene. Volvé al hotel para buscarla de nuevo.',
+      detail: 'El proveedor ya no la mantiene. Vuelve al hotel para buscarla de nuevo.',
     };
   }
   if (state.phase === 'warning') {
@@ -466,7 +466,7 @@ export function continueGate(input: {
   readonly funding?: PrebookFunding;
 }): ContinueGate {
   if (input.expired) {
-    return { ok: false, reason: 'La tarifa venció: volvé al hotel para buscarla de nuevo.' };
+    return { ok: false, reason: 'La tarifa venció: vuelve al hotel para buscarla de nuevo.' };
   }
   if (input.blocked) {
     return { ok: false, reason: 'Esta tarifa no se puede reservar como hotel suelto.' };
@@ -475,7 +475,7 @@ export function continueGate(input: {
     return { ok: false, reason: fundingGateReason(input.funding) };
   }
   if (input.change?.requiresAcceptance === true && !input.accepted) {
-    return { ok: false, reason: 'Aceptá los cambios de la tarifa para continuar.' };
+    return { ok: false, reason: 'Acepta los cambios de la tarifa para continuar.' };
   }
   return { ok: true };
 }

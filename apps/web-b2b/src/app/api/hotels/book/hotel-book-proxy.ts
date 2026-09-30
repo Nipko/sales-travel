@@ -28,10 +28,10 @@ export interface HotelBookProxyReply {
 type ApiCall = (path: string, init: RequestInit) => Promise<ApiResponse>;
 
 const MISSING_KEY =
-  'No pudimos identificar este intento de reserva. Recargá la página y volvé a confirmar la reserva.';
+  'No pudimos identificar este intento de reserva. Recarga la página y vuelve a confirmar la reserva.';
 
 const INVALID_BODY =
-  'Revisá los datos de los huéspedes y del contacto: hay campos incompletos o con un formato que no aceptamos.';
+  'Revisa los datos de los huéspedes y del contacto: hay campos incompletos o con un formato que no aceptamos.';
 
 function badRequest(message: string): HotelBookProxyReply {
   return { status: 400, body: { statusCode: 400, error: 'Bad Request', message } };

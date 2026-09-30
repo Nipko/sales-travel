@@ -3,10 +3,13 @@ import type { CarLocation } from '../actions';
 import {
   HOUR_SLOTS,
   buildSearchValues,
+  carSearchEcho,
   hourLabel,
   nowAt,
   placeLabel,
   rentalDays,
+  rentalDaysOf,
+  rentalRangeLabel,
   searchSummaryView,
   type CarSearchDraft,
 } from './car-search-model';
@@ -186,5 +189,64 @@ describe('resumen de la búsqueda', () => {
       placeLabel({ value: 'Miami International Airport, MIA, Florida, US', iata: 'MIA' }),
     ).toBe('Miami International Airport (MIA)');
     expect(hourLabel('0930')).toBe('09:30');
+  });
+});
+
+describe('rentalRangeLabel: el contador del calendario de autos', () => {
+  it('cuenta con las horas, no sólo con las fechas', () => {
+    const rango = { start: '2026-10-22', end: '2026-10-25' };
+    expect(rentalRangeLabel(rango, '10:00', '10:00')).toBe('3 días');
+    expect(rentalRangeLabel(rango, '10:00', '11:00')).toBe('4 días');
+  });
+
+  it('devolver el mismo día, más tarde, es un día', () => {
+    expect(rentalRangeLabel({ start: '2026-10-22', end: '2026-10-22' }, '09:00', '18:00')).toBe(
+      '1 día',
+    );
+  });
+
+  it('sin las dos fechas no hay contador', () => {
+    expect(rentalRangeLabel({ start: '2026-10-22', end: null }, '10:00', '10:00')).toBeNull();
+    expect(rentalRangeLabel({ start: null, end: null }, '10:00', '10:00')).toBeNull();
+  });
+
+  it('el mismo día con la devolución antes (o a la hora) de la recogida no es «1 día»: no se puede buscar', () => {
+    const mismoDia = { start: '2026-10-22', end: '2026-10-22' };
+    expect(rentalRangeLabel(mismoDia, '18:00', '09:00')).toBeNull();
+    expect(rentalRangeLabel(mismoDia, '10:00', '10:00')).toBeNull();
+    expect(rentalDaysOf(mismoDia, '18:00', '09:00')).toBeNull();
+    // Y es exactamente lo que rechaza la búsqueda.
+    const built = buildSearchValues(
+      draft({
+        pickUpDate: '2026-10-22',
+        dropOffDate: '2026-10-22',
+        pickUpTime: '18:00',
+        dropOffTime: '09:00',
+      }),
+      NOW,
+    );
+    expect(built.ok).toBe(false);
+  });
+
+  it('del día siguiente a una hora más temprana sigue contando: 1 día', () => {
+    expect(rentalDaysOf({ start: '2026-10-22', end: '2026-10-23' }, '18:00', '09:00')).toBe(1);
+  });
+});
+
+describe('carSearchEcho: qué se está buscando, mientras se busca', () => {
+  it('lugar, fechas con hora y días', () => {
+    const built = buildSearchValues(draft(), NOW);
+    if (!built.ok) throw new Error(built.error);
+    expect(carSearchEcho({ values: built.values, pickup: BOG })).toBe(
+      'Aeropuerto El Dorado (BOG) · jue 22 oct 10:00 – jue 29 oct 10:00 · 7 días',
+    );
+  });
+
+  it('con otro lugar de devolución, los dos', () => {
+    const built = buildSearchValues(draft({ otherDropoff: true, dropoff: MEDELLIN }), NOW);
+    if (!built.ok) throw new Error(built.error);
+    expect(carSearchEcho({ values: built.values, pickup: BOG, dropoff: MEDELLIN })).toMatch(
+      /^Aeropuerto El Dorado \(BOG\) → Medellín · /,
+    );
   });
 });

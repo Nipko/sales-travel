@@ -2,6 +2,7 @@
 
 import { Car, RefreshCw, SearchX, Ticket, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react';
+import { ResultsSkeletonFrame, SearchLoading } from '../../../components/ui/search-loading';
 import { cn } from '../../../lib/cn';
 import {
   bookCarAction,
@@ -20,7 +21,7 @@ import { CarCheckout } from './_components/car-checkout';
 import { CarResultSkeleton } from './_components/car-result-card';
 import { CarResults } from './_components/car-results';
 import { CarSearchForm } from './_components/car-search-form';
-import { rentalDays, type CarSearchCriteria } from './_components/car-search-model';
+import { carSearchEcho, rentalDays, type CarSearchCriteria } from './_components/car-search-model';
 import { CarSearchSummaryBar } from './_components/car-search-summary-bar';
 import { ReservationPanel } from './_components/reservation-panel';
 
@@ -93,6 +94,8 @@ export default function AutosPage() {
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [lastAttempt, setLastAttempt] = useState<CarSearchCriteria | null>(null);
+  /** Qué se está buscando, para la espera: sale de lo que se envió, no del formulario. */
+  const [echo, setEcho] = useState('');
   const [editing, setEditing] = useState(false);
   const [searchToken, setSearchToken] = useState(0);
   const focusResults = useRef(false);
@@ -134,6 +137,7 @@ export default function AutosPage() {
     setSearchError('');
     setSelectError('');
     setLastAttempt(next);
+    setEcho(carSearchEcho(next));
     startSearch(async () => {
       const res = await searchCarsAction(next.values).catch(() => ({
         ok: false as const,
@@ -307,7 +311,7 @@ export default function AutosPage() {
               >
                 <RefreshCw
                   aria-hidden="true"
-                  className={cn('size-3.5', searching && 'animate-spin')}
+                  className={cn('size-3.5', searching && 'animate-spin motion-reduce:animate-none')}
                 />
                 Buscar de nuevo
               </button>
@@ -328,25 +332,27 @@ export default function AutosPage() {
           </p>
         ) : null}
 
-        {searching && !hasResults ? (
-          <div role="status" aria-live="polite" className="space-y-3">
-            <p className="flex items-center gap-2 text-sm text-[var(--color-fg-muted)]">
-              <span className="size-3.5 animate-spin rounded-full border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)]" />
-              Buscando autos disponibles en AgentCars…
-            </p>
+        {/* La espera ocupa el lugar de los resultados. Los de la búsqueda anterior quedan
+            montados pero ocultos: filtros y orden viven en ellos (y en la URL) y no se pierden. */}
+        <SearchLoading active={searching} subject="autos" echo={echo}>
+          <ResultsSkeletonFrame>
             {[0, 1, 2].map((i) => (
               <CarResultSkeleton key={i} />
             ))}
+          </ResultsSkeletonFrame>
+        </SearchLoading>
+
+        {hasResults && criteria ? (
+          <div hidden={searching}>
+            <CarResults
+              offers={offers}
+              days={rentalDays(criteria.values)}
+              searching={searching}
+              selectingKey={selectingKey}
+              onSelect={selectCar}
+              headingId={resultsHeadingId}
+            />
           </div>
-        ) : hasResults && criteria ? (
-          <CarResults
-            offers={offers}
-            days={rentalDays(criteria.values)}
-            searching={searching}
-            selectingKey={selectingKey}
-            onSelect={selectCar}
-            headingId={resultsHeadingId}
-          />
         ) : searched && !searching && !searchError ? (
           <NoCars />
         ) : null}

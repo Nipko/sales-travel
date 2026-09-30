@@ -41,7 +41,7 @@ type Phase =
   | { readonly kind: 'done'; readonly outcome: HotelCancelOutcome };
 
 const ESTIMATE_FAILED =
-  'No pudimos calcular la penalidad estimada. Sin verla no se envía la cancelación: probá de nuevo.';
+  'No pudimos calcular la penalidad estimada. Sin verla no se envía la cancelación: prueba de nuevo.';
 
 const OPS_FAILED =
   'No pudimos comprobar si hay una cancelación anterior. Por seguridad no se envía la operación.';

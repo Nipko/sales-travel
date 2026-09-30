@@ -39,7 +39,10 @@ export function SearchSummaryBar({
           <span className="truncate">{view.destination}</span>
           {searching ? (
             <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-[var(--color-fg-muted)]">
-              <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+              <Loader2
+                aria-hidden="true"
+                className="size-3.5 animate-spin motion-reduce:animate-none"
+              />
               Buscando…
             </span>
           ) : null}

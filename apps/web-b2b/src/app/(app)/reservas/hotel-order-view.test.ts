@@ -405,7 +405,7 @@ describe('hotelReadResultOf — "Actualizar estado" (U-16)', () => {
       ok: false,
       message: 'La cuenta de la reserva ya no está.',
     });
-    expect(hotelReadResultOf(502, { error: 'Bad gateway' }).message).toMatch(/Probá de nuevo/);
+    expect(hotelReadResultOf(502, { error: 'Bad gateway' }).message).toMatch(/Prueba de nuevo/);
     expect(hotelReadResultOf(200, { found: true }).ok).toBe(false);
   });
 });

@@ -48,13 +48,13 @@ describe('searchHotelsAction — nacionalidad del pasajero principal (RF-06, U-0
   it('sin nacionalidad no se busca: nunca un valor por defecto', async () => {
     const res = await searchHotelsAction(INITIAL, form({ guestNationality: '' }));
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('Indicá la nacionalidad del pasajero principal.');
+    expect(res.error).toBe('Indica la nacionalidad del pasajero principal.');
     expect(apiMock).not.toHaveBeenCalled();
   });
 
   it('un valor que no es un país oficial no se manda', async () => {
     const res = await searchHotelsAction(INITIAL, form({ guestNationality: 'Colombia' }));
-    expect(res.error).toBe('No reconocemos esa nacionalidad: elegila de la lista.');
+    expect(res.error).toBe('No reconocemos esa nacionalidad: elígela de la lista.');
     expect(apiMock).not.toHaveBeenCalled();
   });
 
@@ -117,7 +117,7 @@ describe('searchHotelsAction — destino del autocompletado (docs/tbo/05 §8.5)'
     '%s no es un destino: no se busca',
     async (destinationId) => {
       const res = await searchHotelsAction(INITIAL, form({ destinationId }));
-      expect(res.error).toBe('Elegí un destino del autocompletado o indicá IDs de hotel.');
+      expect(res.error).toBe('Elige un destino del autocompletado o indica IDs de hotel.');
       expect(apiMock).not.toHaveBeenCalled();
     },
   );
@@ -212,7 +212,7 @@ describe('searchHotelsAction — moneda de la búsqueda (D-TBO-15)', () => {
 
   it('una moneda que no es un código ISO no llega al API', async () => {
     const res = await searchHotelsAction(INITIAL, form({ currency: 'dólares' }));
-    expect(res.error).toBe('Elegí la moneda de la búsqueda de la lista.');
+    expect(res.error).toBe('Elige la moneda de la búsqueda de la lista.');
     expect(apiMock).not.toHaveBeenCalled();
   });
 
@@ -336,7 +336,7 @@ describe('suggestDestinationsAction — "no hay ciudades" no es "no se pudo cons
   it('la sesión venció: se dice así', async () => {
     apiMock.mockResolvedValue({ ok: false, error: { status: 401, message: 'Unauthorized' } });
     expect((await suggestDestinationsAction('bogo')).error).toBe(
-      'Tu sesión venció. Volvé a iniciar sesión para buscar destinos.',
+      'Tu sesión venció. Vuelve a iniciar sesión para buscar destinos.',
     );
   });
 

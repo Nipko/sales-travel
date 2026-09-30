@@ -43,9 +43,9 @@ export const PORTFOLIO_TITLES: Readonly<Record<string, string>> = {
 };
 
 const GENERIC_TITLE = 'La cartera de la agencia no cubre esta reserva.';
-const GENERIC_DETAIL = 'Revisá la cartera de la agencia en Cartera B2B.';
+const GENERIC_DETAIL = 'Revisa la cartera de la agencia en Cartera B2B.';
 /** Sin el texto del API, lo que el vendedor puede hacer con un motivo de la red. */
-export const NETWORK_DETAIL = 'Hablá con quien te financia antes de volver a intentarlo.';
+export const NETWORK_DETAIL = 'Habla con quien te financia antes de volver a intentarlo.';
 
 /** Lo que el PreBook dice de la cartera. Sin él, no se sabe y decide el Book. */
 export type PrebookFunding =
@@ -133,11 +133,11 @@ export function paymentNote(ownAccount: boolean): string {
 
 /** El motivo junto al botón de seguir cuando la cartera no cubre la tarifa. */
 export const FUNDING_GATE_REASON =
-  'Resolvé la cartera de la agencia antes de cargar los huéspedes: esta reserva se rechazaría.';
+  'Resuelve la cartera de la agencia antes de cargar los huéspedes: esta reserva se rechazaría.';
 
 /** El mismo motivo cuando lo que no cubre es un nivel de la red, no la cartera de la agencia. */
 export const NETWORK_FUNDING_GATE_REASON =
-  'Hablá con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.';
+  'Habla con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.';
 
 export function fundingGateReason(
   funding: PrebookFunding & { readonly status: 'blocked' },

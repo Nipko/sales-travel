@@ -31,7 +31,7 @@ describe('suggestionsQuery — lo que se le pregunta al API', () => {
 describe('suggestionsErrorMessage — el motivo, sin datos técnicos', () => {
   it('sesión vencida y sin permiso, con qué hacer', () => {
     expect(suggestionsErrorMessage(401)).toBe(
-      'Tu sesión venció. Volvé a iniciar sesión para buscar destinos.',
+      'Tu sesión venció. Vuelve a iniciar sesión para buscar destinos.',
     );
     expect(suggestionsErrorMessage(403)).toBe(
       'Tu usuario no tiene permiso para buscar destinos de hoteles.',
@@ -85,7 +85,7 @@ describe('destinationNotice — qué decir debajo del campo', () => {
   it('sin coincidencias: lo dice y pide otro nombre', () => {
     expect(destinationNotice(base)).toEqual({
       kind: 'no-match',
-      text: 'No hay ciudades que coincidan con «bogo». Probá con otro nombre.',
+      text: 'No hay ciudades que coincidan con «bogo». Prueba con otro nombre.',
     });
   });
 

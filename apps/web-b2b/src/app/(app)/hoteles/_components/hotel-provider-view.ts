@@ -77,7 +77,7 @@ export function emptyResultsView(providers: readonly HotelProviderOutcome[]): Em
     if (missing > 0) {
       return {
         title: 'Ningún proveedor pudo buscar esta vez.',
-        hint: 'Revisá el aviso de arriba: dice qué pasó con cada uno. Que no haya resultados no quiere decir que no haya lugar.',
+        hint: 'Revisa el aviso de arriba: dice qué pasó con cada uno. Que no haya resultados no quiere decir que no haya lugar.',
       };
     }
     return {
@@ -90,13 +90,13 @@ export function emptyResultsView(providers: readonly HotelProviderOutcome[]): Em
       title: 'Los proveedores que respondieron no tienen tarifas para mostrar.',
       hint:
         missing === 1
-          ? 'Un proveedor no aportó todas sus tarifas: revisá el aviso de arriba antes de decirle al cliente que no hay lugar.'
-          : `${missing} proveedores no aportaron todas sus tarifas: revisá el aviso de arriba antes de decirle al cliente que no hay lugar.`,
+          ? 'Un proveedor no aportó todas sus tarifas: revisa el aviso de arriba antes de decirle al cliente que no hay lugar.'
+          : `${missing} proveedores no aportaron todas sus tarifas: revisa el aviso de arriba antes de decirle al cliente que no hay lugar.`,
     };
   }
   return {
     title: 'No hay disponibilidad para ese destino y esas fechas.',
-    hint: 'Probá con otras fechas, otro destino o menos habitaciones.',
+    hint: 'Prueba con otras fechas, otro destino o menos habitaciones.',
   };
 }
 
@@ -110,7 +110,7 @@ function noProvidersHint(providers: readonly HotelProviderOutcome[]): string {
     (p) => p.status === 'skipped' && p.skipReason === 'platform-disabled',
   ).length;
   if (byPlatform > 0 && byPlatform === providers.length) {
-    return 'La plataforma los deshabilitó para tu agencia. Consultá con el equipo de la plataforma.';
+    return 'La plataforma los deshabilitó para tu agencia. Consulta con el equipo de la plataforma.';
   }
   if (byPlatform > 0) {
     return 'Un administrador puede conectar los que faltan en Proveedores (GDS); los que deshabilitó la plataforma sólo los reactiva la plataforma.';

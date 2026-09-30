@@ -50,10 +50,10 @@ export function searchWalletNotice(
   if (wallets.ownHotelAccounts) return undefined;
   const who = wallets.financierName ?? 'Planetour';
   if (!wallets.enabled.includes(currency)) {
-    return `Tu agencia no tiene cartera en ${currency}: podés cotizar, pero no reservar. Pedile a ${who} que la habilite.`;
+    return `Tu agencia no tiene cartera en ${currency}: puedes cotizar, pero no reservar. Pídele a ${who} que la habilite.`;
   }
   if (wallets.operating.includes(currency)) return undefined;
   // Otro estado que activa (una cartera sobre el cupo de los datos viejos) tampoco retiene.
   const state = wallets.suspended.includes(currency) ? 'está suspendida' : 'no está activa';
-  return `La cartera ${currency} de tu agencia ${state}: podés cotizar, pero no reservar hasta que ${who} la reactive.`;
+  return `La cartera ${currency} de tu agencia ${state}: puedes cotizar, pero no reservar hasta que ${who} la reactive.`;
 }

@@ -569,7 +569,7 @@ export default function ReservasPage() {
 
       {sells ? null : (
         <SalesBlockedBanner>
-          Acá consultás y cancelás lo ya vendido; pagar, emitir y vender servicios lo hace una
+          Aquí consultas y cancelas lo ya vendido; pagar, emitir y vender servicios lo hace una
           sucursal.
         </SalesBlockedBanner>
       )}
@@ -1095,7 +1095,7 @@ export default function ReservasPage() {
       {confirmCancel && (
         <ConfirmDialog
           title={`Cancelar reserva #${confirmCancel.orderNumber}`}
-          message={`¿Seguro que querés cancelar esta reserva${
+          message={`¿Seguro que quieres cancelar esta reserva${
             confirmCancel.pnr ? ` (PNR ${confirmCancel.pnr})` : ''
           }? Esta acción no se puede deshacer.`}
           confirmLabel="Sí, cancelar reserva"
@@ -1250,7 +1250,7 @@ function OrderDetailModal({
     } catch {
       setRetryMessage({
         ok: false,
-        text: 'No pudimos comprobar el resultado. No vuelvas a enviarlo; revisá el historial.',
+        text: 'No pudimos comprobar el resultado. No vuelvas a enviarlo; revisa el historial.',
       });
     } finally {
       setRetrying(null);

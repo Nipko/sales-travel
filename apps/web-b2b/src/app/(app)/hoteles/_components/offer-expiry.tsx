@@ -100,7 +100,7 @@ export function timerLabel(state: OfferExpiryState): string {
 export function offerExpiryNotice(
   state: OfferExpiryState,
 ): { tone: 'warning' | 'expired'; title: string; detail: string } | undefined {
-  const again = 'Buscá de nuevo para ver precios vigentes antes de reservar.';
+  const again = 'Busca de nuevo para ver precios vigentes antes de reservar.';
   if (state.expired > 0) {
     const all = state.expired === state.total;
     return {
@@ -227,7 +227,7 @@ export function OfferExpiry({
             >
               <RefreshCw
                 aria-hidden="true"
-                className={cn('size-3.5', searching && 'animate-spin')}
+                className={cn('size-3.5', searching && 'animate-spin motion-reduce:animate-none')}
               />
               {searching ? 'Buscando…' : 'Buscar de nuevo'}
             </button>

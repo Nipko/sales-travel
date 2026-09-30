@@ -48,7 +48,7 @@ describe('CurrencyField', () => {
 
   it('el aviso de cartera se anuncia junto al campo y no bloquea buscar', () => {
     const notice =
-      'Tu agencia no tiene cartera en USD: podés cotizar, pero no reservar. Pedile a Planetour que la habilite.';
+      'Tu agencia no tiene cartera en USD: puedes cotizar, pero no reservar. Pídele a Planetour que la habilite.';
     const out = html({
       options: { defaultCurrency: 'COP', currencies: ['COP', 'USD'] },
       value: 'USD',

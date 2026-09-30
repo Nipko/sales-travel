@@ -13,7 +13,7 @@ const WALLETS = {
 describe('searchWalletNotice — el aviso temprano en la búsqueda de hoteles', () => {
   it('sin cartera en la moneda elegida: se puede cotizar, no reservar, y a quién pedírsela', () => {
     expect(searchWalletNotice(WALLETS, 'USD')).toBe(
-      'Tu agencia no tiene cartera en USD: podés cotizar, pero no reservar. Pedile a Consolidador Andino que la habilite.',
+      'Tu agencia no tiene cartera en USD: puedes cotizar, pero no reservar. Pídele a Consolidador Andino que la habilite.',
     );
   });
 
@@ -23,7 +23,7 @@ describe('searchWalletNotice — el aviso temprano en la búsqueda de hoteles', 
 
   it('en otro estado que no retiene (sobre el cupo), no la llama suspendida', () => {
     const notice = searchWalletNotice(WALLETS, 'PEN');
-    expect(notice).toMatch(/cartera PEN de tu agencia no está activa: podés cotizar/);
+    expect(notice).toMatch(/cartera PEN de tu agencia no está activa: puedes cotizar/);
     expect(notice).not.toMatch(/suspendida/);
   });
 
@@ -36,7 +36,7 @@ describe('searchWalletNotice — el aviso temprano en la búsqueda de hoteles', 
 
   it('sin quien financie (la raíz): Planetour', () => {
     expect(searchWalletNotice({ ...WALLETS, financierName: null }, 'USD')).toMatch(
-      /Pedile a Planetour/,
+      /Pídele a Planetour/,
     );
   });
 

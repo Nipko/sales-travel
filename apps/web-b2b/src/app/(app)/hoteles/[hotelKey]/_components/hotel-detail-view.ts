@@ -218,18 +218,18 @@ export function emptyRatesView(view: Pick<DetailRatesView, 'failed' | 'answered'
   if (view.answered === 0) {
     return {
       title: 'No pudimos traer las tarifas de este hotel.',
-      hint: 'Revisá el aviso de arriba y probá de nuevo en unos minutos. Que no haya tarifas no quiere decir que no haya lugar.',
+      hint: 'Revisa el aviso de arriba y prueba de nuevo en unos minutos. Que no haya tarifas no quiere decir que no haya lugar.',
     };
   }
   if (view.failed.length > 0) {
     return {
       title: 'Los proveedores que respondieron no tienen tarifas para estas fechas.',
-      hint: 'Un proveedor no respondió: revisá el aviso de arriba antes de decirle al cliente que no hay lugar.',
+      hint: 'Un proveedor no respondió: revisa el aviso de arriba antes de decirle al cliente que no hay lugar.',
     };
   }
   return {
     title: 'Este hotel no tiene disponibilidad para estas fechas.',
-    hint: 'Volvé a los resultados y probá con otras fechas u otro hotel.',
+    hint: 'Vuelve a los resultados y prueba con otras fechas u otro hotel.',
   };
 }
 

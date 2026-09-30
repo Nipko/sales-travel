@@ -36,10 +36,10 @@ describe('parseFunding — el aviso de cartera del PreBook', () => {
   it('un bloqueo sin motivo o sin texto válido sigue siendo un bloqueo, con el texto genérico', () => {
     expect(parseFunding({ status: 'blocked', reason: '<b>x</b>', message: '' })).toEqual({
       status: 'blocked',
-      message: 'Revisá la cartera de la agencia en Cartera B2B.',
+      message: 'Revisa la cartera de la agencia en Cartera B2B.',
     });
     expect(parseFunding({ status: 'blocked', message: 'x'.repeat(501) })).toMatchObject({
-      message: 'Revisá la cartera de la agencia en Cartera B2B.',
+      message: 'Revisa la cartera de la agencia en Cartera B2B.',
     });
   });
 
@@ -49,7 +49,7 @@ describe('parseFunding — el aviso de cartera del PreBook', () => {
     ).toEqual({
       status: 'blocked',
       reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
-      message: 'Hablá con quien te financia antes de volver a intentarlo.',
+      message: 'Habla con quien te financia antes de volver a intentarlo.',
     });
   });
 
@@ -79,7 +79,7 @@ describe('fundingNotice — lo que ve el vendedor antes de cargar huéspedes', (
     ['PORTFOLIO_NETWORK_COST_UNAVAILABLE', 'No se pudo calcular el costo para quien te financia.'],
   ])('%s → "%s", sin enlace a Cartera B2B: lo resuelve quien financia', (reason, title) => {
     const message =
-      'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.';
+      'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.';
     const view = fundingNotice({ status: 'blocked', reason, message });
     expect(view).toEqual({ title, detail: message, action: 'financier' });
     // Ni montos, ni ids, ni qué nivel falló: sólo "tu red" y "quien te financia".
@@ -130,7 +130,7 @@ describe('fundingGateReason — por qué no se sigue a los huéspedes', () => {
       NETWORK_FUNDING_GATE_REASON,
     );
     expect(NETWORK_FUNDING_GATE_REASON).toBe(
-      'Hablá con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
+      'Habla con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
     );
   });
 

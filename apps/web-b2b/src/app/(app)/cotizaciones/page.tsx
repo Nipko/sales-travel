@@ -1,7 +1,7 @@
 'use client';
 
 import { flightDate, flightTime, formatMoney } from '../../../lib/flight-format';
-import { AlertTriangle, FileText, Plane, Search, TriangleAlert } from 'lucide-react';
+import { AlertTriangle, FileText, Plane, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -14,6 +14,7 @@ import {
   type DateRange,
   type TripMode,
 } from '../../../components/ui/date-range-picker';
+import { SearchButtonLabel, SearchLoading } from '../../../components/ui/search-loading';
 import {
   searchFlightsAction,
   type Offer,
@@ -96,22 +97,18 @@ function isSimulatedOffer(offer: Offer, simulated: SimulatedProviders): boolean 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
+    // `aria-disabled` y no `disabled`, como en hoteles y autos: el foco no se cae al `body`
+    // durante la espera y el «Buscando…» se lee entero. El clic (y el Enter de un campo, que
+    // llega como clic a este botón) no envía otra búsqueda encima de la que corre.
     <Button
       type="submit"
-      disabled={pending}
-      className="h-14 w-full gap-2 rounded-xl px-7 text-[15px] font-semibold shadow-[var(--shadow-sm)] transition-all duration-200 hover:shadow-[var(--shadow-md)] active:scale-[0.99] xl:w-auto"
+      aria-disabled={pending || undefined}
+      onClick={(event) => {
+        if (pending) event.preventDefault();
+      }}
+      className="h-14 w-full gap-2 rounded-xl px-7 text-[15px] font-semibold shadow-[var(--shadow-sm)] transition-all duration-200 hover:shadow-[var(--shadow-md)] active:scale-[0.99] aria-disabled:cursor-progress aria-disabled:active:scale-100 motion-reduce:transform-none xl:w-auto"
     >
-      {pending ? (
-        <>
-          <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          Buscando…
-        </>
-      ) : (
-        <>
-          <Search className="size-4" />
-          Buscar
-        </>
-      )}
+      <SearchButtonLabel searching={pending}>Buscar</SearchButtonLabel>
     </Button>
   );
 }
@@ -299,7 +296,7 @@ export default function CotizacionesPage() {
   const handleQuote = useCallback(
     async (offer: Offer) => {
       if (searched === null) {
-        setQuoteError('Volvé a buscar antes de cotizar.');
+        setQuoteError('Vuelve a buscar antes de cotizar.');
         return;
       }
       const res = await createQuotationAction(offer, {
@@ -460,8 +457,8 @@ function DegradedProvidersNotice({ providers }: { providers: ProviderOutcome[] }
             : `${failed.length} proveedores no respondieron`}
           .
         </strong>{' '}
-        Puede haber vuelos y tarifas que no se están mostrando. Volvé a buscar en unos minutos antes
-        de darle un precio al cliente.
+        Puede haber vuelos y tarifas que no se están mostrando. Vuelve a buscar en unos minutos
+        antes de darle un precio al cliente.
         <ul className="mt-1.5 space-y-0.5 text-xs text-[var(--color-fg-muted)]">
           {failed.map((p) => (
             <li key={p.code}>
@@ -499,7 +496,7 @@ function SimulatedFaresNotice({ result }: { result: SearchResult }) {
         {todas
           ? 'Faltan credenciales del proveedor para esta agencia, así que estos precios son de prueba y '
           : `${fake} de ${total} tarifas vienen de un proveedor sin credenciales cargadas: están marcadas y `}
-        <strong className="font-semibold">no se le pueden cotizar a un cliente</strong>. Cargá las
+        <strong className="font-semibold">no se le pueden cotizar a un cliente</strong>. Carga las
         credenciales en Mi Red → Credenciales.
       </span>
     </div>
@@ -530,38 +527,61 @@ function SearchResults({
   onQuote: (offer: Offer) => Promise<void>;
 }) {
   const { pending } = useFormStatus();
-  const simulated = useMemo(() => simulatedProviders(result), [result]);
 
-  if (pending) {
-    /*
-      La espera dice QUÉ se está buscando. Antes había cuatro íconos latiendo —vuelo, hotel,
-      traslado, asistencia— que no describían nada de lo que estaba pasando: esta pantalla
-      sólo busca vuelos. El eco sirve para algo concreto: quien dictó las fechas de memoria
-      las ve escritas, y corta antes si se equivocó de mes.
-    */
-    return (
-      <section className="mt-8">
-        <div
-          role="status"
-          className="mb-4 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-        >
-          <span
-            aria-hidden="true"
-            className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-[var(--color-primary)]/25 border-t-[var(--color-primary)]"
-          />
-          <p className="min-w-0 text-sm">
-            <span className="font-semibold text-[var(--color-fg)]">Buscando</span>{' '}
-            <span className="text-[var(--color-fg-muted)]">{echo}</span>
-          </p>
-        </div>
+  /*
+    La espera dice QUÉ se está buscando. Antes había cuatro íconos latiendo —vuelo, hotel,
+    traslado, asistencia— que no describían nada de lo que estaba pasando: esta pantalla
+    sólo busca vuelos. El eco sirve para algo concreto: quien dictó las fechas de memoria
+    las ve escritas, y corta antes si se equivocó de mes. Es la misma espera de hoteles y
+    autos (SearchLoading), con la silueta de la fila de vuelos.
+  */
+  return (
+    <>
+      <SearchLoading
+        active={pending}
+        subject="vuelos"
+        echo={echo}
+        className="mt-8"
+        cardClassName="rounded-xl"
+      >
         <div className="space-y-4">
           <SkeletonFlightRow />
           <SkeletonFlightRow />
           <SkeletonFlightRow />
         </div>
-      </section>
-    );
-  }
+      </SearchLoading>
+      {pending ? null : (
+        <SearchResultsBody
+          hasSearched={hasSearched}
+          echo={echo}
+          result={result}
+          allGroups={allGroups}
+          flightGroups={flightGroups}
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          sort={sort}
+          onSortChange={onSortChange}
+          onQuote={onQuote}
+        />
+      )}
+    </>
+  );
+}
+
+/** Los resultados ya llegados: la lista, los avisos o el vacío. */
+function SearchResultsBody({
+  hasSearched,
+  echo,
+  result,
+  allGroups,
+  flightGroups,
+  filters,
+  onFiltersChange,
+  sort,
+  onSortChange,
+  onQuote,
+}: Parameters<typeof SearchResults>[0]) {
+  const simulated = useMemo(() => simulatedProviders(result), [result]);
 
   // Se entra por allGroups, no por flightGroups: si los filtros excluyen todo, la sección
   // tiene que seguir en pantalla para poder limpiarlos. Con la condición sobre los grupos
@@ -586,7 +606,7 @@ function SearchResults({
             </p>
             <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
               Hay {allGroups.length} {allGroups.length === 1 ? 'resultado' : 'resultados'} en total.
-              Probá quitando algún filtro.
+              Prueba quitando algún filtro.
             </p>
           </div>
         ) : (
@@ -631,7 +651,7 @@ function SearchResults({
             Ningún vuelo disponible para {echo || 'esta búsqueda'}
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-            Probá corriendo las fechas un día, un aeropuerto alternativo de la misma ciudad, o
+            Prueba corriendo las fechas un día, un aeropuerto alternativo de la misma ciudad, o
             cambiando la cabina.
           </p>
         </div>

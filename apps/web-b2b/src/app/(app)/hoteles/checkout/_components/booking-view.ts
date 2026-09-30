@@ -244,9 +244,9 @@ const TRANSIENT: ReadonlySet<string> = new Set([
 ]);
 
 const UNKNOWN_MESSAGE =
-  'No recibimos la respuesta de la reserva y puede haberse hecho igual. No la repitas con otros datos: consultala en Mis Reservas o reintentá sin cambiar nada, que no se duplica.';
+  'No recibimos la respuesta de la reserva y puede haberse hecho igual. No la repitas con otros datos: consúltala en Mis Reservas o reintenta sin cambiar nada, que no se duplica.';
 
-const FIX_MESSAGE = 'Revisá los datos marcados y volvé a confirmar.';
+const FIX_MESSAGE = 'Revisa los datos marcados y vuelve a confirmar.';
 
 /**
  * Qué hacer con la respuesta de `POST /api/hotels/book`.
@@ -345,21 +345,21 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'revalidate',
       title: REVALIDATE[reason],
-      message: message ?? 'Revalidá la tarifa para ver sus condiciones actuales.',
+      message: message ?? 'Revalida la tarifa para ver sus condiciones actuales.',
     };
   }
   if (reason !== undefined && RESEARCH[reason]) {
     return {
       kind: 'research',
       title: RESEARCH[reason],
-      message: message ?? 'Volvé al hotel para buscar tarifas actualizadas.',
+      message: message ?? 'Vuelve al hotel para buscar tarifas actualizadas.',
     };
   }
   if (reason !== undefined && ACCOUNT[reason]) {
     return {
       kind: 'rejected',
       title: ACCOUNT[reason],
-      message: message ?? 'Avisale a quien administra la cuenta del proveedor.',
+      message: message ?? 'Avísale a quien administra la cuenta del proveedor.',
       retry: false,
     };
   }
@@ -379,7 +379,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'rejected',
       title: 'Las carteras están ocupadas con otras reservas.',
-      message: message ?? 'No se retuvo saldo. Probá de nuevo en unos segundos.',
+      message: message ?? 'No se retuvo saldo. Prueba de nuevo en unos segundos.',
       retry: true,
     };
   }
@@ -389,7 +389,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'rejected',
       title: PORTFOLIO_TITLES[reason],
-      message: message ?? 'Revisá la cartera de la agencia en Cartera B2B.',
+      message: message ?? 'Revisa la cartera de la agencia en Cartera B2B.',
       retry: true,
       action: 'portfolios',
     };
@@ -401,7 +401,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
       title: 'Tu agencia no puede reservar tarifas no reembolsables.',
       message:
         message ??
-        'Quien financia a tu agencia las tiene bloqueadas. Elegí una tarifa reembolsable del hotel.',
+        'Quien financia a tu agencia las tiene bloqueadas. Elige una tarifa reembolsable del hotel.',
       retry: false,
     };
   }
@@ -409,7 +409,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'rejected',
       title: 'Falta el contacto de soporte de la agencia.',
-      message: message ?? 'Configuralo en Mi agencia para reservar hoteles.',
+      message: message ?? 'Configúralo en Mi agencia para reservar hoteles.',
       retry: true,
       action: 'agency',
     };
@@ -418,7 +418,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'rejected',
       title: 'El proveedor no respondió a tiempo.',
-      message: message ?? 'No se hizo ninguna reserva. Probá de nuevo en unos segundos.',
+      message: message ?? 'No se hizo ninguna reserva. Prueba de nuevo en unos segundos.',
       retry: true,
     };
   }
@@ -433,7 +433,7 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
     return {
       kind: 'rejected',
       title: 'No se pudo reservar.',
-      message: message ?? 'Tu sesión no es válida para esta operación. Volvé a iniciar sesión.',
+      message: message ?? 'Tu sesión no es válida para esta operación. Vuelve a iniciar sesión.',
       retry: false,
     };
   }
@@ -472,7 +472,7 @@ export function repricedChangeView(
           delta: `+ ${formatMoney({ amountMinor: diff, currency: outcome.currentTotal.currency })}`,
         }
       : {}),
-    changes: 'No se hizo la reserva. Si aceptás el precio nuevo, confirmala de nuevo.',
+    changes: 'No se hizo la reserva. Si aceptas el precio nuevo, confírmala de nuevo.',
     requiresAcceptance: true,
     acceptLabel: `Acepto el precio nuevo de ${after}.`,
   };
@@ -544,7 +544,7 @@ export const TRACKING_TEXT: Readonly<
   confirming: {
     title: 'Confirmando la reserva con el proveedor…',
     detail:
-      'El proveedor puede tardar hasta 2 minutos en responder. No la repitas: si cerrás esta pantalla, la reserva sigue y la encontrás en Mis Reservas.',
+      'El proveedor puede tardar hasta 2 minutos en responder. No la repitas: si cierras esta pantalla, la reserva sigue y la encuentras en Mis Reservas.',
   },
   verifying: {
     title: 'Verificando con el proveedor…',
@@ -624,11 +624,11 @@ export function bookGate(input: {
   readonly repricedPending: boolean;
 }): BookGate {
   if (input.expired) {
-    return { ok: false, reason: 'La tarifa venció: volvé al hotel para buscarla de nuevo.' };
+    return { ok: false, reason: 'La tarifa venció: vuelve al hotel para buscarla de nuevo.' };
   }
   if (input.blockedReason) return { ok: false, reason: input.blockedReason };
   if (input.repricedPending) {
-    return { ok: false, reason: 'Aceptá el precio nuevo para confirmar la reserva.' };
+    return { ok: false, reason: 'Acepta el precio nuevo para confirmar la reserva.' };
   }
   if (input.submitting) return { ok: false };
   return { ok: true };

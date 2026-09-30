@@ -30,7 +30,7 @@ export interface PrebookNonRefundable {
 export const NON_REFUNDABLE_FIELD = 'nonRefundableAcknowledged';
 
 export const NON_REFUNDABLE_REQUIRED =
-  'Confirmá que entendés que la tarifa no es reembolsable para reservarla.';
+  'Confirma que entiendes que la tarifa no es reembolsable para reservarla.';
 
 const LOCAL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
 const CURRENCY_RE = /^[A-Z]{3}$/;
@@ -162,4 +162,4 @@ export function nonRefundableAckLabel(nr: PrebookNonRefundable): string {
 
 /** Al lado de la casilla: lo que ya no se puede corregir después de reservar. */
 export const NON_REFUNDABLE_REVIEW_REMINDER =
-  'Antes de confirmar, revisá los nombres de los huéspedes y las fechas: un error se corrige cancelando, y cancelar cuesta el total.';
+  'Antes de confirmar, revisa los nombres de los huéspedes y las fechas: un error se corrige cancelando, y cancelar cuesta el total.';

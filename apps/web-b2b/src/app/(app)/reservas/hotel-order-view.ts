@@ -753,7 +753,7 @@ export type HotelReadResult =
   | { readonly ok: false; readonly message: string };
 
 const READ_FAILED =
-  'No pudimos consultar al proveedor en este momento. Probá de nuevo en unos minutos.';
+  'No pudimos consultar al proveedor en este momento. Prueba de nuevo en unos minutos.';
 
 /**
  * Lo que respondió `POST /orders/:id/retrieve` para una orden de hotel. Una consulta manual lee la

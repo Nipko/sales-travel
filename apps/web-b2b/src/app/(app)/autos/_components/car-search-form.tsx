@@ -1,8 +1,10 @@
 'use client';
 
-import { Info, Loader2, Search, TriangleAlert } from 'lucide-react';
+import { Info, TriangleAlert } from 'lucide-react';
 import { forwardRef, useEffect, useId, useState, type FormEvent } from 'react';
+import { DateRangePicker } from '../../../../components/ui/date-range-picker';
 import { Select } from '../../../../components/ui/field';
+import { SearchButtonLabel } from '../../../../components/ui/search-loading';
 import { cn } from '../../../../lib/cn';
 import { getRatesAction, type CarLocation, type PaymentType, type RateType } from '../actions';
 import { CarLocationCombobox } from './location-combobox';
@@ -12,7 +14,9 @@ import {
   PAYMENT_LABELS,
   buildSearchValues,
   daysLabel,
-  rentalDays,
+  nowAt,
+  rentalDaysOf,
+  rentalRangeLabel,
   type CarSearchCriteria,
   type CarSearchDraft,
   type SearchField,
@@ -20,22 +24,12 @@ import {
 
 /*
  * El formulario de búsqueda de autos, con la forma del de hoteles: lugares con autocompletado,
- * fechas y horas de recogida y devolución, forma de pago y tipo de tarifa. Queda montado aunque se
- * pliegue detrás de la barra de la búsqueda, así "Editar búsqueda" lo abre con los mismos datos.
+ * fechas de recogida y devolución en un solo calendario (como vuelos y hoteles) con sus horas al
+ * lado, forma de pago y tipo de tarifa. Queda montado aunque se pliegue detrás de la barra de la
+ * búsqueda, así "Editar búsqueda" lo abre con los mismos datos.
  */
 
-const inputClass = cn(
-  'flex h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] shadow-[var(--shadow-xs)]',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 focus-visible:border-[var(--color-primary)]',
-  'aria-[invalid=true]:border-[var(--color-danger)]',
-  'transition-all duration-150',
-);
 const labelClass = 'block text-xs font-medium text-[var(--color-fg)]';
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export const CarSearchForm = forwardRef<
   HTMLFormElement,
@@ -49,6 +43,7 @@ export const CarSearchForm = forwardRef<
   const ids = {
     pickup: useId(),
     dropoff: useId(),
+    dates: useId(),
     pickUpDate: useId(),
     pickUpTime: useId(),
     dropOffDate: useId(),
@@ -56,7 +51,6 @@ export const CarSearchForm = forwardRef<
     rateType: useId(),
     error: useId(),
   };
-  const today = todayISO();
 
   const [pickup, setPickup] = useState<CarLocation | null>(null);
   const [dropoff, setDropoff] = useState<CarLocation | null>(null);
@@ -97,6 +91,11 @@ export const CarSearchForm = forwardRef<
     };
   }, [pickupCountry]);
 
+  // El primer día elegible es el de hoy EN EL MOSTRADOR, con el mismo reloj que
+  // `buildSearchValues`: con la fecha del navegador el calendario ofrecía un día que después se
+  // rechazaba (o escondía uno válido) cuando la recogida está en otro huso.
+  const today = nowAt(new Date(), pickup?.timezone).date;
+
   const draft: CarSearchDraft = {
     pickup,
     dropoff,
@@ -108,18 +107,16 @@ export const CarSearchForm = forwardRef<
     paymentType,
     rateType,
   };
-  const days =
-    pickUpDate && dropOffDate && dropOffDate >= pickUpDate
-      ? rentalDays({
-          pickUpDate,
-          dropOffDate,
-          pickUpHour: pickUpTime,
-          dropOffHour: dropOffTime,
-        })
-      : undefined;
+  const days = rentalDaysOf(
+    { start: pickUpDate || null, end: dropOffDate || null },
+    pickUpTime,
+    dropOffTime,
+  );
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // El botón sigue enfocable mientras se busca (`aria-disabled`): no se lanza otra encima.
+    if (searching) return;
     const built = buildSearchValues(draft);
     if (!built.ok) {
       setProblem({ field: built.field, error: built.error });
@@ -186,23 +183,34 @@ export const CarSearchForm = forwardRef<
         Devolver en otro lugar
       </label>
 
-      <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 lg:grid-cols-4 lg:gap-x-4">
-        <div className="space-y-1.5">
-          <label htmlFor={ids.pickUpDate} className={labelClass}>
-            Fecha de recogida
-          </label>
-          <input
-            id={ids.pickUpDate}
-            type="date"
-            min={today}
-            value={pickUpDate}
-            aria-invalid={invalid('pickUpDate') || undefined}
-            aria-describedby={describedBy('pickUpDate')}
-            onChange={(e) => {
-              setPickUpDate(e.target.value);
-              if (dropOffDate && e.target.value > dropOffDate) setDropOffDate('');
+      <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-4">
+        {/* Recogida y devolución en el mismo calendario: primer clic la recogida, segundo la
+            devolución. Devolver el mismo día vale; lo decide la hora (`buildSearchValues`). */}
+        <div className="col-span-2 space-y-1.5 lg:col-span-1">
+          <span id={ids.dates} className={labelClass}>
+            Fechas
+          </span>
+          <DateRangePicker
+            mode="roundtrip"
+            purpose="rental"
+            size="md"
+            value={{ start: pickUpDate || null, end: dropOffDate || null }}
+            onChange={(range) => {
+              setPickUpDate(range.start ?? '');
+              setDropOffDate(range.end ?? '');
+              if (problem?.field === 'pickUpDate' || problem?.field === 'dropOffDate') {
+                setProblem(null);
+              }
             }}
-            className={inputClass}
+            min={today}
+            startName="pickUpDate"
+            endName="dropOffDate"
+            triggerId={ids.pickUpDate}
+            endTriggerId={ids.dropOffDate}
+            labelledBy={ids.dates}
+            invalid={invalid('pickUpDate') || invalid('dropOffDate')}
+            describedBy={describedBy('pickUpDate') ?? describedBy('dropOffDate')}
+            describeLength={(range) => rentalRangeLabel(range, pickUpTime, dropOffTime)}
           />
         </div>
         <div className="space-y-1.5">
@@ -223,21 +231,6 @@ export const CarSearchForm = forwardRef<
               </option>
             ))}
           </Select>
-        </div>
-        <div className="space-y-1.5">
-          <label htmlFor={ids.dropOffDate} className={labelClass}>
-            Fecha de devolución
-          </label>
-          <input
-            id={ids.dropOffDate}
-            type="date"
-            min={pickUpDate || today}
-            value={dropOffDate}
-            aria-invalid={invalid('dropOffDate') || undefined}
-            aria-describedby={describedBy('dropOffDate')}
-            onChange={(e) => setDropOffDate(e.target.value)}
-            className={inputClass}
-          />
         </div>
         <div className="space-y-1.5">
           <label htmlFor={ids.dropOffTime} className={labelClass}>
@@ -286,8 +279,13 @@ export const CarSearchForm = forwardRef<
         </div>
 
         <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row sm:items-center sm:gap-3">
-          {days !== undefined ? (
-            <p className="text-xs text-[var(--color-fg-muted)] sm:text-right" aria-live="polite">
+          {/* La región viva queda montada siempre, fuera del flujo: una que aparece junto con su
+              texto no se anuncia. Lo visible entra y sale sin `aria-live`. */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {days !== null ? `Alquiler de ${daysLabel(days)}` : ''}
+          </p>
+          {days !== null ? (
+            <p aria-hidden="true" className="text-xs text-[var(--color-fg-muted)] sm:text-right">
               Alquiler de{' '}
               <span className="font-semibold text-[var(--color-fg)]">{daysLabel(days)}</span>
             </p>
@@ -324,20 +322,14 @@ export const CarSearchForm = forwardRef<
 
 function SubmitButton({ searching }: { searching: boolean }) {
   return (
+    // `aria-disabled` y no `disabled`: el foco no se cae al `body` durante la espera y el
+    // «Buscando…» se lee entero. `submit` frena el envío repetido.
     <button
       type="submit"
-      disabled={searching}
-      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-5 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+      aria-disabled={searching || undefined}
+      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-5 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-[background-color,transform] hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2 active:scale-[0.99] aria-disabled:cursor-progress aria-disabled:active:scale-100 motion-reduce:transform-none sm:w-auto"
     >
-      {searching ? (
-        <>
-          <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Buscando…
-        </>
-      ) : (
-        <>
-          <Search aria-hidden="true" className="size-4" /> Buscar autos
-        </>
-      )}
+      <SearchButtonLabel searching={searching}>Buscar autos</SearchButtonLabel>
     </button>
   );
 }

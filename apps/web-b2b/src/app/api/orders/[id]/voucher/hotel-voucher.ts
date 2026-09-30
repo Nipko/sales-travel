@@ -149,7 +149,7 @@ export function hotelVoucherOf(order: unknown, content?: HotelContent): HotelVou
       ok: false,
       status: 409,
       message:
-        'El voucher está disponible cuando la reserva está confirmada por el proveedor. Revisá su estado en Mis Reservas.',
+        'El voucher está disponible cuando la reserva está confirmada por el proveedor. Revisa su estado en Mis Reservas.',
     };
   }
 

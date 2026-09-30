@@ -58,7 +58,7 @@ describe('RF-09 — la ventana de 27 minutos y el aviso a los 20', () => {
     expect(offerExpiryNotice(state)).toEqual({
       tone: 'expired',
       title: 'Las tarifas vencieron.',
-      detail: 'Buscá de nuevo para ver precios vigentes antes de reservar.',
+      detail: 'Busca de nuevo para ver precios vigentes antes de reservar.',
     });
   });
 

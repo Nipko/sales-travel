@@ -195,7 +195,7 @@ export function BookingStep({
     notice?.kind === 'research' || (notice?.kind === 'rejected' && !notice.retry)
       ? notice.title
       : notice?.kind === 'revalidate'
-        ? 'Revalidá la tarifa para confirmar la reserva.'
+        ? 'Revalida la tarifa para confirmar la reserva.'
         : undefined;
   const gate = bookGate({
     expired,
@@ -476,7 +476,7 @@ export function BookingStep({
             onExpiredChange={setExpired}
             hotelLink={hotelLink}
           >
-            <p>Cargá los huéspedes y confirmá la reserva.</p>
+            <p>Carga los huéspedes y confirma la reserva.</p>
           </CheckoutExpiry>
 
           {notice ? (

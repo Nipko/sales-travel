@@ -162,7 +162,7 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
   it('sin estadía válida no se busca: nunca una nacionalidad por defecto (RF-06)', async () => {
     const res = await hotelRatesAction(KEY, { ...STAY, guestNationality: '' });
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('Faltan los datos de la búsqueda. Buscá de nuevo desde Hoteles.');
+    expect(res.error).toBe('Faltan los datos de la búsqueda. Busca de nuevo desde Hoteles.');
     expect(apiMock).not.toHaveBeenCalled();
   });
 

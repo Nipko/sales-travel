@@ -34,10 +34,10 @@ export function directCancellationBlock(operations: readonly OrderOperationView[
     return 'El proveedor no confirmó si la cancelación se aplicó. No la reenvíes: primero hay que consultar y conciliar la reserva con el proveedor.';
   }
   if (latest.status !== 'failed') {
-    return 'Ya hay una cancelación en curso. Esperá a que termine antes de intentar otra acción.';
+    return 'Ya hay una cancelación en curso. Espera a que termine antes de intentar otra acción.';
   }
   if (canRetryCancelOperation(latest)) {
-    return 'El intento falló antes de enviar la cancelación. Continuá desde “Reintentar” en el historial; no inicies una cancelación nueva.';
+    return 'El intento falló antes de enviar la cancelación. Continúa desde “Reintentar” en el historial; no inicies una cancelación nueva.';
   }
-  return 'Este intento de cancelación no es reintentable. Revisá el motivo o escalalo al equipo de soporte.';
+  return 'Este intento de cancelación no es reintentable. Revisa el motivo o escálalo al equipo de soporte.';
 }
