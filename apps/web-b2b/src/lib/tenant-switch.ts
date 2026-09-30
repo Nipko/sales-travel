@@ -123,25 +123,33 @@ export type SwitchSeatsState =
   /** Hay que volver a elegir la agencia (el permiso venció, la sesión elegida ya no estaba). */
   | { step: 'retry'; attempt: number; message: string };
 
-export function initialSwitchSeatsState(seats: SeatsFull): SeatsState {
-  return { step: 'seats', attempt: 0, email: '', seats };
+/** `listedAt`: cuándo llegó la lista, el "ahora" de "Activo hace 3 min" (ver SeatsState). */
+export function initialSwitchSeatsState(seats: SeatsFull, nowMs: number = Date.now()): SeatsState {
+  return { step: 'seats', attempt: 0, email: '', seats, listedAt: nowMs };
 }
 
 /** Después de POST /auth/seats/release sin sesión emitida, dentro del selector. */
 export function afterSwitchRelease(
   outcome: Exclude<AuthOutcome, { kind: 'session' }>,
-  ctx: { attempt: number; seats: SeatsFull },
+  ctx: { attempt: number; seats: SeatsFull; listedAt: number },
+  nowMs: number = Date.now(),
 ): SwitchSeatsState {
   const seatsState = (patch: Partial<SeatsState> = {}): SeatsState => ({
     step: 'seats',
     attempt: ctx.attempt,
     email: '',
     seats: ctx.seats,
+    listedAt: ctx.listedAt,
     ...patch,
   });
   switch (outcome.kind) {
     case 'seats':
-      return seatsState({ seats: outcome.seats, notice: LOGIN_MESSAGES.seatsTakenAgain });
+      // Una lista nueva se mide contra la hora en que llegó, no contra la de la anterior.
+      return seatsState({
+        seats: outcome.seats,
+        listedAt: nowMs,
+        notice: LOGIN_MESSAGES.seatsTakenAgain,
+      });
     case 'release-invalid':
       return { step: 'retry', attempt: ctx.attempt, message: SWITCH_MESSAGES.releaseExpired };
     case 'release-session-gone':

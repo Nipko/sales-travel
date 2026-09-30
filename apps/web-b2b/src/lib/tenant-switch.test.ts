@@ -142,24 +142,28 @@ describe('isTenantId', () => {
 });
 
 describe('cupo lleno dentro del selector', () => {
-  const ctx = { attempt: 2, seats: SEATS };
+  const LISTED_AT = 1_000_000;
+  const NOW = 1_120_000;
+  const ctx = { attempt: 2, seats: SEATS, listedAt: LISTED_AT };
 
-  it('arranca en el paso de cupo del login, sin email', () => {
-    expect(initialSwitchSeatsState(SEATS)).toEqual({
+  it('arranca en el paso de cupo del login, sin email y con la hora de la lista', () => {
+    expect(initialSwitchSeatsState(SEATS, NOW)).toEqual({
       step: 'seats',
       attempt: 0,
       email: '',
       seats: SEATS,
+      listedAt: NOW,
     });
   });
 
-  it('alguien ocupó el puesto antes: la lista nueva, con aviso', () => {
+  it('alguien ocupó el puesto antes: la lista nueva, medida desde que llegó, con aviso', () => {
     const fresh = { ...SEATS, inUse: 3 };
-    expect(afterSwitchRelease({ kind: 'seats', seats: fresh }, ctx)).toEqual({
+    expect(afterSwitchRelease({ kind: 'seats', seats: fresh }, ctx, NOW)).toEqual({
       step: 'seats',
       attempt: 2,
       email: '',
       seats: fresh,
+      listedAt: NOW,
       notice: LOGIN_MESSAGES.seatsTakenAgain,
     });
   });
@@ -183,10 +187,12 @@ describe('cupo lleno dentro del selector', () => {
   });
 
   it('errores de red: se queda en la lista con el error', () => {
-    expect(afterSwitchRelease({ kind: 'unavailable' }, ctx)).toMatchObject({
+    expect(afterSwitchRelease({ kind: 'unavailable' }, ctx, NOW)).toMatchObject({
       step: 'seats',
       error: LOGIN_MESSAGES.unavailable,
       seats: SEATS,
+      // La misma lista: conserva su hora.
+      listedAt: LISTED_AT,
     });
     expect(afterSwitchRelease({ kind: 'rate-limited' }, ctx)).toMatchObject({
       error: LOGIN_MESSAGES.rateLimited,

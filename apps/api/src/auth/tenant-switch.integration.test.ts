@@ -71,7 +71,7 @@ d('cambiar de agencia y agencia por defecto, contra Postgres como app_user', () 
     sessions,
     {} as MfaService,
     new SeatService(new PgSeatRepository(database), audit, new NetworkService(database), jwt),
-    new MfaChallengeService(database),
+    new MfaChallengeService(database, new LoginAttemptsService(database)),
     new TrustedDeviceService(database),
     new LoginAttemptsService(database),
   );

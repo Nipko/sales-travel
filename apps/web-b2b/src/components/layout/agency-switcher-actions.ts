@@ -1,6 +1,6 @@
 'use server';
 
-import { LOGIN_MESSAGES, classifyAuthResponse } from '../../app/login/login-state';
+import { LOGIN_MESSAGES, classifyAuthResponse, shownSeats } from '../../app/login/login-state';
 import { apiWithStatus } from '../../lib/api';
 import { setActiveTenant, setSession } from '../../lib/session';
 import {
@@ -69,18 +69,18 @@ export async function releaseSeatForSwitchAction(
   const sessionId = asString(formData.get('sessionId'));
   // El estado anterior sólo sirve para volver a pintar la lista si algo falla: lo que se manda a la
   // API sale del formulario y la API lo valida.
-  const seats = prev.step === 'seats' ? prev.seats : null;
+  const shown = prev.step === 'seats' ? shownSeats(prev) : null;
 
-  if (!releaseToken || !seats) {
+  if (!releaseToken || !shown) {
     return { step: 'retry', attempt, message: SWITCH_MESSAGES.releaseExpired };
   }
   if (!sessionId) {
-    return { step: 'seats', attempt, email: '', seats, error: LOGIN_MESSAGES.releaseMissing };
+    return { step: 'seats', attempt, email: '', ...shown, error: LOGIN_MESSAGES.releaseMissing };
   }
 
   const res = await apiWithStatus('/auth/seats/release', post({ releaseToken, sessionId }));
   const outcome = classifyAuthResponse('release', res);
-  if (outcome.kind !== 'session') return afterSwitchRelease(outcome, { attempt, seats });
+  if (outcome.kind !== 'session') return afterSwitchRelease(outcome, { attempt, ...shown });
 
   // La sesión ya se emitió (y reemplazó a la actual): pase lo que pase con el tenant, se adopta.
   const tenantId = await adoptSession(outcome.auth);
