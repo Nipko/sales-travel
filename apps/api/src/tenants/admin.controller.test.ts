@@ -23,10 +23,17 @@ import {
   InviteUserSchema,
   MoveTenantSchema,
   TenantIdParamSchema,
+  UpdateSeatsSchema,
   UpdateTenantSchema,
+  UuidParamSchema,
 } from './dto.js';
 import { InvitationsController } from './invitations.controller.js';
 import type { InvitationsService } from './invitations.service.js';
+import { MemberSupportController } from './member-support.controller.js';
+import type { MemberSupportService } from './member-support.service.js';
+import { SeatsController } from './seats.controller.js';
+import { TenantSeatsSuperadminOnlyError } from './seats.policy.js';
+import type { SeatsService } from './seats.service.js';
 import type { TenantsService } from './tenants.service.js';
 
 const ACTOR = '99999999-9999-4999-8999-999999999999';
@@ -52,6 +59,9 @@ function banco({
   const db = {
     withRequestContext: vi.fn(() => Promise.resolve(membresia)),
   };
+  const seats = {
+    updatePolicy: vi.fn(() => Promise.resolve({ poolTenantId: NODO })),
+  };
   const controller = new AdminController(
     db as unknown as DatabaseService,
     {} as PasswordService,
@@ -59,8 +69,9 @@ function banco({
     { emit: vi.fn() } as unknown as AuditService,
     {} as SessionService,
     tenants as unknown as TenantsService,
+    seats as unknown as SeatsService,
   );
-  return { controller, network, tenants, db };
+  return { controller, network, tenants, db, seats };
 }
 
 describe('AdminController: corrección de la red, sólo superadmin', () => {
@@ -92,6 +103,33 @@ describe('AdminController: corrección de la red, sólo superadmin', () => {
     expect(tenants.update).toHaveBeenCalledWith(ACTOR, NODO, { isBranch: true });
     expect(tenants.move).toHaveBeenCalledWith(ACTOR, NODO, PADRE);
     expect(tenants.listNetwork).toHaveBeenCalledWith(ACTOR);
+  });
+
+  it('puestos e inactividad: 401 sin sesión, 403 con motivo a un admin de red aunque administre el nodo', async () => {
+    const { controller, seats } = banco({ superadmin: false, roleOver: 'consolidator_admin' });
+    const body = { concurrentSeats: 10 };
+
+    await expect(controller.updateSeats(undefined, NODO, body)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    // El mismo motivo y mensaje que el alta con puestos, no el genérico en inglés.
+    const denied = controller.updateSeats(ACTOR, NODO, body);
+    await expect(denied).rejects.toBeInstanceOf(TenantSeatsSuperadminOnlyError);
+    await expect(denied).rejects.toMatchObject({
+      reason: 'TENANT_SEATS_SUPERADMIN_ONLY',
+      message: 'Sólo el superadmin fija los puestos simultáneos y la inactividad de un nodo.',
+    });
+    expect(seats.updatePolicy).not.toHaveBeenCalled();
+  });
+
+  it('puestos e inactividad: el superadmin los fija', async () => {
+    const { controller, seats } = banco({ superadmin: true });
+
+    await controller.updateSeats(ACTOR, NODO, { concurrentSeats: 5, idleTimeoutMinutes: null });
+    expect(seats.updatePolicy).toHaveBeenCalledWith(ACTOR, NODO, {
+      concurrentSeats: 5,
+      idleTimeoutMinutes: null,
+    });
   });
 
   it('el alta la decide el servicio (padre, tipo y admin inicial), con el actor de la sesión', async () => {
@@ -249,15 +287,65 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
 
 describe('RolesGuard con la metadata REAL del controlador', () => {
   const guard = new RolesGuard(new Reflector());
-  const ctx = {
-    getHandler: () => () => undefined,
-    getClass: () => AdminController,
-  } as unknown as ExecutionContext;
+  const ctxOf = (controller: unknown) =>
+    ({
+      getHandler: () => () => undefined,
+      getClass: () => controller,
+    }) as unknown as ExecutionContext;
 
-  it.each<Role>(['vendedor', 'cliente_final'])('%s no llega a ningún handler', (role) => {
-    expect(() =>
-      requestContextStorage.run({ userId: ACTOR, role }, () => guard.canActivate(ctx)),
-    ).toThrow(ForbiddenException);
+  it.each([
+    ['AdminController', AdminController],
+    ['SeatsController', SeatsController],
+    ['MemberSupportController', MemberSupportController],
+  ])('%s: ni vendedor ni cliente_final llegan a ningún handler', (_n, controller) => {
+    for (const role of ['vendedor', 'cliente_final'] as Role[]) {
+      expect(() =>
+        requestContextStorage.run({ userId: ACTOR, role }, () =>
+          guard.canActivate(ctxOf(controller)),
+        ),
+      ).toThrow(ForbiddenException);
+    }
+    expect(
+      requestContextStorage.run({ userId: ACTOR, role: 'admin' }, () =>
+        guard.canActivate(ctxOf(controller)),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('SeatsController y MemberSupportController: sin sesión no llegan al servicio', () => {
+  it('401 y el servicio no se entera', async () => {
+    const seats = { view: vi.fn(), release: vi.fn() };
+    const support = { resetMfa: vi.fn(), revokeSessions: vi.fn() };
+    const seatsCtl = new SeatsController(seats as unknown as SeatsService);
+    const supportCtl = new MemberSupportController(support as unknown as MemberSupportService);
+
+    await expect(seatsCtl.view(undefined, NODO)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(seatsCtl.release(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.resetMfa(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.revokeSessions(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    for (const fn of [...Object.values(seats), ...Object.values(support)]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  });
+
+  it('con sesión, el actor y los ids de la ruta llegan tal cual', async () => {
+    const seats = {
+      view: vi.fn(() => Promise.resolve({})),
+      release: vi.fn(() => Promise.resolve({ ok: true })),
+    };
+    const seatsCtl = new SeatsController(seats as unknown as SeatsService);
+
+    await seatsCtl.view(ACTOR, NODO);
+    await seatsCtl.release(ACTOR, NODO, OTRO);
+    expect(seats.view).toHaveBeenCalledWith(ACTOR, NODO);
+    expect(seats.release).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
   });
 });
 
@@ -315,8 +403,74 @@ describe('Zod en los bordes', () => {
       ['email inválido', { adminEmail: 'no-es-email' }],
       ['padre que no es uuid', { parentTenantId: 'platform' }],
       ['isBranch no booleano', { isBranch: 'si' }],
+      ['0 puestos', { concurrentSeats: 0 }],
+      ['más de 10000 puestos', { concurrentSeats: 10_001 }],
+      ['puestos con decimales', { concurrentSeats: 2.5 }],
+      ['puestos como texto libre', { concurrentSeats: '5 puestos' }],
+      ['inactividad de 4 minutos', { idleTimeoutMinutes: 4 }],
+      ['inactividad de más de 8 h', { idleTimeoutMinutes: 481 }],
     ])('rechaza: %s', (_q, extra) => {
       expect(() => alta.transform({ ...base, ...extra })).toThrow(BadRequestException);
+    });
+
+    it('puestos e inactividad: opcionales; vacío o null es heredar; admite el número como texto', () => {
+      expect(alta.transform({ ...base, concurrentSeats: 5, idleTimeoutMinutes: 30 })).toEqual({
+        ...base,
+        concurrentSeats: 5,
+        idleTimeoutMinutes: 30,
+      });
+      expect(
+        alta.transform({ ...base, concurrentSeats: ' 12 ', idleTimeoutMinutes: '480' }),
+      ).toEqual({ ...base, concurrentSeats: 12, idleTimeoutMinutes: 480 });
+      expect(alta.transform({ ...base, concurrentSeats: '', idleTimeoutMinutes: null })).toEqual(
+        base,
+      );
+      expect(alta.transform({ ...base, concurrentSeats: 1, idleTimeoutMinutes: 5 })).toMatchObject({
+        concurrentSeats: 1,
+        idleTimeoutMinutes: 5,
+      });
+      expect(alta.transform({ ...base, concurrentSeats: 10_000 })).toMatchObject({
+        concurrentSeats: 10_000,
+      });
+    });
+  });
+
+  describe('puestos e inactividad de un nodo (PATCH)', () => {
+    const puestos = new ZodValidationPipe(UpdateSeatsSchema);
+
+    it('número, null (heredar) o ausente (no tocar)', () => {
+      expect(puestos.transform({ concurrentSeats: 3, idleTimeoutMinutes: 15 })).toEqual({
+        concurrentSeats: 3,
+        idleTimeoutMinutes: 15,
+      });
+      expect(puestos.transform({ concurrentSeats: null, idleTimeoutMinutes: null })).toEqual({
+        concurrentSeats: null,
+        idleTimeoutMinutes: null,
+      });
+      expect(puestos.transform({ idleTimeoutMinutes: '60' })).toEqual({ idleTimeoutMinutes: 60 });
+      expect(puestos.transform({ concurrentSeats: 10_000 })).toEqual({ concurrentSeats: 10_000 });
+    });
+
+    it.each([
+      ['vacío', {}],
+      ['0 puestos', { concurrentSeats: 0 }],
+      ['puestos negativos', { concurrentSeats: -1 }],
+      ['más de 10000 puestos', { concurrentSeats: 10_001 }],
+      ['puestos con decimales', { concurrentSeats: 1.5 }],
+      ['inactividad de 4 minutos', { idleTimeoutMinutes: 4 }],
+      ['inactividad de 481 minutos', { idleTimeoutMinutes: 481 }],
+      ['inactividad en segundos (1800)', { idleTimeoutMinutes: 1800 }],
+      ['texto vacío (heredar es null)', { concurrentSeats: '' }],
+      ['booleano', { concurrentSeats: true }],
+      ['campos de más', { concurrentSeats: 3, tenantId: NODO }],
+    ])('rechaza: %s', (_q, body) => {
+      expect(() => puestos.transform(body)).toThrow(BadRequestException);
+    });
+
+    it('los otros ids de la ruta son uuid en minúsculas', () => {
+      const id = new ZodValidationPipe(UuidParamSchema);
+      expect(id.transform(OTRO.toUpperCase())).toBe(OTRO);
+      expect(() => id.transform('mi-sesion')).toThrow(BadRequestException);
     });
   });
 

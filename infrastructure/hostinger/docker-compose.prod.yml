@@ -113,6 +113,9 @@ services:
       PGPASSWORD: ${APP_USER_PASSWORD}
       PGDATABASE: sales_travel
       JWT_SECRET: ${JWT_SECRET}
+      # Secreto que comparte con web-b2b: con él cree la IP y el navegador del usuario que el panel
+      # reenvía (x-client-ip, x-client-user-agent). Vacío = no los cree nunca. Lo deriva deploy.yml.
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:-}
       # BYOC: clave maestra AES-256-GCM para cifrar credenciales de proveedor (base64 de 32 bytes).
       PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:-}
       # Bóveda de payloads de proveedor (0043): clave AES-256-GCM PROPIA (base64 de 32 bytes).
@@ -181,6 +184,9 @@ services:
       PORT: '3001'
       NEXT_PUBLIC_API_URL: https://api.planetour.cloud
       INTERNAL_API_URL: http://api:3000
+      # El mismo que el api: el panel lo manda en x-internal-proxy junto con la IP y el navegador
+      # del usuario. Sin él, el api ve a todos con la IP de este contenedor (un solo cupo de login).
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:-}
     networks: [edge, internal]
     depends_on:
       - api

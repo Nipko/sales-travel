@@ -60,6 +60,47 @@ export const TenantIdParamSchema = z
   .uuid()
   .transform((v) => v.toLowerCase());
 
+/** Otro uuid de la ruta (`:userId`, `:sessionId`), con el mismo criterio. */
+export const UuidParamSchema = z
+  .string()
+  .uuid()
+  .transform((v) => v.toLowerCase());
+
+/**
+ * Un entero en rango. El formulario del panel puede mandarlo como texto ("5"): se acepta si son sólo
+ * dígitos; "5.5", "5 puestos" o "" no.
+ */
+function intInRange(min: number, max: number) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && /^\s*\d+\s*$/.test(value) ? Number(value) : value),
+    z
+      .number({ invalid_type_error: `un número entero entre ${min} y ${max}` })
+      .int(`un número entero entre ${min} y ${max}`)
+      .min(min, `entre ${min} y ${max}`)
+      .max(max, `entre ${min} y ${max}`),
+  );
+}
+
+/** Sesiones simultáneas de un nodo. Mismo rango que el CHECK de tenants.concurrent_seats (0055). */
+export const ConcurrentSeatsSchema = intInRange(1, 10_000);
+/** Minutos de inactividad de un nodo. Mismo rango que el CHECK de tenants.idle_timeout_minutes. */
+export const IdleTimeoutMinutesSchema = intInRange(5, 480);
+
+/**
+ * Puestos e inactividad de un nodo (sólo superadmin). `null` = heredar del ancestro; un campo que no
+ * viene no se toca. Al menos uno.
+ */
+export const UpdateSeatsSchema = z
+  .object({
+    concurrentSeats: ConcurrentSeatsSchema.nullable().optional(),
+    idleTimeoutMinutes: IdleTimeoutMinutesSchema.nullable().optional(),
+  })
+  .strict()
+  .refine((v) => v.concurrentSeats !== undefined || v.idleTimeoutMinutes !== undefined, {
+    message: 'indicá qué cambiar: concurrentSeats o idleTimeoutMinutes (null = heredar)',
+  });
+export type UpdateSeatsDto = z.infer<typeof UpdateSeatsSchema>;
+
 /**
  * Un campo opcional del formulario: vacío, sólo espacios o `null` es "no enviado". El panel manda
  * '' en los datos del admin inicial que no se llenan, y eso daba un 400 al crear una agencia sin
@@ -113,6 +154,10 @@ export const CreateTenantSchema = z
     adminEmail: optionalField(z.string().trim().email().toLowerCase()),
     adminName: optionalField(z.string().trim().min(1).max(120)),
     adminPassword: optionalField(z.string().min(12).max(128)),
+    /** Puestos simultáneos propios. Sólo el superadmin (403 si no); sin valor, hereda. */
+    concurrentSeats: optionalField(ConcurrentSeatsSchema),
+    /** Minutos de inactividad propios. Sólo el superadmin (403 si no); sin valor, hereda. */
+    idleTimeoutMinutes: optionalField(IdleTimeoutMinutesSchema),
   })
   .superRefine((value, ctx) => {
     if (

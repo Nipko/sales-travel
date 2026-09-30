@@ -58,7 +58,7 @@ export function PaxPicker({ defaultValue }: PaxPickerProps) {
       <input type="hidden" name="children" value={pax.children} />
       <input type="hidden" name="infants" value={pax.infants} />
 
-      <DropdownMenu.Root>
+      <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
           <button
             type="button"

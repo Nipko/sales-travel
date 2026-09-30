@@ -4,6 +4,7 @@ import {
   currencyForCountry,
   emptyDraft,
   nodeDraftPayload,
+  seatFieldsPolicy,
   validateNodeDraft,
   type NodeDraft,
 } from './tenant-admin-form';
@@ -113,5 +114,43 @@ describe('createdMessage', () => {
     );
     expect(msg.warn).toBe(true);
     expect(msg.detail).toMatch(/reenviala desde Usuarios/);
+  });
+});
+
+describe('puestos e inactividad en el alta (sólo superadmin)', () => {
+  it('sólo el superadmin los fija; bajo la plataforma el cupo es obligatorio', () => {
+    expect(seatFieldsPolicy(false, 'platform')).toBeUndefined();
+    expect(seatFieldsPolicy(true, 'platform')).toEqual({ seatsRequired: true });
+    expect(seatFieldsPolicy(true, 'consolidator')).toEqual({ seatsRequired: false });
+    expect(seatFieldsPolicy(true, undefined)).toEqual({ seatsRequired: false });
+  });
+
+  it('sin política no se validan (quien no es superadmin no los ve)', () => {
+    expect(validateNodeDraft(draft({ concurrentSeats: 'x' }))).toEqual({});
+  });
+
+  it('bajo la plataforma, vacío es un error', () => {
+    const errors = validateNodeDraft(draft(), { seatsRequired: true });
+    expect(errors.concurrentSeats).toMatch(/Indicá cuántos/);
+    expect(validateNodeDraft(draft({ concurrentSeats: '5' }), { seatsRequired: true })).toEqual({});
+  });
+
+  it('más abajo, vacío es heredar; fuera de rango o inactividad rara es un error', () => {
+    expect(validateNodeDraft(draft(), { seatsRequired: false })).toEqual({});
+    // 4 min queda fuera del rango del API (5-480).
+    const errors = validateNodeDraft(draft({ concurrentSeats: '0', idleTimeoutMinutes: '4' }), {
+      seatsRequired: false,
+    });
+    expect(errors.concurrentSeats).toMatch(/entre 1 y/);
+    expect(errors.idleTimeoutMinutes).toMatch(/Elegí uno/);
+  });
+
+  it('viajan sólo si tienen valor', () => {
+    expect(
+      nodeDraftPayload(draft({ concurrentSeats: '12', idleTimeoutMinutes: '60' })),
+    ).toMatchObject({ concurrentSeats: 12, idleTimeoutMinutes: 60 });
+    const inherit = nodeDraftPayload(draft());
+    expect(inherit).not.toHaveProperty('concurrentSeats');
+    expect(inherit).not.toHaveProperty('idleTimeoutMinutes');
   });
 });

@@ -12,6 +12,7 @@ import { NetworkService } from '../network/network.service.js';
 import { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import type { CreateTenantDto, UpdateTenantDto } from './dto.js';
 import { InvitationsService } from './invitations.service.js';
+import { TenantSeatsSuperadminOnlyError } from './seats.policy.js';
 import {
   childTenantType,
   initialAdminRole,
@@ -58,10 +59,25 @@ export interface CreatedTenant {
   admin?: { email: string; role: Role; status: InitialAdminOutcome };
 }
 
+/**
+ * Motivo con que quedan revocadas las sesiones que un movimiento deja consumiendo el cupo de una
+ * red a la que su nodo ya no pertenece. El panel lo informa como una sesión cerrada sin más
+ * (SESSION_REVOKED, ver auth/session-revocation.ts).
+ */
+export const TENANT_MOVED_REASON = 'tenant_moved';
+
 export interface MovedTenant {
   /** Nodos movidos (el nodo y sus descendientes); 0 si ya colgaba de ese padre. */
   moved: number;
   tenant: TenantState;
+}
+
+/** Una sesión que el movimiento deja en un cupo que ya no está por encima de su nodo. */
+interface StrandedSessionRow {
+  session_id: string;
+  user_id: string;
+  tenant_id: string;
+  pool_tenant_id: string;
 }
 
 interface TenantRow {
@@ -151,12 +167,19 @@ export class TenantsService {
    * - Admin inicial: nunca con un rol igual o superior al del actor sobre el padre. Si el email ya
    *   tiene cuenta no se le vincula: se le invita, y la acepta él. Sin contraseña, también se le
    *   invita.
+   * - Puestos simultáneos e inactividad: sólo el superadmin (403 si los manda otro). Sin valor, el
+   *   nodo los hereda de su cadena.
    *
    * El nodo, el admin creado y el `TenantCreated` van en una transacción. La invitación sale
    * después: si falla, el nodo queda y la respuesta lo dice.
    */
   async create(actorUserId: string, input: CreateTenantDto): Promise<CreatedTenant> {
     const superadmin = await this.network.isSuperadmin(actorUserId);
+    // Los puestos son la licencia que vende la plataforma: los fija sólo el superadmin (decisión
+    // del founder). Un admin de red que los manda recibe 403 en vez de verlos ignorados en silencio.
+    const seatsRequested =
+      input.concurrentSeats !== undefined || input.idleTimeoutMinutes !== undefined;
+    if (seatsRequested && !superadmin) throw new TenantSeatsSuperadminOnlyError();
 
     const parentId = input.parentTenantId ?? (superadmin ? await this.platformRootId() : undefined);
     if (parentId === undefined) {
@@ -219,6 +242,8 @@ export class TenantsService {
             parent_tenant_id: parent.id,
             tenant_type: tenantType,
             is_branch: isBranch,
+            concurrent_seats: input.concurrentSeats ?? null,
+            idle_timeout_minutes: input.idleTimeoutMinutes ?? null,
           })
           .onConflict((oc) => oc.column('slug').doNothing())
           .returning(['id'])
@@ -248,6 +273,12 @@ export class TenantsService {
             tenantType,
             isBranch,
             parentTenantId: parent.id,
+            ...(input.concurrentSeats === undefined
+              ? {}
+              : { concurrentSeats: input.concurrentSeats }),
+            ...(input.idleTimeoutMinutes === undefined
+              ? {}
+              : { idleTimeoutMinutes: input.idleTimeoutMinutes }),
             ...(adminRole === undefined
               ? {}
               : { adminRole, admin: created ? 'created' : 'invited' }),
@@ -354,15 +385,24 @@ export class TenantsService {
    * Mueve un nodo con su subárbol bajo otro padre (D6 A, G-09), con `move_tenant_subtree` (0051):
    * recalcula el `path`, rechaza ciclos, más de 4 niveles y lo que prohíbe D4, bloquea con
    * reservas abiertas pagadas con cartera, y deja el `tenant.moved` con el actor de la petición.
-   * Por eso corre con el usuario en el contexto y no escribe un segundo evento.
+   * Por eso corre con el usuario en el contexto y no escribe un segundo `tenant.moved`.
    *
    * Lo histórico no se toca; desde el cambio rigen las credenciales, reglas y marca del nuevo
    * padre, porque se heredan leyendo el `path`. La caché de habilitación de esta réplica se olvida
    * para que la búsqueda lo vea al instante.
+   *
+   * Las sesiones abiertas no se heredan así: cada una guardó al emitirse el nodo del cupo que
+   * consume (`seat_tenant_id`). Las que quedarían consumiendo el de la red vieja se cierran en la
+   * misma transacción (closeStrandedSessions).
    */
   async move(actorUserId: string, tenantId: string, newParentId: string): Promise<MovedTenant> {
     const result = await this.db
       .withRequestContext({ userId: actorUserId }, async (trx) => {
+        // ANTES de mover: move_tenant_subtree bloquea el subárbol `FOR UPDATE`, y un ingreso en
+        // curso que ya reemplazó su sesión anterior espera ese bloqueo para insertar la nueva (su
+        // FK a tenants). Revocar después sería esperarlo a él mientras él nos espera: deadlock.
+        // Si el movimiento se rechaza, las revocaciones se deshacen con él.
+        await this.closeStrandedSessions(trx, actorUserId, tenantId, newParentId);
         const res = await sql<{ moved: number | string }>`
           SELECT move_tenant_subtree(${tenantId}::uuid, ${newParentId}::uuid) AS moved
         `.execute(trx);
@@ -375,6 +415,80 @@ export class TenantsService {
 
     if (result.moved > 0) this.enablement.invalidate();
     return result;
+  }
+
+  /**
+   * Cierra (`tenant_moved`) las sesiones abiertas del subárbol de `tenantId` que ocupan un puesto de
+   * un cupo que deja de estar por encima de ellas al colgarlo de `newParentId`: el del padre de hoy
+   * o el de un ancestro suyo que no lo es también del padre nuevo. Si no, seguirían ocupando un
+   * puesto en una red a la que ya no pertenecen, sin que su admin pudiera verlas ni liberarlas
+   * desde Equipo (la vista las acota al subárbol), mientras el 409 de cupo lleno de esa red le
+   * mostraría a su admin nombre, email, IP y dispositivo de gente de otra red, y no contarían contra
+   * el cupo nuevo. Al volver a entrar consumen del cupo que les toca (o se topan con el 409).
+   *
+   * No se tocan las que consumen un cupo del propio subárbol ni el de un ancestro común (la
+   * plataforma, un consolidador al mover entre sus agencias): siguen en su red y bien contadas. Las
+   * que no consumían puesto (plataforma, o cadena sin límite) siguen sin consumirlo hasta cerrarse,
+   * igual que cuando el superadmin le pone cupo a un nodo que no tenía (SeatsService.updatePolicy).
+   *
+   * `sessions` tiene RLS por usuario: se leen y revocan con las funciones DEFINER de 0055
+   * (`pool_active_sessions`, `revoke_session`), que no autorizan. Autoriza el controlador (sólo
+   * superadmin) y, de nuevo, move_tenant_subtree en esta misma transacción. Queda un evento con
+   * cada sesión cerrada.
+   */
+  private async closeStrandedSessions(
+    trx: Transaction<DB>,
+    actorUserId: string,
+    tenantId: string,
+    newParentId: string,
+  ): Promise<void> {
+    const stranded = await sql<StrandedSessionRow>`
+      WITH node AS (
+        SELECT id, path FROM tenants WHERE id = ${tenantId}::uuid
+      ),
+      leaving AS (
+        SELECT a.id
+        FROM node
+        JOIN tenants a ON a.path OPERATOR(public.@>) node.path AND a.id <> node.id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM tenants np
+          WHERE np.id = ${newParentId}::uuid
+            AND a.path OPERATOR(public.@>) np.path
+        )
+      )
+      SELECT pas.session_id, pas.user_id, pas.tenant_id, leaving.id AS pool_tenant_id
+      FROM leaving
+      CROSS JOIN LATERAL pool_active_sessions(leaving.id) pas
+      JOIN tenants t ON t.id = pas.tenant_id
+      JOIN node ON t.path OPERATOR(public.<@) node.path
+    `.execute(trx);
+    if (stranded.rows.length === 0) return;
+
+    const res = await sql<{ session_id: string; revoked: boolean }>`
+      SELECT s.id AS session_id, revoke_session(s.id, ${TENANT_MOVED_REASON}) AS revoked
+      FROM unnest(${stranded.rows.map((r) => r.session_id)}::uuid[]) AS s(id)
+    `.execute(trx);
+    // Una que se cerró entre la lectura y la revocación (logout, inactividad) no es de este evento.
+    const revoked = new Set(res.rows.filter((r) => r.revoked).map((r) => r.session_id));
+    const closed = stranded.rows.filter((r) => revoked.has(r.session_id));
+    if (closed.length === 0) return;
+
+    await this.audit.emitWithin(trx, {
+      eventType: 'auth.sessions.revoked_by_tenant_move',
+      tenantId,
+      actorUserId,
+      aggregateType: 'tenant',
+      aggregateId: tenantId,
+      payload: {
+        toParentId: newParentId,
+        sessions: closed.map((r) => ({
+          sessionId: r.session_id,
+          userId: r.user_id,
+          tenantId: r.tenant_id,
+          poolTenantId: r.pool_tenant_id,
+        })),
+      },
+    });
   }
 
   /** Toda la red para el panel del superadmin, con tipo, sucursal, padre y profundidad. */
