@@ -23,7 +23,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export async function dailyReportAction(date?: string): Promise<DailyReportResult> {
   const d = date?.trim();
   if (d && !DATE_RE.test(d)) {
-    return { ok: false, entries: [], error: 'Ingresá una fecha válida (YYYY-MM-DD).' };
+    return { ok: false, entries: [], error: 'Escribe una fecha válida (AAAA-MM-DD).' };
   }
 
   const qs = new URLSearchParams();

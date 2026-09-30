@@ -61,7 +61,7 @@ export default function OficinasPage() {
     setError('');
     const dist = Number(distance);
     if (!Number.isFinite(dist) || dist <= 0) {
-      setError('Ingresá una distancia válida (en millas).');
+      setError('Escribe una distancia válida (en millas).');
       return;
     }
 
@@ -83,14 +83,14 @@ export default function OficinasPage() {
       } else if (code) {
         values.cityCode = code;
       } else {
-        setError('Elegí una ciudad de la lista o ingresá un código IATA.');
+        setError('Elige una ciudad de la lista o escribe un código IATA.');
         return;
       }
     } else {
       const latN = Number(lat);
       const lngN = Number(lng);
       if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
-        setError('Ingresá coordenadas válidas (lat y lng).');
+        setError('Escribe coordenadas válidas (lat y lng).');
         return;
       }
       values.lat = latN;
@@ -176,8 +176,8 @@ export default function OficinasPage() {
               </div>
             </div>
             <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
-              Elegí la ciudad de la lista y buscamos por su ubicación y radio (más preciso). El
-              código IATA es solo un respaldo si lo escribís a mano.
+              Elige la ciudad de la lista y buscamos por su ubicación y radio (más preciso). El
+              código IATA es solo un respaldo si lo escribes a mano.
             </p>
           </>
         ) : (
