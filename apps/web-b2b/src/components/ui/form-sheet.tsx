@@ -178,7 +178,7 @@ export function FormSheet({
             ref={bodyRef}
             onScroll={measure}
             data-sheet-body
-            className="scroll-panel min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            className="scroll-panel relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
             <div className="px-5 pb-6 pt-1">{children}</div>
           </div>

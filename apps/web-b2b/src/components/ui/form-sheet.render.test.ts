@@ -59,6 +59,7 @@ describe('FormSheet', () => {
     const bodyTag = /<div[^>]*data-sheet-body[^>]*>/.exec(html)?.[0] ?? '';
     expect(bodyTag).toContain('overflow-y-auto');
     expect(bodyTag).toContain('min-h-0');
+    expect(bodyTag).toMatch(/class="[^"]*\brelative\b/);
     // La barra visible (globals.css) y sin que el scroll se escape a la página de atrás.
     expect(bodyTag).toContain('scroll-panel');
     expect(bodyTag).toContain('overscroll-contain');

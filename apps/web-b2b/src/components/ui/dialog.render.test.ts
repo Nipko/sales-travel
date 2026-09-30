@@ -42,6 +42,9 @@ describe('Dialog', () => {
     const body = /<div[^>]*data-dialog-body[^>]*>/.exec(html)?.[0] ?? '';
     expect(body).toContain('overflow-y-auto');
     expect(body).toContain('scroll-panel');
+    // Posicionado: si no, los sr-only del formulario toman el panel como bloque contenedor y al
+    // traerlos a la vista scrollea el panel entero (el bug del final de los resultados).
+    expect(body).toMatch(/class="[^"]*\brelative\b/);
   });
 
   it('el pie va después del cuerpo, fuera de lo que scrollea', () => {

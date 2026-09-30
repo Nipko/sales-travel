@@ -253,7 +253,7 @@ export function Dialog({
               contenedor con scroll lo recorta. */}
           <div
             data-dialog-body
-            className="scroll-panel min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1"
+            className="scroll-panel relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1"
           >
             {children}
           </div>
