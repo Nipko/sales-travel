@@ -68,7 +68,13 @@ export function AppShell({
     // `dvh` y no `vh`: en móvil la barra de direcciones del navegador se recoge al scrollear y
     // `100vh` cuenta la ventana SIN recoger, así que el shell quedaba más alto que la pantalla
     // y volvía a aparecer un scroll del documento — el fallo original, disfrazado.
-    <div className="flex h-dvh overflow-hidden bg-[var(--color-bg)]">
+    //
+    // `relative` acá y en `<main>`: sin un ancestro posicionado, el bloque contenedor de todo
+    // `position: absolute` —los `sr-only` de cada tarjeta, por ejemplo— es el documento. Esos
+    // elementos no los recorta el `overflow` de `main` ni el de acá, y se quedan en el lugar que
+    // tendrían en la lista: con 40 hoteles el documento medía 8.300 px y, al terminar la lista,
+    // la rueda seguía por una franja en blanco que se llevaba el menú y la barra.
+    <div className="relative flex h-dvh overflow-hidden bg-[var(--color-bg)]">
       <BrandStyle branding={branding} />
       <Sidebar
         role={role}
@@ -87,7 +93,7 @@ export function AppShell({
         {/* `min-h-0` es obligatorio, no cosmético: un item de flex column arranca con
             `min-height: auto` y se niega a encoger por debajo de su contenido, con lo que
             `overflow-y-auto` nunca llega a desbordar y el scroll se escapa otra vez al padre. */}
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+        <main className="relative min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <SessionGuard initial={session} />
     </div>

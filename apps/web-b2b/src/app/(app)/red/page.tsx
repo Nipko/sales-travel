@@ -406,7 +406,9 @@ export default function RedPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+        // `relative`: sin él, los `sr-only` de las acciones de la última columna no los recorta
+        // esta tabla y, en el teléfono, toda la página se corre de lado sobre un hueco en blanco.
+        <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)]">

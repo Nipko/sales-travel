@@ -25,9 +25,12 @@ const LEGEND = 'text-xs font-semibold text-[var(--color-fg)]';
 
 function Section({ legend, children }: { legend: string; children: ReactNode }) {
   return (
-    <fieldset className="space-y-2 border-t border-[var(--color-border)] pt-4 first:border-t-0 first:pt-0">
-      <legend className={cn(LEGEND, 'mb-2')}>{legend}</legend>
-      {children}
+    <fieldset className="border-t border-[var(--color-border)] pt-4 first:border-t-0 first:pt-0">
+      {/* Flotado, el `legend` no se dibuja sobre el borde: queda debajo de la raya y junto a sus
+          opciones. Encima del borde quedaba más cerca de la sección de arriba que de la suya, y
+          el hueco de abajo alargaba el panel. */}
+      <legend className={cn(LEGEND, 'float-left mb-2 w-full')}>{legend}</legend>
+      <div className="clear-left space-y-2">{children}</div>
     </fieldset>
   );
 }

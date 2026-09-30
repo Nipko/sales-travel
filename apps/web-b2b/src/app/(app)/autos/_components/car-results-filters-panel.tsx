@@ -20,9 +20,12 @@ import {
 
 function Section({ legend, children }: { legend: string; children: ReactNode }) {
   return (
-    <fieldset className="space-y-1 border-t border-[var(--color-border)] pt-4 first:border-t-0 first:pt-0">
-      <legend className="mb-2 text-xs font-semibold text-[var(--color-fg)]">{legend}</legend>
-      {children}
+    <fieldset className="border-t border-[var(--color-border)] pt-4 first:border-t-0 first:pt-0">
+      {/* Flotado, como en hoteles: el `legend` queda debajo de la raya, junto a sus opciones. */}
+      <legend className="float-left mb-2 w-full text-xs font-semibold text-[var(--color-fg)]">
+        {legend}
+      </legend>
+      <div className="clear-left space-y-1">{children}</div>
     </fieldset>
   );
 }

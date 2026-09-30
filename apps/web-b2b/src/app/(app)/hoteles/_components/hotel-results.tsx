@@ -3,6 +3,7 @@
 import { Ban, List, MapPinned, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Select } from '../../../../components/ui/field';
+import { FiltersAside } from '../../../../components/ui/filters-aside';
 import { cn } from '../../../../lib/cn';
 import type { HotelOffer, HotelSearchCriteriaView } from '../actions';
 import { HotelResultCard } from './hotel-result-card';
@@ -157,16 +158,11 @@ export function HotelResults({
       className={cn('transition-opacity', searching && 'opacity-60')}
     >
       <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
-        <aside
-          aria-label="Filtros"
-          className="hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] xl:sticky xl:top-4 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto"
+        <FiltersAside
+          headerAction={<ClearFiltersButton filters={filters} onClear={clearFilters} />}
         >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">Filtros</h2>
-            <ClearFiltersButton filters={filters} onClear={clearFilters} />
-          </div>
           {panel}
-        </aside>
+        </FiltersAside>
 
         <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-1.5 sm:gap-2">
