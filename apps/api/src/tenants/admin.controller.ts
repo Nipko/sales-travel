@@ -1,6 +1,5 @@
 import {
   Body,
-  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -10,10 +9,9 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { sql, type Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { PasswordService } from '../auth/password.service.js';
 import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role } from '../database/database.types.js';
@@ -22,7 +20,6 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
-  CreateUserSchema,
   MembershipImpactQuerySchema,
   MoveTenantSchema,
   SetMembershipStatusSchema,
@@ -32,7 +29,6 @@ import {
   UpdateTenantSchema,
   type ChangeRoleDto,
   type CreateTenantDto,
-  type CreateUserDto,
   type MembershipImpactQuery,
   type MoveTenantDto,
   type SetMembershipStatusDto,
@@ -45,6 +41,7 @@ import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
 import { InvitationsService } from './invitations.service.js';
 import { TenantSeatsSuperadminOnlyError, type SeatsView } from './seats.policy.js';
 import { SeatsService } from './seats.service.js';
+import { UserCreationRetiredError } from './onboarding.errors.js';
 import { assertCanGrant } from './tenant-admin.policy.js';
 import {
   TenantsService,
@@ -87,7 +84,6 @@ function invitationScope(role: Role, tenantId: string): string | undefined {
 export class AdminController {
   constructor(
     private readonly db: DatabaseService,
-    private readonly password: PasswordService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
@@ -296,87 +292,14 @@ export class AdminController {
     return this.tenants.move(actor, tenantId, body.parentTenantId);
   }
 
+  /**
+   * Retirado (docs/platform/14): un usuario se suma a un nodo sólo aceptando una invitación
+   * (POST /invitations). Sigue la ruta para que un panel viejo reciba un 410 con motivo y no un 404.
+   * No lee el body ni la base: la respuesta no cambia exista o no el email.
+   */
   @Post('users')
-  async createUser(
-    @CurrentUser() userId: string | undefined,
-    @Body(new ZodValidationPipe(CreateUserSchema)) body: CreateUserDto,
-  ) {
-    if (!userId) throw new UnauthorizedException();
-    // G-06: el rango se mide sobre el nodo DESTINO. Antes no se medía: un `admin` creaba un
-    // consolidator_admin o un tenant_admin, incluso con su propio email en un nodo hijo.
-    const actorRole = await this.actorRoleOver(
-      userId,
-      body.tenantId,
-      'target tenant is outside your network',
-    );
-    this.assertOutranks(actorRole, body.role);
-
-    const existingUser = await this.db.db
-      .selectFrom('users')
-      .select('id')
-      .where('email', '=', body.email)
-      .executeTakeFirst();
-    if (existingUser) {
-      const existingMembership = await this.db.withRequestContext({ userId }, async (trx) => {
-        return trx
-          .selectFrom('memberships')
-          .select('id')
-          .where('user_id', '=', existingUser.id)
-          .where('tenant_id', '=', body.tenantId)
-          .executeTakeFirst();
-      });
-      if (existingMembership) throw new ConflictException('user already belongs to this tenant');
-    }
-
-    const result = await this.db.db.transaction().execute(async (trx) => {
-      let newUserId: string;
-
-      if (existingUser) {
-        newUserId = existingUser.id;
-      } else {
-        const hash = await this.password.hash(body.password);
-        const user = await trx
-          .insertInto('users')
-          .values({
-            email: body.email,
-            name: body.name,
-            password_hash: hash,
-          })
-          .returning(['id', 'email', 'name'])
-          .executeTakeFirstOrThrow();
-        newUserId = user.id;
-      }
-
-      await sql`SELECT set_config('app.current_tenant_id', ${body.tenantId}, true)`.execute(trx);
-      await trx
-        .insertInto('memberships')
-        .values({
-          tenant_id: body.tenantId,
-          user_id: newUserId,
-          role: body.role,
-          invited_by: userId,
-        })
-        .execute();
-
-      const user = await trx
-        .selectFrom('users')
-        .select(['id', 'email', 'name', 'status'])
-        .where('id', '=', newUserId)
-        .executeTakeFirstOrThrow();
-
-      return user;
-    });
-
-    await this.audit.emit({
-      eventType: 'UserCreated',
-      tenantId: body.tenantId,
-      actorUserId: userId,
-      aggregateType: 'user',
-      aggregateId: result.id,
-      payload: { email: body.email, role: body.role, existingUserLinked: Boolean(existingUser) },
-    });
-
-    return { user: result };
+  createUser(): never {
+    throw new UserCreationRetiredError();
   }
 
   /**

@@ -37,21 +37,25 @@ export interface NewNodeInput {
   readonly parentTenantId: string;
   readonly tenantType: 'consolidator' | 'agency' | 'subagency';
   readonly isBranch?: true;
+  /** El admin inicial sólo se invita: viaja su email y nada más (docs/platform/14). */
   readonly adminEmail?: string;
-  readonly adminName?: string;
-  readonly adminPassword?: string;
   /** Puestos simultáneos propios (1-10000). Ausente = comparte el cupo del padre. Sólo superadmin. */
   readonly concurrentSeats?: number;
   /** Minutos de inactividad (5-480). Ausente = hereda. Sólo superadmin. */
   readonly idleTimeoutMinutes?: number;
 }
 
-/** Qué pasó con el admin inicial (TenantsService.create). */
-export type InitialAdminOutcome = 'created' | 'invited' | 'invite_failed';
+/** Qué pasó con el admin inicial (TenantsService.create): siempre se invita. */
+export type InitialAdminOutcome = 'invited' | 'invite_failed';
 
 export interface CreatedNode {
   readonly tenant: TenantStateView;
-  readonly admin?: { readonly email: string; readonly status: InitialAdminOutcome };
+  readonly admin?: {
+    readonly email: string;
+    readonly status: InitialAdminOutcome;
+    /** Cuándo vence la invitación (ISO); sólo si salió. */
+    readonly expiresAt?: string;
+  };
 }
 
 const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
@@ -150,11 +154,16 @@ export function parseCreatedNode(value: unknown): CreatedNode | undefined {
   const admin = asRecord(r?.['admin']);
   const email = str(admin?.['email']);
   const status = str(admin?.['status']);
-  const outcome =
-    status === 'created' || status === 'invited' || status === 'invite_failed' ? status : undefined;
-  return email !== undefined && outcome !== undefined
-    ? { tenant, admin: { email, status: outcome } }
-    : { tenant };
+  const expiresAt = str(admin?.['expiresAt']);
+  const outcome = status === 'invited' || status === 'invite_failed' ? status : undefined;
+  if (email === undefined || outcome === undefined) return { tenant };
+  return {
+    tenant,
+    admin:
+      outcome === 'invited' && expiresAt !== undefined
+        ? { email, status: outcome, expiresAt }
+        : { email, status: outcome },
+  };
 }
 
 function parseUpdated(value: unknown): TenantStateView | undefined {

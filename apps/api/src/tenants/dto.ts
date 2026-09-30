@@ -1,11 +1,12 @@
 import { z } from '@sales-travel/validation';
 import { ASSIGNABLE_ROLES } from '../auth/roles.js';
+import { ADMIN_PASSWORD_RETIRED_MESSAGE } from './onboarding.errors.js';
 import { CREATABLE_TENANT_TYPES } from './tenant-admin.policy.js';
 
 /**
  * Los roles que se asignan por API: los de `ASSIGNABLE_ROLES` (auth/roles.ts), la fuente única.
- * Ni `superadmin` ni `platform_admin` (retirado, D7 B) pasan este borde. La usan createUser,
- * changeRole y las invitaciones.
+ * Ni `superadmin` ni `platform_admin` (retirado, D7 B) pasan este borde. La usan changeRole y
+ * las invitaciones.
  */
 export const AssignableRoleSchema = z.enum(ASSIGNABLE_ROLES, {
   errorMap: () => ({ message: `rol no asignable: usá uno de ${ASSIGNABLE_ROLES.join(', ')}` }),
@@ -17,15 +18,6 @@ export const ChangeRoleSchema = z.object({
   role: AssignableRoleSchema,
 });
 export type ChangeRoleDto = z.infer<typeof ChangeRoleSchema>;
-
-export const CreateUserSchema = z.object({
-  email: z.string().email().toLowerCase(),
-  name: z.string().min(1).max(120),
-  password: z.string().min(12).max(128),
-  tenantId: z.string().uuid(),
-  role: AssignableRoleSchema,
-});
-export type CreateUserDto = z.infer<typeof CreateUserSchema>;
 
 export const InviteUserSchema = z.object({
   email: z.string().email().toLowerCase(),
@@ -142,53 +134,48 @@ const CreatableTenantTypeSchema = z.enum(CREATABLE_TENANT_TYPES, {
  * Alta de un nodo de la red. El tipo lo decide el padre (D4 A): el cliente sólo lo manda para
  * pedir un consolidador, y si manda otro tiene que coincidir con el derivado. Sin padre, el del
  * superadmin cuelga de la plataforma; el de cualquier otro admin se rechaza.
+ *
+ * El admin inicial sólo se invita (docs/platform/14): viaja su email y nada más. El nombre lo pone
+ * él al aceptar (un `adminName` de un panel viejo se descarta sin error).
  */
-export const CreateTenantSchema = z
-  .object({
-    name: z.string().min(2).max(120),
-    slug: z
+export const CreateTenantSchema = z.object({
+  name: z.string().min(2).max(120),
+  slug: z
+    .string()
+    .min(2)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
+  countryCode: z
+    .string()
+    .length(2)
+    .regex(/^[A-Z]{2}$/),
+  defaultCurrency: z
+    .string()
+    .length(3)
+    .regex(/^[A-Z]{3}$/),
+  defaultLanguage: optionalField(z.enum(['es', 'pt', 'en'])),
+  parentTenantId: optionalField(
+    z
       .string()
-      .min(2)
-      .max(50)
-      .regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
-    countryCode: z
-      .string()
-      .length(2)
-      .regex(/^[A-Z]{2}$/),
-    defaultCurrency: z
-      .string()
-      .length(3)
-      .regex(/^[A-Z]{3}$/),
-    defaultLanguage: optionalField(z.enum(['es', 'pt', 'en'])),
-    parentTenantId: optionalField(
-      z
-        .string()
-        .uuid()
-        .transform((v) => v.toLowerCase()),
-    ),
-    tenantType: optionalField(CreatableTenantTypeSchema),
-    /** Sucursal de Planetour: sólo el superadmin, y sólo bajo la plataforma. */
-    isBranch: optionalField(z.boolean()),
-    adminEmail: optionalField(z.string().trim().email().toLowerCase()),
-    adminName: optionalField(z.string().trim().min(1).max(120)),
-    adminPassword: optionalField(z.string().min(12).max(128)),
-    /** Puestos simultáneos propios. Sólo el superadmin (403 si no); sin valor, hereda. */
-    concurrentSeats: optionalField(ConcurrentSeatsSchema),
-    /** Minutos de inactividad propios. Sólo el superadmin (403 si no); sin valor, hereda. */
-    idleTimeoutMinutes: optionalField(IdleTimeoutMinutesSchema),
-  })
-  .superRefine((value, ctx) => {
-    if (
-      value.adminEmail === undefined &&
-      (value.adminName !== undefined || value.adminPassword !== undefined)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['adminEmail'],
-        message: 'indicá el email del admin, o dejá vacíos todos sus datos',
-      });
-    }
-  });
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+  ),
+  tenantType: optionalField(CreatableTenantTypeSchema),
+  /** Sucursal de Planetour: sólo el superadmin, y sólo bajo la plataforma. */
+  isBranch: optionalField(z.boolean()),
+  adminEmail: optionalField(z.string().trim().email().toLowerCase()),
+  /**
+   * Retirado: se rechaza con motivo en vez de descartarse, para que un panel viejo no dé por
+   * fijada una contraseña que nadie fijó. Vacío es "no enviado", como el resto del formulario.
+   */
+  adminPassword: optionalField(
+    z.never({ errorMap: () => ({ message: ADMIN_PASSWORD_RETIRED_MESSAGE }) }),
+  ),
+  /** Puestos simultáneos propios. Sólo el superadmin (403 si no); sin valor, hereda. */
+  concurrentSeats: optionalField(ConcurrentSeatsSchema),
+  /** Minutos de inactividad propios. Sólo el superadmin (403 si no); sin valor, hereda. */
+  idleTimeoutMinutes: optionalField(IdleTimeoutMinutesSchema),
+});
 export type CreateTenantDto = z.infer<typeof CreateTenantSchema>;
 
 /**

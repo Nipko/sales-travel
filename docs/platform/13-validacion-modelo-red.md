@@ -311,7 +311,7 @@ Lo que Amazon gana y lo que todavía no conviene darle:
 
 1. En _Gestión de Agencias_, pulsa **Nuevo nodo** y elige **Sucursal**. _Cuelga de_ ya viene con Planetour.
 2. Completa nombre (por ejemplo "Planetour Bogotá Norte"), slug, país, moneda e idioma.
-3. El **admin inicial** es opcional. Si lo pones, entra como `tenant_admin` de la sucursal: con contraseña se crea la cuenta; sin contraseña, o si el correo ya tiene cuenta, se le envía una invitación.
+3. El **admin inicial** es opcional. Si pones su correo, se le envía una invitación como `tenant_admin` de la sucursal: al aceptarla elige su contraseña (nadie más la conoce). Queda en _Equipo_ como **Invitado · vence en 7 días**, con **Reenviar** si no le llegó.
 4. Pulsa **Crear sucursal**. La fila nueva lleva el badge "Sucursal" y dice "Cuelga de Planetour S.A.S".
 5. Para el vendedor, ve a _Equipo (Usuarios)_, elige la sucursal en _Agencia_, pulsa **Invitar usuario**, pon su correo con rol **Vendedor** y envía. El vendedor acepta desde el correo y elige su contraseña.
 6. Comprueba con la cuenta del vendedor que _Buscar / Cotizar_ funciona. Con tu cuenta de superadmin, esa pantalla (`/cotizaciones`) muestra el aviso de que el superadministrador no vende, y la API responde 403 `PLATFORM_ROLE_CANNOT_SELL`.

@@ -280,11 +280,60 @@ describe('InvitationList', () => {
           },
         ],
       }) ?? [];
-    const html = renderToStaticMarkup(createElement(InvitationList, { items, onRevoke: () => {} }));
+    const html = renderToStaticMarkup(
+      createElement(InvitationList, {
+        items,
+        onRevoke: () => {},
+        onResend: () => {},
+        resendingId: null,
+      }),
+    );
 
     expect(html).toContain('Invitaciones pendientes (2)');
     expect(html).toContain('Invitado por ana@agencia.co · hace 2 días');
     expect(html).toContain('Invitado por un usuario eliminado · hace 1 día');
     expect(html).toContain('aria-label="Revocar la invitación a nuevo@gmail.com"');
+    // 5 días justos si pintar cae en el mismo milisegundo que armar el dato; si no, 4 y pico.
+    expect(html).toMatch(/vence en [45] días/);
+    expect(html).toContain('aria-label="Reenviar la invitación a nuevo@gmail.com"');
+  });
+
+  it('una vencida lo dice y se puede reenviar; la que se está reenviando espera', () => {
+    const items =
+      parseInvitations({
+        invitations: [
+          {
+            id: 'vieja',
+            email: 'tarde@gmail.com',
+            role: 'vendedor',
+            invitedByEmail: 'ana@agencia.co',
+            expiresAt: new Date(Date.now() - 60_000).toISOString(),
+            createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000).toISOString(),
+          },
+        ],
+      }) ?? [];
+    const idle = renderToStaticMarkup(
+      createElement(InvitationList, {
+        items,
+        onRevoke: () => {},
+        onResend: () => {},
+        resendingId: null,
+      }),
+    );
+    expect(idle).toContain('venció');
+    expect(idle).toContain('>Reenviar<');
+
+    const busy = renderToStaticMarkup(
+      createElement(InvitationList, {
+        items,
+        onRevoke: () => {},
+        onResend: () => {},
+        resendingId: 'vieja',
+      }),
+    );
+    expect(busy).toContain('Reenviando…');
+    expect(busy).toMatch(
+      /<button[^>]*disabled[^>]*aria-label="Reenviar la invitación a tarde@gmail.com"/,
+    );
   });
 });

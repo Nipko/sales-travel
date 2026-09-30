@@ -11,7 +11,6 @@ import {
 } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
-import type { PasswordService } from '../auth/password.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { NetworkService } from '../network/network.service.js';
@@ -117,7 +116,6 @@ function banco({
   const service = new TenantsService(
     db as unknown as DatabaseService,
     {} as NetworkService,
-    {} as PasswordService,
     {} as InvitationsService,
     audit as unknown as AuditService,
     enablement as unknown as ProviderEnablementStore,

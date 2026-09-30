@@ -16,7 +16,6 @@ import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
   LANGUAGE_OPTIONS,
-  PASSWORD_MIN,
   currencyForCountry,
   emptyDraft,
   nodeDraftPayload,
@@ -303,49 +302,22 @@ export function CreateNodeDialog({
               <span className="font-normal text-[var(--color-fg-muted)]">(opcional)</span>
             </p>
             <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
-              Si el email ya tiene cuenta, o si no ponés contraseña, se lo invita y elige la suya.
+              Le enviamos una invitación por correo: al aceptarla elige su propia contraseña. Nadie
+              más la conoce.
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Email" error={errors.adminEmail}>
-              {(a11y) => (
-                <TextInput
-                  {...a11y}
-                  type="email"
-                  autoComplete="off"
-                  value={draft.adminEmail}
-                  onChange={(e) => set('adminEmail', e.target.value)}
-                  placeholder="admin@agencia.com"
-                />
-              )}
-            </Field>
-            <Field label="Nombre">
-              {(a11y) => (
-                <TextInput
-                  {...a11y}
-                  autoComplete="off"
-                  value={draft.adminName}
-                  onChange={(e) => set('adminName', e.target.value)}
-                />
-              )}
-            </Field>
-            <Field
-              label="Contraseña"
-              error={errors.adminPassword}
-              hint={`Al menos ${PASSWORD_MIN} caracteres.`}
-              className="sm:col-span-2"
-            >
-              {(a11y) => (
-                <TextInput
-                  {...a11y}
-                  type="password"
-                  autoComplete="new-password"
-                  value={draft.adminPassword}
-                  onChange={(e) => set('adminPassword', e.target.value)}
-                />
-              )}
-            </Field>
-          </div>
+          <Field label="Email" error={errors.adminEmail}>
+            {(a11y) => (
+              <TextInput
+                {...a11y}
+                type="email"
+                autoComplete="off"
+                value={draft.adminEmail}
+                onChange={(e) => set('adminEmail', e.target.value)}
+                placeholder="admin@agencia.com"
+              />
+            )}
+          </Field>
         </fieldset>
 
         {serverError ? (

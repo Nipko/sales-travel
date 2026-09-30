@@ -155,6 +155,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /invitations',
     'GET /invitations',
     'POST /invitations/:id/revoke',
+    'POST /invitations/:id/resend',
     'GET /tenants/network',
     'GET /tenants/network/sales',
     'GET /tenants/network/audit',
