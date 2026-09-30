@@ -16,6 +16,12 @@ export const HOTEL_EVENTS = {
    * consolidador (0029), y este aviso no le toca resolverlo.
    */
   providerAccountIssue: 'ProviderAccountIssueDetected',
+  /**
+   * El vendedor confirmó que entiende que la tarifa no es reembolsable antes de reservarla (pedido
+   * del founder del 2026-09-29, punto c): quién (`actor_user_id`), cuándo, el 100 % en el precio de
+   * venta y la política que aceptó (su origen y la huella de las condiciones). Va sobre la orden.
+   */
+  nonRefundableAcknowledged: 'HotelNonRefundableAcknowledged',
 } as const;
 
 export type HotelEventType = (typeof HOTEL_EVENTS)[keyof typeof HOTEL_EVENTS];

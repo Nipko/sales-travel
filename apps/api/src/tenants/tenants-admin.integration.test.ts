@@ -551,14 +551,21 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
         [vendedor, s],
       );
       const sesion = { sessionId: rows[0]!.id, userId: vendedor, tenantId: s };
-      expect(await sessions.validate(sesion)).toEqual({ role: 'vendedor' });
+      /** El rol que resuelve la sesión, o `sin rol` si sigue viva sin él (0055: `{ ok, ... }`). */
+      const rolDeLaSesion = async () => {
+        const v = await sessions.validate(sesion);
+        if (!v.ok) return `inválida: ${v.reason}`;
+        return v.role ?? 'sin rol';
+      };
+      expect(await rolDeLaSesion()).toBe('vendedor');
 
       const suspended = await service.update(superadmin, a, { status: 'suspended' });
       expect(suspended).toMatchObject({ id: a, status: 'suspended' });
-      expect(await sessions.validate(sesion)).toEqual({});
+      // La sesión sigue viva, pero bajo un nodo suspendido no hay rol: RolesGuard corta todo.
+      expect(await rolDeLaSesion()).toBe('sin rol');
 
       await service.update(superadmin, a, { status: 'active' });
-      expect(await sessions.validate(sesion)).toEqual({ role: 'vendedor' });
+      expect(await rolDeLaSesion()).toBe('vendedor');
 
       const log = await events('tenant.updated', a);
       expect(log).toEqual([

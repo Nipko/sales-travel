@@ -157,6 +157,7 @@ Una sucursal es una `agency` con `is_branch = true` y cuelga directamente de la 
 | CRM, oportunidades asignadas             | Pendiente: §4.2 punto 3.                                                                  |
 | Decisiones D2, D3 y D5                   | Abiertas: §4.3.                                                                           |
 | Lo que las carteras dejaron para después | Conciliación del saldo, recarga real y limpieza de datos viejos: §4.4.                    |
+| Rediseño de hoteles                      | En `feat/hotels-redesign`, sin desplegar: §5 pasos 10 a 13.                               |
 
 ### 4.1 Confidencialidad
 
@@ -453,6 +454,139 @@ Se reserva de verdad contra el entorno de **test** de TBO, con la cuenta de Plan
 | "no tiene saldo ni cupo suficiente para esta reserva"                            | Sube el **Cupo** de la cartera USD, o registra un **Depósito**, o elige una habitación más barata. |
 | "La cartera en USD de la agencia está suspendida"                                | **Reactivar** en la tarjeta USD.                                                                   |
 | "Falta el contacto de soporte de la agencia" (`AGENCY_CONTACT_MISSING`)          | Email y teléfono internacional en _Mi Agencia_ → Marca de la sucursal o de Planetour.              |
+
+### Paso 10 — Deploy del rediseño de hoteles (0054 y 0055)
+
+Lo que sale con `feat/hotels-redesign`, todo detrás del mismo deploy:
+
+- **Resultados de hoteles nuevos:** barra de la búsqueda, filtros, orden, vista "Mapa" como lista con enlace a Google Maps y tarjeta con foto. Las fotos se traen en segundo plano y pasan por un proxy propio del panel (`/api/hotels/images/…`). El diseño y sus límites están en [docs/tbo/05 §8.6](../tbo/05-contenido-estatico-e-inventario.md#86-cobertura-global-ciudades-que-se-cargan-al-buscar-y-fotos-bajo-demanda-aplicado-2026-09-29).
+- **[0054](../../db/migrations/0054_hotel_catalog_on_demand.sql):** dos funciones `SECURITY DEFINER` con las que el api completa el catálogo bajo demanda (el contenido de los hoteles y los hoteles de una ciudad nueva). No toca datos.
+- **[0055](../../db/migrations/0055_non_refundable_rates_permission.sql):** la tabla `tenant_booking_permissions`, vacía. Sin filas, todos los nodos pueden reservar tarifas no reembolsables, ahora con la confirmación obligatoria del checkout ([docs/tbo/03 §2.13](../tbo/03-prebook-y-book.md#213-tarifas-no-reembolsables-aplicado-2026-09-29)).
+- **Qué cambia para quien vende:** una tarifa no reembolsable pide marcar una casilla con el monto antes de reservar. Un cliente de la API que reserve sin `nonRefundableAcknowledged` recibe 400 `NON_REFUNDABLE_NOT_ACKNOWLEDGED` y no sale nada a TBO.
+
+**Antes de mergear:** el PR de `feat/hotels-redesign` tiene el CI en verde, incluida `booking-permissions.integration.test.ts`, que corre como `app_user`. Los pasos 7 a 9 están hechos y hay un backup reciente de la base, como en el paso 1.
+
+**Deploy y comprobación:**
+
+1. El founder mergea el PR a `main`. El workflow **Deploy** construye las imágenes (también la del sync de TBO, que trae la etapa E2A), aplica 0054 y 0055 y hace el smoke test.
+2. Comprueba que las funciones existen, que el api puede usarlas y que el permiso está vacío:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT p.proname, has_function_privilege('app_user', p.oid, 'EXECUTE') AS app_user FROM pg_proc p WHERE p.proname IN ('hotel_catalog_store_contents', 'hotel_catalog_import_city', 'non_refundable_rates_block') ORDER BY 1"
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT count(*) AS permisos FROM tenant_booking_permissions"
+   ```
+
+   Esperado: las tres funciones con `app_user` en `t`, y `permisos` en 0.
+
+3. Con el vendedor de la sucursal, _Hoteles_ busca como antes y la pantalla de resultados es la nueva.
+
+### Paso 11 — Precargar las ciudades de todos los países (E2A)
+
+Hoy el buscador sólo sugiere las ciudades de los países que el sync recorre (`TBO_SYNC_COUNTRIES`, y con hoteles sólo CO). La etapa E2A baja la lista de ciudades de TODOS los países de TBO, sin sus hoteles. Desde ese momento el autocompletado las sugiere y, la primera vez que alguien busca una, el api trae sus hoteles con una llamada a TBO (1 a 5 s) y los guarda. Es opt-in: la corrida programada no la incluye y no hace falta tocar `TBO_SYNC_STAGES` en el VPS. Detalle en [`tools/sync-tbo-hotel-inventory`](../../tools/sync-tbo-hotel-inventory/README.md#cobertura-global-e2a-las-ciudades-de-todos-los-países).
+
+**Antes de empezar:**
+
+- El paso 10 está desplegado: la imagen del sync con E2A sale con ese deploy.
+- La cuenta TBO de Planetour está en **Activo** (paso 6). El sync la lee de la bóveda y comparte su cupo con la venta, así que conviene correrla fuera del horario de venta. Si coincide con la corrida programada (cada hora de 06:17 a 09:17 UTC), el workflow la pone en cola y espera a que termine la otra.
+- Cuesta unas 250 llamadas a 1 por segundo: `CountryList` y un `CityList` por país. Tiene un tope propio de 300 países por corrida.
+
+**La corrida:**
+
+1. En GitHub → _Actions_ → **Sync TBO Hotel Inventory** → **Run workflow**, rama `main`, con:
+   - **stages:** `E1,E2A`;
+   - **max_calls:** `300`;
+   - **countries:** vacío.
+2. En el log del job, busca estas líneas:
+   - `tbo.sync.credentials` con `credentialSource: "vault:platform/default"`;
+   - `tbo.sync.stage` con `"stage": "E2A"`, que cuenta `countriesInTbo`, `countriesRequested`, `countriesFailed`, `countriesPending` y `citiesUpserted`;
+   - `tbo.sync.result` con `ok: true`, `e2a: "done"`, `worldCitiesUpserted` y `worldCountriesPending`.
+3. Si `worldCountriesPending` es mayor que 0 o hubo `countriesFailed`, repite el mismo **Run workflow**: sólo pide los países que siguen sin ciudades, y un país que ya las tiene cuesta cero llamadas.
+4. Comprueba en la base:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT count(DISTINCT country_code) AS paises, count(*) AS ciudades, count(*) FILTER (WHERE hotel_count IS NULL) AS se_cargan_al_buscar, count(*) FILTER (WHERE hotel_count > 0) AS con_hoteles, count(*) FILTER (WHERE hotel_count = 0) AS sin_hoteles FROM hotel_provider_city WHERE provider_code = 'tbo-hotels'"
+   ```
+
+   Esperado: `paises` cerca de `countriesInTbo` del log y la mayoría de las ciudades en `se_cargan_al_buscar`. Las de Colombia siguen con sus hoteles (`con_hoteles`), y `sin_hoteles` son las que TBO ya contestó vacías, que no se sugieren.
+
+5. Prueba una ciudad nueva. Con el vendedor de la sucursal, en _Hoteles_ escribe una ciudad de un país que no tenía hoteles cargados (por ejemplo `Quito` o `Paris`), elígela y busca. La primera búsqueda tarda unos segundos más y trae hoteles de TBO. Sólo sirve si la sucursal sugiere desde el catálogo local; si la ciudad no aparece en el autocompletado, mira la última fila de la tabla del paso 12. En el log del api:
+
+   ```bash
+   docker compose logs --since 15m api | grep 'hotels.catalog.ciudad_'
+   ```
+
+   Esperado: `hotels.catalog.ciudad_cargada provider=tbo-hotels city=<código> outcome=loaded hotels=<n> unreadable=<n>`. La segunda búsqueda de esa ciudad ya no llama a TBO para cargarla, y la próxima corrida del sync la refresca mientras tenga búsquedas, aunque su país no esté en `TBO_SYNC_COUNTRIES`.
+
+**Cuándo repetirla.** Sólo si TBO suma países: E2A no vuelve a pedir la lista de un país que ya tiene ciudades. Las de los países de `TBO_SYNC_COUNTRIES` las refresca E2 en cada corrida programada; las del resto del mundo quedan como las bajó la primera corrida.
+
+### Paso 12 — Verificar las fotos
+
+Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el catálogo ya tiene; para las que faltan, la pantalla pide el contenido en segundo plano, el api lo trae de `HotelDetails` (lotes de 10, con la cuenta de la agencia), lo guarda en `hotel_content` y la foto aparece. El navegador nunca le pide nada al host de TBO: todo pasa por el proxy del panel.
+
+1. **En la pantalla.** Con el vendedor de la sucursal, busca en Bogotá (moneda USD). Los resultados salen enseguida. Las tarjetas sin foto muestran un marcador y, en unos segundos, las fotos aparecen. Si TBO no tiene fotos de un hotel, la tarjeta dice "Sin foto". Abre un hotel: la ficha muestra la galería o, mientras la trae, "Buscando las fotos del hotel…"; las tarifas no esperan.
+2. **En el navegador (opcional).** En las herramientas de desarrollo, pestaña _Red_:
+   - `content/batch` responde 201 con `items` en `ready`, `pending` o `none`. Si algo queda `pending`, trae `retryAfterMs` y la pantalla vuelve a preguntar, hasta 3 veces por hotel;
+   - las fotos salen de `/_next/image?url=%2Fapi%2Fhotels%2Fimages%2F…` como `image/webp`;
+   - no hay pedidos a `tbotechnology.in` ni a `tboholidays.com`.
+3. **En la base.** Lo que se trajo quedó guardado:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT source, lang, count(*) AS hoteles, count(*) FILTER (WHERE images->>0 IS NOT NULL) AS con_fotos, max(fetched_at) AS ultima FROM hotel_content WHERE provider_code = 'tbo-hotels' GROUP BY source, lang ORDER BY source, lang"
+   ```
+
+   Esperado: filas `details` en el idioma de la búsqueda (`es`), con `ultima` de hace minutos y `con_fotos` creciendo con cada búsqueda. Las `listing` en `en` son el texto de `TBOHotelCodeList`, del sync o de una ciudad cargada al buscar, y no traen fotos.
+
+4. **El proxy, desde el VPS.** Toma una foto guardada y pídela por el proxy y por el optimizador de imágenes:
+
+   ```bash
+   URL=$(docker compose exec -T postgres psql -U postgres -d sales_travel -Atc \
+     "SELECT images->>0 FROM hotel_content WHERE provider_code = 'tbo-hotels' AND images->>0 IS NOT NULL LIMIT 1")
+   KEY=$(printf '%s' "$URL" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+   curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "https://app.planetour.cloud/api/hotels/images/$KEY"
+   curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "https://app.planetour.cloud/_next/image?url=%2Fapi%2Fhotels%2Fimages%2F$KEY&w=384&q=70"
+   ```
+
+   Esperado: `200 image/jpeg` (o el formato de la foto) y `200 image/webp`. Con una URL de otro dominio el proxy responde 404: no es un proxy abierto.
+
+5. **La precarga, al día siguiente.** Las ciudades buscadas entran en la demanda del sync (últimos 14 días), así que la corrida programada baja su contenido en E4 aunque nadie abra las fotos. En el log del workflow, `tbo.sync.result` trae `contentsWritten` mayor que 0. La cobertura por ciudad:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT c.name, count(*) AS activos, count(hc.hotel_id) AS con_ficha_es FROM hotel_inventory i JOIN hotel_provider_city c ON c.provider_code = i.provider_code AND c.provider_city_code = i.provider_city_code LEFT JOIN hotel_content hc ON hc.provider_code = i.provider_code AND hc.hotel_id = i.hotel_id AND hc.lang = 'es' AND hc.source = 'details' WHERE i.provider_code = 'tbo-hotels' AND i.active AND c.country_code = 'CO' GROUP BY c.name ORDER BY activos DESC LIMIT 10"
+   ```
+
+   Esperado: `con_ficha_es` subiendo en las ciudades que se buscan.
+
+**Si algo no sale:**
+
+| Síntoma                                                                     | Qué revisar                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Todas las tarjetas terminan en "Sin foto"                                   | `docker compose logs --since 15m api \| grep hotels.content_batch`. `lote_fallo` con `error=` es TBO lento o caído: el lote se recuerda 2 min y se vuelve a pedir. `guardar_fallo` es la base: revisa que 0054 esté aplicada (paso 10). Sin ninguna línea: el circuito de la cuenta está abierto o TBO está apagado (esos casos no dejan línea), o esos hoteles ya tienen su ficha y TBO no tiene fotos de ellos. |
+| Algunas tarjetas quedan en "Sin foto" y la foto sale al repetir la búsqueda | La pantalla pregunta 3 veces por hotel. Si el cupo de fondo de la cuenta está ocupado (por ejemplo, por el sync corriendo a la vez), el api sigue trayendo las fotos y las guarda, y la próxima vista las muestra. No bloquea la búsqueda.                                                                                                                                                                        |
+| La foto está en la base pero el proxy responde 404                          | El dominio de la URL no es de TBO (`tbotechnology.in`, `tboholidays.com`), o TBO ya no sirve esa foto: no respondió 200 en 8 s, pesa más de 5 MB o no es una imagen. Un fallo se recuerda 5 min. Si TBO cambió de host, se agrega en `TBO_IMAGE_HOST_SUFFIXES` del ACL y en `HOTEL_IMAGE_HOST_SUFFIXES` del panel, que son espejo.                                                                                |
+| El proxy responde 503                                                       | Más de 32 descargas a la vez. Es pasajero: la próxima vista la trae.                                                                                                                                                                                                                                                                                                                                              |
+| Una ciudad nueva dice "No pudimos traer los hoteles de esa ciudad"          | En el log del api, `hotels.catalog.ciudad_no_cargada` con `error=`: TBO no contestó en 15 s o el circuito está abierto; reintenta en unos minutos. `hotels.catalog.ciudad_no_guardada` es la base: revisa que 0054 esté aplicada (paso 10).                                                                                                                                                                       |
+| Una ciudad nueva dice "Esa ciudad no tiene hoteles disponibles por ahora"   | TBO la contestó vacía: queda con `hotel_count = 0` y deja de sugerirse.                                                                                                                                                                                                                                                                                                                                           |
+| Una ciudad del mundo no aparece en el autocompletado                        | La agencia sugiere desde Despegar, porque tiene un proveedor activo del espacio de ids de la plataforma, y entonces el catálogo local no sugiere ([docs/tbo/05 §8.5](../tbo/05-contenido-estatico-e-inventario.md#85-sugerencias-desde-el-catálogo-local-aplicado-2026-09-27)). Si no es eso, falta el paso 11 o la ciudad tiene `hotel_count = 0`.                                                               |
+
+### Paso 13 — Tarifas no reembolsables y su permiso
+
+1. **La venta.** Con el vendedor de la sucursal, en los resultados las tarifas no reembolsables llevan la etiqueta "No reembolsable" en color de advertencia, y el filtro "Solo reembolsables" las saca. Elige una: el paso 1 del checkout muestra el aviso "Tarifa no reembolsable" con el 100 % en USD. En el paso 2, sin marcar la casilla "Entiendo que esta tarifa no es reembolsable…", **Confirmar reserva** no sale y la casilla muestra el error. No hace falta reservarla.
+2. **El bloqueo.** Con tu cuenta de superadmin, en _Gestión de Agencias_ pulsa **Carteras** en la fila de la sucursal. En "Puede reservar tarifas no reembolsables", pulsa el interruptor y **Bloquear**, con motivo. Con el vendedor, repite la búsqueda: esas tarifas dicen "No disponible para tu agencia" y no se ofrecen. Por API, el PreBook y el Book responden 403 `NON_REFUNDABLE_BLOCKED`.
+3. **La auditoría:**
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT e.occurred_at, u.email AS actor, t.slug, e.event_type, e.payload FROM domain_events e JOIN tenants t ON t.id = e.tenant_id LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.event_type IN ('booking.permissions.non_refundable_rates.changed', 'HotelNonRefundableAcknowledged') ORDER BY e.occurred_at DESC LIMIT 5"
+   ```
+
+   Esperado: `booking.permissions.non_refundable_rates.changed` con el slug de la sucursal, tu usuario y un `payload` con `"from": "allowed"`, `"to": "blocked"`, tu motivo y `"source": "api"`. Si alguien reservó una no reembolsable, también `HotelNonRefundableAcknowledged` con el vendedor como actor y el 100 % en `penaltyMinor`.
+
+4. Vuelve a **Permitir** con motivo, salvo que quieras dejar a la sucursal sin no reembolsables. El bloqueo de un nodo rige para todo lo que cuelga de él, y un nivel de arriba bloqueado no se destraba desde abajo.
 
 ### Paso 14 — Deploy de la retención en cascada (0060)
 

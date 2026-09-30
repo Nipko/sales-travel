@@ -233,6 +233,28 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - **Session management** con refresh tokens rotatorios (15min access / 30d refresh)
 - Detección de **anomalías** (login desde nueva geo/dispositivo → email + reto MFA)
 
+**Implementado (2026-09-29, migración `0055_auth_premium.sql`):**
+
+- **2FA TOTP** con QR escaneable (`uqr`, sin servicios externos), auto-envío al 6º dígito,
+  códigos de recuperación `XXXXX-XXXXX` (copiar/descargar/imprimir/regenerar) y "Cambiar de
+  teléfono" sin apagar el factor activo (`users.mfa_pending_secret`).
+- **2FA obligatorio exigido por la API** (`MfaEnforcementGuard`) para `MFA_REQUIRED_ROLES`:
+  `403 MFA_ENROLLMENT_REQUIRED` hasta enrolar; la web muestra el enrolamiento a pantalla completa.
+- **Desafío MFA con estado** (`mfa_challenges`): 5 intentos por desafío y por cuenta (mismo bloqueo
+  de 15 min que la contraseña); tokens de un solo uso en `consumed_tokens`.
+- **Recordar este equipo** 30 días (`trusted_devices`, cookie `st_trusted`): se invalida al cambiar
+  la contraseña, re-enrolar o restablecer el 2FA; se revoca desde Seguridad.
+- **Puestos simultáneos por nodo** (`tenants.concurrent_seats`, lo fija sólo el superadmin; un nodo
+  sin valor consume del ancestro más cercano que lo tenga). Cupo lleno → `409 SEATS_FULL`; si quien
+  queda afuera administra el nodo del cupo, puede liberar un puesto al entrar. **Una sesión por
+  usuario** (`replaced`). Los usuarios de plataforma no consumen puestos ni tienen el tope de sesión.
+- **Cierre por inactividad** (`tenants.idle_timeout_minutes`, 30 min por defecto, 5–480, heredable):
+  el API revoca la sesión (`SESSION_IDLE`) y la web avisa 2 min antes, sincronizada entre pestañas.
+- **Motivos de cierre** en el login (`SESSION_IDLE|REPLACED|RELEASED|EXPIRED|REVOKED`) y regreso a la
+  pantalla pedida (`?next=`, validado contra open redirect).
+- **IP y navegador reales** del usuario detrás del panel (`INTERNAL_PROXY_SECRET`, derivado del
+  `JWT_SECRET` en el deploy).
+
 **Stack técnico:**
 
 - Fase 1: **BetterAuth** o **Lucia** (PG-backed, code-owned, sin lock-in).
@@ -754,6 +776,24 @@ POST   /auth/mfa/verify
 POST   /auth/refresh
 POST   /auth/logout
 GET    /auth/me
+```
+
+Implementados en la Ola 1 (auth premium, 2026-09-29):
+
+```
+POST   /auth/login                       -- { email, password, trustedDeviceToken? } → sesión | desafío MFA | 409 SEATS_FULL
+POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
+POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
+GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
+POST   /auth/logout                      -- { reason?: 'idle' }
+GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all
+GET    /auth/trusted-devices · POST /auth/trusted-devices/:id/revoke · POST /auth/trusted-devices/revoke-all
+GET    /auth/mfa · POST /auth/mfa/enroll · POST /auth/mfa/confirm · POST /auth/mfa/recovery-codes · POST /auth/mfa/disable
+POST   /auth/change-password             -- devuelve token nuevo: la sesión actual sigue
+GET    /tenants/:id/seats                -- uso del cupo y conectados del subárbol (admin del nodo)
+POST   /tenants/:id/seats/sessions/:sessionId/release
+POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
+PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 
 ### Tenant

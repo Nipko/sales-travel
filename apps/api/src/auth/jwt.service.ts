@@ -31,7 +31,29 @@ const EMAIL_TTL = '2d';
 // Token intermedio entre "contraseña correcta" y "segundo factor verificado". Audiencia
 // propia para que NO sirva como bearer de API: si se filtra, sin el código TOTP no abre nada.
 const MFA_AUDIENCE = 'sales-travel-mfa-challenge';
-const MFA_TTL = '5m';
+/** Vida del desafío MFA: el JWT y la fila de `mfa_challenges` vencen juntos. */
+export const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+// Permiso para liberar un puesto y entrar cuando el cupo está lleno. Audiencia propia: no es un
+// bearer de API ni un desafío MFA. Un solo uso vía `consumed_tokens` (jti).
+const SEAT_RELEASE_AUDIENCE = 'sales-travel-seat-release';
+export const SEAT_RELEASE_TTL_MS = 5 * 60 * 1000;
+
+/** Lo que lleva el permiso de liberar un puesto para completar el login igual que el intento original. */
+export interface SeatReleaseClaims {
+  userId: string;
+  /** Nodo del cupo lleno. */
+  poolTenantId: string;
+  /** Tenant con que se emite la sesión al completar (el del login o el del switch-tenant). */
+  tenantId: string | null;
+  /** El intento original pasó el segundo factor. */
+  mfa: boolean;
+  /** El intento original pidió "recordar este equipo". */
+  remember: boolean;
+  /** Un solo uso: se consume en `consumed_tokens`. */
+  jti: string;
+  issuedAt: Date;
+  expiresAt: Date;
+}
 
 @Injectable()
 export class JwtService implements OnModuleInit {
@@ -45,7 +67,8 @@ export class JwtService implements OnModuleInit {
     this.secret = new TextEncoder().encode(value);
   }
 
-  async sign(payload: JwtPayload, expiresIn: string = ACCESS_TTL): Promise<string> {
+  /** `expiresIn`: duración (`'12h'`) o el instante exacto, para que el token venza con su sesión. */
+  async sign(payload: JwtPayload, expiresIn: string | Date = ACCESS_TTL): Promise<string> {
     const { jti, ...claims } = payload;
     let builder = new SignJWT({ ...claims })
       .setProtectedHeader({ alg: 'HS256' })
@@ -87,20 +110,27 @@ export class JwtService implements OnModuleInit {
       .sign(this.secret);
   }
 
-  /** Firma el desafío MFA emitido tras validar la contraseña. */
-  async signMfaChallenge(userId: string): Promise<string> {
+  /**
+   * Firma el desafío MFA emitido tras validar la contraseña. `challengeId` es la fila de
+   * `mfa_challenges` que lleva los intentos y el consumo: el JWT solo no tiene estado.
+   */
+  async signMfaChallenge(userId: string, challengeId: string, expiresAt: Date): Promise<string> {
     return new SignJWT({ purpose: 'mfa-challenge' })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setIssuer(ISSUER)
       .setAudience(MFA_AUDIENCE)
       .setSubject(userId)
-      .setExpirationTime(MFA_TTL)
+      .setJti(challengeId)
+      .setExpirationTime(expiresAt)
       .sign(this.secret);
   }
 
-  /** Verifica el desafío MFA; devuelve el userId. Lanza si es inválido/expirado. */
-  async verifyMfaChallenge(token: string): Promise<string> {
+  /**
+   * Verifica el desafío MFA. Lanza si es inválido, venció o no trae `jti` (un desafío emitido antes
+   * de `mfa_challenges`, que no se puede limitar).
+   */
+  async verifyMfaChallenge(token: string): Promise<{ userId: string; challengeId: string }> {
     const { payload } = await jwtVerify(token, this.secret, {
       issuer: ISSUER,
       audience: MFA_AUDIENCE,
@@ -108,7 +138,62 @@ export class JwtService implements OnModuleInit {
     if (typeof payload.sub !== 'string') {
       throw new Error('JWT missing subject');
     }
-    return payload.sub;
+    if (typeof payload.jti !== 'string') {
+      throw new Error('MFA challenge without jti');
+    }
+    return { userId: payload.sub, challengeId: payload.jti };
+  }
+
+  /** Firma el permiso de liberar un puesto (5 min, un solo uso por `jti`). */
+  async signSeatRelease(
+    claims: Omit<SeatReleaseClaims, 'issuedAt' | 'expiresAt'>,
+  ): Promise<{ token: string; expiresAt: Date }> {
+    const expiresAt = new Date(Date.now() + SEAT_RELEASE_TTL_MS);
+    const token = await new SignJWT({
+      purpose: 'seat-release',
+      pool: claims.poolTenantId,
+      ...(claims.tenantId ? { tid: claims.tenantId } : {}),
+      mfa: claims.mfa,
+      remember: claims.remember,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setIssuer(ISSUER)
+      .setAudience(SEAT_RELEASE_AUDIENCE)
+      .setSubject(claims.userId)
+      .setJti(claims.jti)
+      .setExpirationTime(expiresAt)
+      .sign(this.secret);
+    return { token, expiresAt };
+  }
+
+  /** Verifica el permiso de liberar un puesto. Lanza si es inválido, venció o le falta un claim. */
+  async verifySeatRelease(token: string): Promise<SeatReleaseClaims> {
+    const { payload } = await jwtVerify(token, this.secret, {
+      issuer: ISSUER,
+      audience: SEAT_RELEASE_AUDIENCE,
+    });
+    const pool = payload['pool'];
+    const tid = payload['tid'];
+    if (
+      typeof payload.sub !== 'string' ||
+      typeof payload.jti !== 'string' ||
+      typeof pool !== 'string' ||
+      typeof payload.iat !== 'number' ||
+      typeof payload.exp !== 'number'
+    ) {
+      throw new Error('seat release token incompleto');
+    }
+    return {
+      userId: payload.sub,
+      poolTenantId: pool,
+      tenantId: typeof tid === 'string' ? tid : null,
+      mfa: payload['mfa'] === true,
+      remember: payload['remember'] === true,
+      jti: payload.jti,
+      issuedAt: new Date(payload.iat * 1000),
+      expiresAt: new Date(payload.exp * 1000),
+    };
   }
 
   /** Verifica un token de verificación de email; devuelve el userId. Lanza si es inválido/expirado. */

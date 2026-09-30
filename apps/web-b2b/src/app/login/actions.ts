@@ -1,32 +1,30 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { api } from '../../lib/api';
-import { clearSession, setActiveTenant, setSession } from '../../lib/session';
-
-export interface LoginState {
-  error?: string;
-  /**
-   * Presente cuando la contraseña fue correcta pero falta el segundo factor. El
-   * formulario cambia al paso del código; este token vive 5 minutos y no sirve como
-   * bearer de API.
-   */
-  mfaToken?: string;
-  /** Email en curso, sólo para mostrarlo en el paso MFA. */
-  email?: string;
-}
-
-interface AuthResult {
-  token: string;
-  userId: string;
-  tenantId?: string;
-  mfaEnrollmentRequired?: boolean;
-}
-
-interface MfaChallenge {
-  mfaRequired: true;
-  mfaToken: string;
-}
+import { api, apiWithStatus } from '../../lib/api';
+import { safeNextPath } from '../../lib/safe-next';
+import {
+  clearSession,
+  getTrustedDevice,
+  setActiveTenant,
+  setSession,
+  setTrustedDevice,
+} from '../../lib/session';
+import {
+  LOGIN_MESSAGES,
+  afterLogin,
+  afterMfa,
+  afterRelease,
+  classifyAuthResponse,
+  initialLoginState,
+  nextAttempt,
+  normalizeRecoveryCode,
+  normalizeTotpCode,
+  shownSeats,
+  type AuthSuccess,
+  type LoginState,
+  type MfaMode,
+} from './login-state';
 
 interface Membership {
   tenantId: string;
@@ -36,16 +34,19 @@ function asString(value: FormDataEntryValue | null): string {
   return typeof value === 'string' ? value : '';
 }
 
-function isChallenge(data: AuthResult | MfaChallenge): data is MfaChallenge {
-  return 'mfaRequired' in data && data.mfaRequired === true;
-}
+/**
+ * Deja la sesión lista y manda al destino. Se borra primero lo que hubiera en el navegador: en una
+ * computadora compartida, el tenant activo del usuario anterior no puede quedar pegado al nuevo.
+ */
+async function finishLogin(auth: AuthSuccess, next: string): Promise<never> {
+  await clearSession();
+  await setSession(auth.token, auth.expiresAt);
+  if (auth.trustedDevice) {
+    await setTrustedDevice(auth.trustedDevice.token, auth.trustedDevice.expiresAt);
+  }
 
-/** Deja la sesión lista y devuelve a dónde mandar al usuario. */
-async function establishSession(result: AuthResult): Promise<string> {
-  await setSession(result.token);
-
-  if (result.tenantId) {
-    await setActiveTenant(result.tenantId);
+  if (auth.tenantId) {
+    await setActiveTenant(auth.tenantId);
   } else {
     const memberships = await api<Membership[]>('/me/memberships');
     if (memberships.ok && memberships.data.length > 0) {
@@ -53,64 +54,110 @@ async function establishSession(result: AuthResult): Promise<string> {
     }
   }
 
-  // El rol exige MFA y todavía no está enrolado: se entra directo al enrolamiento en
-  // lugar de dejarlo operar sin segundo factor.
-  return result.mfaEnrollmentRequired ? '/configuracion/seguridad?enrolar=1' : '/';
+  // Si el rol exige 2FA y todavía no lo configuró, el layout del panel muestra el enrolamiento
+  // antes que cualquier pantalla (y después sigue a `next`): no hace falta desviarlo desde acá.
+  redirect(next);
 }
 
-export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const mfaToken = asString(formData.get('mfaToken'));
+function post(body: Record<string, unknown>): RequestInit {
+  return { method: 'POST', body: JSON.stringify(body) };
+}
 
-  // Segundo paso: canjear el desafío MFA por una sesión real.
-  if (mfaToken) {
-    const code = asString(formData.get('code')).trim();
-    if (!code) return { mfaToken, error: 'Ingresá el código de verificación.' };
-
-    const res = await api<AuthResult>('/auth/mfa/verify', {
-      method: 'POST',
-      body: JSON.stringify({ mfaToken, code }),
-    });
-
-    if (!res.ok) {
-      // 401 acá puede ser código malo o desafío vencido; se distinguen para que el
-      // usuario sepa si reintentar o volver a empezar.
-      if (res.error.status === 401) {
-        return {
-          mfaToken,
-          error: 'El código no es válido o el desafío venció. Probá de nuevo.',
-        };
-      }
-      return { mfaToken, error: res.error.message };
-    }
-
-    redirect(await establishSession(res.data));
-  }
-
+async function submitCredentials(
+  prev: LoginState,
+  formData: FormData,
+  next: string,
+): Promise<LoginState> {
+  const attempt = nextAttempt(prev);
   const email = asString(formData.get('email')).trim();
   const password = asString(formData.get('password'));
 
   if (!email || !password) {
-    return { error: 'Email y contraseña son obligatorios.' };
+    return {
+      step: 'credentials',
+      attempt,
+      email,
+      error: { kind: 'missing', message: LOGIN_MESSAGES.missing },
+    };
   }
 
-  const res = await api<AuthResult | MfaChallenge>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
+  // Con un equipo de confianza vigente para ESTE usuario la API no pide el código. Si el token es
+  // de otra persona que usa la misma computadora, o ya venció, la API lo ignora y pide el código.
+  const trustedDeviceToken = await getTrustedDevice();
+  const res = await apiWithStatus(
+    '/auth/login',
+    post({ email, password, ...(trustedDeviceToken ? { trustedDeviceToken } : {}) }),
+  );
+  const outcome = classifyAuthResponse('login', res);
+  if (outcome.kind === 'session') return finishLogin(outcome.auth, next);
+  return afterLogin(outcome, { attempt, email });
+}
 
-  if (!res.ok) {
-    if (res.error.status === 401) return { error: 'Credenciales inválidas.' };
-    if (res.error.status === 429) {
-      return { error: 'Demasiados intentos. Esperá un minuto antes de reintentar.' };
-    }
-    return { error: res.error.message };
+async function submitMfa(prev: LoginState, formData: FormData, next: string): Promise<LoginState> {
+  const attempt = nextAttempt(prev);
+  const email = asString(formData.get('email')).trim();
+  const mfaToken = asString(formData.get('mfaToken'));
+  const mode: MfaMode = asString(formData.get('mode')) === 'recovery' ? 'recovery' : 'totp';
+  const rememberDevice = asString(formData.get('rememberDevice')) === '1';
+  const ctx = { attempt, email, mfaToken, rememberDevice, mode };
+
+  if (!mfaToken) return initialLoginState(email, LOGIN_MESSAGES.mfaLost);
+
+  const raw = asString(formData.get('code'));
+  const code = mode === 'recovery' ? normalizeRecoveryCode(raw) : normalizeTotpCode(raw);
+  // Un código mal formado no llega a la API: gastaría uno de los 5 intentos del desafío.
+  if (code === null) {
+    return {
+      step: 'mfa',
+      ...ctx,
+      error: mode === 'recovery' ? LOGIN_MESSAGES.recoveryFormat : LOGIN_MESSAGES.totpFormat,
+    };
   }
 
-  if (isChallenge(res.data)) {
-    return { mfaToken: res.data.mfaToken, email };
+  const res = await apiWithStatus('/auth/mfa/verify', post({ mfaToken, code, rememberDevice }));
+  const outcome = classifyAuthResponse('mfa', res);
+  if (outcome.kind === 'session') return finishLogin(outcome.auth, next);
+  return afterMfa(outcome, ctx);
+}
+
+async function submitRelease(
+  prev: LoginState,
+  formData: FormData,
+  next: string,
+): Promise<LoginState> {
+  const attempt = nextAttempt(prev);
+  const email = asString(formData.get('email')).trim();
+  const releaseToken = asString(formData.get('releaseToken'));
+  const sessionId = asString(formData.get('sessionId'));
+  // El estado anterior sólo sirve para volver a pintar la misma lista si algo falla: lo que se
+  // manda a la API sale del formulario y la API lo valida.
+  const shown = shownSeats(prev);
+
+  if (!releaseToken || !shown) return initialLoginState(email, LOGIN_MESSAGES.releaseExpired);
+  if (!sessionId) {
+    return { step: 'seats', attempt, email, ...shown, error: LOGIN_MESSAGES.releaseMissing };
   }
 
-  redirect(await establishSession(res.data));
+  const res = await apiWithStatus('/auth/seats/release', post({ releaseToken, sessionId }));
+  const outcome = classifyAuthResponse('release', res);
+  if (outcome.kind === 'session') return finishLogin(outcome.auth, next);
+  return afterRelease(outcome, { attempt, email, ...shown });
+}
+
+/**
+ * Un solo action para los tres pasos (`intent` del formulario), así `useActionState` guarda el
+ * paso en curso y la pantalla no tiene que coordinar tres estados.
+ */
+export async function loginAction(prev: LoginState, formData: FormData): Promise<LoginState> {
+  const next = safeNextPath(formData.get('next'));
+  switch (asString(formData.get('intent'))) {
+    case 'mfa':
+      return submitMfa(prev, formData, next);
+    case 'release':
+      return submitRelease(prev, formData, next);
+    default:
+      return submitCredentials(prev, formData, next);
+  }
 }
 
 export async function logoutAction(): Promise<void> {

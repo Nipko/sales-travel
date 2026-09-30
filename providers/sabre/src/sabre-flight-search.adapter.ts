@@ -275,6 +275,12 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     let modoActual = modo;
     let multiActual: SabreMultipleFaresMode = pedirMulti ? modoMulti : 'off';
     let result: SabreResult<unknown> | undefined;
+    // Lo que se APRENDE de un rechazo se guarda aparte y sólo se fija cuando el escalón de abajo
+    // pasa. Fijarlo antes convertía cualquier error BUSINESS —una fecha inválida, un código sin
+    // mapear— en «este PCC no tiene marcas» para toda la vida del proceso: si la petición sin
+    // marcas falla igual, el error no era de capacidad y no hay nada que aprender.
+    let techoAprendido: SabreBrandedFaresMode | null = null;
+    let multiAprendido = false;
 
     for (;;) {
       const cuerpo = buildSabreShopRequest(criteria, this.cfg, {
@@ -284,6 +290,8 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       });
       try {
         result = await this.http.postJson<unknown>(SABRE_SHOP_PATH, cuerpo, opciones_http);
+        if (multiAprendido) this.multipleFaresUnsupported = true;
+        if (techoAprendido !== null) this.brandedFaresTecho = techoAprendido;
         break;
       } catch (err) {
         if (!esRechazoDeCapacidad(err)) throw err;
@@ -295,7 +303,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
 
         if (multiActual !== 'off') {
           multiActual = 'off';
-          this.multipleFaresUnsupported = true;
+          multiAprendido = true;
           this.log('warn', 'sabre.shop.multiple_fares_no_soportadas', {
             path: SABRE_SHOP_PATH,
             ...detalle,
@@ -312,7 +320,11 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
             ...detalle,
           });
           modoActual = bajado;
-          this.brandedFaresTecho = bajado;
+          techoAprendido = bajado;
+          // Si ya se había apagado MFPI y aun así hubo que bajar las marcas, quitar MFPI no fue
+          // lo que arregló nada: no se aprende. La próxima búsqueda lo vuelve a probar sobre el
+          // techo de marcas ya aprendido y converge en una sola llamada.
+          multiAprendido = false;
           continue;
         }
 
@@ -331,7 +343,9 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     //
     // Se paga UNA vez por instancia: si el reintento tampoco trae nada, la ruta está vacía de
     // verdad y no se marca nada.
-    if (mapped.offers.length === 0 && pedirMarcas && !this.brandedFaresProven) {
+    // Desde el modo que PRODUJO la respuesta vacía, no desde el pedido: si el bucle ya bajó a
+    // 'off', repetir la llamada sin marcas sería la misma petición otra vez.
+    if (mapped.offers.length === 0 && modoActual !== 'off' && !this.brandedFaresProven) {
       const sinMarcas = await this.http.postJson<unknown>(
         SABRE_SHOP_PATH,
         buildSabreShopRequest(criteria, this.cfg, {
@@ -344,7 +358,10 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       const reintento = this.mapear(sinMarcas, criteria, ctx);
       if (reintento.offers.length > 0) {
         // La respuesta VACÍA también degrada un escalón, por la misma razón que el rechazo.
-        this.brandedFaresTecho = degradarBrandedFares(modo);
+        const nuevo = degradarBrandedFares(modoActual);
+        // El techo sólo baja: nunca se sube por una respuesta vacía.
+        this.brandedFaresTecho =
+          this.brandedFaresTecho === null ? nuevo : menorModo(this.brandedFaresTecho, nuevo);
         this.log('warn', 'sabre.shop.branded_fares_vacian_la_respuesta', {
           path: SABRE_SHOP_PATH,
           offersSinMarcas: reintento.offers.length,
@@ -352,7 +369,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
         result = sinMarcas;
         mapped = reintento;
       }
-    } else if (mapped.offers.length > 0 && pedirMarcas) {
+    } else if (mapped.offers.length > 0 && modoActual !== 'off') {
       // Esta cuenta SÍ las soporta: no se vuelve a sospechar de ella en una ruta vacía.
       this.brandedFaresProven = true;
     }

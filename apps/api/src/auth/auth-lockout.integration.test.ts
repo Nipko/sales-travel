@@ -1,24 +1,25 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { DatabaseService } from '../database/database.service.js';
+import { LOCKOUT_THRESHOLD, LoginAttemptsService } from './login-attempts.service.js';
 
 /**
  * Valida el account lockout (migración 0019) contra Postgres.
  *
- * Ejecuta el MISMO SQL que AuthService.registerFailedAttempt, no una réplica en JS: la
- * versión anterior de este test replicaba la lógica read-modify-write, así que validaba
- * una copia y no el código real — y por eso no detectó que el contador se podía evadir
- * con peticiones concurrentes. Ahora el incremento ocurre dentro del UPDATE y hay un
- * caso explícito de concurrencia.
+ * Ejecuta el código REAL de LoginAttemptsService, no una réplica: una versión anterior de este test
+ * replicaba la lógica read-modify-write, así que validaba una copia y no el código real — y por eso
+ * no detectó que el contador se podía evadir con peticiones concurrentes. Ahora el incremento
+ * ocurre dentro del UPDATE y hay un caso explícito de concurrencia. El mismo contador lo usa el
+ * paso MFA del login.
  */
 const hasDb = Boolean(process.env['PGHOST'] && process.env['PGUSER'] && process.env['PGPASSWORD']);
 const d = hasDb ? describe : describe.skip;
 
-const LOCKOUT_THRESHOLD = 5;
-const LOCKOUT_MINUTES = 15;
-
-d('account lockout (AuthService semantics)', () => {
+d('account lockout (LoginAttemptsService)', () => {
   const pool = new pg.Pool();
+  const database = new DatabaseService();
+  const attempts = new LoginAttemptsService(database);
   const sfx = randomBytes(4).toString('hex');
   let userId: string;
 
@@ -42,37 +43,16 @@ d('account lockout (AuthService semantics)', () => {
     };
   }
 
-  /**
-   * SQL idéntico al de AuthService.registerFailedAttempt: el incremento ocurre en la
-   * base, así que dos llamadas concurrentes cuentan dos.
-   */
-  async function failOnce(): Promise<void> {
-    await pool.query(
-      `UPDATE users
-          SET failed_login_attempts = CASE
-                WHEN failed_login_attempts + 1 >= $2 THEN 0
-                ELSE failed_login_attempts + 1
-              END,
-              locked_until = CASE
-                WHEN failed_login_attempts + 1 >= $2 THEN now() + make_interval(mins => $3)
-                ELSE locked_until
-              END
-        WHERE id = $1`,
-      [userId, LOCKOUT_THRESHOLD, LOCKOUT_MINUTES],
-    );
+  async function failOnce(): Promise<boolean> {
+    return (await attempts.registerFailure(userId)).locked;
   }
 
-  /** Réplica de AuthService.onLoginSuccess. */
   async function succeed(): Promise<void> {
-    await pool.query(
-      `UPDATE users
-         SET failed_login_attempts = 0, locked_until = NULL, last_login_at = now()
-       WHERE id = $1`,
-      [userId],
-    );
+    await attempts.registerSuccess(userId);
   }
 
   beforeAll(async () => {
+    database.onModuleInit();
     const u = await pool.query<{ id: string }>(
       `INSERT INTO users (email) VALUES ($1) RETURNING id`,
       [`lock-${sfx}@test.local`],
@@ -82,6 +62,7 @@ d('account lockout (AuthService semantics)', () => {
 
   afterAll(async () => {
     await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+    await database.onModuleDestroy();
     await pool.end();
   });
 
@@ -92,14 +73,16 @@ d('account lockout (AuthService semantics)', () => {
   });
 
   it('does NOT lock before reaching the threshold', async () => {
-    for (let i = 0; i < LOCKOUT_THRESHOLD - 1; i++) await failOnce();
+    for (let i = 0; i < LOCKOUT_THRESHOLD - 1; i++) expect(await failOnce()).toBe(false);
     const u = await readUser();
     expect(u.attempts).toBe(LOCKOUT_THRESHOLD - 1);
     expect(u.lockedUntil).toBeNull();
   });
 
   it('locks the account on the threshold-th consecutive failure', async () => {
-    await failOnce(); // el fallo número LOCKOUT_THRESHOLD
+    expect(await failOnce()).toBe(true); // el fallo número LOCKOUT_THRESHOLD
+    // Bloqueada: la reserva de un intento (paso MFA, reautenticación) ni siquiera se hace.
+    expect(await attempts.reserve(userId)).toBeNull();
     const u = await readUser();
     expect(u.lockedUntil).not.toBeNull();
     expect(u.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
@@ -132,5 +115,36 @@ d('account lockout (AuthService semantics)', () => {
     const locked = await readUser();
     expect(locked.lockedUntil).not.toBeNull();
     expect(locked.attempts).toBe(0);
+  });
+
+  it('la reserva antes de verificar: una ráfaga en paralelo prueba a lo sumo el umbral', async () => {
+    await succeed();
+
+    // Antes el paso MFA miraba el bloqueo con un SELECT y sumaba el fallo después de verificar:
+    // toda la ráfaga pasaba el SELECT antes de que el quinto fallo grabara el bloqueo. La reserva
+    // cuenta el intento y mira el bloqueo en el mismo UPDATE, bajo el lock de la fila.
+    const burst = await Promise.all(
+      Array.from({ length: LOCKOUT_THRESHOLD * 4 }, () => attempts.reserve(userId)),
+    );
+
+    const admitted = burst.filter((r) => r !== null);
+    expect(admitted).toHaveLength(LOCKOUT_THRESHOLD);
+    expect(admitted.filter((r) => r.locked)).toHaveLength(1);
+    expect(admitted.map((r) => r.attemptsLeft).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+    expect((await readUser()).lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('un acierto después de la reserva limpia el contador y el bloqueo', async () => {
+    await succeed();
+    for (let i = 0; i < LOCKOUT_THRESHOLD; i++) await attempts.reserve(userId);
+    expect(await attempts.reserve(userId)).toBeNull();
+
+    await attempts.clearFailures(userId);
+
+    expect(await readUser()).toMatchObject({ attempts: 0, lockedUntil: null });
+    expect(await attempts.reserve(userId)).toEqual({
+      locked: false,
+      attemptsLeft: LOCKOUT_THRESHOLD - 1,
+    });
   });
 });

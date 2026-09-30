@@ -529,7 +529,7 @@ function NodeActions({
     return null;
   }
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
         <Button
           ref={triggerRef}

@@ -86,22 +86,31 @@ export class PasswordResetService {
     return { sent: true };
   }
 
-  /** Canjea el token y fija la contraseña nueva. Revoca TODAS las sesiones del usuario. */
+  /**
+   * Canjea el token y fija la contraseña nueva. Revoca TODAS las sesiones del usuario y, por
+   * `password_changed_at`, también sus equipos de confianza.
+   *
+   * El canje es un UPDATE condicional (`used_at IS NULL`) dentro de la misma transacción que el
+   * cambio: leer y después marcar dejaba que el mismo enlace sirviera dos veces en paralelo. Los
+   * demás enlaces pendientes del usuario también se dan por usados.
+   */
   async reset(token: string, newPassword: string): Promise<{ ok: true }> {
-    const row = await this.db.db
-      .selectFrom('password_reset_tokens')
-      .select(['id', 'user_id', 'expires_at', 'used_at'])
-      .where('token_hash', '=', sha256(token))
-      .executeTakeFirst();
-
-    if (!row || row.used_at !== null || row.expires_at.getTime() <= Date.now()) {
-      throw new BadRequestException('el enlace de restablecimiento es inválido o venció');
-    }
-
     const hash = await this.password.hash(newPassword);
     const now = new Date();
 
-    await this.db.db.transaction().execute(async (trx) => {
+    const userId = await this.db.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .updateTable('password_reset_tokens')
+        .set({ used_at: now })
+        .where('token_hash', '=', sha256(token))
+        .where('used_at', 'is', null)
+        .where('expires_at', '>', now)
+        .returning('user_id')
+        .executeTakeFirst();
+      if (!row) {
+        throw new BadRequestException('el enlace de restablecimiento es inválido o venció');
+      }
+
       await trx
         .updateTable('users')
         .set({
@@ -116,26 +125,30 @@ export class PasswordResetService {
       await trx
         .updateTable('password_reset_tokens')
         .set({ used_at: now })
-        .where('id', '=', row.id)
+        .where('user_id', '=', row.user_id)
+        .where('used_at', 'is', null)
         .execute();
+      return row.user_id;
     });
 
     // Quien haya entrado con la contraseña vieja queda fuera de inmediato.
-    await this.sessions.revokeAllForUser(row.user_id, 'password_reset');
+    await this.sessions.revokeAllForUser(userId, 'password_reset');
 
     await this.audit.emit({
       eventType: 'auth.password_reset.completed',
-      actorUserId: row.user_id,
+      actorUserId: userId,
       aggregateType: 'user',
-      aggregateId: row.user_id,
+      aggregateId: userId,
     });
 
     return { ok: true };
   }
 
   /**
-   * Cambio de contraseña autenticado. Revoca las demás sesiones pero conserva la actual,
-   * para no echar al usuario del panel justo después de cambiarla.
+   * Cambio de contraseña autenticado. Revoca TODAS las sesiones (y, por `password_changed_at`, los
+   * equipos de confianza). El dispositivo actual sigue porque el controlador le emite una sesión
+   * nueva (AuthService.reissueAfterPasswordChange): antes esto prometía conservar la actual y la
+   * mataba igual.
    */
   async change(
     userId: string,

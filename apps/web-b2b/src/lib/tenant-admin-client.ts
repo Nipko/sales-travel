@@ -40,6 +40,10 @@ export interface NewNodeInput {
   readonly adminEmail?: string;
   readonly adminName?: string;
   readonly adminPassword?: string;
+  /** Puestos simultáneos propios (1-10000). Ausente = comparte el cupo del padre. Sólo superadmin. */
+  readonly concurrentSeats?: number;
+  /** Minutos de inactividad (5-480). Ausente = hereda. Sólo superadmin. */
+  readonly idleTimeoutMinutes?: number;
 }
 
 /** Qué pasó con el admin inicial (TenantsService.create). */

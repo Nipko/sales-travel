@@ -26,6 +26,7 @@ import type {
 import type { HotelRoomOccupancy } from '@sales-travel/canonical';
 import {
   TBO_BOOKINGS_BY_DATE_MAX_DAYS,
+  TBO_HOTEL_DETAILS_LIMITS,
   TBO_OFFER_TTL_MS,
   TBO_OPERATIONS,
   TboApiError,
@@ -35,8 +36,11 @@ import {
   classifyTboBookOutcome,
   compareTboRates,
   generateTboBookingReference,
+  tboHotelContentHash,
   type TboBookingByDate,
+  type TboCatalogHotel,
   type TboEnvironment,
+  type TboHotelContent,
   type TboHotelsAdapter,
   type TboRateSnapshot,
   type TboSearchPackContext,
@@ -49,9 +53,15 @@ import type {
   HotelBookFailure,
   HotelBookWithContext,
   HotelBookingContextPort,
+  HotelCatalogRecord,
+  HotelCityCatalog,
+  HotelCityCatalogPort,
+  HotelContentBatch,
+  HotelContentBatchPort,
   HotelContentFetchOptions,
   HotelContentLanguage,
   HotelContentPort,
+  HotelContentRecord,
   HotelGuestCheck,
   HotelOfferInvalidation,
   HotelPrebookContextPort,
@@ -89,10 +99,50 @@ export type TboHotelsAcl = Pick<
 >;
 
 /**
- * Del cliente de contenido estático, sólo `HotelDetails`: es lo único que la API lee en el momento
- * (PR-3.6). El resto del catálogo lo recorre el sync, en otro proceso.
+ * Del cliente de contenido estático, `HotelDetails` (la ficha y las fotos de los resultados) y
+ * `TBOHotelCodeList` (los hoteles de una ciudad que el catálogo todavía no tiene). El resto del
+ * catálogo lo recorre el sync, en otro proceso.
  */
-export type TboContentAcl = Pick<TboStaticContentClient, 'getHotelDetails'>;
+export type TboContentAcl = Pick<TboStaticContentClient, 'getHotelDetails' | 'listCityHotels'>;
+
+/**
+ * Intentos de las lecturas de catálogo bajo demanda: uno más que la ficha, porque nadie las espera
+ * mirando (las fotos llegan en segundo plano) o el vendedor ya está esperando la búsqueda entera, y
+ * un `500` suelto de TBO no debería dejarlas sin datos. El plazo total lo pone quien llama.
+ */
+const CATALOG_MAX_ATTEMPTS = 2;
+
+/** Una fila de `hotel_content` con la huella del ACL: la misma con que la escribe el sync. */
+function contentRecordOf(content: TboHotelContent): HotelContentRecord {
+  return {
+    hotelId: content.hotelId,
+    lang: content.lang,
+    source: content.source,
+    name: content.name,
+    descriptionHtml: content.descriptionHtml,
+    sections: content.sections.map(({ label, text }) => ({ label, text })),
+    facilities: [...content.facilities],
+    attractionsHtml: content.attractionsHtml,
+    images: [...content.images],
+    phone: content.phone,
+    websiteUrl: content.websiteUrl,
+    checkInTime: content.checkInTime,
+    checkOutTime: content.checkOutTime,
+    contentHash: tboHotelContentHash(content),
+  };
+}
+
+function catalogRecordOf(hotel: TboCatalogHotel): HotelCatalogRecord {
+  return {
+    hotelId: hotel.hotelId,
+    name: hotel.name,
+    stars: hotel.stars,
+    location: hotel.location === null ? null : { lat: hotel.location.lat, lng: hotel.location.lng },
+    address: hotel.address,
+    zipcode: hotel.zipcode,
+    countryCode: hotel.countryCode,
+  };
+}
 
 /**
  * Se pidió contenido a un envoltorio armado sin cliente de contenido. El factory siempre lo pasa:
@@ -198,8 +248,10 @@ function baselineRate(baseline: HotelRateBaseline, current: HotelRoompack): TboR
  * fechas, edades ni nacionalidad, así que eso queda en el servidor y no lo pone el navegador.
  * Delega la lectura de una reserva, por localizador o por nuestra referencia (PR-4.2), el PreBook
  * con la comparación contra lo que se mostró (PR-4.5), el Book de la saga con órdenes (PR-4.6), el
- * contenido de un hotel que el catálogo todavía no tiene (PR-3.6), la cancelación (PR-5.1) y las
- * reservas de la cuenta por fecha de creación, que lee la conciliación diaria (PR-5.5).
+ * contenido de un hotel que el catálogo todavía no tiene (PR-3.6), por lotes para guardarlo (las
+ * fotos de los resultados), los hoteles de una ciudad que el catálogo tiene vacía, la cancelación
+ * (PR-5.1) y las reservas de la cuenta por fecha de creación, que lee la conciliación diaria
+ * (PR-5.5).
  */
 export class TboHotelProviderAdapter
   implements
@@ -212,7 +264,9 @@ export class TboHotelProviderAdapter
     HotelPrebookContextPort,
     HotelBookingContextPort,
     HotelAccountIssuePort,
-    HotelContentPort
+    HotelContentPort,
+    HotelContentBatchPort,
+    HotelCityCatalogPort
 {
   // Campos `#`: un adapter volcado a un log no arrastra el ACL ni nada de la cuenta.
   readonly #acl: TboHotelsAcl;
@@ -511,6 +565,66 @@ export class TboHotelProviderAdapter
       websiteUrl: text?.websiteUrl ?? null,
       checkInTime: text?.checkInTime ?? null,
       checkOutTime: text?.checkOutTime ?? null,
+    };
+  }
+
+  /** Lote de HotelDetails: 10 por defecto, nunca más de 13 (05 §10; Q-62). */
+  get contentBatchSize(): number {
+    return TBO_HOTEL_DETAILS_LIMITS.defaultBatchSize;
+  }
+
+  /**
+   * `HotelDetails` de un lote en UN idioma, para GUARDARLO en el catálogo (fotos de los resultados):
+   * cada contenido sale como fila de `hotel_content` con la huella del ACL, la misma del sync, y lo
+   * que TBO no devolvió sale en `missingHotelIds`. Por el cupo de fondo del limitador de la cuenta,
+   * como todo el contenido estático. Un lote de más de 13 códigos no sale: el builder del ACL lo
+   * rechaza antes del cable.
+   */
+  async fetchHotelContents(
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    _ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelContentBatch> {
+    const content = this.#content;
+    if (content === undefined) throw new TboContentClientMissingError();
+    const found = await content.getHotelDetails(hotelIds, lang, {
+      timeoutMs: options.timeoutMs,
+      maxAttempts: CATALOG_MAX_ATTEMPTS,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    return {
+      contents: found.contents.map(contentRecordOf),
+      missingHotelIds: [...found.missingHotelCodes],
+    };
+  }
+
+  /**
+   * `TBOHotelCodeList` de UNA ciudad (p. 65): sus hoteles y el texto en inglés que llega de paso,
+   * para cargarla la primera vez que se busca (05 §8.5). Una ciudad sin hoteles ("No Hotels Found"
+   * rápido, 01 §8.5) vuelve con la lista vacía; uno lento es el plazo de TBO vencido y se lanza.
+   */
+  async listCityCatalog(
+    cityCode: string,
+    countryCode: string | undefined,
+    _ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelCityCatalog> {
+    const content = this.#content;
+    if (content === undefined) throw new TboContentClientMissingError();
+    const found = await content.listCityHotels(
+      cityCode,
+      countryCode === undefined ? {} : { countryCode },
+      {
+        timeoutMs: options.timeoutMs,
+        maxAttempts: CATALOG_MAX_ATTEMPTS,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
+    );
+    return {
+      hotels: found.hotels.map(catalogRecordOf),
+      listingContents: found.listingContents.map(contentRecordOf),
+      unreadable: found.diagnostics.rejected.ITEM_SCHEMA ?? 0,
     };
   }
 

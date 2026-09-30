@@ -9,6 +9,9 @@ import {
   emptyRatesView,
   factsByProvider,
   formatStayDate,
+  hotelLocationView,
+  ratesRefundNotice,
+  stayHoursLine,
   staySummary,
   stayNights,
 } from './hotel-detail-view';
@@ -262,5 +265,58 @@ describe('staySummary — la estadía cotizada a la vista (D-TBO-14 A)', () => {
     expect(formatStayDate('2026-01-01')).toBe('1 ene 2026');
     expect(formatStayDate('mañana')).toBe('mañana');
     expect(stayNights({ checkinDate: '2026-03-28', checkoutDate: '2026-03-30' })).toBe(2);
+  });
+});
+
+describe('hotelLocationView — dónde queda el hotel', () => {
+  const country = (code: string) => (code === 'CO' ? 'Colombia' : code);
+
+  it('la dirección de la ficha con su código postal, el país y las coordenadas del catálogo', () => {
+    const view = hotelLocationView(
+      { address: 'Av. 5 # 10-20', location: { lat: 4.609712345, lng: -74.08175 } },
+      { address: 'Av. 5 # 10-20', zipcode: '110111', countryCode: 'CO' },
+      country,
+    );
+    expect(view).toEqual({
+      address: 'Av. 5 # 10-20 (110111)',
+      country: 'Colombia',
+      coordinates: '4.60971, -74.08175',
+      mapHref: 'https://www.google.com/maps/search/?api=1&query=4.609712%2C-74.081750',
+    });
+  });
+
+  it('sin ficha, lo que dijo la búsqueda; sin dirección ni coordenadas, nada', () => {
+    expect(hotelLocationView({ address: 'Calle 10' }, undefined, country)).toEqual({
+      address: 'Calle 10',
+    });
+    expect(hotelLocationView({}, undefined, country)).toBeUndefined();
+    expect(
+      hotelLocationView({}, { address: null, zipcode: null, countryCode: 'CO' }, country),
+    ).toBeUndefined();
+  });
+});
+
+describe('ratesRefundNotice — el aviso del hotel sobre sus no reembolsables', () => {
+  it('ninguna reembolsable: se avisa; bloqueadas para la agencia: no hay qué reservar', () => {
+    const nr = [{ refundable: false }, { refundable: false }];
+    expect(ratesRefundNotice(nr, false)).toBe('non-refundable-all');
+    expect(ratesRefundNotice(nr, true)).toBe('blocked-all');
+  });
+
+  it('con alguna reembolsable, o sin tarifas, no hay aviso del hotel (cada fila tiene el suyo)', () => {
+    expect(ratesRefundNotice([{ refundable: false }, { refundable: true }], true)).toBeUndefined();
+    expect(ratesRefundNotice([], false)).toBeUndefined();
+  });
+});
+
+describe('stayHoursLine — los horarios a la vista en el encabezado', () => {
+  it('los dos, uno solo o ninguno', () => {
+    expect(stayHoursLine({ checkInTime: '15:00', checkOutTime: '12:00' })).toBe(
+      'Check-in desde 15:00 · Check-out hasta 12:00',
+    );
+    expect(stayHoursLine({ checkInTime: null, checkOutTime: '11:00' })).toBe(
+      'Check-out hasta 11:00',
+    );
+    expect(stayHoursLine({ checkInTime: null, checkOutTime: null })).toBeUndefined();
   });
 });

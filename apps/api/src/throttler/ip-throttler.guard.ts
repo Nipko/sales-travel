@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-
-/** IPv4 o IPv6 con forma razonable. No valida rangos: sólo descarta basura. */
-const IP_LIKE = /^[0-9a-fA-F:.]{3,45}$/;
+import { resolveClientOrigin } from '../request-context/client-origin.js';
 
 /**
  * ThrottlerGuard que identifica al cliente por su IP real.
  *
- * Detrás de Cloudflare la IP del usuario llega en `CF-Connecting-IP`, pero ESA CABECERA
- * LA PUEDE MANDAR CUALQUIERA: hasta ahora se usaba tal cual como clave, así que bastaba
- * con enviar un CF-Connecting-IP distinto en cada intento para estrenar cupo y evadir por
- * completo el anti brute-force del login (10 intentos/min).
+ * Dos orígenes, resueltos en `resolveClientOrigin`:
  *
- * Ahora la clave combina la cabecera con `X-Edge-Peer-IP`, que Caddy borra del request
- * entrante y reescribe con el peer TCP real. Falsificar CF-Connecting-IP ya no despega la
- * clave del origen: todos los intentos de una misma conexión comparten el componente que
- * el cliente no controla.
+ * - El panel (web-b2b) llama por la red interna: la IP del request es la del contenedor y, sin más,
+ *   todos los usuarios del panel compartían UN cupo (10 logins por minuto para toda la plataforma).
+ *   El panel reenvía la IP del navegador en `x-client-ip` con el secreto interno, y esa es la clave.
+ * - Un cliente que llega directo al api: la clave combina `CF-Connecting-IP` con `X-Edge-Peer-IP`,
+ *   que Caddy borra del request entrante y reescribe con el peer TCP real, así que forjar la
+ *   primera no despega la clave del origen.
  *
  * NOTA OPERATIVA: la defensa completa exige además que el origen sólo acepte tráfico de
  * los rangos de Cloudflare. Sin eso, quien alcance la IP del servidor directamente evita
@@ -24,16 +21,6 @@ const IP_LIKE = /^[0-9a-fA-F:.]{3,45}$/;
 @Injectable()
 export class IpThrottlerGuard extends ThrottlerGuard {
   protected override getTracker(req: Record<string, unknown>): Promise<string> {
-    const headers = (req['headers'] ?? {}) as Record<string, unknown>;
-
-    const peer = pick(headers['x-edge-peer-ip']) ?? pick(req['ip']) ?? 'unknown';
-    const claimed = pick(headers['cf-connecting-ip']);
-
-    // Sin cabecera de borde válida, el peer solo ya identifica al cliente.
-    return Promise.resolve(claimed ? `${peer}|${claimed}` : peer);
+    return Promise.resolve(resolveClientOrigin(req).trackerKey);
   }
-}
-
-function pick(value: unknown): string | undefined {
-  return typeof value === 'string' && IP_LIKE.test(value) ? value : undefined;
 }

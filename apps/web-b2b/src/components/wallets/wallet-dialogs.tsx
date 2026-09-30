@@ -858,3 +858,74 @@ export function DepositReportDialog({
     </FormDialog>
   );
 }
+
+// ───────────────────────────── Tarifas no reembolsables ─────────────────────────────
+
+/**
+ * Permitir o bloquear las tarifas no reembolsables de un nodo (pedido del founder del 2026-09-29,
+ * punto e), con motivo, como todo lo que fija quien financia. Bloquear es la acción que corta
+ * ventas: va en rojo y dice qué pasa con lo ya reservado (nada).
+ */
+export function NonRefundableRatesDialog({
+  nodeName,
+  to,
+  inheritedBlock,
+  onSubmit,
+  onClose,
+}: {
+  nodeName: string;
+  to: 'allowed' | 'blocked';
+  /** Un nivel de arriba ya las bloquea: permitirlas acá no las habilita. */
+  inheritedBlock: boolean;
+  onSubmit: Submit<{ nonRefundableRates: 'allowed' | 'blocked'; reason: string }>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | undefined>();
+  const { busy, error, run } = useSaving();
+  const blocking = to === 'blocked';
+
+  function submit() {
+    const checked = validateReason(reason);
+    if (!checked.ok) {
+      setReasonError(checked.errors.reason);
+      return;
+    }
+    setReasonError(undefined);
+    void run(() => onSubmit({ nonRefundableRates: to, reason: checked.value.reason }));
+  }
+
+  return (
+    <FormDialog
+      title={blocking ? 'Bloquear tarifas no reembolsables' : 'Permitir tarifas no reembolsables'}
+      description={
+        blocking
+          ? `${nodeName} no va a poder reservar tarifas no reembolsables: las ve marcadas como no disponibles y la reserva se rechaza. Lo mismo rige para lo que cuelga de ${nodeName}. Las reservas ya hechas no cambian.`
+          : `${nodeName} va a poder reservarlas, siempre con la confirmación obligatoria de que se cobra el 100 % si se cancela, se modifica o el pasajero no se presenta, y sale de su cartera o su crédito.`
+      }
+      onClose={onClose}
+      onSubmit={submit}
+      busy={busy}
+      error={error}
+      submitLabel={blocking ? 'Bloquear' : 'Permitir'}
+      destructive={blocking}
+    >
+      {!blocking && inheritedBlock ? (
+        <ToneNotice tone="warning">
+          Un nivel de arriba de la red las tiene bloqueadas: aunque lo permitas acá, {nodeName} no
+          va a poder reservarlas hasta que lo habiliten ahí.
+        </ToneNotice>
+      ) : null}
+      <ReasonField
+        value={reason}
+        onChange={setReason}
+        error={reasonError}
+        placeholder={
+          blocking
+            ? 'Ej.: dos no presentaciones sin cubrir este mes.'
+            : 'Ej.: cartera al día y cupo aprobado.'
+        }
+      />
+    </FormDialog>
+  );
+}

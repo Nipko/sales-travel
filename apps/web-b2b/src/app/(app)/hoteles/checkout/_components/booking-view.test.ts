@@ -144,6 +144,46 @@ describe('classifyBookResponse — errores', () => {
     });
   });
 
+  it('no reembolsable sin la confirmación: se marca su casilla y se pinta con el 100 % del servidor', () => {
+    const outcome = classifyBookResponse(
+      ...apiError(400, {
+        message: 'Esta tarifa no es reembolsable…',
+        reason: 'NON_REFUNDABLE_NOT_ACKNOWLEDGED',
+        details: {
+          penalty: { amountMinor: 32_134, currency: 'USD' },
+          nonRefundableReason: 'full-penalty-in-force',
+          fullPenaltySinceLocal: '2026-09-25T23:00:00',
+        },
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: 'fix',
+      message: 'Esta tarifa no es reembolsable…',
+      fieldErrors: { nonRefundableAcknowledged: expect.any(String) as unknown },
+      nonRefundable: {
+        reason: 'full-penalty-in-force',
+        penalty: { amountMinor: 32_134, currency: 'USD' },
+        fullPenaltySinceLocal: '2026-09-25T23:00:00',
+      },
+    });
+    expect(keepsAttempt(outcome)).toBe(false);
+  });
+
+  it('no reembolsables bloqueadas para la agencia: rechazo sin reintento, no un 403 de sesión', () => {
+    const outcome = classifyBookResponse(
+      ...apiError(403, {
+        message: 'Tu agencia no puede reservar tarifas no reembolsables…',
+        reason: 'NON_REFUNDABLE_BLOCKED',
+      }),
+    );
+    expect(outcome).toEqual({
+      kind: 'rejected',
+      title: 'Tu agencia no puede reservar tarifas no reembolsables.',
+      message: 'Tu agencia no puede reservar tarifas no reembolsables…',
+      retry: false,
+    });
+  });
+
   it('un 400 de validación del API se ubica en los campos con nuestro texto', () => {
     const outcome = classifyBookResponse(
       ...apiError(400, {

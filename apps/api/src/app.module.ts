@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/guards/auth.guard.js';
+import { MfaEnforcementGuard } from './auth/guards/mfa-enforcement.guard.js';
 import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -19,6 +20,7 @@ import { SearchModule } from './search/search.module.js';
 import { TenantsModule } from './tenants/tenants.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
+import { BookingPermissionsModule } from './booking-permissions/booking-permissions.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
@@ -58,6 +60,7 @@ import { PackagesModule } from './packages/packages.module.js';
     CrmModule,
     PackagesModule,
     PortfoliosModule,
+    BookingPermissionsModule,
     ReportsModule,
     ProviderCredentialsModule,
     ProviderDisclosureModule,
@@ -81,6 +84,12 @@ import { PackagesModule } from './packages/packages.module.js';
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    // Después de AuthGuard y antes de RolesGuard: el MFA que exige el rol lo aplica el servidor.
+    // Sólo las rutas @AllowWithoutMfa() (enrolarse, salir, saber quién es) quedan fuera.
+    {
+      provide: APP_GUARD,
+      useClass: MfaEnforcementGuard,
     },
     // Después de AuthGuard: sólo opina en handlers marcados con @Roles().
     {

@@ -13,6 +13,8 @@
  * más necesita entender qué hacer.
  */
 
+import { requestSessionCheck } from './session-check';
+
 export type JsonRead<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly status: number; readonly message: string };
@@ -57,6 +59,9 @@ export function describeNonJson(status: number, body: string): string {
  * una vez, así que si `json()` falla ya no queda nada que mirar para explicar por qué.
  */
 export async function readJson<T>(res: Response): Promise<JsonRead<T>> {
+  // Un 401 puede ser la sesión cerrada desde afuera (puesto liberado, otro equipo): que la guardia
+  // lo confirme ya y muestre el motivo, en vez de dejar un "sesión vencida" genérico en pantalla.
+  if (res.status === 401) requestSessionCheck();
   let body: string;
   try {
     body = await res.text();

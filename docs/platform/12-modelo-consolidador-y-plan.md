@@ -1,7 +1,7 @@
 # 12 — Modelo Consolidador (B2B2B / BYOC), Diagnóstico de Gaps y Plan de Implementación
 
 **Versión:** 1.3
-**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); retención en cascada, [§12](#12--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
+**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); tarifas no reembolsables, [§11](#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29); retención en cascada, [§12](#12--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
 **Propósito:** Tres cosas en un solo documento: (1) incorporar formalmente el **modelo consolidador con credenciales propias (BYOC)** al target de la plataforma; (2) un **diagnóstico honesto** de dónde estamos vs. la visión y vs. el mercado; (3) un **plan secuenciado** para construirlo y pulirlo con UX limpia y mejores prácticas.
 
 > Este doc es la fuente de verdad para el modelo consolidador. El target ya quedó reflejado en `CLAUDE.md`, `docs/discovery/06-documento-maestro.md` §1.1 y `docs/platform/10-mapa-completo-plataforma.md` (entidad TENANT + jerarquía M8.1).
@@ -542,6 +542,24 @@ Rama `feat/wallets-per-currency`, desde `main` 5de126d. Sin desplegar al escribi
   - La búsqueda de hoteles avisa si la agencia no tiene cartera activa en la moneda elegida.
 - **Tests:** base, API y retención corren como `app_user` contra Postgres en el CI (`wallets-rls`, `wallet-financing`, `holds-per-currency`). Incluyen el que pedía la auditoría: el admin de una agencia no puede tocar su cupo.
 - **Pendiente:** la conciliación del saldo contra el libro, la recarga real y los extractos ([§4.3](#43-pagos-y-fondos)), un test de dos aprobaciones a la vez, prohibir en la base que una agencia abra carteras vacías, borrar `tenants.credit_limit` y las monedas sin dos decimales. Detalle en [13 §4.4](./13-validacion-modelo-red.md#44-después-de-la-tanda-2). El registro de la decisión para TBO es D-TBO-21 en [tbo/08](../tbo/08-requisitos-maestro.md#d-tbo-21--cómo-se-cobra-y-cómo-se-controla-el-crédito-limit).
+
+## §11 — Tarifas no reembolsables: aviso, confirmación obligatoria y control por agencia (2026-09-29)
+
+Rama `feat/hotels-redesign`. Sin desplegar al escribir esto. Pedido explícito del founder: máxima claridad para agencias y clientes sobre las tarifas de hotel que no se reembolsan.
+
+**Qué es "no reembolsable".** Lo decide el servidor (`apps/api/src/hotels/hotel-non-refundable.ts`) con la política FINAL del PreBook y la hora de ahora, de forma conservadora: la declarada así (también si TBO manda `IsRefundable=false` con tramos a 0), y la reembolsable cuyo cargo del 100 % ya rige o puede regir (los tramos están en hora local del hotel sin zona, así que se compara contra UTC+14). La web usa la misma lectura (`rate-refundability.ts`). El 100 % es el precio de VENTA: lo que se descuenta de la cartera o del crédito de la agencia.
+
+- **Base** ([0055](../../db/migrations/0055_non_refundable_rates_permission.sql)): `tenant_booking_permissions` (un permiso por nodo, sin fila = `allowed`) con RLS forzada: lo lee el nodo, quien administra un ancestro y quien lo financia; lo escribe sólo quien lo financia (`can_finance_tenant`, el mismo modelo que las carteras), firmado por el usuario que actúa; nadie lo borra desde la aplicación. `non_refundable_rates_block(tenant)` dice si rige un bloqueo (`own` o `inherited`: el bloqueo de un consolidador alcanza a sus agencias y sub-agencias) y lanza 42501 para un nodo que quien pregunta no puede ver, en vez de responder "permitido".
+- **API:**
+  - `GET/PUT /tenants/:tenantId/booking-permissions` para quien financia (motivo obligatorio, `domain_event` `booking.permissions.non_refundable_rates.changed` en la misma transacción); `GET /hotels/booking-permissions` y `nonRefundableRates` en el sobre de `POST /hotels/availability` para que la web marque las tarifas.
+  - PreBook: bloqueada para la agencia → 403 `NON_REFUNDABLE_BLOCKED` (antes de llamar al proveedor si la búsqueda ya la mostró no reembolsable; después, sin guardar snapshot, si lo es con la política final). Si no, la respuesta lleva `nonRefundable` con el 100 %.
+  - Book: bloqueada → 403 `NON_REFUNDABLE_BLOCKED`; sin `nonRefundableAcknowledged: true` → 400 `NON_REFUNDABLE_NOT_ACKNOWLEDGED` con el monto en `details`. Se vuelve a comprobar después de la revalidación de C2. Nada sale al proveedor en esos casos.
+  - La orden guarda en `selected_offer.nonRefundable` por qué lo es, el 100 %, la política aceptada (tramos en hora local del hotel) y quién la aceptó, cuándo y sobre qué monto; el evento `HotelNonRefundableAcknowledged` lo audita antes del Book, sin PII ni texto del proveedor.
+  - La confirmación por correo de una reserva de hotel usa su propia plantilla, con el recuadro "Tarifa no reembolsable" y el monto exacto (con centavos).
+  - El PreBook y el Book directos de Despegar (`choiceId` / `prebookId`, sólo por API) no informan la política de cancelación antes de reservar: con las no reembolsables bloqueadas para la agencia se rechazan enteros con 403 `NON_REFUNDABLE_BLOCKED`, para que la API directa no sea la puerta de lo que quien financia bloqueó.
+- **Web:** etiqueta y filtro en resultados (ya estaban), aviso con el monto en el detalle y un aviso grande en el paso 1 del checkout; casilla OBLIGATORIA en el paso 2 con el monto exacto y el recordatorio de revisar nombres y fechas; "No reembolsable" en Mis Reservas (lista y detalle, con cuándo lo aceptó el vendedor), en el voucher (sin importes) y en el correo; cancelación con el 100 % y doble confirmación; control "Puede reservar tarifas no reembolsables" en _Gestión de Agencias_ y _Mi Red_ → nodo → _Carteras_. Bloqueadas, las tarifas se muestran como "No disponible para tu agencia" y no se ofrece reservarlas.
+- **Tests:** unidad de la clasificación, del PreBook y del Book (incluidos los rechazos y el registro en la orden), y la integración de 0055 como `app_user` (`booking-permissions.integration.test.ts`).
+- **Pendiente:** no hay cotización de hotel para el cliente en la web (sólo la de vuelos): cuando exista, tiene que decir "No reembolsable" igual que el voucher. El flujo directo de Despegar tampoco puede exigir la confirmación de una no reembolsable a una agencia que las tiene permitidas (no sabe cuál lo es): se cierra cuando Despegar pase al contrato neutral con órdenes.
 
 ## §12 — Retención en cascada (opción 1)
 

@@ -122,6 +122,12 @@ export interface HotelDestinationSuggestion {
   display: string;
   city?: string;
   country?: string;
+  /**
+   * Una ciudad del catálogo local que todavía no tiene hoteles cargados: existe en el proveedor
+   * (su lista de ciudades), y sus hoteles se traen la primera vez que alguien la busca, con unos
+   * segundos más de espera. Ausente, la ciudad ya tiene hoteles o la sugerencia no es del catálogo.
+   */
+  loadsOnSearch?: boolean;
 }
 
 export interface HotelSuggestPort {

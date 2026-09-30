@@ -74,6 +74,47 @@ export interface FilaCiudad {
   country_code: string;
 }
 
+/** Una fila de las fotos candidatas (`hotel-catalog:main-images`), con los nombres de la consulta. */
+export interface FilaFoto {
+  want_provider: string;
+  want_hotel: string;
+  provider_code: string;
+  image_count: number;
+  first_images: unknown[];
+}
+
+/** Lo que sabe la base del contenido de un hotel (`hotel-catalog:content-state`). */
+export interface FilaEstadoContenido {
+  in_catalog: boolean;
+  has_details: boolean;
+}
+
+/**
+ * Las consultas crudas de `HotelCatalogStore` (0054), reconocidas por su marca
+ * (`/* hotel-catalog:… *\/`). Sin esta opción responden vacío: sin fotos, sin estado, sin ciudad.
+ */
+export interface CatalogoBajoDemanda {
+  /** Filas de fotos candidatas; una función se evalúa en cada consulta (el catálogo cambia). */
+  fotos?: readonly FilaFoto[] | (() => readonly FilaFoto[]);
+  /** Por `proveedor hotel`; un hotel ausente no está en el catálogo. */
+  estado?: Readonly<Record<string, FilaEstadoContenido>>;
+  /** La ciudad de `hotel-catalog:city`; ausente = el catálogo no la conoce. */
+  ciudad?: { country_code: string; hotel_count: number | null };
+  /** Lo que devuelve `hotel_catalog_import_city`. */
+  importar?: { outcome: string; active_hotels: number };
+  /**
+   * El catálogo (`hotel_inventory`, ciudad → ids) DESPUÉS de una carga: lo que devuelve la consulta
+   * del catálogo una vez que pasó `hotel-catalog:import-city`.
+   */
+  catalogoTrasImportar?: readonly string[] | Readonly<Record<string, readonly string[]>>;
+  /** Si se define, la consulta con esa marca falla con este error. */
+  fallan?: Readonly<Record<string, Error>>;
+  /** Se llama con lo que llega a `hotel_catalog_store_contents`, como si se guardara. */
+  alGuardar?: (providerCode: string, filas: readonly Record<string, unknown>[]) => void;
+  /** Filas que la función rechaza (las primeras de cada llamada); por defecto, ninguna. */
+  rechazadas?: number;
+}
+
 type Tabla =
   | 'hotel_inventory'
   | 'tenants'
@@ -116,6 +157,8 @@ export interface FakeHotelsDbOptions {
   ciudades?: readonly FilaCiudad[];
   /** Si se define, la consulta de `hotel_provider_city` falla con este error. */
   ciudadesFallan?: Error;
+  /** Las consultas crudas del catálogo bajo demanda (fotos, ciudades que se cargan al buscar). */
+  catalogoBajoDemanda?: CatalogoBajoDemanda;
 }
 
 export interface FakeHotelsDb {
@@ -129,6 +172,8 @@ export interface FakeHotelsDb {
   consultasA: (tabla: Tabla) => CompiledQuery[];
   /** Las consultas de `hotel_inventory` que leen el contenido de la tarjeta. */
   consultasDeFichas: () => CompiledQuery[];
+  /** Las consultas crudas de `HotelCatalogStore` con esa marca (`main-images`, `import-city`…). */
+  consultasMarcadas: (marca: string) => CompiledQuery[];
 }
 
 const TENANT_POR_DEFECTO: FilaTenant = { default_currency: 'USD', country_code: 'CO' };
@@ -159,8 +204,18 @@ class DriverQueGraba extends DummyDriver {
   }
 }
 
-function catalogoDe(opts: FakeHotelsDbOptions, q: CompiledQuery): readonly string[] {
-  const catalogo = opts.catalogo ?? [];
+/** La marca de una consulta cruda de `HotelCatalogStore`, o `undefined`. */
+function marcaDe(q: CompiledQuery): string | undefined {
+  return /\/\* hotel-catalog:([a-z-]+) \*\//.exec(q.sql)?.[1];
+}
+
+function catalogoDe(
+  opts: FakeHotelsDbOptions,
+  q: CompiledQuery,
+  importado: boolean,
+): readonly string[] {
+  const tras = opts.catalogoBajoDemanda?.catalogoTrasImportar;
+  const catalogo = (importado && tras !== undefined ? tras : opts.catalogo) ?? [];
   if (Array.isArray(catalogo)) return catalogo as readonly string[];
   const proveedor = String(q.parameters[0]);
   return (catalogo as Readonly<Record<string, readonly string[]>>)[proveedor] ?? [];
@@ -216,17 +271,71 @@ function contenidosDe(opts: FakeHotelsDbOptions, q: CompiledQuery): unknown[] {
     }));
 }
 
+/** Respuesta de una consulta cruda de `HotelCatalogStore`, por su marca. */
+function marcadaDe(opts: FakeHotelsDbOptions, marca: string, q: CompiledQuery): unknown[] {
+  const bajo = opts.catalogoBajoDemanda ?? {};
+  const falla = bajo.fallan?.[marca];
+  if (falla !== undefined) throw falla;
+  switch (marca) {
+    case 'main-images': {
+      const fotos = typeof bajo.fotos === 'function' ? bajo.fotos() : (bajo.fotos ?? []);
+      return [...fotos];
+    }
+    case 'content-state': {
+      const [proveedores, hoteles] = q.parameters as [string[], string[]];
+      return proveedores.map((provider_code, i) => {
+        const hotel_id = hoteles[i] ?? '';
+        const estado = bajo.estado?.[`${provider_code} ${hotel_id}`];
+        return {
+          provider_code,
+          hotel_id,
+          in_catalog: estado?.in_catalog ?? false,
+          has_details: estado?.has_details ?? false,
+        };
+      });
+    }
+    case 'city':
+      return bajo.ciudad === undefined ? [] : [bajo.ciudad];
+    case 'import-city':
+      return [bajo.importar ?? { outcome: 'loaded', active_hotels: 1 }];
+    case 'store-contents': {
+      const filas = JSON.parse(String(q.parameters[1])) as Record<string, unknown>[];
+      bajo.alGuardar?.(String(q.parameters[0]), filas);
+      const rechazadas = Math.min(bajo.rechazadas ?? 0, filas.length);
+      return [
+        {
+          inserted: filas.length - rechazadas,
+          rewritten: 0,
+          touched: 0,
+          unchanged: 0,
+          protected: 0,
+          rejected: rechazadas,
+        },
+      ];
+    }
+    default:
+      throw new Error(`consulta marcada no prevista por el doble de hoteles: ${marca}`);
+  }
+}
+
 export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
   const consultas: CompiledQuery[] = [];
   const tenant = opts.tenant === undefined ? TENANT_POR_DEFECTO : opts.tenant;
+  let importado = false;
 
   const responder = (q: CompiledQuery): unknown[] => {
     consultas.push(q);
+    const marca = marcaDe(q);
+    if (marca !== undefined) {
+      const filas = marcadaDe(opts, marca, q);
+      if (marca === 'import-city') importado = true;
+      return filas;
+    }
     switch (tablaDe(q)) {
       case 'hotel_inventory':
         return esFicha(q)
           ? fichasDe(opts, q)
-          : catalogoDe(opts, q).map((hotel_id) => ({ hotel_id }));
+          : catalogoDe(opts, q, importado).map((hotel_id) => ({ hotel_id }));
       case 'hotel_destination_map':
         return mapaDe(opts, q);
       case 'hotel_match':
@@ -258,5 +367,6 @@ export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
     consultas,
     consultasA: (tabla) => consultas.filter((q) => tablaDe(q) === tabla && !esFicha(q)),
     consultasDeFichas: () => consultas.filter(esFicha),
+    consultasMarcadas: (marca) => consultas.filter((q) => marcaDe(q) === marca),
   };
 }

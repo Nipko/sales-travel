@@ -21,6 +21,8 @@ export const LONG_LAYOVER_MINUTES = 180;
 
 export interface ItinerarySegmentInput {
   carrier: string;
+  /** Quien OPERA el vuelo, cuando no es quien lo vende (código compartido). */
+  operatingCarrier?: string;
   flightNumber: string;
   origin: string;
   destination: string;
@@ -227,4 +229,18 @@ export function layoverLabel(
   if (layover.alerts.includes('tight')) return `${where} ${time} · conexión corta`;
   if (layover.alerts.includes('long')) return `${where} ${time} · escala larga`;
   return `${where} ${time}`;
+}
+
+/**
+ * Las aerolíneas que operan algún tramo sin ser quien lo vende. El pasajero se presenta en el
+ * mostrador de la OPERADORA: venderle «Avianca» sin decirle que vuela en otra es el reclamo del
+ * aeropuerto.
+ */
+export function codeshareOperators(itinerary: ItineraryInput): string[] {
+  const operadoras = new Set<string>();
+  for (const segment of itinerary.segments) {
+    const op = segment.operatingCarrier?.trim().toUpperCase();
+    if (op && op !== segment.carrier.trim().toUpperCase()) operadoras.add(op);
+  }
+  return [...operadoras];
 }

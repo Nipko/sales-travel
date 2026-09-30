@@ -9,7 +9,12 @@ import { hotelRefOf } from '../../../../(app)/reservas/hotel-order-view';
 import { api } from '../../../../../lib/api';
 import { isValidHex } from '../../../../../lib/brand-tokens';
 import { getActiveTenant } from '../../../../../lib/session';
-import { hotelVoucherOf, pdfText, type HotelVoucher } from './hotel-voucher';
+import {
+  VOUCHER_NON_REFUNDABLE,
+  hotelVoucherOf,
+  pdfText,
+  type HotelVoucher,
+} from './hotel-voucher';
 
 /*
  * El voucher de una reserva de hotel en PDF (docs/tbo/09 PR-6.5; U-15), con la marca de la agencia
@@ -78,6 +83,15 @@ const s = StyleSheet.create({
     marginBottom: 16,
   },
   atHotelTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', marginBottom: 4 },
+  nonRefundable: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1.5,
+    borderColor: '#f59e0b',
+    borderRadius: 4,
+    padding: 10,
+    marginBottom: 16,
+  },
+  nonRefundableTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', marginBottom: 3 },
   tier: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -186,6 +200,13 @@ function HotelVoucherPDF({ v, branding }: { v: HotelVoucher; branding: TenantBra
           ) : null}
           {v.board ? <Line label="Régimen" value={v.board} /> : null}
         </View>
+
+        {v.nonRefundable ? (
+          <View style={s.nonRefundable} wrap={false}>
+            <Text style={s.nonRefundableTitle}>{VOUCHER_NON_REFUNDABLE.title.toUpperCase()}</Text>
+            <Text>{VOUCHER_NON_REFUNDABLE.detail}</Text>
+          </View>
+        ) : null}
 
         {/*
           De acá en adelante, títulos y contenido van como hijos directos de la página: el corte de

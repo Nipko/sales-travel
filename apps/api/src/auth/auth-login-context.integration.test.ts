@@ -7,11 +7,17 @@ import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import { NetworkService } from '../network/network.service.js';
 import { AuthService, type AuthResult, type LoginResult } from './auth.service.js';
 import { JwtService } from './jwt.service.js';
+import { LoginAttemptsService } from './login-attempts.service.js';
+import { MfaChallengeService } from './mfa-challenge.service.js';
 import type { MfaService } from './mfa.service.js';
 import { PasswordService } from './password.service.js';
+import { PgSeatRepository } from './seat.repository.js';
+import { SeatService } from './seat.service.js';
 import { SessionService } from './session.service.js';
+import { TrustedDeviceService } from './trusted-device.service.js';
 
 /**
  * El login resuelve el tenant por defecto y si hay que enrolar MFA leyendo `memberships`, que tiene
@@ -38,14 +44,19 @@ d('AuthService.login como app_user: tenant por defecto y MFA', () => {
   database.db = new Kysely<DB>({ dialect: new PostgresDialect({ pool: comoApp }) });
   const password = new PasswordService();
   const jwt = new JwtService();
+  const audit = new AuditService(database);
   const auth = new AuthService(
     database,
     jwt,
     password,
-    new AuditService(database),
+    audit,
     {} as MailerService,
-    new SessionService(database),
+    new SessionService(database, audit),
     {} as MfaService,
+    new SeatService(new PgSeatRepository(database), audit, new NetworkService(database), jwt),
+    new MfaChallengeService(database, new LoginAttemptsService(database)),
+    new TrustedDeviceService(database),
+    new LoginAttemptsService(database),
   );
 
   let platform: string;
@@ -117,6 +128,8 @@ d('AuthService.login como app_user: tenant por defecto y MFA', () => {
       mfaEnrollmentRequired: true,
     });
     expect(await sessionTenant(result.token)).toBe(platform);
+    // El token vence con su sesión: el panel alinea la cookie con este instante.
+    expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
   it('un vendedor entra en su sucursal, sin enrolamiento', async () => {

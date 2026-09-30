@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { describeNonJson, readJson } from './read-json';
+import { SESSION_CHECK_EVENT } from './session-check';
 
 function respuesta(body: string, status = 200, type = 'application/json'): Response {
   return new Response(body, { status, headers: { 'content-type': type } });
@@ -27,6 +28,31 @@ describe('readJson: una respuesta que no es JSON no puede reventar la pantalla',
   it('un cuerpo vacío tampoco lanza', async () => {
     const out = await readJson(respuesta('', 500));
     expect(out.ok).toBe(false);
+  });
+});
+
+describe('readJson: un 401 le pide a la guardia de sesión que confirme ya', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('401 dispara el aviso; otro estado, no', async () => {
+    const win = new EventTarget();
+    const checks = vi.fn();
+    win.addEventListener(SESSION_CHECK_EVENT, checks);
+    vi.stubGlobal('window', win);
+
+    await readJson(respuesta('{"reason":"SESSION_RELEASED"}', 401));
+    expect(checks).toHaveBeenCalledTimes(1);
+
+    await readJson(respuesta('{"message":"x"}', 403));
+    await readJson(respuesta('{"a":1}'));
+    expect(checks).toHaveBeenCalledTimes(1);
+  });
+
+  it('sin window (en el servidor) no hace nada', async () => {
+    const out = await readJson(respuesta('{}', 401));
+    expect(out).toEqual({ ok: true, data: {} });
   });
 });
 

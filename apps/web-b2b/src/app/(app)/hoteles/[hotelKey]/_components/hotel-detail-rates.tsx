@@ -1,6 +1,15 @@
 'use client';
 
-import { BedDouble, Info, Moon, RefreshCw, Search, ShieldAlert, TriangleAlert } from 'lucide-react';
+import {
+  Ban,
+  BedDouble,
+  Info,
+  Moon,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  TriangleAlert,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -19,8 +28,15 @@ import {
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
 import { newSearchToken, type HotelStay } from '../../_components/hotel-search-handoff';
 import { isRateExpired, OfferExpiry } from '../../_components/offer-expiry';
+import { rateRefundability, type RateRefundability } from '../../_components/rate-refundability';
 import type { HotelDetailRatesResult } from '../actions';
-import { detailRatesView, emptyRatesView, type FailedProvider } from './hotel-detail-view';
+import {
+  detailRatesView,
+  emptyRatesView,
+  ratesRefundNotice,
+  type FailedProvider,
+  type RatesRefundNotice,
+} from './hotel-detail-view';
 import {
   nightlySale,
   ratePolicyView,
@@ -33,6 +49,10 @@ import {
  * Las tarifas del hotel para la estadía de la búsqueda (D-TBO-19 A): una búsqueda nueva de este
  * solo hotel en cada proveedor que lo vende, con las políticas por tramos y el precio por noche
  * "sujetos a confirmación". El PreBook los confirma.
+ *
+ * Una no reembolsable (declarada, o con el 100 % ya vigente) dice cuánto se pierde con su monto
+ * (pedido del 2026-09-29, punto b); si quien financia a la agencia las bloqueó, se marca como no
+ * disponible y no se ofrece reservarla (punto e).
  */
 
 function FailedProvidersNotice({ failed }: { failed: readonly FailedProvider[] }) {
@@ -65,14 +85,64 @@ function FailedProvidersNotice({ failed }: { failed: readonly FailedProvider[] }
   );
 }
 
+/**
+ * El aviso del hotel cuando NINGUNA de sus tarifas es reembolsable, arriba de la lista: el vendedor
+ * lo lee antes de elegir, no tarifa por tarifa. Con el color de advertencia de la etiqueta "No
+ * reembolsable"; si además la agencia no las puede reservar, el de peligro: no hay qué reservar.
+ */
+export function RatesRefundNoticeBox({ notice }: { notice: RatesRefundNotice | undefined }) {
+  if (notice === undefined) return null;
+  if (notice === 'blocked-all') {
+    return (
+      <div
+        role="note"
+        className="flex items-start gap-2.5 rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/5 px-4 py-3 text-sm text-[var(--color-fg)]"
+      >
+        <Ban aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[var(--color-danger)]" />
+        <div className="space-y-0.5">
+          <p className="font-semibold">
+            Tu agencia no puede reservar este hotel para estas fechas.
+          </p>
+          <p className="text-xs">
+            Todas sus tarifas son no reembolsables y quien financia a tu agencia bloqueó ese tipo de
+            tarifa. Probá con otras fechas u otro hotel.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      role="note"
+      className="flex items-start gap-2.5 rounded-lg border border-[var(--color-warning)]/70 bg-[var(--color-warning)]/10 px-4 py-3 text-sm text-[var(--color-fg)]"
+    >
+      <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      <div className="space-y-0.5">
+        <p className="font-semibold">
+          Este hotel no tiene tarifas reembolsables para estas fechas.
+        </p>
+        <p className="text-xs">
+          Si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 % de la tarifa
+          elegida (el monto está en cada una): no se recupera, se descuenta de la cartera o del
+          crédito de la agencia y la agencia responde ante su cliente.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Tramos de la política, precio por noche y con qué nombre se reserva: lo que suma el detalle. */
 function RateDetailExtras({
   pack,
+  sale,
+  refund,
   checkinDate,
   nights,
   sellingNote,
 }: {
   pack: HotelRoompack;
+  sale: HotelRateRow['sale'];
+  refund: RateRefundability;
   checkinDate: string;
   nights: number;
   sellingNote: string | undefined;
@@ -83,6 +153,18 @@ function RateDetailExtras({
 
   return (
     <>
+      {!refund.refundable ? (
+        <p className="flex items-start gap-1.5 rounded-md border border-[var(--color-warning)]/70 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-fg)]">
+          <ShieldAlert aria-hidden="true" className="mt-px size-3 shrink-0" />
+          <span>
+            Si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 %:{' '}
+            <span className="whitespace-nowrap font-semibold tabular-nums">
+              {formatMoney(sale)}
+            </span>
+            . No se recupera y la agencia responde ante su cliente.
+          </span>
+        </p>
+      ) : null}
       {sellingNote ? (
         <p className="flex items-start gap-1 text-[11px] text-[var(--color-fg-muted)]">
           <Info aria-hidden="true" className="mt-px size-3 shrink-0" />
@@ -163,13 +245,17 @@ function RateBookAction({
   row,
   bookable,
   expired,
+  unavailableForAgency,
   onBook,
 }: {
   row: HotelRateRow;
   bookable: boolean;
   expired: boolean;
+  /** No reembolsable y la agencia no las puede reservar: ya lo dice la etiqueta de la fila. */
+  unavailableForAgency: boolean;
   onBook: () => void;
 }) {
+  if (unavailableForAgency) return null;
   if (!bookable) {
     return (
       <p className="text-[11px] text-[var(--color-fg-muted)]">
@@ -294,6 +380,9 @@ export function HotelDetailRates({
   );
   const expired = (row: HotelRateRow) =>
     expiredCutoffMs !== undefined && isRateExpired(row.expiresAt, expiredCutoffMs);
+  // Con la hora en que llegaron las tarifas: una reembolsable cuyo 100 % ya rige es no reembolsable.
+  const refundOf = (row: HotelRateRow) => rateRefundability(row.pack, receivedAt);
+  const blocked = rates?.nonRefundableBlocked === true;
 
   const router = useRouter();
   const book = (row: HotelRateRow) => {
@@ -347,6 +436,7 @@ export function HotelDetailRates({
 
   const count = view.rows.length;
   const provisional = view.rows.some((r) => r.pack.cancellation.policySource !== 'prebook-final');
+  const refundNotice = ratesRefundNotice(view.rows.map(refundOf), blocked);
   return (
     <div
       aria-busy={loading}
@@ -368,6 +458,7 @@ export function HotelDetailRates({
               {count} tarifa{count === 1 ? '' : 's'} · precios de venta por la estadía completa
             </p>
           </OfferExpiry>
+          <RatesRefundNoticeBox notice={refundNotice} />
           {provisional ? (
             <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
               <Info aria-hidden="true" className="mt-px size-3 shrink-0" />
@@ -380,10 +471,20 @@ export function HotelDetailRates({
               const seller = row.pack.provider?.name;
               const note =
                 seller === undefined ? undefined : sellingHotelNote(facts.get(seller), shownFacts);
+              const refund = refundOf(row);
+              const unavailable = blocked && !refund.refundable;
               return (
-                <RateItem key={row.key} row={row} expired={expired(row)}>
+                <RateItem
+                  key={row.key}
+                  row={row}
+                  expired={expired(row)}
+                  refund={refund}
+                  unavailableForAgency={unavailable}
+                >
                   <RateDetailExtras
                     pack={row.pack}
+                    sale={row.sale}
+                    refund={refund}
                     checkinDate={stay.checkinDate}
                     nights={nights}
                     sellingNote={note}
@@ -392,6 +493,7 @@ export function HotelDetailRates({
                     row={row}
                     bookable={offerReferenceOf(row.pack) !== undefined}
                     expired={expired(row)}
+                    unavailableForAgency={unavailable}
                     onBook={() => book(row)}
                   />
                 </RateItem>

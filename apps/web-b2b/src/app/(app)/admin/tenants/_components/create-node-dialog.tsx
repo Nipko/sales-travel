@@ -2,6 +2,7 @@
 
 import { Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useViewer } from '../../../../../components/layout/viewer-context';
 import { NodeKindPicker } from '../../../../../components/network/node-kind';
 import { Button } from '../../../../../components/ui/button';
 import { Dialog } from '../../../../../components/ui/dialog';
@@ -19,10 +20,12 @@ import {
   currencyForCountry,
   emptyDraft,
   nodeDraftPayload,
+  seatFieldsPolicy,
   validateNodeDraft,
   type Language,
   type NodeDraft,
 } from '../../../../../lib/tenant-admin-form';
+import { SeatPolicyFields } from './seat-policy-fields';
 import {
   CREATABLE_KIND_LABEL,
   defaultParent,
@@ -63,6 +66,9 @@ export function CreateNodeDialog({
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState('');
+  // Puestos e inactividad los fija sólo el superadmin; esta pantalla ya es suya, pero si alguna vez
+  // la abre otro rol, los campos no aparecen y no viajan (el API respondería 403).
+  const { superadmin } = useViewer();
 
   const savingRef = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -75,7 +81,9 @@ export function CreateNodeDialog({
     () => (draft.kind === undefined ? [] : parentOptions(nodes, draft.kind, SUPERADMIN)),
     [nodes, draft.kind],
   );
-  const errors = submitted ? validateNodeDraft(draft) : {};
+  const parent = nodes.find((n) => n.id === draft.parentTenantId);
+  const seatPolicy = seatFieldsPolicy(superadmin, parent?.tenantType);
+  const errors = submitted ? validateNodeDraft(draft, seatPolicy) : {};
 
   function set<K extends keyof NodeDraft>(key: K, value: NodeDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -101,8 +109,10 @@ export function CreateNodeDialog({
     if (savingRef.current) return;
     setSubmitted(true);
     setServerError('');
-    if (Object.keys(validateNodeDraft(draft)).length > 0) return;
-    const payload = nodeDraftPayload(draft);
+    if (Object.keys(validateNodeDraft(draft, seatPolicy)).length > 0) return;
+    const payload = nodeDraftPayload(
+      seatPolicy === undefined ? { ...draft, concurrentSeats: '', idleTimeoutMinutes: '' } : draft,
+    );
     if (payload === undefined) return;
 
     savingRef.current = true;
@@ -272,6 +282,18 @@ export function CreateNodeDialog({
             )}
           </Field>
         </div>
+
+        {seatPolicy !== undefined ? (
+          <SeatPolicyFields
+            seats={draft.concurrentSeats}
+            idle={draft.idleTimeoutMinutes}
+            onSeats={(v) => set('concurrentSeats', v)}
+            onIdle={(v) => set('idleTimeoutMinutes', v)}
+            required={seatPolicy.seatsRequired}
+            parentName={parent?.name}
+            errors={errors}
+          />
+        ) : null}
 
         <fieldset className="space-y-4 border-t border-[var(--color-border)] pt-4">
           <legend className="sr-only">Admin inicial (opcional)</legend>

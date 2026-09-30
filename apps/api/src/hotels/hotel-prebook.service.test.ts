@@ -7,6 +7,10 @@ import type { SearchContext } from '@sales-travel/domain';
 import { TboApiError, type TboFetch } from '@sales-travel/tbo-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
+import type {
+  BookingPermissionsService,
+  NonRefundableRatesPolicy,
+} from '../booking-permissions/booking-permissions.service.js';
 import type { TenantType } from '../database/database.types.js';
 import type { BookingHoldPreview, BookingHoldQuote } from '../portfolios/booking-hold.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
@@ -43,6 +47,7 @@ import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import type { SearchTelemetryService } from '../search/search-telemetry.service.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
+import { HotelNonRefundableBlockedError } from './hotel-booking-errors.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
 import {
   HotelPrebookSnapshotStore,
@@ -164,6 +169,8 @@ interface Revalidada {
   pisoMinor?: number;
   moneda?: string;
   comparacion?: Partial<HotelPrebookWithContext['comparison']>;
+  /** Por defecto, no reembolsable con el 100 % desde el 1 de noviembre. */
+  cancelacion?: HotelRoompack['cancellation'];
 }
 
 /** Lo que devuelve el PreBook del stub: la tarifa con políticas finales y lo que el Book reenvía. */
@@ -181,7 +188,7 @@ function revalidada(opts: Revalidada = {}): HotelPrebookWithContext {
     board: 'RO',
     mealTypeRaw: 'Room_Only',
     rooms: [{ name: 'Doble estándar', reference: 0, bedOptions: [] }],
-    cancellation: {
+    cancellation: opts.cancelacion ?? {
       refundable: false,
       status: 'non_refundable',
       rules: [
@@ -266,6 +273,19 @@ interface Banco {
   emit: Mock;
   breaker: CircuitBreakerService;
   cartera: Cartera;
+  permisos: PermisosFake;
+}
+
+type PermisosFake = { nonRefundableRates: Mock<BookingPermissionsService['nonRefundableRates']> };
+
+function permisosFake(bloqueadas = false): PermisosFake {
+  return {
+    nonRefundableRates: vi.fn(() =>
+      Promise.resolve<NonRefundableRatesPolicy>(
+        bloqueadas ? { effective: 'blocked', blockedBy: 'inherited' } : { effective: 'allowed' },
+      ),
+    ),
+  };
 }
 
 type Cartera = Mock<
@@ -294,6 +314,8 @@ interface OpcionesBanco {
   flags?: boolean | ProviderEnablementDecision;
   cache?: CachePort;
   cartera?: Cartera;
+  /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
+  noReembolsablesBloqueadas?: boolean;
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -310,6 +332,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
   const emit = vi.fn(() => Promise.resolve());
   const breaker = new CircuitBreakerService();
   const cartera = opts.cartera ?? carteraQueCubre();
+  const permisos = permisosFake(opts.noReembolsablesBloqueadas);
   const service = new HotelPrebookService(
     hotelRegistry(
       [stub],
@@ -321,8 +344,9 @@ function banco(opts: OpcionesBanco = {}): Banco {
     breaker,
     { emit } as unknown as AuditService,
     fondos(cartera),
+    permisos as unknown as BookingPermissionsService,
   );
-  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker, cartera };
+  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker, cartera, permisos };
 }
 
 async function bancoConBusqueda(opts: OpcionesBanco = {}, ctx = contexto()): Promise<Banco> {
@@ -739,6 +763,7 @@ describe('las puertas: todo rechazo ocurre ANTES de llamar al proveedor', () => 
       new CircuitBreakerService(),
       { emit: vi.fn() } as unknown as AuditService,
       fondos(carteraQueCubre()),
+      permisosFake() as unknown as BookingPermissionsService,
     );
 
     const err: unknown = await service
@@ -749,6 +774,105 @@ describe('las puertas: todo rechazo ocurre ANTES de llamar al proveedor', () => 
     expect((err as HotelProviderCapabilityError).getStatus()).toBe(HttpStatus.BAD_REQUEST);
     expect(stub.adapterFor(AGENCIA).prebook).not.toHaveBeenCalled();
     expect(resolveOffer).not.toHaveBeenCalled();
+  });
+});
+
+describe('no reembolsables (b y e): el PreBook lo dice con el 100 % y lo rechaza si está bloqueado', () => {
+  /** Reembolsable sin cargo hasta el 5 de noviembre, hora del hotel. */
+  const REEMBOLSABLE: HotelRoompack['cancellation'] = {
+    refundable: true,
+    status: 'fully_refundable',
+    rules: [
+      { type: 'Percentage', penaltyPercentage: 0, fromLocalDateTime: '2026-09-20T00:00:00' },
+      { type: 'Percentage', penaltyPercentage: 100, fromLocalDateTime: '2026-11-05T00:00:00' },
+    ],
+    policySource: 'prebook-final',
+    freeCancellationUntilLocal: '2026-11-05T00:00:00',
+  };
+
+  function mostradaReembolsable(): HotelSearchContext {
+    const pack = tarifaBuscada(TARIFA);
+    return contexto({ packs: [{ ...pack, seen: { ...pack.seen, refundable: true } }] });
+  }
+
+  it('la respuesta lleva `nonRefundable` con el 100 % en el precio de VENTA', async () => {
+    const b = await bancoConBusqueda({ reglas: [MAS_3_CONSOLIDADOR, MAS_1_AGENCIA] });
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ pisoMinor: PISO }));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.nonRefundable).toEqual({
+      reason: 'declared',
+      penalty: { amountMinor: PISO, currency: 'USD' },
+    });
+    expect(b.permisos.nonRefundableRates).toHaveBeenCalledWith(AGENCIA);
+  });
+
+  it('bloqueadas y la búsqueda la mostró no reembolsable → 403 sin llamar al proveedor', async () => {
+    const b = await bancoConBusqueda({ noReembolsablesBloqueadas: true });
+
+    const err = await b.service.prebook(AGENCIA, referencia(), USUARIO).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HotelNonRefundableBlockedError);
+    expect((err as HotelNonRefundableBlockedError).getStatus()).toBe(HttpStatus.FORBIDDEN);
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+  });
+
+  it('bloqueadas y el PreBook la da no reembolsable aunque la búsqueda no → 403 sin snapshot', async () => {
+    const b = await bancoConBusqueda({ noReembolsablesBloqueadas: true }, mostradaReembolsable());
+    const save = vi.spyOn(b.snapshots, 'save');
+
+    const err = await b.service.prebook(AGENCIA, referencia(), USUARIO).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HotelNonRefundableBlockedError);
+    expect(b.puerto.prebookWithContext).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('bloqueadas, una reembolsable se revalida igual y sin `nonRefundable`', async () => {
+    const b = await bancoConBusqueda({ noReembolsablesBloqueadas: true }, mostradaReembolsable());
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ cancelacion: REEMBOLSABLE }));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('nonRefundable');
+    expect(b.permisos.nonRefundableRates).not.toHaveBeenCalled();
+  });
+
+  it('reembolsable con el 100 % ya vigente en la hora del hotel → `full-penalty-in-force`', async () => {
+    const b = await bancoConBusqueda({}, mostradaReembolsable());
+    b.puerto.prebookWithContext.mockResolvedValue(
+      revalidada({
+        cancelacion: {
+          refundable: true,
+          status: 'partially_refundable',
+          rules: [
+            {
+              type: 'Percentage',
+              penaltyPercentage: 100,
+              fromLocalDateTime: '2026-09-25T23:00:00',
+            },
+          ],
+          policySource: 'prebook-final',
+        },
+      }),
+    );
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.nonRefundable).toEqual({
+      reason: 'full-penalty-in-force',
+      penalty: { amountMinor: NETO, currency: 'USD' },
+      fullPenaltySinceLocal: '2026-09-25T23:00:00',
+    });
+  });
+
+  it('un fallo al leer el permiso no deja revalidar una no reembolsable: sube', async () => {
+    const b = await bancoConBusqueda();
+    b.permisos.nonRefundableRates.mockRejectedValueOnce(new Error('base caída'));
+
+    await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).rejects.toThrow('base caída');
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
   });
 });
 
@@ -972,6 +1096,7 @@ function bancoTbo(
     breaker,
     { emit } as unknown as AuditService,
     fondos(carteraQueCubre()),
+    permisosFake() as unknown as BookingPermissionsService,
   );
   return { hotels, prebooks, snapshots, fetch, emit };
 }

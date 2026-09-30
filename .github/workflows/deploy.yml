@@ -135,8 +135,16 @@ jobs:
             || echo "::warning::ssh-keyscan failed (se continúa con accept-new)"
 
       - name: Render .env
+        env:
+          # Por entorno y no interpolado en el script: el secreto no queda en el texto del comando.
+          JWT_SECRET_FOR_PROXY: ${{ secrets.JWT_SECRET }}
         run: |
           umask 077
+          # Secreto compartido entre el panel y el api (x-internal-proxy): con él el api cree la IP y
+          # el navegador que el panel le reenvía del usuario. Se DERIVA del JWT_SECRET (sha256 de
+          # `internal-proxy:` + JWT_SECRET) para no sumar un secreto que el founder tenga que cargar;
+          # el hash no deja recuperar el JWT_SECRET. Rotar el JWT_SECRET rota también éste.
+          INTERNAL_PROXY_SECRET=$(printf 'internal-proxy:%s' "$JWT_SECRET_FOR_PROXY" | sha256sum | cut -d' ' -f1)
           # Ningún sync hace ya `source .env` (leen sus claves como texto literal), pero las TBO_SYNC_*
           # siguen entre comillas simples por quien lo haga a mano en el VPS: un
           # valor como `CO, PE` o una contraseña con `&` o `;` cortaría también el de Despegar y el
@@ -147,6 +155,7 @@ jobs:
           APP_USER_PASSWORD=${{ secrets.APP_USER_PASSWORD }}
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
+          INTERNAL_PROXY_SECRET=${INTERNAL_PROXY_SECRET}
           PROVIDER_CREDENTIALS_KEY=${{ secrets.PROVIDER_CREDENTIALS_KEY }}
           PROVIDER_PAYLOADS_KEY=${{ secrets.PROVIDER_PAYLOADS_KEY }}
           PROVIDER_PAYLOADS_KEY_PREVIOUS=${{ secrets.PROVIDER_PAYLOADS_KEY_PREVIOUS }}

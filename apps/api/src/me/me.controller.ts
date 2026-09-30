@@ -1,4 +1,5 @@
 import { Controller, Get, UnauthorizedException } from '@nestjs/common';
+import { AllowWithoutMfa } from '../auth/decorators/allow-without-mfa.decorator.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -22,6 +23,8 @@ interface MembershipView {
 export class MeController {
   constructor(private readonly db: DatabaseService) {}
 
+  // Sin MFA todavía: el panel necesita saber quién es para mostrarle el enrolamiento obligatorio.
+  @AllowWithoutMfa()
   @Get()
   async me(@CurrentUser() userId: string | undefined): Promise<MeView> {
     if (!userId) throw new UnauthorizedException();
@@ -39,6 +42,7 @@ export class MeController {
     };
   }
 
+  @AllowWithoutMfa()
   @Get('memberships')
   async memberships(@CurrentUser() userId: string | undefined): Promise<MembershipView[]> {
     if (!userId) throw new UnauthorizedException();

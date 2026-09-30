@@ -21,6 +21,7 @@ interface QuotationSummary {
   };
   selectedOffer: {
     total: { amountMinor: number; currency: string };
+    expiresAtSource?: 'provider' | 'platform-policy';
     pricing?: { finalMinor: number };
     fareFamily?: { name: string };
     itineraries?: { segments: { carrier: string; flightNumber: string }[] }[];
@@ -172,7 +173,11 @@ export default function QuotationsListPage() {
         <div className="space-y-2">
           {filtered.map((q) => {
             const statusInfo = STATUS_CONFIG[q.status] ?? STATUS_CONFIG.draft!;
-            const isExpired = new Date(q.expiresAt) < new Date() && q.status === 'draft';
+            // Sólo vence lo que el proveedor garantizó con fecha: ver cotizaciones/[id]/page.tsx.
+            const isExpired =
+              q.selectedOffer.expiresAtSource === 'provider' &&
+              new Date(q.expiresAt) < new Date() &&
+              q.status === 'draft';
             const carrier = q.selectedOffer.itineraries?.[0]?.segments[0]?.carrier;
 
             return (

@@ -3,6 +3,7 @@ import {
   guestContactOf,
   hcnViewOf,
   hotelConditionsOf,
+  hotelNonRefundableOf,
   hotelOrderRowOf,
   hotelOrderStateOf,
   hotelPackOf,
@@ -408,3 +409,71 @@ describe('hotelReadResultOf — "Actualizar estado" (U-16)', () => {
     expect(hotelReadResultOf(200, { found: true }).ok).toBe(false);
   });
 });
+
+describe('hotelNonRefundableOf — "No reembolsable" en la orden (pedido del 2026-09-29, punto d)', () => {
+  const NO_REEMBOLSABLE = {
+    refundable: false,
+    status: 'non_refundable',
+    policySource: 'prebook-final',
+    rules: [],
+  };
+
+  function conOferta(patch: Record<string, unknown>, roompack?: Record<string, unknown>) {
+    const base = orden();
+    const offer = base.selectedOffer as Record<string, unknown>;
+    return orden({
+      selectedOffer: {
+        ...offer,
+        ...(roompack === undefined
+          ? {}
+          : { roompack: { ...(offer['roompack'] as Record<string, unknown>), ...roompack } }),
+        ...patch,
+      },
+    });
+  }
+
+  it('lo que la orden guardó al reservar: por qué, el 100 % y cuándo lo aceptó el vendedor', () => {
+    const order = conOferta({
+      nonRefundable: {
+        reason: 'full-penalty-in-force',
+        penalty: { amountMinor: 36000, currency: 'USD' },
+        fullPenaltySinceLocal: '2026-10-10T00:00:00',
+        acknowledgedBy: '55555555-5555-4555-8555-555555555555',
+        acknowledgedAt: '2026-10-01T15:04:00.000Z',
+        acknowledgedAmount: { amountMinor: 36000, currency: 'USD' },
+      },
+    });
+    expect(hotelNonRefundableOf(order, 'UTC')).toEqual({
+      reason: 'full-penalty-in-force',
+      penalty: { amountMinor: 36000, currency: 'USD' },
+      fullPenaltySinceLocal: '2026-10-10T00:00:00',
+      acknowledgedAt: formatReadAtForTest('2026-10-01T15:04:00.000Z'),
+    });
+  });
+
+  it('una orden de antes con la política declarada no reembolsable: el total de la venta', () => {
+    expect(hotelNonRefundableOf(conOferta({}, { cancellation: NO_REEMBOLSABLE }))).toEqual({
+      reason: 'declared',
+      penalty: { amountMinor: 36000, currency: 'USD' },
+    });
+  });
+
+  it('una reembolsable no lo es; sin tarifa legible, tampoco se inventa', () => {
+    expect(hotelNonRefundableOf(orden())).toBeUndefined();
+    expect(hotelNonRefundableOf(orden({ selectedOffer: null }))).toBeUndefined();
+  });
+});
+
+function formatReadAtForTest(iso: string): string {
+  return new Intl.DateTimeFormat('es', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+  })
+    .format(new Date(iso))
+    .replace(/\./g, '');
+}

@@ -186,9 +186,11 @@ function mapOneOffer(args: {
   const itineraries = buildItinerariesFromOfferItems(offerItems, args.journeyMap);
   if (itineraries.length === 0) return null;
 
-  const expiresAt =
-    args.node.TimeLimits?.OfferExpiration?.['@_DateTime'] ??
-    new Date(Date.now() + 30 * 60_000).toISOString();
+  // La vigencia que declara LATAM (`OfferExpiration`) es del PROVEEDOR; el respaldo de 30 min es
+  // nuestro. La pantalla sólo marca «Precio expirado» con la del proveedor.
+  const declared = args.node.TimeLimits?.OfferExpiration?.['@_DateTime'];
+  const expiresAt = declared ?? new Date(Date.now() + 30 * 60_000).toISOString();
+  const expiresAtSource = declared === undefined ? 'platform-policy' : 'provider';
 
   const fareFamily = extractFareFamily(offerItems, args.priceClassMap);
   const baggage = extractOfferBaggage(args.node, args.baggageMap);
@@ -212,6 +214,7 @@ function mapOneOffer(args: {
     policies,
     fetchedAt: args.fetchedAt,
     expiresAt,
+    expiresAtSource,
   };
 }
 

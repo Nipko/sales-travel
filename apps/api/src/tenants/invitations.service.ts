@@ -86,13 +86,14 @@ export class InvitationsService {
 
     const base = process.env['APP_WEB_URL'] ?? 'https://app.planetour.cloud';
     const link = `${base}/invitacion?token=${encodeURIComponent(token)}`;
+    const tenantName = plainText(tenant?.name ?? '') || 'la plataforma';
 
     try {
       await this.mailer.sendToTenant(tenantId, {
         to: email,
-        subject: `Te invitaron a ${tenant?.name ?? 'la plataforma'}`,
-        html: invitationEmailHtml(link, tenant?.name ?? 'la plataforma', INVITE_TTL_DAYS),
-        text: `Te invitaron a ${tenant?.name ?? 'la plataforma'}. Aceptá la invitación acá (vence en ${INVITE_TTL_DAYS} días): ${link}`,
+        subject: `Te invitaron a ${tenantName}`,
+        html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
+        text: `Te invitaron a ${tenantName}. Aceptá la invitación acá (vence en ${INVITE_TTL_DAYS} días): ${link}`,
       });
     } catch {
       // Best-effort: la invitación queda creada y se puede reenviar.
@@ -244,23 +245,50 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function invitationEmailHtml(link: string, tenantName: string, ttlDays: number): string {
+/**
+ * Escapa un valor para interpolarlo en HTML, en texto o dentro de un atributo entre comillas.
+ *
+ * El nombre del nodo lo elige su propio admin (PATCH /tenants/:id/config sólo valida el largo) y la
+ * invitación sale con la identidad de la plataforma a cualquier email: sin escapar, una agencia
+ * metía enlaces o markup en un correo legítimo, que es phishing servido.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Texto de una sola línea para el asunto y el cuerpo en texto plano: sin caracteres de control. Un
+ * salto de línea en el asunto es la puerta a inyectar cabeceras si algún día el correo no pasa por
+ * un cliente que las codifique.
+ */
+export function plainText(value: string): string {
+  return value.replace(/\p{Cc}+/gu, ' ').trim();
+}
+
+export function invitationEmailHtml(link: string, tenantName: string, ttlDays: number): string {
+  const name = escapeHtml(tenantName);
+  const href = escapeHtml(link);
   return `<!doctype html>
 <html lang="es"><body style="margin:0;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0">
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:32px">
         <tr><td>
-          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Te invitaron a ${tenantName}</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Te invitaron a ${name}</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#52525b">
             Aceptá la invitación y elegí tu contraseña. El enlace vence en ${ttlDays} días.
           </p>
-          <a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
+          <a href="${href}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
             Aceptar invitación
           </a>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#71717a">
             Si no esperabas esta invitación, ignorá este correo.<br>
-            <span style="color:#4f46e5;word-break:break-all">${link}</span>
+            <span style="color:#4f46e5;word-break:break-all">${href}</span>
           </p>
         </td></tr>
       </table>

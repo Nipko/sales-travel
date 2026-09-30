@@ -60,6 +60,27 @@ export function parseSuggestionItems(value: unknown): GeoSuggestion[] | undefine
   });
 }
 
+/**
+ * Lo que la sugerencia de una ciudad sin hoteles cargados todavía (`loadsOnSearch`, cobertura
+ * global del 2026-09-29) le dice al vendedor: se ofrece igual, pero la primera búsqueda trae sus
+ * hoteles del proveedor y tarda unos segundos más. `undefined` para el resto de las ciudades.
+ */
+export const LOADS_ON_SEARCH_OPTION_HINT = 'Sus hoteles se cargan al buscar';
+
+export function loadsOnSearchOptionHint(
+  s: Pick<GeoSuggestion, 'loadsOnSearch'>,
+): string | undefined {
+  return s.loadsOnSearch === true ? LOADS_ON_SEARCH_OPTION_HINT : undefined;
+}
+
+/** El aviso debajo del campo con esa ciudad elegida, o `undefined` si no hace falta. */
+export function loadsOnSearchNotice(
+  s: Pick<GeoSuggestion, 'loadsOnSearch' | 'display'> | undefined,
+): string | undefined {
+  if (s?.loadsOnSearch !== true) return undefined;
+  return `Los hoteles de ${s.display} se traen al buscar: la primera búsqueda puede tardar unos segundos más.`;
+}
+
 export interface DestinationNoticeInput {
   readonly query: string;
   /** El destino ya elegido: con él escrito no se sugiere nada. */

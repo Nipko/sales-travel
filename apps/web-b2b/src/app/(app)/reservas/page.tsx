@@ -1,6 +1,7 @@
 'use client';
 
 import { flightTime } from '../../../lib/flight-format';
+import { TicketingDeadlineBadge } from '../cotizaciones/_components/ticketing-deadline-badge';
 import {
   AlertTriangle,
   Car,
@@ -34,7 +35,9 @@ import {
   directCancellationBlock,
   type OrderOperationView,
 } from './cancel-retry-policy';
+import { RefundTag } from '../hoteles/_components/hotel-rate-item';
 import {
+  hotelNonRefundableOf,
   hotelOrderRowOf,
   hotelOrderStateOf,
   hotelVoucherAvailable,
@@ -100,6 +103,7 @@ interface Order {
   selectedOffer?: {
     // vuelos
     itineraries?: { segments: Segment[]; totalDurationMinutes: number; stops: number }[];
+    provider?: { raw?: Record<string, unknown> };
     fareFamily?: { name: string };
     // autos
     category?: string;
@@ -659,6 +663,7 @@ export default function ReservasPage() {
             const isHotel = isHotelOrder(order);
             const hotelRow = isHotel ? hotelOrderRowOf(order) : undefined;
             const hotelState = isHotel ? hotelOrderStateOf(order) : undefined;
+            const hotelNonRefundable = isHotel && hotelNonRefundableOf(order) !== undefined;
             const paxNames = isHotel
               ? undefined
               : order.passengers
@@ -677,6 +682,9 @@ export default function ReservasPage() {
                 ? sc?.pickUpDate
                 : sc?.departureDate;
             const VerticalIcon = isHotel ? Hotel : isCar ? Car : Plane;
+            // Una reserva de vuelo sin billete se cae sola si vence el plazo de emisión: es el
+            // dato que el vendedor tiene que ver en la lista, no dentro del detalle.
+            const showDeadline = !isHotel && !isCar && order.status === 'confirmed';
 
             return (
               <div
@@ -698,11 +706,24 @@ export default function ReservasPage() {
                           {order.pnr}
                         </span>
                       )}
+                      {hotelNonRefundable ? (
+                        <RefundTag
+                          badge={{ tone: 'warning', label: 'No reembolsable' }}
+                          className="text-[10px]"
+                        />
+                      ) : null}
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-fg-muted)]">
                       {dateLabel && <span>{dateLabel}</span>}
                       {paxNames && <span className="truncate">· {paxNames}</span>}
                     </div>
+                    {showDeadline && (
+                      <TicketingDeadlineBadge
+                        raw={order.selectedOffer?.provider?.raw}
+                        fromOrder
+                        className="mt-1.5"
+                      />
+                    )}
                     {/* En el teléfono, "Cancelación en curso" al costado aplasta la fila: va abajo. */}
                     {hotelState ? (
                       <HotelOrderStatusChip state={hotelState} className="mt-1.5 sm:hidden" />
