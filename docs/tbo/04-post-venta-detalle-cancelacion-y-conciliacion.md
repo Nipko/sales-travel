@@ -503,6 +503,9 @@ Trampas que el ACL tiene que respetar (VERIFICADO-CODIGO; la consecuencia es INF
 
 1. **Confirmación en la UI.** La agencia pide cancelar. La UI muestra la penalidad **estimada**, calculada con
    el snapshot de políticas de PreBook y la hora actual en la zona del hotel, y pide confirmación (decisión PV-D).
+   Desde el 2026-09-29, si cancelar cuesta el 100 % (tarifa no reembolsable, o un cargo vigente que ya es el
+   total), lo dice con el monto y pide doble confirmación
+   ([03 §2.13](./03-prebook-y-book.md#213-tarifas-no-reembolsables-aplicado-2026-09-29)).
 2. **Claim.** `cancelOrder` rechaza si la orden ya está cancelada o si hay una cancelación previa sin conciliar
    (VERIFICADO-CODIGO `orders.service.ts:1501-1539`). Si no, adquiere el claim: `order_operations` `pending`,
    índice único de 0037 como CAS (`db/migrations/0037_cancel_operation_claim.sql:35-37`) y

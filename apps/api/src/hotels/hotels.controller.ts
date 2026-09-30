@@ -24,14 +24,27 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
+import {
+  BookingPermissionsService,
+  type NonRefundableRatesPolicy,
+} from '../booking-permissions/booking-permissions.service.js';
+import type { NonRefundableRatesPermission } from '../database/database.types.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
+import {
+  DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE,
+  HotelNonRefundableBlockedError,
+} from './hotel-booking-errors.js';
 import { HotelBookingService, type HotelBookingSummary } from './hotel-booking.service.js';
-import { HotelContentService, type HotelContentView } from './hotel-content.service.js';
+import {
+  HotelContentService,
+  type HotelContentBatchView,
+  type HotelContentView,
+} from './hotel-content.service.js';
 import { HotelPrebookService, type HotelPrebookResponse } from './hotel-prebook.service.js';
 import type { HotelSearchCurrencyOptions } from './hotel-search-currency.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
@@ -40,6 +53,7 @@ import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
   HotelBookBodySchema,
+  HotelContentBatchBodySchema,
   HotelContentParamsSchema,
   HotelContentQuerySchema,
   HotelDetailInputSchema,
@@ -52,6 +66,7 @@ import {
   type CancelBody,
   type HotelAvailabilityInput,
   type HotelBookBody,
+  type HotelContentBatchBody,
   type HotelContentParams,
   type HotelContentQuery,
   type HotelDetailInput,
@@ -72,6 +87,13 @@ import {
  */
 export interface HotelSearchEnvelope extends HotelSearchResponse {
   showProviderInResults: boolean;
+  /**
+   * Si la agencia puede reservar tarifas no reembolsables (lo fija quien la financia, 0055). Con
+   * `blocked`, la pantalla las muestra como no disponibles para la agencia. También es presentación:
+   * no filtra ninguna tarifa, y el PreBook y el Book lo vuelven a decidir. Ausente si no se pudo
+   * leer: la búsqueda no se cae por eso.
+   */
+  nonRefundableRates?: NonRefundableRatesPermission;
 }
 
 @Roles(...SELLING_ROLES)
@@ -86,6 +108,7 @@ export class HotelsController {
     private readonly prebooks: HotelPrebookService,
     private readonly bookings: HotelBookingService,
     private readonly hotelContent: HotelContentService,
+    private readonly permissions: BookingPermissionsService,
   ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -118,12 +141,30 @@ export class HotelsController {
     // El ajuste se resuelve en cada petición y fuera del servicio de búsqueda, como en vuelos:
     // si algún día la búsqueda se cachea, el vendedor no puede seguir viendo la etiqueta vieja
     // después de que el administrador la cambió. Un fallo al resolverlo responde `false`.
-    const [result, showProviderInResults] = await Promise.all([
+    const [result, showProviderInResults, permission] = await Promise.all([
       this.hotels.searchAvailability(tenantId, body),
       this.disclosure.effective(tenantId),
+      this.nonRefundableRatesOrUndefined(tenantId),
     ]);
 
-    return { ...result, showProviderInResults };
+    return {
+      ...result,
+      showProviderInResults,
+      ...(permission === undefined ? {} : { nonRefundableRates: permission.effective }),
+    };
+  }
+
+  /**
+   * Lo que la agencia activa puede reservar, para marcar las tarifas en el detalle de un hotel:
+   * hoy, si puede reservar tarifas no reembolsables y si el bloqueo es suyo o de un nivel de arriba.
+   * Es presentación: el PreBook y el Book lo vuelven a decidir.
+   */
+  @Get('booking-permissions')
+  async bookingPermissions(
+    @CurrentUser() userId: string | undefined,
+  ): Promise<{ nonRefundableRates: NonRefundableRatesPolicy }> {
+    const tenantId = await this.tenant(userId);
+    return { nonRefundableRates: await this.permissions.nonRefundableRates(tenantId) };
   }
 
   @SalesOperation()
@@ -150,6 +191,24 @@ export class HotelsController {
     return this.hotelContent.getContent(tenantId, { ...params, lang: query.lang });
   }
 
+  /**
+   * Fotos de una pantalla de resultados, en segundo plano (estrategia de fotos del 2026-09-29): lo
+   * que el catálogo ya tiene sale al instante y lo que falta se trae del proveedor en lotes, se
+   * guarda y se devuelve; lo que no llega a tiempo sale `pending` con `retryAfterMs`. Nunca es un
+   * error por falta de fotos: un hotel sin foto sale `none`.
+   *
+   * `POST` y no `GET` porque la lista de hoteles no cabe con holgura en una URL. No es una venta ni
+   * gasta cuota de búsqueda: sólo lee contenido estático por el cupo de fondo de la cuenta.
+   */
+  @Post('content/batch')
+  async contentBatch(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(HotelContentBatchBodySchema)) body: HotelContentBatchBody,
+  ): Promise<HotelContentBatchView> {
+    const tenantId = await this.tenant(userId);
+    return this.hotelContent.getContentBatch(tenantId, { lang: body.lang, hotels: body.hotels });
+  }
+
   // ───────────────────────── Reserva ─────────────────────────
 
   /**
@@ -165,6 +224,7 @@ export class HotelsController {
   ): Promise<HotelPrebookResponse | PrebookResult> {
     const tenantId = await this.tenant(userId);
     if (isNeutralHotelPrebook(body)) return this.prebooks.prebook(tenantId, body, userId);
+    await this.assertDespegarDirectSaleAllowed(tenantId);
     return this.reservations.prebook(tenantId, body);
   }
 
@@ -185,7 +245,10 @@ export class HotelsController {
   ): Promise<HotelBookingSummary | BookResult> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.tenant(userId);
-    if (!isNeutralHotelBook(body)) return this.reservations.book(tenantId, body);
+    if (!isNeutralHotelBook(body)) {
+      await this.assertDespegarDirectSaleAllowed(tenantId);
+      return this.reservations.book(tenantId, body);
+    }
 
     const { httpStatus, body: summary } = await this.bookings.book(
       tenantId,
@@ -245,6 +308,30 @@ export class HotelsController {
       confirmations: body.confirmations,
       testCase: body.testCase,
     });
+  }
+
+  /**
+   * El PreBook y el Book directos de Despegar no traen la política de cancelación: no se puede saber
+   * si la tarifa es no reembolsable. Con las no reembolsables bloqueadas para la agencia (0055) no se
+   * usan, y un fallo al leer el permiso sube: no se reserva sin saberlo. Así la API directa no es
+   * una puerta para vender lo que quien financia a la agencia bloqueó.
+   */
+  private async assertDespegarDirectSaleAllowed(tenantId: string): Promise<void> {
+    const policy = await this.permissions.nonRefundableRates(tenantId);
+    if (policy.effective === 'blocked') {
+      throw new HotelNonRefundableBlockedError(DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE);
+    }
+  }
+
+  /** El permiso para el sobre de la búsqueda: si no se puede leer, se omite y la búsqueda sigue. */
+  private async nonRefundableRatesOrUndefined(
+    tenantId: string,
+  ): Promise<NonRefundableRatesPolicy | undefined> {
+    try {
+      return await this.permissions.nonRefundableRates(tenantId);
+    } catch {
+      return undefined;
+    }
   }
 
   private async tenant(userId: string | undefined): Promise<string> {

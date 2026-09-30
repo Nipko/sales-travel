@@ -8,6 +8,7 @@ import type {
 } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
+import { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import { BrandingService } from '../branding/branding.service.js';
 import type { OrderStatus } from '../database/database.types.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
@@ -48,6 +49,8 @@ import {
   HotelBookIntentClosedError,
   HotelBookRepricedError,
   HotelGuestsInvalidError,
+  HotelNonRefundableBlockedError,
+  HotelNonRefundableNotAcknowledgedError,
   HotelPackageOnlyRateError,
   HotelPrebookExpiredError,
 } from './hotel-booking-errors.js';
@@ -66,6 +69,7 @@ import {
 import { HcnTrackingService } from './hcn-tracking.service.js';
 import { HotelBookingVerificationService } from './hotel-booking-verification.service.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
+import { effectiveNonRefundable, type HotelNonRefundableTerms } from './hotel-non-refundable.js';
 import {
   HotelPrebookSnapshotStore,
   type HotelPrebookSnapshot,
@@ -152,6 +156,69 @@ interface BookRun {
   readonly warnings: readonly string[];
 }
 
+/**
+ * La confirmación del vendedor de que entiende que la tarifa no es reembolsable: quién, cuándo y
+ * sobre qué importe (el precio de venta que aceptó).
+ */
+interface NonRefundableAcknowledgement {
+  readonly acknowledgedBy: string;
+  readonly acknowledgedAt: string;
+  readonly acknowledgedAmount: Money;
+}
+
+/**
+ * Lo que la orden guarda de una tarifa no reembolsable (`selected_offer.nonRefundable`): por qué lo
+ * es, el 100 % en el precio de venta, la política aceptada en hora local del hotel y la
+ * confirmación. Es lo que leen la orden, el voucher y los correos para decirlo de forma visible.
+ */
+function nonRefundableRecordOf(
+  terms: HotelNonRefundableTerms,
+  roompack: HotelRoompack,
+  ack: NonRefundableAcknowledgement,
+): Record<string, unknown> {
+  const c = roompack.cancellation;
+  return {
+    reason: terms.reason,
+    penalty: { ...terms.penalty },
+    ...(terms.fullPenaltySinceLocal === undefined
+      ? {}
+      : { fullPenaltySinceLocal: terms.fullPenaltySinceLocal }),
+    policy: {
+      refundable: c.refundable,
+      status: c.status,
+      policySource: c.policySource ?? 'undeclared',
+      ...(c.freeCancellationUntilLocal === undefined
+        ? {}
+        : { freeCancellationUntilLocal: c.freeCancellationUntilLocal }),
+      rules: c.rules.map((rule) => ({ ...rule })),
+    },
+    acknowledgedBy: ack.acknowledgedBy,
+    acknowledgedAt: ack.acknowledgedAt,
+    acknowledgedAmount: { ...ack.acknowledgedAmount },
+  };
+}
+
+/** La política del evento: tramos con fecha, porcentaje e importe, sin el texto del proveedor. */
+function policyForEvent(roompack: HotelRoompack): Record<string, unknown> {
+  const c = roompack.cancellation;
+  return {
+    refundableDeclared: c.refundable,
+    status: c.status,
+    policySource: c.policySource ?? 'undeclared',
+    rules: c.rules.map((rule) => ({
+      ...(rule.fromLocalDateTime === undefined ? {} : { fromLocal: rule.fromLocalDateTime }),
+      ...(rule.penaltyPercentage === undefined ? {} : { percentage: rule.penaltyPercentage }),
+      ...(rule.penaltyAmount === undefined
+        ? {}
+        : {
+            amountMinor: rule.penaltyAmount.amountMinor,
+            currency: rule.penaltyAmount.currency,
+          }),
+      ...(rule.roomIndex === undefined ? {} : { room: rule.roomIndex }),
+    })),
+  };
+}
+
 const OPERATION = 'la reserva con órdenes (se reserva con su flujo propio)';
 
 const PENDING_MESSAGE =
@@ -191,14 +258,24 @@ function sameAccount(
 }
 
 /** El rechazo previo a la orden como error HTTP con su motivo. */
-function rejectionError(rejection: HotelBookRejection, shown: Money): Error {
+function rejectionError(
+  rejection: HotelBookRejection,
+  shown: Money,
+  terms: HotelNonRefundableTerms | undefined,
+): Error {
   switch (rejection) {
     case 'PREBOOK_EXPIRED':
       return new HotelPrebookExpiredError();
     case 'PACKAGE_ONLY_RATE':
       return new HotelPackageOnlyRateError();
+    case 'NON_REFUNDABLE_BLOCKED':
+      return new HotelNonRefundableBlockedError();
     case 'AT_PROPERTY_NOT_ACKNOWLEDGED':
       return new HotelAtPropertyNotAcknowledgedError();
+    case 'NON_REFUNDABLE_NOT_ACKNOWLEDGED':
+      return new HotelNonRefundableNotAcknowledgedError(
+        terms ?? { reason: 'declared', penalty: shown },
+      );
     case 'ACCEPTED_TOTAL_MISMATCH':
       return new HotelAcceptedTotalMismatchError(shown);
   }
@@ -224,6 +301,7 @@ function selectedOfferOf(
   snapshot: HotelPrebookSnapshot,
   prebookRef: string,
   rate?: RevalidatedRate,
+  nonRefundable?: Record<string, unknown>,
 ): Record<string, unknown> {
   const roompack = rate?.roompack ?? snapshot.roompack;
   const comparison = rate?.found.comparison ?? snapshot.comparison;
@@ -251,6 +329,7 @@ function selectedOfferOf(
       changes: [...comparison.changes],
     },
     pricing: pricingSummary(roompack),
+    ...(nonRefundable === undefined ? {} : { nonRefundable }),
   };
 }
 
@@ -306,9 +385,11 @@ interface HoldRef {
  * En la petición, y todo lo que rechaza lo rechaza ANTES de abrir la orden:
  *
  * 1. `Idempotency-Key` UUID, proveedor con Book por contexto, snapshot del PreBook vigente de este
- *    tenant y de la cuenta con la que se reservaría, ventana, tarifa sólo paquete, cargos en el
- *    hotel reconocidos, precio aceptado igual al mostrado, huéspedes contra la ocupación de la
- *    búsqueda y contacto operativo de la agencia.
+ *    tenant y de la cuenta con la que se reservaría, ventana, tarifa sólo paquete, tarifa no
+ *    reembolsable permitida a la agencia (0055) y reconocida por el vendedor, cargos en el hotel
+ *    reconocidos, precio aceptado igual al mostrado, huéspedes contra la ocupación de la búsqueda y
+ *    contacto operativo de la agencia. "No reembolsable" lo decide el servidor con la política del
+ *    PreBook y la hora de ahora (`hotel-non-refundable.ts`), no el navegador.
  * 2. **Orden `pending`** con la clave, la referencia de reserva y la cuenta, comprometida antes de
  *    llamar (D-TBO-07 A). Una clave repetida es 409 `duplicateRequest` sin tocar al proveedor.
  * 3. **Cartera** (RF-23 CA-1): la de la agencia en la moneda de la tarifa, activa, con saldo más
@@ -319,8 +400,10 @@ interface HoldRef {
  * 4. **PreBook de revalidación (C2)** contra lo aceptado y precio de venta con la cascada y el
  *    piso. Si sube o cambian las condiciones, la orden se cierra como no enviada y 409 con los
  *    valores nuevos; si baja, se sigue con el nuevo y se avisa.
- * 5. La orden pasa a decir lo que se va a reservar (el PreBook de C2), se **retiene** ese precio de
- *    venta en la cartera sobre la orden abierta (D-TBO-21 A) y `OrderCreateRequested`.
+ * 5. La orden pasa a decir lo que se va a reservar (el PreBook de C2), con la confirmación de "no
+ *    reembolsable" si aplica (quién, cuándo, el monto y la política), se **retiene** ese precio de
+ *    venta en la cartera sobre la orden abierta (D-TBO-21 A), `HotelNonRefundableAcknowledged` si
+ *    aplica y `OrderCreateRequested`.
  *
  * Después, dentro del proceso y desacoplado de la petición: **el Book**, UN intento, nunca como job
  * de la cola (03 §4.4: la cola reintenta, y un Book repetido puede reservar dos veces), la
@@ -360,6 +443,7 @@ export class HotelBookingService {
     private readonly verification: HotelBookingVerificationService,
     private readonly portfolios: PortfoliosService,
     private readonly hcn: HcnTrackingService,
+    private readonly permissions: BookingPermissionsService,
     @Optional() @Inject(HOTEL_BOOK_OPTIONS) options?: HotelBookOptions,
   ) {
     if (options?.syncWaitMs !== undefined) {
@@ -399,16 +483,32 @@ export class HotelBookingService {
     }
 
     const shown = saleTotalOf(snapshot.roompack);
+    const now = Date.now();
+    const nonRefundable = effectiveNonRefundable(snapshot.roompack, now);
+    // Sólo se pregunta si hace falta: una reembolsable no depende del permiso.
+    const blocked =
+      nonRefundable === undefined ? undefined : await this.blocksNonRefundable(tenantId);
     const rejection = checkBookable({
-      now: Date.now(),
+      now,
       expiresAt: snapshot.expiresAt,
       signals: snapshot.signals,
       atPropertyCharges: snapshot.roompack.atPropertyCharges?.length ?? 0,
       atPropertyAcknowledged: input.atPropertyAcknowledged === true,
+      nonRefundable: nonRefundable !== undefined,
+      nonRefundableBlocked: blocked === true,
+      nonRefundableAcknowledged: input.nonRefundableAcknowledged === true,
       acceptedTotal: input.acceptedTotal,
       shownTotal: shown,
     });
-    if (rejection !== undefined) throw rejectionError(rejection, shown);
+    if (rejection !== undefined) throw rejectionError(rejection, shown, nonRefundable);
+    const acknowledgement: NonRefundableAcknowledgement | undefined =
+      input.nonRefundableAcknowledged === true
+        ? {
+            acknowledgedBy: userId,
+            acknowledgedAt: new Date(now).toISOString(),
+            acknowledgedAmount: { ...input.acceptedTotal },
+          }
+        : undefined;
 
     const guests = adapter.checkBookingGuests(input.rooms, snapshot.rooms);
     if (!guests.ok) throw new HotelGuestsInvalidError(guests.issues);
@@ -431,7 +531,14 @@ export class HotelBookingService {
           ? {}
           : { guestNationality: snapshot.guestNationality }),
       },
-      selectedOffer: selectedOfferOf(snapshot, input.prebookRef),
+      selectedOffer: selectedOfferOf(
+        snapshot,
+        input.prebookRef,
+        undefined,
+        nonRefundable === undefined || acknowledgement === undefined
+          ? undefined
+          : nonRefundableRecordOf(nonRefundable, snapshot.roompack, acknowledgement),
+      ),
       passengers: passengersOf(input.rooms, guests.rooms),
       contactInfo: input.contact,
       totalAmountMinor: shown.amountMinor,
@@ -457,6 +564,8 @@ export class HotelBookingService {
           input,
           bookingReference,
           contact,
+          ...(acknowledgement === undefined ? {} : { acknowledgement }),
+          ...(blocked === undefined ? {} : { blocked }),
         }),
       );
     } catch (err) {
@@ -529,6 +638,9 @@ export class HotelBookingService {
     readonly input: HotelBookInput;
     readonly bookingReference: string;
     readonly contact: HotelBookingContact;
+    readonly acknowledgement?: NonRefundableAcknowledgement;
+    /** Si ya se leyó en la petición el permiso de no reembolsables. */
+    readonly blocked?: boolean;
   }): Promise<BookRun> {
     const { tenantId, provider, adapter, intent, snapshot, input } = c;
     const ctx: SearchContext = { tenantId, requestId: intent.id };
@@ -628,8 +740,24 @@ export class HotelBookingService {
       });
     }
 
+    // La tarifa que se va a reservar es la de C2 y "ahora" es ahora: si pasó a cobrar el 100 % entre
+    // la petición y la revalidación, se exige lo mismo que a una no reembolsable. Nada salió todavía.
+    const nonRefundable = effectiveNonRefundable(rate.roompack, Date.now());
+    if (nonRefundable !== undefined) {
+      if (c.blocked ?? (await this.blocksNonRefundable(tenantId))) {
+        throw new HotelNonRefundableBlockedError();
+      }
+      if (c.acknowledgement === undefined) {
+        throw new HotelNonRefundableNotAcknowledgedError(nonRefundable);
+      }
+    }
+    const nonRefundableRecord =
+      nonRefundable === undefined || c.acknowledgement === undefined
+        ? undefined
+        : nonRefundableRecordOf(nonRefundable, rate.roompack, c.acknowledgement);
+
     const revised = await this.intents.reviseExternalCreateIntent(tenantId, intent, {
-      selectedOffer: selectedOfferOf(snapshot, input.prebookRef, rate),
+      selectedOffer: selectedOfferOf(snapshot, input.prebookRef, rate, nonRefundableRecord),
       totalAmountMinor: revalidatedTotal.amountMinor,
       currency: revalidatedTotal.currency,
     });
@@ -639,6 +767,34 @@ export class HotelBookingService {
     // proveedor lo carga al crédito de la cuenta en cuanto confirma, y una reserva cuyo cobro no
     // alcanza tiene que fallar aquí, sin salir.
     await this.portfolios.holdBookingIntent(tenantId, intent.id, c.userId, revalidatedTotal);
+
+    if (nonRefundable !== undefined && c.acknowledgement !== undefined) {
+      // Quién aceptó, cuándo, el 100 % y la política, sobre la orden y antes de llamar. Sin texto del
+      // proveedor ni datos de huéspedes. La orden ya lo guarda en `selected_offer.nonRefundable`.
+      await this.audit.emit({
+        eventType: HOTEL_EVENTS.nonRefundableAcknowledged,
+        tenantId,
+        actorUserId: c.acknowledgement.acknowledgedBy,
+        aggregateType: 'order',
+        aggregateId: intent.id,
+        payload: {
+          vertical: 'hotels',
+          provider: provider.code,
+          hotelId: found.pack.hotelId,
+          bookingReference: c.bookingReference,
+          reason: nonRefundable.reason,
+          penaltyMinor: nonRefundable.penalty.amountMinor,
+          currency: nonRefundable.penalty.currency,
+          acknowledgedAt: c.acknowledgement.acknowledgedAt,
+          acknowledgedAmountMinor: c.acknowledgement.acknowledgedAmount.amountMinor,
+          ...(nonRefundable.fullPenaltySinceLocal === undefined
+            ? {}
+            : { fullPenaltySinceLocal: nonRefundable.fullPenaltySinceLocal }),
+          rateConditionsHash: found.rateConditionsHash,
+          policy: policyForEvent(rate.roompack),
+        },
+      });
+    }
 
     // Antes de llamar, no después: si el Book no responde, esto demuestra que salió un intento.
     await this.audit.emit({
@@ -659,6 +815,7 @@ export class HotelBookingService {
         guests: input.rooms.reduce((n, room) => n + room.guests.length, 0),
         stage: found.comparison.stage,
         repriced: found.comparison.outcome,
+        ...(nonRefundable === undefined ? {} : { nonRefundable: nonRefundable.reason }),
       },
     });
 
@@ -1042,6 +1199,15 @@ export class HotelBookingService {
   }
 
   // ───────────────────────── Piezas ─────────────────────────
+
+  /**
+   * Si quien financia a la agencia le bloqueó las tarifas no reembolsables (0055), a ella o a un
+   * nivel de arriba. Un fallo de lectura sube: no se reserva una no reembolsable sin saberlo.
+   */
+  private async blocksNonRefundable(tenantId: string): Promise<boolean> {
+    const policy = await this.permissions.nonRefundableRates(tenantId);
+    return policy.effective === 'blocked';
+  }
 
   /**
    * Libera la retención de una orden que quedó `failed` (RF-23 CA-2). Nunca rechaza: si no se

@@ -2,8 +2,14 @@ import type { HotelOffer } from '../../actions';
 import type { HotelProviderHotelRef } from '../../_components/hotel-key';
 import { hotelRateRows, type HotelRateRow } from '../../_components/hotel-rate-view';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
+import type { RateRefundability } from '../../_components/rate-refundability';
 import type { HotelContentResult, HotelDetailRatesResult } from '../actions';
-import { hasDescriptiveContent, type HotelContent } from './hotel-content-view';
+import {
+  addressLine,
+  hasDescriptiveContent,
+  mapsUrl,
+  type HotelContent,
+} from './hotel-content-view';
 import type { HotelFacts } from './hotel-rate-detail-view';
 
 /*
@@ -98,6 +104,75 @@ export function factsByProvider(
     out.set(provider, { ...(name ? { name } : {}), ...(address ? { address } : {}) });
   }
   return out;
+}
+
+// ───────────────────────── Ubicación ─────────────────────────
+
+export interface HotelLocationView {
+  /** La dirección en una línea, con el código postal. */
+  readonly address?: string;
+  /** El país, por su nombre. */
+  readonly country?: string;
+  /** "4.60971, -74.08175": para dictarla o pegarla donde no hay enlace. */
+  readonly coordinates?: string;
+  /** El mapa externo, que se abre aparte: no se embebe (CSP, sin teselas de terceros). */
+  readonly mapHref?: string;
+}
+
+/**
+ * Dónde queda el hotel, con los datos del encabezado (los del primer hotel de la clave): su
+ * dirección con el código postal de su ficha, el país y las coordenadas del catálogo. `undefined`
+ * si no hay nada que decir.
+ */
+export function hotelLocationView(
+  header: Pick<DetailHeader, 'address' | 'location'>,
+  primary: Pick<HotelContent, 'address' | 'zipcode' | 'countryCode'> | undefined,
+  countryName: (code: string) => string,
+): HotelLocationView | undefined {
+  const address = (primary?.address ? addressLine(primary) : null) ?? header.address;
+  const code = primary?.countryCode ?? undefined;
+  const country = code ? countryName(code) : undefined;
+  const location = header.location;
+  const view: HotelLocationView = {
+    ...(address ? { address } : {}),
+    ...(country ? { country } : {}),
+    ...(location
+      ? {
+          coordinates: `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`,
+          mapHref: mapsUrl(location),
+        }
+      : {}),
+  };
+  return view.address || view.coordinates ? view : undefined;
+}
+
+/** "Check-in desde 15:00 · Check-out hasta 12:00", en hora local del hotel; nada sin horarios. */
+export function stayHoursLine(
+  content: Pick<HotelContent, 'checkInTime' | 'checkOutTime'>,
+): string | undefined {
+  const parts = [
+    content.checkInTime === null ? undefined : `Check-in desde ${content.checkInTime}`,
+    content.checkOutTime === null ? undefined : `Check-out hasta ${content.checkOutTime}`,
+  ].filter((p): p is string => p !== undefined);
+  return parts.length === 0 ? undefined : parts.join(' · ');
+}
+
+// ───────────────────────── Tarifas ─────────────────────────
+
+/**
+ * El aviso del hotel sobre sus tarifas no reembolsables (pedido del 2026-09-29, punto a), además de
+ * la etiqueta de cada una: si NINGUNA se puede cancelar sin perder el 100 %, el vendedor lo tiene
+ * que saber antes de elegir; y si además quien financia a la agencia las bloqueó, que no hay nada
+ * que pueda reservar.
+ */
+export type RatesRefundNotice = 'non-refundable-all' | 'blocked-all';
+
+export function ratesRefundNotice(
+  refunds: readonly Pick<RateRefundability, 'refundable'>[],
+  blocked: boolean,
+): RatesRefundNotice | undefined {
+  if (refunds.length === 0 || refunds.some((r) => r.refundable)) return undefined;
+  return blocked ? 'blocked-all' : 'non-refundable-all';
 }
 
 /** Un proveedor que no pudo dar tarifas: nombrado por su código, como el aviso del listado. */

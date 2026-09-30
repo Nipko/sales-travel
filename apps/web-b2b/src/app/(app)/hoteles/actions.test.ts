@@ -111,10 +111,46 @@ describe('searchHotelsAction — el sobre de la respuesta', () => {
     expect((await searchHotelsAction(INITIAL, form({}))).showProviderInResults).toBe(true);
   });
 
+  it('no reembolsables: sólo `blocked` las marca no disponibles; ausente o permitido, nada', async () => {
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBeUndefined();
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { hotels: [], providers: [], nonRefundableRates: 'allowed' },
+    });
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBeUndefined();
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { hotels: [], providers: [], nonRefundableRates: 'blocked' },
+    });
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBe(true);
+  });
+
   it('devuelve lo que se buscó: noches, habitaciones, huéspedes y nacionalidad', async () => {
     const res = await searchHotelsAction(INITIAL, form({}));
     expect(res.criteria).toMatchObject({ nights: 3, rooms: 1, guests: 3, guestNationality: 'CO' });
     expect(typeof res.receivedAt).toBe('number');
+  });
+
+  it('el destino como lo mostró el autocompletado vuelve para la barra de la búsqueda', async () => {
+    const res = await searchHotelsAction(
+      INITIAL,
+      form({ destinationLabel: '  Bogotá,\n Colombia\u0007 ' }),
+    );
+    expect(res.criteria?.destinationLabel).toBe('Bogotá, Colombia');
+    expect(res.criteria?.hotelIdsCount).toBeUndefined();
+    // No viaja al API: es sólo para la pantalla.
+    expect(JSON.parse(String(apiMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty(
+      'destinationLabel',
+    );
+  });
+
+  it('sin destino elegido no hay etiqueta; por IDs, cuántos se pidieron', async () => {
+    const res = await searchHotelsAction(
+      INITIAL,
+      form({ destinationId: '', destinationLabel: 'Bogotá', hotelIds: '123, 456' }),
+    );
+    expect(res.criteria?.destinationLabel).toBeUndefined();
+    expect(res.criteria?.hotelIdsCount).toBe(2);
   });
 
   it('un error del API se muestra con su mensaje', async () => {

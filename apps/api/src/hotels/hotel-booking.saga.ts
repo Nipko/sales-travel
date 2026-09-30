@@ -13,8 +13,9 @@ import type { HotelBookFailure, HotelRepriceOutcome } from '../providers/hotel-p
  *
  * Qué decide, en el orden de la saga:
  *
- *   1. **¿Se puede reservar?** Antes de abrir la orden: la ventana, la tarifa sólo paquete, los
- *      cargos en el hotel sin reconocer y el precio aceptado contra el que se mostró.
+ *   1. **¿Se puede reservar?** Antes de abrir la orden: la ventana, la tarifa sólo paquete, una no
+ *      reembolsable bloqueada para la agencia, los cargos en el hotel y la no reembolsable sin
+ *      reconocer, y el precio aceptado contra el que se mostró.
  *   2. **¿La revalidación (C2) deja seguir?** Si el precio de venta sube o cambian las
  *      condiciones, 409 con los valores nuevos; si baja, se sigue con el nuevo y se avisa
  *      (D-TBO-20 A).
@@ -42,7 +43,9 @@ export const HOTEL_BOOK_MIN_REMAINING_MS = 30_000;
 export type HotelBookRejection =
   | 'PREBOOK_EXPIRED'
   | 'PACKAGE_ONLY_RATE'
+  | 'NON_REFUNDABLE_BLOCKED'
   | 'AT_PROPERTY_NOT_ACKNOWLEDGED'
+  | 'NON_REFUNDABLE_NOT_ACKNOWLEDGED'
   | 'ACCEPTED_TOTAL_MISMATCH';
 
 export interface HotelBookableFacts {
@@ -53,6 +56,15 @@ export interface HotelBookableFacts {
   /** Cuántos cargos se pagan en el hotel (RF-10). */
   readonly atPropertyCharges: number;
   readonly atPropertyAcknowledged: boolean;
+  /**
+   * La tarifa es no reembolsable en los hechos AHORA (`hotel-non-refundable.ts`): declarada, o con
+   * el 100 % ya vigente.
+   */
+  readonly nonRefundable: boolean;
+  /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
+  readonly nonRefundableBlocked: boolean;
+  /** El vendedor marcó "Entiendo que esta tarifa no es reembolsable…". */
+  readonly nonRefundableAcknowledged: boolean;
   /** Lo que el navegador dice que el vendedor aceptó. */
   readonly acceptedTotal: Money;
   /** El precio de venta del snapshot del PreBook: lo que el servidor le mostró. */
@@ -72,8 +84,13 @@ export function checkBookable(facts: HotelBookableFacts): HotelBookRejection | u
   if (facts.expiresAt - facts.now < HOTEL_BOOK_MIN_REMAINING_MS) return 'PREBOOK_EXPIRED';
   // RF-17 con D-TBO-22 A: no hay reservas de paquete que vinculen un vuelo, así que no se vende.
   if (facts.signals.includes('PACKAGE_WITH_FLIGHT_ONLY')) return 'PACKAGE_ONLY_RATE';
+  // Antes que cualquier reconocimiento: confirmar algo que la agencia no puede reservar no sirve.
+  if (facts.nonRefundable && facts.nonRefundableBlocked) return 'NON_REFUNDABLE_BLOCKED';
   if (facts.atPropertyCharges > 0 && !facts.atPropertyAcknowledged) {
     return 'AT_PROPERTY_NOT_ACKNOWLEDGED';
+  }
+  if (facts.nonRefundable && !facts.nonRefundableAcknowledged) {
+    return 'NON_REFUNDABLE_NOT_ACKNOWLEDGED';
   }
   if (!sameMoney(facts.acceptedTotal, facts.shownTotal)) return 'ACCEPTED_TOTAL_MISMATCH';
   return undefined;

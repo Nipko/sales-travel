@@ -122,6 +122,8 @@ export interface CatalogCityRow {
   readonly provider_city_code: string;
   readonly name: string;
   readonly country_code: string;
+  /** `NULL`: el sync bajó la ciudad (E2A) pero nunca sus hoteles; se cargan al buscarla. */
+  readonly hotel_count?: number | null;
 }
 
 const SUGGESTION_LANGUAGES = ['es', 'pt', 'en'] as const;
@@ -160,6 +162,9 @@ export function countryNameOf(countryCode: string, language: SuggestionLanguage)
  * el del proveedor, el único que hay (CityList no tiene idioma, p. 53-54), y abajo va el país: la
  * sugerencia no dice de qué proveedor es, porque la divulgación del proveedor es un ajuste de la
  * agencia (RF-40) y aquí no se consulta.
+ *
+ * Una ciudad sin hoteles cargados todavía (`hotel_count` en `NULL`) sale con `loadsOnSearch`: la
+ * web avisa que la búsqueda tarda unos segundos más la primera vez.
  */
 export function catalogSuggestionOf(
   row: CatalogCityRow,
@@ -172,5 +177,6 @@ export function catalogSuggestionOf(
     type: 0,
     display: row.name.trim(),
     country: countryNameOf(row.country_code, language),
+    ...(row.hotel_count === null ? { loadsOnSearch: true } : {}),
   };
 }

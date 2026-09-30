@@ -15,6 +15,7 @@ import {
   type UnavailableReason,
 } from '../providers/provider.types.js';
 import type { ProviderSearchSlice } from '../search/search-telemetry.service.js';
+import type { HotelMainImage } from './hotel-image-proxy.js';
 
 /*
  * Lo que la búsqueda de hoteles decide sin I/O: a quién no se le pregunta y por qué, puerta de
@@ -89,11 +90,19 @@ export interface HotelProviderOutcome {
 }
 
 /**
+ * Un hotel de la respuesta: la oferta canónica y, si el catálogo ya la tiene, su foto principal
+ * servida por el proxy propio (`/api/hotels/images/…`). La del propio proveedor o la del MISMO
+ * hotel en otro (`hotel_match` aceptado). Sin foto en el catálogo no viene: la web la pide en
+ * segundo plano al contenido por lote.
+ */
+export type HotelSearchHotel = HotelOffer & { readonly mainImage?: HotelMainImage };
+
+/**
  * Respuesta de la búsqueda. `hotels` conserva forma y orden de antes para un solo proveedor;
  * `providers` se AÑADE.
  */
 export interface HotelSearchResponse {
-  hotels: HotelOffer[];
+  hotels: HotelSearchHotel[];
   providers: HotelProviderOutcome[];
 }
 
@@ -399,12 +408,12 @@ export function catalogFactsOf(row: HotelCatalogRow): HotelCatalogFacts {
  * proveedor que vende la tarifa gana siempre (RF-34). Sin nada que completar, sale el mismo
  * objeto.
  */
-export function withCatalogFacts(
-  offer: HotelOffer,
+export function withCatalogFacts<T extends HotelOffer>(
+  offer: T,
   facts: HotelCatalogFacts | undefined,
-): HotelOffer {
+): T {
   if (facts === undefined) return offer;
-  const filled: HotelOffer = { ...offer };
+  const filled: T = { ...offer };
   let changed = false;
   for (const key of ['name', 'stars', 'address', 'location'] as const) {
     if (offer[key] === undefined && facts[key] !== undefined) {
@@ -419,7 +428,7 @@ export function withCatalogFacts(
 
 export interface ProviderOffers {
   readonly code: string;
-  readonly offers: readonly HotelOffer[];
+  readonly offers: readonly HotelSearchHotel[];
   /** Motivo ya humanizado de lo que NO respondió, si respondió sólo en parte (RF-14 CA-3). */
   readonly partialReason?: string;
 }
@@ -450,14 +459,16 @@ interface MergedCard {
  * Nunca se funden dos hoteles de un MISMO proveedor, aunque compartan clave: el proveedor dice que
  * son dos, y una fusión falsa es peor que un duplicado (docs/tbo/05 §9.3). Un hotel sin clave
  * tampoco se funde con nada.
+ *
+ * La foto principal es la del primero que la tenga: la tarjeta es un solo hotel.
  */
 export function mergeProviderOffers(
   batches: readonly ProviderOffers[],
   canonicalKeyOf?: CanonicalHotelKeyOf,
-): HotelOffer[] {
+): HotelSearchHotel[] {
   if (canonicalKeyOf === undefined) return batches.flatMap((b) => b.offers);
 
-  const merged: HotelOffer[] = [];
+  const merged: HotelSearchHotel[] = [];
   const cards = new Map<string, MergedCard>();
   for (const batch of batches) {
     for (const offer of batch.offers) {
@@ -474,11 +485,13 @@ export function mergeProviderOffers(
         continue;
       }
       card.hotels.push({ provider: batch.code, hotelId: offer.hotelId });
-      const first = withCatalogFacts(merged[card.at] as HotelOffer, offer);
+      const first = withCatalogFacts(merged[card.at] as HotelSearchHotel, offer);
+      const mainImage = first.mainImage ?? offer.mainImage;
       merged[card.at] = {
         ...first,
         roompacks: [...first.roompacks, ...offer.roompacks],
         providerHotels: [...card.hotels],
+        ...(mainImage === undefined ? {} : { mainImage }),
       };
     }
   }

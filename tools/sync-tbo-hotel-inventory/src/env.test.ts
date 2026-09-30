@@ -250,6 +250,9 @@ describe('resolveSyncEnv: con credenciales, lo inválido es un error y nunca rep
     ]);
     // E6 (mapa de destinos y equivalencias, PR-3.4) se puede correr sola: no llama a TBO.
     expect([...run({ ...BASE, TBO_SYNC_STAGES: 'e6' }).settings.stages]).toEqual(['E6']);
+    // E2A (ciudades de todos los países) existe pero es opt-in: sólo corre si se la pide.
+    expect([...run({ ...BASE, TBO_SYNC_STAGES: 'E1,e2a' }).settings.stages]).toEqual(['E1', 'E2A']);
+    expect(run(BASE).settings.stages.has('E2A')).toBe(false);
     expect(configIssues({ ...BASE, TBO_SYNC_STAGES: 'E3,E7' })).toEqual([
       'TBO_SYNC_STAGES.1:invalid_enum_value',
     ]);

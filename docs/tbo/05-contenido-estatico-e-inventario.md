@@ -53,6 +53,12 @@ estado: borrador
 8. **¿Catálogo global o por cuenta?** El contrato no lo dice. Postura: global, sincronizado con una cuenta TBO de
    plataforma separada de la de ventas; se verifica con una sonda comparativa durante la certificación
    → [Q-60](./10-preguntas-para-tbo.md#q-60) (§11).
+9. **Fotos y cobertura (APLICADO, 2026-09-29).** Estrategia que aprobó el founder con el mockup del rediseño de
+   hoteles: los resultados salen al instante y las fotos que faltan se traen de `HotelDetails` en segundo plano, se
+   guardan en `hotel_content` y se sirven por un proxy propio; la demanda del sync cuenta las búsquedas del catálogo
+   local; y una etapa opt-in (E2A) baja las ciudades de todos los países, cuyos hoteles se cargan la primera vez que
+   alguien las busca (§8.6). Cómo se opera en el VPS:
+   [platform/13 §5](../platform/13-validacion-modelo-red.md#5-runbook-del-vps), pasos 10 a 12.
 
 ---
 
@@ -497,6 +503,10 @@ La tarjeta de resultados de hoy pinta `name` (con fallback "Hotel {id}"), `stars
 no tiene pantalla de detalle, prebook ni reserva de hotel (ver
 [06](./06-seams-integracion-repo.md)).
 
+> **Actualización del 2026-09-29.** Los dos párrafos de arriba describen el código del 2026-09-23. Hoy la web tiene
+> detalle, PreBook, reserva y post-venta de hotel, y la tarjeta de resultados lleva foto grande, dirección, régimen,
+> cancelación y precio por noche; la foto sale del catálogo o se trae en segundo plano (§8.6).
+
 Las columnas `provider_city_code` y las tablas `hotel_content` y `hotel_room_content` de esta tabla son PROPUESTA
 (§7.3); no existen en el repo.
 
@@ -507,7 +517,7 @@ Las columnas `provider_city_code` y las tablas `hotel_content` y `hotel_room_con
 | Coordenadas                                                              | listado (mapa), dedupe    | `Map`                                                                | `hotel_inventory.latitude/longitude`                 | sync                                                                     |
 | Dirección, CP                                                            | detalle, voucher          | `Address`, `PinCode`                                                 | `hotel_inventory.address/zipcode`                    | sync                                                                     |
 | Ciudad y país                                                            | listado                   | `CityCode` de la request, `CityName`, `CountryCode`                  | `hotel_inventory.provider_city_code`, `country_code` | sync                                                                     |
-| Imagen principal y galería                                               | listado (1), detalle (N)  | `Images` (solo HotelDetails)                                         | `hotel_content.images`                               | sync por lotes + bajo demanda (§6.3 E4)                                  |
+| Imagen principal y galería                                               | listado (1), detalle (N)  | `Images` (solo HotelDetails)                                         | `hotel_content.images`                               | sync por lotes + bajo demanda (§6.3 E4, §8.6)                            |
 | Check-in / check-out                                                     | detalle, voucher          | `CheckInTime`, `CheckOutTime` (solo HotelDetails)                    | `hotel_content.check_in_time/check_out_time`         | ídem                                                                     |
 | Descripción por secciones                                                | detalle                   | `Description`                                                        | `hotel_content.description_html` + `sections`        | ídem                                                                     |
 | Instrucciones de check-in (depósito, documento, cargo por persona extra) | detalle, confirmación     | sección "CheckIn Instructions" de `Description` (p. 60)              | `hotel_content.sections`                             | ídem                                                                     |
@@ -525,13 +535,15 @@ Reglas:
 - **Negaciones en servicios:** "… – no" no se muestra como servicio disponible, y no alimenta filtros hasta que
   exista un diccionario (INFERIDO, pp. 60-61).
 - **El listado no espera a `HotelDetails`.** Con `hotel_inventory` (nombre, estrellas, dirección, coordenadas) la
-  tarjeta se pinta; la imagen principal se agrega si ya está en `hotel_content`. Principio 1 de `CLAUDE.md`:
-  ningún paso de búsqueda se bloquea por contenido.
+  tarjeta se pinta; la imagen principal se agrega si ya está en `hotel_content`, y si no, la web la pide en segundo
+  plano (§8.6). Principio 1 de `CLAUDE.md`: ningún paso de búsqueda se bloquea por contenido.
 - **Invariante de reserva:** en detalle, prebook y confirmación siempre se muestra el nombre y la dirección **del
   proveedor que vende la tarifa**, aunque la tarjeta agrupe hoteles equivalentes de dos proveedores (§9.3).
 - **Imágenes y CSP:** la CSP del panel ya admite cualquier imagen `https:`
   (`apps/web-b2b/next.config.ts:22`, VERIFICADO-CODIGO). Una imagen `http://` quedaría bloqueada como contenido
-  mixto (INFERIDO). Los ejemplos del PDF son `https://` (pp. 57, 62).
+  mixto (INFERIDO). Los ejemplos del PDF son `https://` (pp. 57, 62). Desde el 2026-09-29 el navegador ya no le
+  pide nada al host de TBO: las fotos salen del proxy propio del panel, en el mismo origen (`img-src 'self'`), y
+  `next/image` sirve las miniaturas (§8.6). Las URLs `http` se siguen descartando al ingerir y al servir.
 - Diferencia semántica que conviene no arrastrar: el `/hotels/detail` actual es **disponibilidad de un hotel** de
   Despegar (`apps/api/src/hotels/hotels.service.ts:143-161`), no contenido estático. En TBO, "detalle" son dos
   cosas: Search con un solo `HotelCode` (tarifas) y `HotelDetails` (contenido). El puerto neutral de hoteles tiene
@@ -604,6 +616,7 @@ Dos detalles que afectan a TBO:
 | E0    | —                                                                                                               | env: `TBO_SYNC_USERNAME`, `TBO_SYNC_PASSWORD`, `TBO_SYNC_BASE_URL`, `TBO_SYNC_COUNTRIES` (lista ISO2), presupuesto por corrida; todo validado con Zod al arrancar (las env vars son borde en `CLAUDE.md`; el sync actual solo comprueba presencia, `tools/sync-hotel-inventory/src/index.ts:139-147`) | lock + corrida                                                                                          | cada corrida                                                                     |
 | E1    | `GET CountryList`                                                                                               | —                                                                                                                                                                                                                                                                                                     | valida que los países de `TBO_SYNC_COUNTRIES` existan en TBO                                            | semanal                                                                          |
 | E2    | `POST CityList {"CountryCode": "<ISO2>"}`                                                                       | países habilitados                                                                                                                                                                                                                                                                                    | upsert en `hotel_provider_city` (`code`, `name`, `name_norm`, `country_code`)                           | semanal                                                                          |
+| E2A   | `GET CountryList` + `POST CityList` por país (desde el 2026-09-29, §8.6)                                        | países de TBO sin ciudades guardadas que E2 no refresca                                                                                                                                                                                                                                               | upsert en `hotel_provider_city` sin hoteles (`hotel_count` en `NULL`)                                   | opt-in, a mano (`stages=E1,E2A`); después, sólo países nuevos                    |
 | E3    | `POST TBOHotelCodeList {"CityCode": "<code>", "IsDetailedResponse": "true"}`                                    | ciudades ordenadas por prioridad (abajo)                                                                                                                                                                                                                                                              | upsert en `hotel_inventory` + barrido de la ciudad + centroide y `hotel_count` en `hotel_provider_city` | diaria para ciudades con demanda; semanal el resto; mensual si `hotel_count = 0` |
 | E4    | `POST HotelDetails {"Hotelcodes": "c1,…,cN", "Language": "ES"\|"PT"\|"EN"}` (path con el casing del PDF, CE-04) | hoteles activos sin contenido o con contenido de más de X días, priorizando destinos con demanda                                                                                                                                                                                                      | `hotel_content` por idioma (+ `hotel_room_content` cuando se habilite §2.6.3)                           | continua, dentro del presupuesto                                                 |
 | E5    | `GET hotelcodelist`                                                                                             | —                                                                                                                                                                                                                                                                                                     | hoteles `tbo-hotels` activos que no aparecen en la lista global → `active = false`                      | semanal; se desactiva si el método no responde                                   |
@@ -631,8 +644,9 @@ Decisiones dentro de las etapas:
   a la racha de errores, queda con `last_status_code = 500` y sin `synced_at` nuevo, y se vuelve a pedir en la
   próxima corrida.
 - **Prioridad de ciudades en E3:** (1) las mapeadas a destinos con búsquedas recientes (`search_logs.criteria`
-  guarda `destinationId`, `apps/api/src/hotels/hotels.service.ts:97-102`, `db/migrations/0032_search_logs.sql:27`);
-  (2) las que nunca se sincronizaron; (3) las más antiguas por `synced_at`.
+  guarda `destinationId`, `apps/api/src/hotels/hotels.service.ts:97-102`, `db/migrations/0032_search_logs.sql:27`)
+  y, desde el 2026-09-29, las del catálogo local buscadas directamente (`destinationProvider` +
+  `destinationCityCode`, §8.6); (2) las que nunca se sincronizaron; (3) las más antiguas por `synced_at`.
 - **E4 bajo demanda sin escribir desde el API.** Si el vendedor abre un hotel sin contenido, el API puede llamar
   `HotelDetails` para ese único código con timeout corto y mostrarlo, con caché temporal vía el puerto de caché
   (`CachePort`, `packages/core/src/ports/cache.port.ts:1`; hoy solo lo implementa `MemoryCacheAdapter`, en memoria
@@ -640,6 +654,10 @@ Decisiones dentro de las etapas:
   **No lo escribe en `hotel_content`**: las tablas globales las escribe solo el sync (hoy `app_user` solo tiene
   `SELECT`, `db/migrations/0022_hotel_inventory.sql:29`). El sync ya prioriza esos hoteles porque siguen sin
   contenido. Si la llamada falla, el detalle se muestra sin imágenes.
+  **Cambió en parte el 2026-09-29 (§8.6).** La ficha de un hotel sigue así: lee, pide ese hotel con un plazo de 6 s y
+  guarda la respuesta sólo en su caché. Las fotos de los resultados, en cambio, sí se guardan desde el API: lo que
+  `POST /hotels/content/batch` trae de `HotelDetails` entra en `hotel_content` por la función `SECURITY DEFINER` de
+  0054, con las reglas del sync y sin `INSERT` ni `UPDATE` para `app_user`.
 - **`HotelDetails` y reintentos.** Son lecturas sin dinero: se permiten reintentos con backoff, a diferencia de
   Book y Cancel ([01](./01-autenticacion-conectividad-y-errores.md), [03](./03-prebook-y-book.md)).
 
@@ -963,8 +981,9 @@ que `GET /hotels/suggestions` respondía 503, el vendedor no podía elegir desti
   una vez repuesto Despegar, ya no lo consultan. Alternativa descartada por ahora: caer al catálogo con un aviso. Al
   revés, el kill-switch de TBO no oculta sus ciudades, porque sugerir no lo llama: la búsqueda lo informa con su
   motivo.
-- **Qué se sugiere.** Filas de `hotel_provider_city` de esos proveedores con `hotel_count > 0` (una ciudad que el
-  sync todavía no bajó terminaría en el 503 de catálogo vacío). Lo escrito se normaliza con el mismo algoritmo que
+- **Qué se sugiere.** Filas de `hotel_provider_city` de esos proveedores con `hotel_count > 0` y, desde el
+  2026-09-29, también las que el sync bajó sin hoteles (`hotel_count` en `NULL`), marcadas `loadsOnSearch`: sus
+  hoteles se traen la primera vez que se buscan (§8.6). Nunca las que TBO ya contestó vacías (`hotel_count = 0`). Lo escrito se normaliza con el mismo algoritmo que
   `name_norm` (`normalizeName` del sync: minúsculas, sin acentos ni puntuación), así que "Bogotá", "BOGOTA" y
   "bogota" dan lo mismo. Coinciden las que contienen lo escrito y, para tolerar un error de tipeo, las de similitud
   trigram ≥ 0,4 (`pg_trgm`). Orden: nombre exacto, empieza así, alguna palabra empieza así, lo contiene, parecida;
@@ -983,10 +1002,124 @@ que `GET /hotels/suggestions` respondía 503, el vendedor no podía elegir desti
   catálogo sin sincronizar. Un id de un proveedor de la plataforma (`despegar-hotels:2345`) no se busca en nadie.
 - **Telemetría.** `search_logs.criteria` guarda `destinationProvider` y `destinationCityCode`, nunca `destinationId`:
   con el id ahí, el sync lo listaría como un destino de Despegar sin mapear (`listUnmappedDestinations`). La demanda
-  por ciudad del sync (`demandByCitySql`) todavía no cuenta estas búsquedas: queda como mejora del sync.
+  por ciudad del sync (`demandByCitySql`) cuenta estas búsquedas desde el 2026-09-29 (§8.6).
 - **Límites.** Es un autocomplete de ciudades de proveedor, no de destinos canónicos (opción C de §8.2): con dos
   proveedores de ids propios activos y sin Despegar, la misma ciudad saldría una vez por proveedor y cada una busca
   sólo en el suyo. Con el tercer bedbank o con tenants solo-TBO en producción, la opción C sigue siendo el camino.
+
+### 8.6 Cobertura global, ciudades que se cargan al buscar y fotos bajo demanda (APLICADO, 2026-09-29)
+
+Motivo: producción tenía el catálogo de Colombia entero en `hotel_inventory` (unos 11.200 hoteles activos) pero
+`hotel_content` vacío: E4 sólo baja lo que tiene demanda, y la demanda no contaba las búsquedas del catálogo local. La
+búsqueda por ciudad, además, sólo servía en los países de `TBO_SYNC_COUNTRIES` con datos (hoy sólo CO). El founder
+aprobó el 2026-09-29, con el mockup del rediseño de resultados, esta estrategia: (1) fotos bajo demanda sin bloquear
+la búsqueda; (2) precarga por demanda; (3) cobertura global de ciudades; (4) imágenes por un proxy propio con caché;
+(5) con varios proveedores, la mejor foto del mismo hotel. Commits `d0781b8` (API, sync y proxy), `ac65ac3`
+(resultados) y `2bb7806` (ficha del hotel), en la rama `feat/hotels-redesign`. Cómo se opera en el VPS:
+[platform/13 §5](../platform/13-validacion-modelo-red.md#5-runbook-del-vps), pasos 10 a 12.
+
+**Catálogo y cobertura**
+
+- **Precarga por demanda.** `demandByCitySql` suma a las búsquedas de destinos de la plataforma (por el mapa
+  aceptado) las de ciudades del catálogo local (`search_logs.criteria.destinationProvider` + `destinationCityCode`),
+  contadas una vez por búsqueda. Una ciudad buscada de un país fuera de la corrida entra en E3 y E4 mientras tenga
+  búsquedas en la ventana (`TBO_SYNC_DEMAND_WINDOW_DAYS`, 14 días por defecto)
+  (`tools/sync-tbo-hotel-inventory/src/writer.ts`).
+- **Cobertura global (E2A).** Etapa opt-in del sync (`src/stages/e2a-world-cities.ts`): `CountryList` y un
+  `CityList` por cada país de TBO que no tiene ciudades guardadas y que no refresca E2 (los de la corrida, si la
+  corrida incluye E2 o E3). Son unas 250 llamadas la primera vez; después, una (`CountryList`) más los países nuevos.
+  Tiene tope propio de 300 países por corrida y corre al final, así que nunca le quita presupuesto a E3 ni a E4. Deja
+  las ciudades sin hoteles (`hotel_count` en `NULL`) y no toca el checkpoint de ninguna. No está en las etapas por
+  defecto: se corre a mano con `stages=E1,E2A` y `max_calls=300`. El resumen `tbo.sync.result` dice
+  `worldCitiesUpserted` y `worldCountriesPending`; con pendientes, la próxima corrida con E2A (a mano: las
+  programadas no la incluyen) sigue donde quedó.
+- **Qué se sugiere.** Las ciudades con hoteles y las de `hotel_count` en `NULL`, marcadas `loadsOnSearch`; nunca las
+  que TBO ya contestó vacías (`hotel_count = 0`), que serían un destino inválido (§8.5). Como en §8.5, sólo sugiere
+  el catálogo local a una agencia sin un proveedor activo del espacio de ids de la plataforma (hoy Despegar); con
+  Despegar activo, TBO sigue entrando por el mapa de destinos. La web muestra la marca en la opción ("Sus hoteles
+  se cargan al buscar") y, con la ciudad elegida, avisa debajo del campo que la primera búsqueda puede tardar unos
+  segundos más (`destination-combobox.tsx`, `loadsOnSearchNotice`).
+- **Ciudad que se carga al buscarla.** Si la ciudad elegida no tiene hoteles activos y el sync nunca la cargó, la
+  búsqueda (después de la cuota y sólo con TBO activo para la agencia) hace UNA llamada a `TBOHotelCodeList` por el
+  circuito (pasiva, 10 s por intento y 15 s en total), guarda los hoteles con `hotel_catalog_import_city` (0054),
+  guarda de paso el texto en inglés del listado y sigue buscando. Vacía → 503 "Esa ciudad no tiene hoteles
+  disponibles por ahora"; caída → 503 "Probá de nuevo en unos minutos". Dos búsquedas simultáneas de la misma ciudad
+  hacen una sola llamada. El log del API lo dice con `hotels.catalog.ciudad_cargada` (`outcome`, `hotels`),
+  `hotels.catalog.ciudad_no_cargada` (TBO) o `hotels.catalog.ciudad_no_guardada` (la base).
+
+**Fotos**
+
+- **Foto principal en la disponibilidad.** Cada hotel con foto en el catálogo trae `mainImage.url`, la ruta del proxy
+  del panel (`/api/hotels/images/<base64url>`), nunca la URL de TBO. Sin foto en el catálogo, no viene.
+- **La mejor foto del mismo hotel.** La candidata sale del propio hotel o de uno equivalente de otro proveedor
+  (`hotel_match` aceptado, §9), en este orden: la del proveedor que vende, `details` antes que `listing`, la que
+  tiene más fotos y el idioma pedido (`HotelCatalogStore.imageCandidates`). Sólo cuenta una foto cuyo dominio sirve
+  el proxy: hoy, los de TBO.
+- **Fotos bajo demanda.** `POST /hotels/content/batch` (hasta 24 hoteles, Zod; no es una venta ni gasta cuota de
+  búsqueda): lo que el catálogo tiene sale al instante; lo que falta se pide a `HotelDetails` en lotes de 10 (a lo
+  sumo 20 hoteles por petición), sólo por hoteles del catálogo del proveedor que todavía no tienen contenido
+  `details`, con la cuenta de la agencia, por el cupo de fondo del limitador y por el circuito (pasiva: un
+  `HotelDetails` lento no corta las búsquedas de la red). Se guarda con `hotel_catalog_store_contents` (0054), con la
+  huella `tbo-content-v1` del ACL, la misma del sync. La respuesta espera 9 s como mucho: lo que no llegó sale
+  `pending` con `retryAfterMs` (3 s) y la llamada sigue y guarda. Cada ítem sale `ready` (con la foto), `pending` o
+  `none`. Un hotel sin contenido (o cuya fila la base rechazó) se recuerda 6 h y un lote fallido 2 min, para no
+  volver a pedirlos en cada pantalla. El log dice `hotels.content_batch.lote_fallo`,
+  `hotels.content_batch.filas_rechazadas` o `hotels.content_batch.guardar_fallo`, sólo con códigos y conteos. Con
+  el circuito abierto o TBO apagado no sale nada ni queda línea: esos hoteles salen `none`.
+- **Resultados (web).** La lista se pinta con lo que trajo la búsqueda. Para las tarjetas sin foto, la pantalla pide
+  `POST /api/hotels/content/batch` del panel, que rearma el cuerpo y lo reenvía al API con la sesión: en tandas de
+  hasta 24 hoteles, en el orden en que se ven, dos tandas a la vez como mucho, hasta 3 intentos por hotel respetando
+  `retryAfterMs` (entre 1 y 30 s) y cortando todo al cambiar de búsqueda
+  (`apps/web-b2b/src/app/(app)/hoteles/_components/hotel-photos.ts` y `use-hotel-photos.ts`). Mientras llega, la
+  tarjeta muestra un marcador; con `none`, o si la imagen no carga, "Sin foto". La foto es decorativa (`alt=""`): el
+  nombre del hotel ya es el título de la tarjeta.
+- **Ficha del hotel (detalle).** La acción del panel lee `GET /hotels/content/…` y entrega las fotos ya como rutas del
+  proxy (la URL de TBO no llega al navegador). Si la ficha vuelve sin fotos y no fue TBO quien respondió sin ellas
+  (`origin` distinto de `provider`: el `HotelDetails` de 6 s no llegó o falló), la página pide ese hotel por
+  `/api/hotels/content/batch` —que lo trae con plazo largo y lo guarda en `hotel_content`— hasta tres veces respetando
+  `retryAfterMs`, y con algo `ready` relee la ficha. La galería (foto grande y miniaturas, carrusel con pestañas de
+  WAI-ARIA, teclado y deslizamiento) muestra "Buscando las fotos del hotel…" mientras tanto; las tarifas no esperan.
+- **Proxy de imágenes.** `GET /api/hotels/images/<clave>` del panel (`apps/web-b2b/src/lib/hotel-image-proxy.ts`). La
+  clave es la URL de TBO en base64url, exactamente la normalizada. Sólo `https` de dominios de TBO (espejo de
+  `TBO_IMAGE_HOST_SUFFIXES` del ACL: `tbotechnology.in` y `tboholidays.com`), redirecciones sólo dentro de ellos (3
+  como mucho), 8 s, 5 MB, sólo bytes que son imagen por su firma (nunca SVG). Caché en memoria de 24 h con techo de
+  48 MB y 4.000 entradas; un fallo se recuerda 5 min. A lo sumo 32 descargas a la vez: lo demás responde 503 sin
+  guardarse, porque la ruta es pública y el host de fotos de TBO es el de su API. La foto sale con `Cache-Control`
+  de un día; una clave inválida o una foto que TBO ya no sirve, 404.
+- **Miniaturas.** `next/image` sólo acepta esa ruta (`images.localPatterns`, sin `remotePatterns`), en WebP, anchos
+  96, 160, 256 y 384 (miniaturas) y 640 a 1280 (foto grande), calidades 60, 70 y 75, y las guarda en su caché de
+  disco (7 días como mínimo, 512 MB). Todo sale del propio origen: la CSP no cambia (`img-src 'self'`). Esa caché vive
+  en el contenedor `web-b2b` y se vacía con cada deploy; la de las fotos sigue en `hotel_content`.
+
+**Escritura desde el API.** La app sigue sin `INSERT`/`UPDATE` sobre el catálogo (0041): escribe sólo por las dos
+funciones `SECURITY DEFINER` de 0054, que validan cada campo y aplican las reglas del sync (sólo hoteles del catálogo,
+`listing` nunca sobre `details`, HTML de lista blanca, imágenes `https`, nunca desactivar ni mover un hotel activo).
+Quién puede disparar la escritura lo decide el API: la cuenta de TBO de la agencia, su `opt-in` y el circuito.
+
+**Pantalla de resultados.** El mismo commit de la web (`ac65ac3`) rediseñó la pantalla con lo que aprobó el founder:
+barra de la búsqueda (destino, fechas, noches, huéspedes, moneda, "Editar búsqueda"); filtros del lado del cliente
+(precio total máximo, "Solo reembolsables", estrellas, régimen y, con la divulgación encendida, proveedor), en una
+hoja en el teléfono; estado vacío que propone qué ampliar; orden (recomendados, menor y mayor precio, más estrellas)
+en la URL; y tarjeta con foto grande, dirección en vez del ID técnico, etiquetas de régimen, cancelación, promoción y
+cargos en el hotel, precio por noche con el total y proveedor discreto. Las no reembolsables están en
+[03 §2.13](./03-prebook-y-book.md#213-tarifas-no-reembolsables-aplicado-2026-09-29).
+
+**Mapa: vista de lista, sin mapa embebido.** El botón "Mapa" lista los hoteles con los mismos filtros y el mismo
+orden, con su dirección o sus coordenadas del catálogo, y abre cada uno en Google Maps en otra pestaña, como la ficha
+(`hotel-results-map.tsx`). Un mapa interactivo pediría una dependencia nueva y teselas de un tercero: más orígenes en
+`img-src`/`connect-src` de la CSP, la posición de cada búsqueda saliendo a ese servidor, y las teselas públicas de
+OpenStreetMap no admiten el uso de una aplicación comercial sin un proveedor contratado. Queda así hasta elegir uno.
+
+**Pendientes.**
+
+- E2A no vuelve a pedir la lista de un país que ya tiene ciudades: las de `TBO_SYNC_COUNTRIES` las refresca E2 en
+  cada corrida que la incluye (las programadas), pero las del resto del mundo quedan como las bajó la primera
+  corrida. Si TBO agrega ciudades en esos países, no aparecen hasta que haya un modo de refresco.
+- La cobertura global sólo llega a las agencias que sugieren desde el catálogo local (§8.5). Con Despegar activo,
+  una ciudad de TBO sin mapa de destino no se busca en TBO: es la opción C de §8.2.
+- Licencia y caducidad de las imágenes de TBO siguen sin respuesta → [Q-67](./10-preguntas-para-tbo.md#q-67). El
+  proxy no copia fotos a un almacenamiento propio: si TBO lo permite y los tokens caducan, la copia a MinIO/S3 sigue
+  siendo la opción (b) de §14 punto 4.
 
 ---
 
@@ -1045,7 +1178,7 @@ deduplicación cross-provider" (`packages/canonical/src/hotel.ts:38-45`), y cuan
 | Timeouts de estáticos                | Nada (p. 8)                                                                                | Iniciales: 30 s `CountryList`/`CityList`, 60 s `TBOHotelCodeList`, 45 s `HotelDetails`, 180 s `hotelcodelist` (INFERIDO; medir en test). Son valores de configuración del sync: el de `HotelDetails` queda por debajo del techo de 60 s de `TBO_OPERATIONS`, porque la configuración solo puede acortar ([01](./01-autenticacion-conectividad-y-errores.md) §5.2; [08](./08-requisitos-maestro.md) RNF-01, §9 C-14) | por método                     |
 | Deltas                               | No existen (pp. 51-69)                                                                     | Refresco completo; `content_hash` para no reescribir contenido igual                                                                                                                                                                                                                                                                                                                                                | —                              |
 | Idiomas                              | AR, ES, PT, FR, ZH listados; `EN` solo en ejemplos (pp. 56, 58)                            | Pedir `ES`, `PT` y `EN` en mayúsculas. Si un idioma falla, se guarda EN y se muestra EN de fallback                                                                                                                                                                                                                                                                                                                 | `TBO_SYNC_LANGS`               |
-| Imágenes                             | Sin licencia, caducidad ni host live documentados (pp. 57, 62)                             | Hotlink: se guarda la URL y no se copia. Se refresca con el contenido; si una imagen falla, placeholder                                                                                                                                                                                                                                                                                                             | —                              |
+| Imágenes                             | Sin licencia, caducidad ni host live documentados (pp. 57, 62)                             | Se guarda la URL y no se copia. Se refresca con el contenido; si una imagen falla, placeholder. Desde el 2026-09-29 el navegador no la pide a TBO: pasa por el proxy propio del panel, con caché y sólo desde dominios de TBO (§8.6)                                                                                                                                                                                | —                              |
 | Estabilidad de códigos               | Nada                                                                                       | `hotel_id` y `provider_city_code` se tratan como estables; un hotel que cambia de ciudad se mueve por upsert                                                                                                                                                                                                                                                                                                        | —                              |
 
 ---
@@ -1174,14 +1307,21 @@ la opción recomendada en todas las demás hasta nuevo aviso; lo que manda es el
    incluidas (p. 54). (a) Solo destinos domésticos CO, PE y BR; (b) esos más los destinos más vendidos desde LATAM
    (por ejemplo US, MX, DO, AR, CL, ES), según la lista comercial; (c) todo el catálogo, no recomendado sin conocer
    el QPS. **Recomendación: (b) con lista cerrada**, ampliable por configuración (`TBO_SYNC_COUNTRIES`).
+   **2026-09-29:** los hoteles se siguen sincronizando por la lista cerrada. Lo que se suma, aprobado por el founder,
+   es la lista de ciudades de todos los países (E2A, una llamada por país) y los hoteles de una ciudad nueva la
+   primera vez que alguien la busca (§8.6).
 2. **Herramienta de sync.** (a) Herramienta aparte `tools/sync-tbo-hotel-inventory`; (b) convertir el sync de
    Despegar en runner multi-proveedor. **Recomendación: (a)**: no toca un job que funciona y cada proveedor tiene su
    propia cadencia (§6.2).
 3. **Contenido rico (imágenes, descripción, horarios).** (a) Descarga por lotes para todos los hoteles activos de
    los países habilitados; (b) solo hoteles de destinos con demanda más la carga bajo demanda al abrir el detalle,
    sin persistir desde el API. **Recomendación: (b) al inicio**, pasando a (a) cuando se conozca el QPS.
+   **2026-09-29:** se aplica (b) con un cambio que aprobó el founder: lo que se trae bajo demanda para las fotos de
+   los resultados sí se guarda desde el API, por la función de 0054 y con las reglas del sync (§8.6).
 4. **Imágenes.** (a) Hotlink a las URLs de TBO; (b) copia a MinIO/S3. Depende de la licencia (§13, pregunta sobre imágenes).
    **Recomendación: (a) en fase 1**; (b) solo si TBO lo permite y los tokens caducan.
+   **2026-09-29:** se aplica (a) sin que el navegador hable con TBO: las fotos pasan por el proxy propio del panel,
+   con caché en memoria y miniaturas de `next/image`, y no se copian a un almacenamiento propio (§8.6).
 5. **Resolución de destino en fase 1.** (a) Mapa calculado contra el id de Despegar (opción B de §8), que deja la
    búsqueda TBO dependiendo del autocomplete de Despegar; (b) autocomplete y destinos propios desde ya (opción C),
    con más trabajo de UI y curaduría. **Recomendación: (a)**, salvo que se quieran tenants solo-TBO desde el

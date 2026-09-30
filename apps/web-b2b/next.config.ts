@@ -34,6 +34,20 @@ const config: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: path.join(import.meta.dirname, '../../'),
   typedRoutes: true,
+  // Fotos de hoteles: llegan por el proxy propio (`/api/hotels/images/<clave>`, lib/hotel-image-proxy)
+  // y `next/image` las achica a miniatura y las guarda en su caché de disco. Sólo esa ruta local:
+  // ninguna imagen remota pasa por el optimizador, así que no hay `remotePatterns`.
+  images: {
+    localPatterns: [{ pathname: '/api/hotels/images/**', search: '' }],
+    deviceSizes: [640, 828, 1080, 1280],
+    imageSizes: [96, 160, 256, 384],
+    // Las calidades que piden las fotos de hoteles (miniatura de la galería, tarjeta, foto grande):
+    // el optimizador rechaza cualquier otra, así nadie le pide variantes de más.
+    qualities: [60, 70, 75],
+    formats: ['image/webp'],
+    minimumCacheTTL: 7 * 24 * 60 * 60,
+    maximumDiskCacheSize: 512 * 1024 * 1024,
+  },
   async headers() {
     return [
       {

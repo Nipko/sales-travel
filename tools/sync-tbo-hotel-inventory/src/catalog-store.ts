@@ -31,7 +31,10 @@ export interface CatalogStore {
   /** E2: upsert de `hotel_provider_city` (código, nombre, `name_norm`, país). No toca el checkpoint. */
   upsertCities(countryCode: string, cities: readonly TboCity[]): Promise<number>;
 
-  /** Candidatas de E3 de esos países, con su demanda reciente. El orden lo decide `selectDueCities`. */
+  /**
+   * Candidatas de E3 de esos países, más las ciudades de otros países con búsquedas recientes (las
+   * que el API cargó bajo demanda), con su demanda. El orden lo decide `selectDueCities`.
+   */
   listCityCandidates(query: CityCandidatesQuery): Promise<readonly CityCandidate[]>;
 
   /** E3 de una ciudad, en UNA transacción corta: upsert, guarda, barrido y centroide. */
@@ -43,7 +46,10 @@ export interface CatalogStore {
   /** E5: baja lógica de los hoteles activos que `hotelcodelist` ya no trae, con la misma guarda. */
   deactivateMissing(input: DeactivateMissingInput): Promise<DeactivateMissingResult>;
 
-  /** E4: hoteles activos de esos países con su demanda y lo que ya tienen de HotelDetails. */
+  /**
+   * E4: hoteles activos de esos países, y los de ciudades buscadas de otros países, con su demanda
+   * y lo que ya tienen de HotelDetails.
+   */
   listContentCandidates(query: ContentCandidatesQuery): Promise<readonly ContentCandidate[]>;
 
   /**

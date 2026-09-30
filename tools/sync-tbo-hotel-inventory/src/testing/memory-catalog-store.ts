@@ -152,6 +152,11 @@ export class MemoryCatalogStore implements CatalogStore {
   readonly demand = new Map<string, number>();
   /** Búsquedas recientes por `destinationId` (lo que `search_logs` da agrupado por búsqueda). */
   readonly searchesByDestination = new Map<string, number>();
+  /**
+   * Búsquedas recientes de una ciudad del catálogo local de este proveedor
+   * (`destinationProvider` + `destinationCityCode`), por código de ciudad: no pasan por el mapa.
+   */
+  readonly searchesByProviderCity = new Map<string, number>();
   /** El destino de la UI: `source_provider_code` del mapa y el otro lado de las equivalencias. */
   sourceProviderCode = PLATFORM_DESTINATION_PROVIDER;
   /** `hotel_match`, de todos los proveedores. */
@@ -320,7 +325,7 @@ export class MemoryCatalogStore implements CatalogStore {
         .filter(
           (c) =>
             c.providerCode === this.providerCode &&
-            query.countries.includes(c.countryCode) &&
+            (query.countries.includes(c.countryCode) || this.#demandOf(c.code) > 0) &&
             (query.cities === undefined || query.cities.includes(c.code)),
         )
         .map((c) => ({
@@ -448,8 +453,9 @@ export class MemoryCatalogStore implements CatalogStore {
       if (hotel.providerCityCode === null) continue;
       if (query.cities !== undefined && !query.cities.includes(hotel.providerCityCode)) continue;
       const city = this.city(hotel.providerCityCode);
-      if (city === undefined || !query.countries.includes(city.countryCode)) continue;
+      if (city === undefined) continue;
       const demand = this.#demandOf(city.code);
+      if (!query.countries.includes(city.countryCode) && demand <= 0) continue;
       if (query.onlyDemand && demand <= 0) continue;
       const detailsFetchedAt: Partial<Record<TboContentLanguage, Date>> = {};
       for (const row of this.contents.values()) {
@@ -676,7 +682,7 @@ export class MemoryCatalogStore implements CatalogStore {
   #demandOf(cityCode: string): number {
     const fixed = this.demand.get(cityCode);
     if (fixed !== undefined) return fixed;
-    let searches = 0;
+    let searches = this.searchesByProviderCity.get(cityCode) ?? 0;
     for (const row of this.destinations.values()) {
       if (row.targetCityCode !== cityCode || row.status !== 'accepted') continue;
       searches += this.searchesByDestination.get(row.sourceCityId) ?? 0;

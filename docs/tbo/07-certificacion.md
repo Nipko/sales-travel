@@ -636,7 +636,7 @@ Postura: (A). Es la decisión DC-1 (§11). Con (B), los pasos de §7.3 se mantie
 
 ## 8. Checklist de UI que TBO revisará en el portal
 
-Es lo mínimo que el portal tiene que hacer para que TBO pueda recorrer la Fase 3. Que TBO revise exactamente esto es INFERIDO de los CK de §3. La columna "Hoy" es el estado del código al 2026-09-23, salvo en U-04 y U-05, que dicen que el founder aceptó su desviación el 2026-09-27 (debajo de la tabla).
+Es lo mínimo que el portal tiene que hacer para que TBO pueda recorrer la Fase 3. Que TBO revise exactamente esto es INFERIDO de los CK de §3. La columna "Hoy" es el estado del código al 2026-09-23, salvo en U-04, que dice que el founder aceptó su desviación el 2026-09-27 (debajo de la tabla), y en U-05, que dice cómo se cumple desde el 2026-09-29.
 
 | ID   | Pantalla               | Qué debe hacer o mostrar                                                                                                                                                                      | CK                  | Hoy                                                                                                                                                                 |
 | ---- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -644,7 +644,7 @@ Es lo mínimo que el portal tiene que hacer para que TBO pueda recorrer la Fase 
 | U-02 | Búsqueda               | Destino resuelto a hoteles TBO y fechas                                                                                                                                                       | CK-04               | Solo destinos de Despegar; el subtítulo dice "vía Despegar/HotelDo" (`apps/web-b2b/src/app/(app)/hoteles/page.tsx:38-40`)                                           |
 | U-03 | Búsqueda               | **Nacionalidad del huésped líder**: campo obligatorio, sin valor silencioso                                                                                                                   | CK-01               | No existe; no hay campo de nacionalidad en `hoteles/` (VERIFICADO-CODIGO, por ausencia)                                                                             |
 | U-04 | Búsqueda               | Habitaciones con 1–8 adultos, 0–4 niños y edad de cada niño de 0 a 18, dentro de los límites de TBO                                                                                           | CK-03               | Desviación aceptada por el founder el 2026-09-27 (abajo): topes de la plataforma, 6 niños y edades 0–17; con 5 o 6 niños TBO queda fuera de esa búsqueda con motivo |
-| U-05 | Resultados             | Nombre, estrellas, dirección e imagen del hotel (contenido estático); nombre de cada habitación; régimen; reembolsable o no; promociones; `Inclusion`                                         | —                   | Desviación aceptada por el founder el 2026-09-27 (abajo): la imagen está en el detalle del hotel, no en la tarjeta de resultados                                    |
+| U-05 | Resultados             | Nombre, estrellas, dirección e imagen del hotel (contenido estático); nombre de cada habitación; régimen; reembolsable o no; promociones; `Inclusion`                                         | —                   | Cumple desde el 2026-09-29: la tarjeta lleva la foto del catálogo o la trae en segundo plano ([05](./05-contenido-estatico-e-inventario.md) §8.6)                   |
 | U-06 | Resultados             | **Precio de venta** (waterfall), no el neto                                                                                                                                                   | CK-09               | Pinta el neto `price.total` (`hotel-result-card.tsx:62`, `:118`)                                                                                                    |
 | U-07 | Resultados             | Suplementos: `AtProperty` rotulado "a pagar en el hotel", con importe y moneda propios, separado del total                                                                                    | CK-08               | Solo un "A pagar en destino" agregado de Despegar (`hotel-result-card.tsx:110-112`)                                                                                 |
 | U-08 | Resultados             | Mensaje claro ante `Status.Code` 201 (sin disponibilidad)                                                                                                                                     | CK-16               | Por construir para TBO                                                                                                                                              |
@@ -662,7 +662,8 @@ Es lo mínimo que el portal tiene que hacer para que TBO pueda recorrer la Fase 
 | U-20 | Idioma                 | Recorrible por un tester que no lee español: guía en inglés (Anexo B) o locale EN (DC-3)                                                                                                      | —                   | Solo español                                                                                                                                                        |
 
 **Desviaciones aceptadas (2026-09-27).** El founder aceptó el 2026-09-27 dos puntos que la web cumple de otra
-forma. Salieron del cierre de la Fase 6 ([09](./09-plan-implementacion.md) §13) y quedan registrados en
+forma. U-05 dejó de ser una desviación el 2026-09-29. Salieron del cierre de la Fase 6
+([09](./09-plan-implementacion.md) §13) y quedan registrados en
 [08](./08-requisitos-maestro.md#desviaciones-aceptadas-del-checklist-de-ui). La razón es la que dejaron ese cierre y,
 en U-04, los comentarios de PR-6.1 junto a los topes (VERIFICADO-CODIGO en la rama `feat/tbo-hotels`):
 
@@ -676,10 +677,11 @@ en U-04, los comentarios de PR-6.1 junto a los topes (VERIFICADO-CODIGO en la ra
   visible en vez de truncar la ocupación. Ninguno de los 8 casos cae fuera (§4.2: hasta 2 niños por habitación,
   edades de 3 a 11). Queda afuera un niño de 18 años, que TBO admite (p. 11) → [Q-14](./10-preguntas-para-tbo.md#q-14).
   Si TBO lo objeta en la verificación de portal (CK-03), el cambio es acotar el selector por proveedor.
-- **U-05.** La imagen del hotel está en el detalle (`/hoteles/[hotelKey]`, contenido estático), no en la tarjeta
-  de resultados. Razón: la oferta neutral de disponibilidad no trae imagen, y llevarla a la tarjeta exige sumar una
-  miniatura del catálogo a `POST /hotels/availability`. U-05 no tiene CK asociado. Si TBO pide la imagen en la
-  tarjeta, ese es el cambio.
+- **U-05. Resuelta el 2026-09-29.** Hasta entonces la imagen del hotel estaba sólo en el detalle
+  (`/hoteles/[hotelKey]`, contenido estático) y no en la tarjeta de resultados, porque la oferta neutral de
+  disponibilidad no traía imagen. El cambio fue el previsto: `POST /hotels/availability` suma la foto principal del
+  catálogo (`mainImage`) y la web trae en segundo plano la que falta ([05](./05-contenido-estatico-e-inventario.md)
+  §8.6). U-05 no tiene CK asociado.
 
 Fuera del portal, pero con la misma obligación contractual: el canal WhatsApp tiene que enunciar los suplementos `AtProperty` y la política antes de confirmar (KP-4, p. 71). TBO no lo verifica en esta ronda si solo declaramos B2B (DC-2), pero la regla aplica a todo canal que venda.
 

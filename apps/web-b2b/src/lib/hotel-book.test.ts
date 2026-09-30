@@ -80,6 +80,17 @@ describe('parseHotelBookRequest — lo que la ruta reenvía al API', () => {
     expect(parseHotelBookRequest(rest)).toEqual(rest);
   });
 
+  it('reenvía la confirmación de tarifa no reembolsable sólo si es `true`', () => {
+    const conConfirmacion = { ...REQUEST, nonRefundableAcknowledged: true as const };
+    expect(parseHotelBookRequest(conConfirmacion)).toEqual(conConfirmacion);
+    expect(parseHotelBookRequest({ ...REQUEST, nonRefundableAcknowledged: 'yes' })).toEqual(
+      REQUEST,
+    );
+    expect(parseHotelBookRequest({ ...REQUEST, nonRefundableAcknowledged: false })).toEqual(
+      REQUEST,
+    );
+  });
+
   it('recorta los nombres sin cambiarlos: la transliteración es del servidor', () => {
     const parsed = parseHotelBookRequest({
       ...REQUEST,

@@ -1,8 +1,8 @@
 'use client';
 
-import { ArrowLeft, Globe2, MapPin, RefreshCw, Star } from 'lucide-react';
+import { ArrowLeft, Clock, Globe2, MapPin, RefreshCw, Star } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../../../../../components/ui/card';
 import { cn } from '../../../../../lib/cn';
 import type { HotelProviderHotelRef } from '../../_components/hotel-key';
@@ -19,7 +19,7 @@ import {
   ContactCard,
   EmptyContent,
   HotelDescription,
-  HotelGallery,
+  LocationCard,
 } from './hotel-content-sections';
 import {
   addressLine,
@@ -29,19 +29,26 @@ import {
   hasDescriptiveContent,
   mapsUrl,
 } from './hotel-content-view';
+import { refsToWarm, rereadContent, warmHotelContent } from './hotel-content-warmup';
 import { HotelDetailRates, RatesNeedSearch, RatesSkeleton } from './hotel-detail-rates';
 import {
   contentToShow,
   detailHeader,
   factsByProvider,
+  hotelLocationView,
+  stayHoursLine,
   stayNights,
   staySummary,
 } from './hotel-detail-view';
+import { GallerySkeleton, HotelGallery } from './hotel-gallery';
 
 /*
  * El detalle de un hotel (U-05 en el portal): la ficha del proveedor que puso nombre a la tarjeta
- * (o, si ése no tiene, la de otro que lo vende) y las tarifas de todos, pedidas a la vez. La ficha no espera a las tarifas ni
- * al revés: el contenido acompaña a la venta, no la frena (principio 1).
+ * (o, si ése no tiene, la de otro que lo vende) y las tarifas de todos, pedidas a la vez. La ficha
+ * no espera a las tarifas ni al revés: el contenido acompaña a la venta, no la frena (principio 1).
+ *
+ * Si la ficha llega sin fotos, se buscan en el proveedor en segundo plano (hotel-content-warmup):
+ * la galería dice que las está buscando y aparecen cuando llegan, sin frenar nada más.
  */
 
 const CONTENT_UNREADABLE: HotelContentResult = {
@@ -63,19 +70,48 @@ interface HotelDetailProps {
   searchToken?: string;
 }
 
+/** Las fotos de la ficha en el proveedor: sin buscar, buscándose o ya buscadas. */
+type PhotoSearch = 'idle' | 'searching' | 'done';
+
 export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
   const [content, setContent] = useState<HotelContentResult | undefined>(undefined);
+  const [photoSearch, setPhotoSearch] = useState<PhotoSearch>('idle');
   // `undefined` mientras no se leyó el almacenamiento; `null` si no hay búsqueda de origen.
   const [handoff, setHandoff] = useState<SearchHandoff | null | undefined>(undefined);
   const [rates, setRates] = useState<HotelDetailRatesResult | undefined>(undefined);
   const [ratesLoading, setRatesLoading] = useState(false);
+  // La lectura en curso de la ficha y su búsqueda de fotos: se corta al reintentar o al salir.
+  const contentRun = useRef<AbortController | null>(null);
 
   const loadContent = useCallback(() => {
+    contentRun.current?.abort();
+    const run = new AbortController();
+    contentRun.current = run;
     setContent(undefined);
-    hotelContentAction(hotelKey)
-      .then(setContent)
-      .catch(() => setContent(CONTENT_UNREADABLE));
-  }, [hotelKey]);
+    setPhotoSearch('idle');
+    void (async () => {
+      const first = await hotelContentAction(hotelKey).catch(() => CONTENT_UNREADABLE);
+      if (run.signal.aborted) return;
+      setContent(first);
+      const targets = refsToWarm(refs, first);
+      if (targets.length === 0) return;
+      setPhotoSearch('searching');
+      const outcome = await warmHotelContent(targets, run.signal);
+      if (run.signal.aborted) return;
+      if (outcome === 'ready') {
+        // Ya quedó en el catálogo: la ficha se vuelve a leer, ahora con sus fotos.
+        const next = await hotelContentAction(hotelKey).catch(() => undefined);
+        if (run.signal.aborted) return;
+        setContent((prev) => rereadContent(refs, prev ?? first, next));
+      }
+      setPhotoSearch('done');
+    })().catch(() => {
+      // Las fotos acompañan a la ficha: si algo falla al buscarlas, la ficha queda como estaba.
+      if (!run.signal.aborted) setPhotoSearch('done');
+    });
+  }, [hotelKey, refs]);
+
+  useEffect(() => () => contentRun.current?.abort(), []);
 
   const loadRates = useCallback(
     (from: SearchHandoff) => {
@@ -113,7 +149,13 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
   const stars = header.stars ? Math.min(5, Math.round(header.stars)) : 0;
   const languageNote = shown ? contentLanguageNote(shown) : undefined;
   const hasContent = shown !== undefined && hasDescriptiveContent(shown);
-  const hasAside = shown !== undefined && (hasArrivalInfo(shown) || hasContactInfo(shown));
+  const searchingPhotos = photoSearch === 'searching';
+  const nameCountry = useMemo(() => countryNamer('es'), []);
+  const location = hotelLocationView(header, primaryContent, nameCountry);
+  const hasArrival = shown !== undefined && hasArrivalInfo(shown);
+  const hasContact = shown !== undefined && hasContactInfo(shown);
+  const hasAside = hasArrival || hasContact || location !== undefined;
+  const hours = shown === undefined ? undefined : stayHoursLine(shown);
 
   // El detalle se abre en otra pestaña para comparar hoteles: con el título del panel en todas,
   // las pestañas no se distinguen entre sí.
@@ -176,6 +218,14 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
                   {address}
                 </span>
               ) : null}
+              {/* A la vista: es lo primero que pregunta el cliente, y en el teléfono la tarjeta de
+                  llegada queda debajo de las tarifas. */}
+              {hours ? (
+                <span className="inline-flex items-center gap-1 tabular-nums">
+                  <Clock aria-hidden="true" className="size-3 shrink-0" />
+                  {hours}
+                </span>
+              ) : null}
               {header.location ? (
                 <a
                   href={mapsUrl(header.location)}
@@ -192,12 +242,15 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
         )}
       </header>
 
-      {shown ? <HotelGallery images={shown.images} name={header.name} /> : null}
-      {content === undefined ? (
-        <div
-          aria-hidden="true"
-          className="h-44 animate-pulse rounded-lg bg-[var(--color-surface-muted)] sm:h-56"
+      {content === undefined ? <GallerySkeleton searching={false} /> : null}
+      {shown !== undefined && shown.images.length > 0 ? (
+        <HotelGallery
+          key={`${shown.providerCode}:${shown.hotelId}`}
+          images={shown.images}
+          name={header.name}
         />
+      ) : searchingPhotos ? (
+        <GallerySkeleton searching />
       ) : null}
 
       {/* Las tarifas a todo el ancho: son lo que el vendedor viene a mirar, y sus políticas se
@@ -245,7 +298,7 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
         </div>
       ) : null}
 
-      {shown ? (
+      {shown !== undefined || location !== undefined ? (
         <div
           className={cn(
             'grid grid-cols-1 gap-5 lg:items-start',
@@ -257,10 +310,11 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
           {hasAside ? (
             <aside
               className="space-y-5 lg:col-start-2 lg:row-start-1"
-              aria-label="Llegada y contacto"
+              aria-label="Llegada, ubicación y contacto"
             >
-              <ArrivalCard content={shown} />
-              <ContactCard content={shown} />
+              {shown !== undefined && hasArrival ? <ArrivalCard content={shown} /> : null}
+              {location !== undefined ? <LocationCard view={location} /> : null}
+              {shown !== undefined && hasContact ? <ContactCard content={shown} /> : null}
             </aside>
           ) : null}
           <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
@@ -270,7 +324,12 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
                 {languageNote}
               </p>
             ) : null}
-            {hasContent ? <HotelDescription content={shown} /> : <EmptyContent />}
+            {/* Mientras se buscan en el proveedor, "no tiene fotos ni descripción" sería falso. */}
+            {shown === undefined ? null : hasContent ? (
+              <HotelDescription content={shown} />
+            ) : searchingPhotos ? null : (
+              <EmptyContent />
+            )}
           </div>
         </div>
       ) : null}

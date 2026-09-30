@@ -151,6 +151,42 @@ describe('HotelOrderDetail', () => {
   });
 });
 
+describe('HotelOrderDetail — tarifa no reembolsable (punto d)', () => {
+  const noReembolsable = (over: Partial<HotelOrderDetailOrder> = {}) =>
+    orden({
+      selectedOffer: {
+        ...(orden().selectedOffer as Record<string, unknown>),
+        nonRefundable: {
+          reason: 'declared',
+          penalty: { amountMinor: 36000, currency: 'USD' },
+          acknowledgedAt: '2026-10-01T15:04:00.000Z',
+        },
+      },
+      ...over,
+    });
+
+  it('lo dice arriba, con el 100 % y cuándo lo confirmó el vendedor', () => {
+    const html = detalle(noReembolsable());
+    expect(html).toContain('No reembolsable');
+    expect(html).toContain('Tarifa no reembolsable');
+    expect(html).toContain('se cobra el 100 %');
+    expect(html).toMatch(/360,00/);
+    expect(html).toContain('El vendedor lo confirmó al reservar');
+    expect(html).toContain('Enviar confirmación');
+  });
+
+  it('cancelada: queda la etiqueta, sin el aviso grande', () => {
+    const html = detalle(noReembolsable({ status: 'cancelled' }));
+    expect(html).toContain('No reembolsable');
+    expect(html).not.toContain('Tarifa no reembolsable');
+  });
+
+  it('una reembolsable no lleva ni la etiqueta ni el aviso', () => {
+    const html = detalle(orden());
+    expect(html).not.toContain('No reembolsable');
+  });
+});
+
 describe('HotelCancelDialog', () => {
   it('arranca calculando la penalidad, sin ofrecer confirmar todavía', () => {
     const html = renderToStaticMarkup(

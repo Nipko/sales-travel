@@ -32,6 +32,9 @@ function hechos(overrides: Partial<HotelBookableFacts> = {}): HotelBookableFacts
     signals: [],
     atPropertyCharges: 0,
     atPropertyAcknowledged: false,
+    nonRefundable: false,
+    nonRefundableBlocked: false,
+    nonRefundableAcknowledged: false,
     acceptedTotal: USD(32_134),
     shownTotal: USD(32_134),
     ...overrides,
@@ -62,6 +65,47 @@ describe('checkBookable: lo que se rechaza antes de abrir la orden', () => {
     expect(
       checkBookable(hechos({ atPropertyCharges: 2, atPropertyAcknowledged: true })),
     ).toBeUndefined();
+  });
+
+  it('no reembolsable (pedido del 2026-09-29, punto c): sin la confirmación del vendedor no se abre la orden', () => {
+    expect(checkBookable(hechos({ nonRefundable: true }))).toBe('NON_REFUNDABLE_NOT_ACKNOWLEDGED');
+    expect(
+      checkBookable(hechos({ nonRefundable: true, nonRefundableAcknowledged: true })),
+    ).toBeUndefined();
+    // Una reembolsable no necesita la confirmación, aunque llegue marcada.
+    expect(checkBookable(hechos({ nonRefundableAcknowledged: true }))).toBeUndefined();
+  });
+
+  it('no reembolsable bloqueada para la agencia (punto e): se rechaza aunque venga confirmada', () => {
+    expect(
+      checkBookable(
+        hechos({
+          nonRefundable: true,
+          nonRefundableBlocked: true,
+          nonRefundableAcknowledged: true,
+        }),
+      ),
+    ).toBe('NON_REFUNDABLE_BLOCKED');
+    // El bloqueo gana a los reconocimientos que faltan: confirmar algo que no se puede reservar no
+    // sirve de nada.
+    expect(
+      checkBookable(
+        hechos({ nonRefundable: true, nonRefundableBlocked: true, atPropertyCharges: 1 }),
+      ),
+    ).toBe('NON_REFUNDABLE_BLOCKED');
+    // Bloqueada, una reembolsable se reserva igual.
+    expect(checkBookable(hechos({ nonRefundableBlocked: true }))).toBeUndefined();
+  });
+
+  it('los cargos en el hotel se reconocen antes que la no reembolsable: el orden del formulario', () => {
+    expect(checkBookable(hechos({ nonRefundable: true, atPropertyCharges: 1 }))).toBe(
+      'AT_PROPERTY_NOT_ACKNOWLEDGED',
+    );
+    expect(
+      checkBookable(
+        hechos({ nonRefundable: true, atPropertyCharges: 1, atPropertyAcknowledged: true }),
+      ),
+    ).toBe('NON_REFUNDABLE_NOT_ACKNOWLEDGED');
   });
 
   it.each([

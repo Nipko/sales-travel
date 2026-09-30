@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, FileText, Phone, Receipt, RefreshCw, X, XCircle } from 'lucide-react';
+import { Clock, FileText, Mail, Phone, Receipt, RefreshCw, X, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { useModalBehavior } from '../../../../components/ui/dialog';
@@ -13,8 +13,10 @@ import {
 } from '../../hoteles/[hotelKey]/_components/hotel-content-view';
 import { formatMoney, rateBoardLabel } from '../../hoteles/_components/hotel-format';
 import { encodeHotelKey } from '../../hoteles/_components/hotel-key';
+import { RefundTag } from '../../hoteles/_components/hotel-rate-item';
 import { atHotelCharges } from '../../hoteles/_components/hotel-rate-view';
 import { CancelPolicy } from '../../hoteles/checkout/_components/cancel-policy';
+import { NonRefundableNotice } from '../../hoteles/checkout/_components/non-refundable-notice';
 import { RateConditions } from '../../hoteles/checkout/_components/rate-conditions';
 import { directCancellationBlock } from '../cancel-retry-policy';
 import { hotelCancellationBlock } from '../hotel-cancellation-view';
@@ -22,6 +24,7 @@ import {
   guestContactOf,
   hcnViewOf,
   hotelConditionsOf,
+  hotelNonRefundableOf,
   hotelOrderStateOf,
   hotelPackOf,
   hotelReadResultOf,
@@ -47,8 +50,9 @@ import { OrderOperationsHistory, useOrderOperations } from './order-operations-h
  * El detalle de una reserva de hotel en Mis Reservas (docs/tbo/09 PR-6.5; U-15 a U-17): el estado
  * con su subestado, la reserva en el proveedor (localizador, estado leído y número de confirmación
  * del hotel) con "Actualizar estado", el hotel, las habitaciones con sus huéspedes, lo que se paga
- * en el hotel, la política y las condiciones que se aceptaron al reservar, el voucher y la
- * cancelación.
+ * en el hotel, la política y las condiciones que se aceptaron al reservar, el voucher, la
+ * confirmación por correo y la cancelación. Una tarifa no reembolsable lo dice arriba, con el 100 %
+ * y cuándo lo aceptó el vendedor (pedido del 2026-09-29, punto d).
  *
  * Todo sale de la orden guardada y del seguimiento, que trae sólo códigos: la única lectura al
  * proveedor es la que pide el vendedor con "Actualizar estado".
@@ -137,6 +141,9 @@ export function HotelOrderDetail({
   const contact = guestContactOf(order);
   const atHotel = pack ? atHotelCharges(pack) : [];
   const voucher = hotelVoucherAvailable(order);
+  const nonRefundable = hotelNonRefundableOf(order);
+  const showNonRefundable =
+    nonRefundable !== undefined && order.status !== 'failed' && order.status !== 'cancelled';
   const ops = useOrderOperations(
     order.id,
     `${order.status}|${JSON.stringify(order.providerTracking ?? null)}`,
@@ -207,6 +214,36 @@ export function HotelOrderDetail({
     }
   }
 
+  // ── La confirmación por correo al huésped (la misma ruta que vuelos, con la plantilla de hotel).
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ ok: boolean; text: string } | null>(null);
+  async function sendConfirmation() {
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(order.id)}/send-confirmation`, {
+        method: 'POST',
+      });
+      const read = await readJson<{ sent?: boolean; to?: string; error?: string }>(res);
+      if (!read.ok || !res.ok) {
+        setSendResult({
+          ok: false,
+          text: (read.ok ? read.data.error : read.message) ?? 'No se pudo enviar la confirmación.',
+        });
+        return;
+      }
+      setSendResult(
+        read.data.sent
+          ? { ok: true, text: `Confirmación enviada a ${read.data.to ?? contact.email ?? ''}.` }
+          : { ok: false, text: 'La agencia no tiene un correo de salida configurado.' },
+      );
+    } catch {
+      setSendResult({ ok: false, text: 'Error de conexión. Probá de nuevo en unos segundos.' });
+    } finally {
+      setSending(false);
+    }
+  }
+
   const hotel = content.kind === 'ok' ? content.content : undefined;
   const address = hotel ? addressLine(hotel) : null;
 
@@ -227,6 +264,9 @@ export function HotelOrderDetail({
                 Reserva #{order.orderNumber}
               </h2>
               <HotelOrderStatusChip state={state} />
+              {nonRefundable ? (
+                <RefundTag badge={{ tone: 'warning', label: 'No reembolsable' }} />
+              ) : null}
             </div>
             <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
               Hotel{stay ? ` · ${stay.dates}` : ''}
@@ -244,6 +284,15 @@ export function HotelOrderDetail({
 
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
           <HotelOrderNoticeBox state={state} />
+          {showNonRefundable ? (
+            <NonRefundableNotice nonRefundable={nonRefundable} headingLevel={3}>
+              {nonRefundable.acknowledgedAt ? (
+                <p className="text-xs text-[var(--color-fg-muted)]">
+                  El vendedor lo confirmó al reservar, el {nonRefundable.acknowledgedAt}.
+                </p>
+              ) : null}
+            </NonRefundableNotice>
+          ) : null}
 
           <Section
             title="Reserva en el proveedor"
@@ -439,7 +488,7 @@ export function HotelOrderDetail({
             </div>
           ) : null}
 
-          {pack ? <CancelPolicy pack={pack} /> : null}
+          {pack ? <CancelPolicy pack={pack} nonRefundable={nonRefundable !== undefined} /> : null}
           {pack ? <RateConditions conditions={conditions} defaultOpen={false} /> : null}
 
           {contact.email || contact.phone ? (
@@ -465,6 +514,29 @@ export function HotelOrderDetail({
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] p-4">
+          {sendResult ? (
+            <p
+              role={sendResult.ok ? 'status' : 'alert'}
+              className={cn(
+                'mr-auto text-[11px]',
+                sendResult.ok ? 'text-[var(--color-fg-muted)]' : 'text-[var(--color-danger)]',
+              )}
+            >
+              {sendResult.text}
+            </p>
+          ) : null}
+          {voucher && contact.email ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={sending}
+              onClick={() => void sendConfirmation()}
+              className="gap-1.5 text-xs"
+            >
+              <Mail aria-hidden="true" className="size-3.5" />
+              {sending ? 'Enviando…' : 'Enviar confirmación'}
+            </Button>
+          ) : null}
           {voucher ? (
             <Button asChild variant="secondary" size="sm" className="gap-1.5 text-xs">
               <a
