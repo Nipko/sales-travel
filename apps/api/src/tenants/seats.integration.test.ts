@@ -86,7 +86,7 @@ d('puestos, Equipo y soporte a miembros, contra Postgres', () => {
     { sendToTenant: vi.fn(() => Promise.resolve(true)) } as unknown as MailerService,
     audit,
   );
-  const tenants = new TenantsService(database, network, password, invitations, audit, {
+  const tenants = new TenantsService(database, network, invitations, audit, {
     invalidate: vi.fn(),
   } as unknown as ProviderEnablementStore);
 

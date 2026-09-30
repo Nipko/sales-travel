@@ -88,7 +88,6 @@ d('suspender o degradar una membership, contra Postgres', () => {
   );
   const admin = new AdminController(
     database,
-    password,
     network,
     audit,
     sessions,

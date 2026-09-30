@@ -3,7 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { PasswordService } from '../auth/password.service.js';
-import { isAssignableRole } from '../auth/roles.js';
+import { canGrantRole, isAssignableRole } from '../auth/roles.js';
 import type { DB, Role } from '../database/database.types.js';
 import { DatabaseService } from '../database/database.service.js';
 import { MailerService } from '../mail/mailer.service.js';
@@ -13,6 +13,8 @@ import {
   type InvitationBacking,
   type InvitationDefect,
 } from './invitation-validity.js';
+import { InvitationNotPendingError } from './onboarding.errors.js';
+import { RoleNotGrantableError } from './tenant-admin.policy.js';
 
 const INVITE_TTL_DAYS = 7;
 
@@ -126,26 +128,7 @@ export class InvitationsService {
         .executeTakeFirstOrThrow(),
     );
 
-    const tenant = await this.db.db
-      .selectFrom('tenants')
-      .select('name')
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-
-    const base = process.env['APP_WEB_URL'] ?? 'https://app.planetour.cloud';
-    const link = `${base}/invitacion?token=${encodeURIComponent(token)}`;
-    const tenantName = plainText(tenant?.name ?? '') || 'la plataforma';
-
-    try {
-      await this.mailer.sendToTenant(tenantId, {
-        to: email,
-        subject: `Te invitaron a ${tenantName}`,
-        html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
-        text: `Te invitaron a ${tenantName}. Aceptá la invitación acá (vence en ${INVITE_TTL_DAYS} días): ${link}`,
-      });
-    } catch {
-      // Best-effort: la invitación queda creada y se puede reenviar.
-    }
+    await this.sendInvitationEmail(tenantId, email, token);
 
     await this.audit.emit({
       eventType: 'UserInvited',
@@ -188,6 +171,93 @@ export class InvitationsService {
       expiresAt: r.expires_at,
       createdAt: r.created_at,
     }));
+  }
+
+  /**
+   * Reenvía una invitación pendiente con un enlace nuevo: el anterior deja de valer y vence a los
+   * INVITE_TTL_DAYS de ahora, también si ya había vencido. Es el "Reenviar" del correo que no llegó.
+   *
+   * Reenviar es volver a emitir: exige el rango que pide invitar con ese rol, medido con `actorRole`
+   * (el rol con que el actor administra el nodo, lo resuelve el controller), y quien reenvía pasa a
+   * ser `invited_by`, el que la respalda desde ahora. El anterior queda en la auditoría. La RLS de
+   * 0028 acota la lectura al subárbol que administra.
+   */
+  async resend(params: {
+    actorUserId: string;
+    actorRole: Role;
+    tenantId: string;
+    invitationId: string;
+  }): Promise<{ id: string; expiresAt: Date }> {
+    const { actorUserId, actorRole, tenantId, invitationId } = params;
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60_000);
+
+    const invitation = await this.db.withRequestContext(
+      { userId: actorUserId, tenantId },
+      async (trx) => {
+        const pending = await trx
+          .selectFrom('user_invitations')
+          .select(['id', 'email', 'role', 'invited_by'])
+          .where('id', '=', invitationId)
+          .where('tenant_id', '=', tenantId)
+          .where('accepted_at', 'is', null)
+          .where('revoked_at', 'is', null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!pending) throw new InvitationNotPendingError();
+        if (!canGrantRole(actorRole, pending.role)) {
+          throw new RoleNotGrantableError(
+            'No podés reenviar una invitación con un rol igual o superior al tuyo.',
+          );
+        }
+
+        await trx
+          .updateTable('user_invitations')
+          .set({ token_hash: sha256(token), expires_at: expiresAt, invited_by: actorUserId })
+          .where('id', '=', pending.id)
+          .execute();
+        await this.audit.emitWithin(trx, {
+          eventType: 'UserInvitationResent',
+          tenantId,
+          actorUserId,
+          aggregateType: 'invitation',
+          aggregateId: pending.id,
+          payload: {
+            role: pending.role,
+            previousInvitedBy: pending.invited_by,
+            expiresAt: expiresAt.toISOString(),
+          },
+        });
+        return pending;
+      },
+    );
+
+    await this.sendInvitationEmail(tenantId, invitation.email, token);
+    return { id: invitation.id, expiresAt };
+  }
+
+  /** El correo con el enlace. Best-effort: si falla, la invitación queda y se reenvía. */
+  private async sendInvitationEmail(tenantId: string, email: string, token: string): Promise<void> {
+    const tenant = await this.db.db
+      .selectFrom('tenants')
+      .select('name')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+
+    const base = process.env['APP_WEB_URL'] ?? 'https://app.planetour.cloud';
+    const link = `${base}/invitacion?token=${encodeURIComponent(token)}`;
+    const tenantName = plainText(tenant?.name ?? '') || 'la plataforma';
+
+    try {
+      await this.mailer.sendToTenant(tenantId, {
+        to: email,
+        subject: `Te invitaron a ${tenantName}`,
+        html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
+        text: `Te invitaron a ${tenantName}. Aceptá la invitación acá (vence en ${INVITE_TTL_DAYS} días): ${link}`,
+      });
+    } catch {
+      // Best-effort: la invitación queda creada y se puede reenviar.
+    }
   }
 
   async revoke(actorUserId: string, tenantId: string, invitationId: string): Promise<{ ok: true }> {

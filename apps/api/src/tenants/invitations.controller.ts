@@ -18,6 +18,8 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   AcceptInvitationSchema,
   InviteUserSchema,
+  TenantIdParamSchema,
+  UuidParamSchema,
   type AcceptInvitationDto,
   type InviteUserDto,
 } from './dto.js';
@@ -85,6 +87,26 @@ export class InvitationsController {
       throw new ForbiddenException('target tenant is outside your network');
     }
     return this.invitations.revoke(userId, tenantId, id);
+  }
+
+  /**
+   * Reenvía una invitación pendiente con un enlace nuevo (el anterior deja de valer). El rango se
+   * mide sobre el nodo de la invitación, como al invitar: el servicio lo compara con su rol.
+   */
+  @Roles(...AGENCY_ADMIN_ROLES)
+  @Post(':id/resend')
+  async resend(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(UuidParamSchema)) id: string,
+    @Query('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+  ) {
+    if (!userId) throw new UnauthorizedException();
+
+    const actorRole = await this.network.roleOver(userId, tenantId);
+    if (actorRole === undefined) {
+      throw new ForbiddenException('target tenant is outside your network');
+    }
+    return this.invitations.resend({ actorUserId: userId, actorRole, tenantId, invitationId: id });
   }
 
   /**
