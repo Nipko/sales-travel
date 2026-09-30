@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { Toaster } from 'sonner';
+import { agencyOptions, parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
-import { getActiveTenant, getRequestedPath, setActiveTenant } from '../../lib/session';
+import { getActiveTenant, getRequestedPath } from '../../lib/session';
 import { viewerOf } from '../../lib/viewer';
 import { AppShell, BrandStyle } from '../../components/layout/app-shell';
 import { SalesGate } from '../../components/layout/sales-gate';
@@ -10,15 +11,6 @@ import { decideLayoutGate } from '../../components/layout/session-gate';
 import { parseSessionSnapshot, sessionEndPath } from '../../components/layout/session-guard-state';
 import { VerifyBanner } from '../../components/layout/verify-banner';
 import { MfaEnrollmentGate } from './configuracion/seguridad/_components/mfa-enrollment-gate';
-
-interface Membership {
-  id: string;
-  role: string;
-  status: string;
-  tenantId: string;
-  tenantSlug: string;
-  tenantName: string;
-}
 
 interface MeResponse {
   email?: string;
@@ -37,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // el 2FA. Las cuatro están exentas del chequeo de 2FA en el API, justamente para poder decidir.
   const [meRes, membershipsRes, sessionRes, mfaRes] = await Promise.all([
     api<MeResponse>('/me'),
-    api<Membership[]>('/me/memberships'),
+    api<unknown>('/me/memberships'),
     api<unknown>('/auth/session'),
     api<unknown>('/auth/mfa'),
   ]);
@@ -55,23 +47,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // quedar dentro de un try/catch.
   if (gate.kind === 'end') redirect(sessionEndPath(gate.motivo, await getRequestedPath()));
 
-  const memberships = membershipsRes.ok ? membershipsRes.data : [];
+  const memberships = membershipsRes.ok ? parseMemberships(membershipsRes.data) : [];
   const session = sessionRes.ok ? parseSessionSnapshot(sessionRes.data) : null;
 
-  let activeTenantId = await getActiveTenant();
-  const activeTenant = activeTenantId
-    ? (memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0])
-    : memberships[0];
-
-  if (activeTenant && activeTenant.tenantId !== activeTenantId) {
-    activeTenantId = activeTenant.tenantId;
-    // Next sólo deja escribir cookies en Server Actions y Route Handlers: desde este layout la
-    // escritura lanza y tumbaba el panel entero cuando la cookie quedaba vieja (una membership dada
-    // de baja, otra cuenta en el mismo navegador). Se intenta igual —en un render disparado por una
-    // Server Action sí se puede— y si no, se sigue: la pantalla usa el tenant resuelto acá, y el API
-    // descarta un x-tenant-id que no le corresponde y opera con el `tid` firmado del token.
-    await setActiveTenant(activeTenantId).catch(() => undefined);
-  }
+  // La cookie la alinea el middleware con el `tid` de la sesión; si no calza con ninguna
+  // membership activa, la por defecto de la API (el mismo criterio del login). Acá no se escribe
+  // la cookie: un Server Component no puede, y antes lo intentaba.
+  const activeTenant = resolveActiveMembership(memberships, await getActiveTenant());
+  const activeTenantId = activeTenant?.tenantId;
 
   let branding: TenantBranding | undefined;
   if (activeTenantId) {
@@ -102,6 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // El superadmin es una identidad del usuario, no del tenant activo: se mira en todas sus
   // memberships, como hace la API al rechazar una venta.
   const viewer = viewerOf(memberships);
+  const agencies = agencyOptions(memberships, activeTenantId);
 
   return (
     <AppShell
@@ -112,6 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       branding={branding}
       viewer={viewer}
       session={session}
+      agencies={agencies}
     >
       {showVerifyBanner && <VerifyBanner />}
       <SalesGate>{children}</SalesGate>

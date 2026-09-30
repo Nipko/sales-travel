@@ -557,6 +557,21 @@ Rama `feat/hotels-redesign`. Sin desplegar al escribir esto. Pedido explícito d
 - **Tests:** unidad de la clasificación, del PreBook y del Book (incluidos los rechazos y el registro en la orden), y la integración de 0055 como `app_user` (`booking-permissions.integration.test.ts`).
 - **Pendiente:** no hay cotización de hotel para el cliente en la web (sólo la de vuelos): cuando exista, tiene que decir "No reembolsable" igual que el voucher. El flujo directo de Despegar tampoco puede exigir la confirmación de una no reembolsable a una agencia que las tiene permitidas (no sabe cuál lo es): se cierra cuando Despegar pase al contrato neutral con órdenes.
 
+## §12 — Cambiar de agencia desde el panel (2026-09-29)
+
+Sobre auth premium (#12: puestos simultáneos, una sesión por usuario, `SEATS_FULL`). Cierra el hallazgo de la auditoría del 2026-09-29: aceptar una invitación le suma a una cuenta existente una membership en otra agencia, y `POST /auth/switch-tenant` existía, pero el panel no lo llamaba nunca y el menú _Agencia Activa_ sólo mostraba la actual. Además la agencia por defecto tenía dos criterios: la API abría la sesión en la membership más antigua y el panel tomaba la primera de `/me/memberships` por orden alfabético, sin mirar su estado.
+
+- **Un solo criterio de agencia por defecto** ([`default-tenant.ts`](../../apps/api/src/auth/default-tenant.ts)): la última agencia con la que operó (`users.last_tenant_id`, [0061](../../db/migrations/0061_users_last_tenant.sql)) si sigue con membership activa y su nodo opera; si no, la más antigua que opera; si ninguna opera, la más antigua igual, para que el panel explique por qué. Lo usan el login (también al liberar un puesto) y `GET /me/memberships` (`isDefault`). La columna se escribe cada vez que se emite una sesión con tenant.
+- **API:**
+  - `POST /auth/switch-tenant` responde 403 `TENANT_SUSPENDED` si el destino o un ancestro no está activo (antes emitía una sesión sin rol), sin tocar la sesión actual. Con el cupo del destino lleno sigue el 409 `SEATS_FULL` de auth-premium.
+  - `GET /me/memberships` suma `logoUrl` (heredado, 0030), `tenantType`, `operable`, `unavailableReason` (`tenant_suspended`, `tenant_archived`, `ancestor_suspended`), `blockedByName` e `isDefault`. Sigue en orden alfabético y con todas las memberships.
+- **Web:**
+  - Selector de agencia en el topbar, en el drawer móvil (_Cambiar de agencia_) y en la paleta ⌘K / Ctrl+K (_Cambiar de agencia…_, más las pantallas del menú). Hoja desde abajo en el teléfono, paleta en escritorio; buscador desde 5 agencias; las que no operan aparecen al final, deshabilitadas y con su motivo.
+  - Elegir llama a `switch-tenant`, reescribe `st_session` y `st_tenant` juntas, hace `router.refresh()`, avisa a las otras pestañas y muestra "Ahora operás como <Agencia>". Con `SEATS_FULL` se muestra el mismo panel del login: quien administra el nodo del cupo desconecta a alguien (`/auth/seats/release`) y entra.
+  - El middleware alinea `st_tenant` con el `tid` de la sesión: la cabecera `x-tenant-id` ya no se despega del nodo cuyo puesto ocupa la sesión. El layout y las guardas de administración resuelven la agencia activa con `resolveActiveMembership` (la de la sesión, si no la `isDefault` de la API), y el layout ya no intenta escribir cookies.
+  - El drawer móvil se dibuja en un portal a `<body>`: el `backdrop-filter` del header lo encerraba en sus 56 px.
+- **Tests:** criterio y vista de memberships (unit), `AuthService` con dobles, y [`tenant-switch.integration.test.ts`](../../apps/api/src/auth/tenant-switch.integration.test.ts) contra Postgres como `app_user` (en CI). En la web, la lógica pura (`agencies`, `tenant-switch`, `command-menu`, middleware) y el render del selector.
+- **Pendiente:** elegir con qué agencia entrar cuando el cupo de la por defecto está lleno en el login (hoy se muestra `SEATS_FULL` de esa agencia), y llevar a la pantalla de inicio si la página abierta no existe en la agencia nueva (hoy se refresca la misma ruta).
 ## §12 — Suspender corta el nodo, no a la persona; invitaciones con respaldo (2026-09-29)
 
 Cierra dos brechas de la auditoría del 2026-09-29. Va sobre auth premium (#12, 0055).

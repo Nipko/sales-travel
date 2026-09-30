@@ -7,11 +7,9 @@ import {
   TENANT_COOKIE,
   TRUSTED_DEVICE_COOKIE,
   sessionCookieMaxAge,
+  tenantCookieOptions,
   trustedDeviceCookieMaxAge,
 } from './session-cookies';
-
-/** El tenant activo es una preferencia de navegación, no una credencial: puede durar más. */
-const TENANT_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 function baseCookieOptions() {
   return {
@@ -49,12 +47,14 @@ export async function clearSession(): Promise<void> {
   for (const name of COOKIES_CLEARED_ON_LOGOUT) jar.delete(name);
 }
 
+/**
+ * Sólo desde una server action o un route handler, y siempre junto con la sesión de ese tenant: un
+ * Server Component no puede escribir cookies (Next lanza), y una cookie que no coincide con el `tid`
+ * de la sesión la corrige el middleware en el próximo pedido.
+ */
 export async function setActiveTenant(tenantId: string): Promise<void> {
   const jar = await cookies();
-  jar.set(TENANT_COOKIE, tenantId, {
-    ...baseCookieOptions(),
-    maxAge: TENANT_MAX_AGE_SECONDS,
-  });
+  jar.set(TENANT_COOKIE, tenantId, tenantCookieOptions(process.env.NODE_ENV === 'production'));
 }
 
 export async function getActiveTenant(): Promise<string | null> {

@@ -132,3 +132,55 @@ describe('middleware: token vencido', () => {
     expect(deletedCookies(res).sort()).toEqual(['st_session', 'st_tenant']);
   });
 });
+
+describe('middleware: st_tenant sigue al tid de la sesión', () => {
+  const TID = '3f2b8c1e-5d4a-4c3b-9a8e-7f6d5c4b3a21';
+
+  function jwtWith(claims: Record<string, unknown>): string {
+    const b64url = (value: string) =>
+      btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    return `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify({ sub: 'u', exp, ...claims }))}.firma`;
+  }
+
+  function withCookies(path: string, cookie: string): NextRequest {
+    return new NextRequest(new URL(path, ORIGIN), { headers: new Headers({ cookie }) });
+  }
+
+  /** El valor de `st_tenant` que escribe la respuesta, o `null` si no la toca. */
+  function tenantSet(res: Response): string | null {
+    const all = res.headers.get('set-cookie') ?? '';
+    return /(?:^|,\s*)st_tenant=([^;]*)/.exec(all)?.[1] ?? null;
+  }
+
+  it('si la cookie apunta a otra agencia, la corrige al tid, sin redirigir', () => {
+    const res = middleware(request('/reservas', jwtWith({ tid: TID })));
+    expect(location(res)).toBeNull();
+    expect(tenantSet(res)).toBe(TID);
+    expect(res.headers.get('set-cookie')).toMatch(/HttpOnly/i);
+  });
+
+  it('sin cookie de tenant, la escribe', () => {
+    const res = middleware(withCookies('/', `st_session=${jwtWith({ tid: TID })}`));
+    expect(tenantSet(res)).toBe(TID);
+  });
+
+  it('el render de ESTE pedido ya ve la cookie corregida', () => {
+    const res = middleware(request('/reservas', jwtWith({ tid: TID })));
+    // Next pasa al render los cambios de cabeceras del pedido con este prefijo.
+    const forwarded = res.headers.get('x-middleware-request-cookie') ?? '';
+    expect(forwarded).toContain(`st_tenant=${TID}`);
+  });
+
+  it('si ya coincide, no toca nada', () => {
+    const res = middleware(
+      withCookies('/', `st_session=${jwtWith({ tid: TID })}; st_tenant=${TID}`),
+    );
+    expect(tenantSet(res)).toBeNull();
+  });
+
+  it('un token sin tid (usuario sin agencias) o con un tid que no es uuid no escribe nada', () => {
+    expect(tenantSet(middleware(request('/', jwtWith({}))))).toBeNull();
+    expect(tenantSet(middleware(request('/', jwtWith({ tid: '../x' }))))).toBeNull();
+  });
+});

@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Route } from 'next';
+import { navForViewer, type Viewer } from './viewer';
 
 export interface NavItem {
   label: string;
@@ -63,3 +64,37 @@ export const superAdminNav: NavItem[] = [
   // la de las credenciales de la agencia (adminNav).
   { label: 'Proveedores de la plataforma', href: '/admin/plataforma/proveedores', icon: Plug },
 ];
+
+/** Roles que ven la sección Administración. */
+const ADMIN_NAV_ROLES: readonly string[] = [
+  'superadmin',
+  'platform_admin',
+  'consolidator_admin',
+  'tenant_admin',
+  'agency_admin',
+  'admin',
+];
+
+export interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+/**
+ * Las secciones del menú que ve este usuario con el rol de la agencia activa. La misma lista para
+ * el sidebar y para la paleta de comandos (⌘K): si no, una ofrecía pantallas que la otra no.
+ */
+export function navSections(role: string | undefined, viewer: Viewer): NavSection[] {
+  const sections: NavSection[] = [
+    // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts).
+    { label: 'Operaciones', items: navForViewer(operationsNav, viewer) },
+    { label: 'Gestión', items: managementNav },
+  ];
+  if (ADMIN_NAV_ROLES.includes(role ?? '')) {
+    sections.push({ label: 'Administración', items: adminNav });
+  }
+  // La seguridad de la propia cuenta no es administración: la ve cualquiera.
+  sections.push({ label: 'Mi cuenta', items: accountNav });
+  if (role === 'superadmin') sections.push({ label: 'Super Admin', items: superAdminNav });
+  return sections;
+}

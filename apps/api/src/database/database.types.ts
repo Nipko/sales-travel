@@ -162,6 +162,8 @@ export interface UsersTable {
    * Pasa a `mfa_secret` recién cuando /auth/mfa/confirm verifica un código contra él.
    */
   mfa_pending_secret: string | null;
+  /** 0061: última agencia con la que operó. Preferencia del login, no autoriza nada. */
+  last_tenant_id: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

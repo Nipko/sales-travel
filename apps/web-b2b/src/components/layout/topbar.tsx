@@ -1,9 +1,8 @@
 'use client';
 
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, Home, LogOut, Search, User, Globe } from 'lucide-react';
-import Link from 'next/link';
-import { BrandMark } from './brand-mark';
+import { ChevronDown, LogOut, User } from 'lucide-react';
+import { AgencyTrigger, CommandMenuButton } from './agency-switcher';
 import { MobileNav } from './mobile-nav';
 import { logout } from './session-sync';
 import { ThemeToggle } from './theme-toggle';
@@ -17,10 +16,11 @@ interface TopbarProps {
 }
 
 /**
- * Los menús de la barra son NO modales (`modal={false}`). Uno modal de Radix, olvidado abierto,
- * atrapaba el foco, dejaba el `<body>` sin clics y ocultaba el resto al lector de pantalla: cuando
- * aparecía el aviso de inactividad, el foco de "Seguir conectado" volvía al menú y el primer clic
- * sólo lo cerraba. Sin modal, el menú se cierra solo en cuanto el foco sale de él.
+ * El menú del usuario es NO modal (`modal={false}`). Uno modal de Radix, olvidado abierto, atrapaba
+ * el foco, dejaba el `<body>` sin clics y ocultaba el resto al lector de pantalla: cuando aparecía
+ * el aviso de inactividad, el foco de "Seguir conectado" volvía al menú y el primer clic sólo lo
+ * cerraba. Sin modal, el menú se cierra solo en cuanto el foco sale de él. La agencia ya no es un
+ * menú: abre el selector de agencia (agency-switcher.tsx).
  */
 export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: TopbarProps) {
   // Revoca en el API, avisa a las demás pestañas (se van al login juntas) y sale con una navegación
@@ -31,83 +31,18 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-6 backdrop-blur-md transition-all">
-      {/* Left side: Active Agency Indicator */}
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-4 backdrop-blur-md sm:px-6 transition-all">
+      {/* Izquierda: la agencia con la que se opera, y el cambio de agencia. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <MobileNav role={role} tenantName={tenantName} tenantSlug={tenantSlug} logoUrl={logoUrl} />
-        <DropdownMenu.Root modal={false}>
-          <DropdownMenu.Trigger asChild>
-            <button
-              type="button"
-              className="group flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-fg-muted)] shadow-[var(--shadow-xs)] transition-all duration-200 hover:bg-[var(--color-surface-muted)] hover:border-[var(--color-border-strong)] active:scale-[0.98] cursor-pointer"
-            >
-              <BrandMark tenantName={tenantName} logoUrl={logoUrl} size="sm" tone="onLight" />
-              <span className="font-semibold text-[var(--color-fg)] group-hover:text-[var(--color-primary)] transition-colors">
-                {tenantName ?? 'Sin tenant'}
-              </span>
-              {tenantSlug ? (
-                <span className="hidden sm:inline font-mono text-[9px] uppercase tracking-wider text-[var(--color-fg-subtle)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">
-                  {tenantSlug}
-                </span>
-              ) : null}
-              <ChevronDown className="size-3 text-[var(--color-fg-subtle)] transition-transform duration-200 group-hover:translate-y-0.5" />
-            </button>
-          </DropdownMenu.Trigger>
-
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="start"
-              sideOffset={6}
-              className="z-50 min-w-[220px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-lg)] animate-fade-in-up"
-            >
-              <DropdownMenu.Item asChild>
-                <Link
-                  href="/"
-                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[var(--color-fg)] outline-none transition-colors hover:bg-[var(--color-surface-muted)]"
-                >
-                  <Home className="size-4 text-[var(--color-fg-muted)]" />
-                  <span>Ir al inicio</span>
-                </Link>
-              </DropdownMenu.Item>
-
-              <div className="my-1 h-px bg-[var(--color-border)]/60" />
-
-              <div className="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-[var(--color-fg-subtle)]">
-                Agencia Activa
-              </div>
-              <div className="flex items-center gap-2.5 rounded-lg bg-[var(--color-surface-muted)] p-2.5 mb-1.5">
-                <div className="flex size-7 items-center justify-center rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-                  <Globe className="size-4" />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-semibold text-[var(--color-fg)] truncate leading-tight">
-                    {tenantName ?? 'Sin Agencia'}
-                  </span>
-                  <span className="text-[10px] text-[var(--color-fg-subtle)] truncate mt-0.5 font-mono">
-                    {tenantSlug ?? '-'}
-                  </span>
-                </div>
-              </div>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+        <AgencyTrigger tenantName={tenantName} tenantSlug={tenantSlug} logoUrl={logoUrl} />
       </div>
 
       {/* Right side: Search & User Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3 pl-3">
         <ThemeToggle />
-        {/* Comando de Búsqueda Rápida */}
-        <button
-          type="button"
-          className="hidden md:flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 px-3 py-1.5 text-xs text-[var(--color-fg-subtle)] shadow-[var(--shadow-xs)] transition-all duration-200 hover:bg-[var(--color-surface-muted)] hover:border-[var(--color-border-strong)] active:scale-[0.98] cursor-pointer"
-        >
-          <Search className="size-3.5 text-[var(--color-fg-subtle)]" />
-          <span className="font-medium">Buscar...</span>
-          <kbd className="ml-3 inline-flex items-center gap-0.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--color-fg-subtle)] shadow-[var(--shadow-xs)]">
-            <span>⌘</span>
-            <span>K</span>
-          </kbd>
-        </button>
+        {/* Paleta de comandos (⌘K / Ctrl+K): pantallas y "Cambiar de agencia". */}
+        <CommandMenuButton />
 
         {/* Menú del Usuario */}
         <DropdownMenu.Root modal={false}>

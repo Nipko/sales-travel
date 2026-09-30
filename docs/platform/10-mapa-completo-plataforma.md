@@ -720,6 +720,8 @@ Implementados en la Ola 1 (auth premium, 2026-09-29):
 POST   /auth/login                       -- { email, password, trustedDeviceToken? } → sesión | desafío MFA | 409 SEATS_FULL
 POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
 POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
+POST   /auth/switch-tenant               -- { tenantId } reemplaza la sesión · 409 SEATS_FULL · 403 TENANT_SUSPENDED
+GET    /me/memberships                   -- agencias del usuario: logo, operable y motivo, isDefault (la del próximo login)
 GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
 POST   /auth/logout                      -- { reason?: 'idle' }
 GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all
