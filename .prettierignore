@@ -24,6 +24,6 @@ apps/web-b2b/src/data/airports-full.json
 docs/sabre/evidence/
 
 
-# Lo escribe release-please en cada release (`* ` y dos líneas en blanco): reformatearlo no dura, la
-# próxima release antepone su sección con el mismo estilo y `format:check` vuelve a fallar.
+# Lo genera release-please en cada release con su propio formato (líneas en blanco dobles):
+# reformatearlo no sirve, el próximo release lo vuelve a escribir igual y rompe `format:check`.
 CHANGELOG.md

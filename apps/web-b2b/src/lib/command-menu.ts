@@ -47,7 +47,7 @@ export function commandItems(options: {
       id: 'switch-agency',
       group: 'Agencia',
       label: SWITCH_AGENCY_LABEL,
-      hint: options.currentAgencyName ? `Operás como ${options.currentAgencyName}` : '',
+      hint: options.currentAgencyName ? `Operas como ${options.currentAgencyName}` : '',
     });
   }
   const seen = new Set<string>();
