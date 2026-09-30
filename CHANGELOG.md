@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/Nipko/sales-travel/compare/v0.1.3...v0.1.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* **cars:** AgentCars llega a /v2/sites y autos con el esquema de hoteles ([aff618a](https://github.com/Nipko/sales-travel/commit/aff618a2649172c381d3676ea0803cf259df51ff))
+
 ## [0.1.3](https://github.com/Nipko/sales-travel/compare/v0.1.2...v0.1.3) (2026-09-30)
 
 
