@@ -3,6 +3,7 @@ import type { HotelRoompack, Money } from '@sales-travel/canonical';
 import type { HotelRateConditionCategory, HotelRateSignal } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
+import { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { BookingHoldPreview } from '../portfolios/booking-hold.js';
 import { PortfoliosService } from '../portfolios/portfolios.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
@@ -18,7 +19,9 @@ import {
 } from '../providers/hotel-provider.types.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { providerAccountIssueEvent } from './hotel-account-issues.js';
+import { HotelNonRefundableBlockedError } from './hotel-booking-errors.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
+import { effectiveNonRefundable, type HotelNonRefundableTerms } from './hotel-non-refundable.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { priceRoompack, saleTotalOf } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
@@ -67,6 +70,12 @@ export interface HotelPrebookResponse {
    * pudo leer la cartera: el PreBook no se cae por eso.
    */
   readonly funding?: BookingHoldPreview;
+  /**
+   * Presente si la tarifa es no reembolsable EN LOS HECHOS con la política final del PreBook y la
+   * hora de ahora: declarada, o reembolsable con el 100 % ya vigente (`hotel-non-refundable.ts`).
+   * La web pinta el aviso con el monto exacto y el Book exige `nonRefundableAcknowledged`.
+   */
+  readonly nonRefundable?: HotelNonRefundableTerms;
 }
 
 const OPERATION = 'la revalidación de una tarifa de su búsqueda (se revalida con su flujo propio)';
@@ -105,6 +114,12 @@ function repricingOf(comparison: HotelRepriceComparison): HotelPrebookRepricing 
  * 8. **Aviso de cartera** (RF-23): si la agencia no tiene cartera en la moneda de la tarifa, la
  *    tiene suspendida o no le alcanza para el precio de venta, se dice ya, antes de que el vendedor
  *    cargue huéspedes. No rechaza el PreBook: el que rechaza, sin llamar al proveedor, es el Book.
+ *
+ * **Tarifas no reembolsables** (pedido del founder del 2026-09-29). Si quien financia a la agencia
+ * se las bloqueó (0055), el PreBook se rechaza con `NON_REFUNDABLE_BLOCKED`: antes de llamar al
+ * proveedor si la búsqueda ya la mostró no reembolsable, y después, sin guardar snapshot, si lo es
+ * con la política final (o con el 100 % ya vigente). Si no está bloqueada, la respuesta lleva
+ * `nonRefundable` con el 100 % en el precio de venta.
  */
 @Injectable()
 export class HotelPrebookService {
@@ -118,6 +133,7 @@ export class HotelPrebookService {
     private readonly breaker: CircuitBreakerService,
     private readonly audit: AuditService,
     private readonly portfolios: PortfoliosService,
+    private readonly permissions: BookingPermissionsService,
   ) {}
 
   async prebook(
@@ -138,6 +154,13 @@ export class HotelPrebookService {
     );
     if (searchProfile.requiresGuestNationality === true && offer.guestNationality === undefined) {
       throw new HotelSearchNationalityMissingError();
+    }
+    // La búsqueda ya la mostró no reembolsable: si la agencia no puede venderlas, no se pregunta nada
+    // al proveedor. Una que la búsqueda mostró reembolsable se decide con la política final.
+    let blocked: boolean | undefined;
+    if (!offer.pack.seen.refundable) {
+      blocked = await this.blocksNonRefundable(tenantId);
+      if (blocked) throw new HotelNonRefundableBlockedError();
     }
 
     let found: HotelPrebookWithContext;
@@ -180,6 +203,13 @@ export class HotelPrebookService {
       ...priced,
       provider: { ...priced.provider, raw: { searchId: offer.searchId } },
     };
+
+    // Con la política FINAL: una que la búsqueda mostró reembolsable puede no serlo, o cobrar ya el
+    // 100 %. Bloqueada, no queda snapshot con el que reservarla.
+    const nonRefundable = effectiveNonRefundable(roompack, Date.now());
+    if (nonRefundable !== undefined && (blocked ?? (await this.blocksNonRefundable(tenantId)))) {
+      throw new HotelNonRefundableBlockedError();
+    }
 
     const prebookRef = randomUUID();
     await this.snapshots.save({
@@ -236,7 +266,17 @@ export class HotelPrebookService {
       repricing,
       warnings: [...found.result.warnings],
       ...(funding === undefined ? {} : { funding }),
+      ...(nonRefundable === undefined ? {} : { nonRefundable }),
     };
+  }
+
+  /**
+   * Si quien financia a la agencia le bloqueó las tarifas no reembolsables (0055), a ella o a un
+   * nivel de arriba. Un fallo de lectura sube: no se ofrece reservar sin saberlo.
+   */
+  private async blocksNonRefundable(tenantId: string): Promise<boolean> {
+    const policy = await this.permissions.nonRefundableRates(tenantId);
+    return policy.effective === 'blocked';
   }
 
   /**

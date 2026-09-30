@@ -1,7 +1,18 @@
 'use client';
 
-import { Check, ChevronDown, Clock, ExternalLink, Globe, ImageOff, Phone } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Clock,
+  Copy,
+  ExternalLink,
+  Globe,
+  ImageOff,
+  MapPin,
+  Phone,
+} from 'lucide-react';
 import { useId, useState } from 'react';
+import { toast } from 'sonner';
 import { Card } from '../../../../../components/ui/card';
 import { cn } from '../../../../../lib/cn';
 import {
@@ -13,57 +24,18 @@ import {
   type HotelContentSection,
   type RichInline,
 } from './hotel-content-view';
+import type { HotelLocationView } from './hotel-detail-view';
 
 /*
- * La ficha del hotel: fotos, descripción, servicios, alrededores, horarios y contacto. Todo lo que
- * viene del proveedor se pinta como texto de React; el HTML de la descripción se arma elemento por
- * elemento desde `parseRichText` y nunca se inyecta (RNF-16).
+ * La ficha del hotel: descripción, servicios, alrededores, horarios, ubicación y contacto (las
+ * fotos van en hotel-gallery.tsx). Todo lo que viene del proveedor se pinta como texto de React;
+ * el HTML de la descripción se arma elemento por elemento desde `parseRichText` y nunca se
+ * inyecta (RNF-16).
  */
 
-/** Las primeras fotos: la tira se recorre con el dedo o el teclado, no es una galería completa. */
-const MAX_GALLERY = 20;
 const FACILITIES_PREVIEW = 12;
 
 const SECTION_TITLE = 'text-sm font-semibold tracking-tight text-[var(--color-fg)]';
-
-export function HotelGallery({ images, name }: { images: readonly string[]; name: string }) {
-  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
-  const shown = images.filter((src) => !broken.has(src)).slice(0, MAX_GALLERY);
-  if (shown.length === 0) return null;
-
-  return (
-    <div className="space-y-1.5">
-      {/* Enfocable para recorrerla con las flechas; `no-referrer` para no mandarle al servidor de
-          las fotos la dirección del panel, que lleva la búsqueda. */}
-      <div
-        role="region"
-        aria-label={`Fotos de ${name}`}
-        tabIndex={0}
-        className="flex snap-x snap-mandatory gap-2 overflow-x-auto rounded-lg pb-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-      >
-        {shown.map((src, i) => (
-          <img
-            key={src}
-            src={src}
-            alt={`${name}, foto ${i + 1} de ${shown.length}`}
-            width={384}
-            height={224}
-            loading={i < 2 ? 'eager' : 'lazy'}
-            decoding="async"
-            referrerPolicy="no-referrer"
-            onError={() => setBroken((prev) => new Set(prev).add(src))}
-            className="h-44 w-72 shrink-0 snap-start rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] object-cover sm:h-56 sm:w-96"
-          />
-        ))}
-      </div>
-      <p className="text-[11px] text-[var(--color-fg-muted)]">
-        {shown.length} foto{shown.length === 1 ? '' : 's'}
-        {images.length > MAX_GALLERY ? ` de ${images.length}` : ''}
-        {shown.length > 1 ? ' · deslizá para ver más' : ''}
-      </p>
-    </div>
-  );
-}
 
 function Inlines({ inlines }: { inlines: readonly RichInline[] }) {
   return (
@@ -252,6 +224,69 @@ export function ArrivalCard({ content }: { content: HotelContent }) {
           <SectionList sections={arrival} />
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+const LINK_BUTTON =
+  'inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]';
+
+/**
+ * Dónde queda el hotel. Sin mapa embebido —pediría teselas de un tercero en la CSP, como en la
+ * vista "Mapa" de los resultados—: la dirección para copiarla (al chat con el cliente, por
+ * ejemplo), las coordenadas del catálogo y el mapa externo en otra pestaña.
+ */
+export function LocationCard({ view }: { view: HotelLocationView }) {
+  const text = [view.address, view.country].filter(Boolean).join(', ');
+  const copy = () => {
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (clipboard === undefined) {
+      toast.error('No pudimos copiar la dirección. Seleccionala y copiala a mano.');
+      return;
+    }
+    clipboard.writeText(text).then(
+      () => toast.success('Dirección copiada.'),
+      () => toast.error('No pudimos copiar la dirección. Seleccionala y copiala a mano.'),
+    );
+  };
+
+  return (
+    <Card className="p-4">
+      <h2 className={SECTION_TITLE}>Ubicación</h2>
+      <div className="mt-3 flex items-start gap-2">
+        <MapPin
+          aria-hidden="true"
+          className="mt-0.5 size-3.5 shrink-0 text-[var(--color-fg-subtle)]"
+        />
+        <div className="min-w-0 space-y-0.5">
+          {view.address ? <p className="text-sm text-[var(--color-fg)]">{view.address}</p> : null}
+          {view.country ? (
+            <p className="text-xs text-[var(--color-fg-muted)]">{view.country}</p>
+          ) : null}
+          {view.coordinates ? (
+            <p className="text-[11px] tabular-nums text-[var(--color-fg-muted)]">
+              <span className="sr-only">Coordenadas: </span>
+              {view.coordinates}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {view.mapHref ? (
+          <a href={view.mapHref} target="_blank" rel="noopener noreferrer" className={LINK_BUTTON}>
+            <MapPin aria-hidden="true" className="size-3.5" />
+            Abrir en Google Maps
+            <ExternalLink aria-hidden="true" className="size-3 text-[var(--color-fg-subtle)]" />
+            <span className="sr-only"> (se abre en otra pestaña)</span>
+          </a>
+        ) : null}
+        {view.address ? (
+          <button type="button" onClick={copy} className={LINK_BUTTON}>
+            <Copy aria-hidden="true" className="size-3.5" />
+            Copiar dirección
+          </button>
+        ) : null}
+      </div>
     </Card>
   );
 }

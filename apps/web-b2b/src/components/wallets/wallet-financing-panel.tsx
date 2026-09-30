@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { NodeKindBadge } from '../network/node-kind';
+import { BookingPermissionsSection } from './booking-permissions-section';
 import { Button } from '../ui/button';
 import {
   approveDepositReport,
@@ -84,8 +85,9 @@ function loaded<T>(res: WalletResult<T>): Loadable<T> {
  * Las carteras de UN nodo, gestionadas por quien lo financia (decisión del founder del 2026-09-29,
  * opción A): el superadmin desde Gestión de Agencias → nodo → Carteras, y un consolidador o una
  * agencia desde Mi Red → agencia → Carteras. Habilitar monedas, fijar el cupo, suspender o
- * reactivar, registrar depósitos y ajustes con motivo y confirmación, y aprobar o rechazar los
- * depósitos que el nodo informó. Si quien mira financia a ese nodo lo decide el API.
+ * reactivar, registrar depósitos y ajustes con motivo y confirmación, aprobar o rechazar los
+ * depósitos que el nodo informó y decidir si puede reservar tarifas no reembolsables (pedido del
+ * 2026-09-29, punto e). Si quien mira financia a ese nodo lo decide el API.
  */
 export function WalletFinancingPanel({
   tenantId,
@@ -191,9 +193,9 @@ export function WalletFinancingPanel({
           {view !== undefined ? <NodeKindBadge node={view.tenant} /> : null}
         </div>
         <p className="max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
-          En qué monedas opera, con cuánto cupo y qué depósitos le acreditaste. Reserva en la
-          cartera de la moneda de cada tarifa, con su saldo más su cupo. Todo cambio pide un motivo
-          y queda en la auditoría.
+          En qué monedas opera, con cuánto cupo, qué depósitos le acreditaste y si puede reservar
+          tarifas no reembolsables. Reserva en la cartera de la moneda de cada tarifa, con su saldo
+          más su cupo. Todo cambio pide un motivo y queda en la auditoría.
         </p>
       </header>
 
@@ -282,6 +284,8 @@ export function WalletFinancingPanel({
               </div>
             )}
           </section>
+
+          <BookingPermissionsSection tenantId={tenantId} />
 
           <section aria-labelledby="deposit-reports-title" className="scroll-mt-6 space-y-3">
             <h2 id="deposit-reports-title" className="text-sm font-semibold text-[var(--color-fg)]">

@@ -12,6 +12,10 @@ import { DespegarApiError, type BookRequest } from '@sales-travel/despegar-hotel
 import type { Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
+import type {
+  BookingPermissionsService,
+  NonRefundableRatesPolicy,
+} from '../booking-permissions/booking-permissions.service.js';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
@@ -31,6 +35,10 @@ import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
 import { humanizeDespegarError } from './despegar-hotels-errors.js';
+import {
+  DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE,
+  HotelNonRefundableBlockedError,
+} from './hotel-booking-errors.js';
 import type { HotelBookResponse, HotelBookingService } from './hotel-booking.service.js';
 import { HotelContentService } from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
@@ -44,6 +52,7 @@ import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
   HotelBookBodySchema,
+  HotelContentBatchBodySchema,
   HotelContentParamsSchema,
   HotelContentQuerySchema,
   HotelDetailInputSchema,
@@ -108,6 +117,7 @@ interface Banco {
   resolve: ReturnType<typeof vi.fn>;
   prebooks: HotelPrebookService;
   bookings: { book: ReturnType<typeof vi.fn> };
+  permisos: { nonRefundableRates: ReturnType<typeof vi.fn> };
 }
 
 /** Lo que responde la saga de reserva con órdenes cuando el Book sigue en curso. */
@@ -147,6 +157,11 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
   const contexts = new HotelSearchContextStore(cache);
   const service = new HotelsService(registry, db.service, pricing, telemetry, breaker, contexts);
   const reservations = new DespegarHotelReservationsService(registry, factory, breaker);
+  const permisos = {
+    nonRefundableRates: vi.fn((_tenantId: string) =>
+      Promise.resolve<NonRefundableRatesPolicy>({ effective: 'allowed' }),
+    ),
+  };
   const prebooks = new HotelPrebookService(
     registry,
     contexts,
@@ -158,6 +173,7 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
       previewBookingHold: (_tenantId: string, amount: { currency: string }) =>
         Promise.resolve({ status: 'ok', currency: amount.currency }),
     } as unknown as PortfoliosService,
+    permisos as unknown as BookingPermissionsService,
   );
   const resolve = vi.fn((_userId: string) => Promise.resolve(TENANT));
   const disclosure = {
@@ -173,9 +189,10 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
     prebooks,
     bookings as unknown as HotelBookingService,
     content,
+    permisos as unknown as BookingPermissionsService,
   );
 
-  return { controller, adapter, resolve, prebooks, bookings };
+  return { controller, adapter, resolve, prebooks, bookings, permisos };
 }
 
 /** El cuerpo tal como lo entrega el pipe de la ruta: validado y con los defaults aplicados. */
@@ -255,12 +272,39 @@ describe('POST /hotels/availability — snapshot', () => {
     });
   });
 
-  it('PR-0.5: el sobre CRECE: `{ hotels, providers, showProviderInResults }`', async () => {
+  it('PR-0.5: el sobre CRECE: `{ hotels, providers, showProviderInResults, nonRefundableRates }`', async () => {
     const b = banco();
     const body = pedidoValidado();
     const res = await b.controller.availability(USUARIO, body);
 
-    expect(Object.keys(res)).toEqual(['hotels', 'providers', 'showProviderInResults']);
+    expect(Object.keys(res)).toEqual([
+      'hotels',
+      'providers',
+      'showProviderInResults',
+      'nonRefundableRates',
+    ]);
+  });
+
+  it('no reembolsables (e): el sobre dice si la agencia las puede reservar, sin filtrar ninguna tarifa', async () => {
+    const b = banco();
+    const permitido = await b.controller.availability(USUARIO, pedidoValidado());
+    b.permisos.nonRefundableRates.mockResolvedValueOnce({ effective: 'blocked', blockedBy: 'own' });
+    const bloqueado = await b.controller.availability(USUARIO, pedidoValidado());
+
+    expect(permitido.nonRefundableRates).toBe('allowed');
+    expect(bloqueado.nonRefundableRates).toBe('blocked');
+    expect(bloqueado.hotels).toEqual(permitido.hotels);
+    expect(b.permisos.nonRefundableRates).toHaveBeenCalledWith(TENANT);
+  });
+
+  it('si el permiso no se puede leer, la búsqueda sale igual sin el campo', async () => {
+    const b = banco();
+    b.permisos.nonRefundableRates.mockRejectedValueOnce(new Error('base caída'));
+
+    const res = await b.controller.availability(USUARIO, pedidoValidado());
+
+    expect(res).not.toHaveProperty('nonRefundableRates');
+    expect(res.hotels.length).toBeGreaterThan(0);
   });
 
   it('PR-0.5: un error de Despegar sale como 502 con el texto que antes ponía el filtro', async () => {
@@ -322,6 +366,8 @@ describe('HotelsController — superficie HTTP', () => {
       // Nest registra los parámetros del último al primero: el query antes que la ruta.
       [HotelContentQuerySchema, HotelContentParamsSchema],
     ],
+    ['contentBatch', RequestMethod.POST, 'content/batch', [HotelContentBatchBodySchema]],
+    ['bookingPermissions', RequestMethod.GET, 'booking-permissions', []],
     ['cancel', RequestMethod.POST, 'reservations/:id/cancel', [CancelBodySchema]],
     ['recovery', RequestMethod.POST, 'reservations/:id/recovery', [RecoveryBodySchema]],
   ])('%s → %s /hotels/%s, validado con su esquema', (nombre, metodo, ruta, esquemas) => {
@@ -334,7 +380,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas once', () => {
+  it('no hay más rutas que esas trece', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -344,8 +390,10 @@ describe('HotelsController — superficie HTTP', () => {
       [
         'availability',
         'book',
+        'bookingPermissions',
         'cancel',
         'content',
+        'contentBatch',
         'currencies',
         'detail',
         'getReservation',
@@ -407,6 +455,15 @@ describe('HotelsController — tenant', () => {
       'content',
       (c, u) => c.content(u, { providerCode: 'despegar-hotels', hotelId: '101' }, { lang: 'es' }),
     ],
+    [
+      'contentBatch',
+      (c, u) =>
+        c.contentBatch(u, {
+          lang: 'es',
+          hotels: [{ providerCode: 'despegar-hotels', hotelId: '101' }],
+        }),
+    ],
+    ['bookingPermissions', (c, u) => c.bookingPermissions(u)],
     ['cancel', (c, u) => c.cancel(u, 'RES-0001', {})],
     [
       'recovery',
@@ -438,6 +495,19 @@ describe('HotelsController — tenant', () => {
 });
 
 describe('HotelsController — sobres y paso de parámetros', () => {
+  it('booking-permissions: lo que rige para la agencia activa, con de dónde viene el bloqueo', async () => {
+    const b = banco();
+    b.permisos.nonRefundableRates.mockResolvedValueOnce({
+      effective: 'blocked',
+      blockedBy: 'inherited',
+    });
+
+    const res = await b.controller.bookingPermissions(USUARIO);
+
+    expect(res).toEqual({ nonRefundableRates: { effective: 'blocked', blockedBy: 'inherited' } });
+    expect(b.permisos.nonRefundableRates).toHaveBeenCalledWith(TENANT);
+  });
+
   it('suggestions devuelve `{ items }` con el texto y el locale del query', async () => {
     const b = banco();
     const res = await b.controller.suggestions(USUARIO, { q: 'bogo', locale: 'es_CO' });
@@ -480,6 +550,31 @@ describe('HotelsController — sobres y paso de parámetros', () => {
     expect(res.roompacks.map((rp) => [rp.id, rp.provider.name])).toEqual(
       delAcl.roompacks.map((rp) => [rp.id, 'despegar-hotels']),
     );
+  });
+
+  it('contentBatch: las fotos por lote; sin contenido que traer, `none` y sin salir al proveedor', async () => {
+    const b = banco();
+    const res = await b.controller.contentBatch(USUARIO, {
+      lang: 'es',
+      hotels: [{ providerCode: 'despegar-hotels', hotelId: '101' }],
+    });
+
+    expect(res).toEqual({
+      lang: 'es',
+      items: [
+        {
+          providerCode: 'despegar-hotels',
+          hotelId: '101',
+          status: 'none',
+          mainImage: null,
+          imageCount: 0,
+        },
+      ],
+    });
+    const tocados = Object.values(b.adapter).filter(
+      (m) => vi.isMockFunction(m) && m.mock.calls.length > 0,
+    );
+    expect(tocados).toEqual([]);
   });
 
   it('PR-3.6: content devuelve la ficha sin sobre; sin contenido, sin imágenes y sin error', async () => {
@@ -562,6 +657,49 @@ describe('HotelsController — sobres y paso de parámetros', () => {
     expect(neutral).toHaveBeenCalledTimes(1);
     expect(neutral).toHaveBeenCalledWith(TENANT, referencia, USUARIO);
     expect(delNeutral).toBe(respuesta);
+  });
+
+  it('no reembolsables (e): con la agencia bloqueada, el PreBook y el Book directos de Despegar se rechazan sin llegar a Despegar', async () => {
+    // El flujo directo no trae la política de cancelación: no hay con qué saber si es no
+    // reembolsable, así que la API directa no puede ser la puerta para venderla.
+    const b = banco();
+    b.permisos.nonRefundableRates.mockResolvedValue({
+      effective: 'blocked',
+      blockedBy: 'inherited',
+    });
+
+    const prebook = await b.controller
+      .prebook(USUARIO, { choiceId: 'CH-1' })
+      .catch((e: unknown) => e);
+    const book = await b.controller
+      .book(USUARIO, {
+        prebookId: 'PB-0001',
+        externalBookingReference: 'ISO-0001',
+        contact: { email: 'reservas@agencia.example' },
+        travelers: [{ referenceId: '1', firstName: 'Ana', lastName: 'Prueba' }],
+        payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }] },
+      })
+      .catch((e: unknown) => e);
+
+    for (const err of [prebook, book]) {
+      expect(err).toBeInstanceOf(HotelNonRefundableBlockedError);
+      expect((err as HotelNonRefundableBlockedError).getStatus()).toBe(403);
+      expect((err as HotelNonRefundableBlockedError).reason).toBe('NON_REFUNDABLE_BLOCKED');
+      expect((err as HotelNonRefundableBlockedError).message).toBe(
+        DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE,
+      );
+    }
+    expect(b.permisos.nonRefundableRates).toHaveBeenCalledWith(TENANT);
+    expect(b.adapter.prebook).not.toHaveBeenCalled();
+    expect(b.adapter.book).not.toHaveBeenCalled();
+  });
+
+  it('no reembolsables (e): si el permiso no se puede leer, el flujo directo de Despegar no sale', async () => {
+    const b = banco();
+    b.permisos.nonRefundableRates.mockRejectedValue(new Error('base caída'));
+
+    await expect(b.controller.prebook(USUARIO, { choiceId: 'CH-1' })).rejects.toThrow('base caída');
+    expect(b.adapter.prebook).not.toHaveBeenCalled();
   });
 
   it('PR-4.5: el cuerpo neutral con un proveedor sin PreBook por contexto → 400, sin llegar a Despegar', async () => {

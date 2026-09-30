@@ -87,6 +87,7 @@ export function mapOfferPriceResponse(raw: unknown, originalOffer: Offer): Offer
     baseFare: newBaseFare ?? originalOffer.baseFare,
     taxes: newTaxes ?? originalOffer.taxes,
     expiresAt: newExpiresAt ? ensureIso(newExpiresAt) : originalOffer.expiresAt,
+    ...(newExpiresAt ? { expiresAtSource: 'provider' as const } : {}),
     fetchedAt: new Date().toISOString(),
   };
 

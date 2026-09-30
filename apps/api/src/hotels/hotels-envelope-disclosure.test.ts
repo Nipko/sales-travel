@@ -7,6 +7,7 @@ import { stubHotelOffer } from '../providers/__fixtures__/stub-hotel-provider.fa
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import type { HotelBookingService } from './hotel-booking.service.js';
+import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
@@ -87,6 +88,7 @@ function controllerCon(
     {} as HotelPrebookService,
     {} as HotelBookingService,
     {} as HotelContentService,
+    {} as BookingPermissionsService,
   );
   return { controller, searchAvailability };
 }

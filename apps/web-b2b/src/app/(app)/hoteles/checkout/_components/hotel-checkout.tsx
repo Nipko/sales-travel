@@ -30,6 +30,8 @@ import { CheckoutExpiry } from './checkout-expiry';
 import { FundingNotice } from './funding-notice';
 import { fundingNotice } from './funding-view';
 import { draftFitsRooms, emptyGuestDraft, type GuestDraft } from './guest-form-view';
+import { NonRefundableNotice } from './non-refundable-notice';
+import { nonRefundableAt } from './non-refundable-view';
 import { PriceChangeNotice } from './price-change-notice';
 import { PrebookSummary, PrebookTotal } from './prebook-summary';
 import {
@@ -46,7 +48,9 @@ import { RateConditions, RateSignalsNotice } from './rate-conditions';
  * el proveedor (PreBook) y se muestra lo que queda firme para la reserva —precio de venta, el
  * aviso si cambió, la política de cancelación y las condiciones del hotel—; si subió o cambiaron
  * las condiciones, el vendedor lo acepta antes de seguir (D-TBO-20 A). Una tarifa "sólo con
- * aéreo" no sigue (D-TBO-22 A). El paso 2 (U-12 a U-14), huéspedes y reserva, recibe la tarifa
+ * aéreo" no sigue (D-TBO-22 A). Una no reembolsable (declarada, o con el 100 % ya vigente) lleva
+ * un aviso grande con el monto exacto que se pierde; la confirmación se pide en el paso 2, junto al
+ * botón que reserva. El paso 2 (U-12 a U-14), huéspedes y reserva, recibe la tarifa
  * aceptada; los huéspedes cargados se conservan si el vendedor vuelve al paso 1 o hay que
  * revalidar la tarifa, porque es la misma estadía.
  */
@@ -337,6 +341,11 @@ function PrebookReady({
   );
   const signals = useMemo(() => signalsView(prebook.signals), [prebook.signals]);
   const funding = useMemo(() => fundingNotice(prebook.funding), [prebook.funding]);
+  // Con el reloj del servidor: si el 100 % empezó a regir después del PreBook, también se avisa.
+  const nonRefundable = useMemo(
+    () => nonRefundableAt(prebook, Date.now() + clockOffsetMs),
+    [prebook, clockOffsetMs],
+  );
   const gate = continueGate({
     expired,
     blocked: signals.blocking,
@@ -361,6 +370,7 @@ function PrebookReady({
       </CheckoutExpiry>
 
       <FundingNotice view={funding} />
+      {nonRefundable ? <NonRefundableNotice nonRefundable={nonRefundable} /> : null}
       {change ? (
         <PriceChangeNotice
           change={change}
@@ -373,7 +383,7 @@ function PrebookReady({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-5">
           <PrebookSummary row={row} expired={expired} />
-          <CancelPolicy pack={prebook.roompack} />
+          <CancelPolicy pack={prebook.roompack} nonRefundable={nonRefundable !== undefined} />
           <RateConditions conditions={prebook.rateConditions} />
         </div>
         {/* Después en el DOM: en el teléfono, el total y el paso siguiente quedan al final, una

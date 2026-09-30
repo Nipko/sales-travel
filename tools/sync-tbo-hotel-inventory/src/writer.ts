@@ -132,28 +132,48 @@ const EMPTY_CONTENT_WRITE: ContentWriteResult = Object.freeze({
 });
 
 /**
- * Búsquedas recientes por ciudad del proveedor, la demanda de 05 §6.3: destinos buscados hace poco
- * (`search_logs.criteria.destinationId`, que guarda `HotelsService`) traducidos a ciudades TBO por
- * el mapa ACEPTADO de E6. Sin mapa todavía (PR-3.4), no hay demanda. Se cuentan BÚSQUEDAS, no
- * filas: un fan-out escribe una fila por proveedor con el mismo `search_group_id`, y el `COALESCE`
- * es el mismo de la cuota (0035) para las filas anteriores. La usan E3 y E4.
+ * Búsquedas recientes por ciudad del proveedor, la demanda de 05 §6.3. Cuenta las dos formas en que
+ * `HotelsService` deja el destino en `search_logs.criteria`:
+ *
+ * - `destinationId`: un destino de la plataforma (Despegar), traducido a ciudades del proveedor por
+ *   el mapa ACEPTADO de E6. Sin mapa, esta parte no aporta.
+ * - `destinationProvider` + `destinationCityCode`: una ciudad del catálogo local del proveedor, que
+ *   el vendedor eligió en el autocompletado propio (05 §8.5). Ya es una ciudad suya: no pasa por el
+ *   mapa. Sin esta parte, las búsquedas de los tenants que sugieren desde el catálogo (hoy, todos
+ *   los de TBO sin Despegar) no contaban y E4 no bajaba el contenido de lo que más se busca.
+ *
+ * Se cuentan BÚSQUEDAS, no filas: un fan-out escribe una fila por proveedor con el mismo
+ * `search_group_id`, y el `COALESCE` es el mismo de la cuota (0035) para las filas anteriores. Una
+ * búsqueda cuenta una vez por ciudad aunque aparezca por las dos partes. La usan E3 y E4.
  */
 function demandByCitySql(params: {
   readonly provider: string;
   readonly since: string;
   readonly source: string;
 }): string {
-  return `SELECT m.target_city_code,
-                 count(DISTINCT COALESCE(s.search_group_id, s.id)) AS searches
-            FROM search_logs s
-            JOIN hotel_destination_map m
-              ON m.source_city_id = s.criteria->>'destinationId'
-           WHERE s.vertical = 'hotels'
-             AND s.occurred_at >= ${params.since}
-             AND m.source_provider_code = ${params.source}
-             AND m.target_provider_code = ${params.provider}
-             AND m.status = 'accepted'
-           GROUP BY m.target_city_code`;
+  return `SELECT demand.target_city_code,
+                 count(DISTINCT demand.search_key) AS searches
+            FROM (
+              SELECT m.target_city_code,
+                     COALESCE(s.search_group_id, s.id) AS search_key
+                FROM search_logs s
+                JOIN hotel_destination_map m
+                  ON m.source_city_id = s.criteria->>'destinationId'
+               WHERE s.vertical = 'hotels'
+                 AND s.occurred_at >= ${params.since}
+                 AND m.source_provider_code = ${params.source}
+                 AND m.target_provider_code = ${params.provider}
+                 AND m.status = 'accepted'
+              UNION ALL
+              SELECT s.criteria->>'destinationCityCode' AS target_city_code,
+                     COALESCE(s.search_group_id, s.id) AS search_key
+                FROM search_logs s
+               WHERE s.vertical = 'hotels'
+                 AND s.occurred_at >= ${params.since}
+                 AND s.criteria->>'destinationProvider' = ${params.provider}
+                 AND s.criteria->>'destinationCityCode' IS NOT NULL
+            ) demand
+           GROUP BY demand.target_city_code`;
 }
 
 /**
@@ -415,8 +435,9 @@ export class PgCatalogStore implements CatalogStore {
   }
 
   async listCityCandidates(query: CityCandidatesQuery): Promise<readonly CityCandidate[]> {
-    // Sin mapa de destinos todavía, la demanda es 0 y el orden cae en "nunca sincronizadas" y "más
-    // antiguas" (`selectDueCities`).
+    // Sin demanda, el orden cae en "nunca sincronizadas" y "más antiguas" (`selectDueCities`). Una
+    // ciudad buscada de un país fuera de la corrida también entra: la cargó el API bajo demanda y el
+    // sync la mantiene al día como a las demás que se venden.
     const res = await this.#db.query<CandidateRow>(
       `SELECT c.provider_city_code,
               c.country_code::text AS country_code,
@@ -428,7 +449,7 @@ export class PgCatalogStore implements CatalogStore {
          LEFT JOIN (${demandByCitySql({ provider: '$1', since: '$3', source: '$4' })}) d
            ON d.target_city_code = c.provider_city_code
         WHERE c.provider_code = $1
-          AND c.country_code::text = ANY($2::text[])
+          AND (c.country_code::text = ANY($2::text[]) OR COALESCE(d.searches, 0) > 0)
           AND ($5::text[] IS NULL OR c.provider_city_code = ANY($5::text[]))`,
       [
         this.#provider,
@@ -574,9 +595,9 @@ export class PgCatalogStore implements CatalogStore {
   }
 
   async listContentCandidates(query: ContentCandidatesQuery): Promise<readonly ContentCandidate[]> {
-    // El país es el de la CIUDAD, como en E3: el alcance de la corrida es el de sus ciudades. Sólo
-    // cuenta el contenido `details`: el `listing` no tiene imágenes ni horarios y no evita pedir
-    // HotelDetails.
+    // El país es el de la CIUDAD, como en E3: el alcance de la corrida es el de sus ciudades, más
+    // las buscadas de otros países (las que el API cargó bajo demanda). Sólo cuenta el contenido
+    // `details`: el `listing` no tiene imágenes ni horarios y no evita pedir HotelDetails.
     const res = await this.#db.query<ContentCandidateRow>(
       `SELECT h.hotel_id,
               COALESCE(d.searches, 0)::int AS demand,
@@ -596,7 +617,7 @@ export class PgCatalogStore implements CatalogStore {
           AND hc.source = 'details'
         WHERE h.provider_code = $1
           AND h.active
-          AND c.country_code::text = ANY($2::text[])
+          AND (c.country_code::text = ANY($2::text[]) OR COALESCE(d.searches, 0) > 0)
           AND (NOT $5::boolean OR COALESCE(d.searches, 0) > 0)
           AND ($6::text[] IS NULL OR h.provider_city_code = ANY($6::text[]))
         GROUP BY h.hotel_id, d.searches`,

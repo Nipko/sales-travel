@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LOADS_ON_SEARCH_OPTION_HINT,
   SUGGESTIONS_MAX_QUERY,
   SUGGESTIONS_UNAVAILABLE,
   destinationNotice,
+  loadsOnSearchNotice,
+  loadsOnSearchOptionHint,
   parseSuggestionItems,
   suggestionsErrorMessage,
   suggestionsQuery,
@@ -98,5 +101,38 @@ describe('destinationNotice — qué decir debajo del campo', () => {
     expect(destinationNotice({ ...base, loading: true, error: 'x' })).toBeUndefined();
     expect(destinationNotice({ ...base, query: 'b' })).toBeUndefined();
     expect(destinationNotice({ ...base, query: 'Bogotá', label: 'Bogotá' })).toBeUndefined();
+  });
+});
+
+describe('ciudades que se cargan al buscar (loadsOnSearch)', () => {
+  const cusco = { display: 'Cusco', loadsOnSearch: true };
+
+  it('la opción lo dice; el resto de las ciudades, no', () => {
+    expect(loadsOnSearchOptionHint(cusco)).toBe(LOADS_ON_SEARCH_OPTION_HINT);
+    expect(loadsOnSearchOptionHint({ loadsOnSearch: false })).toBeUndefined();
+    expect(loadsOnSearchOptionHint({})).toBeUndefined();
+  });
+
+  it('elegida, avisa que la primera búsqueda tarda unos segundos más', () => {
+    expect(loadsOnSearchNotice(cusco)).toBe(
+      'Los hoteles de Cusco se traen al buscar: la primera búsqueda puede tardar unos segundos más.',
+    );
+    expect(loadsOnSearchNotice({ display: 'Bogotá' })).toBeUndefined();
+    expect(loadsOnSearchNotice(undefined)).toBeUndefined();
+  });
+
+  it('parseSuggestionItems conserva la marca que manda el API', () => {
+    const items = parseSuggestionItems({
+      items: [
+        {
+          id: 'tbo-hotels:111777',
+          gid: 'tbo-hotels:111777',
+          type: 0,
+          display: 'Cusco',
+          loadsOnSearch: true,
+        },
+      ],
+    });
+    expect(items?.[0]?.loadsOnSearch).toBe(true);
   });
 });

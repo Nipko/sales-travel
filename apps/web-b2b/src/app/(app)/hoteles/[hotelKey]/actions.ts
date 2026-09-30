@@ -1,10 +1,15 @@
 'use server';
 
 import { api } from '../../../../lib/api';
+import { hotelImageProxyUrl } from '../../../../lib/hotel-image-proxy';
 import type { HotelOffer } from '../actions';
 import { decodeHotelKey, type HotelProviderHotelRef } from '../_components/hotel-key';
 import { parseStay } from '../_components/hotel-search-handoff';
-import { parseHotelContent, type HotelContent } from './_components/hotel-content-view';
+import {
+  parseHotelContent,
+  withProxiedPhotos,
+  type HotelContent,
+} from './_components/hotel-content-view';
 
 /*
  * Lecturas del detalle de un hotel: la ficha de cada proveedor que lo vende y sus tarifas para la
@@ -44,6 +49,11 @@ export interface HotelDetailRatesResult {
   readonly outcomes: readonly HotelRatesOutcome[];
   /** Cuándo llegó la respuesta (epoch en ms): cambia en cada consulta. */
   readonly receivedAt?: number;
+  /**
+   * Quien financia a la agencia le bloqueó las tarifas no reembolsables (0055): se marcan como no
+   * disponibles y no se ofrece reservarlas. Ausente si no se pudo leer: el PreBook decide igual.
+   */
+  readonly nonRefundableBlocked?: boolean;
   readonly error?: string;
 }
 
@@ -53,7 +63,10 @@ function pathOf(ref: HotelProviderHotelRef): string {
   return `/hotels/content/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.hotelId)}?lang=${CONTENT_LANG}`;
 }
 
-/** La ficha de cada proveedor del hotel. Sin contenido, el API responde la ficha vacía, no un error. */
+/**
+ * La ficha de cada proveedor del hotel. Sin contenido, el API responde la ficha vacía, no un error.
+ * Las fotos salen como rutas del proxy propio: la URL del proveedor no llega al navegador.
+ */
 export async function hotelContentAction(hotelKey: string): Promise<HotelContentResult> {
   const refs = typeof hotelKey === 'string' ? decodeHotelKey(hotelKey) : undefined;
   if (refs === undefined) return { ok: false, outcomes: [], error: INVALID_KEY };
@@ -65,7 +78,7 @@ export async function hotelContentAction(hotelKey: string): Promise<HotelContent
       const content = parseHotelContent(res.data, ref);
       return content === undefined
         ? { ref, error: 'La ficha del hotel llegó incompleta.' }
-        : { ref, content };
+        : { ref, content: withProxiedPhotos(content, hotelImageProxyUrl) };
     }),
   );
   return { ok: outcomes.some((o) => o.content !== undefined), outcomes };
@@ -96,6 +109,7 @@ export async function hotelRatesAction(
     };
   }
 
+  const permission = api<unknown>('/hotels/booking-permissions');
   const outcomes = await Promise.all(
     refs.map(async (ref): Promise<HotelRatesOutcome> => {
       const body: Record<string, unknown> = {
@@ -119,9 +133,22 @@ export async function hotelRatesAction(
         : { ref, error: 'La respuesta del proveedor llegó incompleta.' };
     }),
   );
+  const blocked = nonRefundableBlockedOf(await permission);
   return {
     ok: outcomes.some((o) => o.offer !== undefined),
     outcomes,
     receivedAt: Date.now(),
+    ...(blocked ? { nonRefundableBlocked: true } : {}),
   };
+}
+
+/** `GET /hotels/booking-permissions`: sólo un `blocked` explícito marca las tarifas. */
+function nonRefundableBlockedOf(res: Awaited<ReturnType<typeof api<unknown>>>): boolean {
+  if (!res.ok || typeof res.data !== 'object' || res.data === null) return false;
+  const rates = (res.data as { nonRefundableRates?: unknown }).nonRefundableRates;
+  return (
+    typeof rates === 'object' &&
+    rates !== null &&
+    (rates as { effective?: unknown }).effective === 'blocked'
+  );
 }

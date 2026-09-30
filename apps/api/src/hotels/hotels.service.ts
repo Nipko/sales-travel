@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
   HotelOffer,
   HotelRatesQuery,
@@ -11,18 +11,22 @@ import type {
   HotelSuggestPort,
 } from '@sales-travel/domain';
 import { CurrencyCodeSchema } from '@sales-travel/validation';
-import { sql, type SelectQueryBuilder } from 'kysely';
+import { sql, type SelectQueryBuilder, type SqlBool } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { PricingService, type ApplicableRule } from '../pricing/pricing.service.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   PLATFORM_ID_SPACE_PROVIDER,
+  supportsHotelCityCatalog,
   supportsHotelRatesContext,
   supportsHotelRatesDetail,
   supportsHotelSearchContext,
   supportsHotelSuggest,
   type HotelCatalogOrder,
+  type HotelCityCatalog,
+  type HotelCityCatalogPort,
+  type HotelContentLanguage,
   type HotelProviderAccountFingerprint,
   type HotelProviderAdapter,
   type HotelProviderRegistration,
@@ -30,6 +34,8 @@ import {
   type HotelSearchProfile,
   type ResolvedHotelProvider,
 } from '../providers/hotel-provider.types.js';
+import { HotelCatalogStore, type HotelCityImportOutcome } from './hotel-catalog.store.js';
+import { pickMainImages } from './hotel-image-proxy.js';
 import { ProviderCallError } from '../providers/provider.types.js';
 import {
   BreakerRejectionError,
@@ -61,6 +67,7 @@ import {
   type CanonicalHotelKeyOf,
   type HotelCatalogFacts,
   type HotelProviderOutcome,
+  type HotelSearchHotel,
   type HotelSearchResponse,
   type ProviderOffers,
 } from './hotel-search.aggregate.js';
@@ -106,12 +113,39 @@ const FALLBACK_MIN_HOTELS = 5;
 const CATALOG_EMPTY_MESSAGE =
   'El catálogo de hoteles de ese destino todavía no está sincronizado. Probá con otra ciudad o avisá al administrador.';
 
+export const CITY_WITHOUT_HOTELS_MESSAGE =
+  'Esa ciudad no tiene hoteles disponibles por ahora. Probá con una ciudad cercana.';
+
+export const CITY_LOAD_FAILED_MESSAGE =
+  'No pudimos traer los hoteles de esa ciudad en este momento. Probá de nuevo en unos minutos.';
+
+/**
+ * Plazo de cada intento de traer los hoteles de una ciudad nueva (TBOHotelCodeList tarda 1-5 s) y
+ * de la carga entera, cola del limitador incluida. El vendedor está esperando la búsqueda: más que
+ * esto y es mejor decirle que pruebe en un rato.
+ */
+export const CITY_LOAD_ATTEMPT_TIMEOUT_MS = 10_000;
+export const CITY_LOAD_TOTAL_TIMEOUT_MS = 15_000;
+
+/** Una ciudad del catálogo local que el sync nunca cargó: se trae al buscarla (05 §8.5). */
+interface CityToLoad {
+  readonly cityCode: string;
+  readonly countryCode: string;
+}
+
 /** Qué hoteles se le piden a cada proveedor, o por qué no se le pregunta. */
 type CatalogPlan =
   | { readonly hotelIds: readonly string[] }
+  | { readonly load: CityToLoad }
   | {
       readonly skip: 'catalog-empty' | 'no-destination-map' | 'foreign-hotel-ids';
     };
+
+/** El plan de un proveedor una vez cargadas las ciudades nuevas: ya no queda ninguna por cargar. */
+type ResolvedPlan = Exclude<CatalogPlan, { readonly load: CityToLoad }>;
+
+/** Cómo terminó la carga de una ciudad nueva. */
+type CityLoadResult = 'loaded' | 'empty' | 'failed' | 'unsupported';
 
 /** Un proveedor que sabe hacer una operación, con lo que su llamada necesita del breaker. */
 interface CapableProvider<TPort> {
@@ -196,6 +230,11 @@ function failureClassOf(err: unknown): string {
   return err instanceof Error ? err.name : typeof err;
 }
 
+/** El idioma del contenido de la búsqueda (el de las fotos da igual: sólo desempata). */
+function contentLanguageOf(input: HotelAvailabilityInput): HotelContentLanguage {
+  return input.language === undefined ? 'es' : NEUTRAL_LANGUAGE[input.language];
+}
+
 /** Clave de un hotel de un proveedor. El separador no puede aparecer en un código de proveedor. */
 function hotelKey(providerCode: string, hotelId: string): string {
   return `${providerCode} ${hotelId}`;
@@ -215,11 +254,11 @@ function tenantCurrency(raw: string | null | undefined): string | undefined {
 }
 
 /** Precio de venta de cada tarifa de un hotel ({@link priceRoompack}). */
-function withPricing(
-  offer: HotelOffer,
+function withPricing<T extends HotelOffer>(
+  offer: T,
   rules: ApplicableRule[],
   sellerTenantId: string,
-): HotelOffer {
+): T {
   return {
     ...offer,
     roompacks: offer.roompacks.map((pack) => priceRoompack(pack, rules, sellerTenantId)),
@@ -254,6 +293,14 @@ function withPricing(
 export class HotelsService {
   private readonly logger = new Logger(HotelsService.name);
 
+  /**
+   * Cargas de ciudades nuevas en vuelo, por proveedor y ciudad: dos vendedores que buscan la misma
+   * ciudad a la vez esperan UNA llamada a TBOHotelCodeList, no dos.
+   */
+  private readonly cityLoads = new Map<string, Promise<CityLoadResult>>();
+
+  private readonly catalog: HotelCatalogStore;
+
   constructor(
     private readonly registry: HotelProviderRegistry,
     private readonly db: DatabaseService,
@@ -261,7 +308,10 @@ export class HotelsService {
     private readonly telemetry: SearchTelemetryService,
     private readonly breaker: CircuitBreakerService,
     private readonly searchContexts: HotelSearchContextStore,
-  ) {}
+    @Optional() catalog?: HotelCatalogStore,
+  ) {
+    this.catalog = catalog ?? new HotelCatalogStore(db);
+  }
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -365,8 +415,9 @@ export class HotelsService {
 
   /**
    * Ciudades de `hotel_provider_city` de esos proveedores cuyo nombre contiene lo escrito o se le
-   * parece, sólo las que tienen hoteles activos: una ciudad que el sync todavía no bajó terminaría
-   * en el 503 de catálogo vacío.
+   * parece: las que tienen hoteles y las que el sync bajó sin ellos (`hotel_count` en `NULL`, la
+   * cobertura global de E2A), que salen marcadas `loadsOnSearch` porque sus hoteles se traen al
+   * buscarlas. Nunca las que TBO ya contestó vacías (`hotel_count = 0`): serían un destino inválido.
    *
    * Se compara contra `name_norm`, que el sync guarda sin acentos, con lo escrito normalizado con
    * el mismo algoritmo: "Bogotá", "BOGOTA" y "bogota" encuentran lo mismo. Primero la ciudad que
@@ -374,9 +425,9 @@ export class HotelsService {
    * así, las que lo contienen y al final las parecidas; dentro de cada grupo, la más parecida y la
    * de más hoteles. El resto del orden es sólo para que dos consultas iguales devuelvan lo mismo.
    *
-   * La tabla es chica —las ciudades de los países que se sincronizan, y sólo las que tienen
-   * hoteles— y el `OR` con la similitud la recorre entera; el índice trigram de 0041 sirve cuando
-   * crezca y se quiera partir la consulta.
+   * Con las ciudades del mundo la tabla ya no es chica: lo parecido se filtra con el operador `%`
+   * de `pg_trgm`, que usa el índice trigram de 0041 (umbral 0,3 por defecto), y después con la
+   * similitud mínima; el `like` usa el mismo índice.
    */
   private async suggestFromCatalog(
     providerCodes: readonly string[],
@@ -390,13 +441,16 @@ export class HotelsService {
 
     const rows = await this.db.db
       .selectFrom('hotel_provider_city')
-      .select(['provider_code', 'provider_city_code', 'name', 'country_code'])
+      .select(['provider_code', 'provider_city_code', 'name', 'country_code', 'hotel_count'])
       .where('provider_code', 'in', [...providerCodes])
-      .where('hotel_count', '>', 0)
+      .where((eb) => eb.or([eb('hotel_count', '>', 0), eb('hotel_count', 'is', null)]))
       .where((eb) =>
         eb.or([
           eb('name_norm', 'like', contains),
-          eb(similarity, '>=', CATALOG_SUGGESTION_MIN_SIMILARITY),
+          eb.and([
+            sql<SqlBool>`name_norm % ${needle}`,
+            eb(similarity, '>=', CATALOG_SUGGESTION_MIN_SIMILARITY),
+          ]),
         ]),
       )
       .orderBy(
@@ -407,7 +461,7 @@ export class HotelsService {
                  else 4 end`,
       )
       .orderBy(similarity, 'desc')
-      .orderBy('hotel_count', 'desc')
+      .orderBy(sql`hotel_count desc nulls last`)
       .orderBy('name')
       .orderBy('provider_code')
       .orderBy('provider_city_code')
@@ -435,7 +489,7 @@ export class HotelsService {
     // ningún catálogo tiene el destino, no hay a quién preguntar y no se gasta nada.
     const destination = destinationOf(input.destinationId);
     const plans = await this.catalogPlans(input, destination);
-    if (![...plans.values()].some((p) => 'hotelIds' in p)) {
+    if (![...plans.values()].some((p) => 'hotelIds' in p || 'load' in p)) {
       // Lista vacía = el catálogo no está sincronizado, NO que no haya hoteles. Devolver [] en
       // silencio hacía que el vendedor concluyera lo segundo.
       throw new ServiceUnavailableException(CATALOG_EMPTY_MESSAGE);
@@ -455,6 +509,16 @@ export class HotelsService {
 
     const { active, skipped, unavailable } = await this.registry.forTenant(tenantId);
 
+    // Una ciudad del catálogo local que el sync nunca cargó se carga AHORA, después de la cuota
+    // (la llamada es parte de esta búsqueda) y sólo con un proveedor activo para la agencia.
+    const { plans: resolved, loads } = await this.loadCitiesOnDemand(tenantId, active, plans);
+    if (loads.length > 0 && ![...resolved.values()].some((p) => 'hotelIds' in p)) {
+      // Vacía sólo si TODAS las cargas dijeron "sin hoteles"; un fallo invita a reintentar.
+      throw new ServiceUnavailableException(
+        loads.every((r) => r === 'empty') ? CITY_WITHOUT_HOTELS_MESSAGE : CITY_LOAD_FAILED_MESSAGE,
+      );
+    }
+
     const state: FanOutState = {
       outcomes: [
         ...skipped.map((s) => skippedOutcome(s.code, s.reason, SKIP_REASON_TEXT[s.reason])),
@@ -469,7 +533,7 @@ export class HotelsService {
     const callable: CallablePlan[] = [];
     for (const provider of active) {
       // Todo activo está registrado: las dos listas salen del mismo arreglo de factories.
-      const plan = plans.get(provider.code) as CatalogPlan;
+      const plan = resolved.get(provider.code) as ResolvedPlan;
       if ('skip' in plan) {
         outcomes.push(skippedOutcome(provider.code, plan.skip, SKIP_REASON_TEXT[plan.skip]));
         continue;
@@ -498,7 +562,7 @@ export class HotelsService {
           hotelCount: callable.reduce((n, c) => n + c.criteria.hotelIds.length, 0),
         },
       },
-      () => this.runFanOut(tenantId, callable, currency, state),
+      () => this.runFanOut(tenantId, callable, currency, state, contentLanguageOf(input)),
       (r) => r.hotels.length,
       undefined,
       (r) => telemetrySlices(r.providers, state.called, state.durations),
@@ -666,6 +730,7 @@ export class HotelsService {
     callable: readonly CallablePlan[],
     currency: string,
     state: FanOutState,
+    imageLang: HotelContentLanguage,
   ): Promise<HotelSearchResponse> {
     const fallbacks = callable.filter((c) => c.provider.callPolicy === 'fallback');
     await this.callWave(
@@ -701,12 +766,13 @@ export class HotelsService {
     }
 
     const profiles = new Map(callable.map((c) => [c.provider.code, c.provider.searchProfile]));
-    const contributed = await Promise.all(
+    const filled = await Promise.all(
       state.contributed.map(async (batch): Promise<ProviderOffers> => {
         if (profiles.get(batch.code)?.contentFromCatalog !== true) return batch;
         return { ...batch, offers: await this.withCatalogContent(batch.code, batch.offers) };
       }),
     );
+    const contributed = await this.withMainImages(filled, imageLang);
 
     return {
       hotels: mergeProviderOffers(contributed, await this.canonicalKeys(contributed)),
@@ -801,6 +867,171 @@ export class HotelsService {
       );
     }
     return filled;
+  }
+
+  /**
+   * La foto principal de cada hotel que YA está en el catálogo, servida por el proxy propio
+   * (`/api/hotels/images/…`): la suya o la del MISMO hotel en otro proveedor (`hotel_match`
+   * aceptado, RF-34). No sale a buscar nada: lo que falta lo pide la web en segundo plano al
+   * contenido por lote, y los resultados no esperan.
+   *
+   * Es decorativo: si la consulta falla, la búsqueda sale sin fotos, nunca con un error.
+   */
+  private async withMainImages(
+    batches: readonly ProviderOffers[],
+    lang: HotelContentLanguage,
+  ): Promise<ProviderOffers[]> {
+    const refs = batches.flatMap((b) =>
+      b.offers.map((o) => ({ providerCode: b.code, hotelId: o.hotelId })),
+    );
+    if (refs.length === 0) return [...batches];
+    const hosts = new Map(
+      this.registry.registered().map((r) => [r.code, r.searchProfile.imageHosts ?? []]),
+    );
+    let images;
+    try {
+      images = pickMainImages(
+        await this.catalog.imageCandidates(refs, lang),
+        (code) => hosts.get(code) ?? [],
+      );
+    } catch (err) {
+      // Sin el error: el mensaje de un driver puede citar los parámetros de la consulta.
+      this.logger.warn(`hotels.main_images.no_disponible error=${failureClassOf(err)}`);
+      return [...batches];
+    }
+    if (images.size === 0) return [...batches];
+    return batches.map((batch) => ({
+      ...batch,
+      offers: batch.offers.map((offer): HotelSearchHotel => {
+        const image = images.get(`${batch.code} ${offer.hotelId}`);
+        return image === undefined ? offer : { ...offer, mainImage: { url: image.url } };
+      }),
+    }));
+  }
+
+  // ───────────────────────── Ciudades que se cargan al buscarlas ─────────────────────────
+
+  /**
+   * Carga las ciudades del catálogo local que el sync nunca cargó (docs/tbo/05 §8.5; estrategia de
+   * cobertura del 2026-09-29): el autocompletado sugiere cualquier ciudad con código del proveedor
+   * (E2A), y la primera búsqueda de una trae sus `HotelCodes` con UNA llamada (TBO
+   * `TBOHotelCodeList`, 1-5 s), los guarda por la función de 0054 y sigue con la búsqueda.
+   *
+   * - Sólo proveedores ACTIVOS para la agencia: la cuenta, el flag de `opt-in` y el circuito son los
+   *   de la venta. Uno apagado no se carga y la búsqueda dice por qué, como siempre.
+   * - Por su circuito, pasiva: un TBOHotelCodeList lento no corta las búsquedas de la red.
+   * - Deja el plan de cada proveedor resuelto: sus hoteles, o `catalog-empty` si no pudo o si no
+   *   está activo (su parte ya dice por qué).
+   *
+   * Devuelve también cómo terminó cada carga, para el mensaje si ninguno terminó con hoteles.
+   */
+  private async loadCitiesOnDemand(
+    tenantId: string,
+    active: readonly ResolvedHotelProvider[],
+    plans: ReadonlyMap<string, CatalogPlan>,
+  ): Promise<{ plans: Map<string, ResolvedPlan>; loads: CityLoadResult[] }> {
+    const activeByCode = new Map(active.map((p) => [p.code, p]));
+    const resolved = new Map<string, ResolvedPlan>();
+    const loads: CityLoadResult[] = [];
+    for (const [code, plan] of plans) {
+      if (!('load' in plan)) {
+        resolved.set(code, plan);
+        continue;
+      }
+      const provider = activeByCode.get(code);
+      if (provider === undefined) {
+        resolved.set(code, { skip: 'catalog-empty' });
+        continue;
+      }
+      const result = await this.loadCity(tenantId, provider, plan.load);
+      loads.push(result);
+      const hotelIds =
+        result === 'loaded'
+          ? await this.resolveProviderCityHotelIds(
+              code,
+              [plan.load.cityCode],
+              provider.searchProfile.maxHotelsPerSearch,
+              provider.searchProfile.catalogOrder,
+            )
+          : [];
+      resolved.set(code, hotelIds.length > 0 ? { hotelIds } : { skip: 'catalog-empty' });
+    }
+    return { plans: resolved, loads };
+  }
+
+  private loadCity(
+    tenantId: string,
+    { code, adapter, circuit }: ResolvedHotelProvider,
+    city: CityToLoad,
+  ): Promise<CityLoadResult> {
+    if (!supportsHotelCityCatalog(adapter)) return Promise.resolve('unsupported');
+    const key = `${code} ${city.cityCode}`;
+    let pending = this.cityLoads.get(key);
+    if (pending === undefined) {
+      pending = this.fetchAndImportCity(tenantId, code, adapter, circuit, city).finally(() =>
+        this.cityLoads.delete(key),
+      );
+      this.cityLoads.set(key, pending);
+    }
+    return pending;
+  }
+
+  /** UNA carga: pide la ciudad, la guarda y guarda su texto en inglés. Nunca lanza. */
+  private async fetchAndImportCity(
+    tenantId: string,
+    code: string,
+    adapter: HotelCityCatalogPort,
+    circuit: ProviderCircuitOptions | undefined,
+    city: CityToLoad,
+  ): Promise<CityLoadResult> {
+    let catalog: HotelCityCatalog;
+    try {
+      catalog = await this.breaker.execute(
+        code,
+        () =>
+          adapter.listCityCatalog(
+            city.cityCode,
+            city.countryCode,
+            { tenantId },
+            {
+              timeoutMs: CITY_LOAD_ATTEMPT_TIMEOUT_MS,
+              signal: AbortSignal.timeout(CITY_LOAD_TOTAL_TIMEOUT_MS),
+            },
+          ),
+        { ...circuit, scope: 'sales', passive: true },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `hotels.catalog.ciudad_no_cargada provider=${code} city=${city.cityCode} error=${failureClassOf(err)}`,
+      );
+      return 'failed';
+    }
+
+    let outcome: HotelCityImportOutcome;
+    try {
+      ({ outcome } = await this.catalog.importCity(code, city.cityCode, catalog.hotels));
+    } catch (err) {
+      this.logger.warn(
+        `hotels.catalog.ciudad_no_guardada provider=${code} city=${city.cityCode} error=${failureClassOf(err)}`,
+      );
+      return 'failed';
+    }
+    this.logger.log(
+      `hotels.catalog.ciudad_cargada provider=${code} city=${city.cityCode} outcome=${outcome} hotels=${catalog.hotels.length} unreadable=${catalog.unreadable}`,
+    );
+    if (outcome === 'loaded' && catalog.listingContents.length > 0) {
+      // El texto en inglés que llegó de paso: el respaldo de la ficha hasta que haya HotelDetails.
+      // Si no se puede guardar, la búsqueda sigue igual.
+      try {
+        await this.catalog.storeContents(code, catalog.listingContents);
+      } catch (err) {
+        this.logger.warn(
+          `hotels.catalog.listing_no_guardado provider=${code} city=${city.cityCode} error=${failureClassOf(err)}`,
+        );
+      }
+    }
+    if (outcome === 'loaded' || outcome === 'already-loaded') return 'loaded';
+    return outcome === 'empty' ? 'empty' : 'failed';
   }
 
   /** Lo que la fila de `hotel_inventory` de cada hotel aporta a su oferta, por `hotel_id`. */
@@ -1052,6 +1283,10 @@ export class HotelsService {
         searchProfile.maxHotelsPerSearch,
         searchProfile.catalogOrder,
       );
+      if (hotelIds.length === 0) {
+        const load = await this.cityToLoad(code, destination.cityCode);
+        if (load !== undefined) return { load };
+      }
     } else if (searchProfile.idSpace === 'provider') {
       const cityCodes = await this.resolveDestinationCityCodes(code, destination.cityId);
       if (cityCodes.length === 0) return { skip: 'no-destination-map' };
@@ -1070,6 +1305,26 @@ export class HotelsService {
       );
     }
     return hotelIds.length > 0 ? { hotelIds } : { skip: 'catalog-empty' };
+  }
+
+  /**
+   * La ciudad, si el catálogo la tiene y el sync nunca la cargó (`hotel_count` en `NULL`): ésa se
+   * carga al buscarla. Una que TBO ya contestó vacía no se vuelve a pedir, y una que el catálogo no
+   * conoce no es un destino. Si la consulta falla, no se carga: queda el 503 de siempre.
+   */
+  private async cityToLoad(
+    providerCode: string,
+    cityCode: string,
+  ): Promise<CityToLoad | undefined> {
+    try {
+      const city = await this.catalog.city(providerCode, cityCode);
+      return city?.neverLoaded === true ? { cityCode, countryCode: city.countryCode } : undefined;
+    } catch (err) {
+      this.logger.warn(
+        `hotels.catalog.ciudad_no_consultada provider=${providerCode} error=${failureClassOf(err)}`,
+      );
+      return undefined;
+    }
   }
 
   // ───────────────────────── Criterio ─────────────────────────

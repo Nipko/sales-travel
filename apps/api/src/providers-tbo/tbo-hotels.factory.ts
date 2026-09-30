@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
 import {
+  TBO_IMAGE_HOST_SUFFIXES,
   TBO_SEARCH_LIMITS,
   TboConfigError,
   TboHotelsAdapter,
@@ -139,6 +140,9 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
    * `requiresGuestNationality`: TBO tarifa según la nacionalidad del pasajero principal (p. 10) y
    * pide no fijarla en código (KP-1, p. 71). Sin ella, TBO no participa y se dice por qué (RF-06,
    * D-TBO-14 A); ni la cuenta ni el tenant la completan.
+   *
+   * `imageHosts`: las fotos de HotelDetails vienen de `imageresource.aspx` en dominios de TBO; sólo
+   * ésas pasan por el proxy de imágenes de los resultados (05 §10).
    */
   readonly searchProfile: HotelSearchProfile = {
     idSpace: 'provider',
@@ -152,6 +156,7 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
     },
     requiresGuestNationality: true,
     contentFromCatalog: true,
+    imageHosts: TBO_IMAGE_HOST_SUFFIXES,
   };
 
   private readonly logger = new Logger('TboHotels');

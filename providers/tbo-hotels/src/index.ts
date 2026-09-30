@@ -293,3 +293,15 @@ export type {
 
 // El lote de HotelDetails lo parte el sync (E4): necesita el techo y el tamaño por defecto.
 export { TBO_HOTEL_DETAILS_LIMITS } from './static/hotel-details.request.builder';
+
+// La huella de `hotel_content`: la escriben el sync y el API (contenido bajo demanda), y una sola
+// función hace que una fila igual se reconozca venga de donde venga.
+export { TBO_CONTENT_HASH_VERSION, tboHotelContentHash } from './static/content-hash';
+
+// De qué dominios sirve TBO sus fotos: el proxy de imágenes sólo sale a buscar ésas.
+export {
+  TBO_IMAGE_HOST_SUFFIXES,
+  TBO_IMAGE_URL_MAX_LENGTH,
+  isTboImageUrl,
+  tboImageUrl,
+} from './static/image-hosts';

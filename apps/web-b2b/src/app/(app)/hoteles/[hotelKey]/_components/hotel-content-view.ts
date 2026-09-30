@@ -34,7 +34,10 @@ export interface HotelContent {
   readonly sections: readonly HotelContentSection[];
   readonly facilities: readonly string[];
   readonly attractionsHtml: string | null;
-  /** Sólo URLs absolutas `https`. */
+  /**
+   * Las fotos. Al leer la respuesta, sólo URLs absolutas `https` del proveedor; lo que entrega
+   * `hotelContentAction` a la pantalla ya son rutas del proxy propio ({@link withProxiedPhotos}).
+   */
   readonly images: readonly string[];
   readonly phone: string | null;
   /** `http` o `https`: es un enlace, no un recurso embebido. */
@@ -177,6 +180,25 @@ export function parseHotelContent(
     checkInTime: timeOrNull(raw['checkInTime']),
     checkOutTime: timeOrNull(raw['checkOutTime']),
   };
+}
+
+/**
+ * La ficha con sus fotos como rutas del proxy propio del panel (`/api/hotels/images/…`), en el
+ * orden del proveedor y sin repetidas. Se hace en el servidor (la acción), así la URL del proveedor
+ * no viaja al navegador: ni el del vendedor ni el de un cliente le piden nada al host de fotos del
+ * proveedor, y la marca blanca no lo muestra. Una foto que el proxy no serviría (otro dominio) no
+ * entra: el panel no pinta fotos de terceros por fuera del proxy (CSP `img-src 'self'`).
+ */
+export function withProxiedPhotos(
+  content: HotelContent,
+  toProxyPath: (src: string) => string | undefined,
+): HotelContent {
+  const photos = new Set<string>();
+  for (const src of content.images) {
+    const path = toProxyPath(src);
+    if (path !== undefined) photos.add(path);
+  }
+  return { ...content, images: [...photos] };
 }
 
 // ───────────────────────── HTML de la lista blanca ─────────────────────────

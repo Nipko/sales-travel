@@ -176,7 +176,7 @@ export async function runCli(io: CliIo): Promise<number> {
     // sigue. Una racha de errores no: TBO está caído o algo nuestro se rompió, y el workflow tiene
     // que ponerse en rojo aunque las ciudades anteriores hayan quedado bien escritas.
     const ok = report.stopReason !== 'errors';
-    const { e1, e2, e3, e4, e5, e6, ...totals } = report;
+    const { e1, e2, e2a, e3, e4, e5, e6, ...totals } = report;
     const summary = {
       ok,
       credentialSource: account.source,
@@ -189,6 +189,8 @@ export async function runCli(io: CliIo): Promise<number> {
       hotelsDeactivated: e3.hotelsDeactivated + (e5.status === 'done' ? e5.deactivated : 0),
       sweepAnomalies: e3.sweepAnomalies,
       citiesUpserted: e2.citiesUpserted,
+      worldCitiesUpserted: e2a.citiesUpserted,
+      worldCountriesPending: e2a.countriesPending,
       listingContentsWritten: e3.listingContentsWritten,
       contentsWritten: e4.contentsWritten,
       contentsUnchanged: e4.contentsUnchanged,
@@ -198,6 +200,7 @@ export async function runCli(io: CliIo): Promise<number> {
       hotelMatchesReview: e6.hotelMatch.reviewHotels,
       destinationsAccepted: e6.destinationMap.acceptedOverlap + e6.destinationMap.acceptedCentroid,
       destinationsAmbiguous: e6.destinationMap.ambiguous,
+      e2a: e2a.status,
       e4: e4.status,
       e5: e5.status,
       e6: e6.destinationMap.status === 'held' ? 'held' : e6.hotelMatch.status,

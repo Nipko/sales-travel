@@ -1115,7 +1115,10 @@ describe('PR-3.6: contenido de un hotel bajo demanda (HotelDetails)', () => {
   function contenido(
     result: TboHotelDetailsResult = detalle(),
   ): TboContentAcl & { getHotelDetails: ReturnType<typeof vi.fn> } {
-    return { getHotelDetails: vi.fn(() => Promise.resolve(result)) };
+    return {
+      getHotelDetails: vi.fn(() => Promise.resolve(result)),
+      listCityHotels: vi.fn(() => Promise.reject(new Error('no se usa en la ficha'))),
+    };
   }
 
   it('pide UN código en el idioma, en un solo intento, con el plazo y la señal de quien llama', async () => {

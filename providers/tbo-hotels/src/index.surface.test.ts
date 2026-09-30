@@ -42,6 +42,7 @@ import * as searchSchema from './search/response.schema';
 import * as searchBuilder from './search/search.request.builder';
 import * as cityListBuilder from './static/city-list.request.builder';
 import * as cityListMapper from './static/city-list.response.mapper';
+import * as contentHash from './static/content-hash';
 import * as contentTypes from './static/content.types';
 import * as countryListMapper from './static/country-list.response.mapper';
 import * as hotelCodeListMapper from './static/hotel-code-list.response.mapper';
@@ -49,6 +50,7 @@ import * as hotelDetailsBuilder from './static/hotel-details.request.builder';
 import * as hotelDetailsMapper from './static/hotel-details.response.mapper';
 import * as hotelRecord from './static/hotel-record';
 import * as htmlSanitizer from './static/html-sanitizer';
+import * as imageHosts from './static/image-hosts';
 import * as staticNormalize from './static/normalize';
 import * as staticObserver from './static/observer';
 import * as staticSchema from './static/response.schema';
@@ -354,6 +356,8 @@ const PROBED: readonly ProbedModule[] = [
   // ───────────── Contenido estático (PR-3.1) ─────────────
   { name: 'tbo-static-content.client', module: staticClient },
   { name: 'static/content.types', module: contentTypes },
+  { name: 'static/content-hash', module: contentHash },
+  { name: 'static/image-hosts', module: imageHosts },
   {
     name: 'static/hotel-details.request.builder',
     module: hotelDetailsBuilder,

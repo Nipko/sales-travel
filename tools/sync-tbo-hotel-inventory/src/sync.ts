@@ -5,6 +5,7 @@ import type { SyncLogger } from './log.js';
 import type { CatalogSource, StageContext } from './stages/context.js';
 import { runCountriesStage, type E1Result } from './stages/e1-countries.js';
 import { runCitiesStage, type E2Result } from './stages/e2-cities.js';
+import { runWorldCitiesStage, type E2AResult } from './stages/e2a-world-cities.js';
 import { runCityHotelsStage, type E3Result } from './stages/e3-city-hotels.js';
 import { runHotelContentStage, type E4Result } from './stages/e4-hotel-content.js';
 import { runHotelCodeListStage, type E5Result } from './stages/e5-hotel-code-list.js';
@@ -14,8 +15,9 @@ import { runHotelMatchStage, type E6MatchResult } from './stages/e6-hotel-match.
 /**
  * Una corrida del sync del catálogo TBO (docs/tbo/05 §6; 08 RF-30): lock consultivo, E1, E2, E5 y
  * E3 dentro del presupuesto; E6 (equivalencias de hotel y mapa de destinos, 08 RF-33 y RF-34), que
- * es sólo SQL; y E4 con lo que quede. E6 va antes que E4 porque el contenido prioriza los destinos
- * con demanda, y la demanda se lee por el mapa que E6 acaba de dejar al día.
+ * es sólo SQL; E4 con lo que quede; y al final E2A, las ciudades del resto del mundo, que es opt-in
+ * y nunca le quita presupuesto a lo que se vende hoy. E6 va antes que E4 porque el contenido
+ * prioriza los destinos con demanda, y la demanda se lee por el mapa que E6 acaba de dejar al día.
  *
  * No escribe `domain_events`: el catálogo es dato de referencia de plataforma, no un cambio de
  * negocio, con el mismo criterio que el sync de Despegar (05 §6.6).
@@ -45,6 +47,8 @@ export type SyncReport =
       readonly errorsByCode: Readonly<Record<string, number>>;
       readonly e1: E1Result;
       readonly e2: E2Result;
+      /** Ciudades del resto del mundo (opt-in): `skipped` si la corrida no la incluye. */
+      readonly e2a: E2AResult;
       readonly e3: E3Result;
       readonly e4: E4Result;
       readonly e5: E5Result;
@@ -94,6 +98,7 @@ export async function runSync(settings: SyncSettings, deps: SyncDeps): Promise<S
     const hotelMatch = await runHotelMatchStage(ctx, e1.countries);
     const destinationMap = await runDestinationMapStage(ctx, e1.countries);
     const e4 = await runHotelContentStage(ctx, e1.countries);
+    const e2a = await runWorldCitiesStage(ctx);
     const counters = gate.counters();
     return {
       action: 'sync',
@@ -107,6 +112,7 @@ export async function runSync(settings: SyncSettings, deps: SyncDeps): Promise<S
       errorsByCode: counters.errorsByCode,
       e1,
       e2,
+      e2a,
       e3,
       e4,
       e5,

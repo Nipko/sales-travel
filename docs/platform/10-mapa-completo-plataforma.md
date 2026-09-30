@@ -732,7 +732,7 @@ POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:user
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 
-Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_scoped_revocation.sql`, detalle en [12 §11](./12-modelo-consolidador-y-plan.md)):
+Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_scoped_revocation.sql`, detalle en [12 §12](./12-modelo-consolidador-y-plan.md)):
 
 ```
 PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations

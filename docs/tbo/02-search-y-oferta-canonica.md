@@ -599,6 +599,10 @@ Otras reglas del piso:
 | Relación con `IsRefundable` | Hay un ejemplo con `IsRefundable: false` y dos tramos `Fixed 0.00` antes del 100 % (p. 50)                                                                           | Nunca se deriva uno del otro: se guardan los dos                                                                                                                                                                                                                                                                                |
 | Cancelación gratuita        | —                                                                                                                                                                    | `freeCancellationUntil` = `FromDate` del primer tramo con cargo mayor que 0, siempre que el tramo anterior sea 0. El margen de seguridad frente a la zona horaria se define en [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md)                                                                                      |
 
+**Desde el 2026-09-29** (D-TBO-39): los dos datos se siguen guardando, pero para vender la contradicción se lee
+como no reembolsable, sin prometer cancelación gratis, y una tarifa cuyo 100 % ya rige se trata igual
+([03 §2.13](./03-prebook-y-book.md#213-tarifas-no-reembolsables-aplicado-2026-09-29)).
+
 **Traducción al contrato actual** (`types.ts:13-29`, VERIFICADO-CODIGO):
 
 - `refundable` ← `IsRefundable`;

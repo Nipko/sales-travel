@@ -42,11 +42,19 @@ import {
   issuesByPath,
   type GuestDraft,
 } from './guest-form-view';
+import {
+  NON_REFUNDABLE_FIELD,
+  nonRefundableAckKey,
+  nonRefundableAt,
+  nonRefundableForTotal,
+  type PrebookNonRefundable,
+} from './non-refundable-view';
 import type { AcceptedPrebook } from './prebook-view';
 
 /*
  * El paso 2 del checkout (U-12 a U-14, U-18, U-19; RF-18, RF-20, RF-22; D-TBO-09 A): huéspedes,
- * contacto, los cargos en el hotel con su reconocimiento y el Book.
+ * contacto, los cargos en el hotel con su reconocimiento, la confirmación OBLIGATORIA de una tarifa
+ * no reembolsable (pedido del 2026-09-29, punto c) y el Book.
  *
  * El Book sale UNA vez por intento. Cada intento lleva su `Idempotency-Key`, nueva, y el botón se
  * deshabilita mientras viaja; además un candado síncrono frena el segundo clic que llega antes de
@@ -119,6 +127,11 @@ export function BookingStep({
   });
   const [repricedAccepted, setRepricedAccepted] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+  // El importe que el vendedor confirmó (`amountMinor currency`). Si el 100 % cambia —aceptó un
+  // precio nuevo—, la casilla vuelve a estar sin marcar: confirmó otro monto.
+  const [nonRefundableAckedFor, setNonRefundableAckedFor] = useState<string>();
+  // Lo que dijo el servidor al rechazar un Book sin la confirmación: gana a lo que ve la pantalla.
+  const [serverNonRefundable, setServerNonRefundable] = useState<PrebookNonRefundable>();
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<Readonly<Record<string, string>>>({});
   const [expired, setExpired] = useState(false);
@@ -136,7 +149,6 @@ export function BookingStep({
     [prebook.roompack, selection.showProviderInResults],
   );
   const atHotel = useMemo(() => atHotelCharges(prebook.roompack), [prebook.roompack]);
-  const cancellation = useMemo(() => cancelPolicyView(prebook.roompack), [prebook.roompack]);
   const roomNames = useMemo(() => prebook.roompack.rooms.map((r) => r.name), [prebook.roompack]);
   const hotelLink = hotelLinkOf(selection);
   const nights = stayNights(selection.stay);
@@ -147,9 +159,31 @@ export function BookingStep({
       ? { prebookRef: repriced.prebookRef, total: repriced.currentTotal }
       : current;
 
+  // Con el reloj del servidor, en cada pintado: si el 100 % empieza a regir mientras se cargan los
+  // huéspedes, la casilla aparece antes de que el servidor rechace el Book. El 100 % es el precio de
+  // venta con el que se reserva (`acceptedTotal`): si acá se aceptó un precio nuevo, es ése, no el
+  // del paso 1.
+  const nonRefundable = nonRefundableForTotal(
+    serverNonRefundable ?? nonRefundableAt(prebook, Date.now() + clockOffsetMs),
+    effective.total,
+  );
+  const isNonRefundable = nonRefundable !== undefined;
+  const nonRefundableKey = nonRefundableAckKey(nonRefundable);
+  const nonRefundableAcknowledged =
+    nonRefundableKey !== undefined && nonRefundableAckedFor === nonRefundableKey;
+  const cancellation = useMemo(
+    () => cancelPolicyView(prebook.roompack, isNonRefundable),
+    [prebook.roompack, isNonRefundable],
+  );
+
   const check = useMemo(
-    () => checkGuestDraft(draft, { required: atHotel.length > 0, acknowledged }),
-    [draft, atHotel.length, acknowledged],
+    () =>
+      checkGuestDraft(
+        draft,
+        { required: atHotel.length > 0, acknowledged },
+        { required: isNonRefundable, acknowledged: nonRefundableAcknowledged },
+      ),
+    [draft, atHotel.length, acknowledged, isNonRefundable, nonRefundableAcknowledged],
   );
   const errors = useMemo(
     () => ({ ...serverErrors, ...(attempted && !check.ok ? issuesByPath(check.issues) : {}) }),
@@ -215,6 +249,17 @@ export function BookingStep({
     }
   };
 
+  const handleNonRefundableAcknowledged = (value: boolean) => {
+    setNonRefundableAckedFor(value ? nonRefundableKey : undefined);
+    if (NON_REFUNDABLE_FIELD in serverErrors) {
+      setServerErrors((prev) => {
+        const out = { ...prev };
+        delete out[NON_REFUNDABLE_FIELD];
+        return out;
+      });
+    }
+  };
+
   const applyOutcome = (outcome: BookOutcome, startedAt: number) => {
     switch (outcome.kind) {
       case 'confirmed':
@@ -245,6 +290,7 @@ export function BookingStep({
         setNotice(outcome);
         setAttempted(true);
         setServerErrors(outcome.fieldErrors);
+        if (outcome.nonRefundable) setServerNonRefundable(outcome.nonRefundable);
         requestFocus(Object.keys(outcome.fieldErrors).length > 0 ? 'invalid' : 'notice');
         return;
       default:
@@ -309,6 +355,9 @@ export function BookingStep({
           currency: effective.total.currency,
         },
         ...(atHotel.length > 0 && acknowledged ? { atPropertyAcknowledged: true as const } : {}),
+        ...(isNonRefundable && nonRefundableAcknowledged
+          ? { nonRefundableAcknowledged: true as const }
+          : {}),
         rooms: check.rooms,
         contact: check.contact,
       },
@@ -466,6 +515,10 @@ export function BookingStep({
                 acknowledged={acknowledged}
                 onAcknowledgedChange={handleAcknowledged}
                 acknowledgeError={errors[AT_PROPERTY_FIELD]}
+                nonRefundable={nonRefundable}
+                nonRefundableAcknowledged={nonRefundableAcknowledged}
+                onNonRefundableAcknowledgedChange={handleNonRefundableAcknowledged}
+                nonRefundableError={errors[NON_REFUNDABLE_FIELD]}
                 gate={gate}
                 onConfirm={confirm}
                 onBack={onBack}
