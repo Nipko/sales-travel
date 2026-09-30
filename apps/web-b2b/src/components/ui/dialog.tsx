@@ -33,6 +33,9 @@ export function useModalBehavior(open: boolean, onClose: () => void) {
     panelRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
+      // Un diálogo abierto DENTRO de éste (una confirmación) maneja su Escape y su Tab: si no, un
+      // Escape cerraba los dos y el Tab ciclaba por los controles tapados.
+      if (panelRef.current?.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();

@@ -120,6 +120,26 @@ jobs:
             echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Cloudflare ranges vs trusted_proxies
+        # Aviso, nunca bloqueo (infrastructure/hostinger/README.md §10.2). El Caddyfile copia la lista
+        # de Cloudflare: si Cloudflare suma un rango, los usuarios que entren por él quedan
+        # identificados por el servidor del borde, que rota y comparten miles (cupos del throttler,
+        # IP de sesiones y auditoría). Si Cloudflare no responde, el deploy sigue igual.
+        continue-on-error: true
+        run: |
+          if ! published=$(curl -fsS --max-time 10 https://www.cloudflare.com/ips-v4 && echo \
+              && curl -fsS --max-time 10 https://www.cloudflare.com/ips-v6 && echo); then
+            echo "::warning::No se pudo bajar la lista de Cloudflare: trusted_proxies sin verificar."
+            exit 0
+          fi
+          configured=$(grep -m1 'trusted_proxies static' infrastructure/hostinger/Caddyfile \
+            | tr -s ' \t' '\n' | tail -n +4)
+          if ! drift=$(diff <(printf '%s\n' "$published" | tr -d '\r' | grep . | sort) \
+              <(printf '%s\n' "$configured" | grep . | sort)); then
+            echo "::warning::trusted_proxies del Caddyfile no coincide con la lista publicada de Cloudflare (README §10.2)."
+            printf '%s\n' "$drift"
+          fi
+
       - name: Setup SSH
         run: |
           install -m 700 -d ~/.ssh
@@ -223,9 +243,13 @@ jobs:
         run: |
           ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
             "mkdir -p ${{ env.STACK_DIR }}"
+          # El Caddyfile viaja como Caddyfile.next y "Pull & up" lo aplica: Caddy monta ./Caddyfile
+          # como archivo suelto, y rsync lo REEMPLAZA por otro (otro inodo) que el contenedor no ve.
+          install -d "$RUNNER_TEMP/stack"
+          cp infrastructure/hostinger/Caddyfile "$RUNNER_TEMP/stack/Caddyfile.next"
           rsync -az --delete -e "ssh -p $SSH_PORT $SSH_OPTS" \
             infrastructure/hostinger/docker-compose.prod.yml \
-            infrastructure/hostinger/Caddyfile \
+            "$RUNNER_TEMP/stack/Caddyfile.next" \
             infrastructure/hostinger/postgres-init \
             .env \
             "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ env.STACK_DIR }}/"
@@ -236,12 +260,59 @@ jobs:
             set -euo pipefail
             cd /opt/sales-travel
             mv -f docker-compose.prod.yml docker-compose.yml 2>/dev/null || true
+            # En un VPS nuevo no hay ./Caddyfile, y montar uno que no existe crea un DIRECTORIO.
+            [ -f Caddyfile ] || cp Caddyfile.next Caddyfile
             # La red por la que Caddy llega al portal de certificación de TBO: el compose la declara
             # `external` y sin ella `up` falla. `--internal` porque no es salida a internet de nadie.
             docker network inspect sales-travel-cert-ingress >/dev/null 2>&1 \
               || docker network create --internal sales-travel-cert-ingress >/dev/null
             docker compose --env-file .env pull
+            # Antes de tocar nada, el Caddyfile nuevo tiene que cargar en la imagen de Caddy que va a
+            # correr: si no, el paso queda en rojo y el servidor sigue entero como estaba.
+            docker compose --env-file .env run --rm --no-deps -T caddy \
+              caddy validate --adapter caddyfile --config - < Caddyfile.next
+            # Caddyfile nuevo sin cortar conexiones (infrastructure/hostinger/README.md §10.3). `cat >`
+            # escribe ENCIMA del archivo montado (mismo inodo), así que el contenedor lo ve sin
+            # recrearse. Va ANTES de `up`: si el `pull` trajo otra imagen de Caddy, `up` lo recrea, y
+            # tiene que arrancar con el archivo que se acaba de validar en ella, no con el anterior.
+            # Caddyfile.prev es el que había, para devolverlo si el reload lo rechaza.
+            rm -f Caddyfile.prev
+            if ! cmp -s Caddyfile.next Caddyfile; then
+              cp -p Caddyfile Caddyfile.prev
+              cat Caddyfile.next > Caddyfile
+            fi
             docker compose --env-file .env up -d --remove-orphans
+            # Los `< /dev/null`: este script llega por la entrada estándar y un `exec` que la lea se
+            # comería el resto.
+            if docker compose --env-file .env exec -T caddy cat /etc/caddy/Caddyfile < /dev/null \
+              | cmp -s - Caddyfile; then
+              # Sin cortar conexiones, y no hace nada si la configuración no cambió. Si falla, Caddy
+              # sigue con la configuración que tenía (el reload es atómico) y en disco vuelve la
+              # anterior, para que un reinicio no cargue la que no cargó ahora.
+              # Hasta cinco intentos: si `up` acaba de recrear Caddy (imagen nueva), su API de admin
+              # puede no estar escuchando todavía, y ese rechazo no dice nada del archivo.
+              reloaded=false
+              for attempt in 1 2 3 4 5; do
+                if docker compose --env-file .env exec -T caddy \
+                  caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile < /dev/null; then
+                  reloaded=true
+                  break
+                fi
+                echo "caddy reload: intento $attempt de 5 falló"
+                sleep 3
+              done
+              if [ "$reloaded" != true ]; then
+                if [ -f Caddyfile.prev ]; then cat Caddyfile.prev > Caddyfile; fi
+                echo "::error::caddy reload falló: se devolvió el Caddyfile anterior. Ver docker compose logs caddy."
+                exit 1
+              fi
+            else
+              # El contenedor todavía monta un Caddyfile que un rsync de antes de este paso ya
+              # reemplazó: sólo recrearlo le muestra el actual. Pasa una vez, con unos segundos sin
+              # servir; los certificados siguen en el volumen caddy_data.
+              echo "::warning::Caddy montaba un Caddyfile viejo: se recrea el contenedor."
+              docker compose --env-file .env up -d --no-deps --force-recreate caddy
+            fi
             docker image prune -f --filter "until=168h"
           BASH
 

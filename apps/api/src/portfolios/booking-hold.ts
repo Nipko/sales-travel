@@ -4,7 +4,7 @@ import type { Money } from '@sales-travel/canonical';
 /**
  * Retención de cartera ANTES de reservar con un proveedor que cobra al crédito de una cuenta
  * (docs/tbo/08 RF-23; D-TBO-21 A), y en cascada por la red de financiación desde 0060 ("opción 1"
- * del founder, 2026-09-29; docs/platform/12 §12).
+ * del founder, 2026-09-29; docs/platform/12 §14).
  *
  * La regla vive en la base (`wallet_hold_retain`, `wallet_hold_preview`): el nodo que vende retiene
  * el precio de venta en su cartera de la moneda de la tarifa, y cada nivel que lo financia hasta el

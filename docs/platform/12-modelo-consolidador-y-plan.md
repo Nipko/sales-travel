@@ -1,7 +1,7 @@
 # 12 — Modelo Consolidador (B2B2B / BYOC), Diagnóstico de Gaps y Plan de Implementación
 
 **Versión:** 1.3
-**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); tarifas no reembolsables, [§11](#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29); retención en cascada, [§12](#12--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
+**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); tarifas no reembolsables, [§11](#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29); retención en cascada, [§14](#14--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
 **Propósito:** Tres cosas en un solo documento: (1) incorporar formalmente el **modelo consolidador con credenciales propias (BYOC)** al target de la plataforma; (2) un **diagnóstico honesto** de dónde estamos vs. la visión y vs. el mercado; (3) un **plan secuenciado** para construirlo y pulirlo con UX limpia y mejores prácticas.
 
 > Este doc es la fuente de verdad para el modelo consolidador. El target ya quedó reflejado en `CLAUDE.md`, `docs/discovery/06-documento-maestro.md` §1.1 y `docs/platform/10-mapa-completo-plataforma.md` (entidad TENANT + jerarquía M8.1).
@@ -10,7 +10,7 @@
 
 > **Actualización 2026-09-29: carteras por moneda.** La cartera de cada agencia la establece **quien la financia** (opción A del founder): Planetour, por su superadmin, para lo que cuelga de la plataforma; el consolidador para sus agencias; la agencia para sus sub-agencias. Hay una cartera por moneda, con su cupo. La agencia sólo ve sus carteras e informa depósitos, que quedan pendientes hasta que quien la financia los aprueba. Una reserva se retiene en la cartera de la moneda de la tarifa, y sin ella se rechaza (en hoteles, antes de llamar al proveedor). Cierra la brecha crítica de carteras de la auditoría. Detalle en [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29) y [13 §4.1](./13-validacion-modelo-red.md#41-confidencialidad); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), pasos 7 a 9.
 
-> **Actualización 2026-09-29: retención en cascada ("opción 1" del founder).** El cupo ya no puede crecer sin tope a lo largo de la red. Una reserva retiene en la cartera del nodo que vende y, además, en la de cada nivel que lo financia, en la moneda de la tarifa, hasta el dueño de la credencial con que se reserva. El que vende retiene el precio de venta y cada ancestro su costo. Si un nivel no alcanza, no se retiene en ninguno y no se llama al proveedor. Lo decide la base desde la orden (0060). Detalle en [§12](#12--retención-en-cascada-opción-1); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), paso 14.
+> **Actualización 2026-09-29: retención en cascada ("opción 1" del founder).** El cupo ya no puede crecer sin tope a lo largo de la red. Una reserva retiene en la cartera del nodo que vende y, además, en la de cada nivel que lo financia, en la moneda de la tarifa, hasta el dueño de la credencial con que se reserva. El que vende retiene el precio de venta y cada ancestro su costo. Si un nivel no alcanza, no se retiene en ninguno y no se llama al proveedor. Lo decide la base desde la orden (0060). Detalle en [§14](#14--retención-en-cascada-opción-1); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), paso 14.
 
 ---
 
@@ -117,7 +117,7 @@ En esta etapa ser sucursal no cambia ni el pricing ni las carteras: una sucursal
 
 **Carteras: ¿quién establece la cartera de cada agencia?** ✅ **A, quien la financia** (founder, 2026-09-29). Quien financia es el ancestro más cercano de tipo plataforma, consolidador o agencia: Planetour, por su superadmin, para lo que cuelga de la plataforma; el consolidador para sus agencias; la agencia para sus sub-agencias. El superadmin puede con cualquier nodo. Quien financia fija las monedas (una cartera por moneda), el cupo, el estado y los depósitos y ajustes, con motivo y auditados. La agencia sólo ve sus carteras e informa depósitos, que quedan pendientes. Se retiene en la cartera de la moneda de la tarifa y, sin ella, la reserva se rechaza (en hoteles, antes de llamar al proveedor). Se aplica en 0052 y 0053, en `/tenants/:tenantId/portfolios` y en _Gestión de Agencias_ y _Mi Red_ → _Carteras_ ([§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)).
 
-**Carteras: ¿hasta dónde retiene una reserva?** ✅ **Opción 1, en cascada** (founder, 2026-09-29). Retiene el nodo que vende y cada nivel que lo financia, hasta el dueño de la credencial con que se reserva, sin incluirlo, en la moneda de la tarifa. La alternativa "nadie da más cupo del que tiene" no se eligió. Se aplica en 0060 ([§12](#12--retención-en-cascada-opción-1)).
+**Carteras: ¿hasta dónde retiene una reserva?** ✅ **Opción 1, en cascada** (founder, 2026-09-29). Retiene el nodo que vende y cada nivel que lo financia, hasta el dueño de la credencial con que se reserva, sin incluirlo, en la moneda de la tarifa. La alternativa "nadie da más cupo del que tiene" no se eligió. Se aplica en 0060 ([§14](#14--retención-en-cascada-opción-1)).
 
 ### 3.1 Jerarquía de tenants
 
@@ -275,7 +275,7 @@ Hallazgos de la investigación profunda (103 agentes, 21 fuentes, verificación 
 | Gap                                                                    | Prioridad | Por qué                                                                                                  |
 | ---------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- |
 | **Gateway real** (Stripe + MP) hosted checkout (SAQ-A)                 | **P0**    | Hoy no se cobra. Bloquea operación.                                                                      |
-| **Wallet / depósitos de agencia** con extracto y conciliación de saldo | **P0**    | Carteras por moneda (§10) con retención en cascada (§12). Faltan recarga real, extractos y conciliación. |
+| **Wallet / depósitos de agencia** con extracto y conciliación de saldo | **P0**    | Carteras por moneda (§10) con retención en cascada (§14). Faltan recarga real, extractos y conciliación. |
 | Split payments / payout por nodo (consolidador↔agencia)               | P1        | Reparto de márgenes en la red.                                                                           |
 | Métodos locales (PIX, PSE, Yape/Plin, Boleto)                          | P1        | Conversión en LATAM.                                                                                     |
 | Antifraude / 3DS                                                       | P2        | Riesgo a escala.                                                                                         |
@@ -406,7 +406,7 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 1. **Validar** §3 (arquitectura), §6 (orden de fases). Decisiones D1–D5 ✅ cerradas (§7).
 2. ✅ **Fase 0, paso 1-2 implementado** en la rama `feat/consolidator-foundation` (ver §9).
 3. ✅ Investigación de mercado incorporada (§4.0 con citas). Pendiente local: profundizar conciliación BSP/ARC y requisitos fiscales LATAM con fuentes locales cuando lleguemos a Fase 1/4.
-4. **Modelo de red (2026-09-28):** la tanda 1 está en producción desde el merge de #6. De la tanda 2 ya están las carteras por moneda ([§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29), mergeadas con #10), que se despliegan con los pasos 7 a 9 del runbook de [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), y la retención en cascada ([§12](#12--retención-en-cascada-opción-1)), con el paso 14. Falta el resto: G-02 (el neto del proveedor, la otra crítica), G-01, G-17, G-16, el CRM y las decisiones D2, D3 y D5 ([13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2)).
+4. **Modelo de red (2026-09-28):** la tanda 1 está en producción desde el merge de #6. De la tanda 2 ya están las carteras por moneda ([§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29), mergeadas con #10), que se despliegan con los pasos 7 a 9 del runbook de [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), y la retención en cascada ([§14](#14--retención-en-cascada-opción-1)), con el paso 14. Falta el resto: G-02 (el neto del proveedor, la otra crítica), G-01, G-17, G-16, el CRM y las decisiones D2, D3 y D5 ([13 §4](./13-validacion-modelo-red.md#4-qué-queda-para-la-tanda-2)).
 
 ## 9. Estado de implementación (rama `feat/consolidator-foundation`)
 
@@ -473,7 +473,7 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 
 **✅ Tier 2 (alto):**
 
-- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por `CF-Connecting-IP` (`IpThrottlerGuard`).
+- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por la IP real del usuario (`IpThrottlerGuard`). La resuelve Caddy, que cree `CF-Connecting-IP` sólo si la conexión viene de un rango de Cloudflare (`trusted_proxies`), y la pasa en `X-Edge-Peer-IP`; el panel la reenvía al api con el secreto interno. Una IPv6 cuenta por su /64. Desde 2026-09-29: antes el panel no llegaba a recibir la cabecera (un `header_up -X-Edge-Peer-IP` la borraba) y todo el panel era un solo cupo, y rotar `CF-Connecting-IP` daba cupo nuevo. Detalle en `infrastructure/hostinger/README.md` §10.
 - Validación de montos de cartera (entero positivo, tope de cordura) en depósitos/retiros/holds.
 
 **✅ Tier 3 (medio):**
@@ -493,7 +493,7 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 - **BYO-email por agencia**: cada nodo puede configurar su propio remitente (servidor SMTP, correo y **clave de aplicación**) para las notificaciones a su red. Reutiliza la infraestructura BYOC (`provider_accounts` con `provider_code = 'email'`): la clave va cifrada (AES-256-GCM), host/puerto/remitente en `config`, y la **resolución hereda** (propia → ancestro heredable → **default del sistema** vía env `MAIL_*`). Sin tabla nueva. UI: sección "Email" por nodo en _Mi Red_ (`EmailModal`).
 - **MailerService** (`apps/api/src/mail`, nodemailer): `sendToTenant(tenantId, msg)` resuelve el remitente y envía; **best-effort** (nunca rompe la operación de negocio). 5 tests de resolución de spec.
 - **Verificación de email**: token con **audiencia dedicada** (un link de verificación no sirve como bearer de API y viceversa); envío best-effort en `register`; `POST /auth/verify-email` (público) + `POST /auth/resend-verification`; sella `users.email_verified_at` (idempotente) y audita `auth.email_verified`. UI: página pública `/verificar`. No bloquea el login (no rompe usuarios existentes). 3 tests de separación de audiencia.
-- **Gestión de usuarios/roles por nodo**: `GET /tenants/network/users` (gateado por `canManageTenant`) + UI `UsersModal` (listar, cambiar rol, invitar) en _Mi Red_.
+- **Gestión de usuarios/roles por nodo**: `GET /tenants/network/users` (gateado por `canManageTenant`) + UI _Equipo_ (`/admin/usuarios`; el botón _Usuarios_ de _Mi Red_ la abre en ese nodo). El alta es sólo por invitación: ver `14-alta-por-invitacion.md`.
 - **Notificaciones reales (cotización + reserva)** (`mail/templates.ts`): `POST /quotations/:id/send-email` envía la cotización al cliente; `POST /orders/:id/send-confirmation` + auto-envío best-effort al crear la reserva mandan la confirmación con PNR. Todo vía `MailerService` (BYO-email). UI: "Enviar por email" en la cotización ahora envía de verdad (antes abría `mailto`); botón "Enviar confirmación por email" en el detalle de reserva. WhatsApp sigue por `wa.me` (canal real).
 - _Requiere para envío real_: definir el SMTP por defecto del sistema (`MAIL_HOST`/`MAIL_PORT`/`MAIL_USER`/`MAIL_PASS`/`MAIL_FROM`) y `APP_WEB_URL` para el enlace de verificación.
 
@@ -561,26 +561,54 @@ Rama `feat/hotels-redesign`. Sin desplegar al escribir esto. Pedido explícito d
 - **Tests:** unidad de la clasificación, del PreBook y del Book (incluidos los rechazos y el registro en la orden), y la integración de 0055 como `app_user` (`booking-permissions.integration.test.ts`).
 - **Pendiente:** no hay cotización de hotel para el cliente en la web (sólo la de vuelos): cuando exista, tiene que decir "No reembolsable" igual que el voucher. El flujo directo de Despegar tampoco puede exigir la confirmación de una no reembolsable a una agencia que las tiene permitidas (no sabe cuál lo es): se cierra cuando Despegar pase al contrato neutral con órdenes.
 
-## §12 — Retención en cascada (opción 1)
+## §12 — Suspender corta el nodo, no a la persona; invitaciones con respaldo (2026-09-29)
 
-Rama `feat/wallets-credit-cascade`, desde `main` 7f9f011, con las carteras por moneda de [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29) ya mergeadas (#10). La base está en [0060](../../db/migrations/0060_wallet_network_holds.sql), la API en `apps/api/src/portfolios/` y la web en _Cartera B2B_ y en _Carteras_ de cada nodo. Sin desplegar al escribir esto; el runbook es el [paso 14 de 13 §5](./13-validacion-modelo-red.md#paso-14--deploy-de-la-retención-en-cascada-0060). El número sigue a §11 (tarifas no reembolsables) y a los pasos 10 a 13 del runbook, que llegaron a `main` con el rediseño de hoteles (#11).
+Cierra dos brechas de la auditoría del 2026-09-29. Va sobre auth premium (#12, 0055).
+
+- **Sesiones al suspender una membership.** Antes, suspender la membership de un nodo cerraba todas las sesiones del usuario (`revoke_user_sessions`, 0026). Un vendedor que opera en dos agencias quedaba afuera de las dos, y el admin de una sucursal donde el superadmin es miembro podía cerrarle todo. El corte del nodo ya lo hace `SessionService.validate`, que lee rol y estado de la membership en cada request. Ahora sólo se revocan las sesiones del subárbol del nodo cuyo nodo ya no tiene membership activa del usuario (`revoke_user_sessions_for_tenant`, [0056](../../db/migrations/0056_membership_scoped_revocation.sql)). Eso libera el puesto y le dice al usuario por qué quedó afuera. La revocación de todas las sesiones queda para la suspensión del usuario (superadmin), el cambio de contraseña y el reset de 2FA.
+- **Invitaciones que sobrevivían a quien las emitió.** Una invitación vale mientras su invitador la pueda volver a emitir: usuario activo, con un rol que supere al de la invitación sobre el nodo (la misma regla que para invitar, G-06), y el nodo con sus ancestros activos. La regla está en `invitation-validity.ts` (con `ROLE_RANK`) y los datos los junta `invitation_backing` (0056).
+  - Al suspender o degradar una membership, o al suspender al usuario, se revocan en la misma transacción las invitaciones que emitió en ese subárbol (en toda la red si es la suspensión del usuario) y que ya no podría emitir, cada una con su `UserInvitationRevoked` (`cause`, `defect`). Las que otro rol suyo sigue respaldando quedan.
+  - El canje marca la invitación con `claim_pending_invitation` dentro de la transacción que crea la membership y revalida invitador y nodo. Si no pasa, responde 400 `INVITATION_NO_LONGER_VALID` ("Esta invitación ya no es válida, pide una nueva."), deja la invitación pendiente (el rollback la devuelve) y escribe `UserInvitationRejected`.
+- **API:** `PATCH /admin/memberships/status`, `PATCH /admin/memberships/role` y `PATCH /admin/users/status` hacen el cambio, las revocaciones y su evento en una transacción, y devuelven `revokedSessions` y `revokedInvitations`. `GET /admin/memberships/impact` responde cuántas invitaciones revocaría un cambio, con las mismas validaciones: lo aplica en una transacción que se deshace.
+- **Web (Equipo):** la confirmación de suspender o degradar dice "Se revocarán N invitaciones que envió", y el aviso de éxito dice cuántas se revocaron. Suspender aclara que en otros nodos sigue operando. Cada invitación pendiente muestra "Invitado por X · hace N días". El canje distingue la invitación que ya no vale de la usada, vencida o revocada.
+- **Tests:** `membership-revocation.integration.test.ts` corre como `app_user` contra Postgres. Cubre al usuario suspendido en A que sigue operando en B, al superadmin miembro de una sucursal, las invitaciones del suspendido y del degradado, el canje revalidado y el aislamiento entre redes.
+
+## §13 — Cambiar de agencia desde el panel (2026-09-29)
+
+Sobre auth premium (#12: puestos simultáneos, una sesión por usuario, `SEATS_FULL`). Cierra el hallazgo de la auditoría del 2026-09-29: aceptar una invitación le suma a una cuenta existente una membership en otra agencia, y `POST /auth/switch-tenant` existía, pero el panel no lo llamaba nunca y el menú _Agencia Activa_ sólo mostraba la actual. Además la agencia por defecto tenía dos criterios: la API abría la sesión en la membership más antigua y el panel tomaba la primera de `/me/memberships` por orden alfabético, sin mirar su estado.
+
+- **Un solo criterio de agencia por defecto** ([`default-tenant.ts`](../../apps/api/src/auth/default-tenant.ts)): la última agencia con la que operó (`users.last_tenant_id`, [0061](../../db/migrations/0061_users_last_tenant.sql)) si sigue con membership activa y su nodo opera; si no, la más antigua que opera; si ninguna opera, la más antigua igual, para que el panel explique por qué. Lo usan el login (también al liberar un puesto) y `GET /me/memberships` (`isDefault`). La columna se escribe cada vez que se emite una sesión con tenant.
+- **API:**
+  - `POST /auth/switch-tenant` responde 403 `TENANT_SUSPENDED` si el destino o un ancestro no está activo (antes emitía una sesión sin rol), sin tocar la sesión actual. Con el cupo del destino lleno sigue el 409 `SEATS_FULL` de auth-premium.
+  - `GET /me/memberships` suma `logoUrl` (heredado, 0030), `tenantType`, `operable`, `unavailableReason` (`tenant_suspended`, `tenant_archived`, `ancestor_suspended`), `blockedByName` e `isDefault`. Sigue en orden alfabético y con todas las memberships.
+- **Web:**
+  - Selector de agencia en el topbar, en el drawer móvil (_Cambiar de agencia_) y en la paleta ⌘K / Ctrl+K (_Cambiar de agencia…_, más las pantallas del menú). Hoja desde abajo en el teléfono, paleta en escritorio; buscador desde 5 agencias; las que no operan aparecen al final, deshabilitadas y con su motivo.
+  - Elegir llama a `switch-tenant`, reescribe `st_session` y `st_tenant` juntas, hace `router.refresh()`, avisa a las otras pestañas y muestra "Ahora operás como <Agencia>". Con `SEATS_FULL` se muestra el mismo panel del login: quien administra el nodo del cupo desconecta a alguien (`/auth/seats/release`) y entra.
+  - El middleware alinea `st_tenant` con el `tid` de la sesión: la cabecera `x-tenant-id` ya no se despega del nodo cuyo puesto ocupa la sesión. El layout y las guardas de administración resuelven la agencia activa con `resolveActiveMembership` (la de la sesión, si no la `isDefault` de la API), y el layout ya no intenta escribir cookies.
+  - El drawer móvil se dibuja en un portal a `<body>`: el `backdrop-filter` del header lo encerraba en sus 56 px.
+- **Tests:** criterio y vista de memberships (unit), `AuthService` con dobles, y [`tenant-switch.integration.test.ts`](../../apps/api/src/auth/tenant-switch.integration.test.ts) contra Postgres como `app_user` (en CI). En la web, la lógica pura (`agencies`, `tenant-switch`, `command-menu`, middleware) y el render del selector.
+- **Pendiente:** elegir con qué agencia entrar cuando el cupo de la por defecto está lleno en el login (hoy se muestra `SEATS_FULL` de esa agencia), y llevar a la pantalla de inicio si la página abierta no existe en la agencia nueva (hoy se refresca la misma ruta).
+
+## §14 — Retención en cascada (opción 1)
+
+Rama `feat/wallets-credit-cascade`, desde `main` 7f9f011, con las carteras por moneda de [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29) ya mergeadas (#10). La base está en [0060](../../db/migrations/0060_wallet_network_holds.sql), la API en `apps/api/src/portfolios/` y la web en _Cartera B2B_ y en _Carteras_ de cada nodo. Sin desplegar al escribir esto; el runbook es el [paso 14 de 13 §5](./13-validacion-modelo-red.md#paso-14--deploy-de-la-retención-en-cascada-0060). El número sigue a §11 (tarifas no reembolsables) y a los pasos 10 a 13 del runbook, que llegaron a `main` con el rediseño de hoteles (#11), y a §12 y §13 (suspensión por nodo y selector de agencia), que llegaron con #14 y #15.
 
 **El riesgo que cierra.** Desde §10 el cupo de cada cartera lo fija quien la financia, pero nada acotaba cuánto podía dar ese financiador. Una agencia le daba cupo ilimitado a su sub-agencia, y la sub-agencia reservaba con la cuenta de proveedor que hereda de Planetour, que es la que le paga al proveedor. La retención caía sólo en la cartera de la sub-agencia, así que el cupo no tenía tope a lo largo de la cadena de financiación.
 
 **La decisión (founder, 2026-09-29, "opción 1").** Cada reserva retiene también en la cartera de cada nivel que financia, en la moneda de la tarifa, hasta el dueño de la credencial con que se reserva. La otra opción, "nadie da más cupo del que tiene", no se eligió.
 
-### 12.1 Quién retiene
+### 14.1 Quién retiene
 
 T es el nodo que vende (`app.current_tenant_id`) y O el dueño de la credencial.
 
 - **T retiene**, en su cartera de la moneda de la tarifa, el precio de venta, como hasta ahora (D-TBO-21 A). Es el nivel 0 (`depth` 0, asiento `BOOKING_HOLD`).
 - **Retiene además cada ancestro de T que financia** y está por debajo de O: los de tipo `platform`, `consolidator` o `agency` con `nlevel` mayor que el de O. Van del más cercano al más lejano (`depth` 1, 2, …; asiento `NETWORK_HOLD`). Con la matriz D4 equivale a aplicar `tenant_financier_id` desde T hacia arriba hasta O, sin incluirlo.
 - **O y la raíz nunca retienen.** "Hasta el dueño" excluye al dueño: O le paga al proveedor con su propio contrato, así que quien lo financia no queda expuesto por esa venta. La raíz siempre es O o está por encima de O.
-- **Con la cuenta propia de T (O = T) no retiene nadie** (decisión del founder del 2026-09-30, opción B; §12.9). T le paga al proveedor con su contrato y Planetour no queda expuesto: no se retiene en la cartera de T ni en la de su red, y T no necesita cartera en esa moneda para reservar con su cuenta.
-  - Queda auditado: la retención se registra como un grupo `exempt`, sin niveles, y la base deja `portfolio.hold.exempted` en T, con quién vendió, la venta, la moneda, el motivo `own_account`, el proveedor, la cuenta que se tomó como propia y de dónde salió (§12.4). La orden sigue referenciando esa cuenta, así que no se puede borrar.
+- **Con la cuenta propia de T (O = T) no retiene nadie** (decisión del founder del 2026-09-30, opción B; §14.9). T le paga al proveedor con su contrato y Planetour no queda expuesto: no se retiene en la cartera de T ni en la de su red, y T no necesita cartera en esa moneda para reservar con su cuenta.
+  - Queda auditado: la retención se registra como un grupo `exempt`, sin niveles, y la base deja `portfolio.hold.exempted` en T, con quién vendió, la venta, la moneda, el motivo `own_account`, el proveedor, la cuenta que se tomó como propia y de dónde salió (§14.4). La orden sigue referenciando esa cuenta, así que no se puede borrar.
   - Vale en los tres modos: `off` y `observe` relajan la cascada, nunca la endurecen.
   - Sólo se exime lo que se puede probar. Cuenta propia es la cuenta de T grabada en la orden al reservar (`account`, hoy los hoteles de TBO), o cualquier credencial cuando T es la plataforma: su cuenta de la bóveda o las de entorno son suyas, porque no tiene de quién heredar.
-  - **Vuelos y autos no se eximen**, salvo que venda la plataforma. La orden no graba con qué cuenta se reservó, y que la bóveda le resuelva hoy a T una cuenta suya no lo prueba: T pudo cargarla o activarla después de reservar con la heredada, y el factory de autos completa una cuenta sin token con el de Planetour. Con `resolved`, T retiene en su cartera como antes de 0060, sin cadena (O = T). Se eximen cuando esas órdenes graben la cuenta al reservar, como los hoteles (§12.8).
+  - **Vuelos y autos no se eximen**, salvo que venda la plataforma. La orden no graba con qué cuenta se reservó, y que la bóveda le resuelva hoy a T una cuenta suya no lo prueba: T pudo cargarla o activarla después de reservar con la heredada, y el factory de autos completa una cuenta sin token con el de Planetour. Con `resolved`, T retiene en su cartera como antes de 0060, sin cadena (O = T). Se eximen cuando esas órdenes graben la cuenta al reservar, como los hoteles (§14.8).
   - Un nodo legado suelto también es su propia raíz, pero las credenciales de entorno no son suyas sino de Planetour: sigue reteniendo en su cartera, como antes.
   - Los descendientes de T que reservan con la cuenta de T siguen reteniendo su cadena por debajo de T, como hasta ahora.
   - Si O no se puede resolver, se falla cerrado como antes (`PORTFOLIO_HOLD_ACCOUNT_CHANGED`), y ahora antes de decidir la cartera propia: sin saber quién le paga al proveedor no se sabe si hace falta cartera.
@@ -591,7 +619,7 @@ T es el nodo que vende (`app.current_tenant_id`) y O el dueño de la credencial.
 | La orden                                                                     | O                                                                                                                                                                                                                                                                           | `credential_source` |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | Guarda la cuenta de la bóveda (`orders.provider_account_id`: hoteles de TBO) | El dueño de esa cuenta, si cumple el criterio de 0045: el mismo proveedor que la orden, estado `active` y cuenta propia de T o de un ancestro que la deja heredar. Si no lo cumple, se rechaza: `hold_owner_unresolvable` → 409 `PORTFOLIO_HOLD_ACCOUNT_CHANGED`.           | `account`           |
-| No guarda cuenta (vuelos, autos) y la bóveda le resuelve una al nodo         | El dueño de la cuenta que `resolve_provider_account` le resuelve a T para ese proveedor, sea la propia o la del ancestro heredable más cercano. Es la resolución del factory, pero la de ahora, no la del momento de reservar: por eso no prueba una cuenta propia (§12.1). | `resolved`          |
+| No guarda cuenta (vuelos, autos) y la bóveda le resuelve una al nodo         | El dueño de la cuenta que `resolve_provider_account` le resuelve a T para ese proveedor, sea la propia o la del ancestro heredable más cercano. Es la resolución del factory, pero la de ahora, no la del momento de reservar: por eso no prueba una cuenta propia (§14.1). | `resolved`          |
 | No guarda cuenta y la bóveda no resuelve ninguna (credenciales de entorno)   | La raíz del árbol de T, o sea Planetour. Un nodo legado suelto es su propia raíz y su cadena queda vacía.                                                                                                                                                                   | `root`              |
 
 **Casos.** P es Planetour (nivel 1), C un consolidador (2), A una agencia de C (3) y S una sub-agencia de A (4). B es una sucursal de P, A2 una agencia directa de P y S2 una sub-agencia de A2. Los tests de integración corren estos casos con la tabla de `apps/api/src/portfolios/__fixtures__/network-hold-cases.ts`, donde S2 se llama S3.
@@ -616,13 +644,13 @@ T es el nodo que vende (`app.current_tenant_id`) y O el dueño de la credencial.
 
 **En producción hoy** (Planetour, Amazon Minimalist bajo Planetour y una sucursal) todos los nodos son de nivel 2 o menos, así que la cadena de cualquier venta es vacía y nadie de la red retiene de más. Lo único que cambia es la cuenta propia: Planetour, o un nodo que vende con su propia cuenta grabada en la orden, deja de retener y ya no necesita cartera en esa moneda. La sucursal, que hereda la cuenta de Planetour, sigue reteniendo en su cartera.
 
-### 12.2 Montos
+### 14.2 Montos
 
 - **Nivel 0: el precio de venta** (`orders.total_amount`), como hoy.
 - **Cada ancestro L: su costo.** Lo calcula la base: el neto de la tarifa más los markups de los niveles de arriba de L (las entradas de `compute_price_waterfall` con `level < nlevel(L)`), con las mismas reglas y el mismo orden que el precio de venta (0016; `applyCascade` en la API). No incluye el piso del proveedor ni los markups de L y de sus descendientes: es lo que L le debe hacia arriba por esa venta.
 - **El neto sale de la orden.** En hoteles y autos es `selected_offer.pricing.netMinor`; en hoteles lo escribe el intent y lo reescribe el revise de C2. En vuelos es `selected_offer.total`, porque la oferta canónica lleva ahí el neto del proveedor, revalidado antes de abrir la orden. Tiene que ser un entero entre 1 y 2^53 − 1 en la moneda de la orden.
 - **Falla cerrado.** Si la cadena no es vacía y no hay neto válido, o si el costo de un nivel sale fuera de rango, la retención se rechaza con 409 `PORTFOLIO_NETWORK_COST_UNAVAILABLE` y no se escribe nada. Nunca vuelve en silencio al precio de venta.
-- **Los montos no llegan por parámetro, pero salen de campos que escribe la API.** `wallet_hold_retain` recibe sólo la orden y quien firma, y lee la venta de `orders.total_amount` y el neto de `selected_offer`. Esos campos los escribe la API: en hoteles, el intent y el revise de C2; en vuelos, la revalidación antes de abrir la orden. La base no impide que `app_user` los cambie antes de retener ni después, así que la cascada confía en ellos: es la frontera de confianza (§12.8). El neto por parámetro lo reciben sólo el aviso previo (`wallet_hold_preview`) y su reporte. Corren antes de que exista la orden, y ese neto es el mismo que la base leerá después.
+- **Los montos no llegan por parámetro, pero salen de campos que escribe la API.** `wallet_hold_retain` recibe sólo la orden y quien firma, y lee la venta de `orders.total_amount` y el neto de `selected_offer`. Esos campos los escribe la API: en hoteles, el intent y el revise de C2; en vuelos, la revalidación antes de abrir la orden. La base no impide que `app_user` los cambie antes de retener ni después, así que la cascada confía en ellos: es la frontera de confianza (§14.8). El neto por parámetro lo reciben sólo el aviso previo (`wallet_hold_preview`) y su reporte. Corren antes de que exista la orden, y ese neto es el mismo que la base leerá después.
 
 Ejemplo, el mismo de los tests: neto USD 1.000,00, reglas de hoteles P +5 %, C +8 %, A +10 % y S +12 %, y S vende con la cuenta de P.
 
@@ -632,14 +660,14 @@ Ejemplo, el mismo de los tests: neto USD 1.000,00, reglas de hoteles P +5 %, C +
 | 1     | A       | costo | 1.000,00 × 1,05 × 1,08               | 1.134,00 |
 | 2     | C       | costo | 1.000,00 × 1,05                      | 1.050,00 |
 
-### 12.3 Todo o nada
+### 14.3 Todo o nada
 
 - Retener es una sola transacción con el tenant que vende. Bloquea la orden (`FOR UPDATE`) y la cartera propia. Después deriva la cadena, así un movimiento de nodo concurrente ya terminó o espera, y bloquea las carteras de la red por nivel, de la más profunda a la más alta.
 - Cada nivel se decide antes de escribir: primero la cartera propia, con los motivos de siempre, y después la red. Un nivel alcanza con la regla de hoy: cartera en la moneda, `active`, y saldo más cupo mayor o igual que lo que retiene. El primer rechazo revierte todo, incluido el `BOOKING_HOLD` de T, y el proveedor no se llama. En hoteles el intent se cierra como no enviado.
 - El orden de bloqueo es uno solo en retener, liberar y `move_tenant_subtree`: la orden, el grupo y las carteras por (`nlevel` DESC, id). Las tablas nuevas no tienen FK a `tenants`, para que una retención no tome un `KEY SHARE` que se cruce con un movimiento de nodo.
 - La API corre cada retención y cada liberación con `lock_timeout` de 2 s. Ante un deadlock, un `lock_timeout` o un error de serialización, reintenta la transacción entera hasta 2 veces, con una espera al azar de 50 a 250 ms. Si la red sigue contenida, responde 409 `PORTFOLIO_HOLD_BUSY` al retener o `PORTFOLIO_RELEASE_BUSY` al liberar. Con `PORTFOLIO_RELEASE_BUSY` el estado de la reserva no cambia, y repetir el pedido termina de liberar. Antes esperaba sin límite.
 
-### 12.4 Ciclo de vida
+### 14.4 Ciclo de vida
 
 Cada retención es un grupo por orden (`wallet_hold_groups`) con un nivel por cartera retenida (`wallet_hold_levels`). El grupo y sus niveles comparten estado:
 
@@ -689,7 +717,7 @@ Mientras tanto, en _Reservas de tu red_ la reserva figura como Retenida, y su mo
 - El procedimiento para quien financia está en el [runbook, 13 §5, _Penalidad de una cancelación con cargo_](./13-validacion-modelo-red.md#penalidad-de-una-cancelación-con-cargo).
 - Con la cuenta propia (O = T) no hay nada que registrar: no se retuvo nada y el proveedor le cobra a T en su cuenta.
 
-### 12.5 Modos
+### 14.5 Modos
 
 El modo se fija por red en `wallet_hold_policy`:
 
@@ -707,7 +735,7 @@ El modo se fija por red en `wallet_hold_policy`:
 - La cuenta propia (O = T) no retiene en ningún modo: `off` y `observe` relajan la cascada, nunca la endurecen.
 - 0060 no pone `observe` por su cuenta. Deja un `WARNING` "REVISAR" por cada par (nodo intermedio, moneda) en que el nodo no tiene cartera activa con saldo o cupo y su red sí usa esa moneda. El operador decide qué hacer con cada uno.
 
-### 12.6 Guardas
+### 14.6 Guardas
 
 - **Asientos de retención.** `BOOKING_HOLD`, `BOOKING_RELEASED`, `BOOKING_CHARGE`, `NETWORK_HOLD` y `NETWORK_RELEASED` sólo los escriben las funciones de retención, o un rol que se salta la RLS (migraciones, seeds, la consola del operador). Si `app_user` lo intenta, aunque sea en su propia cartera, recibe 42501 `hold_entry_reserved`.
 - **Saldo.** `balance_minor` sólo lo mueven esas funciones o quien financia al nodo (`can_finance_tenant`, que cubre depósitos, ajustes y aprobaciones de _Carteras_). Cualquier otro recibe 42501 `portfolio_balance_reserved`.
@@ -723,7 +751,7 @@ El modo se fija por red en `wallet_hold_policy`:
 - **Borrados.** Borrar una orden o una cartera con retenciones registradas falla (23503), en vez de dejar plata varada.
 - **Mover un nodo.** `move_tenant_subtree` bloquea las carteras en el mismo orden. STH02 `tenant_move_open_wallet_bookings` cuenta los grupos abiertos del subárbol: `held` o `captured` con la orden activa, o `conflict` en cualquier estado. Una cascada liberada a medias ya no cuenta como liberada. Un grupo `exempt` no cuenta: no hay plata de nadie retenida.
 
-### 12.7 Qué ve cada uno
+### 14.7 Qué ve cada uno
 
 **El vendedor.** Los rechazos de la red son 409 y hablan sólo de "tu red" y de "quien te financia", sin montos, ids, nombres ni qué nivel falló.
 
@@ -731,7 +759,7 @@ El modo se fija por red en `wallet_hold_policy`:
 | ---------------------------------------- | ------------------------------------------------------------------------- |
 | `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED` | Un nivel no tiene cartera en la moneda de la tarifa.                      |
 | `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE`    | Un nivel tiene la cartera suspendida, está sobre el cupo o no le alcanza. |
-| `PORTFOLIO_NETWORK_COST_UNAVAILABLE`     | No se puede calcular el costo para la red (§12.2).                        |
+| `PORTFOLIO_NETWORK_COST_UNAVAILABLE`     | No se puede calcular el costo para la red (§14.2).                        |
 | `PORTFOLIO_HOLD_ACCOUNT_CHANGED`         | La cuenta con que se cotizó ya no está activa en la red del nodo.         |
 | `PORTFOLIO_HOLD_BUSY`                    | La red siguió ocupada con otras reservas después de los reintentos.       |
 
@@ -740,7 +768,7 @@ Los motivos de la cartera propia no cambian (`PORTFOLIO_CURRENCY_NOT_ENABLED`, `
 **Con la cuenta propia (O = T)**, grabada en la orden o de la plataforma, nada habla de carteras:
 
 - el PreBook responde `funding: { status: 'own-account' }` y la web no avisa nada por la cartera. El paso 2 del checkout dice que se reserva con la cuenta de la agencia en el proveedor y que no se retiene saldo de ninguna cartera, y el aviso de una no reembolsable dice que el 100 % lo cobra el proveedor en esa cuenta;
-- `POST /portfolios/hold-booking` responde `{ retained: false, reason: 'OWN_PROVIDER_ACCOUNT', message }`, sin cartera ni asiento, sólo si vende la plataforma: los vuelos y autos de otro nodo no graban la cuenta y retienen en su cartera (§12.1);
+- `POST /portfolios/hold-booking` responde `{ retained: false, reason: 'OWN_PROVIDER_ACCOUNT', message }`, sin cartera ni asiento, sólo si vende la plataforma: los vuelos y autos de otro nodo no graban la cuenta y retienen en su cartera (§14.1);
 - `GET /portfolios` trae `ownProviderAccounts`, los proveedores con cuenta propia activa del nodo, todos (también el correo). La web mira sólo los que retienen y graban la cuenta en la orden (hoy, TBO): con la propia ahí, la búsqueda de hoteles no avisa que falta cartera en la moneda elegida, y _Cartera B2B_ sin carteras dice que esas reservas no retienen, en vez de que sin cartera no se reserva.
 
 **Quien financia.**
@@ -758,10 +786,10 @@ Los motivos de la cartera propia no cambian (`PORTFOLIO_CURRENCY_NOT_ENABLED`, `
 
 **API.** `GET /portfolios/network-holds` es para los admins del nodo, y `GET /tenants/:tenantId/portfolios/network-holds` para quien financia al nodo o el superadmin. Las dos aceptan filtros de moneda y estado y devuelven hasta 200 reservas más los totales.
 
-### 12.8 Límites
+### 14.8 Límites
 
 - **Vuelos y autos** retienen sólo por `POST /portfolios/hold-booking`, que ninguna pantalla llama. Ahora lo hacen en cascada, con O resuelto por la bóveda o la raíz.
-- **La cuenta propia no exime a vuelos y autos**, salvo a la plataforma (§12.1): la orden no graba con qué cuenta se reservó. Para eximirlos, el factory de LATAM y el de autos tienen que devolver la cuenta que resolvieron y la orden grabarla en `provider_account_id`, como los hoteles. Además, el factory de autos completa una cuenta de la bóveda sin `accessToken` con el de Planetour (y el de Despegar, una sin `apiKey`, con la de la plataforma): antes de eximir a esos proveedores, una cuenta así tiene que fallar como incompleta, como LATAM y TBO.
+- **La cuenta propia no exime a vuelos y autos**, salvo a la plataforma (§14.1): la orden no graba con qué cuenta se reservó. Para eximirlos, el factory de LATAM y el de autos tienen que devolver la cuenta que resolvieron y la orden grabarla en `provider_account_id`, como los hoteles. Además, el factory de autos completa una cuenta de la bóveda sin `accessToken` con el de Planetour (y el de Despegar, una sin `apiKey`, con la de la plataforma): antes de eximir a esos proveedores, una cuenta así tiene que fallar como incompleta, como LATAM y TBO.
 - **Hoteles de Despegar:** siguen sin retención.
 - **Lo retenido antes de 0060** queda como un grupo `legacy` de un solo nivel. No se debita a nadie hacia atrás.
 - **Moneda:** la cascada no convierte. Un nodo intermedio necesita cartera, con saldo o cupo, en cada moneda en que su red vende con una credencial de más arriba.
@@ -772,42 +800,42 @@ Los motivos de la cartera propia no cambian (`PORTFOLIO_CURRENCY_NOT_ENABLED`, `
   - La orden se puede volver a sus valores reales después de retener, y nada nota la diferencia con lo que quedó en `wallet_hold_levels`.
   - Seguimiento propuesto: un trigger en `orders` que no deje a `app_user` cambiar `total_amount` ni el precio de `selected_offer` (`pricing`, `total`) cuando la orden ya tiene retención; y que `wallet_hold_retain` exija que la venta cubra el precio de la cascada sobre ese neto (`compute_price_waterfall`).
   - El neto en sí seguirá viniendo de la API.
-- **Liberaciones escaladas de vuelos y autos.** La conciliación R-W no las ve, porque la orden no guarda cuenta, y _Cartera B2B_ lista sólo las reservas `pending`. Se cierran llamando por API al rechazo (§12.4).
-- **Cancelar un auto desde la pantalla de _Autos_** no pasa por la orden y no libera su retención (§12.4).
+- **Liberaciones escaladas de vuelos y autos.** La conciliación R-W no las ve, porque la orden no guarda cuenta, y _Cartera B2B_ lista sólo las reservas `pending`. Se cierran llamando por API al rechazo (§14.4).
+- **Cancelar un auto desde la pantalla de _Autos_** no pasa por la orden y no libera su retención (§14.4).
 - **Mis Reservas no sabe si una orden se reservó con la cuenta propia.** El checkout lo sabe por el PreBook, pero el detalle y la cancelación de una no reembolsable en _Mis Reservas_, y el detalle del hotel antes del PreBook, siguen diciendo que el 100 % se descuenta de la cartera también en ese caso. Queda pendiente: la lectura de la orden tendría que decir que su retención es `exempt`, y esas tres vistas, que el 100 % lo cobra el proveedor en la cuenta de la agencia. Hoy sólo lo ven un consolidador o la plataforma con su cuenta de TBO: TBO no admite cuentas propias de agencias.
-- **La penalidad se registra a mano** en cada nivel (§12.4, _Paridad de cancelación_). Nada avisa que falta registrarla: el runbook dice cómo encontrar las cancelaciones con cargo.
+- **La penalidad se registra a mano** en cada nivel (§14.4, _Paridad de cancelación_). Nada avisa que falta registrarla: el runbook dice cómo encontrar las cancelaciones con cargo.
 
 **Tests.** De la base, como `app_user`: `network-holds.integration`, `network-holds-rls.integration` y `wallet-hold-backfill.integration`. `network-holds.concurrency.integration` necesita sesiones reales, así que sólo corre con el Postgres del CI. De la API: `network-holds.api.integration`, `wallet-hold.store.test`, los de `portfolios`, hoteles, órdenes y conciliación, y `migrations-search-path.test.ts` con `migrations-search-path.integration.test.ts`. La venta con la cuenta propia la cubren los casos O = T de `network-hold-cases.ts`, los tests del servicio, del PreBook y del Book de hoteles, y el caso 11 de la simulación de extremo a extremo.
 
-### 12.9 Preguntas abiertas y decisiones
+### 14.9 Preguntas abiertas y decisiones
 
 Decididas por el founder el 2026-09-30:
 
-1. **O = T: opción B.** Con la cuenta propia del que vende no se retiene nada, ni en su cartera ni en su red, y no hace falta que tenga cartera en esa moneda (§12.1). Antes, T retenía el precio de venta en su cartera (D-TBO-21 A) y nadie más. Toca a D2 ([13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)): Planetour tampoco retiene por esas ventas. Se exime cuando se puede probar la cuenta: la grabada en la orden (hoteles) o cualquier venta de la plataforma. Vuelos y autos de otros nodos siguen reteniendo en su cartera hasta que graben la cuenta (§12.8).
-2. **Penalidad de cancelación: opción A.** Se libera el 100 % en todos los niveles, y quien financia cada nivel registra la penalidad con un ajuste manual auditado (§12.4, _Paridad de cancelación_, y el [procedimiento](./13-validacion-modelo-red.md#penalidad-de-una-cancelación-con-cargo)). Es la que cumple lo que la web promete cuando cancelar cuesta el 100 %.
+1. **O = T: opción B.** Con la cuenta propia del que vende no se retiene nada, ni en su cartera ni en su red, y no hace falta que tenga cartera en esa moneda (§14.1). Antes, T retenía el precio de venta en su cartera (D-TBO-21 A) y nadie más. Toca a D2 ([13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)): Planetour tampoco retiene por esas ventas. Se exime cuando se puede probar la cuenta: la grabada en la orden (hoteles) o cualquier venta de la plataforma. Vuelos y autos de otros nodos siguen reteniendo en su cartera hasta que graben la cuenta (§14.8).
+2. **Penalidad de cancelación: opción A.** Se libera el 100 % en todos los niveles, y quien financia cada nivel registra la penalidad con un ajuste manual auditado (§14.4, _Paridad de cancelación_, y el [procedimiento](./13-validacion-modelo-red.md#penalidad-de-una-cancelación-con-cargo)). Es la que cumple lo que la web promete cuando cancelar cuesta el 100 %.
 
 Siguen abiertas:
 
 3. **Conflictos.** Un grupo en `conflict` congela la plata en todos sus niveles y no deja mover el nodo. Hoy se resuelve a mano, en la base. ¿Quién concilia, y con qué herramienta?
 4. **Nodos intermedios sin cartera.** Si el `WARNING` de 0060 lista alguno, ¿se le abre cartera o se pone `observe` mientras tanto? Hay que tener en cuenta que `observe` apaga la cascada en toda la red del nodo y en todas las monedas.
-5. **Penalidad parcial.** El runbook la registra en cada nivel en la misma proporción de lo que retuvo, con la factura del proveedor (§12.4). Es la lectura directa de la opción A, pero la decisión del founder habló del 100 % de las no reembolsables: falta que la confirme.
+5. **Penalidad parcial.** El runbook la registra en cada nivel en la misma proporción de lo que retuvo, con la factura del proveedor (§14.4). Es la lectura directa de la opción A, pero la decisión del founder habló del 100 % de las no reembolsables: falta que la confirme.
 
-### 12.10 Diferencias con la especificación del 2026-09-29
+### 14.10 Diferencias con la especificación del 2026-09-29
 
 Las revisiones de cada tarea movieron lo implementado respecto de la especificación en estos puntos:
 
 - **Vuelos sí tienen neto** (`selected_offer.total`). Por eso un vuelo de un vendedor de nivel 3 o más retiene en cascada, en vez de dar `PORTFOLIO_NETWORK_COST_UNAVAILABLE`.
 - **Orden sin cuenta:** O es el dueño de la cuenta que la bóveda le resuelve al nodo, y la raíz sólo si no resuelve ninguna. Así una sub-agencia que vuela con su propia cuenta no le deja un cargo a toda su red.
 - **`off`:** en cualquier ancestro gana sobre las filas más cercanas, y no exige resolver la cuenta.
-- **Confirmación retractada:** devuelve la retención a `held`, para que la conciliación la libere si la reserva no existía. El trigger mira sólo el paso a `pending`, así que también descaptura mientras se cancela (§12.4).
+- **Confirmación retractada:** devuelve la retención a `held`, para que la conciliación la libere si la reserva no existía. El trigger mira sólo el paso a `pending`, así que también descaptura mientras se cancela (§14.4).
 - **`conflict`:** deja un evento por nivel y bloquea mover el nodo en cualquier estado de la orden.
-- **Cambio de política:** es un evento de plataforma, no del nodo. El nodo no lee la razón ni el autor, pero sí el modo con que se tomó cada retención suya (§12.5).
+- **Cambio de política:** es un evento de plataforma, no del nodo. El nodo no lee la razón ni el autor, pero sí el modo con que se tomó cada retención suya (§14.5).
 - **Modo `observe`:** la migración no lo pone sola; sólo avisa.
 - **Topes del PreBook y el Book:** son por vendedor y nodo, no por IP, porque web-b2b llama a la API desde un solo peer.
 - **PreBook bloqueado:** también avisa al nivel que bloquea (`wallet_hold_report_preview_block`).
 - **Liberación contenida:** responde `PORTFOLIO_RELEASE_BUSY` y no dice que no se retuvo.
 - **Datos de la red:** `network-holds` y los datos de red de los movimientos son sólo para admins.
 - **Cancelación:** libera también en autos, no sólo en vuelos, si se cancela desde _Mis Reservas_.
-- **Numeración:** la especificación pedía §11 y el paso 10 del runbook, pero en `main` ya los ocupa el rediseño de hoteles (#11). Acá son §12 y el paso 14.
+- **Numeración:** la especificación pedía §11 y el paso 10 del runbook, pero en `main` ya los ocupa el rediseño de hoteles (#11), y §12 y §13 la suspensión por nodo y el selector de agencia. Acá son §14 y el paso 14.
 - **O = T (2026-09-30):** la especificación retenía siempre en el que vende. Con su cuenta propia, grabada en la orden o de la plataforma, ya no retiene nadie (grupo `exempt`), y una cuenta que no se resuelve se rechaza antes de decidir la cartera propia.
 - **Las 0055 no se editan:** llegaron de `main` con `search_path = public` y así se aplicaron en producción. Las endurece la sección 12 de 0060, y el guard de las migraciones rige desde 0061.

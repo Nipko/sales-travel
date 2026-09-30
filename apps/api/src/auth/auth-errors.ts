@@ -276,3 +276,16 @@ export class TrustedDeviceNotFoundError extends NotFoundException {
     this.name = 'TrustedDeviceNotFoundError';
   }
 }
+
+/**
+ * Cambiar a una agencia que no opera: ella o un ancestro está suspendido. La sesión actual sigue.
+ * 403: la membership existe, pero el nodo no deja operar a nadie.
+ */
+export class TenantNotOperableError extends ForbiddenException {
+  readonly reason = 'TENANT_SUSPENDED';
+
+  constructor() {
+    super('Esa agencia está suspendida: no se puede operar con ella por ahora.');
+    this.name = 'TenantNotOperableError';
+  }
+}

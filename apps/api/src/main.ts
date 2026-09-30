@@ -14,8 +14,9 @@ async function bootstrap(): Promise<void> {
     logger: ['log', 'warn', 'error'],
   });
 
-  // Detrás de Caddy + Cloudflare: confiar en el proxy para que req.ip refleje X-Forwarded-For
-  // (fallback del rate limiter; la IP real del cliente la tomamos de CF-Connecting-IP).
+  // Detrás de Caddy: req.ip sale de X-Forwarded-For, que Caddy escribe con la IP del usuario que
+  // resolvió (`{client_ip}`). Es sólo el respaldo: la IP de sesiones, auditoría y rate limiting se
+  // lee en request-context/client-origin.ts.
   const express = app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void };
   express.set('trust proxy', true);
 

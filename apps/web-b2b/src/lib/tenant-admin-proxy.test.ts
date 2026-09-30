@@ -4,6 +4,7 @@ import {
   currentSessionIdOf,
   markCurrentSession,
   memberActionTarget,
+  membershipImpactTarget,
   seatPolicyPlan,
   seatReleaseTarget,
   seatsViewTarget,
@@ -97,6 +98,35 @@ describe('puestos: rutas del API', () => {
       ok: false,
       error: 'Miembro inválido.',
     });
+  });
+});
+
+describe('membershipImpactTarget: GET /admin/memberships/impact', () => {
+  const MEMBER = '22222222-2222-4222-8222-222222222222';
+  const query = (params: Record<string, string>) => new URLSearchParams(params);
+
+  it('reconstruye la consulta con ids en minúsculas y un solo cambio', () => {
+    expect(
+      membershipImpactTarget(query({ tenantId: ID, userId: MEMBER, status: 'suspended', x: '1' })),
+    ).toEqual({
+      ok: true,
+      path: `/admin/memberships/impact?userId=${MEMBER}&tenantId=${ID.toLowerCase()}&status=suspended`,
+    });
+    expect(membershipImpactTarget(query({ tenantId: ID, userId: MEMBER, role: 'admin' }))).toEqual({
+      ok: true,
+      path: `/admin/memberships/impact?userId=${MEMBER}&tenantId=${ID.toLowerCase()}&role=admin`,
+    });
+  });
+
+  it.each([
+    ['sin nodo', { userId: MEMBER, status: 'suspended' }],
+    ['miembro que no es uuid', { tenantId: ID, userId: 'me', status: 'suspended' }],
+    ['ni estado ni rol', { tenantId: ID, userId: MEMBER }],
+    ['los dos', { tenantId: ID, userId: MEMBER, status: 'suspended', role: 'admin' }],
+    ['estado desconocido', { tenantId: ID, userId: MEMBER, status: 'borrado' }],
+    ['un rol que arma otra consulta', { tenantId: ID, userId: MEMBER, role: 'admin&status=x' }],
+  ])('rechaza: %s', (_q, params) => {
+    expect(membershipImpactTarget(query(params)).ok).toBe(false);
   });
 });
 

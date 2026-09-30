@@ -2026,7 +2026,7 @@ la propia agencia. El founder eligió que la cartera de cada agencia la establez
   - Con la red de hoy (todos los nodos de nivel 2 o menos) nadie de la red retiene de más. Lo único que cambia es que
     quien reserva con su propia cuenta TBO, como Planetour, deja de retener.
 
-  Detalle en [platform/12](../platform/12-modelo-consolidador-y-plan.md) §12; el despliegue es el paso 14 de
+  Detalle en [platform/12](../platform/12-modelo-consolidador-y-plan.md) §14; el despliegue es el paso 14 de
   [platform/13](../platform/13-validacion-modelo-red.md) §5.
 
 Implementación: `db/migrations/0052_wallets_per_currency.sql`, `0053_tenant_credit_limit_to_wallets.sql`,

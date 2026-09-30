@@ -1,3 +1,4 @@
+import { invitationExpiry } from './invitation-expiry';
 import type { CreatedNode, NewNodeInput } from './tenant-admin-client';
 import { idleError, parseIdle, parseSeats, seatsError } from './tenant-admin-seats';
 import { CREATABLE_KIND_LABEL, createFields, type CreatableKind } from './tenant-network';
@@ -17,9 +18,8 @@ export interface NodeDraft {
   readonly countryCode: string;
   readonly defaultCurrency: string;
   readonly defaultLanguage: Language;
+  /** El admin inicial se invita por correo y elige su contraseña: sólo se pide su email. */
   readonly adminEmail: string;
-  readonly adminName: string;
-  readonly adminPassword: string;
   /** Puestos simultáneos propios; `''` = comparte el cupo de su padre. Sólo lo fija el superadmin. */
   readonly concurrentSeats: string;
   /** Minutos de inactividad; `''` = hereda. Sólo lo fija el superadmin. */
@@ -72,8 +72,6 @@ export function emptyDraft(kind: CreatableKind | undefined, parentTenantId: stri
     defaultCurrency: 'COP',
     defaultLanguage: 'es',
     adminEmail: '',
-    adminName: '',
-    adminPassword: '',
     concurrentSeats: '',
     idleTimeoutMinutes: '',
   };
@@ -85,7 +83,6 @@ export type DraftField =
   | 'name'
   | 'slug'
   | 'adminEmail'
-  | 'adminPassword'
   | 'concurrentSeats'
   | 'idleTimeoutMinutes';
 
@@ -109,7 +106,6 @@ export function seatFieldsPolicy(
 
 const SLUG = /^[a-z0-9-]+$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-export const PASSWORD_MIN = 12;
 
 /** Los errores por campo; vacío si se puede enviar. */
 export function validateNodeDraft(
@@ -129,15 +125,7 @@ export function validateNodeDraft(
     errors.slug = 'Sólo minúsculas, números y guiones, sin espacios ni tildes.';
   }
   const email = draft.adminEmail.trim();
-  const wantsAdmin = email !== '' || draft.adminName.trim() !== '' || draft.adminPassword !== '';
-  if (wantsAdmin && email === '') {
-    errors.adminEmail = 'Indicá el email del admin, o dejá vacíos todos sus datos.';
-  } else if (email !== '' && !EMAIL.test(email)) {
-    errors.adminEmail = 'Ese email no parece válido.';
-  }
-  if (draft.adminPassword !== '' && draft.adminPassword.length < PASSWORD_MIN) {
-    errors.adminPassword = `La contraseña necesita al menos ${PASSWORD_MIN} caracteres.`;
-  }
+  if (email !== '' && !EMAIL.test(email)) errors.adminEmail = 'Ese email no parece válido.';
   if (seats !== undefined) {
     const seatsMessage = seatsError(draft.concurrentSeats, seats.seatsRequired);
     if (seatsMessage !== undefined) errors.concurrentSeats = seatsMessage;
@@ -148,13 +136,12 @@ export function validateNodeDraft(
 }
 
 /**
- * Lo que se manda al API. Los datos del admin vacíos no viajan: sin admin, el nodo se crea sin él
- * (antes un '' daba un 400). Sin contraseña, al admin se le invita y elige la suya.
+ * Lo que se manda al API. Sin email de admin, el nodo se crea sin él (antes un '' daba un 400); con
+ * email, se le invita y elige su contraseña.
  */
 export function nodeDraftPayload(draft: NodeDraft): NewNodeInput | undefined {
   if (draft.kind === undefined || draft.parentTenantId === '') return undefined;
   const email = draft.adminEmail.trim().toLowerCase();
-  const adminName = draft.adminName.trim();
   // Vacío es heredar: no viaja (y así quien no es superadmin nunca los manda, que sería un 403).
   const concurrentSeats = parseSeats(draft.concurrentSeats);
   const idleTimeoutMinutes = parseIdle(draft.idleTimeoutMinutes);
@@ -167,35 +154,41 @@ export function nodeDraftPayload(draft: NodeDraft): NewNodeInput | undefined {
     parentTenantId: draft.parentTenantId,
     ...createFields(draft.kind),
     ...(email === '' ? {} : { adminEmail: email }),
-    ...(email === '' || adminName === '' ? {} : { adminName }),
-    ...(email === '' || draft.adminPassword === '' ? {} : { adminPassword: draft.adminPassword }),
     ...(concurrentSeats === undefined ? {} : { concurrentSeats }),
     ...(idleTimeoutMinutes === undefined ? {} : { idleTimeoutMinutes }),
   };
 }
 
-/** El aviso al terminar el alta, con lo que pasó con el admin. */
+/**
+ * El aviso al terminar el alta, con lo que pasó con el admin: invitado y cuándo vence, o que la
+ * invitación no salió. Las dos se resuelven en Equipo (reenviar o invitar).
+ */
 export function createdMessage(
   created: CreatedNode,
   kind: CreatableKind,
   name: string,
   parentName: string,
+  now: Date = new Date(),
 ): { readonly title: string; readonly detail?: string; readonly warn: boolean } {
   const participle = kind === 'consolidator' ? 'creado' : 'creada';
   const title = `${CREATABLE_KIND_LABEL[kind]} ${name} ${participle} bajo ${parentName}.`;
   switch (created.admin?.status) {
-    case 'created':
-      return { title, detail: `Su admin ya puede entrar con ${created.admin.email}.`, warn: false };
-    case 'invited':
+    case 'invited': {
+      const expiry =
+        created.admin.expiresAt === undefined
+          ? undefined
+          : invitationExpiry(created.admin.expiresAt, now);
+      const when = expiry === undefined ? '' : ` (la invitación ${expiry.label})`;
       return {
         title,
-        detail: `Le enviamos una invitación a ${created.admin.email} para que active su acceso.`,
+        detail: `Invitamos a ${created.admin.email}${when}: elige su contraseña al aceptar. Si no le llega, reenvíala desde Equipo.`,
         warn: false,
       };
+    }
     case 'invite_failed':
       return {
         title,
-        detail: `La invitación a ${created.admin.email} no salió: reenviala desde Usuarios.`,
+        detail: `La invitación a ${created.admin.email} no salió: invítalo desde Equipo.`,
         warn: true,
       };
     default:

@@ -1,3 +1,4 @@
+import { parseMemberships, resolveActiveMembership } from '../../../lib/agencies';
 import { api } from '../../../lib/api';
 import { heldOrdersOf } from '../../../lib/held-orders';
 import { getActiveTenant } from '../../../lib/session';
@@ -15,11 +16,6 @@ import {
 } from '../../../lib/wallets';
 import { CarterasClient } from './CarterasClient';
 
-interface Membership {
-  tenantId: string;
-  role: string;
-}
-
 const UNREADABLE = 'No pudimos leer las carteras de tu agencia. Recargá la página.';
 
 /**
@@ -35,7 +31,7 @@ export default async function CarterasPage() {
     api<unknown>('/portfolios/transactions'),
     api<unknown>('/portfolios/deposit-reports'),
     api<unknown>('/orders'),
-    api<Membership[]>('/me/memberships'),
+    api<unknown>('/me/memberships'),
   ]);
 
   // Sin carteras legibles se dice que no se pudieron leer: nunca una cartera en cero inventada.
@@ -52,11 +48,8 @@ export default async function CarterasPage() {
   const reports = reportsRes.ok ? (parseDepositReports(reportsRes.data) ?? null) : null;
   const heldOrders = ordersRes.ok ? heldOrdersOf(ordersRes.data) : [];
 
-  const memberships = membershipsRes.ok ? membershipsRes.data : [];
-  const activeTenantId = await getActiveTenant();
-  const active = activeTenantId
-    ? (memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0])
-    : memberships[0];
+  const memberships = membershipsRes.ok ? parseMemberships(membershipsRes.data) : [];
+  const active = resolveActiveMembership(memberships, await getActiveTenant());
 
   // Las reservas de la red sólo para quien administra el nodo: al vendedor el API le respondería
   // 403, así que ni se pregunta. Las lecturas van juntas. La pestaña sale si el nodo tiene nodos

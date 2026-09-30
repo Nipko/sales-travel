@@ -253,7 +253,11 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - **Motivos de cierre** en el login (`SESSION_IDLE|REPLACED|RELEASED|EXPIRED|REVOKED`) y regreso a la
   pantalla pedida (`?next=`, validado contra open redirect).
 - **IP y navegador reales** del usuario detrás del panel (`INTERNAL_PROXY_SECRET`, derivado del
-  `JWT_SECRET` en el deploy).
+  `JWT_SECRET` en el deploy). La IP la resuelve Caddy una vez (`trusted_proxies` con los rangos de
+  Cloudflare, `client_ip_headers CF-Connecting-IP`) y viaja en `X-Edge-Peer-IP`; el panel la
+  reenvía en `x-client-ip` y el api no vuelve a leer `CF-Connecting-IP`. Sesiones, auditoría y
+  rate limiting usan la misma IP; el throttler agrupa una IPv6 por su /64
+  (`infrastructure/hostinger/README.md` §10).
 
 **Stack técnico:**
 
@@ -285,17 +289,17 @@ ABAC (políticas dinámicas evaluadas en runtime):
 
 ### 3.3 Hardening de Seguridad
 
-| Capa             | Medida                                                                                                                                                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Red**          | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22. SSH key-only (Ed25519), puerto custom, fail2ban.                                                                                |
-| **Aplicación**   | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token. |
-| **Datos**        | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload.                                                                                                         |
-| **Secretos**     | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima.                                                                                                                                      |
-| **Auditoría**    | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB.                                                                    |
-| **Pagos**        | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys.                                                                                                                    |
-| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable.                                                                                                                                                         |
-| **Pentesting**   | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3.                                                                                                                                    |
-| **Compliance**   | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado).                                                                |
+| Capa             | Medida                                                                                                                                                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Red**          | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22, pero los puertos que publica Docker (80/443) se saltan UFW: el origen sigue abierto a quien conozca su IP (`infrastructure/hostinger/README.md` §10.5). SSH key-only (Ed25519), puerto custom, fail2ban. |
+| **Aplicación**   | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token.                                                                          |
+| **Datos**        | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload.                                                                                                                                                                                  |
+| **Secretos**     | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima.                                                                                                                                                                                                               |
+| **Auditoría**    | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB.                                                                                                                                             |
+| **Pagos**        | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys.                                                                                                                                                                                             |
+| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable.                                                                                                                                                                                                                                  |
+| **Pentesting**   | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3.                                                                                                                                                                                                             |
+| **Compliance**   | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado).                                                                                                                                         |
 
 ### 3.4 Threat Model resumido
 
@@ -571,7 +575,7 @@ INVOICE
   emitted_at
 ```
 
-**Funciones de la retención en cascada** ([0060](../../db/migrations/0060_wallet_network_holds.sql); modelo en [12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)). La base deriva desde la orden la cadena, el dueño de la credencial, los montos de cada nivel y el orden de los bloqueos. La API no pasa montos, sólo la orden y quien firma, con `app.current_tenant_id` del nodo que vende. Los montos salen de `orders.total_amount` y del neto de `selected_offer`, que escribe la API, así que la cascada confía en esos campos (12 §12.8).
+**Funciones de la retención en cascada** ([0060](../../db/migrations/0060_wallet_network_holds.sql); modelo en [12 §14](./12-modelo-consolidador-y-plan.md#14--retención-en-cascada-opción-1)). La base deriva desde la orden la cadena, el dueño de la credencial, los montos de cada nivel y el orden de los bloqueos. La API no pasa montos, sólo la orden y quien firma, con `app.current_tenant_id` del nodo que vende. Los montos salen de `orders.total_amount` y del neto de `selected_offer`, que escribe la API, así que la cascada confía en esos campos (12 §14.8).
 
 | Función                                                                                                                                                               | Quién la usa                                                        | Qué hace                                                                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -720,7 +724,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
 /admin/incidents                 -- monitoreo + status page
-/admin/users                     -- usuarios cross-tenant
+/admin/users                     -- usuarios cross-tenant (sólo lectura: el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
 /admin/audit                     -- log global
 /admin/reports                   -- métricas de plataforma
@@ -784,6 +788,8 @@ Implementados en la Ola 1 (auth premium, 2026-09-29):
 POST   /auth/login                       -- { email, password, trustedDeviceToken? } → sesión | desafío MFA | 409 SEATS_FULL
 POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
 POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
+POST   /auth/switch-tenant               -- { tenantId } reemplaza la sesión · 409 SEATS_FULL · 403 TENANT_SUSPENDED
+GET    /me/memberships                   -- agencias del usuario: logo, operable y motivo, isDefault (la del próximo login)
 GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
 POST   /auth/logout                      -- { reason?: 'idle' }
 GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all
@@ -794,6 +800,16 @@ GET    /tenants/:id/seats                -- uso del cupo y conectados del subár
 POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
+```
+
+Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_scoped_revocation.sql`, detalle en [12 §12](./12-modelo-consolidador-y-plan.md)):
+
+```
+PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations
+PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
+PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes
+GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
+POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
 ```
 
 ### Tenant
@@ -861,7 +877,7 @@ GET    /payments/wallet/transactions
 
 ### Carteras B2B (implementado)
 
-El Wallet B2B vive en `/portfolios` y reemplaza a `/payments/wallet/*`. Las carteras son por moneda, las establece quien financia al nodo ([12 §10](./12-modelo-consolidador-y-plan.md#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)) y retienen en cascada por la red ([12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)).
+El Wallet B2B vive en `/portfolios` y reemplaza a `/payments/wallet/*`. Las carteras son por moneda, las establece quien financia al nodo ([12 §10](./12-modelo-consolidador-y-plan.md#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)) y retienen en cascada por la red ([12 §14](./12-modelo-consolidador-y-plan.md#14--retención-en-cascada-opción-1)).
 
 ```
 -- El nodo, sobre sus propias carteras
@@ -887,7 +903,7 @@ GET    /tenants/:tenantId/portfolios/deposit-reports
 POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
 ```
 
-`network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §12.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.
+`network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §14.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.
 
 ### Pricing
 

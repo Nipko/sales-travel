@@ -1,27 +1,26 @@
 import {
   Body,
-  ConflictException,
   Controller,
   ForbiddenException,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { sql } from 'kysely';
+import type { Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { PasswordService } from '../auth/password.service.js';
 import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import type { Role } from '../database/database.types.js';
+import type { DB, Role } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
-  CreateUserSchema,
+  MembershipImpactQuerySchema,
   MoveTenantSchema,
   SetMembershipStatusSchema,
   SetUserStatusSchema,
@@ -30,7 +29,7 @@ import {
   UpdateTenantSchema,
   type ChangeRoleDto,
   type CreateTenantDto,
-  type CreateUserDto,
+  type MembershipImpactQuery,
   type MoveTenantDto,
   type SetMembershipStatusDto,
   type SetUserStatusDto,
@@ -39,8 +38,10 @@ import {
 } from './dto.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
+import { InvitationsService } from './invitations.service.js';
 import { TenantSeatsSuperadminOnlyError, type SeatsView } from './seats.policy.js';
 import { SeatsService } from './seats.service.js';
+import { UserCreationRetiredError } from './onboarding.errors.js';
 import { assertCanGrant } from './tenant-admin.policy.js';
 import {
   TenantsService,
@@ -50,20 +51,54 @@ import {
   type TenantState,
 } from './tenants.service.js';
 
+/** Una membership del nodo destino, leída con la RLS del actor. */
+interface TargetMembership {
+  id: string;
+  role: Role;
+}
+
+/** Lo que arrastró un cambio sobre una membership o un usuario, además del cambio mismo. */
+interface ChangeEffects {
+  revokedSessions: number;
+  revokedInvitations: number;
+}
+
+/** Deshace la transacción de una simulación devolviendo lo que calculó. */
+class DryRunRollback<T> extends Error {
+  constructor(readonly result: T) {
+    super('dry run');
+    this.name = 'DryRunRollback';
+  }
+}
+
+/**
+ * Hasta dónde pudo respaldar invitaciones una membership: su subárbol, o toda la red si es de
+ * superadmin, que administra cualquier nodo (también los que no cuelgan de la plataforma).
+ */
+function invitationScope(role: Role, tenantId: string): string | undefined {
+  return role === 'superadmin' ? undefined : tenantId;
+}
+
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly db: DatabaseService,
-    private readonly password: PasswordService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
     private readonly tenants: TenantsService,
     private readonly seats: SeatsService,
+    private readonly invitations: InvitationsService,
   ) {}
 
-  /** Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant. */
+  /**
+   * Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant.
+   *
+   * Una degradación puede dejar invitaciones que el usuario emitió y ya no podría emitir (un
+   * tenant_admin que invitó a un admin y queda como admin): se revocan en la misma transacción que
+   * el cambio y su evento.
+   */
   @Patch('memberships/role')
   async changeRole(
     @CurrentUser() userId: string | undefined,
@@ -76,16 +111,7 @@ export class AdminController {
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
-
-    const current = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
-      trx
-        .selectFrom('memberships')
-        .select(['id', 'role'])
-        .where('user_id', '=', body.userId)
-        .where('tenant_id', '=', body.tenantId)
-        .executeTakeFirst(),
-    );
-    if (!current) throw new ForbiddenException('membership not found in this tenant');
+    const current = await this.targetMembership(userId, body.userId, body.tenantId);
 
     // Hay que superar en rango tanto al rol actual del objetivo (para poder tocarlo) como
     // al rol que se le quiere dar (para no conceder más autoridad de la propia).
@@ -97,26 +123,68 @@ export class AdminController {
       await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
     }
 
-    const updated = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
-      trx
-        .updateTable('memberships')
-        .set({ role: body.role })
-        .where('user_id', '=', body.userId)
-        .where('tenant_id', '=', body.tenantId)
-        .returning(['id', 'role'])
-        .executeTakeFirst(),
+    const effects = await this.db.withRequestContext(
+      { userId, tenantId: body.tenantId },
+      async (trx) => {
+        await this.writeRole(trx, current.id, body.role);
+        const revoked = await this.invitations.revokeOrphaned(trx, {
+          inviterUserId: body.userId,
+          rootTenantId: invitationScope(current.role, body.tenantId),
+          actorUserId: userId,
+          cause: 'role_changed',
+        });
+        await this.audit.emitWithin(trx, {
+          eventType: 'MembershipRoleChanged',
+          tenantId: body.tenantId,
+          actorUserId: userId,
+          aggregateType: 'membership',
+          aggregateId: current.id,
+          payload: {
+            targetUserId: body.userId,
+            previousRole: current.role,
+            newRole: body.role,
+            revokedInvitations: revoked.length,
+          },
+        });
+        return { revokedInvitations: revoked.length };
+      },
     );
-    if (!updated) throw new ForbiddenException('membership not found in this tenant');
+    return { id: current.id, role: body.role, ...effects };
+  }
 
-    await this.audit.emit({
-      eventType: 'MembershipRoleChanged',
-      tenantId: body.tenantId,
-      actorUserId: userId,
-      aggregateType: 'membership',
-      aggregateId: updated.id,
-      payload: { targetUserId: body.userId, newRole: body.role },
+  /**
+   * Qué arrastraría suspender la membership o cambiarle el rol, para que la confirmación de Equipo
+   * lo diga antes de aplicarlo ("Se revocarán N invitaciones que envió"). Mismas validaciones que el
+   * cambio. Lo aplica en una transacción que se deshace: el número sale de la misma consulta que usa
+   * el cambio, no de una copia de la regla.
+   */
+  @Get('memberships/impact')
+  async membershipImpact(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(MembershipImpactQuerySchema)) query: MembershipImpactQuery,
+  ): Promise<{ invitationsToRevoke: number }> {
+    if (!userId) throw new UnauthorizedException();
+    if (query.userId === userId) {
+      throw new ForbiddenException('no puedes cambiar tu propia membership');
+    }
+
+    const actorRole = await this.actorRoleOver(userId, query.tenantId);
+    const target = await this.targetMembership(userId, query.userId, query.tenantId);
+    this.assertOutranks(actorRole, target.role);
+    if (query.role !== undefined) this.assertOutranks(actorRole, query.role);
+
+    // Reactivar no le quita potestad a nadie.
+    if (query.status === 'active') return { invitationsToRevoke: 0 };
+
+    const orphaned = await this.dryRun({ userId, tenantId: query.tenantId }, async (trx) => {
+      if (query.role !== undefined) await this.writeRole(trx, target.id, query.role);
+      else await this.writeStatus(trx, target.id, 'suspended');
+      return this.invitations.orphanedInvitations(trx, {
+        inviterUserId: query.userId,
+        rootTenantId: invitationScope(target.role, query.tenantId),
+      });
     });
-    return { id: updated.id, role: updated.role };
+    return { invitationsToRevoke: orphaned.length };
   }
 
   /**
@@ -224,93 +292,25 @@ export class AdminController {
     return this.tenants.move(actor, tenantId, body.parentTenantId);
   }
 
+  /**
+   * Retirado (docs/platform/14): un usuario se suma a un nodo sólo aceptando una invitación
+   * (POST /invitations). Sigue la ruta para que un panel viejo reciba un 410 con motivo y no un 404.
+   * No lee el body ni la base: la respuesta no cambia exista o no el email.
+   */
   @Post('users')
-  async createUser(
-    @CurrentUser() userId: string | undefined,
-    @Body(new ZodValidationPipe(CreateUserSchema)) body: CreateUserDto,
-  ) {
-    if (!userId) throw new UnauthorizedException();
-    // G-06: el rango se mide sobre el nodo DESTINO. Antes no se medía: un `admin` creaba un
-    // consolidator_admin o un tenant_admin, incluso con su propio email en un nodo hijo.
-    const actorRole = await this.actorRoleOver(
-      userId,
-      body.tenantId,
-      'target tenant is outside your network',
-    );
-    this.assertOutranks(actorRole, body.role);
-
-    const existingUser = await this.db.db
-      .selectFrom('users')
-      .select('id')
-      .where('email', '=', body.email)
-      .executeTakeFirst();
-    if (existingUser) {
-      const existingMembership = await this.db.withRequestContext({ userId }, async (trx) => {
-        return trx
-          .selectFrom('memberships')
-          .select('id')
-          .where('user_id', '=', existingUser.id)
-          .where('tenant_id', '=', body.tenantId)
-          .executeTakeFirst();
-      });
-      if (existingMembership) throw new ConflictException('user already belongs to this tenant');
-    }
-
-    const result = await this.db.db.transaction().execute(async (trx) => {
-      let newUserId: string;
-
-      if (existingUser) {
-        newUserId = existingUser.id;
-      } else {
-        const hash = await this.password.hash(body.password);
-        const user = await trx
-          .insertInto('users')
-          .values({
-            email: body.email,
-            name: body.name,
-            password_hash: hash,
-          })
-          .returning(['id', 'email', 'name'])
-          .executeTakeFirstOrThrow();
-        newUserId = user.id;
-      }
-
-      await sql`SELECT set_config('app.current_tenant_id', ${body.tenantId}, true)`.execute(trx);
-      await trx
-        .insertInto('memberships')
-        .values({
-          tenant_id: body.tenantId,
-          user_id: newUserId,
-          role: body.role,
-          invited_by: userId,
-        })
-        .execute();
-
-      const user = await trx
-        .selectFrom('users')
-        .select(['id', 'email', 'name', 'status'])
-        .where('id', '=', newUserId)
-        .executeTakeFirstOrThrow();
-
-      return user;
-    });
-
-    await this.audit.emit({
-      eventType: 'UserCreated',
-      tenantId: body.tenantId,
-      actorUserId: userId,
-      aggregateType: 'user',
-      aggregateId: result.id,
-      payload: { email: body.email, role: body.role, existingUserLinked: Boolean(existingUser) },
-    });
-
-    return { user: result };
+  createUser(): never {
+    throw new UserCreationRetiredError();
   }
 
   /**
-   * Suspende o reactiva una membership. Es la baja de un vendedor o de una agencia dentro
-   * de la red: al suspender se revocan sus sesiones, así que el acceso corta en el acto
-   * en lugar de sobrevivir hasta que expire el token.
+   * Suspende o reactiva una membership. Es la baja de un vendedor o de una agencia dentro de la red.
+   *
+   * La suspensión corta ESE nodo, no a la persona: SessionService.validate lee el estado de la
+   * membership en cada request, así que el nodo deja de operar en el acto. Se revocan sólo las
+   * sesiones del subárbol del nodo, para liberar su puesto y decirle por qué quedó afuera; las que
+   * tiene en otros nodos siguen (antes se cerraban todas, y un vendedor de dos agencias quedaba
+   * afuera de las dos). También se revocan las invitaciones que emitió y ya no podría emitir. Todo
+   * en una transacción, con su evento.
    */
   @Patch('memberships/status')
   async setMembershipStatus(
@@ -323,16 +323,7 @@ export class AdminController {
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
-
-    const target = await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
-      trx
-        .selectFrom('memberships')
-        .select(['id', 'role'])
-        .where('user_id', '=', body.userId)
-        .where('tenant_id', '=', body.tenantId)
-        .executeTakeFirst(),
-    );
-    if (!target) throw new ForbiddenException('membership not found in this tenant');
+    const target = await this.targetMembership(userId, body.userId, body.tenantId);
 
     this.assertOutranks(actorRole, target.role);
 
@@ -341,64 +332,176 @@ export class AdminController {
       await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
     }
 
-    await this.db.withRequestContext({ userId, tenantId: body.tenantId }, (trx) =>
-      trx
-        .updateTable('memberships')
-        .set({ status: body.status })
-        .where('id', '=', target.id)
-        .execute(),
+    const effects = await this.db.withRequestContext(
+      { userId, tenantId: body.tenantId },
+      async (trx): Promise<ChangeEffects> => {
+        await this.writeStatus(trx, target.id, body.status);
+
+        let revokedSessions = 0;
+        let revokedInvitations = 0;
+        if (body.status === 'suspended') {
+          revokedSessions = await this.sessions.revokeForTenant(
+            body.userId,
+            body.tenantId,
+            'membership_suspended',
+            trx,
+          );
+          const revoked = await this.invitations.revokeOrphaned(trx, {
+            inviterUserId: body.userId,
+            rootTenantId: invitationScope(target.role, body.tenantId),
+            actorUserId: userId,
+            cause: 'membership_suspended',
+          });
+          revokedInvitations = revoked.length;
+        }
+
+        await this.audit.emitWithin(trx, {
+          eventType: 'MembershipStatusChanged',
+          tenantId: body.tenantId,
+          actorUserId: userId,
+          aggregateType: 'membership',
+          aggregateId: target.id,
+          payload: {
+            targetUserId: body.userId,
+            status: body.status,
+            role: target.role,
+            revokedSessions,
+            revokedInvitations,
+          },
+        });
+        return { revokedSessions, revokedInvitations };
+      },
     );
 
-    if (body.status === 'suspended') {
-      await this.sessions.revokeAllForUser(body.userId, 'membership_suspended');
-    }
-
-    await this.audit.emit({
-      eventType: 'MembershipStatusChanged',
-      tenantId: body.tenantId,
-      actorUserId: userId,
-      aggregateType: 'membership',
-      aggregateId: target.id,
-      payload: { targetUserId: body.userId, status: body.status, role: target.role },
-    });
-
-    return { id: target.id, status: body.status };
+    return { id: target.id, status: body.status, ...effects };
   }
 
   /**
    * Suspende o reactiva un usuario a nivel plataforma (todas sus memberships a la vez).
    * Sólo superadmin: `users` es cross-tenant, así que un admin de red no debe poder
    * desactivar una identidad que quizá también opera en otra red.
+   *
+   * Suspender cierra TODAS sus sesiones y revoca todas las invitaciones pendientes que emitió, en la
+   * misma transacción que el cambio y su evento.
    */
   @Patch('users/status')
   async setUserStatus(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(SetUserStatusSchema)) body: SetUserStatusDto,
   ) {
-    await this.assertSuperadmin(userId);
-    if (body.userId === userId) {
+    const actor = await this.assertSuperadmin(userId);
+    if (body.userId === actor) {
       throw new ForbiddenException('no podés suspender tu propio usuario');
     }
 
-    await this.db.db
-      .updateTable('users')
-      .set({ status: body.status })
-      .where('id', '=', body.userId)
-      .execute();
+    const effects = await this.db.withRequestContext(
+      { userId: actor },
+      async (trx): Promise<ChangeEffects> => {
+        await trx
+          .updateTable('users')
+          .set({ status: body.status })
+          .where('id', '=', body.userId)
+          .execute();
 
-    if (body.status === 'suspended') {
-      await this.sessions.revokeAllForUser(body.userId, 'user_suspended');
+        let revokedSessions = 0;
+        let revokedInvitations = 0;
+        if (body.status === 'suspended') {
+          revokedSessions = await this.sessions.revokeAllForUser(
+            body.userId,
+            'user_suspended',
+            trx,
+          );
+          const revoked = await this.invitations.revokeOrphaned(trx, {
+            inviterUserId: body.userId,
+            actorUserId: actor,
+            cause: 'user_suspended',
+          });
+          revokedInvitations = revoked.length;
+        }
+
+        await this.audit.emitWithin(trx, {
+          eventType: 'UserStatusChanged',
+          actorUserId: actor,
+          aggregateType: 'user',
+          aggregateId: body.userId,
+          payload: { status: body.status, revokedSessions, revokedInvitations },
+        });
+        return { revokedSessions, revokedInvitations };
+      },
+    );
+
+    return { id: body.userId, status: body.status, ...effects };
+  }
+
+  /** La membership de `targetUserId` en `tenantId`, vista por el actor. 403 si no existe. */
+  private async targetMembership(
+    actorUserId: string,
+    targetUserId: string,
+    tenantId: string,
+  ): Promise<TargetMembership> {
+    const target = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
+      trx
+        .selectFrom('memberships')
+        .select(['id', 'role'])
+        .where('user_id', '=', targetUserId)
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst(),
+    );
+    if (!target) throw new ForbiddenException('membership not found in this tenant');
+    return target;
+  }
+
+  /**
+   * Un UPDATE que la RLS filtra no falla: toca cero filas. Sin esto se revocarían sesiones e
+   * invitaciones, y quedaría el evento, de un cambio que no ocurrió.
+   */
+  private static assertWritten(result: { numUpdatedRows: bigint }): void {
+    if (result.numUpdatedRows === 0n) {
+      throw new ForbiddenException('membership not found in this tenant');
     }
+  }
 
-    await this.audit.emit({
-      eventType: 'UserStatusChanged',
-      actorUserId: userId,
-      aggregateType: 'user',
-      aggregateId: body.userId,
-      payload: { status: body.status },
-    });
+  private async writeRole(trx: Transaction<DB>, membershipId: string, role: Role): Promise<void> {
+    AdminController.assertWritten(
+      await trx
+        .updateTable('memberships')
+        .set({ role })
+        .where('id', '=', membershipId)
+        .executeTakeFirstOrThrow(),
+    );
+  }
 
-    return { id: body.userId, status: body.status };
+  private async writeStatus(
+    trx: Transaction<DB>,
+    membershipId: string,
+    status: SetMembershipStatusDto['status'],
+  ): Promise<void> {
+    AdminController.assertWritten(
+      await trx
+        .updateTable('memberships')
+        .set({ status })
+        .where('id', '=', membershipId)
+        .executeTakeFirstOrThrow(),
+    );
+  }
+
+  /**
+   * Corre `fn` en una transacción con el contexto del request y la deshace: lo que `fn` escribió no
+   * queda, lo que devolvió sí.
+   */
+  private async dryRun<T>(
+    ctx: { userId: string; tenantId: string },
+    fn: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      await this.db.withRequestContext(ctx, async (trx) => {
+        throw new DryRunRollback(await fn(trx));
+      });
+    } catch (err) {
+      if (err instanceof DryRunRollback) return err.result as T;
+      throw err;
+    }
+    throw new Error('dryRun: la transacción no se deshizo');
   }
 
   /**

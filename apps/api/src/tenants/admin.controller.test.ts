@@ -8,7 +8,6 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import type { PasswordService } from '../auth/password.service.js';
 import type { SessionService } from '../auth/session.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
@@ -19,8 +18,8 @@ import { AdminController } from './admin.controller.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
-  CreateUserSchema,
   InviteUserSchema,
+  MembershipImpactQuerySchema,
   MoveTenantSchema,
   TenantIdParamSchema,
   UpdateSeatsSchema,
@@ -62,16 +61,20 @@ function banco({
   const seats = {
     updatePolicy: vi.fn(() => Promise.resolve({ poolTenantId: NODO })),
   };
+  const invitations = {
+    orphanedInvitations: vi.fn(() => Promise.resolve([])),
+    revokeOrphaned: vi.fn(() => Promise.resolve([])),
+  };
   const controller = new AdminController(
     db as unknown as DatabaseService,
-    {} as PasswordService,
     network as unknown as NetworkService,
     { emit: vi.fn() } as unknown as AuditService,
     {} as SessionService,
     tenants as unknown as TenantsService,
     seats as unknown as SeatsService,
+    invitations as unknown as InvitationsService,
   );
-  return { controller, network, tenants, db, seats };
+  return { controller, network, tenants, db, seats, invitations };
 }
 
 describe('AdminController: corrección de la red, sólo superadmin', () => {
@@ -150,47 +153,6 @@ describe('AdminController: corrección de la red, sólo superadmin', () => {
 });
 
 describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () => {
-  const alta = {
-    email: 'nuevo@example.com',
-    name: 'Nuevo',
-    password: 'una-clave-larga',
-    tenantId: NODO,
-  };
-
-  it('createUser: quien no administra el destino recibe 403', async () => {
-    const { controller, network } = banco({ roleOver: undefined });
-
-    await expect(controller.createUser(ACTOR, { ...alta, role: 'vendedor' })).rejects.toThrow(
-      'target tenant is outside your network',
-    );
-    expect(network.roleOver).toHaveBeenCalledWith(ACTOR, NODO);
-  });
-
-  it.each<[Role, Role]>([
-    ['admin', 'tenant_admin'],
-    ['admin', 'consolidator_admin'],
-    ['admin', 'admin'],
-    ['tenant_admin', 'tenant_admin'],
-    ['tenant_admin', 'consolidator_admin'],
-  ])('createUser: un %s sobre el destino no crea un %s', async (actor, role) => {
-    const { controller, db } = banco({ roleOver: actor });
-
-    await expect(
-      controller.createUser(ACTOR, { ...alta, role: role as 'vendedor' }),
-    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
-    expect(db.withRequestContext).not.toHaveBeenCalled();
-  });
-
-  it('el rol del tenant activo no cuenta: consolidator_admin en su red, admin en el destino', async () => {
-    const { controller } = banco({ roleOver: 'admin' });
-
-    await expect(
-      requestContextStorage.run({ userId: ACTOR, role: 'consolidator_admin' }, () =>
-        controller.createUser(ACTOR, { ...alta, role: 'tenant_admin' }),
-      ),
-    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
-  });
-
   it('changeRole: hay que superar el rol actual y el nuevo, sobre el destino', async () => {
     const vendedor = { id: 'm-1', role: 'vendedor' as Role };
 
@@ -220,6 +182,53 @@ describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () =>
     await expect(
       controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'suspended' }),
     ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
+  });
+
+  it('impacto: mismas barreras que el cambio, y no simula nada si no pasan', async () => {
+    const pedir = (c: AdminController, u: string | undefined, extra: object) =>
+      c.membershipImpact(u, { userId: OTRO, tenantId: NODO, ...extra });
+
+    const fuera = banco({ roleOver: undefined });
+    await expect(
+      pedir(fuera.controller, undefined, { status: 'suspended' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      fuera.controller.membershipImpact(ACTOR, {
+        userId: ACTOR,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(pedir(fuera.controller, ACTOR, { status: 'suspended' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(fuera.db.withRequestContext).not.toHaveBeenCalled();
+
+    const superior = banco({ roleOver: 'admin', membresia: { id: 'm-4', role: 'tenant_admin' } });
+    await expect(pedir(superior.controller, ACTOR, { status: 'suspended' })).rejects.toMatchObject({
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    const subir = banco({ roleOver: 'admin', membresia: { id: 'm-5', role: 'vendedor' } });
+    await expect(pedir(subir.controller, ACTOR, { role: 'tenant_admin' })).rejects.toMatchObject({
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    for (const b of [superior, subir]) {
+      expect(b.invitations.orphanedInvitations).not.toHaveBeenCalled();
+    }
+  });
+
+  it('impacto: reactivar no revoca nada y no abre la simulación', async () => {
+    const { controller, db, invitations } = banco({
+      roleOver: 'tenant_admin',
+      membresia: { id: 'm-6', role: 'admin' },
+    });
+
+    await expect(
+      controller.membershipImpact(ACTOR, { userId: OTRO, tenantId: NODO, status: 'active' }),
+    ).resolves.toEqual({ invitationsToRevoke: 0 });
+    // Sólo la lectura de la membership destino.
+    expect(db.withRequestContext).toHaveBeenCalledTimes(1);
+    expect(invitations.orphanedInvitations).not.toHaveBeenCalled();
   });
 
   it('changeRole y setMembershipStatus: fuera de la red es 403 antes de leer nada', async () => {
@@ -365,7 +374,6 @@ describe('Zod en los bordes', () => {
           ...base,
           defaultLanguage: 'es',
           adminEmail: '',
-          adminName: '  ',
           adminPassword: '',
           parentTenantId: '',
           tenantType: '',
@@ -380,16 +388,12 @@ describe('Zod en los bordes', () => {
           ...base,
           parentTenantId: PADRE.toUpperCase(),
           adminEmail: '  Ana@Example.com ',
-          adminName: ' Ana ',
-          adminPassword: 'una-clave-larga',
           isBranch: true,
         }),
       ).toEqual({
         ...base,
         parentTenantId: PADRE,
         adminEmail: 'ana@example.com',
-        adminName: 'Ana',
-        adminPassword: 'una-clave-larga',
         isBranch: true,
       });
     });
@@ -397,9 +401,11 @@ describe('Zod en los bordes', () => {
     it.each([
       ['la plataforma no se crea por API', { tenantType: 'platform' }],
       ['un tipo desconocido', { tenantType: 'sucursal' }],
-      ['nombre o contraseña del admin sin su email', { adminName: 'Ana' }],
+      [
+        'contraseña del admin (se invita)',
+        { adminEmail: 'a@example.com', adminPassword: 'x'.repeat(16) },
+      ],
       ['contraseña sin email', { adminPassword: 'una-clave-larga' }],
-      ['contraseña corta', { adminEmail: 'a@example.com', adminPassword: 'corta' }],
       ['email inválido', { adminEmail: 'no-es-email' }],
       ['padre que no es uuid', { parentTenantId: 'platform' }],
       ['isBranch no booleano', { isBranch: 'si' }],
@@ -516,21 +522,36 @@ describe('Zod en los bordes', () => {
     });
   });
 
+  describe('impacto de un cambio sobre una membership', () => {
+    const impacto = new ZodValidationPipe(MembershipImpactQuerySchema);
+    const ids = { userId: OTRO, tenantId: NODO };
+
+    it('suspender o un rol asignable', () => {
+      expect(impacto.transform({ ...ids, status: 'suspended' })).toEqual({
+        ...ids,
+        status: 'suspended',
+      });
+      expect(impacto.transform({ ...ids, role: 'vendedor' })).toEqual({ ...ids, role: 'vendedor' });
+    });
+
+    it.each([
+      ['ni estado ni rol', ids],
+      ['los dos', { ...ids, status: 'suspended', role: 'vendedor' }],
+      ['un rol de plataforma', { ...ids, role: 'superadmin' }],
+      ['un estado desconocido', { ...ids, status: 'archived' }],
+      ['sin el nodo', { userId: OTRO, status: 'suspended' }],
+      ['campos de más', { ...ids, status: 'suspended', dryRun: 'false' }],
+    ])('rechaza: %s', (_q, query) => {
+      expect(() => impacto.transform(query)).toThrow(BadRequestException);
+    });
+  });
+
   describe('D7 B: ni superadmin ni platform_admin se asignan por API', () => {
     it.each(['superadmin', 'platform_admin'])('%s', (role) => {
       const ids = { userId: OTRO, tenantId: NODO };
       expect(() => new ZodValidationPipe(ChangeRoleSchema).transform({ ...ids, role })).toThrow(
         BadRequestException,
       );
-      expect(() =>
-        new ZodValidationPipe(CreateUserSchema).transform({
-          email: 'a@example.com',
-          name: 'A',
-          password: 'una-clave-larga',
-          tenantId: NODO,
-          role,
-        }),
-      ).toThrow(BadRequestException);
       expect(() =>
         new ZodValidationPipe(InviteUserSchema).transform({
           email: 'a@example.com',

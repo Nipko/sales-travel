@@ -44,6 +44,22 @@ function decodeBase64Url(segment: string): string | null {
   }
 }
 
+/** El payload del JWT, SIN verificar la firma. `null` si no se puede leer. */
+function tokenPayload(token: string): Record<string, unknown> | null {
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  const json = decodeBase64Url(payload);
+  if (json === null) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Cuándo vence el access token según su propio `exp`, en ms; `null` si no se puede leer.
  *
@@ -52,16 +68,21 @@ function decodeBase64Url(segment: string): string | null {
  * filtro igual que antes y lo rechaza la API, que es la que valida.
  */
 export function tokenExpiresAtMs(token: string): number | null {
-  const payload = token.split('.')[1];
-  if (!payload) return null;
-  const json = decodeBase64Url(payload);
-  if (json === null) return null;
-  try {
-    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
-    return typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
+  const exp = tokenPayload(token)?.['exp'];
+  return typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * El tenant de la sesión (`tid`), SIN verificar la firma. Lo usa el middleware para que la cookie
+ * `st_tenant` (la cabecera `x-tenant-id`) no se despegue nunca de la sesión: un `tid` inventado no
+ * sirve de nada, porque la API vuelve a validar el token y sólo honra la cabecera si el usuario está
+ * autorizado en ese tenant.
+ */
+export function tokenTenantId(token: string): string | null {
+  const tid = tokenPayload(token)?.['tid'];
+  return typeof tid === 'string' && UUID.test(tid) ? tid : null;
 }
 
 /** ¿El token ya venció seguro? Si no se puede leer, se asume vivo y decide la API. */

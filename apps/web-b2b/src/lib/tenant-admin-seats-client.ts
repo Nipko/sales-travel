@@ -12,9 +12,11 @@ import {
   parseInvitations,
   parseMemberActionResult,
   parseMembers,
+  parseMembershipImpact,
   teamLoadError,
   type MemberAction,
   type MemberActionResult,
+  type MembershipImpact,
   type NetworkMember,
   type PendingInvitation,
 } from './tenant-admin-team';
@@ -120,6 +122,31 @@ export function runMemberAction(
   );
 }
 
+/** El cambio sobre una membership que la confirmación está por aplicar. */
+export type MembershipChange = { readonly status: 'suspended' } | { readonly role: string };
+
+/**
+ * Qué arrastraría el cambio (las invitaciones que se revocarían). Se pregunta antes de abrir la
+ * confirmación; si falla, la pantalla confirma igual, sin el número.
+ */
+export function loadMembershipImpact(
+  tenantId: string,
+  userId: string,
+  change: MembershipChange,
+): Promise<Loaded<MembershipImpact>> {
+  const params = new URLSearchParams({
+    tenantId,
+    userId,
+    ...('status' in change ? { status: change.status } : { role: change.role }),
+  });
+  return call(
+    `/api/admin/memberships/impact?${params.toString()}`,
+    {},
+    parseMembershipImpact,
+    memberActionError,
+  );
+}
+
 export function loadMembers(tenantId: string): Promise<Loaded<NetworkMember[]>> {
   return call(`/api/tenants/network/users?tenantId=${seg(tenantId)}`, {}, parseMembers, (status) =>
     teamLoadError(status),
@@ -144,5 +171,30 @@ export function revokeInvitation(tenantId: string, invitationId: string): Promis
       status === 401
         ? 'Tu sesión venció. Volvé a iniciar sesión.'
         : message?.trim() || 'No pudimos revocar la invitación. Probá de nuevo.',
+  );
+}
+
+/** `{ id, expiresAt }` del reenvío. `undefined` si la forma no es la esperada. */
+function parseResent(value: unknown): { expiresAt: string } | undefined {
+  const expiresAt = asRecord(value)?.['expiresAt'];
+  return typeof expiresAt === 'string' ? { expiresAt } : undefined;
+}
+
+/**
+ * Reenviar una invitación: enlace nuevo (el anterior deja de valer) y 7 días más. Devuelve el nuevo
+ * vencimiento; el error, el mensaje del API tal cual.
+ */
+export function resendInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<Loaded<{ expiresAt: string }>> {
+  return call(
+    `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
+    { method: 'POST' },
+    parseResent,
+    (status, message) =>
+      status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
 }

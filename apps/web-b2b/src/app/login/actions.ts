@@ -26,10 +26,6 @@ import {
   type MfaMode,
 } from './login-state';
 
-interface Membership {
-  tenantId: string;
-}
-
 function asString(value: FormDataEntryValue | null): string {
   return typeof value === 'string' ? value : '';
 }
@@ -37,6 +33,10 @@ function asString(value: FormDataEntryValue | null): string {
 /**
  * Deja la sesión lista y manda al destino. Se borra primero lo que hubiera en el navegador: en una
  * computadora compartida, el tenant activo del usuario anterior no puede quedar pegado al nuevo.
+ *
+ * El tenant es el de la sesión que emitió la API (su criterio: la última agencia con la que operó,
+ * si sigue operando). Antes, si no venía, se tomaba la primera de /me/memberships por orden
+ * alfabético: otro criterio, y otra agencia que la de la sesión.
  */
 async function finishLogin(auth: AuthSuccess, next: string): Promise<never> {
   await clearSession();
@@ -45,14 +45,7 @@ async function finishLogin(auth: AuthSuccess, next: string): Promise<never> {
     await setTrustedDevice(auth.trustedDevice.token, auth.trustedDevice.expiresAt);
   }
 
-  if (auth.tenantId) {
-    await setActiveTenant(auth.tenantId);
-  } else {
-    const memberships = await api<Membership[]>('/me/memberships');
-    if (memberships.ok && memberships.data.length > 0) {
-      await setActiveTenant(memberships.data[0]!.tenantId);
-    }
-  }
+  if (auth.tenantId) await setActiveTenant(auth.tenantId);
 
   // Si el rol exige 2FA y todavía no lo configuró, el layout del panel muestra el enrolamiento
   // antes que cualquier pantalla (y después sigue a `next`): no hace falta desviarlo desde acá.

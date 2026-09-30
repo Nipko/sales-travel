@@ -71,7 +71,7 @@
 --   - Los montos, la moneda, la cadena y el dueño de la credencial los decide la base desde la orden.
 --     La API no los pasa por parámetro, pero la venta (total_amount) y el neto (selected_offer) son
 --     campos de la orden que escribe ella: la cascada confía en esos campos, y nada acá impide que
---     app_user los cambie (docs/platform/12 §12.8). Sólo wallet_hold_preview y el aviso del PreBook
+--     app_user los cambie (docs/platform/12 §14.8). Sólo wallet_hold_preview y el aviso del PreBook
 --     (wallet_hold_report_preview_block), que corren antes de que exista la orden y no escriben
 --     asientos, reciben el neto: el mismo que la base leerá después (wallet_hold_net):
 --     pricing.netMinor en hoteles y autos, offer.total en vuelos.

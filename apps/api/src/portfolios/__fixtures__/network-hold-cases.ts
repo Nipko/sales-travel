@@ -1,5 +1,5 @@
 /**
- * La red de prueba de la retención en cascada (db/migrations/0060; docs/platform/12 §12) y los casos
+ * La red de prueba de la retención en cascada (db/migrations/0060; docs/platform/12 §14) y los casos
  * de quién retiene, compartidos por los tests de integración de la base y de la API.
  *
  *   P  (plataforma, nivel 1, +5 %)

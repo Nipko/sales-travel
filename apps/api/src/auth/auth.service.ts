@@ -18,7 +18,9 @@ import {
   SeatReleaseExpiredError,
   SeatReleaseForbiddenError,
   SessionNotFoundError,
+  TenantNotOperableError,
 } from './auth-errors.js';
+import { pickDefaultMembership } from './default-tenant.js';
 import type { RegisterDto, LoginDto } from './dto.js';
 import { ACCESS_TTL_MS, JwtService, type SeatReleaseClaims } from './jwt.service.js';
 import { LOCKOUT_MINUTES, LoginAttemptsService } from './login-attempts.service.js';
@@ -33,6 +35,7 @@ import {
   REVOKED_TENANT_SWITCHED,
 } from './session-revocation.js';
 import { SessionService } from './session.service.js';
+import { tenantOperableSql } from './tenant-operable.js';
 import { TrustedDeviceService } from './trusted-device.service.js';
 
 export interface AuthResult {
@@ -75,8 +78,10 @@ export interface SessionInfo {
 }
 
 interface ActiveMembership {
-  tenant_id: string;
+  tenantId: string;
   role: Role;
+  /** El nodo y sus ancestros están activos (ver tenantOperableSql). */
+  operable: boolean;
 }
 
 /** Cómo se completó el ingreso, para la auditoría. */
@@ -87,7 +92,7 @@ interface FinishLoginOptions {
   mfaEnabled: boolean;
   method: LoginMethod;
   remember?: boolean;
-  /** Tenant con que emitir la sesión; si ya no hay membership activa allí, el por defecto. */
+  /** Tenant con que emitir la sesión; si ya no hay membership activa allí o no opera, el por defecto. */
   tenantId?: string | null;
 }
 
@@ -513,23 +518,31 @@ export class AuthService {
    * Resuelve el tenant por defecto y emite la sesión. Compartido por login, completeMfa y
    * releaseSeat. Con la sesión emitida se limpia el contador de fallos (el paso MFA ya lo limpió al
    * aceptar el código) y se registra el acceso.
+   *
+   * El tenant sale de {@link pickDefaultMembership}, el mismo criterio que publica
+   * GET /me/memberships (`isDefault`): la última agencia con la que operó, si sigue operando.
    */
   private async finishLogin(userId: string, opts: FinishLoginOptions): Promise<AuthResult> {
-    const memberships = await this.activeMemberships(userId);
-    const membership =
-      (opts.tenantId ? memberships.find((m) => m.tenant_id === opts.tenantId) : undefined) ??
-      memberships[0];
+    const [memberships, lastTenantId] = await Promise.all([
+      this.activeMemberships(userId),
+      this.lastTenantOf(userId),
+    ]);
+    const membership = pickDefaultMembership(memberships, {
+      requested: opts.tenantId,
+      last: lastTenantId,
+    });
     // Un equipo de confianza sólo tiene sentido si esta sesión pasó el segundo factor.
     const remember = opts.remember === true && opts.mfaVerified;
 
     const { token, expiresAt } = await this.issueToken({
       userId,
-      tenantId: membership?.tenant_id ?? null,
+      tenantId: membership?.tenantId ?? null,
       role: membership?.role,
       mfaVerified: opts.mfaVerified,
       remember,
     });
     await this.attempts.registerSuccess(userId);
+    if (membership) await this.rememberTenant(userId, membership.tenantId);
 
     let trustedDevice: AuthResult['trustedDevice'];
     if (remember) {
@@ -547,7 +560,7 @@ export class AuthService {
 
     await this.audit.emit({
       eventType: 'auth.login.success',
-      tenantId: membership?.tenant_id ?? null,
+      tenantId: membership?.tenantId ?? null,
       actorUserId: userId,
       aggregateType: 'user',
       aggregateId: userId,
@@ -566,7 +579,7 @@ export class AuthService {
       token,
       expiresAt: expiresAt.toISOString(),
       userId,
-      tenantId: membership?.tenant_id,
+      tenantId: membership?.tenantId,
       role: membership?.role,
       ...(enrollmentRequired ? { mfaEnrollmentRequired: true } : {}),
       ...(trustedDevice ? { trustedDevice } : {}),
@@ -578,16 +591,54 @@ export class AuthService {
    * memberships_self no deja ver ninguna fila, el token salía sin tenant y el login nunca pedía
    * enrolar MFA, ni al superadmin.
    */
-  private activeMemberships(userId: string): Promise<ActiveMembership[]> {
-    return this.db.withRequestContext({ userId }, (trx) =>
+  private async activeMemberships(userId: string): Promise<ActiveMembership[]> {
+    const rows = await this.db.withRequestContext({ userId }, (trx) =>
       trx
         .selectFrom('memberships')
-        .select(['tenant_id', 'role'])
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .orderBy('created_at')
+        .select([
+          'memberships.tenant_id',
+          'memberships.role',
+          tenantOperableSql('memberships.tenant_id').as('operable'),
+        ])
+        .where('memberships.user_id', '=', userId)
+        .where('memberships.status', '=', 'active')
+        .orderBy('memberships.created_at')
         .execute(),
     );
+    return rows.map((r) => ({
+      tenantId: r.tenant_id,
+      role: r.role,
+      operable: r.operable === true,
+    }));
+  }
+
+  /** La última agencia con la que operó (0061). Sólo una preferencia: se valida al usarla. */
+  private async lastTenantOf(userId: string): Promise<string | null> {
+    const row = await this.db.db
+      .selectFrom('users')
+      .select('last_tenant_id')
+      .where('id', '=', userId)
+      .executeTakeFirst();
+    return row?.last_tenant_id ?? null;
+  }
+
+  /**
+   * Recuerda la agencia de la sesión recién emitida para abrir la próxima en ella. Best-effort: si
+   * falla, la sesión ya está emitida y el próximo login cae a la más antigua que opera.
+   */
+  private async rememberTenant(userId: string, tenantId: string): Promise<void> {
+    try {
+      await this.db.db
+        .updateTable('users')
+        .set({ last_tenant_id: tenantId })
+        .where('id', '=', userId)
+        .where((eb) =>
+          eb.or([eb('last_tenant_id', 'is', null), eb('last_tenant_id', '!=', tenantId)]),
+        )
+        .execute();
+    } catch {
+      // Ver arriba: recordar la agencia nunca tumba un ingreso ni un cambio de agencia.
+    }
   }
 
   /**
@@ -596,7 +647,9 @@ export class AuthService {
    * Base para que el tenant venga del JWT en vez del header `x-tenant-id`.
    *
    * La sesión nueva hereda el segundo factor de la actual (ya lo pasó) y la reemplaza. Si el
-   * destino consume de otro cupo y está lleno, 409 SEATS_FULL y la sesión actual sigue.
+   * destino consume de otro cupo y está lleno, 409 SEATS_FULL y la sesión actual sigue. Un destino
+   * suspendido (él o un ancestro) tampoco: 403 TENANT_SUSPENDED, sin tocar la sesión actual.
+   * El destino queda como la agencia por defecto del próximo login.
    */
   async switchTenant(
     userId: string,
@@ -606,16 +659,21 @@ export class AuthService {
     const membership = await this.db.withRequestContext({ userId }, async (trx) =>
       trx
         .selectFrom('memberships')
-        .select(['tenant_id', 'role'])
-        .where('user_id', '=', userId)
-        .where('tenant_id', '=', targetTenantId)
-        .where('status', '=', 'active')
+        .select([
+          'memberships.tenant_id',
+          'memberships.role',
+          tenantOperableSql('memberships.tenant_id').as('operable'),
+        ])
+        .where('memberships.user_id', '=', userId)
+        .where('memberships.tenant_id', '=', targetTenantId)
+        .where('memberships.status', '=', 'active')
         .executeTakeFirst(),
     );
 
     if (!membership) {
       throw new ForbiddenException('no active membership in target tenant');
     }
+    if (membership.operable !== true) throw new TenantNotOperableError();
 
     const current = currentSessionId
       ? await this.sessions.snapshot(currentSessionId, userId)
@@ -632,6 +690,7 @@ export class AuthService {
         ? { current: { sessionId: currentSessionId, reason: REVOKED_TENANT_SWITCHED } }
         : {}),
     });
+    await this.rememberTenant(userId, membership.tenant_id);
     await this.audit.emit({
       eventType: 'auth.switch_tenant',
       tenantId: membership.tenant_id,
@@ -661,10 +720,11 @@ export class AuthService {
     const snapshot = sessionId ? await this.sessions.snapshot(sessionId, userId) : null;
     const memberships = await this.activeMemberships(userId);
     const membership =
-      memberships.find((m) => m.tenant_id === snapshot?.tenantId) ?? memberships[0];
+      memberships.find((m) => m.tenantId === snapshot?.tenantId) ??
+      pickDefaultMembership(memberships, { last: await this.lastTenantOf(userId) });
     const { token, expiresAt } = await this.issueToken({
       userId,
-      tenantId: snapshot?.tenantId ?? membership?.tenant_id ?? null,
+      tenantId: snapshot?.tenantId ?? membership?.tenantId ?? null,
       role: membership?.role,
       mfaVerified: snapshot?.mfaVerified === true,
       replaceReason: 'password_changed',

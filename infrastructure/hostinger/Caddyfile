@@ -1,7 +1,28 @@
 {
 	email admin@planetour.cloud
 	servers {
-		trusted_proxies static private_ranges
+		# ---- Quién es el cliente (README §10) ----
+		# Caddy decide la IP del usuario UNA vez, `{client_ip}`, y la pasa a los upstreams en
+		# X-Edge-Peer-IP (snippet `client_origin`). El api y el panel no vuelven a interpretarla.
+		#
+		# `trusted_proxies`: Caddy cree la cabecera de `client_ip_headers` SÓLO si la conexión TCP viene
+		# de uno de estos rangos; de cualquier otro, `{client_ip}` es el peer, que no se falsifica. Son
+		# los de Cloudflare (https://www.cloudflare.com/ips-v4 y /ips-v6, al 2026-09-29), en ese orden.
+		# Sin ellos el "cliente" era el borde de Cloudflare: una IP que rota entre conexiones y comparten
+		# miles de usuarios. Para actualizarlos: README §10.2; el test caddyfile-client-ip.guard.test.ts
+		# del api tiene la misma lista y falla si falta un rango.
+		# Sin `private_ranges` a propósito: Cloudflare llega por IPv4 (los registros son A), que Docker
+		# entrega con la IP de origen intacta. Lo único privado que puede conectar a Caddy es el
+		# docker-proxy que atiende la IPv6 del VPS, y quien llegara directo por ahí podría inventarse
+		# CF-Connecting-IP.
+		# Va en una sola línea: `static` sólo lee los argumentos de su línea.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		# CF-Connecting-IP y no X-Forwarded-For: Cloudflare la escribe con UNA IP y pisa la que mande el
+		# cliente; a X-Forwarded-For, en cambio, le agrega la suya DETRÁS de lo que el cliente haya puesto.
+		# Sin `trusted_proxies_strict`: sólo cambia algo con una lista de IPs, y CF-Connecting-IP trae
+		# una. Con él, un valor dentro de un rango de confianza (el 2a06:98c0:3600::103 de los Workers de
+		# otra zona) se saltaría y el cliente volvería a ser el borde que rota.
+		client_ip_headers CF-Connecting-IP
 	}
 }
 
@@ -16,16 +37,39 @@
 	}
 }
 
+# ---- Lo que el api y los paneles saben del cliente ----
+# Se importa DENTRO de cada `reverse_proxy` hacia el api o un panel. `header_up X v` pisa la cabecera
+# que mande el cliente y `header_up -X` la borra, pero Caddy aplica primero todos los que escriben y
+# DESPUÉS todos los que borran (HeaderOps.ApplyTo, modules/caddyhttp/headers/headers.go): borrar una
+# cabecera que también se escribe hace que no llegue nunca. Así se perdía X-Edge-Peer-IP hasta este
+# cambio. Acá sólo se borran cabeceras que no se escriben.
+(client_origin) {
+	# La IP del usuario que resolvió Caddy (`trusted_proxies` arriba). El nombre es histórico: antes
+	# llevaba el peer TCP. La leen apps/api/src/request-context/client-origin.ts y el panel, que la
+	# reenvía al api (apps/web-b2b/src/lib/api.ts).
+	header_up X-Edge-Peer-IP {client_ip}
+	header_up X-Real-IP {client_ip}
+	# Con Cloudflare en `trusted_proxies`, Caddy CONSERVA las X-Forwarded-* que llegan, y el cliente
+	# puede mandar las suyas a través de Cloudflare. Se escriben como cuando no se confiaba en nadie
+	# (salvo X-Forwarded-For, que ahora es el usuario y no el borde): el api resuelve el tenant de un
+	# request sin sesión con X-Forwarded-Host, y el panel arma redirecciones con su URL.
+	# Al cargar, Caddy avisa "Unnecessary header_up X-Forwarded-Host/Proto": el aviso supone que no
+	# se confía en ningún proxy. Acá sí hacen falta; no quitarlas.
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Forwarded-Host {hostport}
+	header_up X-Forwarded-Proto {scheme}
+	# Las cabeceras con las que el panel le cuenta al api quién es el usuario (red interna, con el
+	# secreto INTERNAL_PROXY_SECRET). Desde afuera no valen nada, aunque el secreto se filtrara.
+	header_up -X-Internal-Proxy
+	header_up -X-Client-Ip
+	header_up -X-Client-User-Agent
+}
+
 # ---- API ----
 api.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy api:3000 {
-		header_up X-Real-IP {remote_host}
-		# IP del peer TCP real, que el cliente no puede falsificar (a diferencia de
-		# CF-Connecting-IP, que es sólo una cabecera). El throttler la usa como segunda
-		# clave para que forjar CF-Connecting-IP no alcance para estrenar cupo.
-		header_up -X-Edge-Peer-IP
-		header_up X-Edge-Peer-IP {remote_host}
+		import client_origin
 		# Despliegue sin 502 (PR-4.10): `docker compose up -d` detiene el api viejo —deja de
 		# aceptar conexiones y drena hasta 125 s— y sólo después arranca el nuevo, que además
 		# espera a `migrate`. En ese hueco la conexión falla (rechazada, o sin nombre que
@@ -54,12 +98,7 @@ api.planetour.cloud {
 app.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy web-b2b:3001 {
-		header_up X-Real-IP {remote_host}
-		# IP del peer TCP real, que el cliente no puede falsificar (a diferencia de
-		# CF-Connecting-IP, que es sólo una cabecera). El throttler la usa como segunda
-		# clave para que forjar CF-Connecting-IP no alcance para estrenar cupo.
-		header_up -X-Edge-Peer-IP
-		header_up X-Edge-Peer-IP {remote_host}
+		import client_origin
 	}
 	import security_headers
 }
@@ -75,10 +114,7 @@ app.planetour.cloud {
 cert-app.planetour.cloud {
 	encode zstd gzip
 	reverse_proxy cert-web-b2b:3001 {
-		header_up X-Real-IP {remote_host}
-		# Misma cabecera que el panel de producción, por el mismo motivo (throttler).
-		header_up -X-Edge-Peer-IP
-		header_up X-Edge-Peer-IP {remote_host}
+		import client_origin
 	}
 	import security_headers
 	# Un portal de pruebas no se indexa.
@@ -89,7 +125,7 @@ cert-app.planetour.cloud {
 # planetour.cloud, www.planetour.cloud {
 #	encode zstd gzip
 #	reverse_proxy web-b2c:3002 {
-#		header_up X-Real-IP {remote_host}
+#		import client_origin
 #	}
 #	import security_headers
 # }
@@ -98,7 +134,7 @@ cert-app.planetour.cloud {
 # admin.planetour.cloud {
 #	encode zstd gzip
 #	reverse_proxy web-admin:3003 {
-#		header_up X-Real-IP {remote_host}
+#		import client_origin
 #	}
 #	import security_headers
 # }
@@ -110,7 +146,7 @@ cert-app.planetour.cloud {
 #	encode zstd gzip
 #	# El api inspecciona el Host header y resuelve el tenant_id correspondiente.
 #	reverse_proxy web-b2b:3001 {
-#		header_up X-Real-IP {remote_host}
+#		import client_origin
 #		header_up X-Tenant-Host {host}
 #	}
 #	import security_headers

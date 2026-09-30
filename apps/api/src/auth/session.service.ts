@@ -1,8 +1,8 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import type { Role, UserStatus } from '../database/database.types.js';
+import type { DB, Role, UserStatus } from '../database/database.types.js';
 import type { SessionFailureReason } from '../request-context/request-context.js';
 import { MFA_REQUIRED_ROLES, PLATFORM_ROLES } from './roles.js';
 import { REVOKED_IDLE_TIMEOUT, reasonForRevocation } from './session-revocation.js';
@@ -327,17 +327,45 @@ export class SessionService {
 
   /**
    * Revoca TODAS las sesiones de un usuario: cambio de contraseña, "cerrar sesión en
-   * todos los dispositivos", suspensión o baja de la red.
+   * todos los dispositivos" o suspensión del usuario en la plataforma. La suspensión de una
+   * membership NO pasa por acá: ver {@link revokeForTenant}.
    *
    * Usa revoke_user_sessions() (SECURITY DEFINER) para poder alcanzar también las
    * sesiones de OTRO usuario en el camino administrativo, donde la policy sessions_self
-   * no aplicaría. La autorización jerárquica se valida en el llamador.
+   * no aplicaría. La autorización jerárquica se valida en el llamador. `executor` permite
+   * revocar dentro de la transacción del cambio que la motiva.
    */
-  async revokeAllForUser(targetUserId: string, reason: string): Promise<number> {
+  async revokeAllForUser(
+    targetUserId: string,
+    reason: string,
+    executor: Kysely<DB> | Transaction<DB> = this.db.db,
+  ): Promise<number> {
     const res = await sql<{
       revoke_user_sessions: number;
-    }>`SELECT revoke_user_sessions(${targetUserId}::uuid, ${reason})`.execute(this.db.db);
+    }>`SELECT revoke_user_sessions(${targetUserId}::uuid, ${reason})`.execute(executor);
     return res.rows[0]?.revoke_user_sessions ?? 0;
+  }
+
+  /**
+   * Revoca las sesiones de un usuario en el subárbol de `tenantId` que ya no tienen membership
+   * activa en su nodo (revoke_user_sessions_for_tenant, 0056): al suspenderle la membership de un
+   * nodo, las de ese nodo. Las que tiene en otros nodos siguen vivas: suspender a un vendedor en una
+   * agencia no lo saca de la otra donde también trabaja.
+   *
+   * No es lo que corta el acceso (validate ya no le da rol en un nodo donde la membership no está
+   * activa): libera el puesto que ocupaba la sesión y le dice al usuario por qué quedó afuera.
+   * Llamarla dentro de la transacción que suspende, después del UPDATE.
+   */
+  async revokeForTenant(
+    targetUserId: string,
+    tenantId: string,
+    reason: string,
+    executor: Kysely<DB> | Transaction<DB> = this.db.db,
+  ): Promise<number> {
+    const res = await sql<{ revoked: number }>`
+      SELECT revoke_user_sessions_for_tenant(${targetUserId}::uuid, ${tenantId}::uuid, ${reason}) AS revoked
+    `.execute(executor);
+    return res.rows[0]?.revoked ?? 0;
   }
 
   /** El tenant y el estado del MFA con que se emitió una sesión propia (switch-tenant, cambio de contraseña). */

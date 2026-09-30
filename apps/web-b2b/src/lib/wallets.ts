@@ -134,7 +134,7 @@ export interface AgencyWallets {
 /**
  * Los proveedores cuyas reservas retienen cartera y graban en la orden la cuenta con que se
  * reservaron: los de hoteles que reservan por el Book neutral con órdenes (hoy sólo TBO; Despegar
- * no retiene, docs/platform/12 §12.8). Con la cuenta propia en ellos la reserva no retiene nada
+ * no retiene, docs/platform/12 §14.8). Con la cuenta propia en ellos la reserva no retiene nada
  * (decisión del founder del 2026-09-30). Vuelos y autos no graban la cuenta, así que la propia no
  * los exime. Uno nuevo que retenga se suma acá; si falta, la web sólo avisa de más y decide la base.
  */
