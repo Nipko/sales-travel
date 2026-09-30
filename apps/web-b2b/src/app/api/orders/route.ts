@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { api } from '../../../lib/api';
+import { api, apiWithStatus } from '../../../lib/api';
+import { proxyOrderCreate } from './order-create-proxy';
 
 export async function GET() {
   const res = await api<{ orders: unknown[] }>('/orders');
@@ -8,15 +9,6 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as unknown;
-  const res = await api<unknown>('/orders', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  }
-
-  return NextResponse.json(res.data);
+  const reply = await proxyOrderCreate(req, apiWithStatus);
+  return NextResponse.json(reply.body, { status: reply.status });
 }

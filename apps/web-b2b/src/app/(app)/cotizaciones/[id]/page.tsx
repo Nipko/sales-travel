@@ -2,6 +2,7 @@
 
 import { describePolicy, policyState } from '../../../../lib/fare-policy';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import { TicketingDeadlineBadge } from '../_components/ticketing-deadline-badge';
 import { flightDate, flightTime, formatMoney } from '../../../../lib/flight-format';
 import {
   ArrowLeft,
@@ -39,6 +40,7 @@ import {
   type PriceVerificationState,
 } from './offer-price-flow';
 import {
+  createOrderErrorMessage,
   createOrderReconciliationView,
   createOrderTransportFailureView,
   isAmbiguousCreateHttpStatus,
@@ -369,7 +371,7 @@ export default function QuotationDetailPage() {
     if (!res.ok) {
       setBookingResult({
         outcome: 'FAILED',
-        error: humanizeBookingError(data.error ?? data.message ?? ERROR_DESCONOCIDO),
+        error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
       });
       return;
     }
@@ -377,7 +379,7 @@ export default function QuotationDetailPage() {
     if (!outcome) {
       setBookingResult({
         outcome: 'FAILED',
-        error: humanizeBookingError(data.error ?? data.message ?? ERROR_DESCONOCIDO),
+        error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
       });
       return;
     }
@@ -388,7 +390,9 @@ export default function QuotationDetailPage() {
         outcome === 'CONFIRMED'
           ? undefined
           : humanizeBookingError(
-              describeIssues(data.providerResult?.issues) ?? data.error ?? ERROR_DESCONOCIDO,
+              describeIssues(data.providerResult?.issues) ??
+                createOrderErrorMessage(data) ??
+                ERROR_DESCONOCIDO,
             ),
     });
   }
@@ -472,7 +476,11 @@ export default function QuotationDetailPage() {
 
   const { searchCriteria, selectedOffer } = quotation;
   const statusInfo = STATUS_LABELS[quotation.status] ?? STATUS_LABELS.draft!;
-  const isExpired = new Date(quotation.expiresAt) < new Date();
+  // Sólo una vigencia que declaró el PROVEEDOR puede vencer el precio. La de contenido ATPCO es
+  // nuestro TTL de caché (90 s): marcarla «Precio expirado» a los 90 s de guardar era falso, la
+  // reserva revalida el precio de todas formas.
+  const priceFromProvider = quotation.selectedOffer.expiresAtSource === 'provider';
+  const isExpired = priceFromProvider && new Date(quotation.expiresAt) < new Date();
   const totalPax =
     searchCriteria.paxCount.adults +
     searchCriteria.paxCount.children +
@@ -878,17 +886,20 @@ export default function QuotationDetailPage() {
                 )}
               </div>
 
-              <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[var(--color-fg-subtle)]">
-                <Clock className="size-3" />
-                <span>
-                  Expira{' '}
-                  {new Date(quotation.expiresAt).toLocaleString('es-CO', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
+              <div className="mt-3 space-y-1.5 text-[11px]">
+                <TicketingDeadlineBadge raw={quotation.selectedOffer.provider.raw} />
+                <p className="flex items-center gap-1.5 text-[var(--color-fg-subtle)]">
+                  {priceFromProvider
+                    ? `${isExpired ? 'Precio vencido el' : 'Precio garantizado hasta el'} ${new Date(
+                        quotation.expiresAt,
+                      ).toLocaleString('es-CO', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}`
+                    : 'Precio sujeto a revalidación al reservar'}
+                </p>
               </div>
             </CardContent>
           </Card>

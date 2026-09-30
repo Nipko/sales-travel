@@ -9,6 +9,7 @@ interface Money {
 
 interface Segment {
   carrier: string;
+  operatingCarrier?: string;
   flightNumber: string;
   origin: string;
   destination: string;
@@ -87,6 +88,8 @@ export interface Offer {
   };
   fetchedAt: string;
   expiresAt: string;
+  /** Sólo `'provider'` autoriza a presentar `expiresAt` como vigencia de la tarifa. */
+  expiresAtSource?: 'provider' | 'platform-policy';
 }
 
 /** Qué pasó con un proveedor en esta búsqueda. Espejo de ProviderOutcome en el API. */
