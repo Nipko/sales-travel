@@ -1,16 +1,21 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { CachePort } from '@sales-travel/core';
 import { z } from '@sales-travel/validation';
 import { DatabaseService } from '../database/database.service.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   supportsHotelContent,
+  supportsHotelContentBatch,
+  type HotelContentBatch,
   type HotelContentLanguage,
   type HotelContentSection,
   type HotelProviderContent,
+  type HotelProviderRegistration,
 } from '../providers/hotel-provider.types.js';
 import { ProviderNotAvailableError } from '../providers/provider.types.js';
 import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import { HotelCatalogStore, hotelRefKey, type HotelRef } from './hotel-catalog.store.js';
+import { pickMainImages, type HotelMainImage } from './hotel-image-proxy.js';
 import { UnknownHotelProviderError } from './hotel-provider-errors.js';
 import { catalogFactsOf } from './hotel-search.aggregate.js';
 
@@ -18,10 +23,10 @@ import { catalogFactsOf } from './hotel-search.aggregate.js';
  * Contenido de un hotel para su ficha: descripción, servicios, imágenes, horarios (docs/tbo/09
  * PR-3.6; 05 §4 y §6.3; 08 RF-32 y RNF-16).
  *
- * - **Lee `hotel_content`, no lo escribe.** Las tablas del catálogo son de plataforma y las escribe
- *   sólo el sync, que corre como `postgres`; `app_user` sólo tiene `SELECT` (0041). Tampoco escribe
- *   lo que trae del proveedor en el momento: el sync ya prioriza los hoteles que siguen sin
- *   contenido, y dos escritores del mismo catálogo se pisarían la huella (`content_hash`).
+ * - **La ficha lee `hotel_content`, no lo escribe**: lo que trae del proveedor para UN hotel queda
+ *   en la caché propia. Quien escribe el catálogo desde el API es el contenido por lote de los
+ *   resultados ({@link HotelContentService.getContentBatch}), por la función de 0054 y con la huella
+ *   del ACL, la misma del sync: dos escritores, una sola regla.
  * - **Respaldo en inglés.** Sin contenido en el idioma pedido sale el inglés, y la respuesta dice en
  *   qué idioma vino (`lang` contra `requestedLang`). Es el idioma en que llega el texto del listado
  *   de ciudad, así que es el que más hoteles tienen (05 §6.3).
@@ -65,6 +70,74 @@ export const HOTEL_CONTENT_CACHE_TTL_S = Object.freeze({
 });
 
 const KEY_PREFIX = 'hotels:content';
+const BATCH_KEY_PREFIX = 'hotels:content-batch';
+
+/** Hoteles por petición del contenido por lote: una pantalla de resultados, de a tandas. */
+export const HOTEL_CONTENT_BATCH_MAX_HOTELS = 24;
+
+/**
+ * Hoteles que UNA petición manda a buscar al proveedor, como mucho: dos lotes de HotelDetails. El
+ * resto sale `pending` y la web los vuelve a pedir; así una pantalla con muchos hoteles sin foto no
+ * encola de golpe decenas de llamadas en el cupo de la cuenta.
+ */
+export const HOTEL_CONTENT_BATCH_MAX_FETCH = 20;
+
+/**
+ * Cuánto espera la respuesta a que el proveedor conteste. Nadie espera mirando —las fotos llegan en
+ * segundo plano—, pero una petición colgada ocupa una conexión del navegador. Lo que no llegó sale
+ * `pending` y la llamada al proveedor SIGUE: lo que traiga se guarda y la próxima petición lo lee.
+ */
+export const HOTEL_CONTENT_BATCH_WAIT_MS = 9_000;
+
+/** Plazo de cada lote en el proveedor, cola del limitador incluida. */
+export const HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS = 25_000;
+
+/** Cuándo conviene volver a preguntar por lo que quedó `pending`. */
+export const HOTEL_CONTENT_BATCH_RETRY_AFTER_MS = 3_000;
+
+/**
+ * Cuánto se recuerda que un hotel no tiene contenido (el proveedor respondió sin él) o que su lote
+ * falló: sin esto, cada pantalla de resultados volvería a pedir los mismos hoteles.
+ */
+export const HOTEL_CONTENT_BATCH_CACHE_TTL_S = Object.freeze({
+  empty: 6 * 60 * 60,
+  failed: 2 * 60,
+});
+
+/**
+ * Qué pasa con las fotos de un hotel:
+ *
+ * - `ready`: hay foto y sale en `mainImage`.
+ * - `pending`: se está trayendo del proveedor (o quedó para la próxima tanda): volver a pedir.
+ * - `none`: no hay foto que mostrar por ahora (el proveedor no la tiene, no se le puede pedir o falló
+ *   hace poco). La tarjeta muestra el marcador de "sin foto"; no hay que insistir.
+ */
+export type HotelContentBatchStatus = 'ready' | 'pending' | 'none';
+
+export interface HotelContentBatchRequest {
+  readonly lang: HotelContentLanguage;
+  readonly hotels: readonly HotelRef[];
+}
+
+export interface HotelContentBatchItem {
+  readonly providerCode: string;
+  readonly hotelId: string;
+  readonly status: HotelContentBatchStatus;
+  /** La foto principal por el proxy propio (`/api/hotels/images/…`); `null` si no hay. */
+  readonly mainImage: HotelMainImage | null;
+  /** Cuántas fotos tiene el contenido del que sale la principal. */
+  readonly imageCount: number;
+}
+
+export interface HotelContentBatchView {
+  readonly lang: HotelContentLanguage;
+  readonly items: readonly HotelContentBatchItem[];
+  /** Presente si algún hotel quedó `pending`: en cuántos ms conviene volver a preguntar. */
+  readonly retryAfterMs?: number;
+}
+
+const BatchNegativeSchema = z.enum(['empty', 'failed']);
+type BatchNegative = z.infer<typeof BatchNegativeSchema>;
 
 /** Techos de lo que sale: una ficha no necesita más, y una fila rota no infla la respuesta. */
 const MAX_IMAGES = 100;
@@ -391,12 +464,23 @@ export class HotelContentService {
    */
   private readonly inFlight = new Map<string, Promise<Cached | undefined>>();
 
+  /**
+   * Lotes de contenido en vuelo, por hotel e idioma: dos pantallas de resultados que piden el mismo
+   * hotel a la vez esperan UN lote, no dos. Se borra al terminar, haya salido bien o no.
+   */
+  private readonly batchInFlight = new Map<string, Promise<void>>();
+
+  private readonly catalog: HotelCatalogStore;
+
   constructor(
     private readonly registry: HotelProviderRegistry,
     private readonly db: DatabaseService,
     private readonly breaker: CircuitBreakerService,
     @Inject(HOTEL_CONTENT_CACHE) private readonly cache: CachePort,
-  ) {}
+    @Optional() catalog?: HotelCatalogStore,
+  ) {
+    this.catalog = catalog ?? new HotelCatalogStore(db);
+  }
 
   async getContent(tenantId: string, request: HotelContentRequest): Promise<HotelContentView> {
     const { providerCode, hotelId, lang } = request;
@@ -447,6 +531,296 @@ export class HotelContentService {
       );
     }
     return this.view(request, inventory ?? NO_FACTS, chosen);
+  }
+
+  // ───────────────────────── Contenido por lote (fotos de los resultados) ─────────────────────────
+
+  /**
+   * La foto principal de cada hotel de una pantalla de resultados (estrategia de fotos del
+   * 2026-09-29). Los resultados salen al instante sin esperar esto: la web lo pide en segundo plano
+   * para los hoteles que llegaron sin foto, y las fotos aparecen a medida que llegan.
+   *
+   * 1. Lo que el catálogo ya tiene sale enseguida, del hotel o de uno equivalente de otro proveedor
+   *    (`hotel_match` aceptado, RF-34): con varios proveedores, la mejor foto del MISMO hotel.
+   * 2. Lo que falta se le pide al proveedor que sabe darlo (TBO `HotelDetails`, lotes de 10), sólo
+   *    por hoteles de SU catálogo que todavía no tienen contenido de detalle, con la cuenta que la
+   *    agencia tiene habilitada, por el cupo de fondo del limitador y por su circuito —pasivo: un
+   *    HotelDetails lento no corta las búsquedas de la red—. Lo que responde se GUARDA en
+   *    `hotel_content` (0054) con la huella del sync, y la respuesta lo devuelve.
+   * 3. Nunca bloquea: la respuesta espera a lo sumo {@link HOTEL_CONTENT_BATCH_WAIT_MS}; lo que no
+   *    llegó sale `pending`, y la llamada sigue y guarda para la próxima.
+   *
+   * Nada de esto es un cambio de negocio: no emite eventos. En el log, sólo códigos y conteos.
+   */
+  async getContentBatch(
+    tenantId: string,
+    request: HotelContentBatchRequest,
+  ): Promise<HotelContentBatchView> {
+    const { lang } = request;
+    const registrations = new Map(this.registry.registered().map((r) => [r.code, r]));
+    const refs = uniqueRefs(request.hotels).slice(0, HOTEL_CONTENT_BATCH_MAX_HOTELS);
+    const known = refs.filter((r) => registrations.has(r.providerCode));
+    const hostsOf = (code: string): readonly string[] =>
+      registrations.get(code)?.searchProfile.imageHosts ?? [];
+
+    let images = pickMainImages(await this.catalog.imageCandidates(known, lang), hostsOf);
+    const withoutImage = known.filter((r) => !images.has(hotelRefKey(r.providerCode, r.hotelId)));
+    const fetchable = await this.fetchableRefs(withoutImage, lang, registrations);
+    const fetchNow = fetchable.slice(0, HOTEL_CONTENT_BATCH_MAX_FETCH);
+    const deferred = new Set(
+      fetchable
+        .slice(HOTEL_CONTENT_BATCH_MAX_FETCH)
+        .map((r) => hotelRefKey(r.providerCode, r.hotelId)),
+    );
+
+    const pending = new Set<string>();
+    if (fetchNow.length > 0) {
+      const done = new Set<string>();
+      await settleWithin(
+        this.fetchAndStore(tenantId, fetchNow, lang, done),
+        HOTEL_CONTENT_BATCH_WAIT_MS,
+      );
+      for (const r of fetchNow) {
+        const key = hotelRefKey(r.providerCode, r.hotelId);
+        if (!done.has(key)) pending.add(key);
+      }
+      if (done.size > 0) {
+        images = pickMainImages(await this.catalog.imageCandidates(known, lang), hostsOf);
+      }
+    }
+
+    const items = refs.map((r): HotelContentBatchItem => {
+      const key = hotelRefKey(r.providerCode, r.hotelId);
+      const image = images.get(key);
+      if (image !== undefined) {
+        return {
+          providerCode: r.providerCode,
+          hotelId: r.hotelId,
+          status: 'ready',
+          mainImage: { url: image.url },
+          imageCount: image.count,
+        };
+      }
+      return {
+        providerCode: r.providerCode,
+        hotelId: r.hotelId,
+        status: pending.has(key) || deferred.has(key) ? 'pending' : 'none',
+        mainImage: null,
+        imageCount: 0,
+      };
+    });
+    return {
+      lang,
+      items,
+      ...(items.some((i) => i.status === 'pending')
+        ? { retryAfterMs: HOTEL_CONTENT_BATCH_RETRY_AFTER_MS }
+        : {}),
+    };
+  }
+
+  /**
+   * De los hoteles sin foto, los que vale la pena pedir: de un proveedor cuyo contenido sale del
+   * catálogo, en SU catálogo (un código inventado no gasta el cupo de la cuenta del consolidador),
+   * sin contenido de detalle todavía (si ya lo tiene y no trae fotos, el proveedor no las tiene) y
+   * sin un "no tiene" o un fallo reciente en la caché.
+   */
+  private async fetchableRefs(
+    refs: readonly HotelRef[],
+    lang: HotelContentLanguage,
+    registrations: ReadonlyMap<string, HotelProviderRegistration>,
+  ): Promise<HotelRef[]> {
+    const candidates = refs.filter(
+      (r) => registrations.get(r.providerCode)?.searchProfile.contentFromCatalog === true,
+    );
+    if (candidates.length === 0) return [];
+    const state = await this.catalog.contentState(candidates);
+    const out: HotelRef[] = [];
+    for (const r of candidates) {
+      const known = state.get(hotelRefKey(r.providerCode, r.hotelId));
+      if (known === undefined || !known.inCatalog || known.hasDetails) continue;
+      const negative = BatchNegativeSchema.safeParse(
+        await this.cache.get<unknown>(batchKey(r, lang)),
+      );
+      if (negative.success) continue;
+      out.push(r);
+    }
+    return out;
+  }
+
+  /**
+   * Pide y guarda el contenido de esos hoteles, por proveedor y en lotes de su tamaño. Marca en
+   * `done` cada hotel cuyo lote terminó (bien o mal). Nunca lanza: un proveedor que no se puede
+   * resolver, un circuito abierto o un lote que falla dejan a sus hoteles sin foto, no a la
+   * respuesta sin las demás.
+   */
+  private async fetchAndStore(
+    tenantId: string,
+    refs: readonly HotelRef[],
+    lang: HotelContentLanguage,
+    done: Set<string>,
+  ): Promise<void> {
+    const byProvider = new Map<string, string[]>();
+    for (const r of refs) {
+      const ids = byProvider.get(r.providerCode) ?? [];
+      ids.push(r.hotelId);
+      byProvider.set(r.providerCode, ids);
+    }
+    await Promise.all(
+      [...byProvider].map(([code, ids]) => this.fetchProvider(tenantId, code, ids, lang, done)),
+    );
+  }
+
+  private async fetchProvider(
+    tenantId: string,
+    providerCode: string,
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    done: Set<string>,
+  ): Promise<void> {
+    const markDone = (ids: readonly string[]): void => {
+      for (const id of ids) done.add(hotelRefKey(providerCode, id));
+    };
+    let resolved;
+    try {
+      resolved = await this.registry.byCodeForSale(tenantId, providerCode);
+    } catch (err) {
+      if (!(err instanceof ProviderNotAvailableError)) {
+        this.logger.warn(
+          `hotels.content_batch.proveedor_no_resuelto provider=${providerCode} error=${errorName(err)}`,
+        );
+      }
+      markDone(hotelIds);
+      return;
+    }
+    const { adapter, circuit } = resolved;
+    if (!supportsHotelContentBatch(adapter)) {
+      markDone(hotelIds);
+      return;
+    }
+
+    const waits: Promise<void>[] = [];
+    const fresh: string[] = [];
+    for (const id of hotelIds) {
+      const running = this.batchInFlight.get(batchFlightKey(providerCode, id, lang));
+      if (running === undefined) fresh.push(id);
+      else waits.push(running.finally(() => markDone([id])));
+    }
+    const size = Math.max(1, adapter.contentBatchSize);
+    for (let i = 0; i < fresh.length; i += size) {
+      const chunk = fresh.slice(i, i + size);
+      const run = this.fetchChunk(providerCode, chunk, lang, () =>
+        this.breaker.execute(
+          providerCode,
+          () =>
+            adapter.fetchHotelContents(
+              chunk,
+              lang,
+              { tenantId },
+              {
+                timeoutMs: HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS,
+                signal: AbortSignal.timeout(HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS),
+              },
+            ),
+          { ...circuit, scope: 'sales', passive: true },
+        ),
+      ).finally(() => {
+        markDone(chunk);
+        for (const id of chunk) this.batchInFlight.delete(batchFlightKey(providerCode, id, lang));
+      });
+      for (const id of chunk) this.batchInFlight.set(batchFlightKey(providerCode, id, lang), run);
+      waits.push(run);
+    }
+    await Promise.all(waits);
+  }
+
+  /** UN lote: lo pide, guarda lo que vuelve y recuerda lo que no. Nunca lanza. */
+  private async fetchChunk(
+    providerCode: string,
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    call: () => Promise<HotelContentBatch>,
+  ): Promise<void> {
+    let batch: HotelContentBatch;
+    try {
+      batch = await call();
+    } catch (err) {
+      // El circuito abierto o el kill-switch ya responden al instante: no hay nada que recordar.
+      if (err instanceof BreakerRejectionError) return;
+      this.logger.warn(
+        `hotels.content_batch.lote_fallo provider=${providerCode} lang=${lang} hotels=${hotelIds.length} error=${errorName(err)}`,
+      );
+      await this.rememberBatch(providerCode, hotelIds, lang, 'failed');
+      return;
+    }
+    const requested = new Set(hotelIds);
+    // Sólo lo pedido y en el idioma pedido: un código que no se pidió no escribe su contenido.
+    const contents = batch.contents.filter((c) => requested.has(c.hotelId) && c.lang === lang);
+    let rejected = 0;
+    try {
+      ({ rejected } = await this.catalog.storeContents(providerCode, contents));
+      if (rejected > 0) {
+        this.logger.warn(
+          `hotels.content_batch.filas_rechazadas provider=${providerCode} rejected=${rejected}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `hotels.content_batch.guardar_fallo provider=${providerCode} error=${errorName(err)}`,
+      );
+      await this.rememberBatch(providerCode, hotelIds, lang, 'failed');
+      return;
+    }
+    const returned = [...new Set(contents.map((c) => c.hotelId))];
+    const missing = hotelIds.filter((id) => !returned.includes(id));
+    // Una fila que la base rechazó deja al hotel sin `details`: sin recordarlo, cada pantalla de
+    // resultados volvería a pedirlo al proveedor y a gastar su cupo en un contenido que no entra.
+    const unstorable =
+      rejected > 0 ? await this.stillWithoutDetails(providerCode, returned, lang) : [];
+    const nothingToShow = [...missing, ...unstorable];
+    if (nothingToShow.length > 0) {
+      await this.rememberBatch(providerCode, nothingToShow, lang, 'empty');
+    }
+  }
+
+  /**
+   * De esos hoteles, los que siguen sin contenido `details` en el catálogo. Si no se puede saber,
+   * ninguno: todos esperan el plazo corto de un fallo. Nunca lanza.
+   */
+  private async stillWithoutDetails(
+    providerCode: string,
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+  ): Promise<string[]> {
+    if (hotelIds.length === 0) return [];
+    try {
+      const state = await this.catalog.contentState(
+        hotelIds.map((hotelId) => ({ providerCode, hotelId })),
+      );
+      return hotelIds.filter((id) => state.get(hotelRefKey(providerCode, id))?.hasDetails !== true);
+    } catch (err) {
+      this.logger.warn(
+        `hotels.content_batch.estado_no_disponible provider=${providerCode} error=${errorName(err)}`,
+      );
+      await this.rememberBatch(providerCode, hotelIds, lang, 'failed');
+      return [];
+    }
+  }
+
+  private async rememberBatch(
+    providerCode: string,
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    kind: BatchNegative,
+  ): Promise<void> {
+    await Promise.all(
+      hotelIds.map((hotelId) =>
+        this.cache.set(
+          batchKey({ providerCode, hotelId }, lang),
+          kind,
+          HOTEL_CONTENT_BATCH_CACHE_TTL_S[kind],
+        ),
+      ),
+    );
   }
 
   // ───────────────────────── Catálogo ─────────────────────────
@@ -627,6 +1001,44 @@ export class HotelContentService {
       checkInTime: body?.checkInTime ?? null,
       checkOutTime: body?.checkOutTime ?? null,
     };
+  }
+}
+
+function batchKey(ref: HotelRef, lang: HotelContentLanguage): string {
+  return `${BATCH_KEY_PREFIX}:${ref.providerCode}:${ref.hotelId}:${lang}`;
+}
+
+function batchFlightKey(providerCode: string, hotelId: string, lang: HotelContentLanguage): string {
+  return `${providerCode} ${hotelId} ${lang}`;
+}
+
+/** Sin repetidos y en el orden en que llegaron. */
+function uniqueRefs(refs: readonly HotelRef[]): HotelRef[] {
+  const seen = new Set<string>();
+  const out: HotelRef[] = [];
+  for (const r of refs) {
+    const key = hotelRefKey(r.providerCode, r.hotelId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ providerCode: r.providerCode, hotelId: r.hotelId });
+  }
+  return out;
+}
+
+/**
+ * Espera `work` hasta `ms` y sigue: lo que no terminó continúa solo. El temporizador no retiene el
+ * proceso (`unref`), así un apagado no espera a unas fotos.
+ */
+async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([work.catch(() => undefined), deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

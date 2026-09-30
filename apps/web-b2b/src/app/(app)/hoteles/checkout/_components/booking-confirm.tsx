@@ -10,13 +10,17 @@ import { formatMoney } from '../../_components/hotel-format';
 import { OwnMarginLine, stayLabel } from '../../_components/hotel-rate-item';
 import type { AtHotelCharge, HotelRateRow } from '../../_components/hotel-rate-view';
 import type { BookGate } from './booking-view';
+import { NonRefundableAck } from './non-refundable-notice';
+import type { PrebookNonRefundable } from './non-refundable-view';
 
 /*
  * El resumen del paso 2 y el único botón que reserva (U-13; RF-10). Los cargos que se pagan en el
  * hotel están acá, EN el paso de reserva y al lado del botón, cada uno con su importe y su moneda y
  * fuera del total; si los hay, el vendedor confirma que se los mostró al cliente antes de reservar
- * (el servidor rechaza el Book sin esa confirmación). Se paga con el saldo o el crédito de la
- * agencia: no hay campos de tarjeta en ninguna parte del checkout (D1).
+ * (el servidor rechaza el Book sin esa confirmación). Una tarifa no reembolsable lleva su casilla
+ * OBLIGATORIA con el 100 % exacto y el recordatorio de revisar nombres y fechas (pedido del
+ * 2026-09-29, punto c): sin ella el servidor tampoco reserva. Se paga con el saldo o el crédito de
+ * la agencia: no hay campos de tarjeta en ninguna parte del checkout (D1).
  */
 
 export function BookingConfirm({
@@ -28,6 +32,10 @@ export function BookingConfirm({
   acknowledged,
   onAcknowledgedChange,
   acknowledgeError,
+  nonRefundable,
+  nonRefundableAcknowledged,
+  onNonRefundableAcknowledgedChange,
+  nonRefundableError,
   gate,
   onConfirm,
   onBack,
@@ -41,6 +49,11 @@ export function BookingConfirm({
   acknowledged: boolean;
   onAcknowledgedChange: (acknowledged: boolean) => void;
   acknowledgeError: string | undefined;
+  /** La tarifa es no reembolsable en los hechos: se pide la casilla obligatoria. */
+  nonRefundable: PrebookNonRefundable | undefined;
+  nonRefundableAcknowledged: boolean;
+  onNonRefundableAcknowledgedChange: (acknowledged: boolean) => void;
+  nonRefundableError: string | undefined;
   gate: BookGate;
   onConfirm: () => void;
   onBack: () => void;
@@ -115,6 +128,15 @@ export function BookingConfirm({
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {nonRefundable ? (
+        <NonRefundableAck
+          nonRefundable={nonRefundable}
+          acknowledged={nonRefundableAcknowledged}
+          onAcknowledgedChange={onNonRefundableAcknowledgedChange}
+          error={nonRefundableError}
+        />
       ) : null}
 
       <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">

@@ -438,6 +438,40 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     expect(cuerpo(spy.calls[2]!.init)).toContain('SingleBrandedFare');
   });
 
+  it('si falla IGUAL sin marcas, el error no era de marcas y la siguiente búsqueda las vuelve a pedir', async () => {
+    // Un BUSINESS cualquiera (fecha inválida, código sin mapear) no puede apagar las marcas para
+    // toda la vida del proceso: lo aprendido sólo se fija cuando el escalón de abajo PASA.
+    const spy = spyFetch((n) => (n <= 2 ? rechazoDeNegocio() : json(adultFixture)));
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedFares: 'single', multipleFares: 'off' },
+    });
+
+    await expect(sut.search(CRITERIA, CTX)).rejects.toThrow(SabreApiError);
+    expect(spy.calls).toHaveLength(2);
+    expect(cuerpo(spy.calls[1]!.init)).not.toContain('BrandedFareIndicators');
+
+    await sut.search(CRITERIA, CTX);
+    expect(cuerpo(spy.calls[2]!.init)).toContain('SingleBrandedFare');
+  });
+
+  it('MFPI sólo se aprende si apagarlo fue lo que hizo pasar la petición', async () => {
+    // [MFPI+single] rechazo → [single] rechazo → [off] pasa. Quitar MFPI no arregló nada: la
+    // siguiente búsqueda lo vuelve a pedir, ya sobre el techo de marcas aprendido.
+    const spy = spyFetch((n) => (n <= 2 ? rechazoDeNegocio() : json(adultFixture)));
+    const sut = adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandedFares: 'single', multipleFares: 'with-baggage' },
+    });
+
+    await sut.search(CRITERIA, CTX);
+    expect(spy.calls).toHaveLength(3);
+    await sut.search(CRITERIA, CTX);
+    const segunda = cuerpo(spy.calls[3]!.init);
+    expect(segunda).toContain('FlexibleFares');
+    expect(segunda).not.toContain('BrandedFareIndicators');
+  });
+
   it('sin marcas pedidas NO hay reintento: un fallo de negocio sigue siendo un fallo', async () => {
     // El reintento es una degradación acotada, no un «si algo falla, prueba otra cosa».
     //

@@ -728,6 +728,23 @@ export interface PortfolioDepositReportsTable {
   updated_at: Generated<Timestamp>;
 }
 
+export type NonRefundableRatesPermission = 'allowed' | 'blocked';
+
+/**
+ * Permisos de reserva de un nodo (0055) que fija QUIEN LO FINANCIA (`can_finance_tenant`, 0052): por
+ * ahora, si puede reservar tarifas no reembolsables. Sin fila rige `allowed`. Un `blocked` rige
+ * también para todo lo que cuelga del nodo (`non_refundable_rates_block`). `updated_by` tiene que ser
+ * `app.current_user_id` (42501 `booking_permissions_author`) y `updated_at` lo pone la base. `app_user`
+ * no la borra.
+ */
+export interface TenantBookingPermissionsTable {
+  tenant_id: string;
+  non_refundable_rates: Generated<NonRefundableRatesPermission>;
+  updated_by: string;
+  /** La pone la base (trigger de 0055): se puede omitir al insertar. */
+  updated_at: Timestamp;
+}
+
 export interface MarkupRulesTable {
   id: Generated<string>;
   tenant_id: string;
@@ -977,6 +994,7 @@ export interface DB {
   agency_portfolios: AgencyPortfoliosTable;
   portfolio_transactions: PortfolioTransactionsTable;
   portfolio_deposit_reports: PortfolioDepositReportsTable;
+  tenant_booking_permissions: TenantBookingPermissionsTable;
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;
   package_items: PackageItemsTable;

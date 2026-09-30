@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { Money } from '@sales-travel/canonical';
@@ -10,6 +11,7 @@ import type {
   HotelRepriceOutcome,
 } from '../providers/hotel-provider.types.js';
 import type { HotelRepricedReason } from './hotel-booking.saga.js';
+import type { HotelNonRefundableTerms } from './hotel-non-refundable.js';
 
 /**
  * Los rechazos de la reserva de hotel con órdenes (docs/tbo/09 PR-4.6). Todos ocurren ANTES de
@@ -55,6 +57,67 @@ export class HotelAtPropertyNotAcknowledgedError extends BadRequestException {
       'Esta tarifa tiene cargos que el huésped paga en el hotel. Confirmá que se los mostraste al cliente para reservar.',
     );
     this.name = 'HotelAtPropertyNotAcknowledgedError';
+  }
+}
+
+/** Un importe como lo lee el vendedor: `1.234.567,00 COP`. */
+function moneyText(money: Money): string {
+  const amount = new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(money.amountMinor / 100);
+  return `${amount} ${money.currency}`;
+}
+
+/**
+ * Quien financia a la agencia (su consolidador, su agencia o Planetour) le bloqueó las tarifas no
+ * reembolsables (db/migrations/0055), a ella o a un nivel de arriba. Se rechaza el PreBook y el Book
+ * sin reservar nada, y la web las muestra como no disponibles para la agencia.
+ */
+export class HotelNonRefundableBlockedError extends ForbiddenException {
+  readonly reason = 'NON_REFUNDABLE_BLOCKED';
+
+  constructor(
+    message = 'Tu agencia no puede reservar tarifas no reembolsables: quien la financia las tiene bloqueadas. Elegí una tarifa reembolsable del hotel o pedile a tu consolidador que las habilite.',
+  ) {
+    super(message);
+    this.name = 'HotelNonRefundableBlockedError';
+  }
+}
+
+/**
+ * El flujo directo de Despegar (`choiceId` / `prebookId`) no informa la política de cancelación
+ * antes de reservar: no hay con qué saber si la tarifa es no reembolsable. Con las no reembolsables
+ * bloqueadas para la agencia, se rechaza entero en vez de dejar pasar una que lo sea.
+ */
+export const DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE =
+  'Tu agencia tiene bloqueadas las tarifas no reembolsables y la reserva directa de Despegar no informa la política de cancelación antes de reservar, así que no se puede usar. Pedile a quien financia a tu agencia que las habilite.';
+
+/**
+ * La tarifa es no reembolsable (declarada, o con el 100 % ya vigente) y el vendedor no confirmó que
+ * lo entiende (pedido del founder del 2026-09-29, punto c). Los datos para pintar el aviso van en
+ * `publicDetails`: el 100 % en el precio de venta y, si aplica, desde cuándo rige.
+ */
+export class HotelNonRefundableNotAcknowledgedError extends BadRequestException {
+  readonly reason = 'NON_REFUNDABLE_NOT_ACKNOWLEDGED';
+  readonly publicDetails: {
+    readonly penalty: Money;
+    readonly nonRefundableReason: HotelNonRefundableTerms['reason'];
+    readonly fullPenaltySinceLocal?: string;
+  };
+
+  constructor(terms: HotelNonRefundableTerms) {
+    super(
+      `Esta tarifa no es reembolsable: si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 % (${moneyText(terms.penalty)}). Confirmá que lo entendés para reservar.`,
+    );
+    this.name = 'HotelNonRefundableNotAcknowledgedError';
+    this.publicDetails = {
+      penalty: { ...terms.penalty },
+      nonRefundableReason: terms.reason,
+      ...(terms.fullPenaltySinceLocal === undefined
+        ? {}
+        : { fullPenaltySinceLocal: terms.fullPenaltySinceLocal }),
+    };
   }
 }
 

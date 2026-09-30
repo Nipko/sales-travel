@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HotelContent } from '../../../../(app)/hoteles/[hotelKey]/_components/hotel-content-view';
-import { hotelVoucherOf, pdfText } from './hotel-voucher';
+import { VOUCHER_NON_REFUNDABLE, hotelVoucherOf, pdfText } from './hotel-voucher';
 
 /**
  * U-15 (07 §8): el voucher lleva `ConfirmationNumber`, estado, HCN "pendiente", habitaciones,
@@ -164,6 +164,36 @@ describe('hotelVoucherOf', () => {
     }
     // La proporción del tramo sí: es la política, no un precio.
     expect(result.ok && result.voucher.policy?.tiers[0]?.charge).toMatch(/50 % del total/);
+  });
+
+  it('una reembolsable no lleva el aviso de no reembolsable', () => {
+    const result = hotelVoucherOf(orden(), CONTENT);
+    expect(result.ok && result.voucher.nonRefundable).toBe(false);
+  });
+
+  it('no reembolsable (punto d): lo dice, sin importes, y la política no promete nada gratis', () => {
+    const base = orden();
+    const offer = base['selectedOffer'] as Record<string, unknown>;
+    const result = hotelVoucherOf(
+      orden({
+        selectedOffer: {
+          ...offer,
+          nonRefundable: {
+            reason: 'full-penalty-in-force',
+            penalty: { amountMinor: 36000, currency: 'USD' },
+            fullPenaltySinceLocal: '2026-10-10T00:00:00',
+            acknowledgedAt: '2026-10-01T15:04:00.000Z',
+          },
+        },
+      }),
+      CONTENT,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.voucher.nonRefundable).toBe(true);
+    expect(result.voucher.policy?.headline).toBe('No reembolsable: el cargo del 100 % ya rige.');
+    expect(JSON.stringify(result)).not.toContain('360,00');
+    expect(VOUCHER_NON_REFUNDABLE.detail).toMatch(/no hay reembolso/);
   });
 
   it('sin la ficha del hotel, el voucher sale igual', () => {

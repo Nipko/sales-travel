@@ -4,6 +4,7 @@ import { saleTotal } from '../../_components/hotel-rate-view';
 import type { RateSelection } from '../../_components/hotel-rate-selection';
 import { OFFER_WARNING_REMAINING_MS, type OfferExpiryState } from '../../_components/offer-expiry';
 import { FUNDING_GATE_REASON, parseFunding, type PrebookFunding } from './funding-view';
+import { parseNonRefundable, type PrebookNonRefundable } from './non-refundable-view';
 
 /*
  * El paso 1 del checkout sin React (U-09 a U-11): la respuesta del PreBook neutral leída sin
@@ -62,6 +63,11 @@ export interface HotelPrebook {
    * no se sabe, y decide el Book.
    */
   readonly funding?: PrebookFunding;
+  /**
+   * La tarifa es no reembolsable en los hechos con la política final (pedido del 2026-09-29): el
+   * 100 % en el precio de venta. El Book exige la confirmación del vendedor.
+   */
+  readonly nonRefundable?: PrebookNonRefundable;
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -193,6 +199,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
     return undefined;
   }
   const funding = parseFunding(value['funding']);
+  const nonRefundable = parseNonRefundable(value['nonRefundable']);
   return {
     prebookRef,
     providerCode,
@@ -207,6 +214,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
       changes,
     },
     ...(funding === undefined ? {} : { funding }),
+    ...(nonRefundable === undefined ? {} : { nonRefundable }),
   };
 }
 

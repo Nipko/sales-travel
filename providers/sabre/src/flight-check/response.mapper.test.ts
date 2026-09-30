@@ -247,6 +247,39 @@ describe('mapSabreFlightCheckResponse — selección y handles', () => {
     expect(mapped.matched?.offer.provider.raw).not.toHaveProperty('ndcOfferId');
   });
 
+  it('guarda el plazo de pago con zona como instante UTC, y descarta uno sin zona', () => {
+    const raw = response();
+    const matched = raw.offers[1] as Record<string, unknown> | undefined;
+    if (matched === undefined) throw new Error('fixture incompleto');
+    matched['paymentTimeLimit'] = '2026-08-28T01:28:00-05:00';
+    expect(
+      map(raw).matched?.offer.provider.raw?.[SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit],
+    ).toBe('2026-08-28T06:28:00.000Z');
+
+    // Sin offset no hay instante: inventar la zona sería imprimir otra hora como fecha límite.
+    matched['paymentTimeLimit'] = '2026-08-28T01:28:00';
+    expect(map(raw).matched?.offer.provider.raw).not.toHaveProperty(
+      SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit,
+    );
+  });
+
+  it('no hereda el plazo de un Flight Check anterior si la respuesta nueva no lo trae', () => {
+    const base = basis();
+    const conPlazoViejo: Offer = {
+      ...base,
+      provider: {
+        ...base.provider,
+        raw: {
+          ...(base.provider.raw ?? {}),
+          [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: '2026-08-20T00:00:00.000Z',
+        },
+      },
+    };
+    expect(map(response(), conPlazoViejo).matched?.offer.provider.raw).not.toHaveProperty(
+      SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit,
+    );
+  });
+
   it('excluye items opcionales de handles, componentes y precio reservable', () => {
     const raw = response();
     const matched = raw.offers[1];

@@ -16,7 +16,8 @@ import {
   type HotelCancelOutcome,
   type PenaltyView,
 } from '../hotel-cancellation-view';
-import { hotelStayOf, type HotelOrderInput } from '../hotel-order-view';
+import { hotelNonRefundableOf, hotelStayOf, type HotelOrderInput } from '../hotel-order-view';
+import { formatMoney } from '../../hoteles/_components/hotel-format';
 
 /*
  * Cancelar una reserva de hotel (U-17; RF-25; D-TBO-25 A, D-TBO-26 A): primero la penalidad
@@ -26,6 +27,10 @@ import { hotelStayOf, type HotelOrderInput } from '../hotel-order-view';
  * El pedido sale una sola vez: mientras está en vuelo no se puede cerrar ni volver a tocar, y ante
  * una respuesta que no llega nunca se ofrece repetirlo. El "Reintentar" del historial también pasa
  * por acá: un reintento es otra cancelación para el vendedor, con la penalidad de hoy.
+ *
+ * Si cancelar cuesta el 100 % —tarifa no reembolsable, o un cargo vigente que ya es el total— se
+ * dice con el monto y se pide DOBLE confirmación (pedido del 2026-09-29, punto d): la casilla que
+ * nombra el monto y, después, un último paso que lo repite antes de enviar.
  */
 
 type Phase =
@@ -45,6 +50,7 @@ async function loadPhase(
   orderId: string,
   sale: { amountMinor: number; currency: string },
   retryOperationId: string | undefined,
+  nonRefundable: boolean,
 ) {
   const id = encodeURIComponent(orderId);
   const [estimateRes, opsRes] = await Promise.all([
@@ -59,7 +65,7 @@ async function loadPhase(
   }
   const estimate = parseCancellationEstimate(read.data);
   if (estimate === undefined) return { kind: 'error', message: ESTIMATE_FAILED } as const;
-  const penalty = penaltyViewOf(estimate, sale);
+  const penalty = penaltyViewOf(estimate, sale, nonRefundable);
 
   let block: string | undefined = penalty.blocked;
   if (block === undefined) {
@@ -105,6 +111,9 @@ export function HotelCancelDialog({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [acknowledged, setAcknowledged] = useState(false);
+  // El segundo paso de una cancelación que cuesta el 100 %: el último aviso antes de enviarla.
+  const [finalStep, setFinalStep] = useState(false);
+  const finalRef = useRef<HTMLDivElement | null>(null);
   const attempted = useRef(false);
   const sendingRef = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -124,16 +133,19 @@ export function HotelCancelDialog({
   }, []);
   const panelRef = useModalBehavior(true, close);
 
+  const nonRefundable = hotelNonRefundableOf(order) !== undefined;
   const load = useCallback(async () => {
     setPhase({ kind: 'loading' });
+    setFinalStep(false);
     setPhase(
       await loadPhase(
         order.id,
         { amountMinor: order.totalAmount, currency: order.currency },
         retryOperationId,
+        nonRefundable,
       ),
     );
-  }, [order.id, order.totalAmount, order.currency, retryOperationId]);
+  }, [order.id, order.totalAmount, order.currency, retryOperationId, nonRefundable]);
 
   useEffect(() => {
     void load();
@@ -143,9 +155,18 @@ export function HotelCancelDialog({
     if (phase.kind === 'done') resultRef.current?.focus();
   }, [phase.kind]);
 
+  useEffect(() => {
+    if (finalStep) finalRef.current?.focus();
+  }, [finalStep]);
+
   async function confirm() {
     if (sendingRef.current || phase.kind !== 'ready' || phase.block) return;
     if (phase.penalty.requiresAcknowledgement && !acknowledged) return;
+    // Cuesta el 100 %: la primera confirmación sólo lleva al último aviso.
+    if (phase.penalty.fullCharge && !finalStep) {
+      setFinalStep(true);
+      return;
+    }
     attempted.current = true;
     sendingRef.current = true;
     setPhase({ kind: 'sending', penalty: phase.penalty });
@@ -271,17 +292,34 @@ export function HotelCancelDialog({
                 id={ackId}
                 type="checkbox"
                 checked={acknowledged}
-                onChange={(e) => setAcknowledged(e.target.checked)}
+                onChange={(e) => {
+                  setAcknowledged(e.target.checked);
+                  if (!e.target.checked) setFinalStep(false);
+                }}
                 className="mt-0.5 size-4 shrink-0 rounded border-[var(--color-border)] accent-[var(--color-danger)]"
               />
-              <span>
-                Entiendo que la cancelación no se puede deshacer y que el proveedor puede cobrar{' '}
-                {phase.penalty.tone === 'unknown'
-                  ? 'un cargo que no podemos estimar'
-                  : 'esta penalidad'}
-                .
+              <span className={phase.penalty.fullCharge ? 'font-medium' : undefined}>
+                {phase.penalty.ackLabel}
               </span>
             </label>
+          ) : null}
+
+          {phase.kind === 'ready' && finalStep ? (
+            <div
+              ref={finalRef}
+              tabIndex={-1}
+              role="alert"
+              className="space-y-1 rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/5 px-3 py-2.5 text-[var(--color-fg)] focus-visible:outline-none"
+            >
+              <p className="font-semibold">Última confirmación</p>
+              <p>
+                Vas a cancelar la reserva #{order.orderNumber}. Se cobra el 100 %:{' '}
+                <span className="whitespace-nowrap font-semibold tabular-nums">
+                  {formatMoney({ amountMinor: order.totalAmount, currency: order.currency })}
+                </span>
+                , sin reembolso para la agencia ni para el cliente.
+              </p>
+            </div>
           ) : null}
 
           {sending ? (
@@ -323,8 +361,13 @@ export function HotelCancelDialog({
             </Button>
           ) : (
             <>
-              <Button variant="secondary" size="sm" disabled={sending} onClick={close}>
-                No, volver
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={sending}
+                onClick={finalStep ? () => setFinalStep(false) : close}
+              >
+                {finalStep ? 'No, volver atrás' : 'No, volver'}
               </Button>
               {phase.kind === 'ready' || sending ? (
                 <Button
@@ -340,9 +383,13 @@ export function HotelCancelDialog({
                 >
                   {sending
                     ? 'Cancelando…'
-                    : retryOperationId === undefined
-                      ? 'Sí, cancelar reserva'
-                      : 'Sí, reintentar la cancelación'}
+                    : phase.kind === 'ready' && phase.penalty.fullCharge && !finalStep
+                      ? 'Continuar'
+                      : finalStep
+                        ? 'Sí, cancelar y asumir el 100 %'
+                        : retryOperationId === undefined
+                          ? 'Sí, cancelar reserva'
+                          : 'Sí, reintentar la cancelación'}
                 </Button>
               ) : null}
             </>
