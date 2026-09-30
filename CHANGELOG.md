@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.3](https://github.com/Nipko/sales-travel/compare/v0.1.2...v0.1.3) (2026-09-30)
+
+
+### Features
+
+* **portfolios:** la cuenta propia (BYOC) no retiene en la cartera, decisión del founder ([a650f5e](https://github.com/Nipko/sales-travel/commit/a650f5ef1506ca105c13cb43bf5274e08409cb1d))
+* **portfolios:** retención en cascada por la red de financiación hasta el dueño de la credencial ([618f020](https://github.com/Nipko/sales-travel/commit/618f02091dcb641a01a1ca97ef45688ca33ba866))
+
+
+### Bug Fixes
+
+* **db:** las 0055 aplicadas no se editan; 0060 §12 endurece su search_path y el test lo verifica ([6d10b05](https://github.com/Nipko/sales-travel/commit/6d10b05d7e90c5ddd19578841039731f16c3d736))
+* **web-b2b:** selector de agencia en "tú" y CHANGELOG fuera de prettier (CI de main) ([12b0c81](https://github.com/Nipko/sales-travel/commit/12b0c819993863a0be1a44857379fa01bb6d5df3))
+
 ## [0.1.2](https://github.com/Nipko/sales-travel/compare/v0.1.1...v0.1.2) (2026-09-30)
 
 
