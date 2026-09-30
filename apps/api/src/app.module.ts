@@ -20,6 +20,7 @@ import { SearchModule } from './search/search.module.js';
 import { TenantsModule } from './tenants/tenants.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
+import { BookingPermissionsModule } from './booking-permissions/booking-permissions.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
@@ -59,6 +60,7 @@ import { PackagesModule } from './packages/packages.module.js';
     CrmModule,
     PackagesModule,
     PortfoliosModule,
+    BookingPermissionsModule,
     ReportsModule,
     ProviderCredentialsModule,
     ProviderDisclosureModule,

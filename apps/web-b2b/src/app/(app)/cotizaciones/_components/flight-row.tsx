@@ -11,6 +11,7 @@ import { FareFamilyMatrix } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
 import {
   buildItineraryView,
+  codeshareOperators,
   layoverLabel,
   summarizeCarriers,
   type ItineraryInput,
@@ -229,6 +230,7 @@ function ItineraryLeg({
   if (!first || !last) return null;
 
   const view = buildItineraryView(itinerary);
+  const operadoras = codeshareOperators(itinerary);
 
   return (
     <div>
@@ -288,6 +290,11 @@ function ItineraryLeg({
           </p>
         </div>
       </div>
+      {operadoras.length > 0 ? (
+        <p className="mt-1.5 text-xs font-medium text-[var(--color-fg-muted)]">
+          Operado por {operadoras.map(airlineName).join(', ')}
+        </p>
+      ) : null}
     </div>
   );
 }

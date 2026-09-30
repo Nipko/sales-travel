@@ -570,14 +570,24 @@ d('PgCatalogStore contra Postgres (0041)', () => {
     await seedHotel(TBO, 'ctyb', 'IT-CTY-B');
     const store = new PgCatalogStore(db, { providerCode: TBO });
     const since = new Date(Date.now() - 3_600_000);
-    const codes = (rows: readonly { readonly code: string }[]): string[] =>
-      rows.map((row) => row.code).sort();
-    const hotels = (rows: readonly { readonly hotelId: string }[]): string[] =>
-      rows.map((row) => row.hotelId).sort();
+    // Sin la lista entran también las ciudades BUSCADAS de otros países (las que el API carga bajo
+    // demanda), y otros tests de este archivo dejan búsquedas: aquí se miran las que no las tienen.
+    const codes = (rows: readonly { readonly code: string; readonly demand: number }[]): string[] =>
+      rows
+        .filter((row) => row.demand === 0)
+        .map((row) => row.code)
+        .sort();
+    const hotels = (
+      rows: readonly { readonly hotelId: string; readonly demand: number }[],
+    ): string[] =>
+      rows
+        .filter((row) => row.demand === 0)
+        .map((row) => row.hotelId)
+        .sort();
 
-    expect(
-      codes(await store.listCityCandidates({ countries: ['PY'], demandSince: since })),
-    ).toEqual(['IT-CTY-A', 'IT-CTY-B']);
+    const all = await store.listCityCandidates({ countries: ['PY'], demandSince: since });
+    expect(codes(all)).toEqual(['IT-CTY-A', 'IT-CTY-B']);
+    expect(all.filter((row) => row.countryCode !== 'PY').every((row) => row.demand > 0)).toBe(true);
     expect(
       codes(
         await store.listCityCandidates({
@@ -878,5 +888,59 @@ d('PgCatalogStore contra Postgres (0041)', () => {
       const res = await db.query<{ s: number }>('SELECT similarity($1, $2)::float8 AS s', [a, b]);
       expect(trigramSimilarity(a, b)).toBeCloseTo(res.rows[0]?.s ?? -1, 5);
     }
+  });
+
+  // Al final del archivo: deja búsquedas en la ventana, y la demanda de otros países entra en E3 y
+  // E4 de cualquier corrida que se lea después.
+  it('demanda del catálogo local: las búsquedas de una ciudad del proveedor cuentan sin mapa', async () => {
+    // Una ciudad de un país que la corrida no sincroniza, cargada por el API bajo demanda.
+    await seedCity('IT-CAT', 'UY', null);
+    await seedCity('IT-CAT-QUIETA', 'UY', null);
+    await seedHotel(TBO, 'cat1', 'IT-CAT');
+    await seedHotel(TBO, 'catq', 'IT-CAT-QUIETA');
+    const destination = String(700_000_000 + Math.floor(Math.random() * 1_000_000));
+    await db.query(
+      `INSERT INTO hotel_destination_map
+         (source_provider_code, source_city_id, target_provider_code, target_city_code, method, status)
+       VALUES ('despegar-hotels', $1, $2, 'IT-CAT', 'manual', 'accepted')`,
+      [destination, TBO],
+    );
+    const group = randomUUID();
+    const catalogo = { destinationProvider: TBO, destinationCityCode: 'IT-CAT' };
+    const rows: [Record<string, unknown>, string | null, string][] = [
+      // Un fan-out: dos filas del mismo grupo, UNA búsqueda.
+      [catalogo, group, 'now()'],
+      [catalogo, group, 'now()'],
+      // Una de otro proveedor de catálogo: no es de éste.
+      [{ destinationProvider: 'otro-hotels', destinationCityCode: 'IT-CAT' }, null, 'now()'],
+      // Una vieja, fuera de la ventana.
+      [catalogo, null, "now() - interval '30 days'"],
+      // Una por el mapa de destinos de la plataforma: suma por la otra parte.
+      [{ destinationId: Number(destination) }, null, 'now()'],
+    ];
+    for (const [criteria, groupId, at] of rows) {
+      await db.query(
+        `INSERT INTO search_logs
+           (vertical, provider_code, duration_ms, outcome, criteria, search_group_id, occurred_at)
+         VALUES ('hotels', $1, 10, 'ok', $2::jsonb, $3, ${at})`,
+        [OTHER, JSON.stringify(criteria), groupId],
+      );
+    }
+    const store = new PgCatalogStore(db, { providerCode: TBO });
+    const since = new Date(Date.now() - 3_600_000);
+
+    // Los países de la corrida no incluyen UY: la ciudad buscada entra igual, la quieta no.
+    const cities = await store.listCityCandidates({ countries: ['AR'], demandSince: since });
+    const byCode = new Map(cities.map((c) => [c.code, c]));
+    expect(byCode.get('IT-CAT')).toMatchObject({ countryCode: 'UY', demand: 2 });
+    expect(byCode.has('IT-CAT-QUIETA')).toBe(false);
+
+    const content = await store.listContentCandidates({
+      countries: ['AR'],
+      demandSince: since,
+      onlyDemand: true,
+    });
+    expect(content.find((c) => c.hotelId === 'cat1')).toMatchObject({ demand: 2 });
+    expect(content.some((c) => c.hotelId === 'catq')).toBe(false);
   });
 });

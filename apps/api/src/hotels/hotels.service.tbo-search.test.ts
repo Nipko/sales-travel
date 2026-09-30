@@ -34,6 +34,7 @@ import {
 } from './__fixtures__/fake-hotels-db.js';
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import type { HotelBookingService } from './hotel-booking.service.js';
+import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
@@ -250,6 +251,7 @@ function banco(
     {} as HotelPrebookService,
     {} as HotelBookingService,
     {} as HotelContentService,
+    {} as BookingPermissionsService,
   );
   return {
     service,

@@ -7,6 +7,7 @@ import {
   type HotelGuestTitle,
 } from '../../../../../lib/hotel-book';
 import type { RoomDistribution } from '../../actions';
+import { NON_REFUNDABLE_FIELD, NON_REFUNDABLE_REQUIRED } from './non-refundable-view';
 
 /*
  * Los huéspedes del paso 2 sin React (U-12; RF-18; docs/tbo/03 §3.2): un bloque por habitación en
@@ -331,6 +332,10 @@ export type GuestFormCheck =
 export function checkGuestDraft(
   draft: GuestDraft,
   atProperty: { readonly required: boolean; readonly acknowledged: boolean },
+  nonRefundable: { readonly required: boolean; readonly acknowledged: boolean } = {
+    required: false,
+    acknowledged: false,
+  },
 ): GuestFormCheck {
   const issues: GuestIssue[] = [];
   const seen = new Set<string>();
@@ -392,6 +397,10 @@ export function checkGuestDraft(
 
   if (atProperty.required && !atProperty.acknowledged) {
     issues.push({ path: AT_PROPERTY_FIELD, message: AT_PROPERTY_REQUIRED });
+  }
+  // La casilla de "no reembolsable" va después: está debajo de los cargos, junto al botón.
+  if (nonRefundable.required && !nonRefundable.acknowledged) {
+    issues.push({ path: NON_REFUNDABLE_FIELD, message: NON_REFUNDABLE_REQUIRED });
   }
 
   if (issues.length > 0) return { ok: false, issues };

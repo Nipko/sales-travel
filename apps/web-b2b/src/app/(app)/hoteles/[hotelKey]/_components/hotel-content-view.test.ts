@@ -12,6 +12,7 @@ import {
   safeImageUrls,
   safeWebsiteUrl,
   splitSections,
+  withProxiedPhotos,
 } from './hotel-content-view';
 
 const REF = { provider: 'tbo-hotels', hotelId: '1402689' };
@@ -235,5 +236,31 @@ describe('presentación de la ficha', () => {
     expect(addressLine({ address: 'Av. 5', zipcode: '110111' })).toBe('Av. 5 (110111)');
     expect(addressLine({ address: 'Av. 5, 110111', zipcode: '110111' })).toBe('Av. 5, 110111');
     expect(addressLine({ address: null, zipcode: null })).toBeNull();
+  });
+});
+
+describe('withProxiedPhotos — las fotos que llegan a la pantalla', () => {
+  it('rutas del proxy, en el orden del proveedor y sin repetidas; lo que el proxy no sirve no entra', () => {
+    const c = parseHotelContent(
+      view({
+        images: [
+          'https://img.tbo.com/1.jpg',
+          'https://otro.example/2.jpg',
+          'https://img.tbo.com/1.jpg',
+          'https://img.tbo.com/3.jpg',
+        ],
+      }),
+      REF,
+    );
+    const proxy = (src: string) =>
+      src.startsWith('https://img.tbo.com/')
+        ? `/api/hotels/images/${src.slice(20, 21)}`
+        : undefined;
+    expect(withProxiedPhotos(c!, proxy).images).toEqual([
+      '/api/hotels/images/1',
+      '/api/hotels/images/3',
+    ]);
+    // El resto de la ficha, intacto.
+    expect(withProxiedPhotos(c!, proxy)).toMatchObject({ name: 'Hotel Plaza', stars: 4 });
   });
 });

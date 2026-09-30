@@ -1,11 +1,13 @@
 import { z } from '@sales-travel/validation';
 import { describe, expect, it } from 'vitest';
+import { HOTEL_CONTENT_BATCH_MAX_HOTELS } from './hotel-content.service.js';
 import { PROVIDER_DESTINATION_INVALID } from './hotel-destination.js';
 import {
   BookSchema,
   CancelBodySchema,
   GUEST_NATIONALITY_INVALID,
   HotelAvailabilityInputSchema,
+  HotelContentBatchBodySchema,
   HotelDetailInputSchema,
   HotelPrebookBodySchema,
   HotelSuggestQuerySchema,
@@ -553,5 +555,43 @@ describe('RecoveryBodySchema', () => {
         .success,
     ).toBe(true);
     expect(RecoveryBodySchema.safeParse({ ...base, confirmations: [] }).success).toBe(false);
+  });
+});
+
+describe('HotelContentBatchBodySchema (fotos de los resultados por lote)', () => {
+  const hotel = { providerCode: 'tbo-hotels', hotelId: '1010099' };
+
+  it('idioma en minúsculas y español por defecto', () => {
+    expect(HotelContentBatchBodySchema.parse({ hotels: [hotel] })).toEqual({
+      lang: 'es',
+      hotels: [hotel],
+    });
+    expect(HotelContentBatchBodySchema.parse({ lang: 'PT', hotels: [hotel] }).lang).toBe('pt');
+  });
+
+  it('de 1 a HOTEL_CONTENT_BATCH_MAX_HOTELS hoteles: más es un 400, no una consulta enorme', () => {
+    expect(HotelContentBatchBodySchema.safeParse({ hotels: [] }).success).toBe(false);
+    const muchos = Array.from({ length: HOTEL_CONTENT_BATCH_MAX_HOTELS + 1 }, (_, i) => ({
+      providerCode: 'tbo-hotels',
+      hotelId: String(i),
+    }));
+    expect(HotelContentBatchBodySchema.safeParse({ hotels: muchos }).success).toBe(false);
+    expect(
+      HotelContentBatchBodySchema.safeParse({
+        hotels: muchos.slice(0, HOTEL_CONTENT_BATCH_MAX_HOTELS),
+      }).success,
+    ).toBe(true);
+  });
+
+  it('código de proveedor y de hotel con su forma; nada de más', () => {
+    for (const body of [
+      { hotels: [{ providerCode: 'TBO Hotels', hotelId: '1' }] },
+      { hotels: [{ providerCode: 'tbo-hotels', hotelId: '../1' }] },
+      { hotels: [{ ...hotel, url: 'https://evil.example' }] },
+      { hotels: [hotel], extra: true },
+      { hotels: [hotel], lang: 'fr' },
+    ]) {
+      expect(HotelContentBatchBodySchema.safeParse(body).success).toBe(false);
+    }
   });
 });

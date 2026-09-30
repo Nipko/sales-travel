@@ -47,6 +47,12 @@ export interface HotelBookRequest {
   readonly acceptedTotal: HotelBookMoney;
   /** Sólo `true`: el vendedor confirmó que le mostró al cliente los cargos a pagar en el hotel. */
   readonly atPropertyAcknowledged?: true;
+  /**
+   * Sólo `true`: el vendedor confirmó que entiende que la tarifa no es reembolsable (se cobra el
+   * 100 % si se cancela, se modifica o el pasajero no se presenta). Si lo es lo decide el servidor,
+   * que rechaza el Book sin esto.
+   */
+  readonly nonRefundableAcknowledged?: true;
   /** Una por habitación, en el orden de la búsqueda. */
   readonly rooms: readonly HotelBookRoom[];
   readonly contact: HotelBookContact;
@@ -185,6 +191,9 @@ export function parseHotelBookRequest(value: unknown): HotelBookRequest | undefi
     prebookRef,
     acceptedTotal,
     ...(value['atPropertyAcknowledged'] === true ? { atPropertyAcknowledged: true as const } : {}),
+    ...(value['nonRefundableAcknowledged'] === true
+      ? { nonRefundableAcknowledged: true as const }
+      : {}),
     rooms,
     contact,
   };

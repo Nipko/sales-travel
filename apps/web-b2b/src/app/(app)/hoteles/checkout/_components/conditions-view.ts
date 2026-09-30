@@ -85,28 +85,36 @@ export interface CancelPolicyView {
 /**
  * La política de cancelación como se muestra antes de reservar: con qué se cancela sin cargo, los
  * tramos con su fecha en la hora del hotel y lo que costaría cancelar en cada uno.
+ *
+ * `effectiveNonRefundable`: la tarifa se declara reembolsable pero el 100 % ya rige (lo decide
+ * `non-refundable-view.ts`, igual que el servidor). Entonces no se promete una cancelación sin
+ * cargo que ya pasó: la frase dice que no es reembolsable y los tramos quedan a la vista.
  */
 export function cancelPolicyView(
   pack: Pick<HotelRoompack, 'cancellation' | 'price' | 'pricing'>,
+  effectiveNonRefundable = false,
 ): CancelPolicyView {
   const c = pack.cancellation;
   const policy = ratePolicyView(pack);
+  const refundable = c.refundable && !effectiveNonRefundable;
   const freeUntil =
-    c.refundable && c.freeCancellationUntilLocal
+    refundable && c.freeCancellationUntilLocal
       ? formatHotelLocalDateTime(c.freeCancellationUntilLocal)
       : undefined;
   const headline = !c.refundable
     ? 'No reembolsable.'
-    : freeUntil
-      ? `Cancelación sin cargo hasta el ${freeUntil}.`
-      : c.policySource === 'none'
-        ? 'Reembolsable. El proveedor no informó los plazos.'
-        : 'Reembolsable con cargo según la fecha de cancelación.';
+    : effectiveNonRefundable
+      ? 'No reembolsable: el cargo del 100 % ya rige.'
+      : freeUntil
+        ? `Cancelación sin cargo hasta el ${freeUntil}.`
+        : c.policySource === 'none'
+          ? 'Reembolsable. El proveedor no informó los plazos.'
+          : 'Reembolsable con cargo según la fecha de cancelación.';
   const tiers = policy?.tiers ?? [];
   const notes = policy?.notes;
   return {
     headline,
-    refundable: c.refundable,
+    refundable,
     final: c.policySource === 'prebook-final',
     tiers,
     hotelLocalTime: freeUntil !== undefined || (policy?.hotelLocalTime ?? false),

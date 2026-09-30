@@ -1,7 +1,7 @@
 'use client';
 
 import { Hotel, Info, Loader2, RefreshCw, Search, TriangleAlert } from 'lucide-react';
-import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
+import { startTransition, useActionState, useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../lib/cn';
 import {
   hotelSearchCurrenciesAction,
@@ -12,16 +12,14 @@ import {
 } from './actions';
 import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
-import { HotelResultCard } from './_components/hotel-result-card';
 import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
+import { HotelResults } from './_components/hotel-results';
 import {
-  detailLinkForOffer,
   newSearchToken,
   saveSearchHandoff,
   stayOfCriteria,
 } from './_components/hotel-search-handoff';
 import { NationalityField, rememberNationality } from './_components/nationality-field';
-import { OfferExpiry } from './_components/offer-expiry';
 import { RoomsPicker } from './_components/rooms-picker';
 import {
   currencyFromQuery,
@@ -30,6 +28,7 @@ import {
   queryWithCurrency,
   type SearchCurrencies,
 } from './_components/search-currency';
+import { SearchSummaryBar } from './_components/search-summary-bar';
 import { searchWalletNotice, type SearchWallets } from './_components/search-wallet';
 
 const INITIAL: HotelSearchResult = {
@@ -128,9 +127,43 @@ export default function HotelesPage() {
   const [checkin, setCheckin] = useState('');
   const [checkout, setCheckout] = useState('');
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
-  const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
   const formRef = useRef<HTMLFormElement>(null);
+  const formId = useId();
   const today = todayISO();
+
+  // Con resultados, el formulario se pliega detrás de la barra de la búsqueda; "Editar búsqueda"
+  // lo vuelve a abrir con los mismos datos (sigue montado, sólo oculto). Cada búsqueda nueva lo
+  // vuelve a plegar. Sin hoteles no se pliega: lo siguiente es cambiar la búsqueda.
+  const [editing, setEditing] = useState(false);
+  const resultsHeadingId = useId();
+  const summaryId = useId();
+  // El envío salió del formulario, que se pliega con el foco adentro: el foco pasa al título de
+  // los resultados, que dice cuántos hoteles hay, en vez de perderse en la página. La pantalla
+  // muestra desde la barra de la búsqueda, que queda justo encima.
+  const focusResults = useRef(false);
+  useEffect(() => {
+    setEditing(false);
+    if (!focusResults.current) return;
+    focusResults.current = false;
+    window.requestAnimationFrame(() => {
+      const heading = document.getElementById(resultsHeadingId);
+      if (heading === null) return;
+      heading.focus({ preventScroll: true });
+      (document.getElementById(summaryId) ?? heading).scrollIntoView({ block: 'nearest' });
+    });
+  }, [state.receivedAt, resultsHeadingId, summaryId]);
+  const hasResults = state.ok && state.criteria !== undefined && state.hotels.length > 0;
+  const collapsed = hasResults && !editing;
+  function toggleEditing() {
+    const next = !editing;
+    setEditing(next);
+    if (next) {
+      // Al abrirlo, el foco va al primer campo: el lector de pantalla y el teclado siguen ahí.
+      window.requestAnimationFrame(() =>
+        formRef.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus(),
+      );
+    }
+  }
 
   // Moneda de la búsqueda (D-TBO-15): la lista la da el API; la elección se recuerda en la URL.
   const [currencyOptions, setCurrencyOptions] = useState<SearchCurrencies | null | undefined>(
@@ -186,7 +219,24 @@ export default function HotelesPage() {
     // El valor del campo todavía es el anterior hasta el próximo render: se pisa en los datos.
     const data = new FormData(form);
     data.set('currency', next);
+    focusResults.current = true;
     startTransition(() => formAction(data));
+  }
+
+  /**
+   * "Buscar de nuevo" del aviso de vencimiento: la misma búsqueda. Con el formulario plegado, un
+   * campo que dejó de valer (la entrada quedó en el pasado con la pantalla abierta desde ayer)
+   * frenaría el envío sin que se vea por qué: se abre el formulario y el navegador lo señala.
+   */
+  function searchAgain() {
+    const form = formRef.current;
+    if (!form) return;
+    if (!form.checkValidity()) {
+      setEditing(true);
+      window.requestAnimationFrame(() => form.reportValidity());
+      return;
+    }
+    form.requestSubmit();
   }
 
   // `expiresAt` lo fija el servidor: el contador corre con SU reloj, no con el del navegador,
@@ -226,7 +276,7 @@ export default function HotelesPage() {
   const hotelCount = state.hotels.length;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 sm:space-y-5 sm:p-6">
       <header className="flex items-center gap-3">
         <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--color-primary)]/10">
           <Hotel aria-hidden="true" className="size-5 text-[var(--color-primary)]" />
@@ -245,11 +295,26 @@ export default function HotelesPage() {
           `preventDefault` React no corre el `action` ni vacía nada; el `action` queda para un
           envío antes de hidratar, que sin él saldría por GET con la búsqueda y la nacionalidad
           en la URL. */}
+      {hasResults && state.criteria ? (
+        <SearchSummaryBar
+          id={summaryId}
+          criteria={state.criteria}
+          editing={editing}
+          searching={isPending}
+          onToggleEdit={toggleEditing}
+          formId={formId}
+        />
+      ) : null}
+
       <form
         ref={formRef}
+        id={formId}
+        hidden={collapsed}
+        aria-label="Búsqueda de hoteles"
         action={formAction}
         onSubmit={(event) => {
           event.preventDefault();
+          focusResults.current = true;
           const data = new FormData(event.currentTarget);
           startTransition(() => formAction(data));
         }}
@@ -302,7 +367,7 @@ export default function HotelesPage() {
           <RoomsPicker />
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_minmax(0,1fr)_auto] xl:items-start">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_minmax(0,1fr)] xl:items-start">
           <NationalityField />
 
           <CurrencyField
@@ -324,15 +389,6 @@ export default function HotelesPage() {
               className={inputClass}
             />
           </div>
-
-          <label className="flex h-10 items-center gap-2 text-xs text-[var(--color-fg-muted)] sm:mt-[1.375rem]">
-            <input
-              type="checkbox"
-              name="refundableOnly"
-              className="size-4 accent-[var(--color-primary)]"
-            />
-            Solo reembolsables
-          </label>
         </div>
 
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-[11px] text-[var(--color-fg-muted)]">
@@ -344,7 +400,8 @@ export default function HotelesPage() {
             Elegí un destino del autocompletado y buscamos en el catálogo de hoteles de cada
             proveedor habilitado. Si necesitás hoteles puntuales, podés escribir sus IDs. Los
             catálogos se actualizan todas las noches: un destino o un hotel nuevo puede tardar un
-            día en aparecer.
+            día en aparecer. Precio, estrellas, régimen y &quot;Solo reembolsables&quot; se filtran
+            en los resultados, sin volver a buscar.
           </span>
         </div>
 
@@ -391,41 +448,18 @@ export default function HotelesPage() {
 
       {state.ok ? (
         hotelCount > 0 ? (
-          <section
-            aria-labelledby="hotel-results-title"
-            aria-busy={isPending}
-            className={cn('space-y-3 transition-opacity', isPending && 'opacity-60')}
-          >
-            <OfferExpiry
-              hotels={state.hotels}
-              clockOffsetMs={clockOffsetMs}
-              onCutoffChange={setExpiredCutoffMs}
-              onSearchAgain={() => formRef.current?.requestSubmit()}
-              searching={isPending}
-            >
-              <h2 id="hotel-results-title" className="font-normal">
-                {hotelCount} hotel{hotelCount === 1 ? '' : 'es'} con disponibilidad · precios de
-                venta{state.criteria?.currency ? ` en ${state.criteria.currency}` : ''} por la
-                estadía completa
-              </h2>
-            </OfferExpiry>
-            {/* Con varios proveedores, dos pueden devolver el mismo id de hotel: el id solo no
-                es una clave única de la lista. */}
-            {state.hotels.map((offer, i) => {
-              const detail =
-                searchToken === undefined ? undefined : detailLinkForOffer(offer, searchToken);
-              return (
-                <HotelResultCard
-                  key={`${i}:${offer.hotelId}`}
-                  offer={offer}
-                  showProvider={state.showProviderInResults}
-                  nights={state.criteria?.nights}
-                  expiredCutoffMs={expiredCutoffMs}
-                  detailHref={detail}
-                />
-              );
-            })}
-          </section>
+          <HotelResults
+            hotels={state.hotels}
+            showProvider={state.showProviderInResults}
+            nonRefundableBlocked={state.nonRefundableBlocked === true}
+            criteria={state.criteria}
+            receivedAt={state.receivedAt}
+            clockOffsetMs={clockOffsetMs}
+            searchToken={searchToken}
+            searching={isPending}
+            onSearchAgain={searchAgain}
+            headingId={resultsHeadingId}
+          />
         ) : (
           <EmptyResults providers={state.providers} />
         )

@@ -69,6 +69,10 @@ const SEGUIMIENTO: HotelOrderTrackingRow = {
 };
 
 function banco(filas: OrderRow[]) {
+  const sendToTenant = vi.fn(
+    (_tenantId: string, _mail: { to: string; subject: string; html: string; text: string }) =>
+      Promise.resolve(true),
+  );
   const listTracking = vi.fn((_tenantId: string, ids: readonly string[]) =>
     Promise.resolve(
       new Map(ids.filter((id) => id === 'h1').map((id) => [id, { ...SEGUIMIENTO, orderId: id }])),
@@ -105,15 +109,17 @@ function banco(filas: OrderRow[]) {
   const controller = new OrdersController(
     orders as unknown as OrdersService,
     {} as unknown as DatabaseService,
-    {} as unknown as MailerService,
-    {} as unknown as BrandingService,
+    { sendToTenant } as unknown as MailerService,
+    {
+      resolve: () => Promise.resolve({ name: 'Agencia Sur', color: null }),
+    } as unknown as BrandingService,
     { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
     new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
       decisionFor: () => Promise.resolve(undefined),
     }),
     reads,
   );
-  return { controller, orders, listTracking };
+  return { controller, orders, listTracking, sendToTenant };
 }
 
 describe('/orders con una orden de hotel', () => {
@@ -225,5 +231,57 @@ describe('/orders con una orden de hotel', () => {
       BadRequestException,
     );
     expect(b.orders.cancellationEstimate).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /orders/:id/send-confirmation con una orden de hotel', () => {
+  const NO_REEMBOLSABLE = {
+    vertical: 'hotels',
+    roompack: {
+      rooms: [{ name: 'Doble estándar' }],
+      cancellation: { refundable: false, status: 'non_refundable', rules: [] },
+    },
+    nonRefundable: { reason: 'declared', penalty: { amountMinor: 34012, currency: 'USD' } },
+  };
+
+  it('usa la plantilla de hotel: la estadía, el localizador y el aviso de no reembolsable', async () => {
+    const b = banco([
+      fila('h1', HOTEL, {
+        search_criteria: {
+          vertical: 'hotels',
+          checkinDate: '2026-11-10',
+          checkoutDate: '2026-11-12',
+        },
+        selected_offer: NO_REEMBOLSABLE,
+        passengers: [{ room: 0, guests: [{ firstName: 'Ana', lastName: 'Pérez' }] }],
+      }),
+    ]);
+
+    await expect(b.controller.sendConfirmation(USER, 'h1')).resolves.toEqual({
+      sent: true,
+      to: 'ana@x.test',
+    });
+    const [, mail] = b.sendToTenant.mock.calls[0]!;
+    expect(mail.subject).toBe('Reserva de hotel confirmada #1 · No reembolsable');
+    expect(mail.html).toContain('Tarifa no reembolsable');
+    expect(mail.html).toContain('LOC-h1');
+    expect(mail.html).toContain('Doble estándar');
+    expect(mail.text).toContain('TARIFA NO REEMBOLSABLE');
+    expect(mail.html).not.toContain(' → ');
+  });
+
+  it('una reserva de hotel reembolsable no lleva el aviso', async () => {
+    const b = banco([fila('h1', HOTEL, { selected_offer: { vertical: 'hotels' } })]);
+    await b.controller.sendConfirmation(USER, 'h1');
+    const [, mail] = b.sendToTenant.mock.calls[0]!;
+    expect(mail.subject).toBe('Reserva de hotel confirmada #1');
+    expect(mail.html).not.toContain('no reembolsable');
+  });
+
+  it('una de vuelos sigue con su plantilla', async () => {
+    const b = banco([fila('v1', VUELOS)]);
+    await b.controller.sendConfirmation(USER, 'v1');
+    const [, mail] = b.sendToTenant.mock.calls[0]!;
+    expect(mail.subject).toMatch(/^Reserva registrada #1/);
   });
 });

@@ -114,6 +114,20 @@ export function isAmbiguousCreateHttpStatus(status: number): boolean {
   return status >= 500;
 }
 
+/**
+ * El texto de un error del API. `message` primero: el cuerpo de NestJS trae también `error`, que
+ * es el nombre del estado («Bad Request», «Conflict») y no le dice nada al vendedor.
+ */
+export function createOrderErrorMessage(body: CreateOrderResponseBody): string | undefined {
+  const message: unknown = body.message;
+  if (typeof message === 'string' && message.trim().length > 0) return message;
+  if (Array.isArray(message)) {
+    const first: unknown = message[0];
+    if (typeof first === 'string' && first.trim().length > 0) return first;
+  }
+  return typeof body.error === 'string' && body.error.trim().length > 0 ? body.error : undefined;
+}
+
 /** Sólo un `FAILED` explícito del proveedor permite ofrecer un create nuevo. */
 export function shouldShowBookingForm(result: BookingOutcomeView | null): boolean {
   return result === null || result.outcome === 'FAILED';

@@ -83,11 +83,44 @@ describe('penaltyViewOf — en el precio de venta, nunca el neto', () => {
     expect(all).not.toMatch(/300,00|150,00/);
   });
 
-  it('no reembolsable: el total de la venta', () => {
+  it('no reembolsable: el 100 % de la venta, con su monto en la casilla y segunda confirmación', () => {
     const view = penaltyViewOf(estimada({ basis: 'non-refundable', penalty: NETO }), VENTA);
-    expect(view.headline).toMatch(/360,00/);
-    expect(view.headline).toMatch(/el total/);
+    expect(view.headline).toMatch(/^100 % · 360,00/);
     expect(view.requiresAcknowledgement).toBe(true);
+    expect(view.fullCharge).toBe(true);
+    expect(view.ackLabel).toMatch(
+      /^Entiendo que cancelar esta reserva cuesta el 100 % \(360,00\s(US\$|USD)\) y que no se recupera\.$/,
+    );
+    expect(view.notes[0]).toMatch(/no reembolsable: cancelar cuesta el 100 %/);
+    // La nota de la estimación no se repite con otras palabras.
+    expect(view.notes.filter((n) => /no es reembolsable/.test(n))).toEqual([]);
+  });
+
+  it('un cargo vigente que ya es el total también cuesta el 100 %', () => {
+    const view = penaltyViewOf(estimada({ penalty: NETO }), VENTA);
+    expect(view).toMatchObject({ fullCharge: true, tone: 'charged' });
+    expect(view.headline).toMatch(/^100 %/);
+  });
+
+  it('la orden dice no reembolsable: manda aunque la estimación no se pudiera hacer', () => {
+    const view = penaltyViewOf({ kind: 'unavailable', reason: 'no-policy' }, VENTA, true);
+    expect(view).toMatchObject({
+      fullCharge: true,
+      tone: 'charged',
+      requiresAcknowledgement: true,
+    });
+    expect(view.headline).toMatch(/360,00/);
+  });
+
+  it('con un cargo parcial no hay segunda confirmación', () => {
+    const view = penaltyViewOf(estimada(), VENTA);
+    expect(view.fullCharge).toBe(false);
+    expect(view.ackLabel).toBe(
+      'Entiendo que la cancelación no se puede deshacer y que el proveedor puede cobrar esta penalidad.',
+    );
+    expect(penaltyViewOf({ kind: 'unavailable', reason: 'no-snapshot' }, VENTA).ackLabel).toMatch(
+      /un cargo que no podemos estimar/,
+    );
   });
 
   it('sin cargo: no pide aceptar nada', () => {

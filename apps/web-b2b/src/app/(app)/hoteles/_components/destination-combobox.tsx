@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, MapPin, RefreshCw } from 'lucide-react';
+import { Clock, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { suggestDestinationsAction, type GeoSuggestion } from '../actions';
@@ -8,6 +8,8 @@ import {
   SUGGESTIONS_MIN_QUERY,
   SUGGESTIONS_UNAVAILABLE,
   destinationNotice,
+  loadsOnSearchNotice,
+  loadsOnSearchOptionHint,
 } from './destination-suggestions';
 
 /**
@@ -34,6 +36,8 @@ export function DestinationCombobox() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
   const [active, setActive] = useState(-1);
+  const [selected, setSelected] = useState<GeoSuggestion>();
+  const loadsNoticeId = `${id}-loads`;
 
   useEffect(() => {
     const q = query.trim();
@@ -78,6 +82,7 @@ export function DestinationCombobox() {
     setQuery(s.display);
     setGid(s.gid);
     setGeoId(String(s.id));
+    setSelected(s);
     setItems([]);
     setOpen(false);
   }
@@ -85,6 +90,7 @@ export function DestinationCombobox() {
   const notice = open
     ? destinationNotice({ query, label, loading, itemsCount: items.length, error })
     : undefined;
+  const loadsNotice = loadsOnSearchNotice(selected);
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (items.length === 0) return;
@@ -126,13 +132,18 @@ export function DestinationCombobox() {
           placeholder="Ciudad o destino"
           aria-expanded={open && items.length > 0}
           aria-controls={listId}
-          aria-describedby={notice ? noticeId : undefined}
+          aria-describedby={
+            [notice ? noticeId : undefined, loadsNotice ? loadsNoticeId : undefined]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           aria-autocomplete="list"
           onChange={(e) => {
             setQuery(e.target.value);
             setGid('');
             setGeoId('');
             setLabel('');
+            setSelected(undefined);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
@@ -155,35 +166,54 @@ export function DestinationCombobox() {
           role="listbox"
           className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
         >
-          {items.map((s, i) => (
-            <li
-              key={s.gid}
-              role="option"
-              aria-selected={i === active}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                select(s);
-              }}
-              onMouseEnter={() => setActive(i)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors duration-75',
-                i === active
-                  ? 'bg-[var(--color-primary)]/8 text-[var(--color-fg)]'
-                  : 'text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]',
-              )}
-            >
-              <MapPin className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{s.display}</p>
-                {s.city || s.country ? (
-                  <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
-                    {[s.city, s.country].filter(Boolean).join(', ')}
-                  </p>
-                ) : null}
-              </div>
-            </li>
-          ))}
+          {items.map((s, i) => {
+            const hint = loadsOnSearchOptionHint(s);
+            return (
+              <li
+                key={s.gid}
+                role="option"
+                aria-selected={i === active}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  select(s);
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors duration-75',
+                  i === active
+                    ? 'bg-[var(--color-primary)]/8 text-[var(--color-fg)]'
+                    : 'text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]',
+                )}
+              >
+                <MapPin className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{s.display}</p>
+                  {s.city || s.country ? (
+                    <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
+                      {[s.city, s.country].filter(Boolean).join(', ')}
+                    </p>
+                  ) : null}
+                  {hint ? (
+                    <p className="mt-0.5 flex items-start gap-1 text-[11px] text-[var(--color-fg-muted)]">
+                      <Clock aria-hidden="true" className="mt-px size-3 shrink-0" />
+                      <span>{hint}</span>
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+
+      {loadsNotice ? (
+        <p
+          id={loadsNoticeId}
+          className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]"
+        >
+          <Clock aria-hidden="true" className="mt-px size-3 shrink-0" />
+          <span>{loadsNotice}</span>
+        </p>
       ) : null}
 
       {/* Región viva siempre montada: un lector de pantalla anuncia el motivo cuando cambia. */}

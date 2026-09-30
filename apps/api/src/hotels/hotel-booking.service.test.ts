@@ -12,6 +12,10 @@ import type { HotelBookingRoomGuests, HotelBookingView, SearchContext } from '@s
 import type { TboFetch } from '@sales-travel/tbo-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
+import type {
+  BookingPermissionsService,
+  NonRefundableRatesPolicy,
+} from '../booking-permissions/booking-permissions.service.js';
 import type { BrandingService, SupportContact } from '../branding/branding.service.js';
 import type { TenantType } from '../database/database.types.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
@@ -76,6 +80,8 @@ import {
   HotelBookIntentClosedError,
   HotelBookRepricedError,
   HotelGuestsInvalidError,
+  HotelNonRefundableBlockedError,
+  HotelNonRefundableNotAcknowledgedError,
   HotelPackageOnlyRateError,
   HotelPrebookExpiredError,
 } from './hotel-booking-errors.js';
@@ -168,6 +174,8 @@ interface Pack {
   offerRef?: string;
   cargos?: HotelFee[];
   moneda?: string;
+  /** Por defecto, no reembolsable con el 100 % desde el 1 de noviembre. */
+  cancelacion?: HotelRoompack['cancellation'];
 }
 
 function pack(opts: Pack = {}): HotelRoompack {
@@ -181,7 +189,7 @@ function pack(opts: Pack = {}): HotelRoompack {
     board: 'RO',
     mealTypeRaw: 'Room_Only',
     rooms: [{ name: 'Doble estándar', reference: 0, bedOptions: [] }],
-    cancellation: {
+    cancellation: opts.cancelacion ?? {
       refundable: false,
       status: 'non_refundable',
       rules: [
@@ -284,6 +292,8 @@ function pedido(overrides: Partial<HotelBookInput> = {}): HotelBookInput {
     prebookRef: PREBOOK_REF,
     acceptedTotal: USD(PISO),
     atPropertyAcknowledged: true,
+    // La tarifa de estos casos es no reembolsable: el vendedor lo confirmó (punto c del 2026-09-29).
+    nonRefundableAcknowledged: true,
     rooms: HUESPEDES,
     contact: CONTACTO_HUESPED,
     ...overrides,
@@ -294,6 +304,7 @@ interface Revalidada {
   netoMinor?: number;
   pisoMinor?: number | null;
   moneda?: string;
+  cancelacion?: HotelRoompack['cancellation'];
   totalText?: string;
   signals?: HotelPrebookWithContext['result']['signals'];
   comparacion?: Partial<HotelPrebookWithContext['comparison']>;
@@ -308,6 +319,7 @@ function revalidada(opts: Revalidada = {}): HotelPrebookWithContext {
     moneda,
     netoMinor: total.amountMinor,
     ...(opts.pisoMinor === undefined ? {} : { pisoMinor: opts.pisoMinor }),
+    ...(opts.cancelacion === undefined ? {} : { cancelacion: opts.cancelacion }),
   });
   return {
     result: {
@@ -546,6 +558,20 @@ interface OpcionesBanco {
   cuentaEnBase?: { updatedAt?: string; available?: boolean };
   /** Habilitación de la plataforma. Por defecto, todo encendido. */
   flags?: ProviderFlagsPort;
+  /** Quien financia a la agencia le bloqueó las no reembolsables (0055). Por defecto, no. */
+  noReembolsablesBloqueadas?: boolean;
+}
+
+type PermisosFake = { nonRefundableRates: Mock<BookingPermissionsService['nonRefundableRates']> };
+
+function permisosFake(bloqueadas = false): PermisosFake {
+  return {
+    nonRefundableRates: vi.fn(() =>
+      Promise.resolve<NonRefundableRatesPolicy>(
+        bloqueadas ? { effective: 'blocked', blockedBy: 'own' } : { effective: 'allowed' },
+      ),
+    ),
+  };
 }
 
 interface Banco {
@@ -566,6 +592,8 @@ interface Banco {
   fondos: Fondos;
   /** El plan del HCN que abre la confirmación (PR-5.4). */
   hcn: HcnFake;
+  /** El permiso de no reembolsables de la agencia (0055). */
+  permisos: PermisosFake;
 }
 
 type HcnFake = { schedule: Mock<HcnTrackingService['schedule']> };
@@ -626,6 +654,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     hcn as unknown as HcnTrackingService,
   );
   const fondos = carteraDe(opts.cartera);
+  const permisos = permisosFake(opts.noReembolsablesBloqueadas);
   const service = new HotelBookingService(
     registry,
     snapshots,
@@ -639,6 +668,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     verification,
     fondos.service,
     hcn as unknown as HcnTrackingService,
+    permisos as unknown as BookingPermissionsService,
     opts.sinOpciones === true ? undefined : (opts.options ?? { syncWaitMs: 5_000 }),
   );
   return {
@@ -658,6 +688,7 @@ async function banco(opts: OpcionesBanco = {}, snap = snapshot()): Promise<Banco
     verification,
     fondos,
     hcn,
+    permisos,
   };
 }
 
@@ -961,6 +992,7 @@ describe('RF-20: la orden existe antes del Book, y el Book sale con lo que reval
     await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
 
     expect(tipos(b)).toEqual([
+      HOTEL_EVENTS.nonRefundableAcknowledged,
       ORDER_EVENTS.createRequested,
       ORDER_EVENTS.created,
       ORDER_EVENTS.verified,
@@ -977,6 +1009,7 @@ describe('RF-20: la orden existe antes del Book, y el Book sale con lo que reval
       guests: 3,
       stage: 'C2',
       repriced: 'UNCHANGED',
+      nonRefundable: 'declared',
     });
     expect(evento(b, ORDER_EVENTS.created)).toEqual({
       provider: STUB,
@@ -1103,6 +1136,7 @@ describe('las puertas: todo rechazo ocurre ANTES de abrir la orden y de llamar a
         b.verification,
         b.fondos.service,
         b.hcn as unknown as HcnTrackingService,
+        b.permisos as unknown as BookingPermissionsService,
         { syncWaitMs: 5_000 },
       );
 
@@ -1250,6 +1284,274 @@ describe('las puertas: todo rechazo ocurre ANTES de abrir la orden y de llamar a
       HttpStatus.UNPROCESSABLE_ENTITY,
     );
     expect(b.branding.resolveSupportContact).toHaveBeenCalledWith(AGENCIA);
+  });
+});
+
+// ───────────────────────── Tarifas no reembolsables (pedido del 2026-09-29) ─────────────────────────
+
+/** Reembolsable sin cargo hasta el 5 de noviembre, hora del hotel. */
+const REEMBOLSABLE: HotelRoompack['cancellation'] = {
+  refundable: true,
+  status: 'fully_refundable',
+  rules: [
+    { type: 'Percentage', penaltyPercentage: 0, fromLocalDateTime: '2026-09-20T00:00:00' },
+    { type: 'Percentage', penaltyPercentage: 100, fromLocalDateTime: '2026-11-05T00:00:00' },
+  ],
+  policySource: 'prebook-final',
+  freeCancellationUntilLocal: '2026-11-05T00:00:00',
+};
+
+/**
+ * Reembolsable según el proveedor, pero con el 100 % desde el 25 de septiembre a las 23:00 del
+ * hotel: con T0 = 25/09 15:00 UTC, en UTC+14 ya son las 05:00 del 26. Puede estar rigiendo.
+ */
+const CIEN_VIGENTE: HotelRoompack['cancellation'] = {
+  refundable: true,
+  status: 'partially_refundable',
+  rules: [
+    { type: 'Percentage', penaltyPercentage: 50, fromLocalDateTime: '2026-09-20T00:00:00' },
+    { type: 'Percentage', penaltyPercentage: 100, fromLocalDateTime: '2026-09-25T23:00:00' },
+  ],
+  policySource: 'prebook-final',
+};
+
+describe('no reembolsables (b, c y e): el servidor decide y exige la confirmación', () => {
+  async function sinOrden(b: Banco, promesa: Promise<unknown>): Promise<unknown> {
+    const err = await rechazo(promesa);
+    expect(b.memory.rows()).toHaveLength(0);
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+    expect(b.emit).not.toHaveBeenCalled();
+    return err;
+  }
+
+  it('sin `nonRefundableAcknowledged` → 400 con el 100 % en el precio de venta, sin orden ni proveedor', async () => {
+    const b = await banco();
+
+    const err = await sinOrden(
+      b,
+      b.service.book(AGENCIA, USUARIO, CLAVE, pedido({ nonRefundableAcknowledged: false })),
+    );
+
+    expect(err).toBeInstanceOf(HotelNonRefundableNotAcknowledgedError);
+    const e = err as HotelNonRefundableNotAcknowledgedError;
+    expect(e.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    expect(e.reason).toBe('NON_REFUNDABLE_NOT_ACKNOWLEDGED');
+    expect(e.publicDetails).toEqual({ penalty: USD(PISO), nonRefundableReason: 'declared' });
+    expect(e.message).toContain('se cobra el 100 % (321,34 USD)');
+  });
+
+  it('IsRefundable=false con tramos a 0 (contradicción de TBO) → no reembolsable: pide la confirmación', async () => {
+    const contradictoria: HotelRoompack['cancellation'] = {
+      refundable: false,
+      status: 'non_refundable',
+      rules: [
+        { type: 'Fixed', penaltyAmount: USD(0), fromLocalDateTime: '2026-09-20T00:00:00' },
+        { type: 'Fixed', penaltyAmount: USD(0), fromLocalDateTime: '2026-10-20T00:00:00' },
+      ],
+      policySource: 'prebook-final',
+    };
+    const b = await banco({}, snapshot({}, { cancelacion: contradictoria }));
+
+    const err = await sinOrden(
+      b,
+      b.service.book(AGENCIA, USUARIO, CLAVE, pedido({ nonRefundableAcknowledged: undefined })),
+    );
+
+    expect(err).toBeInstanceOf(HotelNonRefundableNotAcknowledgedError);
+  });
+
+  it('reembolsable con el 100 % ya vigente → se trata como no reembolsable, con desde cuándo rige', async () => {
+    const b = await banco({}, snapshot({}, { cancelacion: CIEN_VIGENTE }));
+
+    const err = await sinOrden(
+      b,
+      b.service.book(AGENCIA, USUARIO, CLAVE, pedido({ nonRefundableAcknowledged: false })),
+    );
+
+    expect((err as HotelNonRefundableNotAcknowledgedError).publicDetails).toEqual({
+      penalty: USD(PISO),
+      nonRefundableReason: 'full-penalty-in-force',
+      fullPenaltySinceLocal: '2026-09-25T23:00:00',
+    });
+  });
+
+  it('bloqueadas por quien financia (e) → 403 aunque venga confirmada, sin orden ni proveedor', async () => {
+    const b = await banco({ noReembolsablesBloqueadas: true });
+
+    const err = await sinOrden(b, b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect(err).toBeInstanceOf(HotelNonRefundableBlockedError);
+    expect((err as HotelNonRefundableBlockedError).getStatus()).toBe(HttpStatus.FORBIDDEN);
+    expect((err as HotelNonRefundableBlockedError).reason).toBe('NON_REFUNDABLE_BLOCKED');
+    expect(b.permisos.nonRefundableRates).toHaveBeenCalledWith(AGENCIA);
+  });
+
+  it('una reembolsable no pide la confirmación ni lee el permiso, aunque esté bloqueado', async () => {
+    const b = await banco(
+      { noReembolsablesBloqueadas: true },
+      snapshot({}, { cancelacion: REEMBOLSABLE }),
+    );
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ cancelacion: REEMBOLSABLE }));
+
+    const res = await b.service.book(
+      AGENCIA,
+      USUARIO,
+      CLAVE,
+      pedido({ nonRefundableAcknowledged: undefined }),
+    );
+
+    expect(res.body.status).toBe('confirmed');
+    expect(b.permisos.nonRefundableRates).not.toHaveBeenCalled();
+    expect(json(fila(b)['selected_offer'])).not.toHaveProperty('nonRefundable');
+    expect(tipos(b)).not.toContain(HOTEL_EVENTS.nonRefundableAcknowledged);
+  });
+
+  it('la orden guarda quién aceptó, cuándo, el monto y la política; el evento lo audita sin PII', async () => {
+    const b = await banco();
+    b.puerto.bookWithContext.mockImplementation(() => {
+      // Antes del Book: la confirmación ya está en la orden y en su rastro.
+      expect(json(fila(b)['selected_offer'])).toHaveProperty('nonRefundable');
+      expect(tipos(b)).toContain(HOTEL_EVENTS.nonRefundableAcknowledged);
+      return Promise.resolve(confirmada());
+    });
+
+    await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
+
+    const oferta = json(fila(b)['selected_offer']) as Record<string, unknown>;
+    expect(oferta['nonRefundable']).toEqual({
+      reason: 'declared',
+      penalty: USD(PISO),
+      policy: {
+        refundable: false,
+        status: 'non_refundable',
+        policySource: 'prebook-final',
+        rules: [
+          { type: 'Percentage', penaltyPercentage: 100, fromLocalDateTime: '2026-11-01T00:00:00' },
+        ],
+      },
+      acknowledgedBy: USUARIO,
+      acknowledgedAt: new Date(T0).toISOString(),
+      acknowledgedAmount: USD(PISO),
+    });
+    const ack = eventos(b).find((e) => e.eventType === HOTEL_EVENTS.nonRefundableAcknowledged);
+    expect(ack?.aggregateId).toBe(fila(b)['id']);
+    expect(b.emit.mock.calls.find(([e]) => e === ack)?.[0]).toMatchObject({
+      actorUserId: USUARIO,
+      aggregateType: 'order',
+    });
+    expect(ack?.payload).toEqual({
+      vertical: 'hotels',
+      provider: STUB,
+      hotelId: 'S-1',
+      bookingReference: REF,
+      reason: 'declared',
+      penaltyMinor: PISO,
+      currency: 'USD',
+      acknowledgedAt: new Date(T0).toISOString(),
+      acknowledgedAmountMinor: PISO,
+      rateConditionsHash: 'b'.repeat(64),
+      policy: {
+        refundableDeclared: false,
+        status: 'non_refundable',
+        policySource: 'prebook-final',
+        rules: [{ fromLocal: '2026-11-01T00:00:00', percentage: 100 }],
+      },
+    });
+    for (const dato of PII) expect(JSON.stringify(ack)).not.toContain(dato);
+  });
+
+  it('confirmada una reembolsable con el 100 % ya vigente: la orden y el evento dicen desde cuándo y la política entera', async () => {
+    // Sin cargo hasta el 25/09 a las 23:00 del hotel, que en UTC+14 ya pasó; un tramo por
+    // habitación con importe, y uno sin fecha local. Sin origen declarado de la política.
+    const vencida: HotelRoompack['cancellation'] = {
+      refundable: true,
+      status: 'fully_refundable',
+      rules: [
+        {
+          type: 'Fixed',
+          penaltyAmount: USD(0),
+          fromLocalDateTime: '2026-09-20T00:00:00',
+          roomIndex: 1,
+        },
+        { type: 'Percentage', penaltyPercentage: 100, fromLocalDateTime: '2026-09-25T23:00:00' },
+        { type: 'Percentage', penaltyPercentage: 100, fromHours: 24 },
+      ],
+      freeCancellationUntilLocal: '2026-09-25T23:00:00',
+    };
+    const b = await banco({}, snapshot({}, { cancelacion: vencida }));
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ cancelacion: vencida }));
+
+    await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
+
+    const oferta = json(fila(b)['selected_offer']) as Record<string, unknown>;
+    expect(oferta['nonRefundable']).toMatchObject({
+      reason: 'full-penalty-in-force',
+      fullPenaltySinceLocal: '2026-09-25T23:00:00',
+      policy: {
+        refundable: true,
+        status: 'fully_refundable',
+        policySource: 'undeclared',
+        freeCancellationUntilLocal: '2026-09-25T23:00:00',
+        rules: vencida.rules,
+      },
+    });
+    expect(evento(b, HOTEL_EVENTS.nonRefundableAcknowledged)).toMatchObject({
+      reason: 'full-penalty-in-force',
+      fullPenaltySinceLocal: '2026-09-25T23:00:00',
+      policy: {
+        refundableDeclared: true,
+        status: 'fully_refundable',
+        policySource: 'undeclared',
+        rules: [
+          { fromLocal: '2026-09-20T00:00:00', amountMinor: 0, currency: 'USD', room: 1 },
+          { fromLocal: '2026-09-25T23:00:00', percentage: 100 },
+          { percentage: 100 },
+        ],
+      },
+    });
+    expect(evento(b, ORDER_EVENTS.createRequested)['nonRefundable']).toBe('full-penalty-in-force');
+  });
+
+  it('si en C2 pasa a cobrar el 100 % y no se confirmó → 400, orden cerrada sin envío y sin Book', async () => {
+    const b = await banco({}, snapshot({}, { cancelacion: REEMBOLSABLE }));
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada({ cancelacion: CIEN_VIGENTE }));
+
+    const err = await rechazo(
+      b.service.book(AGENCIA, USUARIO, CLAVE, pedido({ nonRefundableAcknowledged: undefined })),
+    );
+
+    expect(err).toBeInstanceOf(HotelNonRefundableNotAcknowledgedError);
+    expect(fila(b)).toMatchObject({
+      status: 'failed',
+      create_request_key: null,
+      error_message: CREATE_NOT_SENT_MARKER,
+    });
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+    expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
+  });
+
+  it('si en C2 pasa a no reembolsable y la agencia las tiene bloqueadas → 403 sin Book', async () => {
+    const b = await banco(
+      { noReembolsablesBloqueadas: true },
+      snapshot({}, { cancelacion: REEMBOLSABLE }),
+    );
+    b.puerto.prebookWithContext.mockResolvedValue(revalidada());
+
+    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect(err).toBeInstanceOf(HotelNonRefundableBlockedError);
+    expect(fila(b)).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+  });
+
+  it('un fallo al leer el permiso no deja reservar: sube sin abrir la orden', async () => {
+    const b = await banco();
+    b.permisos.nonRefundableRates.mockRejectedValueOnce(new Error('base caída'));
+
+    const err = await sinOrden(b, b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect((err as Error).message).toBe('base caída');
   });
 });
 
@@ -1926,8 +2228,10 @@ describe('la consolidación con CAS: nunca pisa otro camino, nunca repite el Boo
   });
 
   it('ni con el canal de auditoría caído la saga rechaza después del Book', async () => {
+    // Los eventos previos al Book (la confirmación de no reembolsable y el pedido) entran.
     const emit = vi.fn((e: { eventType: string }) =>
-      e.eventType === ORDER_EVENTS.createRequested
+      e.eventType === ORDER_EVENTS.createRequested ||
+      e.eventType === HOTEL_EVENTS.nonRefundableAcknowledged
         ? Promise.resolve()
         : Promise.reject(new Error('auditoría caída')),
     );
@@ -2627,6 +2931,7 @@ function bancoTbo(
     breaker,
     contexts,
   );
+  const permisos = permisosFake() as unknown as BookingPermissionsService;
   const prebookService = new HotelPrebookService(
     registry,
     contexts,
@@ -2635,6 +2940,7 @@ function bancoTbo(
     breaker,
     audit,
     fondos.service,
+    permisos,
   );
   const bookings = new HotelBookingService(
     registry,
@@ -2649,6 +2955,7 @@ function bancoTbo(
     verification,
     fondos.service,
     hcn as unknown as HcnTrackingService,
+    permisos,
     { syncWaitMs: 5_000 },
   );
   return {
@@ -2710,6 +3017,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       prebookRef,
       acceptedTotal: total,
       atPropertyAcknowledged: true,
+      nonRefundableAcknowledged: true,
       rooms: HUESPEDES_TBO,
       contact: CONTACTO_HUESPED,
     });
@@ -2778,6 +3086,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
         prebookRef,
         acceptedTotal: total,
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: HUESPEDES_TBO,
         contact: CONTACTO_HUESPED,
       })
@@ -2819,6 +3128,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       prebookRef,
       acceptedTotal: total,
       atPropertyAcknowledged: true,
+      nonRefundableAcknowledged: true,
       rooms: HUESPEDES_TBO,
       contact: CONTACTO_HUESPED,
     });
@@ -2853,6 +3163,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       prebookRef,
       acceptedTotal: total,
       atPropertyAcknowledged: true,
+      nonRefundableAcknowledged: true,
       rooms: HUESPEDES_TBO,
       contact: CONTACTO_HUESPED,
     });
@@ -2916,6 +3227,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
           currency: 'USD',
         },
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: HUESPEDES_TBO,
         contact: CONTACTO_HUESPED,
       }),
@@ -2937,6 +3249,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
         prebookRef,
         acceptedTotal: total,
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: HUESPEDES_TBO,
         contact: CONTACTO_HUESPED,
       }),
@@ -2956,6 +3269,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
         prebookRef,
         acceptedTotal: total,
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: HUESPEDES_TBO,
         contact: CONTACTO_HUESPED,
       }),
@@ -2973,6 +3287,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
         prebookRef,
         acceptedTotal: total,
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: [HUESPEDES_TBO[0] ?? { guests: [] }],
         contact: CONTACTO_HUESPED,
       }),
@@ -3005,6 +3320,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
           currency: 'USD',
         },
         atPropertyAcknowledged: true,
+        nonRefundableAcknowledged: true,
         rooms: HUESPEDES_TBO,
         contact: CONTACTO_HUESPED,
       }),
@@ -3040,6 +3356,7 @@ describe('RF-21 con TBO: el Book incierto se lee por la referencia a los 120 s y
       prebookRef,
       acceptedTotal: total,
       atPropertyAcknowledged: true,
+      nonRefundableAcknowledged: true,
       rooms: HUESPEDES_TBO,
       contact: CONTACTO_HUESPED,
     });

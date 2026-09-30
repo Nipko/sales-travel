@@ -1294,7 +1294,8 @@ ningún U-xx está probado de punta a punta. Desviaciones respecto del checklist
   tiene TBO ve "Ningún proveedor pudo buscar esta vez" con ese motivo.
 - **U-05.** La imagen del hotel está en el detalle (`/hoteles/[hotelKey]`, contenido estático), no en la tarjeta de
   resultados: la oferta neutral de disponibilidad no trae imagen. Llevarla a la tarjeta exige sumar una miniatura del
-  catálogo a `POST /hotels/availability`.
+  catálogo a `POST /hotels/availability`. **Resuelta el 2026-09-29:** la tarjeta lleva la foto (`mainImage`) o la
+  trae en segundo plano ([05](./05-contenido-estatico-e-inventario.md) §8.6).
 
 ---
 

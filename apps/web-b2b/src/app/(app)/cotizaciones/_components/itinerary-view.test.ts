@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildItineraryView,
+  codeshareOperators,
   dayOffset,
   layoverLabel,
   spreadPositions,
@@ -294,5 +295,38 @@ describe('layoverLabel', () => {
       hhmm,
     );
     expect(label).toBe('GRU → CGH 5h 00m · cambio de aeropuerto');
+  });
+});
+
+describe('codeshareOperators', () => {
+  const tramo = {
+    flightNumber: '1',
+    origin: 'BOG',
+    destination: 'LET',
+    departureAt: '2026-10-29T07:00:00-05:00',
+    arrivalAt: '2026-10-29T09:00:00-05:00',
+  };
+
+  it('nombra sólo a quien opera sin ser quien vende', () => {
+    expect(
+      codeshareOperators({
+        segments: [
+          { ...tramo, carrier: 'AV', operatingCarrier: 'AV' },
+          { ...tramo, carrier: 'AV', operatingCarrier: 'VH' },
+        ],
+        totalDurationMinutes: 240,
+        stops: 1,
+      }),
+    ).toEqual(['VH']);
+  });
+
+  it('sin operadora informada no inventa un código compartido', () => {
+    expect(
+      codeshareOperators({
+        segments: [{ ...tramo, carrier: 'LA' }],
+        totalDurationMinutes: 120,
+        stops: 0,
+      }),
+    ).toEqual([]);
   });
 });

@@ -548,7 +548,7 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 **Por qué la necesitamos.** Qué se promete al viajero ("reembolsable" o no) y cómo se calcula la penalidad estimada (PV-D).
 
-**Postura si no responden.** Se guardan y se muestran los dos, sin derivar uno del otro ([02](./02-search-y-oferta-canonica.md) §9.6; [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) PV-09).
+**Postura si no responden.** Se guardan y se muestran los dos, sin derivar uno del otro ([02](./02-search-y-oferta-canonica.md) §9.6; [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) PV-09). Desde el 2026-09-29, para vender se lee del lado conservador: la tarifa es no reembolsable, con el aviso y la confirmación obligatoria de D-TBO-39 ([03](./03-prebook-y-book.md) §2.13).
 
 ### Q-27
 

@@ -1,5 +1,9 @@
-import type { HotelRoompack } from '../hoteles/actions';
+import type { HotelRoompack, Money } from '../hoteles/actions';
 import { formatStayDate, stayNights } from '../hoteles/[hotelKey]/_components/hotel-detail-view';
+import {
+  parseNonRefundable,
+  type PrebookNonRefundable,
+} from '../hoteles/checkout/_components/non-refundable-view';
 import type {
   HotelPrebookCondition,
   HotelRateConditionCategory,
@@ -613,6 +617,37 @@ export function hotelConditionsOf(
       },
     ];
   });
+}
+
+// ───────────────────────── No reembolsable (pedido del 2026-09-29, punto d) ─────────────────────────
+
+export interface HotelOrderNonRefundable extends PrebookNonRefundable {
+  /** Cuándo lo confirmó el vendedor al reservar ("26 sep 2026, 14:05"), si la orden lo guarda. */
+  readonly acknowledgedAt?: string;
+}
+
+/**
+ * Si la reserva es de una tarifa no reembolsable, con el 100 %: lo que la orden guardó al reservar
+ * (`selected_offer.nonRefundable`: por qué, el monto, la política y quién y cuándo lo aceptó) o, en
+ * una orden de antes, la política declarada no reembolsable con el total de la venta. `undefined`
+ * si no lo es.
+ */
+export function hotelNonRefundableOf(
+  order: Pick<HotelOrderInput, 'selectedOffer' | 'totalAmount' | 'currency'>,
+  timeZone?: string,
+): HotelOrderNonRefundable | undefined {
+  const record = recordOf(order.selectedOffer)['nonRefundable'];
+  const stored = parseNonRefundable(record);
+  if (stored !== undefined) {
+    const at = recordOf(record)['acknowledgedAt'];
+    return typeof at === 'string' && Number.isFinite(Date.parse(at))
+      ? { ...stored, acknowledgedAt: formatReadAt(at, timeZone) }
+      : stored;
+  }
+  const c = hotelPackOf(order)?.cancellation;
+  if (c === undefined || (c.refundable && c.status !== 'non_refundable')) return undefined;
+  const penalty: Money = { amountMinor: order.totalAmount, currency: order.currency };
+  return { reason: 'declared', penalty };
 }
 
 export interface GuestContactView {

@@ -11,10 +11,13 @@ import { cancelPolicyView } from './conditions-view';
 
 export function CancelPolicy({
   pack,
+  nonRefundable = false,
 }: {
   pack: Pick<HotelRoompack, 'cancellation' | 'price' | 'pricing'>;
+  /** No reembolsable en los hechos (declarada o con el 100 % ya vigente). */
+  nonRefundable?: boolean;
 }) {
-  const view = cancelPolicyView(pack);
+  const view = cancelPolicyView(pack, nonRefundable);
   const Icon = view.refundable ? ShieldCheck : ShieldX;
 
   return (

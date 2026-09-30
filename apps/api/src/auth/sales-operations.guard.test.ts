@@ -228,8 +228,16 @@ const ENTRADAS: [string, Clase][] = [
     'GET /cars/rates',
   ),
   ...noVenta(
+    'lo que la agencia puede reservar (tarifas no reembolsables), para marcar tarifas: sin precio',
+    'GET /hotels/booking-permissions',
+  ),
+  ...noVenta(
     'ficha estática de un hotel, sin precio: la usa también el voucher de una reserva hecha',
     'GET /hotels/content/:providerCode/:hotelId',
+  ),
+  ...noVenta(
+    'fotos de los resultados por lote: contenido estático sin precio, por el cupo de fondo',
+    'POST /hotels/content/batch',
   ),
   ...noVenta(
     'post-venta de lectura',
@@ -279,6 +287,11 @@ const ENTRADAS: [string, Clase][] = [
     'GET /tenants/:tenantId/portfolios/deposit-reports',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
+  ),
+  ...noVenta(
+    'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
+    'GET /tenants/:tenantId/booking-permissions',
+    'PUT /tenants/:tenantId/booking-permissions',
   ),
 ];
 
