@@ -8,6 +8,7 @@ import {
   type MemoryOrder,
   type MemoryWallet,
 } from './__fixtures__/memory-wallet-holds.js';
+import { held } from './__fixtures__/held-outcome.js';
 import { BookingHoldRejectedError } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 
@@ -66,10 +67,12 @@ describe('PortfoliosService.holdBooking', () => {
   it('deriva monto y moneda de la orden; los valores del cliente son sólo expectativas', async () => {
     const h = harness();
 
-    const result = await h.service.holdBooking(TENANT, ORDER, USER, {
-      amountMinor: 125_000,
-      currency: ' cop ',
-    });
+    const result = held(
+      await h.service.holdBooking(TENANT, ORDER, USER, {
+        amountMinor: 125_000,
+        currency: ' cop ',
+      }),
+    );
 
     expect(result.transaction.amount_minor).toBe(-125_000);
     expect(result.transaction.notes).toBe(
@@ -167,7 +170,7 @@ describe('PortfoliosService.holdBooking', () => {
   it('el cupo que fija quien financia completa lo que falta de saldo', async () => {
     const h = harness({ wallet: { credit_limit_minor: 25_000, balance_minor: 100_000 } });
 
-    const result = await h.service.holdBooking(TENANT, ORDER, USER);
+    const result = held(await h.service.holdBooking(TENANT, ORDER, USER));
 
     expect(result.portfolio.balance_minor).toBe(-25_000);
     expect(h.bank.state.entries).toHaveLength(1);
@@ -193,6 +196,23 @@ describe('PortfoliosService.holdBooking', () => {
     expect(err).toMatchObject({ reason: 'PORTFOLIO_NETWORK_COST_UNAVAILABLE' });
     expect(h.balance()).toBe(500_000);
     expect(h.bank.reports).toEqual([{ tenantId: TENANT, orderId: ORDER }]);
+  });
+
+  it('un vuelo con la cuenta propia del nodo (O = T) no retiene nada, ni pide cartera en su moneda', async () => {
+    const h = harness({ wallet: null });
+    h.bank.network.ownAccount = true;
+
+    await expect(h.service.holdBooking(TENANT, ORDER, USER)).resolves.toEqual({
+      status: 'own-account',
+    });
+    expect(h.bank.state.entries).toHaveLength(0);
+    expect(h.bank.groupOf(ORDER)).toMatchObject({ status: 'exempt' });
+
+    // Pedirlo otra vez devuelve lo registrado, sin otro grupo ni un 409 de "ya retenida".
+    await expect(h.service.holdBooking(TENANT, ORDER, USER)).resolves.toEqual({
+      status: 'own-account',
+    });
+    expect(h.bank.state.groups).toHaveLength(1);
   });
 
   it('ante dos requests concurrentes crea un solo hold y debita exactamente una vez', async () => {

@@ -124,6 +124,31 @@ export interface AgencyWallets {
   readonly portfolios: readonly Wallet[];
   /** A quién pedirle una moneda, cupo o que apruebe un depósito. `null`: lo gestiona Planetour. */
   readonly financier: { readonly tenantId: string; readonly name: string } | null;
+  /**
+   * Los proveedores en que la agencia tiene su propia cuenta, todos (también el correo). Sólo
+   * códigos de proveedor. Cuáles importan para la cartera lo dice {@link reservesWithOwnAccounts}.
+   */
+  readonly ownProviderAccounts: readonly string[];
+}
+
+/**
+ * Los proveedores cuyas reservas retienen cartera y graban en la orden la cuenta con que se
+ * reservaron: los de hoteles que reservan por el Book neutral con órdenes (hoy sólo TBO; Despegar
+ * no retiene, docs/platform/12 §12.8). Con la cuenta propia en ellos la reserva no retiene nada
+ * (decisión del founder del 2026-09-30). Vuelos y autos no graban la cuenta, así que la propia no
+ * los exime. Uno nuevo que retenga se suma acá; si falta, la web sólo avisa de más y decide la base.
+ */
+export const PROVIDERS_WITH_WALLET_HOLD: readonly string[] = ['tbo-hotels'];
+
+/**
+ * ¿La agencia reserva con su propia cuenta en todos los proveedores que retienen cartera? Entonces
+ * sus reservas no retienen de ninguna y no hace falta avisarle que le falta una. Una cuenta que no
+ * reserva (el correo) o la de un proveedor que no retiene no cuentan.
+ */
+export function reservesWithOwnAccounts(
+  wallets: Pick<AgencyWallets, 'ownProviderAccounts'>,
+): boolean {
+  return PROVIDERS_WITH_WALLET_HOLD.every((code) => wallets.ownProviderAccounts.includes(code));
 }
 
 /** El nodo cuyas carteras gestiona quien lo financia. */
@@ -181,6 +206,9 @@ function exponentOf(value: unknown): number | null | undefined {
   const n = safeInt(value);
   return n !== undefined && n >= 0 && n <= 4 ? n : undefined;
 }
+
+/** Un código de proveedor como los de la bóveda (`tbo-hotels`, `latam-ndc`). */
+const PROVIDER_CODE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /** Un listado: se descartan los elementos con forma rota, no el listado entero. */
 function listOf<T>(value: unknown, parse: (item: unknown) => T | undefined): T[] | undefined {
@@ -401,12 +429,18 @@ export function parseAgencyWallets(value: unknown): AgencyWallets | undefined {
   const f = asRecord(r['financier']);
   const financierId = f?.['tenantId'];
   const financierName = str(f?.['name']);
+  // Sin el dato (un API anterior), ninguna: la búsqueda avisa como siempre y decide el PreBook.
+  const own =
+    listOf(r['ownProviderAccounts'], (c) =>
+      typeof c === 'string' && PROVIDER_CODE_RE.test(c) ? c : undefined,
+    ) ?? [];
   return {
     portfolios: sortWallets(portfolios),
     financier:
       isUuid(financierId) && financierName !== undefined && financierName.trim() !== ''
         ? { tenantId: financierId.toLowerCase(), name: financierName }
         : null,
+    ownProviderAccounts: [...new Set(own)].sort(),
   };
 }
 

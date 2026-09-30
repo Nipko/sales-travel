@@ -335,6 +335,8 @@ export class ReconciliationStore {
         .orderBy('g.created_at')
         .orderBy('g.id')
         .limit(query.limit)
+        // Sólo abiertas (el WHERE): nunca `exempt`, que no retuvo nada.
+        .$narrowType<{ hold_status: WalletHoldStatus }>()
         .execute(),
     );
     return rows.map((r) => ({

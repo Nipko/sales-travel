@@ -137,6 +137,19 @@ describe('parseAgencyWallets — lo que ve la agencia', () => {
     expect(view?.portfolios).toHaveLength(1);
     expect(parseAgencyWallets({ portfolio: apiWallet() })).toBeUndefined();
   });
+
+  it('los proveedores con cuenta propia (no retienen): sólo códigos válidos, sin repetir', () => {
+    const view = parseAgencyWallets({
+      portfolios: [],
+      financier: null,
+      ownProviderAccounts: ['tbo-hotels', 'latam-ndc', 'tbo-hotels', '<b>x</b>', 7, ''],
+    });
+    expect(view?.ownProviderAccounts).toEqual(['latam-ndc', 'tbo-hotels']);
+    // Un API que no lo manda: ninguna, y la búsqueda avisa como siempre.
+    expect(parseAgencyWallets({ portfolios: [], financier: null })?.ownProviderAccounts).toEqual(
+      [],
+    );
+  });
 });
 
 describe('parseFinancedWallets — lo que ve quien financia', () => {

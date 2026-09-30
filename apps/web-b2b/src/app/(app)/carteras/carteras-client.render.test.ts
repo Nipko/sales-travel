@@ -25,6 +25,7 @@ const USD: Wallet = {
 const WALLETS: AgencyWallets = {
   portfolios: [USD],
   financier: { tenantId: '10000000-0000-4000-8000-000000000009', name: 'Consolidador Andino' },
+  ownProviderAccounts: [],
 };
 
 /** Una sub-agencia retenida y otra en revisión, en la cartera USD de quien las financia. */
@@ -58,6 +59,9 @@ const NETWORK: NetworkHolds = {
   totals: [{ currency: 'USD', exponent: 2, heldMinor: 218_400, chargedMinor: 0 }],
 };
 
+const NO_WALLET_TEXT =
+  'Sin una cartera no se puede reservar. Pedile a Planetour que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.';
+
 function html(props: Partial<Parameters<typeof CarterasClient>[0]> = {}): string {
   return renderToStaticMarkup(
     createElement(CarterasClient, {
@@ -85,10 +89,39 @@ describe('CarterasClient', () => {
   });
 
   it('sin carteras: no se puede reservar, y a quién pedírsela', () => {
-    const out = html({ initialWallets: { portfolios: [], financier: null } });
+    const out = html({
+      initialWallets: { portfolios: [], financier: null, ownProviderAccounts: [] },
+    });
     expect(out).toContain('Tu agencia todavía no tiene carteras.');
-    expect(out).toContain('Pedile a Planetour');
+    expect(out).toContain(NO_WALLET_TEXT);
     expect(out).not.toContain('Informar depósito');
+  });
+
+  it('sin carteras pero con cuenta propia en los que retienen: esas reservas no retienen (2026-09-30)', () => {
+    const out = html({
+      initialWallets: {
+        portfolios: [],
+        financier: { tenantId: WALLETS.financier!.tenantId, name: 'Consolidador Andino' },
+        ownProviderAccounts: ['email', 'tbo-hotels'],
+      },
+    });
+    expect(out).toContain('Tu agencia todavía no tiene carteras.');
+    expect(out).toContain(
+      'Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pedile a Consolidador Andino que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.',
+    );
+    expect(out).not.toContain('Sin una cartera no se puede reservar.');
+  });
+
+  it('una cuenta propia que no exime (el correo, un vuelo) no cambia el aviso', () => {
+    const out = html({
+      initialWallets: {
+        portfolios: [],
+        financier: null,
+        ownProviderAccounts: ['agent-cars', 'email', 'latam-ndc'],
+      },
+    });
+    expect(out).toContain(NO_WALLET_TEXT);
+    expect(out).not.toContain('cuenta propia');
   });
 
   it('si no se pudieron leer, lo dice: nunca una cartera en cero inventada', () => {

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { searchWalletNotice, searchWalletsOf } from './search-wallet';
-import { parseAgencyWallets } from '../../../../lib/wallets';
+import { PROVIDERS_WITH_WALLET_HOLD, parseAgencyWallets } from '../../../../lib/wallets';
 
 const WALLETS = {
   enabled: ['COP', 'EUR', 'PEN'],
   operating: ['COP'],
   suspended: ['EUR'],
   financierName: 'Consolidador Andino',
+  ownHotelAccounts: false,
 };
 
 describe('searchWalletNotice — el aviso temprano en la búsqueda de hoteles', () => {
@@ -38,6 +39,12 @@ describe('searchWalletNotice — el aviso temprano en la búsqueda de hoteles', 
       /Pedile a Planetour/,
     );
   });
+
+  it('con su propia cuenta de hoteles no retiene nada (2026-09-30): sin cartera tampoco avisa', () => {
+    const own = { ...WALLETS, ownHotelAccounts: true };
+    expect(searchWalletNotice(own, 'USD')).toBeUndefined();
+    expect(searchWalletNotice(own, 'EUR')).toBeUndefined();
+  });
 });
 
 describe('searchWalletsOf', () => {
@@ -62,6 +69,21 @@ describe('searchWalletsOf', () => {
       operating: [],
       suspended: ['COP'],
       financierName: null,
+      ownHotelAccounts: false,
     });
+  });
+
+  it('reserva hoteles con su propia cuenta si es suya la de cada proveedor que retiene', () => {
+    const base = { portfolios: [], financier: null };
+    const withOwn = (ownProviderAccounts: unknown) =>
+      searchWalletsOf(parseAgencyWallets({ ...base, ownProviderAccounts })!).ownHotelAccounts;
+    expect(PROVIDERS_WITH_WALLET_HOLD).toEqual(['tbo-hotels']);
+    expect(withOwn(['latam-ndc', 'tbo-hotels'])).toBe(true);
+    // Despegar no retiene: tenerla propia no cambia nada; una ajena o ninguna, tampoco.
+    expect(withOwn(['despegar-hotels'])).toBe(false);
+    // El correo no reserva, y vuelos y autos no graban la cuenta en la orden: no eximen.
+    expect(withOwn(['agent-cars', 'email', 'latam-ndc'])).toBe(false);
+    expect(withOwn([])).toBe(false);
+    expect(withOwn(undefined)).toBe(false);
   });
 });

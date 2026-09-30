@@ -8,8 +8,9 @@ import type { Money } from '@sales-travel/canonical';
  *
  * La regla vive en la base (`wallet_hold_retain`, `wallet_hold_preview`): el nodo que vende retiene
  * el precio de venta en su cartera de la moneda de la tarifa, y cada nivel que lo financia hasta el
- * dueño de la credencial retiene su costo en la suya. Acá quedan el vocabulario que la web lee
- * (`reason`), los textos que ve el vendedor y los errores HTTP.
+ * dueño de la credencial retiene su costo en la suya. Con la cuenta propia del nodo (O = T) no se
+ * retiene nada ni hace falta cartera (decisión del founder del 2026-09-30, opción B). Acá quedan el
+ * vocabulario que la web lee (`reason`), los textos que ve el vendedor y los errores HTTP.
  *
  * Los textos de la red hablan sólo de "tu red" y de "quien te financia": el vendedor no ve qué nivel
  * falló, ni montos, ni nombres de sus ancestros.
@@ -65,9 +66,13 @@ export interface BookingHoldQuote {
  * si su cartera y la de cada nivel de su red la cubrirían ahora. Es una lectura sin bloqueo, así que
  * no promete nada: la reserva vuelve a decidir con las carteras bloqueadas. Nunca lleva saldos,
  * cupos ni qué nivel falló, por lo mismo que {@link BookingHoldRejectedError}.
+ *
+ * `own-account`: se reserva con la cuenta propia de la agencia en el proveedor, así que no se retiene
+ * nada de ninguna cartera y no hay nada que avisar por la cartera.
  */
 export type BookingHoldPreview =
   | { readonly status: 'ok'; readonly currency: string }
+  | { readonly status: 'own-account'; readonly currency: string }
   | {
       readonly status: 'blocked';
       readonly currency: string;
@@ -93,6 +98,13 @@ const MESSAGES: Readonly<Record<BookingHoldRejection, (ctx: RejectionContext) =>
   PORTFOLIO_NETWORK_COST_UNAVAILABLE: () =>
     'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avisale a quien te financia.',
 };
+
+/**
+ * Lo que se le dice a quien pide retener una reserva hecha con la cuenta propia de la agencia
+ * (`POST /portfolios/hold-booking`): no es un error, no hay nada que retener.
+ */
+export const OWN_PROVIDER_ACCOUNT_MESSAGE =
+  'La reserva se hizo con la cuenta del proveedor de tu agencia: no se retiene saldo de ninguna cartera.';
 
 /** Lo que ve el vendedor por un rechazo, el mismo texto en el aviso previo y en la reserva. */
 export function bookingHoldMessage(reason: BookingHoldRejection, amountCurrency: string): string {

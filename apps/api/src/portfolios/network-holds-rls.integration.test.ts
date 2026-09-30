@@ -49,6 +49,7 @@ const HELPERS = [
   'wallet_hold_assert_actor(uuid,uuid)',
   'wallet_hold_mode(uuid)',
   'wallet_hold_owner(uuid,text,uuid)',
+  'wallet_hold_is_own_account(uuid,uuid,text)',
   'wallet_hold_chain(uuid,integer)',
   'wallet_hold_net(jsonb,text,text)',
   'wallet_hold_level_cost(uuid,text,bigint,integer)',

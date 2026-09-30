@@ -6,7 +6,8 @@ import type { DatabaseService } from '../database/database.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { PortfolioForbiddenError } from './portfolio-errors.js';
 import { PortfoliosController } from './portfolios.controller.js';
-import type { PortfoliosService } from './portfolios.service.js';
+import type { BookingHoldOutcome, PortfoliosService } from './portfolios.service.js';
+import { OWN_PROVIDER_ACCOUNT_MESSAGE } from './booking-hold.js';
 import { WalletFinancingController } from './wallet-financing.controller.js';
 import type { WalletFinancingService } from './wallet-financing.service.js';
 
@@ -41,7 +42,14 @@ function harness(role: string | null = 'tenant_admin') {
     created_at: NOW,
   };
   const service = {
-    holdBooking: vi.fn(() => Promise.resolve({ portfolio, transaction })),
+    holdBooking: vi.fn(
+      (): Promise<BookingHoldOutcome> =>
+        Promise.resolve({
+          status: 'held',
+          portfolio,
+          transaction,
+        } as unknown as BookingHoldOutcome),
+    ),
     submitDepositReport: vi.fn(() => Promise.resolve({ id: 'r-1' })),
     overview: vi.fn(() => Promise.resolve({ portfolios: [], financier: null })),
     approveBooking: vi.fn(() => Promise.resolve({ success: false, message: 'blocked' })),
@@ -193,6 +201,7 @@ describe('PortfoliosController.hold', () => {
       amountMinor: 125_000,
       currency: 'COP',
     });
+    if (!response.retained) throw new Error('esperaba la retención');
     expect(response.portfolio).toMatchObject({
       balanceMinor: 375_000,
       currency: 'COP',
@@ -212,6 +221,19 @@ describe('PortfoliosController.hold', () => {
     await h.controller.hold(USER, { orderId: ORDER });
 
     expect(h.service.holdBooking).toHaveBeenCalledWith(TENANT, ORDER, USER, {});
+  });
+
+  it('con la cuenta propia de la agencia no retiene nada y lo dice, sin cartera ni asiento', async () => {
+    const h = harness();
+    h.service.holdBooking.mockResolvedValueOnce({ status: 'own-account' });
+
+    const response = await h.controller.hold(USER, { orderId: ORDER });
+
+    expect(response).toEqual({
+      retained: false,
+      reason: 'OWN_PROVIDER_ACCOUNT',
+      message: OWN_PROVIDER_ACCOUNT_MESSAGE,
+    });
   });
 });
 

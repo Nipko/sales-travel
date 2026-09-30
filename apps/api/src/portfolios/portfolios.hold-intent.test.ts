@@ -14,6 +14,7 @@ import {
   type BookingHoldQuote,
 } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
+import { held } from './__fixtures__/held-outcome.js';
 
 /**
  * Retención de cartera sobre la orden ABIERTA, antes del Book (docs/tbo/09 PR-4.8; 08 RF-23 CA 1
@@ -173,6 +174,17 @@ describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin 
     ).resolves.toBeUndefined();
   });
 
+  it('con la cuenta propia del nodo (O = T) no hay nada que cubrir: sigue aunque no tenga cartera', async () => {
+    const b = banco({ wallet: null });
+    b.bank.network.ownAccount = true;
+
+    await expect(
+      b.service.assertBookingHoldAffordable(SUBAGENCIA, quote(34_012), { reportOrderId: ORDEN }),
+    ).resolves.toBeUndefined();
+    expect(b.bank.reports).toEqual([]);
+    expect(b.bank.state.entries).toHaveLength(0);
+  });
+
   it.each([
     ['monto cero', { amountMinor: 0, currency: 'USD' }],
     ['monto no entero', { amountMinor: 1.5, currency: 'USD' }],
@@ -245,6 +257,17 @@ describe('PortfoliosService.previewBookingHold: el aviso del PreBook, antes de c
       message:
         'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avisale a quien te financia.',
     });
+  });
+
+  it('con la cuenta propia del nodo (O = T): own-account, sin aviso de cartera ni a la red', async () => {
+    const b = banco({ wallet: null });
+    b.bank.network.ownAccount = true;
+
+    await expect(
+      b.service.previewBookingHold(SUBAGENCIA, quote(34_012), { reportNetworkBlock: true }),
+    ).resolves.toEqual({ status: 'own-account', currency: 'USD' });
+    expect(b.bank.log).toEqual(['wallet_hold_preview']);
+    expect(b.bank.previewReports).toEqual([]);
   });
 
   it('si la base no lo puede evaluar, no hay aviso', async () => {
@@ -320,11 +343,8 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
   it('bloquea la orden, retiene por wallet_hold_retain y devuelve sólo lo de su cartera', async () => {
     const b = banco();
 
-    const { transaction, portfolio } = await b.service.holdBookingIntent(
-      SUBAGENCIA,
-      ORDEN,
-      USUARIO,
-      USD(34_012),
+    const { transaction, portfolio } = held(
+      await b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)),
     );
 
     expect(transaction).toMatchObject({
@@ -369,6 +389,36 @@ describe('PortfoliosService.holdBookingIntent: la retención sobre la orden abie
     expect((err as BookingHoldRejectedError).message).toContain('cartera en USD');
     expect(b.bank.state.entries).toHaveLength(0);
     expect(b.bank.reports).toEqual([]);
+  });
+
+  it('con la cuenta propia del nodo (O = T) no retiene nada, ni pide cartera en esa moneda', async () => {
+    const b = banco({ wallet: null });
+    b.bank.network.ownAccount = true;
+
+    await expect(
+      b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012)),
+    ).resolves.toEqual({ status: 'own-account' });
+
+    expect(b.bank.state.entries).toHaveLength(0);
+    expect(b.bank.state.wallets).toHaveLength(0);
+    expect(b.bank.groupOf(ORDEN)).toMatchObject({ status: 'exempt' });
+    // No lee la cartera: no hay asiento propio que devolver.
+    expect(b.bank.log).toEqual([
+      "SET LOCAL lock_timeout = '2s'",
+      'orders FOR UPDATE',
+      'wallet_hold_retain',
+    ]);
+    expect(b.bank.reports).toEqual([]);
+  });
+
+  it('con la cuenta propia y la cartera sin saldo tampoco retiene: la cartera no se toca', async () => {
+    const b = banco({ wallet: { balance_minor: 0 } });
+    b.bank.network.ownAccount = true;
+
+    await b.service.holdBookingIntent(SUBAGENCIA, ORDEN, USUARIO, USD(34_012));
+
+    expect(b.bank.wallet(SUBAGENCIA, 'USD')?.balance_minor).toBe(0);
+    expect(b.bank.state.entries).toHaveLength(0);
   });
 
   it('un nivel de la red que no alcanza: 409 de la red, nada escrito y aviso al que bloqueó', async () => {

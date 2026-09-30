@@ -10,6 +10,7 @@ import type { HotelProviderRegistry } from '../providers/hotel-provider.registry
 import { BookingHoldRejectedError, type BookingHoldQuote } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
+import { held } from './__fixtures__/held-outcome.js';
 import { clearWalletHoldsOfTenants } from './__fixtures__/wallet-hold-seed.js';
 
 /**
@@ -203,11 +204,8 @@ d('retención de cartera sobre el intent contra Postgres (0039 + 0042 + 0052)', 
 
     await cupo(34_012);
     await portfolios.assertBookingHoldAffordable(agencia, cotizacion(USD(34_012)));
-    const { transaction } = await portfolios.holdBookingIntent(
-      agencia,
-      intent.id,
-      usuario,
-      USD(34_012),
+    const { transaction } = held(
+      await portfolios.holdBookingIntent(agencia, intent.id, usuario, USD(34_012)),
     );
 
     expect(transaction).toMatchObject({

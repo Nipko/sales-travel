@@ -5,6 +5,10 @@
  * saldo más el cupo que fija quien financia, y desde 0060 también la de cada nivel de su red hasta
  * el dueño de la cuenta del proveedor—; acá sólo se lee su motivo, y nunca hay saldo ni cupo que
  * mostrar: la agencia ve los suyos en Cartera B2B, y los de su red no son suyos.
+ *
+ * Con la cuenta PROPIA de la agencia en el proveedor no se retiene nada de ninguna cartera, ni hace
+ * falta una en esa moneda (decisión del founder del 2026-09-30): el PreBook lo dice con
+ * `own-account`, no hay aviso de cartera y el checkout dice con qué se paga.
  */
 
 export const PORTFOLIOS_HREF = '/carteras';
@@ -46,6 +50,8 @@ export const NETWORK_DETAIL = 'Hablá con quien te financia antes de volver a in
 /** Lo que el PreBook dice de la cartera. Sin él, no se sabe y decide el Book. */
 export type PrebookFunding =
   | { readonly status: 'ok' }
+  /** Se reserva con la cuenta propia de la agencia: no se retiene nada de ninguna cartera. */
+  | { readonly status: 'own-account' }
   | {
       readonly status: 'blocked';
       /** Motivo máquina (`PORTFOLIO_CURRENCY_NOT_ENABLED`…), o `undefined` si no vino uno válido. */
@@ -69,6 +75,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseFunding(value: unknown): PrebookFunding | undefined {
   if (!isRecord(value)) return undefined;
   if (value['status'] === 'ok') return { status: 'ok' };
+  if (value['status'] === 'own-account') return { status: 'own-account' };
   if (value['status'] !== 'blocked') return undefined;
   const raw = value['reason'];
   const reason = typeof raw === 'string' && CODE_RE.test(raw) ? raw : undefined;
@@ -107,6 +114,21 @@ export function fundingNotice(funding: PrebookFunding | undefined): FundingNotic
     detail: funding.message,
     action: isNetworkFundingReason(funding.reason) ? 'financier' : 'portfolios',
   };
+}
+
+/** ¿Se reserva con la cuenta propia de la agencia en el proveedor, sin retener de ninguna cartera? */
+export function bookedWithOwnAccount(funding: PrebookFunding | undefined): boolean {
+  return funding?.status === 'own-account';
+}
+
+/**
+ * Con qué se paga, al lado del botón que reserva. Sin saberlo (el PreBook no lo dijo), lo de
+ * siempre: la cartera, que es lo que el Book decide con cualquier cuenta que no sea la propia.
+ */
+export function paymentNote(ownAccount: boolean): string {
+  return ownAccount
+    ? 'Se reserva con la cuenta de la agencia en el proveedor, que es quien la cobra: no se retiene saldo de ninguna cartera. No se piden datos de tarjeta.'
+    : 'Se retiene de la cartera de la agencia en la moneda de la tarifa (su saldo más su cupo). No se piden datos de tarjeta.';
 }
 
 /** El motivo junto al botón de seguir cuando la cartera no cubre la tarifa. */

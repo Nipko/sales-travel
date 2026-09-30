@@ -60,7 +60,11 @@ export interface NetworkHoldCase {
   readonly account: AccountOwner | null;
   /** El proveedor de la orden no tiene cuentas en la bóveda: credenciales de entorno. */
   readonly envOnly?: boolean;
-  /** Quiénes retienen, en orden de depth (0 = el que vende). */
+  /**
+   * Quiénes retienen, en orden de depth (0 = el que vende). Vacío: la venta es con la cuenta propia
+   * del que vende (O = T), grabada en la orden o de la plataforma, y no retiene nadie (decisión del
+   * founder del 2026-09-30, opción B).
+   */
   readonly retains: readonly NodeKey[];
 }
 
@@ -88,7 +92,10 @@ export const NETWORK_HOLD_CASES: readonly NetworkHoldCase[] = [
   { name: 'S1 con la cuenta de C', seller: 'S1', account: 'C', retains: ['S1', 'A'] },
   { name: 'A con la cuenta de C', seller: 'A', account: 'C', retains: ['A'] },
   { name: 'S1 con una cuenta de A', seller: 'S1', account: 'A', retains: ['S1'] },
-  { name: 'C con su cuenta propia (O = T)', seller: 'C', account: 'C', retains: ['C'] },
+  // O = T: no retiene nadie, ni el que vende (founder, 2026-09-30). Sus descendientes con esa misma
+  // cuenta siguen reteniendo su cadena por debajo de él (S1 y A con la de C, S1 con la de A).
+  { name: 'C con su cuenta propia (O = T)', seller: 'C', account: 'C', retains: [] },
+  { name: 'A con su cuenta propia (O = T)', seller: 'A', account: 'A', retains: [] },
   {
     name: 'S1 con credenciales de entorno',
     seller: 'S1',
@@ -109,7 +116,27 @@ export const NETWORK_HOLD_CASES: readonly NetworkHoldCase[] = [
     account: null,
     retains: ['S3', 'A2'],
   },
+  // Sin cuenta en la orden, que la bóveda le resuelva hoy la propia no prueba con qué cuenta se
+  // reservó (pudo cargarla después): C retiene en su cartera, como antes de 0060, y nadie más.
+  {
+    name: 'C sin cuenta en la orden: la propia que la bóveda le resuelve no la exime',
+    seller: 'C',
+    account: null,
+    retains: ['C'],
+  },
+  // La plataforma sí: todo lo que se le resuelve es suyo (no tiene de quién heredar).
+  {
+    name: 'P sin cuenta en la orden: la suya, que la bóveda le resuelve (O = T)',
+    seller: 'P',
+    account: null,
+    retains: [],
+  },
 ];
+
+/** ¿El caso es una venta con la cuenta propia del que vende, que no retiene nada? */
+export function isOwnAccountCase(c: NetworkHoldCase): boolean {
+  return c.retains.length === 0;
+}
 
 const byKey = new Map(NETWORK.map((n) => [n.key, n]));
 

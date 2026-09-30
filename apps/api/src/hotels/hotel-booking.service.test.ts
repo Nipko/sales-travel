@@ -460,6 +460,11 @@ interface CarteraFake {
    * cascada la decide la base; acá sólo su motivo.
    */
   red?: Extract<BookingHoldRejection, `PORTFOLIO_NETWORK_${string}`>;
+  /**
+   * La agencia reserva con su propia cuenta del proveedor (O = T): la base no retiene nada ni pide
+   * cartera (decisión del founder del 2026-09-30).
+   */
+  cuentaPropia?: boolean;
 }
 
 interface Fondos {
@@ -492,6 +497,7 @@ function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
   const estado = { saldoMinor: c.saldoMinor, retenciones: new Map<string, number>() };
   const decision = (amount: Money): BookingHoldRejection | undefined => {
     // Como la base: la cartera de la moneda de la reserva, o ninguna; después, la red.
+    if (c.cuentaPropia === true) return undefined;
     if ((c.moneda ?? amount.currency) !== amount.currency) return 'PORTFOLIO_CURRENCY_NOT_ENABLED';
     if (estado.saldoMinor + Math.max(c.cupoMinor ?? 0, 0) < amount.amountMinor) {
       return 'PORTFOLIO_FUNDS_INSUFFICIENT';
@@ -509,7 +515,10 @@ function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
       const reason = decision(quote.amount);
       return Promise.resolve<BookingHoldPreview>(
         reason === undefined
-          ? { status: 'ok', currency: quote.amount.currency }
+          ? {
+              status: c.cuentaPropia === true ? 'own-account' : 'ok',
+              currency: quote.amount.currency,
+            }
           : {
               status: 'blocked',
               currency: quote.amount.currency,
@@ -529,6 +538,10 @@ function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
       (_tenantId: string, orderId: string, _createdBy: string, expected: Money) =>
         new Promise<unknown>((resolve) => {
           decidir(expected);
+          if (c.cuentaPropia === true) {
+            resolve({ status: 'own-account' });
+            return;
+          }
           estado.saldoMinor -= expected.amountMinor;
           estado.retenciones.set(orderId, expected.amountMinor);
           resolve({});
@@ -2358,17 +2371,42 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect(b.fondos.estado.saldoMinor).toBe(-PISO);
   });
 
-  it('con la cuenta propia manda la misma cartera', async () => {
-    const b = await banco({ cartera: { saldoMinor: PISO - 1 } });
+  it('con la cuenta propia (O = T; founder, 2026-09-30) no se retiene nada: reserva aunque la agencia no tenga cartera en esa moneda', async () => {
+    // La decisión es de la base (wallet_hold_preview y wallet_hold_retain): el servicio pregunta
+    // igual, con la cuenta de la búsqueda, y sigue cuando no hay nada que retener.
+    const b = await banco({ cartera: { saldoMinor: 0, moneda: 'COP', cuentaPropia: true } });
 
-    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+    const res = await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
 
-    expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
+    expect(res.body.status).toBe('confirmed');
     expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
       reportOrderId: fila(b)['id'],
     });
+    expect(b.fondos.holdBookingIntent).toHaveBeenCalledWith(
+      AGENCIA,
+      fila(b)['id'],
+      USUARIO,
+      USD(PISO),
+    );
+    expect(b.fondos.estado).toEqual({ saldoMinor: 0, retenciones: new Map() });
+    expect(b.puerto.bookWithContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('con la cuenta propia, si el Book falla no hay retención que liberar', async () => {
+    const b = await banco({ cartera: { saldoMinor: 0, moneda: 'COP', cuentaPropia: true } });
+    b.puerto.bookWithContext.mockRejectedValueOnce(
+      new RechazoError(
+        { outcome: 'FAILED', reason: 'rate-unavailable', dispatched: true, providerStatus: '207' },
+        'offer',
+      ),
+    );
+
+    const res = await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
+
+    expect(res.body.status).toBe('failed');
     expect(fila(b)['status']).toBe('failed');
-    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+    await expect(b.fondos.releaseFailedBookingHold.mock.results[0]?.value).resolves.toBe('no-hold');
+    expect(b.fondos.estado).toEqual({ saldoMinor: 0, retenciones: new Map() });
   });
 
   it('la retención sale después de C2 y antes del Book, sobre la orden abierta y con el precio que ya dice', async () => {

@@ -43,6 +43,7 @@ import {
   networkHoldsEmpty,
   networkHoldsIn,
   openNetworkHolds,
+  reservesWithOwnAccounts,
   sortDepositReports,
   walletCurrencies,
   walletEditable,
@@ -126,6 +127,10 @@ export function CarterasClient({
   const portfolios = useMemo(() => wallets?.portfolios ?? [], [wallets]);
   const financierName = wallets?.financier?.name ?? null;
   const financier = financierName ?? 'Planetour';
+  // Con su propia cuenta en los proveedores que retienen, sus reservas no retienen de ninguna cartera
+  // (decisión del founder del 2026-09-30): "sin cartera no se reserva" no es cierto para ella. El
+  // correo u otra cuenta que no reserva no cuentan.
+  const hasOwnAccounts = wallets !== null && reservesWithOwnAccounts(wallets);
   // Una cartera en una moneda retirada de ISO 4217 se muestra, pero ya no recibe depósitos.
   const reportable = useMemo(() => portfolios.filter(walletEditable), [portfolios]);
   const canReport = canReportDeposits(role) && reportable.length > 0;
@@ -305,8 +310,9 @@ export function CarterasClient({
           icon={<WalletIcon className="size-6" />}
           title="Tu agencia todavía no tiene carteras."
         >
-          Sin una cartera no se puede reservar. Pedile a {financier} que te habilite la moneda en la
-          que vendés (por ejemplo COP o USD) y el cupo que te corresponda.
+          {hasOwnAccounts
+            ? `Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pedile a ${financier} que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.`
+            : `Sin una cartera no se puede reservar. Pedile a ${financier} que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.`}
         </EmptyState>
       ) : (
         <section aria-labelledby="agency-wallets-title" className="space-y-3">

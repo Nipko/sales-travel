@@ -7,7 +7,8 @@ import type { DatabaseService } from '../../database/database.service.js';
  * servicio y del ledger. Modela lo que la API ve: la cartera del nodo que vende con las reglas de
  * `wallet_hold_decide`, el todo o nada, los errores con su SQLSTATE y su regla, y la RLS por tenant.
  * La red por encima es una perilla (`network`): quién retiene y cuánto lo prueban los tests de
- * integración contra la base.
+ * integración contra la base. `network.ownAccount` es la venta con la cuenta propia del nodo
+ * (O = T): no retiene nada, ni exige cartera, y el grupo queda `exempt` sin niveles.
  *
  * Cada `withTenant` es una transacción: trabaja sobre una copia y la publica sólo si el callback
  * termina, en serie como las filas bloqueadas de Postgres.
@@ -55,7 +56,7 @@ export interface MemoryGroup {
   id: string;
   order_id: string;
   origin_tenant_id: string;
-  status: 'held' | 'captured' | 'released' | 'conflict';
+  status: 'held' | 'captured' | 'released' | 'conflict' | 'exempt';
   created_by: string;
 }
 
@@ -68,7 +69,7 @@ export interface MemoryLevel {
   amount_minor: number;
   hold_transaction_id: string;
   release_transaction_id: string | null;
-  status: MemoryGroup['status'];
+  status: Exclude<MemoryGroup['status'], 'exempt'>;
 }
 
 export type NetworkRule =
@@ -91,6 +92,8 @@ export interface NetworkKnob {
   previewUnknown?: boolean;
   /** `wallet_hold_retain` lanza `hold_owner_unresolvable`. */
   ownerUnresolvable?: boolean;
+  /** La cuenta es la propia del nodo que vende (O = T): nadie retiene ni hace falta cartera. */
+  ownAccount?: boolean;
 }
 
 /** Un error como los de `pg`: SQLSTATE, regla y un mensaje con ids que no debe llegar al usuario. */
@@ -117,6 +120,18 @@ function decide(wallet: MemoryWallet | undefined, amount: number): string {
   return wallet.balance_minor + Math.max(wallet.credit_limit_minor, 0) < amount
     ? 'funds_insufficient'
     : 'ok';
+}
+
+/** Lo que `wallet_hold_retain` devuelve con la cuenta propia: el grupo, sin cartera ni asiento. */
+function exemptRow(groupId: string) {
+  return {
+    group_id: groupId,
+    hold_status: 'exempt',
+    own_portfolio_id: null,
+    own_transaction_id: null,
+    network_levels: 0,
+    mode: 'enforce',
+  };
 }
 
 interface CompiledLike {
@@ -332,7 +347,7 @@ export class MemoryWalletHolds {
     const order = s.orders.find((o) => o.id === orderId && o.tenant_id === tenantId);
     if (order === undefined) throw pgError('STW01', 'hold_order_not_found');
 
-    let initial: MemoryGroup['status'];
+    let initial: 'held' | 'captured';
     if (order.status === 'pending' && order.provider_raw === null && order.create_request_key) {
       initial = 'held';
     } else if (order.status === 'confirmed') {
@@ -340,8 +355,10 @@ export class MemoryWalletHolds {
     } else {
       throw pgError('STW01', 'hold_order_not_holdable');
     }
+    const prior = s.groups.find((g) => g.order_id === order.id);
+    if (prior?.status === 'exempt') return exemptRow(prior.id);
     if (
-      s.groups.some((g) => g.order_id === order.id) ||
+      prior !== undefined ||
       s.entries.some(
         (e) => e.transaction_type === 'BOOKING_HOLD' && e.reference_id?.toLowerCase() === order.id,
       )
@@ -354,12 +371,24 @@ export class MemoryWalletHolds {
       throw pgError('STW01', 'hold_amount_invalid');
     }
 
-    const own = s.wallets.find((w) => w.tenant_id === tenantId && w.currency === currency);
-    const decision = decide(own, amount);
-    if (decision !== 'ok' || own === undefined) throw pgError('STW02', `hold_${decision}`);
+    // Como la base: sin dueño resuelto falla cerrado antes de mirar ninguna cartera.
     if (this.network.ownerUnresolvable === true) {
       throw pgError('STW01', 'hold_owner_unresolvable');
     }
+    if (this.network.ownAccount === true) {
+      const exempt: MemoryGroup = {
+        id: randomUUID(),
+        order_id: order.id,
+        origin_tenant_id: tenantId,
+        status: 'exempt',
+        created_by: actor,
+      };
+      s.groups.push(exempt);
+      return exemptRow(exempt.id);
+    }
+    const own = s.wallets.find((w) => w.tenant_id === tenantId && w.currency === currency);
+    const decision = decide(own, amount);
+    if (decision !== 'ok' || own === undefined) throw pgError('STW02', `hold_${decision}`);
     if (this.network.rejectWith !== undefined) throw pgError('STW02', this.network.rejectWith);
 
     const group: MemoryGroup = {
@@ -399,6 +428,7 @@ export class MemoryWalletHolds {
     });
     return {
       group_id: group.id,
+      hold_status: initial,
       own_portfolio_id: own.id,
       own_transaction_id: entry.id,
       network_levels: 0,
@@ -415,7 +445,7 @@ export class MemoryWalletHolds {
     const order = s.orders.find((o) => o.id === orderId && o.tenant_id === tenantId);
     if (order === undefined) throw pgError('STW01', 'hold_order_not_found');
     const group = s.groups.find((g) => g.order_id === order.id);
-    if (group === undefined) return 'no-hold';
+    if (group === undefined || group.status === 'exempt') return 'no-hold';
     if (
       expected !== null &&
       order.status !== expected &&
@@ -468,13 +498,18 @@ export class MemoryWalletHolds {
     return 'open';
   }
 
-  private mark(s: MemoryWalletHoldState, group: MemoryGroup, status: MemoryGroup['status']) {
+  private mark(
+    s: MemoryWalletHoldState,
+    group: MemoryGroup,
+    status: Exclude<MemoryGroup['status'], 'exempt'>,
+  ) {
     group.status = status;
     for (const level of s.levels.filter((l) => l.group_id === group.id)) level.status = status;
   }
 
   private preview(tenantId: string, s: MemoryWalletHoldState, params: readonly unknown[]) {
     if (this.network.previewUnknown === true) return { status: 'unknown', reason: null };
+    if (this.network.ownAccount === true) return { status: 'exempt', reason: null };
     const currency = String(params[3]);
     const sale = Number(params[4]);
     const own = s.wallets.find((w) => w.tenant_id === tenantId && w.currency === currency);

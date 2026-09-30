@@ -695,9 +695,10 @@ titular es INFERIDO ([03](./03-prebook-y-book.md) §7.4). `tenants.credit_limit`
 
 **Estado (2026-09-29).** El límite interno es el cupo de la cartera de la agencia en la moneda de la tarifa, que
 fija quien la financia: `tenants.credit_limit` pasó a ese cupo en 0053 y ya no se lee. El tope de la retención es el
-saldo más ese cupo, con cuenta propia o heredada. Con D-TBO-21 cerrada, el límite de una sub-agencia lo fija su
-agencia, el de una agencia lo fija su consolidador o Planetour, y ninguna agencia toca el suyo
-(`db/migrations/0052_wallets_per_currency.sql`, `can_finance_tenant`). El CA 1 lo cubren
+saldo más ese cupo, con la cuenta heredada; con la propia no se retiene (decisión del founder del 2026-09-30,
+opción B). Con D-TBO-21 cerrada, el límite de una sub-agencia lo fija su agencia, el de una agencia lo fija su
+consolidador o Planetour, y ninguna agencia toca el suyo (`db/migrations/0052_wallets_per_currency.sql`,
+`can_finance_tenant`). El CA 1 lo cubren
 `apps/api/src/hotels/hotel-booking.service.test.ts` (el Book rechazado no sale a TBO) y
 `apps/api/src/portfolios/holds-per-currency.integration.test.ts` (la retención por moneda, como `app_user`). El cobro
 al viajero con checkout alojado sigue sin construir, porque no hay pasarela de pagos (Fase 1 de
@@ -2015,11 +2016,15 @@ la propia agencia. El founder eligió que la cartera de cada agencia la establez
     retienen cada uno su costo.
   - Si un nivel no alcanza, no se retiene en ninguno y no se llama a TBO: 409 `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`,
     `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` o `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. El PreBook ya lo avisa (`funding`).
-  - Liberar recorre lo retenido y devuelve el 100 % en todos los niveles, como hoy.
-  - **O = T.** Si el que vende es el dueño de la cuenta (un consolidador con su propia cuenta TBO) retiene sólo en su
-    cartera, como antes, y nadie de más arriba retiene por esa venta. Si su financiador también debería retener es una
-    pregunta abierta para el founder.
-  - Con la red de hoy (todos los nodos de nivel 2 o menos) ninguna reserva cambia.
+  - Liberar recorre lo retenido y devuelve el 100 % en todos los niveles, como hoy, también con penalidad: quien
+    financia cada nivel la registra con un ajuste manual (decisión del founder del 2026-09-30, opción A; el
+    procedimiento está en platform/13 §5).
+  - **O = T.** Si el que vende es el dueño de la cuenta (un consolidador con su propia cuenta TBO), no retiene nadie,
+    ni él ni su red, y no necesita cartera en la moneda de la tarifa (decisión del founder del 2026-09-30, opción B).
+    El PreBook lo dice (`funding: own-account`) y no hay aviso de cartera. Sus agencias, que heredan esa cuenta,
+    siguen reteniendo su cadena por debajo de él.
+  - Con la red de hoy (todos los nodos de nivel 2 o menos) nadie de la red retiene de más. Lo único que cambia es que
+    quien reserva con su propia cuenta TBO, como Planetour, deja de retener.
 
   Detalle en [platform/12](../platform/12-modelo-consolidador-y-plan.md) §12; el despliegue es el paso 14 de
   [platform/13](../platform/13-validacion-modelo-red.md) §5.

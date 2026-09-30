@@ -125,8 +125,15 @@ export interface NonRefundableNoticeView {
   readonly since?: string;
 }
 
-/** El aviso grande del paso 1 y del detalle de una orden. */
-export function nonRefundableNoticeView(nr: PrebookNonRefundable): NonRefundableNoticeView {
+/**
+ * El aviso grande del paso 1 y del detalle de una orden. Con la cuenta propia de la agencia en el
+ * proveedor (`ownAccount`, lo dice el PreBook) el 100 % lo cobra el proveedor en esa cuenta: no pasa
+ * por ninguna cartera. Sin saberlo (el detalle de una orden), lo de la cartera.
+ */
+export function nonRefundableNoticeView(
+  nr: PrebookNonRefundable,
+  opts: { readonly ownAccount?: boolean } = {},
+): NonRefundableNoticeView {
   const amount = formatMoney(nr.penalty);
   return {
     title: 'Tarifa no reembolsable',
@@ -135,7 +142,9 @@ export function nonRefundableNoticeView(nr: PrebookNonRefundable): NonRefundable
     lead: 'Si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 %:',
     points: [
       'No se recupera: ni la agencia ni el cliente reciben un reembolso.',
-      `Se descuenta de la cartera o del crédito de la agencia en ${nr.penalty.currency}.`,
+      opts.ownAccount === true
+        ? `Lo cobra el proveedor en la cuenta de la agencia, en ${nr.penalty.currency}.`
+        : `Se descuenta de la cartera o del crédito de la agencia en ${nr.penalty.currency}.`,
       'La agencia responde ante su cliente por ese monto.',
     ],
     ...(nr.fullPenaltySinceLocal === undefined

@@ -34,6 +34,7 @@ import {
 } from './booking-view';
 import { CheckoutExpiry } from './checkout-expiry';
 import { cancelPolicyView } from './conditions-view';
+import { bookedWithOwnAccount } from './funding-view';
 import { GuestForm } from './guest-form';
 import {
   AT_PROPERTY_FIELD,
@@ -519,6 +520,7 @@ export function BookingStep({
                 nonRefundableAcknowledged={nonRefundableAcknowledged}
                 onNonRefundableAcknowledgedChange={handleNonRefundableAcknowledged}
                 nonRefundableError={errors[NON_REFUNDABLE_FIELD]}
+                ownAccount={bookedWithOwnAccount(prebook.funding)}
                 gate={gate}
                 onConfirm={confirm}
                 onBack={onBack}

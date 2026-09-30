@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { legacyTenant } from '../__fixtures__/platform-root.js';
 import {
   NETWORK,
   NETWORK_HOLD_CASES,
@@ -8,11 +9,13 @@ import {
   cascadeProvider,
   cascadeVertical,
   expectedHolds,
+  isOwnAccountCase,
   saleOf,
   type AccountOwner,
   type NodeKey,
 } from './__fixtures__/network-hold-cases.js';
 import {
+  clearWalletHolds,
   seedNetwork,
   seedOrder,
   seedWallet,
@@ -23,7 +26,8 @@ import {
 /**
  * La retención en cascada de 0060 contra la base, como `app_user` (el rol de la API): quién retiene,
  * cuánto, el todo o nada, el ciclo de vida (captura, liberación, conflicto), la instantánea, los
- * modos, el aviso al ancestro, el anticipo del PreBook, STH02 y el agotamiento del cupo de la red.
+ * modos, el aviso al ancestro, el anticipo del PreBook, STH02, el agotamiento del cupo de la red y
+ * la venta con la cuenta propia del que vende (O = T), que no retiene nada.
  *
  * Cada llamada corre en su transacción con `app.current_tenant_id` del nodo que vende, como
  * `DatabaseService.withTenant`. Lo que la API hace alrededor (validaciones, mensajes, reintentos) se
@@ -54,8 +58,9 @@ const HUGE_CREDIT = 50_000_000;
 
 interface Retained {
   group_id: string;
-  own_portfolio_id: string;
-  own_transaction_id: string;
+  hold_status: string;
+  own_portfolio_id: string | null;
+  own_transaction_id: string | null;
   network_levels: number;
   mode: string;
 }
@@ -306,7 +311,8 @@ d('retención en cascada por la red (0060, como app_user)', () => {
   });
 
   describe('quién retiene y cuánto (spec §1.4)', () => {
-    it.each(NETWORK_HOLD_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+    const holding = NETWORK_HOLD_CASES.filter((c) => !isOwnAccountCase(c));
+    it.each(holding.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
       const expected = expectedHolds(c);
       const credential = expectedOwner(c);
       const orderId = await openOrder(
@@ -317,6 +323,7 @@ d('retención en cascada por la red (0060, como app_user)', () => {
       const before = await balances('USD');
 
       const out = await retain(id(c.seller), orderId, net.sellers[c.seller]);
+      expect(out.hold_status).toBe('held');
       expect(out.network_levels).toBe(c.retains.length - 1);
       expect(out.mode).toBe('enforce');
 
@@ -473,6 +480,282 @@ d('retención en cascada por la red (0060, como app_user)', () => {
       const out = await retain(id('B'), orderId, net.sellers.B);
       expect(out.network_levels).toBe(0);
       await closeFailed(id('B'), orderId, net.sellers.B);
+    });
+  });
+
+  describe('la cuenta propia del que vende (O = T; founder, 2026-09-30): no retiene nadie', () => {
+    /** Las órdenes de un test, para borrarlas si no son de la red de la corrida. */
+    async function dropOrders(orderIds: string[]): Promise<void> {
+      await clearWalletHolds(admin, orderIds);
+      await admin.query('DELETE FROM orders WHERE id = ANY($1::uuid[])', [orderIds]);
+    }
+
+    const ownAccount = NETWORK_HOLD_CASES.filter(isOwnAccountCase);
+    it.each(ownAccount.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+      const credential = expectedOwner(c);
+      expect(credential.owner).toBe(c.seller);
+      // PEN: nadie de la red tiene cartera en esa moneda, tampoco el que vende.
+      const orderId = await openOrder(c.seller, c.account, { currency: 'PEN' });
+      const usd = await balances('USD');
+
+      const out = await retain(id(c.seller), orderId, net.sellers[c.seller]);
+      expect(out).toEqual({
+        group_id: expect.stringMatching(UUID_RE) as unknown,
+        hold_status: 'exempt',
+        own_portfolio_id: null,
+        own_transaction_id: null,
+        network_levels: 0,
+        mode: 'enforce',
+      });
+      expect(await levels(orderId)).toEqual([]);
+      expect(await group(orderId)).toMatchObject({
+        id: out.group_id,
+        origin_tenant_id: id(c.seller),
+        currency: 'PEN',
+        sale_amount_minor: String(saleOf(c.seller)),
+        credential_owner_tenant_id: id(c.seller),
+        credential_source: credential.source,
+        mode: 'enforce',
+        status: 'exempt',
+        captured_at: null,
+        closed_at: null,
+      });
+      const { rows: entries } = await admin.query(
+        `SELECT 1 FROM portfolio_transactions WHERE lower(reference_id) = lower($1)`,
+        [orderId],
+      );
+      expect(entries).toHaveLength(0);
+      expect(await balances('PEN')).toEqual(new Map());
+      expect(await balances('USD')).toEqual(usd);
+
+      // El rastro, en el que vende y con quién vendió, el proveedor y la cuenta que se tomó como
+      // propia (la de la orden; ninguna si vende la plataforma sin cuenta en la orden).
+      const exempted = await events(orderId, 'portfolio.hold.exempted');
+      expect(
+        exempted.map((e) => [
+          e.tenant_id,
+          e.actor,
+          e.payload['reason'],
+          e.payload['credentialSource'],
+          e.payload['providerCode'],
+          e.payload['providerAccountId'],
+          e.payload['amountMinor'],
+          e.payload['currency'],
+        ]),
+      ).toEqual([
+        [
+          id(c.seller),
+          net.sellers[c.seller],
+          'own_account',
+          credential.source,
+          net.provider,
+          accountOf(c.account),
+          saleOf(c.seller),
+          'PEN',
+        ],
+      ]);
+      expect(await events(orderId, 'portfolio.hold.retained')).toEqual([]);
+
+      // Pedirlo otra vez devuelve lo registrado, sin otro evento ni un "ya retenida".
+      expect(await retain(id(c.seller), orderId, net.sellers[c.seller])).toMatchObject({
+        group_id: out.group_id,
+        hold_status: 'exempt',
+      });
+      expect(await events(orderId, 'portfolio.hold.exempted')).toHaveLength(1);
+
+      // El aviso previo dice lo mismo, sin cartera en esa moneda.
+      expect(
+        await preview(id(c.seller), {
+          account: accountOf(c.account),
+          currency: 'PEN',
+          sale: saleOf(c.seller),
+          net: 100_000,
+        }),
+      ).toEqual({ status: 'exempt', reason: null });
+
+      // Nada que capturar, descapturar ni liberar: settle dice no-hold en cada estado.
+      await setStatus(orderId, 'confirmed');
+      expect(await settle(id(c.seller), orderId, net.sellers[c.seller])).toBe('no-hold');
+      await setStatus(orderId, 'pending');
+      await setStatus(orderId, 'cancelled');
+      expect(await settle(id(c.seller), orderId, net.sellers[c.seller], 'cancelled')).toBe(
+        'no-hold',
+      );
+      await setStatus(orderId, 'failed');
+      expect(await settle(id(c.seller), orderId, net.sellers[c.seller], 'failed')).toBe('no-hold');
+      expect(await group(orderId)).toMatchObject({ status: 'exempt', closed_at: null });
+      expect(await levels(orderId)).toEqual([]);
+      expect(await events(orderId, 'portfolio.hold.captured')).toEqual([]);
+    });
+
+    it('un descendiente con esa misma cuenta sigue reteniendo su cadena por debajo del dueño', async () => {
+      // C no retiene por su venta; S1 y A sí por la de S1 con la cuenta de C, y C no.
+      const own = await openOrder('C', 'C', { currency: 'PEN' });
+      const byChild = await openOrder('S1', 'C');
+      const before = await balances('USD');
+
+      expect(await retain(id('C'), own, net.sellers.C)).toMatchObject({ hold_status: 'exempt' });
+      expect(await retain(id('S1'), byChild, net.sellers.S1)).toMatchObject({
+        hold_status: 'held',
+        network_levels: 1,
+      });
+
+      const expected = expectedHolds({
+        name: 'S1 con la cuenta de C',
+        seller: 'S1',
+        account: 'C',
+        retains: ['S1', 'A'],
+      });
+      expect((await levels(byChild)).map((l) => [l.tenant_id, l.amount_minor])).toEqual([
+        [id('S1'), String(expected.get('S1'))],
+        [id('A'), String(expected.get('A'))],
+      ]);
+      expect((await balances('USD')).get(id('C'))).toBe(before.get(id('C')));
+      await closeFailed(id('S1'), byChild, net.sellers.S1);
+      expect(await balances('USD')).toEqual(before);
+    });
+
+    it('la cuenta propia no retiene en ningún modo: off y observe tampoco la tocan', async () => {
+      for (const mode of ['off', 'observe'] as const) {
+        await admin.query(
+          `INSERT INTO wallet_hold_policy (tenant_id, mode, reason) VALUES ($1, $2, 'prueba O = T')
+           ON CONFLICT (tenant_id) DO UPDATE SET mode = EXCLUDED.mode`,
+          [id('C'), mode],
+        );
+        try {
+          const orderId = await openOrder('C', 'C', { currency: 'PEN' });
+          expect(await retain(id('C'), orderId, net.sellers.C)).toMatchObject({
+            hold_status: 'exempt',
+            mode,
+          });
+          expect(await group(orderId)).toMatchObject({ status: 'exempt', mode });
+          expect(await events(orderId, 'portfolio.network_hold.would_block')).toEqual([]);
+          expect(
+            await preview(id('C'), {
+              account: net.accounts.C,
+              currency: 'PEN',
+              sale: saleOf('C'),
+              net: 100_000,
+            }),
+          ).toEqual({ status: 'exempt', reason: null });
+        } finally {
+          await admin.query('DELETE FROM wallet_hold_policy WHERE tenant_id = $1', [id('C')]);
+        }
+      }
+    });
+
+    it('una cuenta propia inactiva no se resuelve: falla cerrado, como siempre', async () => {
+      await admin.query(`UPDATE provider_accounts SET status = 'disabled' WHERE id = $1`, [
+        net.accounts.C,
+      ]);
+      try {
+        const orderId = await openOrder('C', 'C', { currency: 'PEN' });
+        const e = await failure(retain(id('C'), orderId, net.sellers.C));
+        expect({ code: e.code, constraint: e.constraint }).toEqual({
+          code: 'STW01',
+          constraint: 'hold_owner_unresolvable',
+        });
+        expect(await group(orderId)).toBeUndefined();
+        expect(
+          await preview(id('C'), {
+            account: net.accounts.C,
+            currency: 'PEN',
+            sale: saleOf('C'),
+            net: 100_000,
+          }),
+        ).toEqual({ status: 'unknown', reason: null });
+      } finally {
+        await admin.query(`UPDATE provider_accounts SET status = 'active' WHERE id = $1`, [
+          net.accounts.C,
+        ]);
+      }
+    });
+
+    it('la plataforma con credenciales de entorno es la dueña: tampoco retiene', async () => {
+      const orderId = await openOrder('P', null, {
+        currency: 'PEN',
+        provider: `${net.provider}-env`,
+      });
+      try {
+        expect(await retain(id('P'), orderId, net.sellers.P)).toMatchObject({
+          hold_status: 'exempt',
+        });
+        expect(await group(orderId)).toMatchObject({
+          credential_owner_tenant_id: id('P'),
+          credential_source: 'root',
+          status: 'exempt',
+        });
+      } finally {
+        await dropOrders([orderId]);
+      }
+    });
+
+    it('un nodo legado suelto con credenciales de entorno no es su dueño: retiene en su cartera', async () => {
+      const c = await admin.connect();
+      let legacy: string;
+      try {
+        legacy = await legacyTenant(c, `whc-legacy-${sfx}`, 'agency');
+      } finally {
+        c.release();
+      }
+      extraTenants.push(legacy);
+      await admin.query(
+        `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+        [legacy, net.sellers.A2],
+      );
+      await seedWallet(admin, legacy, { currency: 'PEN', creditLimitMinor: HUGE_CREDIT });
+
+      const orderId = await openOrder('S1', null, {
+        tenantId: legacy,
+        userId: net.sellers.A2,
+        currency: 'PEN',
+        provider: `${net.provider}-env`,
+      });
+      expect(await retain(legacy, orderId, net.sellers.A2)).toMatchObject({
+        hold_status: 'held',
+        network_levels: 0,
+      });
+      expect(await group(orderId)).toMatchObject({
+        credential_owner_tenant_id: legacy,
+        credential_source: 'root',
+        status: 'held',
+      });
+      expect((await levels(orderId)).map((l) => [l.depth, l.tenant_id])).toEqual([[0, legacy]]);
+      expect(await closeFailed(legacy, orderId, net.sellers.A2)).toBe('released');
+    });
+
+    it('una venta eximida no frena a move_tenant_subtree: no hay plata de nadie retenida', async () => {
+      const { rows } = await admin.query<{ id: string }>(
+        `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+         VALUES ($1::text, $1::text, 'CO', 'USD', 'subagency', $2) RETURNING id`,
+        [`whc-s6-${sfx}`, id('A')],
+      );
+      const s6 = rows[0]!.id;
+      extraTenants.push(s6);
+      await admin.query(
+        `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+        [s6, net.sellers.A2],
+      );
+      const { rows: acc } = await admin.query<{ id: string }>(
+        `INSERT INTO provider_accounts (tenant_id, provider_code, label, credentials_enc, status)
+         VALUES ($1, $2, 'whc-s6', '\\x00'::bytea, 'active') RETURNING id`,
+        [s6, net.provider],
+      );
+
+      const orderId = await seedOrder(admin, {
+        tenantId: s6,
+        userId: net.sellers.A2,
+        provider: net.provider,
+        totalMinor: 50_000,
+        currency: 'PEN',
+        accountId: acc[0]!.id,
+        vertical: net.vertical,
+      });
+      expect(await retain(s6, orderId, net.sellers.A2)).toMatchObject({ hold_status: 'exempt' });
+
+      await admin.query('SELECT move_tenant_subtree($1, $2)', [s6, id('A2')]);
+      expect(await group(orderId)).toMatchObject({ status: 'exempt' });
+      expect(await closeFailed(s6, orderId, net.sellers.A2)).toBe('no-hold');
     });
   });
 
@@ -1166,6 +1449,10 @@ d('retención en cascada por la red (0060, como app_user)', () => {
       ['S1 sin fondos en JPY', 'S1', 'P', 'JPY', 100_000],
       ['sin neto con cadena', 'S1', 'P', 'USD', null],
       ['sin neto y sin cadena', 'B', 'P', 'USD', null],
+      ['C con su cuenta propia, sin cartera en PEN', 'C', 'C', 'PEN', 100_000],
+      // Sin cuenta en la orden la propia que resuelve la bóveda no exime: le falta la cartera.
+      ['C con la propia que le resuelve la bóveda, sin cartera en PEN', 'C', null, 'PEN', 100_000],
+      ['P con la suya que le resuelve la bóveda, sin cartera en PEN', 'P', null, 'PEN', 100_000],
     ] as const)(
       'preview dice lo mismo que retain: %s',
       async (_label, seller, owner, currency, net_) => {
@@ -1181,8 +1468,8 @@ d('retención en cascada por la red (0060, como app_user)', () => {
         });
         let outcome: { status: string; reason: string | null };
         try {
-          await retain(id(seller), orderId, net.sellers[seller]);
-          outcome = { status: 'ok', reason: null };
+          const out = await retain(id(seller), orderId, net.sellers[seller]);
+          outcome = { status: out.hold_status === 'exempt' ? 'exempt' : 'ok', reason: null };
           await closeFailed(id(seller), orderId, net.sellers[seller]);
         } catch (err) {
           outcome = { status: 'blocked', reason: (err as PgFailure).constraint ?? '?' };

@@ -699,6 +699,13 @@ export interface PortfolioTransactionsTable {
 export type WalletHoldStatus = 'held' | 'captured' | 'released' | 'conflict';
 
 /**
+ * El estado de un grupo: el de sus niveles, o `exempt` si no retuvo nada porque el que vende reservó
+ * con su propia cuenta (O = T; decisión del founder del 2026-09-30). Un grupo `exempt` no tiene
+ * niveles ni cambia de estado.
+ */
+export type WalletHoldGroupStatus = WalletHoldStatus | 'exempt';
+
+/**
  * Una retención de cartera por orden (0060): la instantánea de quién vende, con qué credencial y en
  * qué modo. La ve sólo el nodo que vende (RLS por `origin_tenant_id`) y `app_user` no la escribe:
  * la escriben `wallet_hold_retain`, `wallet_hold_settle` y la captura al confirmar la orden.
@@ -715,7 +722,7 @@ export interface WalletHoldGroupsTable {
   credential_owner_tenant_id: string | null;
   credential_source: 'account' | 'resolved' | 'root' | 'legacy' | 'unresolved';
   mode: 'off' | 'observe' | 'enforce' | 'legacy';
-  status: WalletHoldStatus;
+  status: WalletHoldGroupStatus;
   created_by: string;
   created_at: Generated<Timestamp>;
   captured_at: Timestamp | null;

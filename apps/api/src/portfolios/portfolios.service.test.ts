@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
-import { MemoryWalletHolds, type MemoryGroup } from './__fixtures__/memory-wallet-holds.js';
+import { MemoryWalletHolds, type MemoryLevel } from './__fixtures__/memory-wallet-holds.js';
 import { PortfolioReleaseBusyError, WalletHoldStateConflictError } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
 
@@ -42,7 +42,7 @@ function harness(options?: {
   /** `false`: el registry de hoteles no conoce al proveedor. */
   knownHotel?: boolean;
   /** Estado de la retención; `null` = la orden no tiene. */
-  holdStatus?: MemoryGroup['status'] | null;
+  holdStatus?: MemoryLevel['status'] | null;
 }) {
   const provider = options?.provider ?? 'sabre';
   const wallet = MemoryWalletHolds.wallet(TENANT, { balance_minor: 500_000 - HELD });

@@ -15,6 +15,7 @@ import { BookingHoldRejectedError, type BookingHoldQuote } from './booking-hold.
 import { PortfoliosService } from './portfolios.service.js';
 import { WalletFinancingService } from './wallet-financing.service.js';
 import { clearWalletHoldsOfTenants, seedWallet } from './__fixtures__/wallet-hold-seed.js';
+import { held } from './__fixtures__/held-outcome.js';
 
 /**
  * La retención usa la cartera de la MONEDA de la tarifa (decisión del founder del 2026-09-29,
@@ -274,11 +275,8 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
     const intent = await openIntent('hotels', 340_12, 'USD');
 
     await portfolios.assertBookingHoldAffordable(agency, quote(money(340_12, 'USD')));
-    const { portfolio, transaction } = await portfolios.holdBookingIntent(
-      agency,
-      intent.id,
-      seller,
-      money(340_12, 'USD'),
+    const { portfolio, transaction } = held(
+      await portfolios.holdBookingIntent(agency, intent.id, seller, money(340_12, 'USD')),
     );
 
     expect(portfolio).toMatchObject({ id: usdWallet, currency: 'USD' });
@@ -313,10 +311,12 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
   it('una reserva de autos confirmada en COP retiene en la cartera COP, y la de USD no se toca', async () => {
     const order = await confirmedCar(150_000_00, 'COP');
 
-    const { portfolio, transaction } = await portfolios.holdBooking(agency, order.id, seller, {
-      amountMinor: 150_000_00,
-      currency: 'COP',
-    });
+    const { portfolio, transaction } = held(
+      await portfolios.holdBooking(agency, order.id, seller, {
+        amountMinor: 150_000_00,
+        currency: 'COP',
+      }),
+    );
 
     expect(portfolio).toMatchObject({ id: copWallet, currency: 'COP' });
     expect(transaction).toMatchObject({ portfolio_id: copWallet, reference_id: order.id });

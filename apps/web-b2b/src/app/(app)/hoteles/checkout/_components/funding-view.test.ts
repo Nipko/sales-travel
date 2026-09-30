@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   FUNDING_GATE_REASON,
   NETWORK_FUNDING_GATE_REASON,
+  bookedWithOwnAccount,
   fundingGateReason,
   fundingNotice,
   isNetworkFundingReason,
   parseFunding,
+  paymentNote,
 } from './funding-view';
 
 const NOT_ENABLED = {
@@ -90,6 +92,31 @@ describe('fundingNotice — lo que ve el vendedor antes de cargar huéspedes', (
   it('sin aviso o con la cartera que cubre, no hay nada que mostrar', () => {
     expect(fundingNotice(undefined)).toBeUndefined();
     expect(fundingNotice({ status: 'ok' })).toBeUndefined();
+  });
+
+  it('con la cuenta propia de la agencia tampoco: no se retiene de ninguna cartera', () => {
+    expect(fundingNotice({ status: 'own-account' })).toBeUndefined();
+  });
+});
+
+describe('la cuenta propia de la agencia (O = T; founder, 2026-09-30)', () => {
+  it('el PreBook la trae como own-account, sin nada más', () => {
+    expect(parseFunding({ status: 'own-account', currency: 'USD', balanceMinor: 7 })).toEqual({
+      status: 'own-account',
+    });
+    expect(bookedWithOwnAccount({ status: 'own-account' })).toBe(true);
+    for (const funding of [undefined, { status: 'ok' } as const]) {
+      expect(bookedWithOwnAccount(funding)).toBe(false);
+    }
+  });
+
+  it('al lado del botón dice con qué se paga: la cuenta propia no retiene de ninguna cartera', () => {
+    expect(paymentNote(true)).toBe(
+      'Se reserva con la cuenta de la agencia en el proveedor, que es quien la cobra: no se retiene saldo de ninguna cartera. No se piden datos de tarjeta.',
+    );
+    expect(paymentNote(false)).toBe(
+      'Se retiene de la cartera de la agencia en la moneda de la tarifa (su saldo más su cupo). No se piden datos de tarjeta.',
+    );
   });
 });
 

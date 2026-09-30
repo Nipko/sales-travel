@@ -16,6 +16,7 @@ import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { OWN_PROVIDER_ACCOUNT_MESSAGE } from './booking-hold.js';
 import { PortfolioForbiddenError } from './portfolio-errors.js';
 import {
   DepositReportsQuerySchema,
@@ -40,6 +41,11 @@ import {
   type WalletMovementView,
   type WalletView,
 } from './wallet-store.js';
+
+/** Lo que responde `POST /portfolios/hold-booking`. */
+export type HoldBookingResponse =
+  | { retained: true; portfolio: WalletView; transaction: WalletMovementView }
+  | { retained: false; reason: 'OWN_PROVIDER_ACCOUNT'; message: string };
 
 /** Los roles de membership que administran un nodo (los de `assertAdminMembership`). */
 const ADMIN_MEMBERSHIP_ROLES: readonly string[] = [
@@ -169,28 +175,37 @@ export class PortfoliosController {
     throw new PortfolioForbiddenError('PORTFOLIO_FINANCIER_REQUIRED', NOT_THE_AGENCY.creditLimit);
   }
 
-  /** Retiene saldo por una reserva confirmada (vuelos y autos), en la cartera de su moneda. */
+  /**
+   * Retiene saldo por una reserva confirmada (vuelos y autos), en la cartera de su moneda y en la de
+   * cada nivel de su red. La orden no guarda con qué cuenta se reservó, así que una cuenta propia
+   * del nodo no la exime; sólo una venta de la plataforma, dueña de todo lo que se le resuelve, no
+   * retiene nada (decisión del founder del 2026-09-30): `retained: false` con el motivo, sin cartera
+   * ni asiento.
+   */
   @SalesOperation()
   @Post('hold-booking')
   async hold(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(HoldBookingSchema)) body: HoldBookingDto,
-  ): Promise<{ portfolio: WalletView; transaction: WalletMovementView }> {
+  ): Promise<HoldBookingResponse> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const expected = {
       ...(body.amountMinor === undefined ? {} : { amountMinor: body.amountMinor }),
       ...(body.currency === undefined ? {} : { currency: body.currency }),
     };
-    const { portfolio, transaction } = await this.portfolios.holdBooking(
-      tenantId,
-      body.orderId,
-      userId,
-      expected,
-    );
+    const outcome = await this.portfolios.holdBooking(tenantId, body.orderId, userId, expected);
+    if (outcome.status === 'own-account') {
+      return {
+        retained: false,
+        reason: 'OWN_PROVIDER_ACCOUNT',
+        message: OWN_PROVIDER_ACCOUNT_MESSAGE,
+      };
+    }
     return {
-      portfolio: walletView(portfolio),
-      transaction: movementView(transaction, portfolio.currency),
+      retained: true,
+      portfolio: walletView(outcome.portfolio),
+      transaction: movementView(outcome.transaction, outcome.portfolio.currency),
     };
   }
 

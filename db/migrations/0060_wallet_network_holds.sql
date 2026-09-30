@@ -11,12 +11,21 @@
 -- CADA NIVEL QUE FINANCIA, EN LA MONEDA DE LA TARIFA, HASTA EL DUEÑO DE LA CREDENCIAL con la que se
 -- reserva. La otra opción ("nadie da más cupo del que tiene") no se eligió.
 --
---   - El nodo que vende (T) retiene siempre, por el precio de venta, como hoy (depth 0).
+--   - El nodo que vende (T) retiene el precio de venta en su cartera, como hasta 0060 (depth 0).
 --   - Retiene además cada ancestro de T que financia (platform, consolidator o agency) y está por
 --     DEBAJO del dueño de la credencial (O), por su COSTO: el neto más los markups de los niveles que
 --     tiene encima (depth 1 = quien financia a T, y así hacia arriba). "Hasta el dueño" es exclusivo:
 --     O le paga al proveedor con su propio contrato, así que quien lo financia no queda expuesto por
 --     esa venta. La raíz tampoco retiene: siempre es O o está por encima de O.
+--   - Con la cuenta propia de T (O = T; decisión del founder del 2026-09-30, "opción B") NO SE
+--     RETIENE NADA, ni en T ni en su red, y T no necesita cartera en esa moneda: le paga al proveedor
+--     con su contrato y nadie de arriba queda expuesto. La retención queda registrada como un grupo
+--     'exempt', sin niveles, con el evento portfolio.hold.exempted. Sólo se exime lo que se puede
+--     probar: la cuenta de T grabada en la orden al reservar (hoteles), o T es la plataforma, dueña
+--     de toda credencial que se le resuelve. Sin cuenta en la orden (vuelos y autos), la bóveda de
+--     ahora no dice con qué cuenta se reservó (el nodo pudo cargar la suya después, o el factory
+--     completarla con secretos de entorno): T retiene en su cartera, como antes. Un nodo legado
+--     suelto que vende con credenciales de entorno tampoco: esas credenciales son de Planetour.
 --   - O sale de la orden, nunca de un parámetro: el dueño de la cuenta de la bóveda con que se
 --     reservó (orders.provider_account_id, con el criterio de 0045). Si la orden no guarda cuenta
 --     (vuelos y autos no la guardan), el dueño de la cuenta que la bóveda le resuelve al nodo para
@@ -36,7 +45,8 @@
 --      en cualquier ancestro gana (el kill-switch).
 --   4. La instantánea de cada retención: wallet_hold_groups (una por orden, la ve quien vende) y
 --      wallet_hold_levels (una por cartera retenida, la ve el dueño de esa cartera). Liberar recorre
---      lo registrado y nunca recalcula la cadena ni el dueño.
+--      lo registrado y nunca recalcula la cadena ni el dueño. Una venta con la cuenta propia deja
+--      su grupo 'exempt' sin niveles: no hay nada que capturar ni liberar.
 --   5. Los asientos NETWORK_HOLD y NETWORK_RELEASED, con CHECK de tipo y de signo.
 --   6. Las guardas: los asientos de retención sólo los escriben las funciones de acá, y el saldo de
 --      una cartera sólo lo mueven ellas o quien la financia.
@@ -364,7 +374,15 @@ CREATE TABLE wallet_hold_groups (
   CONSTRAINT wallet_hold_groups_mode_check
     CHECK (mode IN ('off', 'observe', 'enforce', 'legacy')),
   CONSTRAINT wallet_hold_groups_status_check
-    CHECK (status IN ('held', 'captured', 'released', 'conflict')),
+    CHECK (status IN ('held', 'captured', 'released', 'conflict', 'exempt')),
+  -- Sin retención sólo con la cuenta propia del que vende (O = T): la grabada en la orden o, sin
+  -- cuenta en la orden, la de la plataforma (wallet_hold_is_own_account; el tipo no cabe en un CHECK).
+  CONSTRAINT wallet_hold_groups_exempt_own_account
+    CHECK (status <> 'exempt'
+           OR (credential_owner_tenant_id = origin_tenant_id
+               AND ((credential_source = 'account' AND provider_account_id IS NOT NULL)
+                    OR (credential_source IN ('resolved', 'root')
+                        AND provider_account_id IS NULL)))),
   CONSTRAINT wallet_hold_groups_captured_at
     CHECK (status <> 'captured' OR captured_at IS NOT NULL),
   CONSTRAINT wallet_hold_groups_closed_at
@@ -378,19 +396,19 @@ CREATE INDEX idx_wallet_hold_groups_account_open
   WHERE status IN ('held', 'captured');
 
 COMMENT ON TABLE wallet_hold_groups IS
-  'Una retención de cartera por orden (0060): quién vende, qué se vendió, con qué credencial y en qué modo, y su estado. La ve el nodo que vende (RLS por origin_tenant_id); la escriben sólo wallet_hold_retain, wallet_hold_settle y la captura al confirmar. Sus niveles, uno por cartera retenida, están en wallet_hold_levels.';
+  'Una retención de cartera por orden (0060): quién vende, qué se vendió, con qué credencial y en qué modo, y su estado. La ve el nodo que vende (RLS por origin_tenant_id); la escriben sólo wallet_hold_retain, wallet_hold_settle y la captura al confirmar. Sus niveles, uno por cartera retenida, están en wallet_hold_levels; una venta con la cuenta propia del que vende queda exempt y sin niveles.';
 COMMENT ON COLUMN wallet_hold_groups.origin_tenant_id IS
   'El nodo que vende (app.current_tenant_id de la retención). Sin FK a tenants a propósito (ver 0060 §5).';
 COMMENT ON COLUMN wallet_hold_groups.sale_amount_minor IS
   'Precio de venta retenido en la cartera del nodo que vende (orders.total_amount), en unidades menores de currency.';
 COMMENT ON COLUMN wallet_hold_groups.credential_owner_tenant_id IS
-  'Dueño de la credencial (O) al retener: el de la cuenta de la orden; si la orden no tiene cuenta, el de la cuenta que la bóveda le resolvía al nodo para ese proveedor, o la raíz si no había. Los niveles por debajo de O retienen; O no. NULL en una retención legacy sin cuenta o en una unresolved.';
+  'Dueño de la credencial (O) al retener: el de la cuenta de la orden; si la orden no tiene cuenta, el de la cuenta que la bóveda le resolvía al nodo para ese proveedor, o la raíz si no había. Los niveles por debajo de O retienen; O no. Si O es el que vende con su cuenta propia grabada en la orden, o el que vende es la plataforma, no retiene nadie: el grupo queda exempt. NULL en una retención legacy sin cuenta o en una unresolved.';
 COMMENT ON COLUMN wallet_hold_groups.credential_source IS
   'account: O es el dueño de orders.provider_account_id. resolved: la orden no guarda cuenta (vuelos, autos) y O es el dueño de la que resolve_provider_account le resolvía al nodo para ese proveedor. root: la orden no tiene cuenta y la bóveda no resuelve ninguna (credenciales de entorno); O es la raíz. legacy: retención anterior a 0060. unresolved: con el modo off, la cuenta de la orden ya no se resolvía y sólo retuvo el nodo que vende.';
 COMMENT ON COLUMN wallet_hold_groups.mode IS
   'El modo de wallet_hold_policy con que se retuvo, o legacy si es anterior a 0060.';
 COMMENT ON COLUMN wallet_hold_groups.status IS
-  'held: retenida. captured: la reserva se confirmó y la retención quedó como cargo. released: liberada en todos sus niveles. conflict: figuró confirmada y después no realizada; requiere conciliación manual.';
+  'held: retenida. captured: la reserva se confirmó y la retención quedó como cargo. released: liberada en todos sus niveles. conflict: figuró confirmada y después no realizada; requiere conciliación manual. exempt: no retuvo nada porque el que vende reservó con su propia cuenta (credential_owner_tenant_id = origin_tenant_id, con la cuenta en provider_account_id; o la plataforma sin cuenta en la orden; decisión del founder del 2026-09-30); no tiene niveles ni cambia de estado.';
 
 CREATE TABLE wallet_hold_levels (
   id                      UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -721,6 +739,42 @@ $$;
 
 COMMENT ON FUNCTION wallet_hold_owner(uuid, text, uuid) IS
   'Dueño de la credencial de una venta de p_tenant: el de la cuenta p_account si cumple el criterio de 0045 (mismo proveedor, activa, propia o de un ancestro heredable); con p_account NULL, el de la cuenta que resolve_provider_account le resuelve a p_tenant para p_provider (resolved), o la raíz del árbol si no resuelve ninguna (root). Sin fila si p_account no se resuelve. Helper de 0060, sin GRANT.';
+
+-- ¿La venta es con la cuenta propia del nodo que vende (O = T)? Decisión del founder del
+-- 2026-09-30 ("opción B"): entonces no retiene nadie, ni el nodo ni su red, y el nodo no necesita
+-- cartera en esa moneda. Le paga al proveedor con su contrato y nadie de arriba queda expuesto.
+--
+-- Se exime sólo lo que se puede probar:
+--
+--   - account: la cuenta grabada en la orden al reservar (hoteles) es del nodo. Es la credencial
+--     con que salió la reserva;
+--   - la plataforma, con cualquier origen: todo lo que se le resuelve (su cuenta de la bóveda o las
+--     credenciales de entorno) es suyo, porque no tiene ancestros de quien heredar.
+--
+-- Sin cuenta en la orden (resolved, vuelos y autos) no alcanza con que la bóveda le resuelva hoy
+-- al nodo una cuenta suya: no dice con qué cuenta se reservó. El nodo pudo cargarla o activarla
+-- después de reservar con la heredada, y el factory de autos completa una cuenta sin token con el
+-- de Planetour. Retiene el nodo en su cartera, como antes de 0060 (su cadena es vacía: O = T). Un
+-- nodo legado suelto con credenciales de entorno (root) tampoco se exime: es su propia raíz, pero
+-- esas credenciales no son suyas sino de Planetour.
+CREATE FUNCTION wallet_hold_is_own_account(p_tenant UUID, p_owner UUID, p_source TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+  SELECT COALESCE(
+    p_owner = p_tenant
+    AND (
+      p_source = 'account'
+      OR (p_source IN ('resolved', 'root')
+          AND EXISTS (SELECT 1 FROM public.tenants t
+                       WHERE t.id = p_tenant AND t.tenant_type = 'platform'))
+    ),
+    false);
+$$;
+
+COMMENT ON FUNCTION wallet_hold_is_own_account(uuid, uuid, text) IS
+  'true si la venta de p_tenant es con su propia cuenta y se puede probar: el dueño p_owner es p_tenant y la cuenta es la grabada en la orden (account) o p_tenant es la plataforma (resolved o root: todo lo que se le resuelve es suyo). Entonces no retiene nadie (decisión del founder del 2026-09-30). Sin cuenta en la orden, la de la bóveda de ahora no prueba con qué se reservó: false, y el nodo retiene. Helper de 0060, sin GRANT.';
 
 -- La cadena de la red: los ancestros de p_tenant que financian (platform, consolidator, agency) con
 -- nivel mayor que el del dueño, del más cercano al más lejano. depth 1 es quien financia a p_tenant;
@@ -1097,6 +1151,7 @@ REVOKE ALL ON FUNCTION wallet_hold_current_tenant() FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_assert_actor(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_mode(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_owner(uuid, text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION wallet_hold_is_own_account(uuid, uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_chain(uuid, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_net(jsonb, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION wallet_hold_level_cost(uuid, text, bigint, integer) FROM PUBLIC;
@@ -1263,7 +1318,12 @@ CREATE TRIGGER wallet_hold_uncapture_on_retract
 -- La orden nace:
 --   - 'held' si es un intent abierto (pending, sin desenlace del proveedor y con create_request_key):
 --     la retención de hoteles antes del Book (RF-23; D-TBO-21 A);
---   - 'captured' si ya está confirmada (la retención manual de POST /portfolios/hold-booking).
+--   - 'captured' si ya está confirmada (la retención manual de POST /portfolios/hold-booking);
+--   - 'exempt' si se reserva con la cuenta propia del nodo (O = T; wallet_hold_is_own_account: la
+--     grabada en la orden, o el nodo es la plataforma): no se retiene nada, ni en su cartera ni en
+--     su red, y no hace falta que tenga cartera en esa moneda. Queda el grupo sin niveles y
+--     'portfolio.hold.exempted' en el nodo, con el proveedor y la cuenta. Rige en todos los modos:
+--     'off' apaga la cascada, nunca endurece. Llamarla otra vez devuelve el mismo grupo.
 --
 -- Los montos salen de la orden y de las reglas de markup: el precio de venta en depth 0 y el costo
 -- de cada nivel en los demás. Sin neto válido con la cadena no vacía, no se retiene
@@ -1271,6 +1331,7 @@ CREATE TRIGGER wallet_hold_uncapture_on_retract
 CREATE FUNCTION wallet_hold_retain(p_order_id UUID, p_actor UUID)
 RETURNS TABLE (
   group_id            UUID,
+  hold_status         TEXT,
   own_portfolio_id    UUID,
   own_transaction_id  UUID,
   network_levels      SMALLINT,
@@ -1291,6 +1352,8 @@ DECLARE
   v_owner_id  UUID;
   v_owner_level INTEGER;
   v_source    TEXT;
+  v_resolved  BOOLEAN;
+  prior       public.wallet_hold_groups;
   own         public.agency_portfolios;
   anc         public.agency_portfolios;
   v_decision  TEXT;
@@ -1336,7 +1399,19 @@ BEGIN
       'hold_order_not_holdable', format('order=%s tenant=%s status=%s', ord.id, me, ord.status));
   END IF;
 
-  IF EXISTS (SELECT 1 FROM public.wallet_hold_groups wg WHERE wg.order_id = ord.id)
+  -- Una orden ya eximida no tiene nada que retener: se devuelve lo registrado, sin otro evento.
+  SELECT wg.* INTO prior FROM public.wallet_hold_groups wg WHERE wg.order_id = ord.id;
+  IF prior.id IS NOT NULL AND prior.status = 'exempt' THEN
+    group_id := prior.id;
+    hold_status := prior.status;
+    own_portfolio_id := NULL;
+    own_transaction_id := NULL;
+    network_levels := 0;
+    mode := prior.mode;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+  IF prior.id IS NOT NULL
      OR EXISTS (SELECT 1
                   FROM public.portfolio_transactions pt
                  WHERE pt.transaction_type = 'BOOKING_HOLD'
@@ -1357,26 +1432,25 @@ BEGIN
   END IF;
   v_amount := ord.total_amount;
 
-  -- La cartera propia, con sus motivos de siempre, antes que la red.
+  -- La cartera propia se bloquea antes de derivar el dueño y la cadena, como siempre (así un move
+  -- concurrente ya terminó o espera); se decide después de saber si hace falta.
   SELECT ap.* INTO own
     FROM public.agency_portfolios ap
    WHERE ap.tenant_id = me AND ap.currency = v_currency
      FOR UPDATE;
-  v_decision := public.wallet_hold_decide(own, v_amount);
-  IF v_decision <> 'ok' THEN
-    PERFORM public.raise_wallet_hold_violation(
-      'hold_' || v_decision,
-      format('order=%s depth=0 tenant=%s portfolio=%s', ord.id, me, COALESCE(own.id::text, '?')));
-  END IF;
 
-  -- Con 'off' la cadena no se usa: una cuenta que ya no se resuelve (una credencial rotada antes
-  -- de la retención manual de una orden confirmada) no frena la retención propia, como antes de
-  -- 0060; queda registrada como 'unresolved'.
   v_mode := public.wallet_hold_mode(me);
   SELECT o.owner_id, o.owner_level, o.source
     INTO v_owner_id, v_owner_level, v_source
     FROM public.wallet_hold_owner(me, ord.provider, ord.provider_account_id) o;
-  IF NOT FOUND THEN
+  v_resolved := FOUND;
+
+  -- Sin saber quién le paga al proveedor no se sabe si hace falta cartera ni hasta dónde retener:
+  -- se falla cerrado, antes que decidir la cartera propia. Con 'off' la cadena no se usa: una
+  -- cuenta que ya no se resuelve (una credencial rotada antes de la retención manual de una orden
+  -- confirmada) no frena la retención propia, como antes de 0060; queda registrada como
+  -- 'unresolved' (y nunca es la cuenta propia).
+  IF NOT v_resolved THEN
     IF v_mode <> 'off' THEN
       PERFORM public.raise_wallet_hold_violation(
         'hold_owner_unresolvable',
@@ -1385,6 +1459,54 @@ BEGIN
     v_owner_id := NULL;
     v_owner_level := NULL;
     v_source := 'unresolved';
+  END IF;
+
+  -- Con la cuenta propia (O = T) no se retiene nada ni hace falta cartera: queda el grupo sin
+  -- niveles, con el rastro en el nodo que vende. El evento dice qué cuenta se tomó como propia (la
+  -- de la orden; NULL sólo si vende la plataforma sin cuenta en la orden), por si después se
+  -- desactiva: la orden la sigue referenciando y no se puede borrar.
+  IF v_resolved AND public.wallet_hold_is_own_account(me, v_owner_id, v_source) THEN
+    INSERT INTO public.wallet_hold_groups
+      (order_id, origin_tenant_id, order_number, currency, sale_amount_minor, provider_code,
+       provider_account_id, credential_owner_tenant_id, credential_source, mode, status, created_by)
+    VALUES
+      (ord.id, me, ord.order_number, v_currency, v_amount, ord.provider,
+       ord.provider_account_id, v_owner_id, v_source, v_mode, 'exempt', p_actor)
+    RETURNING id INTO v_group;
+
+    PERFORM public.wallet_hold_emit(
+      me, p_actor, 'portfolio.hold.exempted', ord.id,
+      jsonb_build_object(
+        'orderId', ord.id,
+        'orderNumber', ord.order_number,
+        'originTenantId', me,
+        'amountMinor', v_amount,
+        'currency', v_currency,
+        'status', 'exempt',
+        'reason', 'own_account',
+        'providerCode', ord.provider,
+        'providerAccountId', ord.provider_account_id,
+        'credentialSource', v_source,
+        'mode', v_mode,
+        'source', 'db:wallet_hold_retain'
+      ));
+
+    group_id := v_group;
+    hold_status := 'exempt';
+    own_portfolio_id := NULL;
+    own_transaction_id := NULL;
+    network_levels := 0;
+    mode := v_mode;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+
+  -- La cartera propia, con sus motivos de siempre, antes que la red.
+  v_decision := public.wallet_hold_decide(own, v_amount);
+  IF v_decision <> 'ok' THEN
+    PERFORM public.raise_wallet_hold_violation(
+      'hold_' || v_decision,
+      format('order=%s depth=0 tenant=%s portfolio=%s', ord.id, me, COALESCE(own.id::text, '?')));
   END IF;
 
   IF v_mode <> 'off' THEN
@@ -1545,6 +1667,7 @@ BEGIN
   END LOOP;
 
   group_id := v_group;
+  hold_status := v_initial;
   own_portfolio_id := own.id;
   own_transaction_id := v_own_tx;
   network_levels := v_written;
@@ -1554,7 +1677,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION wallet_hold_retain(uuid, uuid) IS
-  'Retiene la orden p_order_id del nodo app.current_tenant_id: precio de venta en su cartera de la moneda de la orden y, en enforce, el costo de cada nivel de su red hasta el dueño de la credencial (NETWORK_HOLD). Todo o nada; nace held (intent abierto) o captured (orden confirmada). STW01 hold_* / STW02 hold_* y network_* / 42501. Devuelve sólo datos del nodo que vende. Ver db/migrations/0060.';
+  'Retiene la orden p_order_id del nodo app.current_tenant_id: precio de venta en su cartera de la moneda de la orden y, en enforce, el costo de cada nivel de su red hasta el dueño de la credencial (NETWORK_HOLD). Todo o nada; nace held (intent abierto) o captured (orden confirmada). Con la cuenta propia del nodo (O = T: la grabada en la orden, o el nodo es la plataforma) no retiene nada, ni exige cartera: el grupo nace exempt, sin niveles, con portfolio.hold.exempted (y otra llamada lo devuelve igual). STW01 hold_* / STW02 hold_* y network_* / 42501. Devuelve sólo datos del nodo que vende (hold_status held | captured | exempt; sin cartera ni asiento propio si exempt). Ver db/migrations/0060.';
 
 REVOKE ALL ON FUNCTION wallet_hold_retain(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION wallet_hold_retain(uuid, uuid) TO app_user;
@@ -1566,6 +1689,7 @@ GRANT EXECUTE ON FUNCTION wallet_hold_retain(uuid, uuid) TO app_user;
 --   failed                → held: libera todo; captured: conflict (figuró confirmada)
 --   cancelled             → held o captured: libera todo, el 100 % como hoy
 --   released              → already-released;  conflict → conflict;  sin grupo → no-hold
+--   exempt (cuenta propia) → no-hold en cualquier estado: no retuvo nada, no hay nada que cerrar
 --
 -- p_expected_status ('failed' o 'cancelled') es la precondición de la API: si la orden no está en
 -- ese estado y la retención sigue abierta, STW01 hold_release_order_open. Orden de bloqueo: la
@@ -1598,7 +1722,7 @@ BEGIN
     FROM public.wallet_hold_groups wg
    WHERE wg.order_id = ord.id
      FOR UPDATE;
-  IF NOT FOUND THEN
+  IF NOT FOUND OR g.status = 'exempt' THEN
     RETURN 'no-hold';
   END IF;
 
@@ -1651,16 +1775,19 @@ END;
 $$;
 
 COMMENT ON FUNCTION wallet_hold_settle(uuid, uuid, text) IS
-  'Cierra la retención de la orden p_order_id del nodo app.current_tenant_id según su estado: captura (confirmed/ticketed), libera (failed con held, cancelled) o marca conflict (failed después de capturar), sobre lo registrado. Devuelve released | already-released | captured | already-captured | open | no-hold | conflict. Con p_expected_status y la retención abierta, la orden tiene que estar en ese estado (STW01 hold_release_order_open). Ver db/migrations/0060.';
+  'Cierra la retención de la orden p_order_id del nodo app.current_tenant_id según su estado: captura (confirmed/ticketed), libera (failed con held, cancelled) o marca conflict (failed después de capturar), sobre lo registrado. Devuelve released | already-released | captured | already-captured | open | no-hold | conflict; no-hold también para una retención exempt (cuenta propia, sin nada retenido). Con p_expected_status y la retención abierta, la orden tiene que estar en ese estado (STW01 hold_release_order_open). Ver db/migrations/0060.';
 
 REVOKE ALL ON FUNCTION wallet_hold_settle(uuid, uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION wallet_hold_settle(uuid, uuid, text) TO app_user;
 
 -- El aviso previo (PreBook, verificación antes de C2): la misma decisión que wallet_hold_retain,
 -- sin bloquear ni escribir, con lo que la API tiene antes de abrir la orden. Sólo dice ok, blocked
--- (con la regla STW02 del primer nivel que falla) o unknown (parámetros inválidos o una cuenta que
--- no se resuelve para el nodo, salvo con 'off', donde retain tampoco la exige): nunca montos,
--- saldos ni qué nivel falló.
+-- (con la regla STW02 del primer nivel que falla), exempt (la cuenta propia del nodo con el
+-- criterio de wallet_hold_is_own_account: la cuenta de la cotización, que la orden va a grabar, o
+-- el nodo es la plataforma; no se retiene nada ni hace falta cartera) o unknown (parámetros
+-- inválidos o una cuenta que no se
+-- resuelve para el nodo, salvo con 'off', donde retain tampoco la exige): nunca montos, saldos ni
+-- qué nivel falló.
 CREATE FUNCTION wallet_hold_preview(
   p_provider_code        TEXT,
   p_provider_account_id  UUID,
@@ -1677,7 +1804,9 @@ AS $$
 DECLARE
   me            UUID;
   v_mode        TEXT;
+  v_owner_id    UUID;
   v_owner_level INTEGER;
+  v_source      TEXT;
   own           public.agency_portfolios;
   anc           public.agency_portfolios;
   v_decision    TEXT;
@@ -1696,12 +1825,19 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Como wallet_hold_retain: con 'off' la cuenta no tiene que resolverse.
+  -- Como wallet_hold_retain: con 'off' la cuenta no tiene que resolverse, y con la cuenta propia
+  -- del nodo no se retiene nada (en cualquier modo).
   v_mode := public.wallet_hold_mode(me);
-  SELECT o.owner_level INTO v_owner_level
+  SELECT o.owner_id, o.owner_level, o.source INTO v_owner_id, v_owner_level, v_source
     FROM public.wallet_hold_owner(me, p_provider_code, p_provider_account_id) o;
-  IF NOT FOUND AND v_mode <> 'off' THEN
-    status := 'unknown'; reason := NULL;
+  IF NOT FOUND THEN
+    IF v_mode <> 'off' THEN
+      status := 'unknown'; reason := NULL;
+      RETURN NEXT;
+      RETURN;
+    END IF;
+  ELSIF public.wallet_hold_is_own_account(me, v_owner_id, v_source) THEN
+    status := 'exempt'; reason := NULL;
     RETURN NEXT;
     RETURN;
   END IF;
@@ -1752,7 +1888,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) IS
-  'Anticipa wallet_hold_retain para una venta del nodo app.current_tenant_id sin bloquear ni escribir: ok | blocked (reason = regla STW02 del primer nivel que falla) | unknown (parámetros inválidos, o cuenta no resoluble fuera del modo off). p_provider_account_id NULL = la cuenta que la bóveda resuelve para el nodo, o la raíz si no hay (credenciales de entorno). Nunca montos, saldos ni qué nivel falló. Ver db/migrations/0060.';
+  'Anticipa wallet_hold_retain para una venta del nodo app.current_tenant_id sin bloquear ni escribir: ok | blocked (reason = regla STW02 del primer nivel que falla) | exempt (la cuenta propia del nodo, con el criterio de wallet_hold_is_own_account: no retiene nada ni exige cartera) | unknown (parámetros inválidos, o cuenta no resoluble fuera del modo off). p_provider_account_id NULL = la cuenta que la bóveda resuelve para el nodo, o la raíz si no hay (credenciales de entorno). Nunca montos, saldos ni qué nivel falló. Ver db/migrations/0060.';
 
 REVOKE ALL ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) TO app_user;
@@ -1990,9 +2126,8 @@ GRANT EXECUTE ON FUNCTION wallet_hold_report_preview_block(text, uuid, text, tex
 --       concilie; mover el nodo la dejaría en carteras que ya no son de su red. Un nivel de la red
 --       siempre se origina en el subárbol que lo contiene, así que no hace falta otra condición.
 --
--- Y el encabezado, con el search_path ya endurecido (pg_catalog, public, pg_temp; sección 12): una
--- migración no vuelve a escribir `SET search_path = public` sin pg_temp al final, lo verifica
--- apps/api/src/database/migrations-search-path.test.ts.
+-- Y el encabezado, con el search_path ya endurecido (pg_catalog, public, pg_temp), como el resto de
+-- las funciones de 0060: la sección 12 lo haría igual, pero así no depende de ella.
 CREATE OR REPLACE FUNCTION move_tenant_subtree(p_tenant_id UUID, p_new_parent_id UUID)
 RETURNS INTEGER
 LANGUAGE plpgsql SECURITY DEFINER
@@ -2282,17 +2417,21 @@ END $$;
 -- ============================================================================
 -- 12. search_path fijo en las funciones que ya existían
 -- ============================================================================
--- Toda función de `public` con `search_path = public` (las SECURITY DEFINER de 0012 a 0052:
--- can_finance_tenant, tenant_financier_id, can_read_membership, resolve_*, compute_price_waterfall…
--- y las guardas INVOKER de 0052, que corren con el rol de quien escribe) pasa a pg_catalog, public,
--- pg_temp: sin pg_temp en el path, el esquema temporal se busca PRIMERO y una tabla temporal
--- sombrea la de verdad. Con la misma idea, una SECURITY DEFINER sin search_path propio (usaba el de
--- quien la llama) queda con el mismo. Las funciones de extensiones no se tocan.
+-- Toda función de `public` con `search_path = public` (las SECURITY DEFINER de 0012 a 0055:
+-- can_finance_tenant, tenant_financier_id, can_read_membership, resolve_*, compute_price_waterfall,
+-- las de sesiones y puestos de 0055… y las guardas INVOKER de 0052 y 0055, que corren con el rol de
+-- quien escribe) pasa a pg_catalog, public, pg_temp: sin pg_temp en el path, el esquema temporal se
+-- busca PRIMERO y una tabla temporal sombrea la de verdad. Con la misma idea, una SECURITY DEFINER
+-- sin search_path propio (usaba el de quien la llama) queda con el mismo. Las funciones de
+-- extensiones no se tocan. Las migraciones ya aplicadas no se editan: en producción y en una base
+-- nueva las endurece esto mismo.
 --
 -- Corre una vez, sobre lo que existe al migrar. Una migración que se aplique DESPUÉS (con otro
 -- número, de otra rama) y vuelva a escribir `SET search_path = public`, o cree una SECURITY DEFINER
--- sin search_path, quedaría sin endurecer: por eso apps/api/src/database/migrations-search-path.test.ts
--- rechaza las dos cosas en toda migración posterior a 0053.
+-- sin search_path, quedaría sin endurecer. apps/api/src/database/migrations-search-path.test.ts
+-- rechaza las dos cosas en toda migración posterior a 0060, y una numerada hasta 0060 que no esté
+-- entre las que llegan a producción antes que esta (0056, de main, sí);
+-- migrations-search-path.integration.test.ts verifica en la base migrada que esto las cubrió.
 DO $$
 DECLARE
   f RECORD;

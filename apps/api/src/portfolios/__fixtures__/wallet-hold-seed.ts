@@ -53,8 +53,10 @@ export async function seedWallet(
 
 export interface RetainedRow {
   readonly group_id: string;
-  readonly own_portfolio_id: string;
-  readonly own_transaction_id: string;
+  /** held | captured; exempt con la cuenta propia del que vende, sin cartera ni asiento. */
+  readonly hold_status: string;
+  readonly own_portfolio_id: string | null;
+  readonly own_transaction_id: string | null;
   readonly network_levels: number;
   readonly mode: string;
 }

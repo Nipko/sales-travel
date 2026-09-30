@@ -28,7 +28,7 @@ import { BookingStep } from './booking-step';
 import { CancelPolicy } from './cancel-policy';
 import { CheckoutExpiry } from './checkout-expiry';
 import { FundingNotice } from './funding-notice';
-import { fundingNotice } from './funding-view';
+import { bookedWithOwnAccount, fundingNotice } from './funding-view';
 import { draftFitsRooms, emptyGuestDraft, type GuestDraft } from './guest-form-view';
 import { NonRefundableNotice } from './non-refundable-notice';
 import { nonRefundableAt } from './non-refundable-view';
@@ -370,7 +370,12 @@ function PrebookReady({
       </CheckoutExpiry>
 
       <FundingNotice view={funding} />
-      {nonRefundable ? <NonRefundableNotice nonRefundable={nonRefundable} /> : null}
+      {nonRefundable ? (
+        <NonRefundableNotice
+          nonRefundable={nonRefundable}
+          ownAccount={bookedWithOwnAccount(prebook.funding)}
+        />
+      ) : null}
       {change ? (
         <PriceChangeNotice
           change={change}

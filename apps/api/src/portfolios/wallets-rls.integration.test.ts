@@ -351,12 +351,13 @@ d('carteras y depósitos informados bajo RLS (como app_user)', () => {
         ),
       ).toBe('42501/portfolio_balance_reserved');
 
-      // Con su propia cuenta de proveedor la cadena de la red es vacía: retiene sólo la agencia.
+      // Con la cuenta heredada de quien la financia (el consolidador) la cadena de la red es vacía:
+      // retiene sólo la agencia. Con una cuenta propia no retendría nada (O = T, 2026-09-30).
       const provider = `wrls-prov-${sfx}`;
       const { rows: acc } = await admin.query<{ id: string }>(
-        `INSERT INTO provider_accounts (tenant_id, provider_code, credentials_enc, status)
-         VALUES ($1, $2, '\\x00'::bytea, 'active') RETURNING id`,
-        [agency, provider],
+        `INSERT INTO provider_accounts (tenant_id, provider_code, credentials_enc, is_inheritable, status)
+         VALUES ($1, $2, '\\x00'::bytea, true, 'active') RETURNING id`,
+        [consolidator, provider],
       );
       await admin.query('UPDATE agency_portfolios SET credit_limit_minor = 5000 WHERE id = $1', [
         wAgency,

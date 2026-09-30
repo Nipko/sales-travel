@@ -200,9 +200,19 @@ describe('runHoldTransaction: el lock_timeout y el reintento acotado', () => {
 describe('WalletHoldStore.retain: la fila de wallet_hold_retain, validada', () => {
   const row = {
     group_id: GROUP,
+    hold_status: 'held',
     own_portfolio_id: WALLET,
     own_transaction_id: ENTRY,
     network_levels: 2,
+    mode: 'enforce',
+  };
+  /** La venta con la cuenta propia del nodo (O = T): el grupo, sin cartera ni asiento propio. */
+  const exempt = {
+    group_id: GROUP,
+    hold_status: 'exempt',
+    own_portfolio_id: null,
+    own_transaction_id: null,
+    network_levels: 0,
     mode: 'enforce',
   };
 
@@ -213,6 +223,7 @@ describe('WalletHoldStore.retain: la fila de wallet_hold_retain, validada', () =
     const out = await store.run(TENANT, (trx) => store.retain(trx, ORDER, USER));
 
     expect(out).toEqual({
+      status: 'held',
       groupId: GROUP,
       ownPortfolioId: WALLET,
       ownTransactionId: ENTRY,
@@ -223,12 +234,37 @@ describe('WalletHoldStore.retain: la fila de wallet_hold_retain, validada', () =
     expect(call?.parameters).toEqual([ORDER, USER]);
   });
 
+  it('una retención manual de una orden confirmada nace capturada', async () => {
+    const f = fakeDb(() => [{ ...row, hold_status: 'captured' }]);
+    const store = new WalletHoldStore(f.db);
+
+    await expect(store.run(TENANT, (trx) => store.retain(trx, ORDER, USER))).resolves.toMatchObject(
+      { status: 'captured', ownPortfolioId: WALLET },
+    );
+  });
+
+  it('con la cuenta propia del nodo devuelve exempt, sin cartera ni asiento', async () => {
+    const f = fakeDb(() => [exempt]);
+    const store = new WalletHoldStore(f.db);
+
+    await expect(store.run(TENANT, (trx) => store.retain(trx, ORDER, USER))).resolves.toEqual({
+      status: 'exempt',
+      groupId: GROUP,
+      mode: 'enforce',
+    });
+  });
+
   it.each([
     ['sin filas', []],
     ['dos filas', [row, row]],
     ['un id que no es UUID', [{ ...row, group_id: 'no' }]],
     ['más niveles que los que admite la red', [{ ...row, network_levels: 4 }]],
     ['un modo desconocido', [{ ...row, mode: 'legacy' }]],
+    ['un estado desconocido', [{ ...row, hold_status: 'released' }]],
+    ['retenida sin cartera propia', [{ ...row, own_portfolio_id: null }]],
+    ['exenta con una cartera propia', [{ ...exempt, own_portfolio_id: WALLET }]],
+    ['exenta con un asiento propio', [{ ...exempt, own_transaction_id: ENTRY }]],
+    ['exenta con niveles de la red', [{ ...exempt, network_levels: 1 }]],
   ])('%s → WalletHoldContractError, nunca un dato a medias', async (_caso, rows) => {
     const f = fakeDb(() => rows);
     const store = new WalletHoldStore(f.db);
@@ -281,7 +317,7 @@ describe('WalletHoldStore.settle', () => {
   });
 });
 
-describe('WalletHoldStore.preview: sólo ok, blocked con su motivo, o no se sabe', () => {
+describe('WalletHoldStore.preview: sólo ok, exempt, blocked con su motivo, o no se sabe', () => {
   const quote = {
     amount: { amountMinor: 139_709, currency: 'USD' },
     netMinor: 100_000,
@@ -305,6 +341,15 @@ describe('WalletHoldStore.preview: sólo ok, blocked con su motivo, o no se sabe
       139_709,
       100_000,
     ]);
+  });
+
+  it('exempt: la cuenta propia del nodo, que no retiene nada', async () => {
+    const f = fakeDb(() => [{ status: 'exempt', reason: null }]);
+    const store = new WalletHoldStore(f.db);
+
+    await expect(
+      f.db.withTenant(TENANT, (trx) => store.preview(trx as never, quote)),
+    ).resolves.toEqual({ status: 'exempt' });
   });
 
   it.each([

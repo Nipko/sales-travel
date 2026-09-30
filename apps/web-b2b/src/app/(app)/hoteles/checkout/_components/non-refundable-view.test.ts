@@ -164,6 +164,17 @@ describe('los textos: el 100 % con su monto, sin rodeos', () => {
     );
   });
 
+  it('con la cuenta propia de la agencia, el 100 % lo cobra el proveedor en esa cuenta, no una cartera', () => {
+    expect(nonRefundableNoticeView(nr, { ownAccount: true }).points).toEqual([
+      'No se recupera: ni la agencia ni el cliente reciben un reembolso.',
+      'Lo cobra el proveedor en la cuenta de la agencia, en USD.',
+      'La agencia responde ante su cliente por ese monto.',
+    ]);
+    expect(nonRefundableNoticeView(nr, { ownAccount: false }).points[1]).toBe(
+      'Se descuenta de la cartera o del crédito de la agencia en USD.',
+    );
+  });
+
   it('la casilla lleva el monto exacto', () => {
     expect(nonRefundableAckLabel(nr)).toMatch(
       /^Entiendo que esta tarifa no es reembolsable: si se cancela, modifica o el pasajero no se presenta, se cobra el 100 % \(321,34\s(US\$|USD)\)\.$/,

@@ -53,6 +53,14 @@ export interface AgencyWalletsView {
    * superadmin.
    */
   financier: { tenantId: string; name: string } | null;
+  /**
+   * Los proveedores en que el nodo tiene su PROPIA cuenta activa en la bóveda (la que
+   * `resolve_provider_account` le resuelve antes que cualquier heredada), todos, también los que no
+   * reservan (el correo). Una reserva que graba esa cuenta en la orden (hoy, hoteles de TBO) no
+   * retiene de ninguna cartera (decisión del founder del 2026-09-30): la web decide con qué
+   * proveedores vale y deja de avisar que falta una. Sólo códigos, sin cuentas ni credenciales.
+   */
+  ownProviderAccounts: string[];
 }
 
 /** Lo que una reserva retenida admite desde la cartera. */
@@ -65,10 +73,18 @@ interface BookingActionCapabilities {
 
 export type { BookingHoldRelease } from './booking-hold.ledger.js';
 
-interface HeldOnWallet {
-  portfolio: PortfolioRow;
-  transaction: PortfolioTransactionRow;
-}
+/**
+ * Lo que dejó una retención: la cartera del nodo que vende y su asiento, o nada si la reserva es con
+ * la cuenta propia del nodo (O = T; decisión del founder del 2026-09-30, opción B): no se retuvo en
+ * ninguna cartera y no hizo falta tener una en esa moneda.
+ */
+export type BookingHoldOutcome =
+  | {
+      readonly status: 'held';
+      readonly portfolio: PortfolioRow;
+      readonly transaction: PortfolioTransactionRow;
+    }
+  | { readonly status: 'own-account' };
 
 export interface HoldBookingExpectations {
   /**
@@ -145,8 +161,9 @@ export class PortfoliosService {
   // ─────────────────────── Lo que ve y hace la agencia (Cartera B2B) ───────────────────────
 
   /**
-   * Las carteras de la agencia, una por moneda, y quién la financia. Sólo lee: una agencia sin
-   * carteras no tiene ninguna hasta que quien la financia le habilite una moneda.
+   * Las carteras de la agencia, una por moneda, quién la financia y con qué proveedores reserva con
+   * su cuenta propia (esas reservas no retienen). Sólo lee: una agencia sin carteras no tiene
+   * ninguna hasta que quien la financia le habilite una moneda.
    */
   async overview(tenantId: string): Promise<AgencyWalletsView> {
     return this.db.withTenant(tenantId, async (trx) => {
@@ -155,10 +172,20 @@ export class PortfoliosService {
       const financier = await sql<{ id: string; name: string }>`
         SELECT f.id, f.name FROM tenants f WHERE f.id = tenant_financier_id(${tenantId}::uuid)
       `.execute(trx);
+      // La RLS de provider_accounts deja ver sólo las del tenant: nunca las de un ancestro.
+      const own = await trx
+        .selectFrom('provider_accounts')
+        .select('provider_code')
+        .distinct()
+        .where('tenant_id', '=', tenantId)
+        .where('status', '=', 'active')
+        .orderBy('provider_code')
+        .execute();
       const row = financier.rows[0];
       return {
         portfolios: wallets.map(walletView),
         financier: row === undefined ? null : { tenantId: row.id, name: row.name },
+        ownProviderAccounts: own.map((a) => a.provider_code),
       };
     });
   }
@@ -299,7 +326,9 @@ export class PortfoliosService {
    * desde 0060, la cartera de cada nivel de su red hasta el dueño de la credencial (vuelos y autos no
    * guardan la cuenta en la orden: la base toma la que la bóveda le resuelve al nodo para el
    * proveedor, o la raíz con credenciales de entorno). La retención nace cobrada: la reserva ya
-   * existe.
+   * existe. Como la orden no guarda con qué cuenta se reservó, la del propio nodo que hoy le resuelve
+   * la bóveda no la exime: retiene en su cartera, como antes de 0060. Sólo la plataforma, dueña de
+   * todo lo que se le resuelve, queda sin retener (`own-account`).
    *
    * @throws BookingHoldRejectedError si la cartera propia o la de un nivel de la red no alcanza.
    * @throws BadRequestException si la orden no es una reserva confirmada de este tenant, o no dice
@@ -312,7 +341,7 @@ export class PortfoliosService {
     orderId: string,
     createdBy: string,
     expected: HoldBookingExpectations = {},
-  ): Promise<HeldOnWallet> {
+  ): Promise<BookingHoldOutcome> {
     let currency: string | undefined;
     try {
       return await this.walletHolds.run(tenantId, async (trx) => {
@@ -353,7 +382,7 @@ export class PortfoliosService {
    * moneda, sin saldo ni cupo, o con un nivel de su red que no la cubre, no llegue a llamarlo
    * (RF-23 CA-1). No reemplaza a {@link holdBookingIntent}, que vuelve a decidir con las carteras
    * bloqueadas. Si la base no puede evaluarlo (una cuenta que ya no se resuelve), sigue: decide la
-   * reserva.
+   * reserva. Con la cuenta propia del nodo no hay nada que cubrir: sigue sin mirar carteras.
    *
    * Con `reportOrderId` (la orden ya abierta), un rechazo de la red deja el aviso al nivel que
    * bloqueó (`portfolio.network_hold.blocked`).
@@ -377,7 +406,8 @@ export class PortfoliosService {
    * El aviso del PreBook: la misma decisión que {@link assertBookingHoldAffordable}, devuelta en vez
    * de lanzada, para que el vendedor sepa ANTES de cargar huéspedes que la agencia o su red no
    * pueden retener la tarifa. Sólo lee y no promete nada: la reserva vuelve a decidir con las
-   * carteras bloqueadas. `undefined` si la base no lo puede evaluar.
+   * carteras bloqueadas. `undefined` si la base no lo puede evaluar; `own-account` si se reserva con
+   * la cuenta propia del nodo, que no retiene nada (la web no avisa nada por la cartera).
    *
    * Con `reportNetworkBlock` (el PreBook), un bloqueo de la red deja además el aviso al nivel que
    * bloquea, sin orden: la web frena al vendedor acá y el Book, que lo avisaría, no llega a correr.
@@ -393,6 +423,7 @@ export class PortfoliosService {
     );
     if (decision === undefined) return undefined;
     if (decision.status === 'ok') return { status: 'ok', currency: amount.currency };
+    if (decision.status === 'exempt') return { status: 'own-account', currency: amount.currency };
     if (opts.reportNetworkBlock === true && isNetworkRejection(decision.reason)) {
       await this.walletHolds.reportPreviewBlock(tenantId, { ...quote, amount });
     }
@@ -415,6 +446,8 @@ export class PortfoliosService {
    * El monto y la moneda se leen de la orden bajo el tenant y en la misma transacción; `expected` es
    * sólo el control de que la saga retiene lo que cree. Las carteras se bloquean ANTES de decidir
    * (la propia primero, después la red por nivel), así que dos reservas no gastan el mismo saldo.
+   * Con la cuenta propia del nodo (la de la orden) no se retiene nada: `own-account`, y la reserva
+   * sigue aunque el nodo no tenga cartera en esa moneda.
    *
    * @throws BookingHoldRejectedError si la cartera propia o la de un nivel de la red no alcanza.
    * @throws BadRequestException si la orden no es un intent abierto de este tenant.
@@ -427,7 +460,7 @@ export class PortfoliosService {
     orderId: string,
     createdBy: string,
     expected: Money,
-  ): Promise<HeldOnWallet> {
+  ): Promise<BookingHoldOutcome> {
     const target = holdAmount(expected);
     try {
       return await this.walletHolds.run(tenantId, async (trx) => {
@@ -491,16 +524,18 @@ export class PortfoliosService {
 
   /**
    * La retención por `wallet_hold_retain`, dentro de la transacción que ya bloqueó la orden, y lo
-   * que quedó en la cartera propia. La base decide la cadena, los montos y el orden de los
-   * bloqueos; la respuesta sólo lleva datos del nodo que vende.
+   * que quedó en la cartera propia. La base decide la cadena, los montos, el orden de los bloqueos y
+   * si la cuenta es la propia del nodo (entonces no retiene nada); la respuesta sólo lleva datos del
+   * nodo que vende.
    */
   private async retainOnWallets(
     trx: Transaction<DB>,
     tenantId: string,
     order: LockedOrder,
     createdBy: string,
-  ): Promise<HeldOnWallet> {
+  ): Promise<BookingHoldOutcome> {
     const retained = await this.walletHolds.retain(trx, order.id, createdBy);
+    if (retained.status === 'exempt') return { status: 'own-account' };
     const portfolio = await trx
       .selectFrom('agency_portfolios')
       .selectAll()
@@ -517,6 +552,7 @@ export class PortfoliosService {
       throw new Error('la retención propia no se puede leer después de escribirla');
     }
     return {
+      status: 'held',
       portfolio: portfolio as unknown as PortfolioRow,
       transaction: transaction as unknown as PortfolioTransactionRow,
     };

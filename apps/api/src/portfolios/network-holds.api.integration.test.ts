@@ -25,6 +25,7 @@ import {
   teardownNetwork,
   type SeededNetwork,
 } from './__fixtures__/wallet-hold-seed.js';
+import { held } from './__fixtures__/held-outcome.js';
 import {
   BookingHoldRejectedError,
   PortfolioHoldAccountChangedError,
@@ -162,11 +163,11 @@ d('retención en cascada por la API (0060, como app_user)', () => {
     const before = { S1: await balance('S1'), A: await balance('A'), C: await balance('C') };
 
     await portfolios.assertBookingHoldAffordable(id('S1'), quote('S1', 'P'));
-    const { portfolio, transaction } = await portfolios.holdBookingIntent(
-      id('S1'),
-      orderId,
-      net.sellers.S1,
-      { amountMinor: saleOf('S1'), currency: 'USD' },
+    const { portfolio, transaction } = held(
+      await portfolios.holdBookingIntent(id('S1'), orderId, net.sellers.S1, {
+        amountMinor: saleOf('S1'),
+        currency: 'USD',
+      }),
     );
 
     expect(portfolio.tenant_id).toBe(id('S1'));
@@ -221,6 +222,77 @@ d('retención en cascada por la API (0060, como app_user)', () => {
       [orderId],
     );
     expect(rows[0]).toEqual({ source: 'resolved', owner: id('A') });
+  });
+
+  it('C con su cuenta propia (O = T): no retiene nada ni necesita cartera en esa moneda; S1 con esa cuenta sigue reteniendo su cadena', async () => {
+    // PEN: nadie de la red tiene cartera en esa moneda, tampoco C.
+    const orderId = await openOrder('C', 'C', 'PEN');
+    await expect(
+      portfolios.previewBookingHold(id('C'), quote('C', 'C', { currency: 'PEN' }), {
+        reportNetworkBlock: true,
+      }),
+    ).resolves.toEqual({ status: 'own-account', currency: 'PEN' });
+    await portfolios.assertBookingHoldAffordable(id('C'), quote('C', 'C', { currency: 'PEN' }), {
+      reportOrderId: orderId,
+    });
+    await expect(
+      portfolios.holdBookingIntent(id('C'), orderId, net.sellers.C, {
+        amountMinor: saleOf('C'),
+        currency: 'PEN',
+      }),
+    ).resolves.toEqual({ status: 'own-account' });
+    expect(await balance('C', 'PEN')).toBeUndefined();
+    const { rows: entries } = await admin.query(
+      'SELECT 1 FROM portfolio_transactions WHERE lower(reference_id) = lower($1)',
+      [orderId],
+    );
+    expect(entries).toHaveLength(0);
+    await fail(orderId);
+    await expect(
+      portfolios.releaseFailedBookingHold(id('C'), orderId, net.sellers.C),
+    ).resolves.toBe('no-hold');
+
+    // Un vuelo confirmado sin cuenta en la orden: que la bóveda le resuelva hoy a C la suya no prueba
+    // con qué cuenta se reservó, así que no lo exime. Retiene en su cartera, y no tiene en PEN.
+    const flight = await seedOrder(admin, {
+      tenantId: id('C'),
+      userId: net.sellers.C,
+      provider: net.provider,
+      totalMinor: saleOf('C'),
+      currency: 'PEN',
+      accountId: null,
+      vertical: net.vertical,
+      pricing: { netMinor: NET_MINOR, currency: 'PEN' },
+      status: 'confirmed',
+    });
+    await expect(portfolios.holdBooking(id('C'), flight, net.sellers.C)).rejects.toMatchObject({
+      name: 'BookingHoldRejectedError',
+      reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
+    });
+    const { rows: flightGroup } = await admin.query(
+      'SELECT 1 FROM wallet_hold_groups WHERE order_id = $1',
+      [flight],
+    );
+    expect(flightGroup).toHaveLength(0);
+
+    // Cartera B2B y la búsqueda lo saben: C reserva con su cuenta; S1 la hereda, no es suya.
+    expect((await portfolios.overview(id('C'))).ownProviderAccounts).toEqual([net.provider]);
+    expect((await portfolios.overview(id('S1'))).ownProviderAccounts).toEqual([]);
+
+    // S1 vende con la cuenta de C: retiene S1 y A por debajo de C; C no.
+    const before = { S1: await balance('S1'), A: await balance('A'), C: await balance('C') };
+    const byChild = await openOrder('S1', 'C');
+    held(
+      await portfolios.holdBookingIntent(id('S1'), byChild, net.sellers.S1, {
+        amountMinor: saleOf('S1'),
+        currency: 'USD',
+      }),
+    );
+    expect(await balance('S1')).toBe(before.S1! - saleOf('S1'));
+    expect(await balance('A')).toBe(before.A! - 113_400);
+    expect(await balance('C')).toBe(before.C);
+    await fail(byChild);
+    await portfolios.releaseFailedBookingHold(id('S1'), byChild, net.sellers.S1);
   });
 
   it('quien financia ve la reserva de su red al costo de su nivel; el vendedor no ve nada de arriba', async () => {

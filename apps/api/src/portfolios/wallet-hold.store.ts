@@ -41,15 +41,31 @@ const MAX_SAFE_MINOR = Number.MAX_SAFE_INTEGER;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Lo que `wallet_hold_retain` devuelve: sólo datos del nodo que vende. */
-export interface WalletHoldRetained {
-  readonly groupId: string;
-  readonly ownPortfolioId: string;
-  readonly ownTransactionId: string;
-  /** Cuántos niveles de la red retuvieron además del nodo que vende (0 fuera de enforce). */
-  readonly networkLevels: number;
-  readonly mode: 'off' | 'observe' | 'enforce';
-}
+/** El modo de la red con que se tomó la retención (`wallet_hold_policy`). */
+export type WalletHoldMode = 'off' | 'observe' | 'enforce';
+
+/**
+ * Lo que `wallet_hold_retain` devuelve: sólo datos del nodo que vende.
+ *
+ * `exempt`: la venta es con la cuenta propia del nodo (O = T; decisión del founder del 2026-09-30,
+ * opción B). No se retuvo nada, ni en su cartera ni en su red, y no hizo falta cartera en esa
+ * moneda: queda el grupo sin niveles y `portfolio.hold.exempted` en el nodo.
+ */
+export type WalletHoldRetained =
+  | {
+      readonly status: 'held' | 'captured';
+      readonly groupId: string;
+      readonly ownPortfolioId: string;
+      readonly ownTransactionId: string;
+      /** Cuántos niveles de la red retuvieron además del nodo que vende (0 fuera de enforce). */
+      readonly networkLevels: number;
+      readonly mode: WalletHoldMode;
+    }
+  | {
+      readonly status: 'exempt';
+      readonly groupId: string;
+      readonly mode: WalletHoldMode;
+    };
 
 export const WALLET_HOLD_SETTLE_OUTCOMES = [
   'released',
@@ -67,23 +83,41 @@ export type WalletHoldSettleOutcome = (typeof WALLET_HOLD_SETTLE_OUTCOMES)[numbe
 /** La precondición de una liberación: el estado en que la API cree que está la orden. */
 export type WalletHoldExpectedStatus = 'failed' | 'cancelled';
 
-/** El aviso previo, sin montos ni qué nivel falló. `undefined` = no se sabe (se sigue). */
+/**
+ * El aviso previo, sin montos ni qué nivel falló. `exempt`: la cuenta propia del nodo, que no
+ * retiene nada. `undefined` = no se sabe (se sigue).
+ */
 export type WalletHoldPreviewDecision =
   | { readonly status: 'ok' }
+  | { readonly status: 'exempt' }
   | { readonly status: 'blocked'; readonly reason: BookingHoldRejection };
 
-const RetainedRowSchema = z.object({
-  group_id: z.string().uuid(),
-  own_portfolio_id: z.string().uuid(),
-  own_transaction_id: z.string().uuid(),
-  network_levels: z.number().int().min(0).max(3),
-  mode: z.enum(['off', 'observe', 'enforce']),
-});
+const ModeSchema = z.enum(['off', 'observe', 'enforce']);
+
+const RetainedRowSchema = z.discriminatedUnion('hold_status', [
+  z.object({
+    group_id: z.string().uuid(),
+    hold_status: z.enum(['held', 'captured']),
+    own_portfolio_id: z.string().uuid(),
+    own_transaction_id: z.string().uuid(),
+    network_levels: z.number().int().min(0).max(3),
+    mode: ModeSchema,
+  }),
+  // Sin cartera ni asiento propio: no se retuvo nada.
+  z.object({
+    group_id: z.string().uuid(),
+    hold_status: z.literal('exempt'),
+    own_portfolio_id: z.null(),
+    own_transaction_id: z.null(),
+    network_levels: z.literal(0),
+    mode: ModeSchema,
+  }),
+]);
 
 const SettleRowSchema = z.object({ outcome: z.enum(WALLET_HOLD_SETTLE_OUTCOMES) });
 
 const PreviewRowSchema = z.object({
-  status: z.enum(['ok', 'blocked', 'unknown']),
+  status: z.enum(['ok', 'blocked', 'exempt', 'unknown']),
   reason: z.string().nullable(),
 });
 
@@ -224,7 +258,8 @@ export class WalletHoldStore {
   /**
    * Retiene la orden del nodo de la transacción (`wallet_hold_retain`): su cartera y, en enforce,
    * la de cada nivel de su red hasta el dueño de la credencial. Todo o nada: un rechazo lanza STW02
-   * y no deja nada. Montos, moneda y cadena salen de la orden, nunca de acá.
+   * y no deja nada. Montos, moneda y cadena salen de la orden, nunca de acá. Con la cuenta propia
+   * del nodo no retiene nada y devuelve `exempt`.
    */
   async retain(
     trx: Transaction<DB>,
@@ -241,12 +276,17 @@ export class WalletHoldStore {
     if (!parsed.success || rows.length !== 1) {
       throw new WalletHoldContractError('wallet_hold_retain');
     }
+    const row = parsed.data;
+    if (row.hold_status === 'exempt') {
+      return { status: 'exempt', groupId: row.group_id, mode: row.mode };
+    }
     return {
-      groupId: parsed.data.group_id,
-      ownPortfolioId: parsed.data.own_portfolio_id,
-      ownTransactionId: parsed.data.own_transaction_id,
-      networkLevels: parsed.data.network_levels,
-      mode: parsed.data.mode,
+      status: row.hold_status,
+      groupId: row.group_id,
+      ownPortfolioId: row.own_portfolio_id,
+      ownTransactionId: row.own_transaction_id,
+      networkLevels: row.network_levels,
+      mode: row.mode,
     };
   }
 
@@ -274,8 +314,9 @@ export class WalletHoldStore {
 
   /**
    * El aviso previo (`wallet_hold_preview`): la misma decisión que la retención, sin bloquear ni
-   * escribir, con lo que la API sabe antes de abrir la orden. `undefined` = no se sabe (datos que la
-   * base no puede evaluar o una cuenta que no se resuelve): quien llama sigue y decide la reserva.
+   * escribir, con lo que la API sabe antes de abrir la orden. `exempt` = la cuenta propia del nodo,
+   * que no retiene. `undefined` = no se sabe (datos que la base no puede evaluar o una cuenta que no
+   * se resuelve): quien llama sigue y decide la reserva.
    */
   async preview(
     trx: Transaction<DB>,
@@ -294,6 +335,7 @@ export class WalletHoldStore {
     const parsed = PreviewRowSchema.safeParse(rows[0]);
     if (!parsed.success) throw new WalletHoldContractError('wallet_hold_preview');
     if (parsed.data.status === 'ok') return { status: 'ok' };
+    if (parsed.data.status === 'exempt') return { status: 'exempt' };
     if (parsed.data.status === 'unknown') return undefined;
     const reason = holdRejectionOfRule(parsed.data.reason);
     return reason === undefined ? undefined : { status: 'blocked', reason };

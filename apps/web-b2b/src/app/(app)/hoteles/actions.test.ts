@@ -257,6 +257,7 @@ describe('hotelSearchWalletsAction — las carteras para el aviso temprano', () 
           },
         ],
         financier: { tenantId: '10000000-0000-4000-8000-000000000002', name: 'Andino' },
+        ownProviderAccounts: ['latam-ndc'],
       },
     });
     expect(await hotelSearchWalletsAction()).toEqual({
@@ -264,6 +265,7 @@ describe('hotelSearchWalletsAction — las carteras para el aviso temprano', () 
       operating: ['COP'],
       suspended: [],
       financierName: 'Andino',
+      ownHotelAccounts: false,
     });
     expect(apiMock.mock.calls[0]?.[0]).toBe('/portfolios');
   });

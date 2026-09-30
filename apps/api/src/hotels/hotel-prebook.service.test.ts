@@ -576,6 +576,16 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
     expect(res.funding).toEqual(aviso);
   });
 
+  it('con la cuenta propia de la agencia (O = T) no hay nada que retener: own-account, sin aviso', async () => {
+    const aviso: BookingHoldPreview = { status: 'own-account', currency: 'USD' };
+    const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.funding).toEqual({ status: 'own-account', currency: 'USD' });
+    expect(await b.snapshots.get(AGENCIA, res.prebookRef)).toBeDefined();
+  });
+
   it('si la base no puede evaluar la red (una cuenta que ya no se resuelve), sale sin aviso', async () => {
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(undefined)) });
 
