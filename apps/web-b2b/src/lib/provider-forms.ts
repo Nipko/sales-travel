@@ -144,13 +144,20 @@ const LATAM_NDC: ProviderForm = {
 };
 
 // AgentCars (renta de autos). El token es secreto; sourceCountry = POS del agente.
-// baseUrl/suggestUrl/language son opcionales (el adapter usa defaults de desarrollo).
+// baseUrl/suggestUrl/language son opcionales (el adapter usa defaults de desarrollo). El ACL
+// completa `/v2/sites` si llega sólo el host, como lo publica la colección Postman oficial.
 const AGENT_CARS: ProviderForm = {
   label: 'AgentCars',
   credentials: [{ key: 'accessToken', label: 'Access Token', secret: true }],
   config: [
     { key: 'sourceCountry', label: 'País origen / POS', placeholder: 'CO' },
-    { key: 'baseUrl', label: 'Base URL (opcional)', url: true },
+    {
+      key: 'baseUrl',
+      label: 'Base URL (opcional)',
+      url: true,
+      placeholder: 'https://api.agentcars.com/v2/sites',
+      help: 'Vacía usa la de la plataforma. Producción: https://api.agentcars.com/v2/sites; pruebas: https://api.dev.agentcars.com/v2/sites. Si pegas sólo el host, se completa /v2/sites.',
+    },
     { key: 'suggestUrl', label: 'Suggest URL (opcional)', url: true },
     { key: 'language', label: 'Idioma (opcional)', placeholder: 'es' },
   ],

@@ -1,4 +1,9 @@
-import { AgentCarsAdapter, type AgentCarsConfig } from '@sales-travel/agent-cars';
+import {
+  AgentCarsAdapter,
+  AgentCarsApiError,
+  normalizeAgentCarsBaseUrl,
+  type AgentCarsConfig,
+} from '@sales-travel/agent-cars';
 import { Money } from '@sales-travel/canonical';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -348,5 +353,58 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
     await expect(adapter.getRates({ country: 'US', source: 'CO' })).rejects.toThrow(
       /AgentCars API 401/,
     );
+  });
+});
+
+describe('URL base de la cuenta → raíz de la API (…/v2/sites)', () => {
+  it.each([
+    // La variable `api_url` de la colección Postman oficial: sólo el host.
+    ['https://api.agentcars.com', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com/', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com/v2', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com/v2/sites/', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com/v2/sites/get-matrix', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com/V2/Sites', 'https://api.agentcars.com/v2/sites'],
+    ['  https://api.dev.agentcars.com/v2/sites  ', 'https://api.dev.agentcars.com/v2/sites'],
+    ['api.agentcars.com', 'https://api.agentcars.com/v2/sites'],
+    ['https://api.agentcars.com?access-token=x#frag', 'https://api.agentcars.com/v2/sites'],
+    // Un proxy propio con otra ruta se respeta.
+    ['https://proxy.example.com/agentcars/api', 'https://proxy.example.com/agentcars/api'],
+  ])('%s → %s', (raw, expected) => {
+    expect(normalizeAgentCarsBaseUrl(raw)).toBe(expected);
+  });
+
+  it('lo que no es una URL http(s) queda como vino (falla con su propio error)', () => {
+    expect(normalizeAgentCarsBaseUrl('')).toBe('');
+    expect(normalizeAgentCarsBaseUrl('ftp://api.agentcars.com')).toBe('ftp://api.agentcars.com');
+  });
+
+  it('la búsqueda con la cuenta cargada sólo con el host llega a /v2/sites/get-matrix', async () => {
+    const { calls } = stubFetch({});
+    const adapter = new AgentCarsAdapter({ ...cfg, baseUrl: 'https://api.agentcars.com' });
+    await adapter.getMatrix({
+      pickUpLocation: 'BOG',
+      dropOffLocation: 'BOG',
+      pickUpDate: '2026-10-22',
+      dropOffDate: '2026-10-29',
+      pickUpHour: '1000',
+      dropOffHour: '1000',
+      rateType: 'best',
+      country: 'CO',
+    });
+    expect(new URL(url(calls)).pathname).toBe('/v2/sites/get-matrix');
+  });
+
+  it('el error lleva la URL llamada sin query string, para el log', async () => {
+    stubFetch({ error: 'x' }, 404);
+    const adapter = new AgentCarsAdapter({ ...cfg, baseUrl: 'https://api.agentcars.com' });
+    const err = await adapter.getRates({ country: 'CO', source: 'CO' }).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    if (!(err instanceof AgentCarsApiError)) throw new Error('esperaba un AgentCarsApiError');
+    expect(err.status).toBe(404);
+    expect(err.path).toBe('/rates');
+    expect(err.endpoint).toBe('https://api.agentcars.com/v2/sites/rates');
   });
 });

@@ -7,24 +7,27 @@ import {
 } from '@nestjs/common';
 import { AgentCarsApiError } from '@sales-travel/agent-cars';
 import type { Response } from 'express';
-import { humanizeAgentCarsError } from './agent-cars-errors.js';
+import { humanizeAgentCarsError, summarizeAgentCarsBody } from './agent-cars-errors.js';
 
 /**
  * Convierte un error del proveedor AgentCars (HTTP no-2xx / red caída) en un 502 Bad Gateway con un
  * mensaje claro y accionable para el agente (vía humanizeAgentCarsError), en vez de un 500 genérico
- * o el texto crudo del proveedor. El detalle técnico queda en el log, no en la respuesta al cliente.
+ * o el texto crudo del proveedor. El detalle técnico queda en el log, no en la respuesta al cliente:
+ * la URL llamada (sin query; el token viaja en cabecera) y el motivo, no el HTML entero.
  */
 @Catch(AgentCarsApiError)
 export class AgentCarsExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('AgentCars');
 
   catch(err: AgentCarsApiError, host: ArgumentsHost): void {
-    this.logger.warn(`${err.status} ${err.path}: ${err.body.slice(0, 250)}`);
+    this.logger.warn(
+      `${err.status} ${err.endpoint ?? err.path}: ${summarizeAgentCarsBody(err.body)}`,
+    );
     const res = host.switchToHttp().getResponse<Response>();
     res.status(HttpStatus.BAD_GATEWAY).json({
       statusCode: HttpStatus.BAD_GATEWAY,
       error: 'Bad Gateway',
-      message: humanizeAgentCarsError(err.status, err.body),
+      message: humanizeAgentCarsError(err.status, err.body, err.path),
     });
   }
 }

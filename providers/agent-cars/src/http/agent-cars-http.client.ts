@@ -7,6 +7,11 @@ export class AgentCarsApiError extends Error {
     readonly status: number,
     readonly body: string,
     readonly path: string,
+    /**
+     * La URL a la que se llamó, sin query string (no lleva el token: ese viaja en cabecera). Es lo
+     * que dice si la cuenta apunta a otro host o a una ruta que AgentCars no tiene.
+     */
+    readonly endpoint?: string,
   ) {
     super(`AgentCars API ${status} on ${path}: ${body.slice(0, 300)}`);
     this.name = 'AgentCarsApiError';
@@ -30,7 +35,7 @@ export class AgentCarsHttpClient {
       { method: 'GET', headers: this.headers({ Accept: 'application/json' }) },
       path,
     );
-    return this.parse<T>(res, path);
+    return this.parse<T>(res, path, url);
   }
 
   async postForm<T>(
@@ -49,7 +54,7 @@ export class AgentCarsHttpClient {
       { method: 'POST', body: form, headers: this.headers() },
       path,
     );
-    return this.parse<T>(res, path);
+    return this.parse<T>(res, path, url);
   }
 
   /**
@@ -75,7 +80,7 @@ export class AgentCarsHttpClient {
         e.name === 'TimeoutError' || e.name === 'AbortError'
           ? `el proveedor no respondió en ${timeoutMs} ms`
           : e.message;
-      throw new AgentCarsApiError(0, reason, path);
+      throw new AgentCarsApiError(0, reason, path, endpointOf(url));
     }
   }
 
@@ -89,14 +94,24 @@ export class AgentCarsHttpClient {
     return url.toString();
   }
 
-  private async parse<T>(res: Response, path: string): Promise<T> {
+  private async parse<T>(res: Response, path: string, url: string): Promise<T> {
     const text = await res.text();
-    if (!res.ok) throw new AgentCarsApiError(res.status, text, path);
+    if (!res.ok) throw new AgentCarsApiError(res.status, text, path, endpointOf(url));
     if (!text.trim()) return {} as T; // 2xx vacío: los mappers lo toleran (devuelven [] / vacío).
     try {
       return JSON.parse(text) as T;
     } catch {
-      throw new AgentCarsApiError(res.status, `respuesta no-JSON: ${text.slice(0, 200)}`, path);
+      throw new AgentCarsApiError(
+        res.status,
+        `respuesta no-JSON: ${text.slice(0, 200)}`,
+        path,
+        endpointOf(url),
+      );
     }
   }
+}
+
+function endpointOf(url: string): string {
+  const u = new URL(url);
+  return `${u.origin}${u.pathname}`;
 }

@@ -5,7 +5,11 @@
  *
  * Los DTOs de AgentCars se convierten a tipos canónicos aquí; nunca se filtran al dominio.
  */
-import { AGENT_CARS_SUGGEST_URL, type AgentCarsConfig } from './config.js';
+import {
+  AGENT_CARS_SUGGEST_URL,
+  normalizeAgentCarsBaseUrl,
+  type AgentCarsConfig,
+} from './config.js';
 import { AgentCarsHttpClient } from './http/agent-cars-http.client.js';
 import { mapSuggestResults } from './suggest/response.mapper.js';
 import { mapOffices } from './offices/response.mapper.js';
@@ -46,7 +50,12 @@ import type {
   SuggestQuery,
 } from './types.js';
 
-export { AGENT_CARS_BASE_URLS, AGENT_CARS_SUGGEST_URL, isConfigured } from './config.js';
+export {
+  AGENT_CARS_BASE_URLS,
+  AGENT_CARS_SUGGEST_URL,
+  isConfigured,
+  normalizeAgentCarsBaseUrl,
+} from './config.js';
 export { AgentCarsApiError } from './http/agent-cars-http.client.js';
 export type { AgentCarsConfig } from './config.js';
 export type * from './types.js';
@@ -69,9 +78,12 @@ export {
 
 export class AgentCarsAdapter {
   private readonly http: AgentCarsHttpClient;
+  private readonly cfg: AgentCarsConfig;
 
-  constructor(private readonly cfg: AgentCarsConfig) {
-    this.http = new AgentCarsHttpClient(cfg);
+  constructor(cfg: AgentCarsConfig) {
+    // La cuenta (BYOC o entorno) puede traer sólo el host, como la colección Postman oficial.
+    this.cfg = { ...cfg, baseUrl: normalizeAgentCarsBaseUrl(cfg.baseUrl) };
+    this.http = new AgentCarsHttpClient(this.cfg);
   }
 
   // ─────────────────────── Búsqueda de ubicaciones ───────────────────────
