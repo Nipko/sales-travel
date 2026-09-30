@@ -12,9 +12,11 @@ import {
   parseInvitations,
   parseMemberActionResult,
   parseMembers,
+  parseMembershipImpact,
   teamLoadError,
   type MemberAction,
   type MemberActionResult,
+  type MembershipImpact,
   type NetworkMember,
   type PendingInvitation,
 } from './tenant-admin-team';
@@ -116,6 +118,31 @@ export function runMemberAction(
     `/api/tenants/${seg(tenantId)}/members/${seg(userId)}/${action}`,
     { method: 'POST' },
     parseMemberActionResult,
+    memberActionError,
+  );
+}
+
+/** El cambio sobre una membership que la confirmación está por aplicar. */
+export type MembershipChange = { readonly status: 'suspended' } | { readonly role: string };
+
+/**
+ * Qué arrastraría el cambio (las invitaciones que se revocarían). Se pregunta antes de abrir la
+ * confirmación; si falla, la pantalla confirma igual, sin el número.
+ */
+export function loadMembershipImpact(
+  tenantId: string,
+  userId: string,
+  change: MembershipChange,
+): Promise<Loaded<MembershipImpact>> {
+  const params = new URLSearchParams({
+    tenantId,
+    userId,
+    ...('status' in change ? { status: change.status } : { role: change.role }),
+  });
+  return call(
+    `/api/admin/memberships/impact?${params.toString()}`,
+    {},
+    parseMembershipImpact,
     memberActionError,
   );
 }
