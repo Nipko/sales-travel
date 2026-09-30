@@ -59,14 +59,16 @@
 --     tener una membership, de cualquier estado, en ese nodo o en un ancestro (el vendedor, el admin
 --     del dueño que corre la conciliación, el superadmin).
 --   - Los montos, la moneda, la cadena y el dueño de la credencial los decide la base desde la orden.
---     La API no los pasa y no los puede fijar. Sólo wallet_hold_preview y el aviso del PreBook
+--     La API no los pasa por parámetro, pero la venta (total_amount) y el neto (selected_offer) son
+--     campos de la orden que escribe ella: la cascada confía en esos campos, y nada acá impide que
+--     app_user los cambie (docs/platform/12 §12.8). Sólo wallet_hold_preview y el aviso del PreBook
 --     (wallet_hold_report_preview_block), que corren antes de que exista la orden y no escriben
 --     asientos, reciben el neto: el mismo que la base leerá después (wallet_hold_net):
 --     pricing.netMinor en hoteles y autos, offer.total en vuelos.
 --   - Desde acá `app_user` no inserta asientos BOOKING_* ni NETWORK_* y no mueve `balance_minor`,
 --     salvo como quien financia (WalletFinancingService, withRequestContext). El código anterior a
 --     0060 recibe 42501 en cuanto retiene o libera: la migración y el reinicio de la API van en el
---     mismo deploy (docs/platform/13, Paso 10 del runbook).
+--     mismo deploy (docs/platform/13, Paso 14 del runbook).
 --   - `app_user` tampoco crea tablas temporales ni objetos en `public`.
 --
 -- Errores (CONSTRAINT = la regla, TABLE = 'wallet_hold_groups', MESSAGE en castellano sin ids ni
@@ -235,10 +237,11 @@ GRANT EXECUTE ON FUNCTION raise_wallet_hold_violation(text, text) TO app_user;
 --   enforce  la cascada completa.
 --
 -- La cambia el operador por psql (INSERT … ON CONFLICT (tenant_id) DO UPDATE SET mode, reason y
--- updated_by, docs/platform/13 Paso 10). La aplicación no la lee ni la escribe: la consultan las
+-- updated_by, docs/platform/13 Paso 14). La aplicación no la lee ni la escribe: la consultan las
 -- funciones de retención. El rastro de cada cambio no es de la red afectada: va como evento de
--- plataforma (tenant_id NULL), así el nodo no se entera de que su cascada está apagada ni lee las
--- notas del operador.
+-- plataforma (tenant_id NULL), así el nodo no lee la razón ni el autor que anotó el operador. El
+-- modo con que se tomó cada retención sí lo ve: va en sus eventos portfolio.hold.* y en
+-- wallet_hold_groups.mode.
 CREATE TABLE wallet_hold_policy (
   tenant_id   UUID         PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
   mode        TEXT         NOT NULL,
@@ -845,8 +848,9 @@ $$;
 COMMENT ON FUNCTION wallet_hold_emit(uuid, uuid, text, uuid, jsonb) IS
   'Escribe un domain_event de retención (aggregate_type order) en el tenant p_tenant. Helper de 0060, sin GRANT.';
 
--- El evento de un nivel, en el tenant dueño de la cartera. El actor sólo en depth 0: hacia arriba
--- no se expone quién vendió.
+-- El evento de un nivel, en el tenant dueño de la cartera. El actor sólo en depth 0: los eventos de
+-- los niveles de la red no dicen quién vendió. El de depth 0 queda en el tenant del que vende, y la
+-- actividad de la red (AuditService.networkAudit) se lo muestra a los admins de sus ancestros.
 CREATE FUNCTION wallet_hold_level_event(
   p_level  wallet_hold_levels,
   p_mode   TEXT,
@@ -2332,7 +2336,7 @@ END $$;
 -- La migración no pone 'observe' sola: una política es por nodo y vale para todas las monedas y
 -- todos los niveles de su red, así que un hueco en una moneda apagaría la cascada también en las
 -- demás y en los niveles solventes, y nada la levantaría después. Sólo avisa, con el par (nodo,
--- moneda), para el Paso 10 del runbook (docs/platform/13): abrirle la cartera, o poner 'observe' a
+-- moneda), para el Paso 14 del runbook (docs/platform/13): abrirle la cartera, o poner 'observe' a
 -- mano con su razón si hay que destrabar mientras tanto. En producción hoy no debería listar nada.
 DO $$
 DECLARE

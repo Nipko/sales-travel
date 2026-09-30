@@ -1,7 +1,7 @@
 # Mapa Completo de la Plataforma — Sales-Travel
 
 **Versión:** 1.0
-**Fecha:** 2026-04-24
+**Fecha:** 2026-04-24 · **Actualizado:** 2026-09-29 (carteras B2B por moneda y retención en cascada: M5.5, §4.3 y §6)
 **Propósito:** Vista única y exhaustiva de TODO lo que se construye. Es la fuente de verdad técnica para Sprint 0 en adelante. Todo lo que no es construcción de plataforma vive en `11-manual-operativo.md`.
 
 ---
@@ -97,7 +97,7 @@ SALES-TRAVEL PLATFORM
 │   ├── M5.2 Hosted checkout (SAQ-A: Stripe + MP Checkout Pro)
 │   ├── M5.3 Métodos locales (PIX, PSE, Boleto, Yape, Plin, OXXO)
 │   ├── M5.4 Split payments (Stripe Connect + MP Marketplace)
-│   ├── M5.5 Wallet B2B (créditos prepagos por agencia)
+│   ├── M5.5 Wallet B2B (carteras por moneda con cupo de quien financia; retención en cascada por la red)
 │   ├── M5.6 Cash en plataforma (registro de pagos manuales)
 │   ├── M5.7 Webhooks normalizer + idempotency + outbox
 │   ├── M5.8 Conciliación nocturna automatizada
@@ -459,10 +459,59 @@ PAYMENT_INTENT
   customer_country
   created_at, succeeded_at
 
-WALLET (créditos B2B)
+AGENCY_PORTFOLIO (Wallet B2B: una cartera por nodo y moneda; implementado, 0052)
+  id (uuid, pk)
+  tenant_id (fk)                   -- el nodo dueño; unique(tenant_id, currency)
+  currency (ISO 4217)              -- no cambia
+  credit_limit_minor               -- cupo, en unidades menores
+  balance_minor                    -- saldo; saldo + cupo es lo que el nodo puede retener
+  status (active|suspended|overlimit)
+  -- cupo, estado, depósitos y ajustes: sólo quien financia al nodo (can_finance_tenant)
+  -- balance_minor: sólo las funciones wallet_hold_* o quien financia (desde 0060)
+  └── 1:N PORTFOLIO_TRANSACTION
+  └── 1:N PORTFOLIO_DEPOSIT_REPORT (depósito que informa la agencia: pending → approved|rejected)
+
+PORTFOLIO_TRANSACTION (libro de la cartera, sólo agregar)
+  id (uuid, pk)
+  portfolio_id (fk)
+  amount_minor                     -- con signo: *_HOLD < 0, *_RELEASED > 0
+  transaction_type (DEPOSIT_PAYMENT|MANUAL_ADJUSTMENT|BOOKING_HOLD|BOOKING_RELEASED|BOOKING_CHARGE|NETWORK_HOLD|NETWORK_RELEASED)
+  reference_id                     -- la orden, en los asientos de retención
+  idempotency_key, notes, created_by, created_at
+  -- BOOKING_* (el nodo que vende) y NETWORK_* (cada nivel de su red) sólo los escriben las funciones de retención
+
+WALLET_HOLD_POLICY (modo de la retención en cascada por red, 0060)
   tenant_id (fk, pk)
-  balance, currency
-  └── 1:N WALLET_TRANSACTION (recargas, débitos, reversas)
+  mode (off|observe|enforce)       -- un off en un ancestro gana; si no, la fila más cercana; sin fila, enforce
+  reason, updated_by, updated_at
+  -- la escribe el operador por psql; app_user no la lee ni la escribe; cada cambio: wallet_hold.policy_changed
+
+WALLET_HOLD_GROUP (una retención por orden, 0060)
+  id (uuid, pk)
+  order_id (fk, unique)            -- ON DELETE RESTRICT
+  origin_tenant_id                 -- el nodo que vende; sólo él la ve (RLS)
+  order_number, currency, sale_amount_minor
+  provider_code, provider_account_id
+  credential_owner_tenant_id       -- dueño de la credencial (O): los niveles por debajo de O retienen
+  credential_source (account|resolved|root|legacy|unresolved)
+  mode (off|observe|enforce|legacy)
+  status (held|captured|released|conflict)
+  created_by, created_at, captured_at, closed_at
+  └── 1:N WALLET_HOLD_LEVEL
+
+WALLET_HOLD_LEVEL (una cartera retenida, 0060)
+  id (uuid, pk)
+  group_id (fk), order_id
+  depth (0..3)                     -- 0 = el que vende; 1, 2… = cada ancestro que lo financia, por debajo de O
+  tenant_id                        -- dueño de la cartera; sólo él lo ve (RLS)
+  portfolio_id (fk)                -- ON DELETE RESTRICT
+  origin_tenant_id, order_number, currency
+  amount_minor                     -- depth 0: precio de venta; depth ≥ 1: costo del nivel
+  basis (sale|cost)
+  hold_transaction_id (fk)         -- BOOKING_HOLD o NETWORK_HOLD
+  release_transaction_id (fk, nullable)  -- BOOKING_RELEASED o NETWORK_RELEASED
+  status (held|captured|released|conflict)
+  created_at, updated_at
 
 REFUND
   id (pk)
@@ -499,6 +548,21 @@ INVOICE
   pdf_url, xml_url
   emitted_at
 ```
+
+**Funciones de la retención en cascada** ([0060](../../db/migrations/0060_wallet_network_holds.sql); modelo en [12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)). La base deriva desde la orden la cadena, el dueño de la credencial, los montos de cada nivel y el orden de los bloqueos. La API no pasa montos, sólo la orden y quien firma, con `app.current_tenant_id` del nodo que vende. Los montos salen de `orders.total_amount` y del neto de `selected_offer`, que escribe la API, así que la cascada confía en esos campos (12 §12.8).
+
+| Función                                                                                                                                 | Quién la usa                                                        | Qué hace                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wallet_hold_retain(orden, actor)`                                                                                                      | API (`app_user`)                                                    | Retiene todo o nada: el precio de venta en la cartera del que vende (`BOOKING_HOLD`) y, en `enforce`, el costo de cada nivel de su red (`NETWORK_HOLD`). Devuelve sólo datos del que vende.              |
+| `wallet_hold_settle(orden, actor, estado esperado)`                                                                                     | API (`app_user`)                                                    | Según el estado de la orden captura, libera todos los niveles sobre lo registrado o marca `conflict`.                                                                                                    |
+| `wallet_hold_preview(...)`                                                                                                              | API (`app_user`)                                                    | El aviso previo (PreBook, antes de C2): `ok`, `blocked` con la regla, o `unknown`. No bloquea, no escribe y no devuelve montos.                                                                          |
+| `wallet_hold_report_block(orden)`, `wallet_hold_report_preview_block(...)`                                                              | API (`app_user`)                                                    | Dejan `portfolio.network_hold.blocked` en el primer nivel que bloquea, deduplicado.                                                                                                                      |
+| `wallet_hold_capture_on_confirm`, `wallet_hold_uncapture_on_retract`                                                                    | Triggers de `orders`                                                | `held` → `captured` al confirmarse la orden, y de vuelta a `held` cada vez que pasa de `confirmed` o `ticketed` a `pending`: una confirmación retractada o el claim de una cancelación. No mueven saldo. |
+| `portfolio_transactions_hold_entries_gate`, `agency_portfolios_balance_guard`                                                           | Triggers                                                            | Los asientos `BOOKING_*` y `NETWORK_*` y el saldo, sólo desde las funciones de retención o quien financia (42501).                                                                                       |
+| `wallet_hold_policy_audit`, `wallet_hold_policy_stamp`                                                                                  | Triggers de `wallet_hold_policy`                                    | Cada cambio de modo deja `wallet_hold.policy_changed` como evento de plataforma, con el autor de ese cambio.                                                                                             |
+| `wallet_hold_mode`, `wallet_hold_owner`, `wallet_hold_chain`, `wallet_hold_net`, `wallet_hold_level_cost`, `wallet_hold_decide` y otros | Helpers, sin `GRANT`                                                | Modo que rige, dueño de la credencial, cadena de la red, neto de la orden, costo de un nivel y decisión de una cartera.                                                                                  |
+| `raise_wallet_hold_violation(regla, detalle)`                                                                                           | Las funciones de retención y las guardas; `EXECUTE` para `app_user` | Lanza el error de una regla (42501, STW01 o STW02). Es INVOKER, no lee ni escribe; tiene `GRANT` porque las guardas INVOKER corren con el rol de quien escribe.                                          |
+| `wallet_hold_backfill_legacy()`                                                                                                         | La migración                                                        | Pasa las retenciones anteriores a 0060 a grupos `legacy` de un nivel.                                                                                                                                    |
 
 ### 4.4 Providers, IA, Auditoría
 
@@ -754,6 +818,36 @@ POST   /payments/wallet/debit            -- usa saldo
 GET    /payments/wallet/balance
 GET    /payments/wallet/transactions
 ```
+
+### Carteras B2B (implementado)
+
+El Wallet B2B vive en `/portfolios` y reemplaza a `/payments/wallet/*`. Las carteras son por moneda, las establece quien financia al nodo ([12 §10](./12-modelo-consolidador-y-plan.md#10--carteras-por-moneda-y-quién-las-establece-2026-09-29)) y retienen en cascada por la red ([12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)).
+
+```
+-- El nodo, sobre sus propias carteras
+GET    /portfolios                              -- sus carteras por moneda
+GET    /portfolios/transactions?currency        -- movimientos; los NETWORK_* traen de qué agencia y reserva, sólo para admins
+GET    /portfolios/network-holds?currency&status  -- lo que su red retiene o cobró en sus carteras, al costo de su nivel (admins)
+GET    /portfolios/deposit-reports
+POST   /portfolios/deposit-reports              -- informar un depósito (queda pendiente)
+POST   /portfolios/hold-booking                 -- retención manual de una orden confirmada (vuelos, autos)
+POST   /portfolios/orders/:orderId/approve
+POST   /portfolios/orders/:orderId/reject       -- vuelos: cancela con el proveedor (si lo admite) y libera en todos los niveles;
+                                                --   hoteles y autos: 400; con la orden ya failed/cancelled, cualquier vertical libera sin llamar al proveedor
+POST   /portfolios/deposit · /portfolios/withdraw · PATCH /portfolios/credit-limit   -- 403 PORTFOLIO_FINANCIER_REQUIRED
+
+-- Quien financia al nodo (o el superadmin)
+GET    /tenants/:tenantId/portfolios
+POST   /tenants/:tenantId/portfolios            -- habilitar una moneda con su cupo
+PATCH  /tenants/:tenantId/portfolios/:portfolioId   -- cupo y estado
+POST   /tenants/:tenantId/portfolios/:portfolioId/deposits · /adjustments   -- con Idempotency-Key
+GET    /tenants/:tenantId/portfolios/transactions?currency
+GET    /tenants/:tenantId/portfolios/network-holds?currency&status
+GET    /tenants/:tenantId/portfolios/deposit-reports
+POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
+```
+
+`network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §12.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.
 
 ### Pricing
 

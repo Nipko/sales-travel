@@ -1,8 +1,8 @@
 # 13 — Validación del modelo de red: Planetour, sucursales, consolidadores y superadmin
 
-**Versión:** 1.1
-**Fecha:** 2026-09-28 · **Actualizado:** 2026-09-29 (carteras por moneda: [§4.1](#41-confidencialidad) punto 3 y [§5](#5-runbook-del-vps) pasos 7 a 9)
-**Ramas:** tanda 1 en `feat/network-model`, desde `main` 19c6e3f, mergeada con #6 (`fb25713`). Carteras por moneda en `feat/wallets-per-currency`, desde `main` 5de126d.
+**Versión:** 1.3
+**Fecha:** 2026-09-28 · **Actualizado:** 2026-09-29 (carteras por moneda: [§4.1](#41-confidencialidad) punto 3 y [§5](#5-runbook-del-vps) pasos 7 a 9; rediseño de hoteles: §5 pasos 10 a 13; retención en cascada: §4.1 punto 4, [§4.4](#44-después-de-la-tanda-2) y §5 paso 14)
+**Ramas:** tanda 1 en `feat/network-model`, desde `main` 19c6e3f, mergeada con #6 (`fb25713`). Carteras por moneda en `feat/wallets-per-currency`, desde `main` 5de126d, mergeada con #10 (`7f9f011`). Rediseño de hoteles en `feat/hotels-redesign`, encima de las carteras, mergeado con #11. Retención en cascada en `feat/wallets-credit-cascade`, desde `main` 7f9f011.
 **Propósito:** Dejar por escrito cuatro cosas: (1) la auditoría del modelo de red del 2026-09-28, resumida; (2) qué quedó arreglado en la primera tanda; (3) qué queda para la siguiente, con las decisiones abiertas; (4) el runbook para ponerlo en producción.
 
 > El modelo firmado está en [12 §3.0](./12-modelo-consolidador-y-plan.md#30-modelo-de-red-validado-2026-09-28). Este documento es el expediente de cómo se validó y qué falta. Las decisiones D1–D7 de aquí son las de la auditoría, no las D1–D5 de junio de [12 §7](./12-modelo-consolidador-y-plan.md#7-riesgos-y-decisiones-abiertas).
@@ -15,7 +15,8 @@
 2. **La tanda 1 arregla la estructura.** Planetour pasa a ser la raíz `platform` y la base impone qué nodo puede colgar de cuál (D4 A). Existen las sucursales. El superadmin arma, mueve y suspende nodos desde _Gestión de Agencias_ (D6 A). Nadie puede asignar un rol igual o superior al propio, y `platform_admin` dejó de asignarse (D7 B). El superadmin no vende. `seed-superadmin` ya no rompe datos. Ver §3.
 3. **La tanda 2 es la confidencialidad y el superadmin operativo.** Hoy una agencia ve el neto del proveedor (G-02) y los márgenes de sus ancestros (G-01). El superadmin no puede "entrar como" otro nodo (G-17), el reporte de comisiones es inventado (G-16) y nadie ve las oportunidades asignadas del CRM. Faltan tres decisiones: D2, D3 y D5. Ver §4.
 4. **Las carteras ya están resueltas (2026-09-29).** Eran la otra brecha crítica. El founder eligió la opción A: la cartera de cada agencia la establece quien la financia, con una cartera por moneda y su cupo. La agencia sólo ve sus carteras e informa depósitos, y una reserva se retiene en la cartera de la moneda de la tarifa. Ver §4.1 punto 3.
-5. **Despliegue.** La tanda 1 salió a producción con el merge de #6 (`fb25713`); sus pasos son los 1 a 6 del runbook de §5, y el último deja cargada la cuenta TBO en Planetour. Las carteras siguen sin desplegar en `feat/wallets-per-currency`. Los pasos 7 a 9 las llevan a producción, le dan a una sucursal una cartera en USD con cupo y prueban una reserva de TBO en test.
+5. **Despliegue.** La tanda 1 salió a producción con el merge de #6 (`fb25713`); sus pasos son los 1 a 6 del runbook de §5, y el último deja cargada la cuenta TBO en Planetour. Las carteras se mergearon con #10 (`7f9f011`). Los pasos 7 a 9 las llevan a producción, le dan a una sucursal una cartera en USD con cupo y prueban una reserva de TBO en test. El rediseño de hoteles (`feat/hotels-redesign`: fotos, cobertura global de ciudades y tarifas no reembolsables) va encima: los pasos 10 a 13 lo despliegan, precargan las ciudades de todos los países y verifican las fotos y el permiso de no reembolsables.
+6. **Retención en cascada (2026-09-29, "opción 1" del founder).** Una reserva retiene en la cartera del nodo que vende y, además, en la de cada nivel que lo financia, hasta el dueño de la credencial, en la moneda de la tarifa. Así el cupo que una agencia le da a su sub-agencia ya no queda sin tope a lo largo de la red. Si un nivel no alcanza, no se retiene en ninguno y no se llama al proveedor. Está en `feat/wallets-credit-cascade` (0060), sin desplegar. Con la red de hoy, todos los nodos de nivel 2 o menos, ninguna venta cambia. El modelo está en [12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1) y el despliegue es el paso 14 de §5.
 
 ---
 
@@ -134,7 +135,7 @@ Una sucursal es una `agency` con `is_branch = true` y cuelga directamente de la 
 - Lo mueve sólo el superadmin, con todo su subárbol, y queda un evento `tenant.moved` con el actor.
 - Lo histórico queda como está: las órdenes y los movimientos de cartera no se reescriben. Desde el cambio rigen las credenciales, las reglas y la marca del nuevo padre, porque se heredan leyendo el `path`.
 - Se rechazan los ciclos, más de 4 niveles y lo que prohíbe la matriz.
-- Se bloquea si el nodo o su subárbol tiene reservas **abiertas pagadas con cartera** (tienen su `BOOKING_HOLD` y no su `BOOKING_RELEASED`). También se bloquea si tiene reservas abiertas hechas con una cuenta de un ancestro que deja de serlo, porque su post-venta ya no encontraría la cuenta.
+- Se bloquea si el nodo o su subárbol tiene reservas **abiertas pagadas con cartera**. Desde 0060 eso es una retención abierta: `held` o `captured` con la reserva abierta, o `conflict` en cualquier estado. Antes era tener el `BOOKING_HOLD` y no el `BOOKING_RELEASED`, y una cascada liberada a medias contaba como liberada. También se bloquea si tiene reservas abiertas hechas con una cuenta de un ancestro que deja de serlo, porque su post-venta ya no encontraría la cuenta.
 - **Abierta** es `pending`, o `confirmed`/`ticketed` hasta el día siguiente al fin del viaje: check-out del hotel, devolución del auto, o vuelta (si no hay, ida) del vuelo. Sin ninguna fecha legible, cuenta como abierta.
 
 **Errores:** la base usa códigos propios y la API los traduce con motivo. STH01 (regla de la jerarquía) da 409 con el motivo en mayúsculas, por ejemplo `TENANT_ROOT_MUST_BE_PLATFORM` o `TENANT_DEPTH_LIMIT`; si el nodo o su padre no existen, 404 (`TENANT_NOT_FOUND`, `TENANT_PARENT_NOT_FOUND`). STH02 (movimiento bloqueado) da 409 `TENANT_MOVE_OPEN_WALLET_BOOKINGS` o `TENANT_MOVE_OPEN_INHERITED_BOOKINGS`. Un movimiento que la base no permite al usuario da 403 `TENANT_MOVE_FORBIDDEN`.
@@ -148,6 +149,7 @@ Una sucursal es una `agency` con `is_branch = true` y cuelga directamente de la 
 | Tema                                     | Estado                                                                                    |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Carteras (crítica)                       | ✅ Resuelta en `feat/wallets-per-currency`, sin desplegar: §4.1 punto 3 y §5 pasos 7 a 9. |
+| Cupo sin tope a lo largo de la red       | ✅ En `feat/wallets-credit-cascade` (0060), sin desplegar: 12 §12 y §5 paso 14.           |
 | G-02, el neto del proveedor (crítica)    | Pendiente, y es lo que sigue: §4.1 punto 1.                                               |
 | G-01, el simulador de reglas             | Pendiente: §4.1 punto 2.                                                                  |
 | G-17, "entrar como"                      | Pendiente, con el alcance que fije D5: §4.2 punto 1.                                      |
@@ -166,15 +168,16 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
    - "Neto" pasa a decir "costo".
    - Aplica a vuelos, hoteles, autos y el detalle de órdenes.
 2. **G-01, el simulador de reglas.** Sólo para admins. Cada uno ve los pasos de su nodo hacia abajo; el superadmin ve todo.
-3. **Carteras. Resuelta el 2026-09-29** con la opción A del founder: la cartera de cada agencia la establece **quien la financia**. Son cuatro commits en `feat/wallets-per-currency`: `6ad61d7` (base), `ce9181e` (API), `16dc410` (retención) y `43d9d34` (web). Todavía no está desplegada (§5 pasos 7 a 9).
+3. **Carteras. Resuelta el 2026-09-29** con la opción A del founder: la cartera de cada agencia la establece **quien la financia**. Son cuatro commits en `feat/wallets-per-currency`: `6ad61d7` (base), `ce9181e` (API), `16dc410` (retención) y `43d9d34` (web). Se mergeó con #10 (`7f9f011`) y se despliega con los pasos 7 a 9 de §5.
    - **Quién financia a quién.** Es el ancestro más cercano de tipo plataforma, consolidador o agencia (`tenant_financier_id`, [0052](../../db/migrations/0052_wallets_per_currency.sql)). A las agencias, sucursales y consolidadores que cuelgan de Planetour los financia Planetour, y eso lo opera su superadmin. A las agencias de un consolidador las financia el consolidador (sus `consolidator_admin`, `tenant_admin`, `agency_admin` o `admin`), y a las sub-agencias, su agencia. El superadmin puede con cualquier nodo, la raíz incluida, y es el único que gestiona la de Planetour. Fuera de ese caso nadie gestiona la cartera de su propio nodo, y un ancestro que está por encima del que financia tampoco: el consolidador no toca la de una sub-agencia de su agencia (`can_finance_tenant`).
    - **Una cartera por moneda.** `agency_portfolios` pasa a ser única por tenant y moneda. Las filas que había quedan como la cartera de su moneda, y la moneda y el nodo de una cartera ya no cambian. Sólo se habilitan monedas ISO 4217 con dos decimales, porque `Money` asume centavos.
    - **Qué hace quien financia.** Habilita monedas con su cupo inicial, fija el cupo, suspende o reactiva una cartera, y registra depósitos y ajustes con signo. Cada cambio pide motivo (Zod) y deja su `domain_event` en la misma transacción: `portfolio.created`, `portfolio.credit_limit.changed`, `portfolio.status.changed`, `portfolio.deposit.recorded` y `portfolio.adjustment.recorded`. Los depósitos y los ajustes llevan `Idempotency-Key`. En la web, el superadmin lo hace desde _Gestión de Agencias_ → nodo → _Carteras_ y el consolidador o la agencia, desde _Mi Red_ → agencia → _Carteras_. El API es `/tenants/:tenantId/portfolios`.
    - **Qué hace la agencia.** En _Cartera B2B_ ve sus carteras por moneda, sus movimientos y sus informes. Un admin de la agencia puede **informar un depósito**, que queda pendiente y no suma saldo hasta que quien la financia lo aprueba (se acredita un `DEPOSIT_PAYMENT` en la misma transacción) o lo rechaza con motivo. Esos pasos los audita la base (`portfolio.deposit_report.submitted`, `approved` y `rejected`). `POST /portfolios/deposit`, `POST /portfolios/withdraw` y `PATCH /portfolios/credit-limit` responden 403 `PORTFOLIO_FINANCIER_REQUIRED` con el motivo.
    - **La base lo impone.** Si quien escribe no es quien financia al nodo, el cupo, el estado, los depósitos y los ajustes los rechaza un trigger. No frena a un rol que se salta la RLS, como las migraciones, los seeds y el `psql` del operador. Sale un 42501 con la regla `portfolio_financier_required` (o `portfolio_entry_author` y `deposit_report_resolver`, si se firma a nombre de otro usuario), que la API devuelve como 403. Las demás reglas (moneda inmutable, un informe se resuelve una sola vez) salen como STW01 y la API las devuelve como 409 con motivo. Además, el libro de movimientos es de sólo agregar para `app_user`, y la aplicación no borra carteras. Los tests corren como `app_user` (`wallets-rls`, `wallet-financing` y `holds-per-currency`), incluido el que pedía la auditoría: el admin de una agencia no puede tocar su cupo.
-   - **La retención.** Cualquier reserva que retiene cartera (el hotel antes del Book, y un vuelo o un auto confirmados por `POST /portfolios/hold-booking`) lo hace en la cartera de la agencia en la moneda de la tarifa. El tope es el saldo más el cupo, y no se convierte. Sin cartera en esa moneda, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` ("La agencia no tiene cartera en USD: pedile a quien te financia que la habilite"), sin abrir una cartera implícita. Con la cartera suspendida sale `PORTFOLIO_INACTIVE`, y sin saldo ni cupo, `PORTFOLIO_FUNDS_INSUFFICIENT`. En hoteles los tres rechazos llegan antes de llamar al proveedor, y el PreBook y la búsqueda avisan antes de cargar huéspedes. La API ya no crea una cartera COP con cupo 0 la primera vez que alguien la mira.
+   - **La retención.** Cualquier reserva que retiene cartera (el hotel antes del Book, y un vuelo o un auto confirmados por `POST /portfolios/hold-booking`) lo hace en la cartera de la agencia en la moneda de la tarifa. El tope es el saldo más el cupo, y no se convierte. Sin cartera en esa moneda, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` ("La agencia no tiene cartera en USD: pedile a quien te financia que la habilite"), sin abrir una cartera implícita. Con la cartera suspendida sale `PORTFOLIO_INACTIVE`, y sin saldo ni cupo, `PORTFOLIO_FUNDS_INSUFFICIENT`. En hoteles los tres rechazos llegan antes de llamar al proveedor, y el PreBook y la búsqueda avisan antes de cargar huéspedes. La API ya no crea una cartera COP con cupo 0 la primera vez que alguien la mira. Desde 0060 la retención es además en cascada: cada nivel que financia al nodo, hasta el dueño de la credencial, retiene su costo en su propia cartera ([12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)).
    - **El crédito interno de 0007.** [0053](../../db/migrations/0053_tenant_credit_limit_to_wallets.sql) pasa `tenants.credit_limit` al cupo de la cartera en la moneda por defecto del nodo, y la API deja de leerlo. Queda un solo tope por cartera, que fija quien financia.
    - Lo que quedó para después está en §4.4.
+4. **La actividad de la red.** _Mi Red_ (`GET /tenants/network/audit`) les muestra a los admins de un ancestro los eventos de todo su subárbol, con el payload y el correo del actor. Así ven, de cada venta de su red, quién vendió, el precio de venta y el id de la orden. Esa información sale del `OrderCreateRequested` de hoteles, que trae también el neto, y desde 0060 de la retención del nivel 0 del que vende. Las vistas de carteras no lo muestran ([12 §12.7](./12-modelo-consolidador-y-plan.md#127-qué-ve-cada-uno)). Si el founder quiere ocultarlo, va con G-01 y G-02: filtrar esos campos en la actividad de la red o sacarlos de los eventos.
 
 ### 4.2 Superadmin operativo
 
@@ -210,7 +213,9 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
 - G-10 (post-venta de vuelos con la credencial de la venta), G-15 (moneda de las reglas fijas), G-13 (alcance de las reglas para consolidadores) y G-14 (override por agencia hija).
 - Las medias pendientes de §2.4.
 - **Lo que las carteras dejaron para después:**
-  - **Conciliación del saldo contra el libro.** `balance_minor` no está atado a la suma de `portfolio_transactions`. Hoy sólo lo mueven las retenciones y liberaciones de la API, pero la base no frena un `UPDATE` directo del saldo como `app_user`. Cerrarlo pide el invariante "saldo = suma del libro", que los datos y los tests de hoy no cumplen. Es el P0 de [12 §4.3](./12-modelo-consolidador-y-plan.md#43-pagos-y-fondos).
+  - **Conciliación del saldo contra el libro.** `balance_minor` no está atado a la suma de `portfolio_transactions`.
+    - Desde 0060 el saldo ya no lo mueve `app_user` por su cuenta. Las funciones de retención (`wallet_hold_retain` y `wallet_hold_settle`) son las únicas que escriben los asientos de retención (`BOOKING_*`, `NETWORK_*`) y mueven el saldo con ellos. Fuera de ellas, sólo quien financia al nodo (`can_finance_tenant`) toca el saldo, y lo hace con los depósitos, ajustes y aprobaciones de _Carteras_, que escriben su asiento. Cualquier otro `UPDATE` del saldo como `app_user` recibe 42501 `portfolio_balance_reserved`.
+    - Sigue pendiente la conciliación en sí, es decir, el invariante "saldo = suma del libro". Un `UPDATE` del saldo hecho como quien financia, o desde una sesión que se salta la RLS, todavía no exige su asiento, y los datos y los tests de hoy no cumplen ese invariante. Es el P0 de [12 §4.3](./12-modelo-consolidador-y-plan.md#43-pagos-y-fondos).
   - **Recarga real y extractos.** Un depósito lo verifica a mano quien financia, contra su banco, y no hay pasarela ni estado de cuenta descargable.
   - **Dos aprobaciones a la vez.** El servicio bloquea el informe antes de acreditar, así que la segunda aprobación encuentra el informe resuelto y responde 409 `DEPOSIT_REPORT_NOT_PENDING`. Falta un test con dos sesiones contra el Postgres del CI; el doble local (PGlite) tiene una sola.
   - **Carteras vacías.** La base todavía deja que una agencia abra una cartera sin cupo ni saldo, porque la API las abría así, en COP, hasta este cambio. Como ya no las abre, una migración puede prohibirlo.
@@ -226,7 +231,7 @@ Va antes de que una agencia externa venda con márgenes de Planetour o con un pr
 
 Orden obligatorio. Cada paso dice cómo comprobar que salió bien. Los comandos se corren como `deploy` en el VPS, desde `/opt/sales-travel`, y ninguno imprime secretos.
 
-Los pasos 1 a 6 son la tanda 1 (`feat/network-model`, desplegada con #6). Los pasos 7 a 9 son las carteras por moneda (`feat/wallets-per-currency`) y suponen hechos los anteriores: Planetour como `platform`, tu cuenta como superadmin, una sucursal con su vendedor y la cuenta TBO cargada en Planetour.
+Los pasos 1 a 6 son la tanda 1 (`feat/network-model`, desplegada con #6). Los pasos 7 a 9 son las carteras por moneda (`feat/wallets-per-currency`) y suponen hechos los anteriores: Planetour como `platform`, tu cuenta como superadmin, una sucursal con su vendedor y la cuenta TBO cargada en Planetour. Los pasos 10 a 13 son el rediseño de hoteles (`feat/hotels-redesign`) y suponen desplegadas las carteras: el permiso de no reembolsables de 0055 usa quién financia a quién, que es de 0052. El paso 14 es la retención en cascada (`feat/wallets-credit-cascade`) y supone hechos los pasos 7 a 9.
 
 **Antes de empezar (pasos 1 a 6):**
 
@@ -448,3 +453,187 @@ Se reserva de verdad contra el entorno de **test** de TBO, con la cuenta de Plan
 | "no tiene saldo ni cupo suficiente para esta reserva"                            | Sube el **Cupo** de la cartera USD, o registra un **Depósito**, o elige una habitación más barata. |
 | "La cartera en USD de la agencia está suspendida"                                | **Reactivar** en la tarjeta USD.                                                                   |
 | "Falta el contacto de soporte de la agencia" (`AGENCY_CONTACT_MISSING`)          | Email y teléfono internacional en _Mi Agencia_ → Marca de la sucursal o de Planetour.              |
+
+### Paso 14 — Deploy de la retención en cascada (0060)
+
+Lleva a producción la retención en cascada ([12 §12](./12-modelo-consolidador-y-plan.md#12--retención-en-cascada-opción-1)). Supone hechos los pasos 7 a 9: las carteras por moneda desplegadas y una sucursal con cartera en USD.
+
+**Qué cambia al desplegar:**
+
+- **La cascada rige desde el deploy.** Sin filas en `wallet_hold_policy`, el modo es `enforce`. Con la red de hoy (Planetour, Amazon Minimalist y una sucursal, todos de nivel 2 o menos) la cadena de cualquier venta es vacía, así que ninguna venta cambia: sigue reteniendo sólo el nodo que vende.
+- **Cambia con el primer nivel intermedio.** Puede ser un consolidador con agencias, o una agencia con sub-agencias, que venden con una credencial de más arriba. Ese nivel necesita cartera activa, con saldo o cupo, en cada moneda en que vende su red. Si no la tiene, las ventas de su red en esa moneda se rechazan antes de llamar al proveedor.
+- **La API ya no escribe el libro de retenciones.** `app_user` no escribe asientos de retención ni mueve saldos fuera de las funciones de 0060, salvo quien financia desde _Carteras_. Tampoco crea tablas temporales.
+- **Lo retenido antes de 0060** pasa a grupos `legacy` de un solo nivel, sin débitos a nadie.
+- **Más liberaciones.** Cancelar un vuelo o un auto desde _Mis Reservas_ libera su retención. La cancelación desde la pantalla de _Autos_ no la libera. La conciliación diaria cierra las retenciones de hoteles que no coinciden con su orden.
+- **Topes.** El PreBook y el Book de hoteles admiten 60 y 30 pedidos por minuto por vendedor y nodo.
+
+**Antes de mergear:**
+
+- El PR de `feat/wallets-credit-cascade` tiene el CI en verde, incluidos los tests de integración contra Postgres real. `network-holds.concurrency.integration.test.ts` corre ahí por primera vez (con PGlite se salta). Si falla, es una señal real sobre el orden de bloqueo: no se silencia.
+- La rama trae `main` al día. `main` ya tiene las dos 0055 (#11 y #12), con encabezados `SET search_path = public` sin `pg_temp`, y `migrations-search-path.test.ts` los rechaza en toda migración posterior a 0053. En el mismo PR hay que pasarlos a `SET search_path = pg_catalog, public, pg_temp`. El runner registra cada migración por nombre de archivo, así que el cambio no vuelve a correr nada en producción. Allí esas funciones las endurece la sección 12 de 0060, que corre después.
+- Hay un backup reciente de la base, como en el paso 1.
+- Guarda el estado de hoy, para comparar después:
+
+  ```bash
+  docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+    "SELECT t.slug, t.tenant_type, nlevel(t.path) AS nivel, ap.currency, ap.status, ap.credit_limit_minor, ap.balance_minor FROM tenants t LEFT JOIN agency_portfolios ap ON ap.tenant_id = t.id ORDER BY t.path, ap.currency"
+  docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+    "SELECT count(*) AS retenciones FROM portfolio_transactions WHERE transaction_type = 'BOOKING_HOLD'"
+  ```
+
+  Esperado: ningún nodo con `nivel` 3 o 4. Si hay alguno, sus ventas con una credencial de más arriba empiezan a retener también en sus ancestros. Revisa antes las carteras de esos ancestros (ver _Sembrar las carteras intermedias_, más abajo).
+
+**La ventana del deploy.** El workflow aplica 0060 con el contenedor `migrate`, como `postgres`, y recién después arranca la API nueva. Mientras tanto, la API vieja sigue atendiendo y termina lo que tenía en curso. Ese código escribe los asientos de retención como `app_user`, y desde 0060 recibe un 42501:
+
+- una reserva de hotel que llega en ese lapso falla antes de llamar al proveedor, así que no se reserva nada;
+- una liberación (un Book que falló o una cancelación) no se completa y se escala, y la retención queda abierta. Hay dos formas de cerrarla, ya con la API nueva:
+  - si es de un hotel, la cierra la siguiente corrida diaria de la conciliación (paso R-W);
+  - en cualquier vertical, un admin del nodo que vende puede llamar por API a `POST /portfolios/orders/:id/reject`, que con la orden `failed` o `cancelled` libera sin llamar al proveedor. La pantalla no ofrece ese botón, porque _Cartera B2B_ lista sólo las reservas `pending`;
+- 0060 corre en una sola transacción y bloquea `orders`, `agency_portfolios` y `portfolio_transactions`, así que una reserva que llega mientras corre espera a que termine.
+
+Por eso la migración y el reinicio de la API van en el mismo deploy, que es lo que hace el workflow. No apliques 0060 a mano antes.
+
+**Deploy y comprobación:**
+
+1. El founder mergea el PR a `main`. El workflow **Deploy** construye las imágenes, aplica 0060 y hace el smoke test. Si 0060 falla, se deshace entera y el mensaje dice qué revisar. Por ejemplo, "no es superusuario ni BYPASSRLS" quiere decir que el contenedor `migrate` no corrió como `postgres`.
+2. Lee los avisos de 0060 en el log de `postgres` (el contenedor `migrate` no los imprime):
+
+   ```bash
+   docker compose logs --since 30m postgres | grep 'REVISAR: '
+   ```
+
+   Esperado hoy: nada. Hay dos avisos posibles:
+
+   - "el nodo … no tiene cartera activa con saldo o cupo en …, que usa su red": desde este deploy se rechazan las ventas de la red de ese nodo en esa moneda hechas con una credencial de más arriba. Siembra su cartera (abajo). Si hay que destrabar mientras tanto, pon ese nodo en `observe`.
+   - "… retención(es) BOOKING_HOLD sin orden de su tenant no se convirtieron": son asientos viejos que no se pudieron enlazar a su orden. No bloquean mover nodos y `wallet_hold_settle` no los libera, así que hay que revisarlos a mano.
+
+3. Comprueba la conversión, el endurecimiento y las funciones:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT mode, credential_source, status, count(*) FROM wallet_hold_groups GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT has_database_privilege('app_user', current_database(), 'TEMPORARY') AS app_user_temp, (SELECT count(*) FROM wallet_hold_policy) AS politicas"
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT p.proname, pg_get_userbyid(p.proowner) AS dueno, p.prosecdef AS definer, has_function_privilege('app_user', p.oid, 'EXECUTE') AS app_user FROM pg_proc p WHERE p.proname IN ('wallet_hold_retain', 'wallet_hold_settle', 'wallet_hold_preview', 'wallet_hold_report_block', 'wallet_hold_report_preview_block', 'raise_wallet_hold_violation') ORDER BY 1"
+   ```
+
+   Esperado:
+
+   - sólo grupos `legacy`, tantos como `retenciones` de antes menos las del segundo aviso;
+   - `app_user_temp` en `f` y `politicas` en 0;
+   - las cinco `wallet_hold_*` con dueño `postgres`, y `definer` y `app_user` en `t`;
+   - `raise_wallet_hold_violation` con dueño `postgres`, `definer` en `f` y `app_user` en `t`. Es INVOKER y sólo lanza errores. La necesitan las guardas.
+
+4. Repite la reserva de prueba del paso 9 en la sucursal. Después de confirmarla:
+
+   ```bash
+   docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+     "SELECT g.mode, g.credential_source, g.status, (SELECT count(*) FROM wallet_hold_levels l WHERE l.group_id = g.id) AS niveles FROM wallet_hold_groups g JOIN tenants t ON t.id = g.origin_tenant_id WHERE t.slug = '<slug de la sucursal>' ORDER BY g.created_at DESC LIMIT 1"
+   ```
+
+   Esperado: `enforce`, `account`, `captured` y 1 nivel. La sucursal cuelga de Planetour, que es el dueño de la cuenta TBO, así que retiene sólo ella. Después de cancelar, el mismo grupo pasa a `released`.
+
+**Un nivel intermedio sin cartera.**
+
+_Ver qué frena la red._ Un rechazo de la red avisa al nivel que bloquea (`portfolio.network_hold.blocked`, en `enforce`). En `observe`, el aviso es lo que se habría rechazado (`portfolio.network_hold.would_block`):
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT e.occurred_at, e.event_type, t.slug AS nivel, v.slug AS vende, e.payload->>'orderNumber' AS reserva, e.payload->>'currency' AS moneda, e.payload->>'reason' AS motivo, e.payload->>'stage' AS etapa FROM domain_events e JOIN tenants t ON t.id = e.tenant_id LEFT JOIN tenants v ON v.id = (e.payload->>'originTenantId')::uuid WHERE e.event_type IN ('portfolio.network_hold.blocked', 'portfolio.network_hold.would_block') ORDER BY e.occurred_at DESC LIMIT 50"
+```
+
+El `motivo` puede ser:
+
+- `network_currency_not_enabled`: el nivel no tiene cartera en esa moneda;
+- `network_funds_unavailable`: la tiene suspendida, está sobre el cupo o no le alcanza para su costo;
+- `network_cost_unavailable`: la reserva no trae un neto válido. Avísale a desarrollo con el número de reserva.
+
+`etapa` es `prebook` si el vendedor se frenó en el PreBook, antes de abrir la reserva (entonces no hay número de reserva).
+
+_Sembrar las carteras intermedias._ A un nivel intermedio le da la cartera quien lo financia, como en el paso 8:
+
+- a un consolidador o a una agencia que cuelga de Planetour, el superadmin, desde _Gestión de Agencias_ → nodo → _Carteras_ → **Habilitar moneda**;
+- a una agencia de un consolidador, el admin del consolidador desde _Mi Red_ → agencia → _Carteras_, o el superadmin.
+
+El cupo de un nivel intermedio se mide contra su costo, no contra el precio de venta. Lo que el nivel tiene expuesto es el saldo de su cartera: lo retenido y lo cobrado ya están debitados, y los depósitos de quien lo financia lo reponen. Como pasa con la cartera del que vende, un cargo (`captured`) no vuelve solo: el saldo queda abajo hasta que quien financia al nivel registra el depósito con que el nivel le paga. Dimensiona con el saldo: saldo más cupo tiene que cubrir el costo de las ventas que esperas de su red. En _Cartera B2B_ → **Reservas de tu red**, "Retenido" es lo abierto. "Cobrado", en cambio, es el acumulado histórico de todo lo cobrado al costo del nivel, pagado o no, así que no mide la deuda y crece siempre.
+
+_Poner un nodo en `observe`._ Es sólo para destrabar mientras se siembra. La fila vale para el nodo y toda su red, en todas las monedas y en todos los niveles: sus ventas retienen sólo en la cartera del que vende y dejan `would_block` en los niveles que habrían rechazado.
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SELECT set_config('wallet_hold.actor', id::text, true) FROM users WHERE lower(email) = lower('<tu correo>');
+INSERT INTO wallet_hold_policy (tenant_id, mode, reason, updated_by)
+SELECT t.id, 'observe', '<motivo, por ejemplo: sin cartera USD hasta sembrarla>', u.id
+  FROM tenants t, users u
+ WHERE t.slug = '<slug del nodo>' AND lower(u.email) = lower('<tu correo>')
+ON CONFLICT (tenant_id) DO UPDATE
+  SET mode = EXCLUDED.mode, reason = EXCLUDED.reason, updated_by = EXCLUDED.updated_by;
+COMMIT;
+SQL
+```
+
+Esperado: `INSERT 0 1`. `INSERT 0 0` quiere decir que el slug o el correo no existen y no cambió nada. El autor va dos veces, en `updated_by` y en `wallet_hold.actor`. Si el mismo usuario hizo el cambio anterior, la base no distingue su `updated_by` del que ya estaba y toma el de `wallet_hold.actor`. Un cambio sin autor declarado queda sin autor, nunca con el del cambio anterior. El upsert tiene que poner `mode`, `reason` y `updated_by`.
+
+_Volver a `enforce`._ Cuando las carteras del nodo ya están sembradas y dejan de aparecer `would_block` suyos, borra su fila. El autor y el motivo de un borrado sólo se declaran con `wallet_hold.actor` y `wallet_hold.reason`:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SELECT set_config('wallet_hold.actor', id::text, true) FROM users WHERE lower(email) = lower('<tu correo>');
+SELECT set_config('wallet_hold.reason', '<motivo, por ejemplo: carteras de la red sembradas>', true);
+DELETE FROM wallet_hold_policy WHERE tenant_id = (SELECT id FROM tenants WHERE slug = '<slug del nodo>');
+COMMIT;
+SQL
+```
+
+Esperado: `DELETE 1`. Sin su fila, el nodo toma el modo de su ancestro más cercano que tenga una, o `enforce` si ninguno tiene. Para ver el modo que rige en cada nodo:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT t.slug, nlevel(t.path) AS nivel, wallet_hold_mode(t.id) AS modo FROM tenants t ORDER BY t.path"
+```
+
+**Kill-switch.** Si la cascada frena ventas que no debería frenar (un error), apágala en todo el árbol con `off` en la raíz:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SELECT set_config('wallet_hold.actor', id::text, true) FROM users WHERE lower(email) = lower('<tu correo>');
+INSERT INTO wallet_hold_policy (tenant_id, mode, reason, updated_by)
+SELECT t.id, 'off', '<motivo>', u.id
+  FROM tenants t, users u
+ WHERE t.slug = 'platform' AND lower(u.email) = lower('<tu correo>')
+ON CONFLICT (tenant_id) DO UPDATE
+  SET mode = EXCLUDED.mode, reason = EXCLUDED.reason, updated_by = EXCLUDED.updated_by;
+COMMIT;
+SQL
+```
+
+- Un `off` en cualquier ancestro gana, incluso sobre la fila `enforce` u `observe` de una red de más abajo.
+- Retiene sólo el nodo que vende, como antes de 0060, y una cuenta que ya no se resuelve no frena la retención.
+- No libera lo ya retenido: cada grupo conserva sus niveles y los libera cuando se cierra la reserva.
+- No hace falta deploy ni reinicio: rige desde la retención siguiente.
+- Para volver a encenderla, borra la fila de la raíz como en _Volver a `enforce`_, con `slug = 'platform'`.
+
+Cada cambio de política queda en un evento de plataforma (sin tenant), que no aparece en la auditoría de ningún nodo. Los nodos no leen la razón ni el autor. Sí ven el modo con que se tomó cada retención suya, en sus eventos de retención y en `wallet_hold_groups.mode`, así que un `off` o un `observe` se notan en la red:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT e.occurred_at, u.email AS actor, e.payload->>'operation' AS op, e.payload->>'targetTenantId' AS nodo, e.payload->>'previousMode' AS antes, e.payload->>'mode' AS ahora, e.payload->>'effectiveMode' AS rige, e.payload->>'reason' AS motivo FROM domain_events e LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.event_type = 'wallet_hold.policy_changed' ORDER BY e.occurred_at DESC LIMIT 5"
+```
+
+**Si algo no sale:**
+
+| Síntoma                                                                                                                  | Qué revisar                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Tu red todavía no opera en USD…" (`PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`)                                             | Un nivel de la red no tiene cartera en esa moneda. La consulta de `blocked` dice cuál: siémbrala.                                                                                                                                                                                                                                  |
+| "Tu red no tiene cupo disponible en USD…" (`PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE`)                                        | El nivel tiene la cartera suspendida, está sobre el cupo o no le alcanza para su costo: **Reactivar**, subir el **Cupo** o registrar el **Depósito**.                                                                                                                                                                              |
+| "No se pudo calcular el costo de esta reserva para tu red…" (`PORTFOLIO_NETWORK_COST_UNAVAILABLE`)                       | La reserva no trae un neto válido en la moneda de la tarifa. Avísale a desarrollo con el número de reserva.                                                                                                                                                                                                                        |
+| "La cuenta del proveedor con que se cotizó esta reserva ya no está activa en tu red…" (`PORTFOLIO_HOLD_ACCOUNT_CHANGED`) | La cuenta se desactivó o dejó de heredarse entre la cotización y la reserva. Revisa _Proveedores (GDS)_; el vendedor vuelve a buscar la tarifa.                                                                                                                                                                                    |
+| "Tu red está procesando otras reservas en este momento…" (`PORTFOLIO_HOLD_BUSY` o `PORTFOLIO_RELEASE_BUSY`)              | Otras reservas tienen bloqueada la cartera de un nivel. Repite en unos segundos. Si persiste, busca transacciones largas: `SELECT pid, now() - xact_start AS dura, state, left(query, 80) FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start`.                                                                 |
+| `TENANT_MOVE_OPEN_WALLET_BOOKINGS` al mover un nodo                                                                      | Su red tiene retenciones abiertas o en conflicto: `SELECT t.slug, g.status, o.status AS orden, o.order_number FROM wallet_hold_groups g JOIN orders o ON o.id = g.order_id JOIN tenants t ON t.id = g.origin_tenant_id WHERE g.status IN ('held', 'captured', 'conflict') ORDER BY g.created_at`.                                  |
+| Una reserva "En revisión" en _Reservas de tu red_                                                                        | Figuró confirmada y después no realizada: la retención quedó como cargo y se concilia a mano ([12 §12.9](./12-modelo-consolidador-y-plan.md#129-preguntas-abiertas)).                                                                                                                                                              |
+| Una reserva "Cobrada" vuelve a "Retenida" en _Reservas de tu red_                                                        | Se está cancelando: el claim de la cancelación pone la orden en `pending` y la retención vuelve a `held`, sin mover saldo. Si sale, se libera; si el proveedor la rechaza, vuelve a "Cobrada"; si queda sin verificar, sigue "Retenida" hasta que se verifique ([12 §12.4](./12-modelo-consolidador-y-plan.md#124-ciclo-de-vida)). |
+| Una liberación escalada (`OrderEscalated` con `portfolio-hold-release-failed`) que no se cierra                          | Si es un hotel, espera a la corrida diaria de la conciliación. Si es un vuelo o un auto, la conciliación no la ve: un admin del nodo que vende llama por API a `POST /portfolios/orders/:id/reject` con la orden ya `failed` o `cancelled`.                                                                                        |
