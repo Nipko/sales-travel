@@ -1036,7 +1036,9 @@ la búsqueda; (2) precarga por demanda; (3) cobertura global de ciudades; (4) im
 - **Qué se sugiere.** Las ciudades con hoteles y las de `hotel_count` en `NULL`, marcadas `loadsOnSearch`; nunca las
   que TBO ya contestó vacías (`hotel_count = 0`), que serían un destino inválido (§8.5). Como en §8.5, sólo sugiere
   el catálogo local a una agencia sin un proveedor activo del espacio de ids de la plataforma (hoy Despegar); con
-  Despegar activo, TBO sigue entrando por el mapa de destinos.
+  Despegar activo, TBO sigue entrando por el mapa de destinos. La web muestra la marca en la opción ("Sus hoteles
+  se cargan al buscar") y, con la ciudad elegida, avisa debajo del campo que la primera búsqueda puede tardar unos
+  segundos más (`destination-combobox.tsx`, `loadsOnSearchNotice`).
 - **Ciudad que se carga al buscarla.** Si la ciudad elegida no tiene hoteles activos y el sync nunca la cargó, la
   búsqueda (después de la cuota y sólo con TBO activo para la agencia) hace UNA llamada a `TBOHotelCodeList` por el
   circuito (pasiva, 10 s por intento y 15 s en total), guarda los hoteles con `hotel_catalog_import_city` (0054),
@@ -1110,8 +1112,6 @@ OpenStreetMap no admiten el uso de una aplicación comercial sin un proveedor co
 
 **Pendientes.**
 
-- El autocompletado de la web recibe `loadsOnSearch` pero todavía no lo muestra: una ciudad que se carga al buscar se
-  ve igual que las demás, y la primera búsqueda tarda unos segundos más sin aviso.
 - E2A no vuelve a pedir la lista de un país que ya tiene ciudades: las de `TBO_SYNC_COUNTRIES` las refresca E2 en
   cada corrida que la incluye (las programadas), pero las del resto del mundo quedan como las bajó la primera
   corrida. Si TBO agrega ciudades en esos países, no aparecen hasta que haya un modo de refresco.
