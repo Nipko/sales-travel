@@ -469,7 +469,7 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 
 **✅ Tier 2 (alto):**
 
-- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por `CF-Connecting-IP` (`IpThrottlerGuard`).
+- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por la IP real del usuario (`IpThrottlerGuard`). La resuelve Caddy, que cree `CF-Connecting-IP` sólo si la conexión viene de un rango de Cloudflare (`trusted_proxies`), y la pasa en `X-Edge-Peer-IP`; el panel la reenvía al api con el secreto interno. Una IPv6 cuenta por su /64. Desde 2026-09-29: antes el panel no llegaba a recibir la cabecera (un `header_up -X-Edge-Peer-IP` la borraba) y todo el panel era un solo cupo, y rotar `CF-Connecting-IP` daba cupo nuevo. Detalle en `infrastructure/hostinger/README.md` §10.
 - Validación de montos de cartera (entero positivo, tope de cordura) en depósitos/retiros/holds.
 
 **✅ Tier 3 (medio):**

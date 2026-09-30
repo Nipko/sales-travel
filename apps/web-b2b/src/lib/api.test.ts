@@ -74,33 +74,43 @@ describe('apiErrorFromBody: reason y details llegan a quien decide', () => {
 });
 
 describe('clientOriginHeaders: el API ve la IP y el navegador del usuario, no los del contenedor', () => {
+  // Lo que Caddy le pasa al panel: X-Edge-Peer-IP es su `{client_ip}`, la IP del usuario.
   const browser = new Headers({
-    'x-edge-peer-ip': '172.68.10.1',
+    'x-edge-peer-ip': '190.24.8.9',
     'cf-connecting-ip': '190.24.8.9',
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/129',
   });
 
-  it('peer y CF-Connecting-IP juntos, como la clave del throttler; más el secreto', () => {
+  it('UNA IP, la que resolvió Caddy; más el navegador y el secreto', () => {
     expect(clientOriginHeaders(browser, SECRET)).toEqual({
       'x-internal-proxy': SECRET,
-      'x-client-ip': '172.68.10.1|190.24.8.9',
+      'x-client-ip': '190.24.8.9',
       'x-client-user-agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/129',
     });
   });
 
-  it('sin Cloudflare: sólo el peer', () => {
-    const direct = new Headers({ 'x-edge-peer-ip': '203.0.113.7' });
+  it('CF-Connecting-IP no se lee: si difiere, manda la de Caddy', () => {
+    const direct = new Headers({ 'x-edge-peer-ip': '203.0.113.7', 'cf-connecting-ip': '1.2.3.4' });
     expect(clientOriginHeaders(direct, SECRET)['x-client-ip']).toBe('203.0.113.7');
   });
 
-  it('una CF-Connecting-IP sin peer no se reenvía: nadie la respalda', () => {
+  it('IPv6 tal cual: la red /64 la arma el API', () => {
+    const v6 = new Headers({ 'x-edge-peer-ip': '2800:e2:5c80:1a:3d1f:9b2e:47a0:c1d8' });
+    expect(clientOriginHeaders(v6, SECRET)['x-client-ip']).toBe(
+      '2800:e2:5c80:1a:3d1f:9b2e:47a0:c1d8',
+    );
+  });
+
+  it('una CF-Connecting-IP sin X-Edge-Peer-IP no se reenvía: nadie la respalda', () => {
     const forged = new Headers({ 'cf-connecting-ip': '1.2.3.4' });
     expect(clientOriginHeaders(forged, SECRET)['x-client-ip']).toBeUndefined();
   });
 
-  it('basura en las cabeceras de IP no se reenvía', () => {
-    const junk = new Headers({ 'x-edge-peer-ip': '1.2.3.4, 5.6.7.8', 'cf-connecting-ip': 'evil' });
-    expect(clientOriginHeaders(junk, SECRET)['x-client-ip']).toBeUndefined();
+  it('basura en X-Edge-Peer-IP no se reenvía', () => {
+    for (const junk of ['1.2.3.4, 5.6.7.8', '1.2.3.4|5.6.7.8', 'evil', '']) {
+      const headers = new Headers({ 'x-edge-peer-ip': junk, 'cf-connecting-ip': '1.2.3.4' });
+      expect(clientOriginHeaders(headers, SECRET)['x-client-ip'], junk).toBeUndefined();
+    }
   });
 
   it('user-agent recortado y sin caracteres raros', () => {

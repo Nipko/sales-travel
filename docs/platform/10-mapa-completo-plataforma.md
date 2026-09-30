@@ -253,7 +253,11 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - **Motivos de cierre** en el login (`SESSION_IDLE|REPLACED|RELEASED|EXPIRED|REVOKED`) y regreso a la
   pantalla pedida (`?next=`, validado contra open redirect).
 - **IP y navegador reales** del usuario detrás del panel (`INTERNAL_PROXY_SECRET`, derivado del
-  `JWT_SECRET` en el deploy).
+  `JWT_SECRET` en el deploy). La IP la resuelve Caddy una vez (`trusted_proxies` con los rangos de
+  Cloudflare, `client_ip_headers CF-Connecting-IP`) y viaja en `X-Edge-Peer-IP`; el panel la
+  reenvía en `x-client-ip` y el api no vuelve a leer `CF-Connecting-IP`. Sesiones, auditoría y
+  rate limiting usan la misma IP; el throttler agrupa una IPv6 por su /64
+  (`infrastructure/hostinger/README.md` §10).
 
 **Stack técnico:**
 
@@ -285,17 +289,17 @@ ABAC (políticas dinámicas evaluadas en runtime):
 
 ### 3.3 Hardening de Seguridad
 
-| Capa             | Medida                                                                                                                                                                                                                                    |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Red**          | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22. SSH key-only (Ed25519), puerto custom, fail2ban.                                                                                |
-| **Aplicación**   | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token. |
-| **Datos**        | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload.                                                                                                         |
-| **Secretos**     | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima.                                                                                                                                      |
-| **Auditoría**    | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB.                                                                    |
-| **Pagos**        | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys.                                                                                                                    |
-| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable.                                                                                                                                                         |
-| **Pentesting**   | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3.                                                                                                                                    |
-| **Compliance**   | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado).                                                                |
+| Capa             | Medida                                                                                                                                                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Red**          | Cloudflare (WAF + DDoS + Bot Fight Mode + Rate Limiting + Geo Block opcional). UFW en VPS solo 80/443/22, pero los puertos que publica Docker (80/443) se saltan UFW: el origen sigue abierto a quien conozca su IP (`infrastructure/hostinger/README.md` §10.5). SSH key-only (Ed25519), puerto custom, fail2ban. |
+| **Aplicación**   | Helmet headers (CSP, HSTS, X-Frame-Options, Referrer-Policy). Input validation con Zod en cada endpoint. SQL injection: ORM (Prisma) + queries parametrizadas. XSS: React escape default + CSP estricto. CSRF: same-site cookies + token.                                                                          |
+| **Datos**        | At-rest: pgcrypto para PII sensible (documentos, fechas nacimiento). Backups cifrados con GPG. In-transit: TLS 1.3, HSTS preload.                                                                                                                                                                                  |
+| **Secretos**     | sops + age en repo (sin secretos planos). En AWS: Secrets Manager + KMS. Rotación trimestral mínima.                                                                                                                                                                                                               |
+| **Auditoría**    | Event sourcing parcial: cada acción sensible (login, cambio permisos, refund, modificación reserva, edición pricing) genera `domain_event` append-only en TimescaleDB.                                                                                                                                             |
+| **Pagos**        | Hosted Checkout únicamente (SAQ-A). Nunca PAN/CVV en servidor. Webhooks con signature verification + idempotency keys.                                                                                                                                                                                             |
+| **Dependencias** | Dependabot/Renovate semanal. Snyk o GitHub Advanced Security. Lockfile inmutable.                                                                                                                                                                                                                                  |
+| **Pentesting**   | Pentest interno antes de Ola 1 launch. Pentest externo anual desde Ola 2. Bug bounty privado en Ola 3.                                                                                                                                                                                                             |
+| **Compliance**   | LGPD/Ley 1581/Ley 29733: endpoints de export y delete de datos personales. Cookie consent. Retención configurable por tipo de dato. DPO designado (puede ser tercerizado).                                                                                                                                         |
 
 ### 3.4 Threat Model resumido
 

@@ -11,7 +11,7 @@ Internet
    │
    ▼
 Cloudflare  (TLS edge · WAF · DDoS · cache)
-   │  (Full strict, sólo IPs Cloudflare permitidas en origen)
+   │  (Full strict; IP del usuario en CF-Connecting-IP, §10)
    ▼
 Ubuntu 24.04 VPS  (Docker + Compose)
    │
@@ -48,7 +48,9 @@ Lo que hace `provision.sh`:
 3. Crea usuario `deploy` con grupo `docker` y autoriza tu pubkey.
 4. Crea `/opt/sales-travel/`.
 5. SSH hardening: deshabilita password auth, root sólo con clave, max 3 intentos.
-6. UFW: deny incoming por default. Sólo permite `:22` (SSH) y `:80/:443` desde rangos de Cloudflare.
+6. UFW: deny incoming por default. Sólo permite `:22` (SSH) y `:80/:443` desde rangos de Cloudflare. **Ojo:** las reglas
+   de 80/443 no filtran los puertos que publica Docker (Caddy), que se saltan UFW: el origen sigue abierto a cualquiera
+   (§10.5).
 7. fail2ban + unattended-upgrades + sysctl tuning + journald limits.
 8. `docker login ghcr.io` interactivo como `deploy` (usar PAT con scope `read:packages`).
 
@@ -156,7 +158,7 @@ cat ~/.ssh/sales-travel-deploy
 
 1. Push a `main` (o ejecutá `Deploy` workflow manualmente desde la pestaña Actions).
 2. CI buildea api + web-b2b + migrate, las pushea a `ghcr.io/nipko/sales-travel-*:{sha,latest}`.
-3. CI hace SSH al VPS, sincroniza compose+Caddyfile+postgres-init, render `.env` desde secrets, `docker compose pull && up -d`.
+3. CI hace SSH al VPS, sincroniza compose+Caddyfile+postgres-init, render `.env` desde secrets, `docker compose pull && up -d`. El Caddyfile se valida antes del `up` y se aplica con `caddy reload` (§10.3).
 4. Smoke test: `curl https://api.planetour.cloud/api/health` (5 reintentos cada 10s).
 
 Tiempo total ~6–8 min en frío (build con cache caliente baja a ~3 min).
@@ -583,3 +585,168 @@ le gana al ajuste del seed.
   Requiere la imagen con ese cambio y el catálogo del punto siguiente: sin ciudades sincronizadas no hay qué sugerir.
 - **Catálogo.** La base del stack empieza sin el catálogo de TBO (07 §7.3.6): hay que correr el sync del catálogo
   (§9.4) al menos para las ciudades de los `HotelCodes` de test.
+
+---
+
+## 10. Quién es el cliente: la IP real del usuario
+
+El api usa la IP del usuario (`currentContext().ip`) en:
+
+- la clave del rate limiting (`IpThrottlerGuard`: 10 logins por minuto, 300 peticiones por minuto);
+- `sessions.ip`: los dispositivos de _Seguridad_ y las sesiones que ve un admin en _Puestos_ y en el paso de puestos
+  llenos del login;
+- `trusted_devices.ip` ("recordar este equipo") y `password_reset_tokens.requested_ip`;
+- la auditoría (los eventos de `domain_events`).
+
+Tiene que ser la del usuario, la misma entre por donde entre, y nadie tiene que poder elegirla. Todas cambian de valor
+con el primer despliegue de esta cadena: hasta ahí guardaban la IP del contenedor del panel (lo que entraba por el
+panel) o la del borde de Cloudflare (lo que llegaba directo al api).
+
+### 10.1 La cadena
+
+```
+navegador ──▶ Cloudflare ──▶ Caddy ──┬──▶ api                 (api.planetour.cloud)
+                                     └──▶ web-b2b ──(red interna)──▶ api
+```
+
+1. **Cloudflare** escribe `CF-Connecting-IP` con la IP del usuario, pisando la que mande el cliente.
+2. **Caddy decide.** Cree `CF-Connecting-IP` sólo si la conexión TCP viene de un rango de Cloudflare
+   (`trusted_proxies` + `client_ip_headers` en las opciones globales del [`Caddyfile`](./Caddyfile)). Si viene de
+   cualquier otro lado, el usuario es el peer TCP, que no se falsifica. El resultado es `{client_ip}`, y el snippet
+   `client_origin` lo escribe en `X-Edge-Peer-IP` (y en `X-Real-IP` y `X-Forwarded-For`) hacia el api y los paneles,
+   pisando lo que haya mandado el cliente. El nombre `X-Edge-Peer-IP` es histórico: ya no lleva el peer TCP, que
+   detrás de Cloudflare es un servidor de su borde que rota entre conexiones.
+3. **El panel reenvía.** web-b2b llama al api por la red interna, sin Caddy: sin más, el api vería la IP del contenedor
+   para todos los usuarios del panel. Manda la `X-Edge-Peer-IP` que recibió en `x-client-ip`, el navegador en
+   `x-client-user-agent` y `x-internal-proxy: <INTERNAL_PROXY_SECRET>`
+   ([`apps/web-b2b/src/lib/api.ts`](../../apps/web-b2b/src/lib/api.ts)). También las rutas que llaman al api sin
+   `api()`, como `/api/airports`: un test del panel falla si alguna lee `INTERNAL_API_URL` sin `clientOriginHeaders`.
+4. **El api confía** en `x-client-*` sólo con el secreto correcto; si no, usa `X-Edge-Peer-IP`
+   ([`client-origin.ts`](../../apps/api/src/request-context/client-origin.ts)). Nunca lee `CF-Connecting-IP`. El
+   throttler cuenta una IPv4 sola y una IPv6 por su red /64, que es lo mínimo que tiene cualquier conexión IPv6 y
+   dentro de la cual elige la dirección libremente.
+
+Caddy borra `x-internal-proxy`, `x-client-ip` y `x-client-user-agent` de todo request que llega de afuera: aunque el
+secreto se filtrara, desde internet no serviría. `INTERNAL_PROXY_SECRET` lo deriva `deploy.yml` del `JWT_SECRET` (§3).
+
+Dos reglas del `Caddyfile` que vigila el test
+[`caddyfile-client-ip.guard.test.ts`](../../apps/api/src/request-context/caddyfile-client-ip.guard.test.ts):
+
+- **Nunca borrar una cabecera que también se escribe.** Caddy aplica primero todos los `header_up X valor` y después
+  todos los `header_up -X`, sin importar el orden en que están escritos. Hasta 2026-09-29 el Caddyfile tenía
+  `header_up -X-Edge-Peer-IP` antes de `header_up X-Edge-Peer-IP {remote_host}`: la cabecera no llegaba nunca, el
+  panel no mandaba IP y todo el panel contaba como un solo cliente (el usuario 11 del minuto recibía 429 al entrar).
+- **Sin `private_ranges` en `trusted_proxies`.** Cloudflare llega por IPv4 (los registros son `A`), y Docker entrega
+  esas conexiones con la IP de origen intacta. Lo único privado que conecta a Caddy es el `docker-proxy` que atiende la
+  IPv6 del VPS, y confiar en él dejaría inventar `CF-Connecting-IP` a quien llegue directo al origen por IPv6.
+
+### 10.2 Rangos de Cloudflare
+
+`trusted_proxies` lleva la lista de https://www.cloudflare.com/ips-v4 y https://www.cloudflare.com/ips-v6 (al
+2026-09-29), y el test de arriba tiene la misma lista en `CLOUDFLARE_RANGES`. Para comprobar si sigue igual, desde la
+raíz del repo:
+
+```bash
+diff <(curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6; echo) \
+     <(grep -m1 'trusted_proxies static' infrastructure/hostinger/Caddyfile | tr -s ' \t' '\n' | tail -n +4)
+```
+
+El job `deploy` corre esta misma comparación (paso _Cloudflare ranges vs trusted_proxies_) y, si hay diferencias, deja
+un `::warning::` en el resumen del run sin frenar el despliegue.
+
+Sin diferencias no hay nada que hacer. Si las hay: actualizar la línea `trusted_proxies static …` del Caddyfile (una
+sola línea: `static` sólo lee los argumentos de la suya), en el orden de las dos listas, y `CLOUDFLARE_RANGES` del
+test, y desplegar. Mientras falte un rango, los usuarios que Cloudflare atienda desde él quedan identificados por el
+servidor de Cloudflare y no por su IP: comparten cupo con miles de otros y pueden recibir 429 al entrar. Las reglas de
+UFW de `provision.sh` bajan la lista en vivo y no dependen de esto.
+
+**A `trusted_proxies` entra SÓLO lo que publican esas dos listas, nunca una IP vista en `sessions` o en un log.**
+Cloudflare también es dueña de direcciones que no son de su borde: 104.28.x en adelante son las salidas de WARP, Zero
+Trust e iCloud Private Relay, o sea, IPs de usuarios. Confiar en un rango así dejaría a cualquiera con el cliente
+gratuito de WARP llegar directo al origen e inventarse `CF-Connecting-IP` (un cupo nuevo en cada intento, o la IP de
+otro en sesiones y auditoría). El test fija la lista exacta a propósito: no "arreglarlo" agregando rangos.
+
+### 10.3 Cómo se aplica un Caddyfile nuevo
+
+Caddy monta `./Caddyfile` como archivo suelto, y un bind mount de archivo sigue al inodo que existía al crear el
+contenedor. `rsync` no escribe encima: crea un archivo nuevo y lo renombra. Hasta 2026-09-29 un Caddyfile nuevo quedaba
+en disco sin que Caddy lo viera, hasta que algo recreara el contenedor.
+
+Ahora el job `deploy` de [`deploy.yml`](../../.github/workflows/deploy.yml):
+
+1. Copia el Caddyfile al VPS como `Caddyfile.next`, sin tocar el montado.
+2. Después de `pull` y **antes de `up`**, lo valida con la imagen de Caddy que va a correr
+   (`docker compose run --rm --no-deps -T caddy caddy validate --adapter caddyfile --config - < Caddyfile.next`). Si no
+   carga, el paso queda en rojo y en el VPS no cambió nada. Los avisos `Unnecessary header_up X-Forwarded-Host` y
+   `…-Proto` son esperables: suponen que Caddy no confía en ningún proxy (comentario del snippet `client_origin`).
+3. Si cambió, guarda el anterior en `Caddyfile.prev` y escribe el nuevo encima del montado con
+   `cat Caddyfile.next > Caddyfile`, que conserva el inodo. También **antes de `up`**: si el `pull` trajo otra imagen de
+   Caddy, `up` recrea el contenedor, y así arranca con el archivo que se acaba de validar en esa imagen.
+4. Tras `up`, si el contenedor ya ve el archivo nuevo, `caddy reload` lo aplica sin cortar conexiones (y no hace nada
+   si la configuración no cambió). Si el reload falla, Caddy sigue con la configuración que tenía (el reload es
+   atómico), el paso devuelve `Caddyfile.prev` al disco para que un reinicio no cargue lo que no cargó, y queda en rojo
+   con un `::error::`.
+5. Si el contenedor no ve el archivo nuevo, porque monta un inodo que un rsync anterior ya reemplazó, lo recrea (unos
+   segundos sin servir; los certificados siguen en el volumen `caddy_data`) y lo avisa con un `::warning::`. Eso pasa
+   una vez: en el primer despliegue con este paso.
+
+A mano en el VPS, lo mismo:
+
+```bash
+cd /opt/sales-travel
+docker compose --env-file .env exec -T caddy caddy validate --adapter caddyfile --config - < Caddyfile.next
+cat Caddyfile.next > Caddyfile
+docker compose --env-file .env exec -T caddy caddy reload --adapter caddyfile --config /etc/caddy/Caddyfile
+```
+
+No editar `Caddyfile` en el VPS con un editor que guarda en un archivo nuevo (renombrando): el contenedor volvería a
+quedarse con el viejo. El próximo despliegue lo detecta y recrea Caddy.
+
+### 10.4 Verificar después del despliegue
+
+```bash
+cd /opt/sales-travel
+
+# 1. Caddy corre con la configuración nueva: los rangos de Cloudflare y CF-Connecting-IP.
+docker compose exec -T caddy wget -qO- http://localhost:2019/config/apps/http/servers \
+  | grep -o '"client_ip_headers":\[[^]]*\]'
+# → "client_ip_headers":["CF-Connecting-IP"]
+
+# 2. Las sesiones nuevas guardan IPs de usuarios, no de Docker (172.x) ni del borde de Cloudflare.
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT issued_at, host(ip) AS ip, left(user_agent, 40) AS navegador FROM sessions ORDER BY issued_at DESC LIMIT 10"
+```
+
+Y desde tu equipo: la IP con la que te ve Cloudflare (`curl -s https://app.planetour.cloud/cdn-cgi/trace | grep ^ip=`)
+tiene que ser la de tu sesión más reciente en el paso 2 y en _Seguridad_, después de volver a entrar al panel.
+
+- Si aparece una IP que está dentro de la lista de §10.2 (el borde de Cloudflare: 104.16.x–104.27.x, 172.64.x–172.71.x,
+  162.158.x–162.159.x…; compararla con la lista, no a ojo), Caddy no la está resolviendo: el Caddyfile en uso no es el
+  nuevo (paso 1) o Cloudflare llega por un camino que no preserva la IP (por ejemplo, un registro `AAAA` que haga
+  entrar el tráfico por el `docker-proxy`, §10.5).
+- Una 104.28.x o más alta **no** es un error: es un usuario detrás de WARP o de iCloud Private Relay (§10.2). No se
+  agrega a `trusted_proxies`.
+- Si aparece una IP privada de Docker (172.16.x–172.31.x), Caddy no está escribiendo `X-Edge-Peer-IP` o el panel no la
+  reenvía: revisar el paso 1 y que api y panel tengan el mismo `INTERNAL_PROXY_SECRET` (§10.1).
+
+### 10.5 Límites conocidos
+
+- **El origen no está cerrado a Cloudflare.** Docker publica 80/443 con reglas propias de iptables que se evalúan antes
+  que las de UFW, así que las de `provision.sh` no filtran esos puertos. Para la IP no importa (lo que no viene de
+  Cloudflare se identifica por su peer TCP), pero quien conozca la IP del VPS esquiva el WAF. Cerrarlo es configuración
+  del host (cadena `DOCKER-USER`), no de este Caddyfile.
+- **IPv6 del VPS.** Si algún día Cloudflare llega por IPv6 (un registro `AAAA`) con la red de Docker sólo IPv4, esas
+  conexiones pasan por el `docker-proxy` y Caddy ve una IP de Docker: todos esos usuarios compartirían cupo. Habilitar
+  IPv6 en la red `edge` antes de publicar un `AAAA`.
+- **El cupo de una IPv6 es su /64, en los dos sentidos.** Es la IPv6 equivalente de una IPv4 detrás de NAT: una casa o
+  una oficina recibe un /64 y todos sus equipos comparten cupo, como comparten la IPv4 pública. Dos consecuencias
+  aceptadas a sabiendas:
+  - _Usuarios distintos en el mismo /64 comparten los 10 logins y las 300 peticiones por minuto._ Pasa con iCloud
+    Private Relay (Apple publica sus salidas IPv6 como un puñado de /64 por ciudad) y con hostings que reparten /128 de
+    un /64 común entre clientes (una integración que llame directo al api desde un VPS así). Hoy el volumen del panel no
+    llega a esos topes; si aparecen 429 legítimos, la salida es subir el tope global para claves `…::/64` o contar por
+    dirección fuera de las rutas de login, no volver a la dirección entera en el login.
+  - _Quien tiene un prefijo más grande sigue teniendo varios cupos._ Un /56 residencial son 256 cupos y un /48 (gratis
+    en túneles como Hurricane Electric) 65.536. Frente a lo anterior (un cupo por dirección, 2^64 por /64) es un límite
+    real, y el bloqueo por cuenta del login (`locked_until`) no depende de la IP; lo que queda expuesto es probar pocas
+    contraseñas contra muchas cuentas. Un segundo cupo por /48 en las rutas de login lo cerraría.
