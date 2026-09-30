@@ -23,3 +23,7 @@ apps/web-b2b/src/data/airports-full.json
 # que la documentación usa como prueba, que es justo lo que hace verificable el expediente.
 docs/sabre/evidence/
 
+
+# Lo genera release-please en cada release con su propio formato (líneas en blanco dobles):
+# reformatearlo no sirve, el próximo release lo vuelve a escribir igual y rompe `format:check`.
+CHANGELOG.md
