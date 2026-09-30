@@ -6,9 +6,11 @@ import { bool, num, str } from '../internal/coerce.js';
  * Normaliza la URL de imagen del auto a absoluta. La matriz devuelve paths relativos tipo
  * "/cdn/images/cars/X.jpg" que se sirven desde https://cdn.agentcars.com/images/cars/X.jpg
  * (se quita el prefijo "/cdn"). La selección ya trae URLs absolutas (Amadeus), se dejan igual.
+ * Desde el 2026-10-13 AgentCars manda `default-noimage.png` cuando la rentadora no tiene foto:
+ * se trata como sin foto, así la pantalla pinta su propio marcador.
  */
 function absImg(raw: string): string {
-  if (!raw) return '';
+  if (!raw || /default-noimage/i.test(raw)) return '';
   if (raw.startsWith('http')) return raw;
   const path = raw.replace(/^\/cdn/, '');
   return `https://cdn.agentcars.com${path.startsWith('/') ? '' : '/'}${path}`;
@@ -40,6 +42,7 @@ interface RawCarOffer {
   convertedRateAmount?: number | string;
   ccrc?: string;
   rateType?: string;
+  rateIdentifier?: string | number;
   img?: string;
   companyImg?: string;
 }
@@ -80,6 +83,9 @@ function mapCarOffer(r: RawCarOffer): CarOffer {
   }
   if (r.ccrc) offer.ccrc = str(r.ccrc);
   if (r.rateType) offer.rateType = str(r.rateType);
+  const rateIdentifier =
+    typeof r.rateIdentifier === 'number' ? String(r.rateIdentifier) : str(r.rateIdentifier);
+  if (rateIdentifier) offer.rateIdentifier = rateIdentifier;
   const img = absImg(str(r.img));
   if (img) offer.imageUrl = img;
   const companyImg = absImg(str(r.companyImg));

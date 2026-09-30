@@ -10,7 +10,8 @@ import {
   normalizeAgentCarsBaseUrl,
   type AgentCarsConfig,
 } from './config.js';
-import { AgentCarsHttpClient } from './http/agent-cars-http.client.js';
+import { AgentCarsApiError, AgentCarsHttpClient } from './http/agent-cars-http.client.js';
+import { isNoRates } from './internal/error-body.js';
 import { mapSuggestResults } from './suggest/response.mapper.js';
 import { mapOffices } from './offices/response.mapper.js';
 import { mapRates } from './rates/response.mapper.js';
@@ -57,6 +58,12 @@ export {
   normalizeAgentCarsBaseUrl,
 } from './config.js';
 export { AgentCarsApiError } from './http/agent-cars-http.client.js';
+export {
+  INVALID_SEARCH_CODE,
+  NO_RATES_CODE,
+  isErrorBody,
+  isNoRates,
+} from './internal/error-body.js';
 export type { AgentCarsConfig } from './config.js';
 export type * from './types.js';
 
@@ -94,6 +101,7 @@ export class AgentCarsAdapter {
       AGENT_CARS_SUGGEST_URL,
       '',
       { query: q.query, lang: q.lang ?? this.cfg.language ?? 'es' },
+      { auth: false },
     );
     return Array.isArray(raw) ? mapSuggestResults(raw) : [];
   }
@@ -130,12 +138,19 @@ export class AgentCarsAdapter {
   // ─────────────────────── Búsqueda de autos ───────────────────────
 
   async getMatrix(q: CarSearchQuery): Promise<CarOffer[]> {
-    const raw = await this.http.get<Parameters<typeof mapMatrixOffers>[0]>(
-      this.cfg.baseUrl,
-      '/get-matrix',
-      buildMatrixParams({ ...q, source: q.source ?? this.cfg.sourceCountry }),
-    );
-    return mapMatrixOffers(raw);
+    try {
+      const raw = await this.http.get<Parameters<typeof mapMatrixOffers>[0]>(
+        this.cfg.baseUrl,
+        '/get-matrix',
+        buildMatrixParams({ ...q, source: q.source ?? this.cfg.sourceCountry }),
+      );
+      return mapMatrixOffers(raw);
+    } catch (err) {
+      // "Sin tarifas" es un resultado de la búsqueda, no un fallo: sale vacía (412 hasta el
+      // 2026-10-13, 200 con code 13000 después).
+      if (err instanceof AgentCarsApiError && isNoRates(err.status, err.body)) return [];
+      throw err;
+    }
   }
 
   async getSelection(q: CarSelectionQuery): Promise<CarSelection> {
@@ -168,7 +183,18 @@ export class AgentCarsAdapter {
       '/confirmation',
       buildConfirmationBody(req),
     );
-    return mapBookResult(raw);
+    const result = mapBookResult(raw);
+    // Sin código no hay reserva que guardar ni que consultar. No se da por hecha, y el mensaje pide
+    // revisarla antes de reintentar: pudo quedar hecha del lado de la arrendadora.
+    if (!result.confirmationCode) {
+      throw new AgentCarsApiError(
+        200,
+        'respuesta sin código de confirmación',
+        '/confirmation',
+        `${this.cfg.baseUrl}/confirmation`,
+      );
+    }
+    return result;
   }
 
   async myReservation(q: MyReservationQuery): Promise<CarReservation> {

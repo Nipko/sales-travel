@@ -1,6 +1,9 @@
+import { NO_RATES_CODE, INVALID_SEARCH_CODE } from '@sales-travel/agent-cars';
+
 /**
  * Traduce el cuerpo de error crudo de AgentCars a un mensaje claro en español para el usuario.
- * AgentCars suele responder { "error": "Error Loading data: {\"campo\":[\"mensaje\"]}" } o texto plano.
+ * AgentCars responde { "error": "Error Loading data: {\"campo\":[\"mensaje\"]}" }, texto plano o, en
+ * los servicios de búsqueda desde el 2026-10-13, { success: false, error, message, code, data }.
  */
 
 /**
@@ -18,6 +21,9 @@ const RESERVATION_PATHS: ReadonlySet<string> = new Set([
 
 /** Operaciones de búsqueda: "vacío" o "no encontrado" acá es falta de disponibilidad. */
 const SEARCH_PATHS: ReadonlySet<string> = new Set(['/get-matrix', '/get-selection']);
+
+const URL_HINT =
+  'Revisa la URL base en Mi Red → Credenciales → AgentCars (o la variable AGENT_CARS_BASE_URL): pruebas es https://api.dev.agentcars.com/v2/sites y producción https://api.agentcars.com/v2/sites.';
 
 function isHtml(body: string): boolean {
   return /^\s*(<!doctype html|<html)/i.test(body);
@@ -55,31 +61,80 @@ export function summarizeAgentCarsBody(body: string, max = 250): string {
   return body.replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-/** Extrae el mensaje legible del body (desanida el JSON de validación si existe). */
-function extractMessage(body: string): string {
+/** Los mensajes de un objeto de validación por campo: { "campo": ["mensaje", …] }. */
+function fieldMessages(v: unknown): string[] {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return [];
+  return Object.values(v as Record<string, unknown>)
+    .flat()
+    .filter((m): m is string => typeof m === 'string' && m.trim() !== '');
+}
+
+interface ErrorDetail {
+  /** El mensaje legible: el de cada campo si los hay, si no el del error. */
+  readonly text: string;
+  /** Código de aplicación del formato nuevo (13000, 13001), si vino. */
+  readonly code?: number;
+  /** El texto salió de una validación por campo: son los datos pedidos los que están mal. */
+  readonly fromFields?: boolean;
+}
+
+/** Lo que dice el cuerpo: el mensaje (desanidando la validación por campo) y el código, si hay. */
+function describe(body: string): ErrorDetail {
   const raw = body.trim();
-  let msg = raw;
+  let parsed: Record<string, unknown> | undefined;
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed['error'] === 'string') msg = parsed['error'];
-    else if (typeof parsed['message'] === 'string') msg = parsed['message'];
+    const value: unknown = JSON.parse(raw);
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      parsed = value as Record<string, unknown>;
+    }
   } catch {
     // body no es JSON: se usa tal cual.
   }
-  // El error a veces embebe un JSON de validación por campo: 'Error Loading data: {"source":["..."]}'.
+  if (!parsed) return { text: raw };
+
+  const codeValue = Number(parsed['code']);
+  const code = Number.isFinite(codeValue) && codeValue > 0 ? codeValue : undefined;
+  const withCode = (text: string, fromFields = false): ErrorDetail => ({
+    text,
+    ...(code ? { code } : {}),
+    ...(fromFields ? { fromFields } : {}),
+  });
+
+  // Formato nuevo: el detalle por parámetro viene en `data`. Formato anterior de get-matrix: en el
+  // propio `error`, como objeto.
+  const fields = [...fieldMessages(parsed['data']), ...fieldMessages(parsed['error'])];
+  if (fields.length > 0) return withCode(fields.join(' '), true);
+
+  const msg =
+    typeof parsed['error'] === 'string' && parsed['error'].trim()
+      ? parsed['error']
+      : typeof parsed['message'] === 'string'
+        ? parsed['message']
+        : raw;
+  // A veces el error embebe un JSON de validación por campo: 'Error Loading data: {"source":["..."]}'.
   const nested = msg.match(/\{[\s\S]*\}/);
   if (nested) {
     try {
-      const fields = JSON.parse(nested[0]) as Record<string, unknown>;
-      const messages = Object.values(fields)
-        .flat()
-        .filter((v): v is string => typeof v === 'string');
-      if (messages.length > 0) return messages.join(' ');
+      const embedded = fieldMessages(JSON.parse(nested[0]));
+      if (embedded.length > 0) return withCode(embedded.join(' '), true);
     } catch {
       // no era un JSON de campos: se ignora.
     }
   }
-  return msg;
+  return withCode(msg);
+}
+
+/** Un fallo de red (status 0): el host no existe, no contestó o rechazó la conexión. */
+function networkMessage(body: string): string {
+  const dns = /\b(ENOTFOUND|EAI_AGAIN)\b\s*([^\s)]*)/.exec(body);
+  if (dns) {
+    const host = dns[2] ? ` «${dns[2]}»` : '';
+    return `No encontramos el servidor de AgentCars${host}: la dirección no existe. ${URL_HINT}`;
+  }
+  if (/no respondió/i.test(body)) {
+    return 'AgentCars no respondió a tiempo. Prueba de nuevo en unos segundos.';
+  }
+  return 'No pudimos conectar con AgentCars. Prueba de nuevo en unos segundos.';
 }
 
 /**
@@ -88,21 +143,19 @@ function extractMessage(body: string): string {
  * búsqueda, en una reserva y en una confirmación.
  */
 export function humanizeAgentCarsError(status: number, body: string, path?: string): string {
-  // Error de red / proveedor caído (status 0 = fetch falló; 5xx = error del proveedor).
-  if (status === 0) {
-    return 'No pudimos conectar con AgentCars. Prueba de nuevo en unos segundos.';
-  }
+  // Error de red (status 0 = fetch falló) o del proveedor (5xx).
+  if (status === 0) return networkMessage(body);
   if (status >= 500) {
     return 'AgentCars tuvo un problema interno. Prueba de nuevo en unos minutos.';
   }
 
   // Configuración: la URL base no es la raíz de la API y AgentCars no conoce la ruta.
   if (isMissingRoute(status, body)) {
-    return 'La dirección configurada para AgentCars no existe (404). Revisa la URL base en Mi Red → Credenciales → AgentCars (o la variable AGENT_CARS_BASE_URL): déjala vacía o usa la raíz de la API, que termina en /v2/sites.';
+    return `La dirección configurada para AgentCars no existe (404). ${URL_HINT}`;
   }
 
-  const detail = extractMessage(body);
-  const m = detail.toLowerCase();
+  const detail = describe(body);
+  const m = detail.text.toLowerCase();
   const op = path ?? '';
 
   // Configuración: país de origen (POS) sin definir.
@@ -110,17 +163,35 @@ export function humanizeAgentCarsError(status: number, body: string, path?: stri
     return 'Falta el país de origen (POS) en la configuración de AgentCars. Carga "País origen / POS" en Mi Red → Credenciales → AgentCars (o la variable AGENT_CARS_SOURCE).';
   }
 
-  // Credenciales / token.
+  // Credenciales / token. La guía v2.0: "Authentication IP + token", cada token vale sólo desde la IP
+  // que AgentCars tiene registrada.
   if (
     status === 401 ||
-    status === 403 ||
     m.includes('unauthorized') ||
     m.includes('invalid credentials') ||
     m.includes('access token') ||
     m.includes('access-token') ||
     (m.includes('token') && (m.includes('invalid') || m.includes('blank')))
   ) {
-    return 'Las credenciales de AgentCars son inválidas o faltan. Verifica el Access Token en Mi Red → Credenciales → AgentCars.';
+    return 'AgentCars rechazó las credenciales. Cada Access Token vale sólo desde la IP que AgentCars tiene registrada: verifica el token en Mi Red → Credenciales → AgentCars y pídele a AgentCars que registre la IP pública del servidor.';
+  }
+  if (status === 403) {
+    return `AgentCars dice que la cuenta no tiene permiso para esta operación${
+      detail.text && !isHtml(detail.text) ? `: ${detail.text.slice(0, 160)}` : ''
+    }. Consúltalo con AgentCars.`;
+  }
+
+  // Integración: falta un parámetro obligatorio (así lo contesta AgentCars, con ese "2").
+  if (m.includes('requested page does not exist')) {
+    return 'Al pedido a AgentCars le falta un dato obligatorio. Es un error de la integración, no de la búsqueda: repórtalo al equipo técnico.';
+  }
+
+  // Confirmación: incompleta, o sin código (pudo quedar hecha: no reintentar a ciegas).
+  if (m.includes('incomplete_request')) {
+    return 'AgentCars rechazó la reserva por datos incompletos (INCOMPLETE_REQUEST). Vuelve a buscar y selecciona el auto de nuevo; si se repite, repórtalo al equipo técnico.';
+  }
+  if (m.includes('sin código de confirmación')) {
+    return 'AgentCars no devolvió el código de confirmación y la reserva pudo quedar hecha. Revísala en «Gestionar reserva» o en el reporte diario antes de intentar de nuevo.';
   }
 
   const notFound = status === 404 || m.includes('not found') || m.includes('no encontr');
@@ -128,6 +199,17 @@ export function humanizeAgentCarsError(status: number, body: string, path?: stri
   // Reserva existente que no aparece: es el apellido o el código, no una sesión.
   if (RESERVATION_PATHS.has(op) && notFound) {
     return 'No encontramos esa reserva en AgentCars. Revisa el apellido del conductor y el código de confirmación.';
+  }
+
+  // Sin tarifas para esos datos (code 13000; antes, un 412 "We don't have rates…").
+  if (detail.code === NO_RATES_CODE || /don'?t have rates/i.test(detail.text)) {
+    if (op === '/get-selection') {
+      return 'Ese auto ya no está disponible con esa tarifa. Vuelve a buscar para ver opciones actualizadas.';
+    }
+    if (op === '/get-rate-information') {
+      return 'La tarifa ya no está disponible. Vuelve a buscar y selecciona el auto de nuevo.';
+    }
+    return 'AgentCars no devolvió autos para esta búsqueda. Prueba con otras fechas, otro horario u otro lugar de recogida.';
   }
 
   // Sesión expirada (uniqid tiene TTL de 15 min).
@@ -142,11 +224,18 @@ export function humanizeAgentCarsError(status: number, body: string, path?: stri
     return 'La sesión de la tarifa expiró (es válida 15 minutos). Vuelve a buscar y selecciona el auto de nuevo.';
   }
 
+  // Parámetros de búsqueda inválidos: 422 / code 13001 desde el 2026-10-13; antes, la validación por
+  // campo en el propio `error`.
+  if (status === 422 || detail.code === INVALID_SEARCH_CODE || detail.fromFields) {
+    const why = detail.text && !isHtml(detail.text) ? `: ${detail.text.slice(0, 200)}` : '';
+    return `AgentCars no aceptó los datos de la búsqueda${why}. Revísalos y busca de nuevo.`;
+  }
+
   const empty =
     m.includes('empty response') ||
     m.includes('carservice') ||
     m.includes('respuesta vacía') ||
-    detail.trim() === '';
+    detail.text.trim() === '';
 
   // En la búsqueda, vacío o "no encontrado" es que no hay autos para esos datos.
   if (SEARCH_PATHS.has(op) && (empty || notFound)) {
@@ -173,8 +262,8 @@ export function humanizeAgentCarsError(status: number, body: string, path?: stri
   }
 
   // Fallback: mostramos el detalle del proveedor si es corto y legible, si no, genérico.
-  if (detail && detail.length <= 160 && !isHtml(detail)) {
-    return `AgentCars rechazó la operación: ${detail}`;
+  if (detail.text && detail.text.length <= 160 && !isHtml(detail.text)) {
+    return `AgentCars rechazó la operación: ${detail.text}`;
   }
   return 'AgentCars no pudo procesar la solicitud. Revisa los datos e intenta de nuevo.';
 }

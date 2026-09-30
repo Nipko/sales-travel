@@ -2,10 +2,17 @@ import type { CarSearchQuery, CarSelectionQuery } from '../types.js';
 
 type QueryParams = Record<string, string | number | undefined>;
 
+/**
+ * Parámetros de getMatrix (y base de getSelection). La guía v2.0 marca `pickUpAddress` y
+ * `dropOffAddress` como obligatorios, con `NA` por defecto: sin ellos AgentCars puede contestar
+ * "The requested page does not exist2." (falta un parámetro obligatorio).
+ */
 export function buildMatrixParams(q: CarSearchQuery): QueryParams {
   return {
     pickUpLocation: q.pickUpLocation,
+    pickUpAddress: 'NA',
     dropOffLocation: q.dropOffLocation,
+    dropOffAddress: 'NA',
     pickUpDate: q.pickUpDate,
     dropOffDate: q.dropOffDate,
     pickUpHour: q.pickUpHour,

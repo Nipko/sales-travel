@@ -502,3 +502,32 @@ describe('mapDailyReport', () => {
     expect(mapDailyReport([])).toEqual([]);
   });
 });
+
+describe('mapMatrixOffers — guía v2.0', () => {
+  const car = {
+    category: 'Economy',
+    sippCode: 'ECAR',
+    companyCode: 'AL',
+    companyName: 'ALAMO',
+    rateAmount: '169.12',
+    currency: 'USD',
+    carModel: 'Kia Rio or similar',
+    rateType: '2',
+    rateIdentifier: '9NWXS',
+    img: 'https://cdn.agentcars.com/images/cars/default-noimage.png',
+  };
+
+  it('lleva el rateIdentifier de la oferta, también si llega numérico', () => {
+    expect(mapMatrixOffers({ Economy: [car] })[0]?.rateIdentifier).toBe('9NWXS');
+    expect(
+      mapMatrixOffers({ Economy: [{ ...car, rateIdentifier: 170046564 }] })[0]?.rateIdentifier,
+    ).toBe('170046564');
+    expect(mapMatrixOffers({ Economy: [{ ...car, rateIdentifier: '' }] })[0]).not.toHaveProperty(
+      'rateIdentifier',
+    );
+  });
+
+  it('la imagen genérica de "sin foto" cuenta como sin foto', () => {
+    expect(mapMatrixOffers({ Economy: [car] })[0]).not.toHaveProperty('imageUrl');
+  });
+});

@@ -122,6 +122,11 @@ export interface CarOffer {
   ccrc?: string;
   /** rateType real de la oferta (índice de tarifa, ej "3"); usar en GetSelection (NO 'best'). */
   rateType?: string;
+  /**
+   * Identificador de la tarifa en la rentadora. La guía v2.0 dice que no es contractual, pero la
+   * confirmación responde INCOMPLETE_REQUEST si falta: se lleva tal cual, sin interpretarlo.
+   */
+  rateIdentifier?: string;
   /** URL absoluta de la imagen del auto. */
   imageUrl?: string;
   /** URL del logo de la arrendadora. */
@@ -211,6 +216,8 @@ export interface ConfirmCarRequest {
   realTax: Money;
   total: Money;
   ccrc?: string;
+  /** El de la oferta de getMatrix (ver CarOffer.rateIdentifier). */
+  rateIdentifier?: string;
   cdCode?: string;
   pcCode?: string;
   extras?: CarExtras;

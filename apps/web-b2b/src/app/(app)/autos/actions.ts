@@ -61,6 +61,8 @@ export interface CarOffer {
   ccrc?: string;
   /** rateType real del auto (índice de tarifa); se usa en la selección, no 'best'. */
   rateType?: string;
+  /** Identificador de la tarifa en la rentadora: la confirmación lo pide (INCOMPLETE_REQUEST sin él). */
+  rateIdentifier?: string;
   imageUrl?: string;
   companyImageUrl?: string;
   pricing?: CarPricing;
@@ -371,6 +373,7 @@ export async function bookCarAction(
     ...(selection.companyName && { companyName: selection.companyName }),
   };
   if (selection.ccrc) body.ccrc = selection.ccrc;
+  if (selection.rateIdentifier) body.rateIdentifier = selection.rateIdentifier;
   if (options.flightNumber?.trim()) body.flightNumber = options.flightNumber.trim();
   if (options.onHold) body.onHold = true;
   const extras: Record<string, boolean> = {};

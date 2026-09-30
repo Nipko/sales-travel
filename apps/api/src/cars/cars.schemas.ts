@@ -131,6 +131,8 @@ export const ConfirmInputSchema = z.object({
   carModel: z.string().min(1).optional(),
   companyName: z.string().min(1).optional(),
   ccrc: z.string().min(1).optional(),
+  // El de la oferta de get-matrix: la confirmación responde INCOMPLETE_REQUEST si falta.
+  rateIdentifier: z.string().min(1).max(64).optional(),
   cdCode: z.string().min(1).optional(),
   pcCode: z.string().min(1).optional(),
   flightNumber: z.string().min(1).optional(),

@@ -1,4 +1,5 @@
 import type { AgentCarsConfig } from '../config.js';
+import { isErrorBody } from '../internal/error-body.js';
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -8,8 +9,8 @@ export class AgentCarsApiError extends Error {
     readonly body: string,
     readonly path: string,
     /**
-     * La URL a la que se llamó, sin query string (no lleva el token: ese viaja en cabecera). Es lo
-     * que dice si la cuenta apunta a otro host o a una ruta que AgentCars no tiene.
+     * La URL a la que se llamó, sin query string (ahí va el token). Es lo que dice si la cuenta
+     * apunta a otro host o a una ruta que AgentCars no tiene.
      */
     readonly endpoint?: string,
   ) {
@@ -25,14 +26,24 @@ export class AgentCarsApiError extends Error {
  */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+interface RequestOptions {
+  /** `false` para servicios públicos que no llevan token (el suggest). */
+  auth?: boolean;
+}
+
 export class AgentCarsHttpClient {
   constructor(private readonly cfg: AgentCarsConfig) {}
 
-  async get<T>(baseUrl: string, path: string, query: Record<string, QueryValue> = {}): Promise<T> {
-    const url = this.buildUrl(baseUrl, path, query);
+  async get<T>(
+    baseUrl: string,
+    path: string,
+    query: Record<string, QueryValue> = {},
+    opts: RequestOptions = {},
+  ): Promise<T> {
+    const url = this.buildUrl(baseUrl, path, this.withToken(query, opts));
     const res = await this.fetchOrThrow(
       url,
-      { method: 'GET', headers: this.headers({ Accept: 'application/json' }) },
+      { method: 'GET', headers: { Accept: 'application/json' } },
       path,
     );
     return this.parse<T>(res, path, url);
@@ -44,42 +55,53 @@ export class AgentCarsHttpClient {
     body: Record<string, QueryValue>,
     query: Record<string, QueryValue> = {},
   ): Promise<T> {
-    const url = this.buildUrl(baseUrl, path, query);
+    const url = this.buildUrl(baseUrl, path, this.withToken(query, {}));
     const form = new FormData();
     for (const [k, v] of Object.entries(body)) {
       if (v !== null && v !== undefined) form.append(k, String(v));
     }
     const res = await this.fetchOrThrow(
       url,
-      { method: 'POST', body: form, headers: this.headers() },
+      { method: 'POST', body: form, headers: { Accept: 'application/json' } },
       path,
     );
     return this.parse<T>(res, path, url);
   }
 
   /**
-   * El token viaja en CABECERA, no en el query string.
+   * El token va en el query string (`access-token`): es la única forma que documenta la guía de
+   * AgentCars (v2.0, "Authentication IP + token": cada token vale sólo desde la IP registrada).
    *
-   * Antes iba como `?access-token=…`, así que la credencial del tenant quedaba escrita
-   * en los access logs de cualquier proxy intermedio, en el historial del navegador si
-   * la URL se compartía, y en el Referer de recursos externos. AgentCars acepta ambas
-   * formas; la cabecera no se registra.
+   * El 2026-08-09 (66b3437) se lo pasó a una cabecera `access-token`, suponiendo que el API la
+   * aceptaba. Nunca se verificó —la URL base mala lo tapaba con un 404— y la guía no la menciona;
+   * en junio, con el token en la URL, la integración sí había funcionado. Lo que no puede pasar es
+   * que la URL con el token quede en un log nuestro: los errores y el log llevan `endpoint`, sin
+   * query, y el suggest, que es público, no lo recibe.
    */
-  private headers(extra: Record<string, string> = {}): Record<string, string> {
-    return { 'access-token': this.cfg.accessToken, ...extra };
+  private withToken(
+    query: Record<string, QueryValue>,
+    opts: RequestOptions,
+  ): Record<string, QueryValue> {
+    return opts.auth === false ? query : { ...query, 'access-token': this.cfg.accessToken };
   }
 
-  /** Envuelve un fallo de red (DNS/timeout/conexión) como AgentCarsApiError(status 0). */
+  /**
+   * Envuelve un fallo de red (DNS/timeout/conexión) como AgentCarsApiError(status 0). Node sólo dice
+   * "fetch failed"; el motivo real (ENOTFOUND con el host, ECONNREFUSED…) viene en `cause`, y sin él
+   * una URL base mal escrita parecía una caída del proveedor.
+   */
   private async fetchOrThrow(url: string, init: RequestInit, path: string): Promise<Response> {
     const timeoutMs = this.cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     try {
       return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (err) {
-      const e = err as Error;
+      const e = err as Error & { cause?: { code?: unknown; hostname?: unknown } };
+      const code = typeof e.cause?.code === 'string' ? e.cause.code : undefined;
+      const host = typeof e.cause?.hostname === 'string' ? ` ${e.cause.hostname}` : '';
       const reason =
         e.name === 'TimeoutError' || e.name === 'AbortError'
           ? `el proveedor no respondió en ${timeoutMs} ms`
-          : e.message;
+          : `${e.message}${code ? ` (${code}${host})` : ''}`;
       throw new AgentCarsApiError(0, reason, path, endpointOf(url));
     }
   }
@@ -98,8 +120,9 @@ export class AgentCarsHttpClient {
     const text = await res.text();
     if (!res.ok) throw new AgentCarsApiError(res.status, text, path, endpointOf(url));
     if (!text.trim()) return {} as T; // 2xx vacío: los mappers lo toleran (devuelven [] / vacío).
+    let parsed: unknown;
     try {
-      return JSON.parse(text) as T;
+      parsed = JSON.parse(text);
     } catch {
       throw new AgentCarsApiError(
         res.status,
@@ -108,6 +131,9 @@ export class AgentCarsHttpClient {
         endpointOf(url),
       );
     }
+    // Un 2xx también puede ser un error (ver error-body.ts): leído como datos, inventaba resultados.
+    if (isErrorBody(parsed)) throw new AgentCarsApiError(res.status, text, path, endpointOf(url));
+    return parsed as T;
   }
 }
 

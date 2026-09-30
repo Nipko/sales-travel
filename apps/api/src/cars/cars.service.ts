@@ -151,6 +151,7 @@ export class CarsService {
       total: Money.fromMajor(input.total, input.currency),
     };
     if (input.ccrc) req.ccrc = input.ccrc;
+    if (input.rateIdentifier) req.rateIdentifier = input.rateIdentifier;
     if (input.cdCode) req.cdCode = input.cdCode;
     if (input.pcCode) req.pcCode = input.pcCode;
     if (input.extras) req.extras = input.extras;

@@ -166,3 +166,109 @@ describe('summarizeAgentCarsBody', () => {
     expect(summarizeAgentCarsBody('a'.repeat(400))).toHaveLength(250);
   });
 });
+
+describe('humanizeAgentCarsError — guía v2.0 (revisada el 2026-09-30)', () => {
+  it('un host que no existe (el "fetch failed" del 2026-09-30) pide revisar la URL, no reintentar', () => {
+    const msg = humanizeAgentCarsError(0, 'fetch failed (ENOTFOUND api.dev.agencars.com)');
+    expect(msg).toContain('«api.dev.agencars.com»');
+    expect(msg).toContain('https://api.dev.agentcars.com/v2/sites');
+    expect(msg).not.toContain('Prueba de nuevo');
+  });
+
+  it('un timeout y una conexión rechazada sí se reintentan', () => {
+    expect(humanizeAgentCarsError(0, 'el proveedor no respondió en 15000 ms')).toContain(
+      'no respondió a tiempo',
+    );
+    expect(humanizeAgentCarsError(0, 'fetch failed (ECONNREFUSED)')).toContain('Prueba de nuevo');
+  });
+
+  it('401: el token vale sólo desde la IP registrada en AgentCars', () => {
+    const msg = humanizeAgentCarsError(
+      401,
+      '{"name":"Unauthorized","message":"Your request was made with invalid credentials.","code":0,"status":401}',
+      '/get-matrix',
+    );
+    expect(msg).toContain('IP');
+    expect(msg).toContain('registre la IP pública del servidor');
+  });
+
+  it('403: la cuenta no tiene permiso para la operación', () => {
+    expect(humanizeAgentCarsError(403, '{"error":"Not allowed"}', '/confirmation')).toContain(
+      'no tiene permiso',
+    );
+  });
+
+  it('422 (formato nuevo): los mensajes por parámetro de `data`', () => {
+    const body = JSON.stringify({
+      success: false,
+      error: 'Error Loading data',
+      message: 'Error Loading data',
+      code: 13001,
+      data: {
+        dropOffLocation: ['Dropoff Location cannot be blank.'],
+        pickUpDate: ['the date should be minimal today'],
+      },
+    });
+    const msg = humanizeAgentCarsError(422, body, '/get-selection');
+    expect(msg).toContain('no aceptó los datos de la búsqueda');
+    expect(msg).toContain('Dropoff Location cannot be blank. the date should be minimal today');
+  });
+
+  it('validación por campo del formato actual (HTTP 200) dice lo mismo', () => {
+    const msg = humanizeAgentCarsError(
+      200,
+      '{"error":{"pickUpDate":["the date should be minimal today"]}}',
+      '/get-matrix',
+    );
+    expect(msg).toContain('no aceptó los datos de la búsqueda: the date should be minimal today');
+  });
+
+  it('el país de origen vacío en `data` sigue siendo un problema de configuración (POS)', () => {
+    const body = JSON.stringify({
+      success: false,
+      error: 'Error Loading data',
+      code: 13001,
+      data: { source: ['Source Country cannot be blank.'] },
+    });
+    expect(humanizeAgentCarsError(422, body, '/get-matrix')).toContain('país de origen');
+  });
+
+  it('sin tarifas (code 13000 o el 412 de hoy) según la operación', () => {
+    const nuevo = JSON.stringify({
+      success: false,
+      error: 'x',
+      message: 'x',
+      code: 13000,
+      data: [],
+    });
+    expect(humanizeAgentCarsError(200, nuevo, '/get-selection')).toContain('ya no está disponible');
+    expect(humanizeAgentCarsError(200, nuevo, '/get-rate-information')).toContain(
+      'La tarifa ya no está disponible',
+    );
+    const hoy =
+      '{"error":"We don\'t have rates avaliable for the selected location. Please select another location ciu"}';
+    expect(humanizeAgentCarsError(412, hoy, '/get-selection')).toContain('ya no está disponible');
+    expect(humanizeAgentCarsError(412, hoy, '/get-matrix')).toContain('no devolvió autos');
+  });
+
+  it('parámetro obligatorio faltante ("The requested page does not exist2.") es de la integración', () => {
+    const body =
+      '{"name":"Not Found","message":"The requested page does not exist2.","code":0,"status":404}';
+    const msg = humanizeAgentCarsError(404, body, '/get-matrix');
+    expect(msg).toContain('le falta un dato obligatorio');
+    expect(msg).not.toContain('no devolvió autos');
+  });
+
+  it('confirmación: INCOMPLETE_REQUEST y una respuesta sin código', () => {
+    expect(
+      humanizeAgentCarsError(200, '{"error":"INCOMPLETE_REQUEST"}', '/confirmation'),
+    ).toContain('datos incompletos');
+    const msg = humanizeAgentCarsError(
+      200,
+      'respuesta sin código de confirmación',
+      '/confirmation',
+    );
+    expect(msg).toContain('pudo quedar hecha');
+    expect(msg).toContain('antes de intentar de nuevo');
+  });
+});
