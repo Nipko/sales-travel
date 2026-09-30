@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isTokenExpired, loginUrlFor, requestedPathOf, tokenExpiresAtMs } from './login-redirect';
+import {
+  isTokenExpired,
+  loginUrlFor,
+  requestedPathOf,
+  tokenExpiresAtMs,
+  tokenTenantId,
+} from './login-redirect';
 
 function jwtWith(payload: Record<string, unknown>): string {
   const b64url = (value: string) =>
@@ -76,5 +82,24 @@ describe('vencimiento del token', () => {
     ]) {
       expect(isTokenExpired(token, now)).toBe(false);
     }
+  });
+});
+
+describe('tokenTenantId', () => {
+  const b64url = (value: string) =>
+    btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const jwt = (payload: unknown) =>
+    `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify(payload))}.f`;
+  const TID = '3f2b8c1e-5d4a-4c3b-9a8e-7f6d5c4b3a21';
+
+  it('el tid de la sesión', () => {
+    expect(tokenTenantId(jwt({ sub: 'u', tid: TID }))).toBe(TID);
+  });
+
+  it('sin tid, con un tid que no es uuid o con un token ilegible: null', () => {
+    expect(tokenTenantId(jwt({ sub: 'u' }))).toBeNull();
+    expect(tokenTenantId(jwt({ tid: 'x; Path=/' }))).toBeNull();
+    expect(tokenTenantId(jwt([1, 2]))).toBeNull();
+    expect(tokenTenantId('opaco')).toBeNull();
   });
 });

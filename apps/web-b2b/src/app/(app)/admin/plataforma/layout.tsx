@@ -1,13 +1,7 @@
 import { redirect } from 'next/navigation';
+import { parseMemberships, resolveActiveMembership } from '../../../../lib/agencies';
 import { api } from '../../../../lib/api';
 import { getActiveTenant } from '../../../../lib/session';
-
-interface Membership {
-  id: string;
-  role: string;
-  status: string;
-  tenantId: string;
-}
 
 /**
  * El panel de la plataforma es sólo del superadmin, como `/admin/tenants`. Es la guarda de la
@@ -15,10 +9,10 @@ interface Membership {
  */
 export default async function PlatformAdminLayout({ children }: { children: React.ReactNode }) {
   const activeTenantId = await getActiveTenant();
-  const res = await api<Membership[]>('/me/memberships');
-  const memberships = res.ok ? res.data : [];
+  const res = await api<unknown>('/me/memberships');
+  const memberships = res.ok ? parseMemberships(res.data) : [];
 
-  const activeMembership = memberships.find((m) => m.tenantId === activeTenantId) ?? memberships[0];
+  const activeMembership = resolveActiveMembership(memberships, activeTenantId);
 
   if (!activeMembership || activeMembership.role !== 'superadmin') {
     redirect('/');

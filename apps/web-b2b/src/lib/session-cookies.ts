@@ -19,6 +19,24 @@ export const COOKIES_CLEARED_ON_LOGOUT = [SESSION_COOKIE, TENANT_COOKIE] as cons
  */
 export const REQUESTED_PATH_HEADER = 'x-st-path';
 
+/**
+ * `st_tenant` es una preferencia de navegación, no una credencial: dura más que la sesión. La
+ * escriben el login y el cambio de agencia (junto con `st_session`) y el middleware, que la alinea
+ * con el `tid` de la sesión.
+ */
+export const TENANT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+
+/** Las opciones de `st_tenant`, las mismas desde una server action que desde el middleware. */
+export function tenantCookieOptions(production: boolean) {
+  return {
+    httpOnly: true,
+    secure: production,
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: TENANT_COOKIE_MAX_AGE_SECONDS,
+  };
+}
+
 /** El access token dura 12 h: si la API no dice cuándo vence, la cookie no vive más que eso. */
 export const SESSION_FALLBACK_SECONDS = 12 * 60 * 60;
 export const TRUSTED_DEVICE_FALLBACK_SECONDS = 30 * 24 * 60 * 60;

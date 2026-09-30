@@ -1,5 +1,7 @@
+import type { AgencyOption } from '../../lib/agencies';
 import { brandStyleSheet } from '../../lib/brand-tokens';
 import { ANONYMOUS_VIEWER, type Viewer } from '../../lib/viewer';
+import { AgencySwitcherProvider } from './agency-switcher';
 import { SessionGuard } from './session-guard';
 import type { SessionSnapshot } from './session-guard-state';
 import { Sidebar } from './sidebar';
@@ -26,6 +28,8 @@ interface AppShellProps {
    * la inactividad y el vencimiento, sin esperar al primer ping.
    */
   session?: SessionSnapshot | null;
+  /** Las agencias del usuario para el selector (topbar, drawer móvil y ⌘K). */
+  agencies?: AgencyOption[];
 }
 
 /**
@@ -52,6 +56,7 @@ export function AppShell({
   branding,
   viewer = ANONYMOUS_VIEWER,
   session = null,
+  agencies = [],
 }: AppShellProps) {
   const shell = (
     // `h-dvh` + `overflow-hidden`, NO `min-h-screen`: con `min-h-screen` el contenedor crece
@@ -88,5 +93,11 @@ export function AppShell({
     </div>
   );
 
-  return <ViewerProvider viewer={viewer}>{shell}</ViewerProvider>;
+  return (
+    <ViewerProvider viewer={viewer}>
+      <AgencySwitcherProvider agencies={agencies} role={role}>
+        {shell}
+      </AgencySwitcherProvider>
+    </ViewerProvider>
+  );
 }
