@@ -469,7 +469,7 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 
 **✅ Tier 2 (alto):**
 
-- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por `CF-Connecting-IP` (`IpThrottlerGuard`).
+- Rate limiting anti brute-force: `@nestjs/throttler` (300/min global, 10/min en login/register) con tracker por la IP real del usuario (`IpThrottlerGuard`). La resuelve Caddy, que cree `CF-Connecting-IP` sólo si la conexión viene de un rango de Cloudflare (`trusted_proxies`), y la pasa en `X-Edge-Peer-IP`; el panel la reenvía al api con el secreto interno. Una IPv6 cuenta por su /64. Desde 2026-09-29: antes el panel no llegaba a recibir la cabecera (un `header_up -X-Edge-Peer-IP` la borraba) y todo el panel era un solo cupo, y rotar `CF-Connecting-IP` daba cupo nuevo. Detalle en `infrastructure/hostinger/README.md` §10.
 - Validación de montos de cartera (entero positivo, tope de cordura) en depósitos/retiros/holds.
 
 **✅ Tier 3 (medio):**
@@ -572,6 +572,7 @@ Sobre auth premium (#12: puestos simultáneos, una sesión por usuario, `SEATS_F
   - El drawer móvil se dibuja en un portal a `<body>`: el `backdrop-filter` del header lo encerraba en sus 56 px.
 - **Tests:** criterio y vista de memberships (unit), `AuthService` con dobles, y [`tenant-switch.integration.test.ts`](../../apps/api/src/auth/tenant-switch.integration.test.ts) contra Postgres como `app_user` (en CI). En la web, la lógica pura (`agencies`, `tenant-switch`, `command-menu`, middleware) y el render del selector.
 - **Pendiente:** elegir con qué agencia entrar cuando el cupo de la por defecto está lleno en el login (hoy se muestra `SEATS_FULL` de esa agencia), y llevar a la pantalla de inicio si la página abierta no existe en la agencia nueva (hoy se refresca la misma ruta).
+
 ## §12 — Suspender corta el nodo, no a la persona; invitaciones con respaldo (2026-09-29)
 
 Cierra dos brechas de la auditoría del 2026-09-29. Va sobre auth premium (#12, 0055).
