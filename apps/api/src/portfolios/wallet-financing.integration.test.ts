@@ -268,12 +268,15 @@ d('quien financia establece las carteras (API como app_user)', () => {
         randomUUID(),
       );
 
+      // Funciones y no promesas ya creadas: con las tres lanzadas a la vez, la segunda o la tercera
+      // podía rechazar antes de que el for llegara a esperarla, y Vitest lo contaba como un rechazo
+      // no manejado que ponía en rojo la corrida entera (a veces sí, a veces no).
       for (const read of [
-        financing.overview(siblingAdmin, agency),
-        financing.listMovements(siblingAdmin, agency),
-        financing.listDepositReports(siblingAdmin, agency),
+        () => financing.overview(siblingAdmin, agency),
+        () => financing.listMovements(siblingAdmin, agency),
+        () => financing.listDepositReports(siblingAdmin, agency),
       ]) {
-        expect(await denied(read)).toBe('403/PORTFOLIO_FINANCIER_REQUIRED');
+        expect(await denied(read())).toBe('403/PORTFOLIO_FINANCIER_REQUIRED');
       }
 
       const own = await portfolios.overview(sibling);
