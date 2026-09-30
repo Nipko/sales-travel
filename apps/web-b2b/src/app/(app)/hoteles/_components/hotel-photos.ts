@@ -159,7 +159,8 @@ export function parsePhotoBatchReply(raw: unknown): PhotoBatchReply | undefined 
   };
 }
 
-function clampRetry(ms: number | undefined): number {
+/** La espera antes de volver a pedir, acotada; sin dato, {@link PHOTO_RETRY_DEFAULT_MS}. */
+export function clampPhotoRetry(ms: number | undefined): number {
   const value = ms ?? PHOTO_RETRY_DEFAULT_MS;
   return Math.min(PHOTO_RETRY_MAX_MS, Math.max(PHOTO_RETRY_MIN_MS, value));
 }
@@ -200,7 +201,7 @@ export function applyPhotoBatch(
   nowMs: number,
 ): Map<string, PhotoState> {
   const next = new Map(states);
-  const retryAt = nowMs + clampRetry(reply.retryAfterMs);
+  const retryAt = nowMs + clampPhotoRetry(reply.retryAfterMs);
   for (const t of batch) {
     if (settled(states, t.key)) continue;
     const attempts = states.get(t.key)?.attempts ?? 1;
@@ -229,7 +230,7 @@ export function failPhotoBatch(
   retryAfterMs?: number,
 ): Map<string, PhotoState> {
   const next = new Map(states);
-  const retryAt = nowMs + clampRetry(retryAfterMs);
+  const retryAt = nowMs + clampPhotoRetry(retryAfterMs);
   for (const t of batch) {
     if (settled(states, t.key)) continue;
     const attempts = states.get(t.key)?.attempts ?? 1;

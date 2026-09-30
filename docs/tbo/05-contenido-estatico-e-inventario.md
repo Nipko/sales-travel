@@ -1020,6 +1020,12 @@ en los países de `TBO_SYNC_COUNTRIES` con datos. Estrategia aprobada por el fou
   (nunca SVG), caché en memoria con techo en bytes y en entradas, a lo sumo 32 descargas a la vez (lo demás, 503
   sin guardar: la ruta es pública y el host de fotos de TBO es el de su API) y `Cache-Control` de un día. `next/image` la usa por
   `images.localPatterns` para servir miniaturas cacheadas en disco (`img-src 'self'`).
+- **Ficha del hotel (detalle).** La acción del panel lee `GET /hotels/content/…` y entrega las fotos ya como rutas del
+  proxy (la URL de TBO no llega al navegador). Si la ficha vuelve sin fotos y no fue TBO quien respondió sin ellas
+  (`origin` distinto de `provider`: el `HotelDetails` de 6 s no llegó o falló), la página pide ese hotel por
+  `/api/hotels/content/batch` —que lo trae con plazo largo y lo guarda en `hotel_content`— hasta tres veces respetando
+  `retryAfterMs`, y con algo `ready` relee la ficha. La galería (foto grande y miniaturas, carrusel con pestañas de
+  WAI-ARIA, teclado y deslizamiento) muestra "Buscando las fotos del hotel…" mientras tanto; las tarifas no esperan.
 - **Escritura desde el API.** La app sigue sin `INSERT`/`UPDATE` sobre el catálogo (0041): escribe sólo por las dos
   funciones `SECURITY DEFINER` de 0054, que validan cada campo y aplican las reglas del sync (sólo hoteles del
   catálogo, `listing` nunca sobre `details`, HTML de lista blanca, imágenes `https`, nunca desactivar ni mover un

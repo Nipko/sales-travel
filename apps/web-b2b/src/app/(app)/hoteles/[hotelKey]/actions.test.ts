@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../lib/api', () => ({ api: apiMock }));
 
+import { hotelImageProxyUrl } from '../../../../lib/hotel-image-proxy';
 import { encodeHotelKey } from '../_components/hotel-key';
 import { hotelContentAction, hotelRatesAction } from './actions';
 
@@ -26,7 +27,11 @@ function contentView(ref: { provider: string; hotelId: string }) {
     lang: 'es',
     origin: 'catalog',
     name: 'Hotel Plaza',
-    images: ['https://img.example/1.jpg', 'http://img.example/2.jpg'],
+    images: [
+      'https://api.tbotechnology.in/imageresource.aspx?img=1.jpg',
+      'http://api.tbotechnology.in/imageresource.aspx?img=2.jpg',
+      'https://img.example/3.jpg',
+    ],
     sections: [],
     facilities: [],
   };
@@ -48,7 +53,14 @@ describe('hotelContentAction — la ficha de cada proveedor del hotel', () => {
       '/hotels/content/tbo-hotels/1402689?lang=es',
     ]);
     expect(res.ok).toBe(true);
-    expect(res.outcomes[1]?.content?.images).toEqual(['https://img.example/1.jpg']);
+    // Por el proxy propio: la URL del proveedor no llega al navegador, y lo que no es `https` de
+    // un dominio de fotos del proveedor no entra.
+    const photos = res.outcomes[1]?.content?.images ?? [];
+    expect(photos).toEqual([
+      hotelImageProxyUrl('https://api.tbotechnology.in/imageresource.aspx?img=1.jpg'),
+    ]);
+    expect(photos[0]).toMatch(/^\/api\/hotels\/images\/[A-Za-z0-9_-]+$/);
+    expect(JSON.stringify(res)).not.toContain('tbotechnology.in');
   });
 
   it('una clave que no es nuestra no llega al API', async () => {

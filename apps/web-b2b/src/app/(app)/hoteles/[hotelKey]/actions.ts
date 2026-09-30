@@ -1,10 +1,15 @@
 'use server';
 
 import { api } from '../../../../lib/api';
+import { hotelImageProxyUrl } from '../../../../lib/hotel-image-proxy';
 import type { HotelOffer } from '../actions';
 import { decodeHotelKey, type HotelProviderHotelRef } from '../_components/hotel-key';
 import { parseStay } from '../_components/hotel-search-handoff';
-import { parseHotelContent, type HotelContent } from './_components/hotel-content-view';
+import {
+  parseHotelContent,
+  withProxiedPhotos,
+  type HotelContent,
+} from './_components/hotel-content-view';
 
 /*
  * Lecturas del detalle de un hotel: la ficha de cada proveedor que lo vende y sus tarifas para la
@@ -58,7 +63,10 @@ function pathOf(ref: HotelProviderHotelRef): string {
   return `/hotels/content/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.hotelId)}?lang=${CONTENT_LANG}`;
 }
 
-/** La ficha de cada proveedor del hotel. Sin contenido, el API responde la ficha vacía, no un error. */
+/**
+ * La ficha de cada proveedor del hotel. Sin contenido, el API responde la ficha vacía, no un error.
+ * Las fotos salen como rutas del proxy propio: la URL del proveedor no llega al navegador.
+ */
 export async function hotelContentAction(hotelKey: string): Promise<HotelContentResult> {
   const refs = typeof hotelKey === 'string' ? decodeHotelKey(hotelKey) : undefined;
   if (refs === undefined) return { ok: false, outcomes: [], error: INVALID_KEY };
@@ -70,7 +78,7 @@ export async function hotelContentAction(hotelKey: string): Promise<HotelContent
       const content = parseHotelContent(res.data, ref);
       return content === undefined
         ? { ref, error: 'La ficha del hotel llegó incompleta.' }
-        : { ref, content };
+        : { ref, content: withProxiedPhotos(content, hotelImageProxyUrl) };
     }),
   );
   return { ok: outcomes.some((o) => o.content !== undefined), outcomes };
