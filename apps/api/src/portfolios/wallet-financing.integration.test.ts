@@ -268,8 +268,9 @@ d('quien financia establece las carteras (API como app_user)', () => {
         randomUUID(),
       );
 
-      // Thunks y no promesas: creadas juntas, la segunda puede rechazar mientras se espera la
-      // primera y queda como rechazo sin manejar (falló así contra Postgres real en el CI del #11).
+      // Funciones y no promesas ya creadas: con las tres lanzadas a la vez, la segunda o la tercera
+      // podía rechazar antes de que el for llegara a esperarla, y Vitest lo contaba como un rechazo
+      // no manejado que ponía en rojo la corrida entera (a veces sí, a veces no).
       for (const read of [
         () => financing.overview(siblingAdmin, agency),
         () => financing.listMovements(siblingAdmin, agency),

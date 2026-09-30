@@ -60,6 +60,16 @@ export interface TenantsTable {
    * la API ya no lo lee (la retención usa sólo el cupo de la cartera).
    */
   credit_limit: Generated<string>;
+  /**
+   * 0055: sesiones simultáneas que admite el nodo (1-10000). NULL = consume del ancestro más
+   * cercano que lo tenga (`seat_pool_of`); si ninguno, sin límite. Sólo lo fija el superadmin.
+   */
+  concurrent_seats: number | null;
+  /**
+   * 0055: minutos sin actividad antes de cerrar la sesión (5-480). NULL = hereda del ancestro más
+   * cercano; si ninguno, 30 (`effective_idle_timeout_minutes`). Sólo lo fija el superadmin.
+   */
+  idle_timeout_minutes: number | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -147,6 +157,11 @@ export interface UsersTable {
   mfa_secret: string | null;
   mfa_enabled_at: Timestamp | null;
   mfa_last_used_step: string | null;
+  /**
+   * 0055: secreto nuevo del enrolamiento o de "cambiar de teléfono", cifrado igual que `mfa_secret`.
+   * Pasa a `mfa_secret` recién cuando /auth/mfa/confirm verifica un código contra él.
+   */
+  mfa_pending_secret: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -166,6 +181,65 @@ export interface SessionsTable {
   revoked_reason: string | null;
   ip: string | null;
   user_agent: string | null;
+  /**
+   * 0055: tope de inactividad de ESTA sesión, snapshot de `effective_idle_timeout_minutes * 60` al
+   * emitirla. La base lo acota a 300-28800 (5 min a 8 h).
+   */
+  idle_timeout_seconds: Generated<number>;
+  /**
+   * 0055: nodo del cupo que consume (`seat_pool_of` del tenant al emitir). NULL = no consume
+   * puesto: usuario de plataforma o nodo sin límite.
+   */
+  seat_tenant_id: string | null;
+  /** 0055: la sesión pasó el segundo factor (TOTP, código de recuperación o equipo de confianza). */
+  mfa_verified_at: Timestamp | null;
+}
+
+/** Un instante sin default en la base: obligatorio al insertar. */
+type RequiredTimestamp = ColumnType<Date, Date | string, Date | string>;
+
+/**
+ * 0055: desafío MFA del login. El `id` viaja como `jti` del mfaToken; máximo 5 intentos y un solo
+ * consumo (`UPDATE ... WHERE consumed_at IS NULL AND attempts < 5 RETURNING`). RLS por usuario.
+ */
+export interface MfaChallengesTable {
+  id: Generated<string>;
+  user_id: string;
+  attempts: Generated<number>;
+  remember_device: Generated<boolean>;
+  created_at: Timestamp;
+  expires_at: RequiredTimestamp;
+  consumed_at: Timestamp | null;
+}
+
+/**
+ * 0055: "recordar este equipo". Sólo el sha256 hex (64 caracteres en minúscula, lo exige la base)
+ * del token, que vive en la cookie `st_trusted`. Válido si no está revocado ni vencido y
+ * `created_at` es posterior a `users.password_changed_at` y a `users.mfa_enabled_at`. RLS por
+ * usuario; "quitar" es revocar, la app no borra.
+ */
+export interface TrustedDevicesTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hash: string;
+  created_at: Timestamp;
+  last_used_at: Timestamp;
+  expires_at: RequiredTimestamp;
+  revoked_at: Timestamp | null;
+  ip: string | null;
+  user_agent: string | null;
+}
+
+/**
+ * 0055: `jti` de tokens firmados de un solo uso ya canjeados (el de liberar un puesto). Consumir es
+ * `INSERT ... ON CONFLICT (jti) DO NOTHING RETURNING jti`: 0 filas = ya se usó. Sin RLS; la app
+ * sólo inserta y lee.
+ */
+export interface ConsumedTokensTable {
+  jti: string;
+  purpose: string;
+  consumed_at: Timestamp;
+  expires_at: RequiredTimestamp;
 }
 
 export interface MfaRecoveryCodesTable {
@@ -886,6 +960,9 @@ export interface DB {
   memberships: MembershipsTable;
   sessions: SessionsTable;
   mfa_recovery_codes: MfaRecoveryCodesTable;
+  mfa_challenges: MfaChallengesTable;
+  trusted_devices: TrustedDevicesTable;
+  consumed_tokens: ConsumedTokensTable;
   password_reset_tokens: PasswordResetTokensTable;
   user_invitations: UserInvitationsTable;
   search_logs: SearchLogsTable;

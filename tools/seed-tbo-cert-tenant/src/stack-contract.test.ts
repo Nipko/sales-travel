@@ -64,6 +64,8 @@ interface RenderModule {
     catalogNames: string[];
   };
   readonly STACK_ENV: readonly EnvRule[];
+  readonly STACK_DERIVED: readonly { readonly name: string; readonly from: string }[];
+  internalProxySecret(jwtSecret: string): string;
   readonly SEED_ENV: readonly EnvRule[];
   readonly SEED_CONNECTION: Readonly<Record<string, string>>;
   readonly CATALOG_ENV: readonly EnvRule[];
@@ -271,9 +273,10 @@ describe('render del .env del stack (RC-07)', () => {
   it('escribe sólo la lista cerrada', () => {
     const out = render.renderCertEnv({ ...poisoned(), ...VALID });
     expect([...entriesOf(out.stack).keys()].sort()).toEqual(
-      render.STACK_ENV.filter((r) => !r.optional)
-        .map((r) => r.name)
-        .sort(),
+      [
+        ...render.STACK_ENV.filter((r) => !r.optional).map((r) => r.name),
+        ...render.STACK_DERIVED.map((d) => d.name),
+      ].sort(),
     );
     expect([...entriesOf(out.seed).keys()].sort()).toEqual(
       [
@@ -332,6 +335,22 @@ describe('render del .env del stack (RC-07)', () => {
     expect(stack.get('PROVIDER_CREDENTIALS_KEY')).toBe(VALID['CERT_PROVIDER_CREDENTIALS_KEY']);
     expect(seed.get('PROVIDER_CREDENTIALS_KEY')).toBe(stack.get('PROVIDER_CREDENTIALS_KEY'));
     expect(seed.get('PGPASSWORD')).toBe(stack.get('POSTGRES_ADMIN_PASSWORD'));
+  });
+
+  it('INTERNAL_PROXY_SECRET sale del JWT_SECRET del stack, con la cuenta de producción', () => {
+    const stack = entriesOf(render.renderCertEnv(VALID).stack);
+    const secret = stack.get('INTERNAL_PROXY_SECRET') ?? '';
+    // sha256 hex de `internal-proxy:` + JWT_SECRET, como el paso `Render .env` de producción.
+    expect(DEPLOY_TEXT).toContain(`printf 'internal-proxy:%s'`);
+    expect(secret).toBe(render.internalProxySecret(VALID['CERT_JWT_SECRET'] ?? ''));
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(secret).not.toContain(VALID['CERT_JWT_SECRET'] ?? '');
+  });
+
+  it('INTERNAL_PROXY_SECRET no se escribe si el JWT_SECRET no pasa su regla', () => {
+    expect(renderIssues({ ...VALID, CERT_JWT_SECRET: 'corto' }).issues).toEqual([
+      'CERT_JWT_SECRET:too_short',
+    ]);
   });
 
   it('seed.env conserva literal la contraseña de TBO (`$`, `#`, comillas, espacios)', () => {
@@ -528,7 +547,14 @@ describe('docker-compose.cert.yml', () => {
 
   it('sólo interpola lo que escribe el render, y lo obligatorio corta el `up` si falta', () => {
     const refs = [...CERT_COMPOSE_TEXT.matchAll(/\$\{([A-Z][A-Z0-9_]*)(:[?-])?[^}]*\}/g)];
-    const rules = new Map(render.STACK_ENV.map((r) => [r.name, r]));
+    // Las derivadas las escribe siempre el render: cuentan como obligatorias.
+    const rules = new Map<string, { readonly optional?: boolean }>([
+      ...render.STACK_ENV.map((r): [string, EnvRule] => [r.name, r]),
+      ...render.STACK_DERIVED.map((d): [string, { optional: false }] => [
+        d.name,
+        { optional: false },
+      ]),
+    ]);
     for (const [, name = '', operator] of refs) {
       const rule = rules.get(name);
       expect(rule, `el compose lee ${name}, que el render no escribe`).toBeDefined();
@@ -551,6 +577,7 @@ describe('docker-compose.cert.yml', () => {
         'FLIGHT_PROVIDER_CALL_POLICIES',
         'HOTEL_PROVIDERS_OPT_IN',
         'HOTEL_PROVIDER_CALL_POLICIES',
+        'INTERNAL_PROXY_SECRET',
         'JWT_SECRET',
         'NODE_ENV',
         'PGDATABASE',
@@ -571,6 +598,12 @@ describe('docker-compose.cert.yml', () => {
         'SHUTDOWN_DRAIN_TIMEOUT_MS',
       ].sort(),
     );
+  });
+
+  it('el api y el panel reciben el mismo INTERNAL_PROXY_SECRET, el que escribe el render', () => {
+    const interpolation = '${INTERNAL_PROXY_SECRET:?falta INTERNAL_PROXY_SECRET}';
+    expect(envOf(service(CERT, 'cert-api'))['INTERNAL_PROXY_SECRET']).toBe(interpolation);
+    expect(envOf(service(CERT, 'cert-web-b2b'))['INTERNAL_PROXY_SECRET']).toBe(interpolation);
   });
 
   it('TBO encendido para el tenant del stack; nadie con credenciales de plataforma', () => {

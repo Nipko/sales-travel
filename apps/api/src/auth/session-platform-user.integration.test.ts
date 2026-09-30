@@ -91,7 +91,8 @@ d('SessionService.validate: la marca de usuario de plataforma, contra Postgres',
   it('el superadmin lleva la marca en su nodo', async () => {
     const root = await user('root');
     await member(platform, root, 'superadmin');
-    expect(await sessions.validate(await session(root, platform))).toEqual({
+    expect(await sessions.validate(await session(root, platform))).toMatchObject({
+      ok: true,
       role: 'superadmin',
       platformUser: true,
     });
@@ -101,7 +102,8 @@ d('SessionService.validate: la marca de usuario de plataforma, contra Postgres',
     const root = await user('root-seller');
     await member(platform, root, 'superadmin');
     await member(branch, root, 'vendedor');
-    expect(await sessions.validate(await session(root, branch))).toEqual({
+    expect(await sessions.validate(await session(root, branch))).toMatchObject({
+      ok: true,
       role: 'vendedor',
       platformUser: true,
     });
@@ -110,21 +112,25 @@ d('SessionService.validate: la marca de usuario de plataforma, contra Postgres',
   it('un vendedor de la sucursal no la lleva', async () => {
     const seller = await user('seller');
     await member(branch, seller, 'vendedor');
-    expect(await sessions.validate(await session(seller, branch))).toEqual({ role: 'vendedor' });
+    const validated = await sessions.validate(await session(seller, branch));
+    expect(validated).toMatchObject({ ok: true, role: 'vendedor' });
+    expect(validated).not.toHaveProperty('platformUser');
   });
 
   it('el admin de Planetour que no es superadmin tampoco (el founder hoy, en producción)', async () => {
     const founder = await user('founder');
     await member(platform, founder, 'consolidator_admin');
-    expect(await sessions.validate(await session(founder, platform))).toEqual({
-      role: 'consolidator_admin',
-    });
+    const validated = await sessions.validate(await session(founder, platform));
+    expect(validated).toMatchObject({ ok: true, role: 'consolidator_admin' });
+    expect(validated).not.toHaveProperty('platformUser');
   });
 
   it('una membership de superadmin suspendida no da la marca, igual que isSuperadmin()', async () => {
     const former = await user('former');
     await member(platform, former, 'superadmin', 'suspended');
     await member(branch, former, 'vendedor');
-    expect(await sessions.validate(await session(former, branch))).toEqual({ role: 'vendedor' });
+    const validated = await sessions.validate(await session(former, branch));
+    expect(validated).toMatchObject({ ok: true, role: 'vendedor' });
+    expect(validated).not.toHaveProperty('platformUser');
   });
 });

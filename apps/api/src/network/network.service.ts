@@ -34,6 +34,23 @@ export interface NetworkUser {
   role: string;
   membershipStatus: string;
   createdAt: Date;
+  /** Último ingreso a la plataforma (en cualquier nodo). `null` = nunca ingresó. */
+  lastLoginAt: Date | null;
+  /** Tiene el segundo factor activo. */
+  mfaEnabled: boolean;
+  /** Bloqueado por intentos fallidos hasta ese instante; `null` si no está bloqueado ahora. */
+  lockedUntil: Date | null;
+  /** Sesiones vivas (no revocadas, no vencidas, dentro de su inactividad) en el subárbol del nodo. */
+  activeSessions: number;
+}
+
+/** Una fila de `user_admin_overview` (0055). */
+interface UserOverviewRow {
+  user_id: string;
+  last_login_at: Date | null;
+  mfa_enabled: boolean;
+  locked_until: Date | null;
+  active_sessions: number | string;
 }
 
 interface NetworkRow {
@@ -148,6 +165,51 @@ export class NetworkService {
   }
 
   /**
+   * {@link roleOver} para varios nodos en una consulta: el rol con que el usuario administra cada
+   * uno. Un nodo que no administra (o que no existe) no aparece en el mapa.
+   *
+   * Lo usa la regla del soporte a un miembro, que exige administrar TODOS los nodos donde el
+   * objetivo tiene membership activa.
+   */
+  async rolesOver(userId: string, tenantIds: readonly string[]): Promise<Map<string, Role>> {
+    const ids = [...new Set(tenantIds)];
+    if (ids.length === 0) return new Map();
+
+    const rows = await this.db.withRequestContext({ userId }, async (trx) => {
+      const result = await sql<{ tenant_id: string; role: Role }>`
+        SELECT target_t.id AS tenant_id, m.role
+        FROM tenants target_t
+        JOIN memberships m ON m.user_id = ${userId}::uuid AND m.status = 'active'
+        JOIN tenants admin_t ON admin_t.id = m.tenant_id
+        WHERE target_t.id = ANY(${ids}::uuid[])
+          AND (
+            m.role = 'superadmin'
+            OR (
+              m.role = ANY(${[...AGENCY_ADMIN_ROLES]}::text[])
+              AND admin_t.path OPERATOR(public.@>) target_t.path
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM tenants anc
+            WHERE anc.path OPERATOR(public.@>) admin_t.path
+              AND anc.status <> 'active'
+          )
+      `.execute(trx);
+      return result.rows;
+    });
+
+    const byTenant = new Map<string, Role[]>();
+    for (const r of rows) byTenant.set(r.tenant_id, [...(byTenant.get(r.tenant_id) ?? []), r.role]);
+
+    const out = new Map<string, Role>();
+    for (const [tenantId, roles] of byTenant) {
+      const best = highestRole(roles);
+      if (best !== undefined) out.set(tenantId, best);
+    }
+    return out;
+  }
+
+  /**
    * ¿Puede el usuario OPERAR en `tenantId`? True si es miembro directo (cualquier rol),
    * superadmin, o admin de un nodo ancestro (act-as descendiente). Se usa para validar el
    * header `x-tenant-id` y evitar que un cliente opere bajo un tenant ajeno.
@@ -213,6 +275,10 @@ export class NetworkService {
    * Usuarios (memberships) de un nodo de la red. Gateado: el usuario debe poder gestionar
    * `tenantId` (su nodo, un descendiente, o superadmin). Se lee con el contexto del tenant
    * destino → la policy `memberships_tenant_isolation` devuelve sólo sus memberships.
+   *
+   * Suma lo que el admin necesita para dar soporte (último ingreso, 2FA, bloqueo, sesiones abiertas)
+   * con `user_admin_overview` (0055): `sessions` tiene RLS por usuario, así que sin esa función
+   * SECURITY DEFINER el admin no podría contar las de su equipo. La autorización es la de arriba.
    */
   async listTenantUsers(userId: string, tenantId: string): Promise<NetworkUser[]> {
     if (!(await this.canManageTenant(userId, tenantId))) {
@@ -234,16 +300,30 @@ export class NetworkService {
         .where('memberships.tenant_id', '=', tenantId)
         .orderBy('memberships.created_at')
         .execute();
-      return rows.map((r) => ({
-        userId: r.userId,
-        email: r.email,
-        name: r.name,
-        userStatus: r.userStatus,
-        role: r.role,
-        membershipStatus: r.membershipStatus,
-        // pg devuelve Date para timestamptz; el tipo Kysely es ColumnType (Timestamp).
-        createdAt: r.createdAt as unknown as Date,
-      }));
+
+      const overview = await sql<UserOverviewRow>`
+        SELECT user_id, last_login_at, mfa_enabled, locked_until, active_sessions
+        FROM user_admin_overview(${tenantId}::uuid)
+      `.execute(trx);
+      const byUser = new Map(overview.rows.map((o) => [o.user_id, o]));
+
+      return rows.map((r) => {
+        const o = byUser.get(r.userId);
+        return {
+          userId: r.userId,
+          email: r.email,
+          name: r.name,
+          userStatus: r.userStatus,
+          role: r.role,
+          membershipStatus: r.membershipStatus,
+          // pg devuelve Date para timestamptz; el tipo Kysely es ColumnType (Timestamp).
+          createdAt: r.createdAt as unknown as Date,
+          lastLoginAt: o?.last_login_at ?? null,
+          mfaEnabled: o?.mfa_enabled === true,
+          lockedUntil: o?.locked_until ?? null,
+          activeSessions: Number(o?.active_sessions ?? 0),
+        };
+      });
     });
   }
 

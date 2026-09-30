@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService, type AuditEntry } from '../audit/audit.service.js';
+import { AllowWithoutMfa } from '../auth/decorators/allow-without-mfa.decorator.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
@@ -152,6 +153,12 @@ export class TenantsController {
     });
   }
 
+  /**
+   * Exenta del MFA obligatorio: la pantalla de enrolamiento a la que el panel manda a un admin sin
+   * 2FA se pinta con la marca de su agencia, y sin esto le respondería 403 antes de poder enrolarse.
+   * Sólo lectura de la marca efectiva, que no expone nada sensible.
+   */
+  @AllowWithoutMfa()
   @Get(':id/branding')
   async getBranding(
     @CurrentUser() userId: string | undefined,

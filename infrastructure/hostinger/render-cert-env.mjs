@@ -23,6 +23,7 @@
  *
  * Los errores nombran la variable y el motivo, nunca el valor.
  */
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -80,6 +81,30 @@ export const STACK_ENV = Object.freeze([
     optional: true,
   },
 ]);
+
+/**
+ * Lo que el `.env` del stack lleva CALCULADO a partir de otra entrada, en vez de leído del job.
+ *
+ * `INTERNAL_PROXY_SECRET`: el secreto que comparten cert-api y cert-web-b2b (`x-internal-proxy`)
+ * para que el api crea la IP y el navegador del usuario que el panel le reenvía. Se deriva del
+ * `JWT_SECRET` del stack igual que en producción (.github/workflows/deploy.yml): sha256 hex de
+ * `internal-proxy:` + JWT_SECRET. Así no hay un secret más que cargar en el entorno `tbo-cert`, y
+ * el hash no deja recuperar el JWT_SECRET.
+ *
+ * @type {readonly { name: string, from: string, derive: (value: string) => string }[]}
+ */
+export const STACK_DERIVED = Object.freeze([
+  { name: 'INTERNAL_PROXY_SECRET', from: 'CERT_JWT_SECRET', derive: internalProxySecret },
+]);
+
+/**
+ * El mismo cálculo que el paso `Render .env` de producción.
+ *
+ * @param {string} jwtSecret
+ */
+export function internalProxySecret(jwtSecret) {
+  return createHash('sha256').update(`internal-proxy:${jwtSecret}`).digest('hex');
+}
 
 /**
  * Conexión del seed: el superusuario del stack, como `migrate` y tools/seed-superadmin. Fijos
@@ -322,6 +347,13 @@ export function renderCertEnv(source) {
   /** @type {string[]} */
   const issues = [];
   const stack = pick(STACK_ENV, source, issues);
+  // Sólo de una entrada que pasó su regla: si no, el issue ya está anotado y el render falla abajo.
+  for (const derived of STACK_DERIVED) {
+    const raw = source[derived.from] ?? '';
+    if (raw !== '' && !issues.some((issue) => issue.startsWith(`${derived.from}:`))) {
+      stack.push([derived.name, derived.derive(raw)]);
+    }
+  }
   const seed = [...Object.entries(SEED_CONNECTION), ...pick(SEED_ENV, source, issues)];
   const catalog = pickCatalog(source, issues);
   // Con la misma clave el api apaga la bóveda de RQ/RS en silencio, y esas RQ/RS son la evidencia

@@ -58,6 +58,9 @@ import {
 } from '../../../lib/provider-forms';
 import { providerAccountSaveError } from '../../../lib/provider-account-errors';
 import { canManageWalletsFromNetwork } from '../../../lib/wallet-access';
+import { seatFieldsPolicy } from '../../../lib/tenant-admin-form';
+import { idleError, parseIdle, parseSeats, seatsError } from '../../../lib/tenant-admin-seats';
+import { SeatPolicyFields } from '../admin/tenants/_components/seat-policy-fields';
 import {
   buildForest,
   createActionLabel,
@@ -110,6 +113,9 @@ interface CreateForm {
   adminEmail: string;
   adminName: string;
   adminPassword: string;
+  /** Puestos e inactividad propios; `''` = heredar. Sólo los fija el superadmin. */
+  concurrentSeats: string;
+  idleTimeoutMinutes: string;
 }
 
 const inputClass =
@@ -483,7 +489,16 @@ function CreateAgencyModal({
     adminEmail: '',
     adminName: '',
     adminPassword: '',
+    concurrentSeats: '',
+    idleTimeoutMinutes: '',
   });
+  // Puestos e inactividad: sólo el superadmin, y bajo la plataforma el cupo es obligatorio (sin él
+  // el nodo no tendría de quién heredarlo y quedaría sin límite).
+  const seatPolicy = seatFieldsPolicy(superadmin, parent.tenantType);
+  const [seatErrors, setSeatErrors] = useState<{
+    concurrentSeats?: string;
+    idleTimeoutMinutes?: string;
+  }>({});
 
   function onName(name: string) {
     setForm((f) => ({ ...f, name, slug: slugify(name) }));
@@ -499,7 +514,23 @@ function CreateAgencyModal({
       setError('Elegí qué tipo de nodo crear.');
       return;
     }
-    const { kind, adminEmail, adminName, adminPassword, ...rest } = form;
+    if (seatPolicy !== undefined) {
+      const concurrentSeats = seatsError(form.concurrentSeats, seatPolicy.seatsRequired);
+      const idleTimeoutMinutes = idleError(form.idleTimeoutMinutes);
+      setSeatErrors({ concurrentSeats, idleTimeoutMinutes });
+      if (concurrentSeats !== undefined || idleTimeoutMinutes !== undefined) return;
+    }
+    const {
+      kind,
+      adminEmail,
+      adminName,
+      adminPassword,
+      concurrentSeats: seatsDraft,
+      idleTimeoutMinutes: idleDraft,
+      ...rest
+    } = form;
+    const seats = seatPolicy === undefined ? undefined : parseSeats(seatsDraft);
+    const idle = seatPolicy === undefined ? undefined : parseIdle(idleDraft);
     setSaving(true);
     try {
       const res = await fetch('/api/admin/tenants', {
@@ -513,6 +544,8 @@ function CreateAgencyModal({
           ...(adminEmail.trim() ? { adminEmail: adminEmail.trim() } : {}),
           ...(adminName.trim() ? { adminName: adminName.trim() } : {}),
           ...(adminPassword ? { adminPassword } : {}),
+          ...(seats === undefined ? {} : { concurrentSeats: seats }),
+          ...(idle === undefined ? {} : { idleTimeoutMinutes: idle }),
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -596,6 +629,19 @@ function CreateAgencyModal({
             <option value="en">Inglés</option>
           </select>
         </Field>
+        {seatPolicy !== undefined ? (
+          <div className="sm:col-span-2">
+            <SeatPolicyFields
+              seats={form.concurrentSeats}
+              idle={form.idleTimeoutMinutes}
+              onSeats={(v) => setForm((f) => ({ ...f, concurrentSeats: v }))}
+              onIdle={(v) => setForm((f) => ({ ...f, idleTimeoutMinutes: v }))}
+              required={seatPolicy.seatsRequired}
+              parentName={parent.name}
+              errors={seatErrors}
+            />
+          </div>
+        ) : null}
         <div className="sm:col-span-2">
           <div className="my-1 border-t border-[var(--color-border)]" />
           <p className="text-xs font-medium text-[var(--color-fg-muted)]">

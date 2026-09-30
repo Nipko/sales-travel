@@ -94,6 +94,7 @@ export function Field({
     id: string;
     'aria-invalid': boolean;
     'aria-describedby': string | undefined;
+    'aria-required': boolean | undefined;
   }) => ReactNode;
 }) {
   const id = useId();
@@ -112,7 +113,14 @@ export function Field({
         ) : null}
       </label>
 
-      {children({ id, 'aria-invalid': Boolean(error), 'aria-describedby': describedBy })}
+      {/* `aria-required` porque el asterisco es aria-hidden: sin esto, un lector de pantalla no
+          anunciaba ningún campo obligatorio. */}
+      {children({
+        id,
+        'aria-invalid': Boolean(error),
+        'aria-describedby': describedBy,
+        'aria-required': required || undefined,
+      })}
 
       {error ? (
         <p id={errorId} role="alert" className="text-xs text-[var(--color-danger)]">
