@@ -31,9 +31,9 @@ const HARDENED_UP_TO = 60;
 
 /**
  * Las migraciones de 0054 a 0060 que llegan a producción antes que 0060 (las de 0001 a 0053 también,
- * las cuenta {@link UP_TO_0053}). 0056 es de `main` (#14) y todavía no está en esta rama: se aplica
- * antes que 0060 en producción y, por número, en una base nueva, así que la sección 12 la endurece
- * igual. Está en la lista para que traer `main` no la rechace.
+ * las cuenta {@link UP_TO_0053}). 0056 llegó de `main` (#14): se aplica antes que 0060 en producción
+ * y, por número, en una base nueva, así que la sección 12 la endurece igual. 0061, también de `main`,
+ * numera después de 0060 y cumple las reglas de las posteriores aunque en producción corra antes.
  *
  * Una que no esté acá: si llegó a producción antes que 0060 (de `main`, como 0056), se suma. Si 0060
  * ya está desplegada, es nueva y va después de 0060. Una migración ya aplicada nunca se renumera: el
