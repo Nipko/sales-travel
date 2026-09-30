@@ -1,6 +1,7 @@
 import { Loader2, Search } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { RESULTS_GRID } from './filters-aside';
 
 /*
  * La espera de una búsqueda, igual en vuelos, hoteles y autos: el botón pasa a «Buscando…» y el
@@ -173,7 +174,7 @@ const BONE = 'animate-pulse rounded bg-[var(--color-surface-muted)]';
  */
 export function ResultsSkeletonFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
+    <div className={RESULTS_GRID}>
       <div className="hidden space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] xl:block">
         <div className={cn(BONE, 'h-4 w-16')} />
         {[0, 1, 2].map((group) => (

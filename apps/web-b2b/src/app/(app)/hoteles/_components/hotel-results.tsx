@@ -3,7 +3,7 @@
 import { Ban, List, MapPinned, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Select } from '../../../../components/ui/field';
-import { FiltersAside } from '../../../../components/ui/filters-aside';
+import { FiltersAside, RESULTS_GRID } from '../../../../components/ui/filters-aside';
 import { cn } from '../../../../lib/cn';
 import type { HotelOffer, HotelSearchCriteriaView } from '../actions';
 import {
@@ -255,7 +255,7 @@ export function HotelResults({
       aria-busy={searching}
       className={cn('transition-opacity', searching && 'opacity-60')}
     >
-      <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
+      <div className={RESULTS_GRID}>
         <FiltersAside
           headerAction={<ClearFiltersButton filters={filters} onClear={clearFilters} />}
         >

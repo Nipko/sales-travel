@@ -10,6 +10,16 @@ import { ScrollFade } from './scroll-fade';
  * el alto que queda: el de la ventana menos la barra de arriba, el `top-4` del pegado y el
  * relleno de abajo de la página (`sm:p-6`), para que la columna termine a la par de la lista.
  */
+
+/**
+ * La grilla de la pantalla de resultados: esta columna y la lista. La usan la lista y su
+ * esqueleto (`search-loading`), para que al llegar no salte nada.
+ *
+ * 16rem y no 15: con la carga por tramos los conteos pasan de 100, y "Solo reembolsables" con un
+ * conteo de tres cifras al lado de la barra de scroll partía el renglón en dos.
+ */
+export const RESULTS_GRID = 'xl:grid xl:grid-cols-[16rem_minmax(0,1fr)] xl:items-start xl:gap-6';
+
 export function FiltersAside({
   headerAction,
   children,
