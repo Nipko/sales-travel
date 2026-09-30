@@ -268,12 +268,14 @@ d('quien financia establece las carteras (API como app_user)', () => {
         randomUUID(),
       );
 
+      // Thunks y no promesas: creadas juntas, la segunda puede rechazar mientras se espera la
+      // primera y queda como rechazo sin manejar (falló así contra Postgres real en el CI del #11).
       for (const read of [
-        financing.overview(siblingAdmin, agency),
-        financing.listMovements(siblingAdmin, agency),
-        financing.listDepositReports(siblingAdmin, agency),
+        () => financing.overview(siblingAdmin, agency),
+        () => financing.listMovements(siblingAdmin, agency),
+        () => financing.listDepositReports(siblingAdmin, agency),
       ]) {
-        expect(await denied(read)).toBe('403/PORTFOLIO_FINANCIER_REQUIRED');
+        expect(await denied(read())).toBe('403/PORTFOLIO_FINANCIER_REQUIRED');
       }
 
       const own = await portfolios.overview(sibling);
