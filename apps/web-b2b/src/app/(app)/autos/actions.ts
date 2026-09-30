@@ -1,6 +1,7 @@
 'use server';
 
 import { api } from '../../../lib/api';
+import { earliestTodayIso } from '../../../lib/earliest-today';
 
 // ─────────────────────────── Tipos (espejo del contrato /cars) ───────────────────────────
 
@@ -159,11 +160,6 @@ export interface DriverValues {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HOUR_RE = /^\d{4}$/;
 
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 /** Normaliza "HH:MM" o "1000" a HHMM de 4 dígitos. */
 function normalizeHour(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -176,7 +172,9 @@ function validSearch(v: CarSearchValues): string | null {
   if (!/^[A-Z]{2}$/.test(v.country)) return 'No pudimos determinar el país de destino.';
   if (!DATE_RE.test(v.pickUpDate)) return 'Elige una fecha de recogida válida.';
   if (!DATE_RE.test(v.dropOffDate)) return 'Elige una fecha de devolución válida.';
-  if (v.pickUpDate < todayISO()) return 'La recogida no puede ser anterior a hoy.';
+  // Piso: el "hoy" más temprano del mundo. El reloj del servidor va en UTC y la recogida se mide
+  // con el reloj del mostrador, que el formulario ya validó (`buildSearchValues`).
+  if (v.pickUpDate < earliestTodayIso()) return 'La recogida no puede ser anterior a hoy.';
   if (v.dropOffDate < v.pickUpDate)
     return 'La devolución debe ser igual o posterior a la recogida.';
   if (!HOUR_RE.test(v.pickUpHour)) return 'Hora de recogida inválida.';

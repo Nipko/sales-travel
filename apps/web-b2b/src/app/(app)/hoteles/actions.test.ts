@@ -65,6 +65,38 @@ describe('searchHotelsAction — nacionalidad del pasajero principal (RF-06, U-0
   });
 });
 
+describe('searchHotelsAction — la entrada de hoy, con el reloj del servidor en UTC', () => {
+  it('a las 20:30 de Bogotá (ya mañana en UTC) la entrada de esa noche sigue valiendo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-01T01:30:00Z'));
+    try {
+      const res = await searchHotelsAction(
+        INITIAL,
+        form({ checkinDate: '2026-09-30', checkoutDate: '2026-10-02' }),
+      );
+      expect(res.error).toBeUndefined();
+      expect(apiMock).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una entrada que ya pasó en todas partes se rechaza', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-01T13:00:00Z'));
+    try {
+      const res = await searchHotelsAction(
+        INITIAL,
+        form({ checkinDate: '2026-09-30', checkoutDate: '2026-10-02' }),
+      );
+      expect(res.error).toBe('La fecha de entrada no puede ser anterior a hoy.');
+      expect(apiMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('searchHotelsAction — destino del autocompletado (docs/tbo/05 §8.5)', () => {
   function destinoEnviado(): unknown {
     const [, init] = apiMock.mock.calls[0] as [string, { body: string }];
