@@ -205,7 +205,7 @@ GRANT SELECT, INSERT ON consumed_tokens TO app_user;
 CREATE OR REPLACE FUNCTION seat_pool_of(p_tenant UUID)
 RETURNS UUID
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   SELECT a.id
     FROM tenants t
@@ -222,7 +222,7 @@ COMMENT ON FUNCTION seat_pool_of(UUID) IS
 CREATE OR REPLACE FUNCTION effective_idle_timeout_minutes(p_tenant UUID)
 RETURNS INTEGER
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   SELECT COALESCE(
     (SELECT a.idle_timeout_minutes
@@ -258,7 +258,7 @@ COMMENT ON FUNCTION effective_idle_timeout_minutes(UUID) IS
 CREATE OR REPLACE FUNCTION seats_in_use(p_pool UUID, p_exclude_user UUID)
 RETURNS INTEGER
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   SELECT count(*)::int
     FROM sessions s
@@ -289,7 +289,7 @@ RETURNS TABLE (
   user_agent    TEXT
 )
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   SELECT s.id,
          s.user_id,
@@ -324,7 +324,7 @@ COMMENT ON FUNCTION pool_active_sessions(UUID) IS
 CREATE OR REPLACE FUNCTION revoke_session(p_session UUID, p_reason TEXT)
 RETURNS BOOLEAN
 LANGUAGE sql SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   WITH revoked AS (
     UPDATE sessions
@@ -353,7 +353,7 @@ COMMENT ON FUNCTION revoke_session(UUID, TEXT) IS
 CREATE OR REPLACE FUNCTION admin_reset_user_mfa(p_user UUID)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
 BEGIN
   UPDATE users
@@ -401,7 +401,7 @@ RETURNS TABLE (
   active_sessions  INTEGER
 )
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   WITH root AS (
     SELECT path FROM tenants WHERE id = p_tenant
@@ -455,7 +455,7 @@ COMMENT ON FUNCTION user_admin_overview(UUID) IS
 CREATE OR REPLACE FUNCTION refresh_session_idle_timeouts(p_tenant UUID)
 RETURNS INTEGER
 LANGUAGE sql SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = public
 AS $$
   WITH root AS (
     SELECT path FROM tenants WHERE id = p_tenant
