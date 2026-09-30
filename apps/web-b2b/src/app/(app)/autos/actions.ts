@@ -169,11 +169,11 @@ function normalizeHour(raw: string): string {
 }
 
 function validSearch(v: CarSearchValues): string | null {
-  if (!v.pickUpLocation) return 'Elegí el lugar de recogida.';
-  if (!v.dropOffLocation) return 'Elegí el lugar de devolución.';
+  if (!v.pickUpLocation) return 'Elige el lugar de recogida.';
+  if (!v.dropOffLocation) return 'Elige el lugar de devolución.';
   if (!/^[A-Z]{2}$/.test(v.country)) return 'No pudimos determinar el país de destino.';
-  if (!DATE_RE.test(v.pickUpDate)) return 'Ingresá una fecha de recogida válida.';
-  if (!DATE_RE.test(v.dropOffDate)) return 'Ingresá una fecha de devolución válida.';
+  if (!DATE_RE.test(v.pickUpDate)) return 'Elige una fecha de recogida válida.';
+  if (!DATE_RE.test(v.dropOffDate)) return 'Elige una fecha de devolución válida.';
   if (v.pickUpDate < todayISO()) return 'La recogida no puede ser anterior a hoy.';
   if (v.dropOffDate < v.pickUpDate)
     return 'La devolución debe ser igual o posterior a la recogida.';
@@ -339,7 +339,7 @@ export async function bookCarAction(
     return { ok: false, error: 'Nombre y apellido del conductor son requeridos.' };
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(driver.email)) {
-    return { ok: false, error: 'Ingresá un email válido.' };
+    return { ok: false, error: 'Escribe un correo válido.' };
   }
 
   const major = (m: Money): number => m.amountMinor / 100;

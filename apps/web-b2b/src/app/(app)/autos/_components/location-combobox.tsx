@@ -22,6 +22,12 @@ interface Props {
   value: CarLocation | null;
   onSelect: (loc: CarLocation | null) => void;
   placeholder?: string;
+  /** id del campo, para llevarle el foco desde el formulario cuando falta. */
+  inputId?: string;
+  /** El formulario lo marcó: falta elegir un lugar de la lista. */
+  invalid?: boolean;
+  /** id del mensaje que explica qué falta. */
+  describedBy?: string | undefined;
 }
 
 export function CarLocationCombobox({
@@ -29,8 +35,12 @@ export function CarLocationCombobox({
   value,
   onSelect,
   placeholder = 'Ciudad, aeropuerto o IATA',
+  inputId,
+  invalid = false,
+  describedBy,
 }: Props) {
-  const id = useId();
+  const autoId = useId();
+  const id = inputId ?? autoId;
   const listboxId = `${id}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -132,10 +142,15 @@ export function CarLocationCombobox({
           aria-expanded={open && items.length > 0}
           aria-controls={listboxId}
           aria-autocomplete="list"
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          className={inputClass}
+          className={cn(
+            inputClass,
+            invalid && 'border-[var(--color-danger)] focus-visible:ring-[var(--color-danger)]/25',
+          )}
         />
         {loading ? (
           <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-[var(--color-fg-subtle)]" />
@@ -185,7 +200,9 @@ export function CarLocationCombobox({
                   <p className="truncate font-medium">{loc.value}</p>
                   <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
                     {loc.countryCode}
-                    {loc.hasOffice > 0 ? ` · ${loc.hasOffice} oficina(s)` : ''}
+                    {loc.hasOffice > 0
+                      ? ` · ${loc.hasOffice} ${loc.hasOffice === 1 ? 'oficina' : 'oficinas'}`
+                      : ''}
                   </p>
                 </div>
                 {loc.iata ? (
@@ -209,7 +226,7 @@ export function CarLocationCombobox({
             Sin resultados para «{query.trim()}»
           </p>
           <p className="mt-1 text-[11px] text-[var(--color-fg-muted)]">
-            Probá con un código IATA (BOG, MIA) o el nombre de la ciudad. Las ciudades sin
+            Prueba con un código IATA (BOG, MIA) o el nombre de la ciudad. Las ciudades sin
             aeropuerto también sirven.
           </p>
         </div>

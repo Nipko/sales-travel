@@ -46,12 +46,12 @@ export interface FindOfficesResult {
 
 function validValues(v: FindOfficesValues): string | null {
   if (!Number.isFinite(v.distance) || v.distance <= 0) {
-    return 'Ingresá una distancia válida (en millas).';
+    return 'Escribe una distancia válida (en millas).';
   }
   const hasCoords = v.lat != null && v.lng != null;
   const hasCity = !!v.cityCode && v.cityCode.trim().length > 0;
   if (!hasCoords && !hasCity) {
-    return 'Indicá un código de ciudad (IATA) o coordenadas (lat y lng).';
+    return 'Indica un código de ciudad (IATA) o coordenadas (lat y lng).';
   }
   if (v.source && !/^[A-Za-z]{2}$/.test(v.source)) {
     return 'El país origen debe ser un código de 2 letras (ej: CO).';

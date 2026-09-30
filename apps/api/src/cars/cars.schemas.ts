@@ -21,7 +21,7 @@ export const FindOfficesQuerySchema = z
     cityCode: z.string().min(1).optional(),
   })
   .refine((v) => (v.lat != null && v.lng != null) || v.cityCode != null, {
-    message: 'Indicá coordenadas (lat y lng) o un cityCode.',
+    message: 'Indica coordenadas (lat y lng) o un cityCode.',
     path: ['cityCode'],
   });
 
@@ -73,7 +73,7 @@ function cityCoordsOk(v: {
 
 const cityCoordsRefinement = {
   message:
-    'Búsqueda por ciudad: enviá lat/lng cuando pickUpLocation="City" y latDropOff/lngDropOff cuando dropOffLocation="City2".',
+    'Búsqueda por ciudad: envía lat/lng cuando pickUpLocation="City" y latDropOff/lngDropOff cuando dropOffLocation="City2".',
   path: ['lat'] as (string | number)[],
 };
 
