@@ -1,7 +1,6 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
-import { PasswordService } from '../auth/password.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role, TenantStatus, TenantType } from '../database/database.types.js';
 import {
@@ -47,16 +46,20 @@ export interface NetworkNode extends TenantState {
 }
 
 /**
- * Qué pasó con el admin inicial:
- * - `created`: no tenía cuenta; se creó con la contraseña del formulario.
- * - `invited`: ya tenía cuenta, o no vino contraseña; acepta por invitación y elige la suya.
- * - `invite_failed`: el nodo se creó pero la invitación no; se reenvía desde Usuarios.
+ * Qué pasó con el admin inicial, que siempre se invita (docs/platform/14):
+ * - `invited`: la invitación quedó pendiente y salió el correo; acepta y elige su contraseña. Lo
+ *   mismo tenga o no cuenta en la plataforma: la respuesta no lo delata.
+ * - `invite_failed`: el nodo se creó pero la invitación no; se invita desde Equipo.
  */
-export type InitialAdminOutcome = 'created' | 'invited' | 'invite_failed';
+export type InitialAdminOutcome = 'invited' | 'invite_failed';
+
+export type InitialAdmin =
+  | { email: string; role: Role; status: 'invited'; invitationId: string; expiresAt: Date }
+  | { email: string; role: Role; status: 'invite_failed' };
 
 export interface CreatedTenant {
   tenant: TenantState;
-  admin?: { email: string; role: Role; status: InitialAdminOutcome };
+  admin?: InitialAdmin;
 }
 
 /**
@@ -141,7 +144,6 @@ export class TenantsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly network: NetworkService,
-    private readonly password: PasswordService,
     private readonly invitations: InvitationsService,
     private readonly audit: AuditService,
     private readonly enablement: ProviderEnablementStore,
@@ -216,20 +218,7 @@ export class TenantsService {
       );
     }
 
-    const existingAdmin =
-      adminEmail === undefined
-        ? undefined
-        : await this.db.db
-            .selectFrom('users')
-            .select('id')
-            .where('email', '=', adminEmail)
-            .executeTakeFirst();
-    const passwordHash =
-      adminEmail !== undefined && existingAdmin === undefined && input.adminPassword !== undefined
-        ? await this.password.hash(input.adminPassword)
-        : undefined;
-
-    const { tenant, adminCreated } = await this.db
+    const tenant = await this.db
       .withRequestContext({ userId: actorUserId }, async (trx) => {
         const row = await trx
           .insertInto('tenants')
@@ -250,18 +239,6 @@ export class TenantsService {
           .executeTakeFirst();
         if (!row) throw new TenantSlugTakenError();
 
-        const created =
-          adminEmail !== undefined && adminRole !== undefined && passwordHash !== undefined
-            ? await this.createAdmin(trx, {
-                tenantId: row.id,
-                email: adminEmail,
-                name: input.adminName,
-                passwordHash,
-                role: adminRole,
-                invitedBy: actorUserId,
-              })
-            : false;
-
         await this.audit.emitWithin(trx, {
           eventType: 'TenantCreated',
           tenantId: row.id,
@@ -279,28 +256,33 @@ export class TenantsService {
             ...(input.idleTimeoutMinutes === undefined
               ? {}
               : { idleTimeoutMinutes: input.idleTimeoutMinutes }),
-            ...(adminRole === undefined
-              ? {}
-              : { adminRole, admin: created ? 'created' : 'invited' }),
+            ...(adminRole === undefined ? {} : { adminRole, admin: 'invited' }),
           },
         });
 
-        return { tenant: await this.stateOf(trx, row.id), adminCreated: created };
+        return this.stateOf(trx, row.id);
       })
       .catch(rethrow);
 
     if (adminEmail === undefined || adminRole === undefined) return { tenant };
-    if (adminCreated)
-      return { tenant, admin: { email: adminEmail, role: adminRole, status: 'created' } };
 
     try {
-      await this.invitations.invite({
+      const invitation = await this.invitations.invite({
         actorUserId,
         tenantId: tenant.id,
         email: adminEmail,
         role: adminRole,
       });
-      return { tenant, admin: { email: adminEmail, role: adminRole, status: 'invited' } };
+      return {
+        tenant,
+        admin: {
+          email: adminEmail,
+          role: adminRole,
+          status: 'invited',
+          invitationId: invitation.id,
+          expiresAt: invitation.expiresAt,
+        },
+      };
     } catch (err) {
       // Sin el email: es PII y el id del nodo alcanza para encontrarlo en la auditoría.
       this.logger.warn(
@@ -564,41 +546,5 @@ export class TenantsService {
       .executeTakeFirst();
     if (!row) throw new TenantHierarchyNotFoundError('TENANT_NOT_FOUND');
     return toState(row);
-  }
-
-  /**
-   * Crea la cuenta del admin inicial y su membership. `false` si el email ya tenía cuenta (se creó
-   * entre la consulta y el alta): a ése no se le vincula, se le invita.
-   */
-  private async createAdmin(
-    trx: Transaction<DB>,
-    admin: {
-      tenantId: string;
-      email: string;
-      name: string | undefined;
-      passwordHash: string;
-      role: Role;
-      invitedBy: string;
-    },
-  ): Promise<boolean> {
-    const user = await trx
-      .insertInto('users')
-      .values({ email: admin.email, name: admin.name ?? null, password_hash: admin.passwordHash })
-      .onConflict((oc) => oc.column('email').doNothing())
-      .returning('id')
-      .executeTakeFirst();
-    if (!user) return false;
-
-    await sql`SELECT set_config('app.current_tenant_id', ${admin.tenantId}, true)`.execute(trx);
-    await trx
-      .insertInto('memberships')
-      .values({
-        tenant_id: admin.tenantId,
-        user_id: user.id,
-        role: admin.role,
-        invited_by: admin.invitedBy,
-      })
-      .execute();
-    return true;
   }
 }

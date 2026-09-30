@@ -188,7 +188,7 @@ describe('RequestContextMiddleware', () => {
     const { context } = await contextFor(valid(), {
       headers: {
         'x-internal-proxy': SECRET,
-        'x-client-ip': '172.68.10.1|190.24.8.9',
+        'x-client-ip': '190.24.8.9',
         'x-client-user-agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/129',
         'user-agent': 'undici',
       },
@@ -197,6 +197,18 @@ describe('RequestContextMiddleware', () => {
       ip: '190.24.8.9',
       userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/129',
     });
+  });
+
+  it('directo al api, la IP es la que resolvió Caddy y no CF-Connecting-IP', async () => {
+    vi.stubEnv('INTERNAL_PROXY_SECRET', SECRET);
+    const { context } = await contextFor(valid(), {
+      headers: {
+        'x-edge-peer-ip': '190.24.8.9',
+        'cf-connecting-ip': '203.0.113.66',
+        'user-agent': 'curl/8',
+      },
+    });
+    expect(context).toMatchObject({ ip: '190.24.8.9', userAgent: 'curl/8' });
   });
 
   it('sin el secreto, los x-client-* se ignoran', async () => {

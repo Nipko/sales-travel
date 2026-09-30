@@ -20,8 +20,8 @@ import { TenantsService } from './tenants.service.js';
 /**
  * El alta y la corrección de nodos por la API contra Postgres (G-05, G-06, G-07, G-09; D4 A, D6 A):
  * lo que el doble del controlador no puede probar. Que el tipo derivado entra por el trigger de 0050,
- * que el admin inicial queda con el rol que corresponde y un email existente se invita en vez de
- * vincularse, que el PATCH deja su evento con el antes y el después en la misma transacción, que
+ * que el admin inicial queda invitado con el rol que corresponde (sin cuenta ni membership, tenga o
+ * no cuenta), que el PATCH deja su evento con el antes y el después en la misma transacción, que
  * suspender un nodo corta el rol de su red, que mover llama a `move_tenant_subtree` con el actor y
  * no escribe un segundo evento, y que el rango se mide sobre el nodo destino.
  *
@@ -87,7 +87,6 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
   const service = new TenantsService(
     database,
     network,
-    password,
     invitations,
     audit,
     enablement as unknown as ProviderEnablementStore,
@@ -402,25 +401,31 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
     });
   });
 
-  describe('admin inicial: nunca un rol superior al propio, y a una cuenta existente se la invita (G-06)', () => {
-    const clave = 'una-clave-larga-de-prueba';
+  describe('admin inicial: nunca un rol superior al propio, y siempre por invitación (G-06, docs/platform/14)', () => {
+    /** El rol de la invitación pendiente de `email` en el nodo; `undefined` si no hay. */
+    async function invitedRole(tenantId: string, email: string): Promise<string | undefined> {
+      const { rows } = await pool.query<{ role: string }>(
+        `SELECT role FROM user_invitations
+          WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL`,
+        [tenantId, email],
+      );
+      return rows[0]?.role;
+    }
 
-    it('el superadmin da el rol del tipo de nodo; el admin nuevo se crea con su membership', async () => {
+    it('el superadmin da el rol del tipo de nodo; el admin nuevo queda invitado, sin cuenta', async () => {
       const email = `ta-nuevo-c-${sfx}@test.local`;
       const res = await service.create(
         superadmin,
-        alta('c-admin', {
-          tenantType: 'consolidator',
-          adminEmail: email,
-          adminName: 'Ana',
-          adminPassword: clave,
-        }),
+        alta('c-admin', { tenantType: 'consolidator', adminEmail: email }),
       );
 
-      expect(res.admin).toEqual({ email, role: 'consolidator_admin', status: 'created' });
-      expect(await membershipRole(res.tenant.id, email)).toBe('consolidator_admin');
+      expect(res.admin).toMatchObject({ email, role: 'consolidator_admin', status: 'invited' });
+      expect(await invitedRole(res.tenant.id, email)).toBe('consolidator_admin');
+      expect(await membershipRole(res.tenant.id, email)).toBeUndefined();
+      const { rows } = await pool.query('SELECT 1 FROM users WHERE email = $1', [email]);
+      expect(rows).toHaveLength(0);
       const [evento] = await events('TenantCreated', res.tenant.id);
-      expect(evento!.payload).toMatchObject({ adminRole: 'consolidator_admin', admin: 'created' });
+      expect(evento!.payload).toMatchObject({ adminRole: 'consolidator_admin', admin: 'invited' });
       expect(JSON.stringify(evento!.payload)).not.toContain(email);
     });
 
@@ -429,24 +434,23 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
       const e2 = `ta-nuevo-s-${sfx}@test.local`;
       const a = await service.create(
         consAdmin,
-        alta('a-admin', { parentTenantId: cons, adminEmail: e1, adminPassword: clave }),
+        alta('a-admin', { parentTenantId: cons, adminEmail: e1 }),
       );
       const s = await service.create(
         agencyAdmin,
-        alta('s-admin', { parentTenantId: agency, adminEmail: e2, adminPassword: clave }),
+        alta('s-admin', { parentTenantId: agency, adminEmail: e2 }),
       );
 
       expect(a.admin?.role).toBe('tenant_admin');
-      expect(await membershipRole(a.tenant.id, e1)).toBe('tenant_admin');
+      expect(await invitedRole(a.tenant.id, e1)).toBe('tenant_admin');
       expect(s.admin?.role).toBe('agency_admin');
-      expect(await membershipRole(s.tenant.id, e2)).toBe('agency_admin');
+      expect(await invitedRole(s.tenant.id, e2)).toBe('agency_admin');
     });
 
     it('un `admin` no puede darle admin al nodo nuevo: 403 y no se crea nada', async () => {
       const body = alta('plain', {
         parentTenantId: agency,
         adminEmail: `ta-nadie-${sfx}@test.local`,
-        adminPassword: clave,
       });
       expect(await rejection(service.create(agencyPlainAdmin, body))).toBe(
         '403/ROLE_NOT_GRANTABLE',
@@ -460,14 +464,11 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
       expect(sinAdmin.tenant.tenantType).toBe('subagency');
     });
 
-    it('un email que ya tiene cuenta no se vincula: se le invita y su contraseña no se toca', async () => {
+    it('un email que ya tiene cuenta no se vincula: se le invita y su cuenta no se toca', async () => {
       const email = `ta-agency-admin-${sfx}@test.local`;
-      const res = await service.create(
-        superadmin,
-        alta('existente', { adminEmail: email, adminName: 'Otro nombre', adminPassword: clave }),
-      );
+      const res = await service.create(superadmin, alta('existente', { adminEmail: email }));
 
-      expect(res.admin).toEqual({ email, role: 'tenant_admin', status: 'invited' });
+      expect(res.admin).toMatchObject({ email, role: 'tenant_admin', status: 'invited' });
       expect(await membershipRole(res.tenant.id, email)).toBeUndefined();
       const { rows: inv } = await pool.query<{ role: string; accepted_at: Date | null }>(
         'SELECT role, accepted_at FROM user_invitations WHERE tenant_id = $1 AND email = $2',
@@ -485,16 +486,24 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
       });
     });
 
-    it('sin contraseña, el admin nuevo también se invita', async () => {
-      const email = `ta-sin-clave-${sfx}@test.local`;
+    it('la respuesta trae la invitación para reenviarla: su id y cuándo vence', async () => {
+      const email = `ta-con-vencimiento-${sfx}@test.local`;
       const res = await service.create(
         consAdmin,
-        alta('sin-clave', { parentTenantId: cons, adminEmail: email }),
+        alta('vence', { parentTenantId: cons, adminEmail: email }),
       );
 
-      expect(res.admin).toEqual({ email, role: 'tenant_admin', status: 'invited' });
-      const { rows } = await pool.query('SELECT 1 FROM users WHERE email = $1', [email]);
-      expect(rows).toHaveLength(0);
+      const { rows } = await pool.query<{ id: string; expires_at: Date }>(
+        'SELECT id, expires_at FROM user_invitations WHERE tenant_id = $1 AND email = $2',
+        [res.tenant.id, email],
+      );
+      expect(res.admin).toEqual({
+        email,
+        role: 'tenant_admin',
+        status: 'invited',
+        invitationId: rows[0]!.id,
+        expiresAt: rows[0]!.expires_at,
+      });
     });
   });
 

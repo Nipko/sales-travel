@@ -8,7 +8,6 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import type { PasswordService } from '../auth/password.service.js';
 import type { SessionService } from '../auth/session.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
@@ -19,7 +18,6 @@ import { AdminController } from './admin.controller.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
-  CreateUserSchema,
   InviteUserSchema,
   MembershipImpactQuerySchema,
   MoveTenantSchema,
@@ -69,7 +67,6 @@ function banco({
   };
   const controller = new AdminController(
     db as unknown as DatabaseService,
-    {} as PasswordService,
     network as unknown as NetworkService,
     { emit: vi.fn() } as unknown as AuditService,
     {} as SessionService,
@@ -156,47 +153,6 @@ describe('AdminController: corrección de la red, sólo superadmin', () => {
 });
 
 describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () => {
-  const alta = {
-    email: 'nuevo@example.com',
-    name: 'Nuevo',
-    password: 'una-clave-larga',
-    tenantId: NODO,
-  };
-
-  it('createUser: quien no administra el destino recibe 403', async () => {
-    const { controller, network } = banco({ roleOver: undefined });
-
-    await expect(controller.createUser(ACTOR, { ...alta, role: 'vendedor' })).rejects.toThrow(
-      'target tenant is outside your network',
-    );
-    expect(network.roleOver).toHaveBeenCalledWith(ACTOR, NODO);
-  });
-
-  it.each<[Role, Role]>([
-    ['admin', 'tenant_admin'],
-    ['admin', 'consolidator_admin'],
-    ['admin', 'admin'],
-    ['tenant_admin', 'tenant_admin'],
-    ['tenant_admin', 'consolidator_admin'],
-  ])('createUser: un %s sobre el destino no crea un %s', async (actor, role) => {
-    const { controller, db } = banco({ roleOver: actor });
-
-    await expect(
-      controller.createUser(ACTOR, { ...alta, role: role as 'vendedor' }),
-    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
-    expect(db.withRequestContext).not.toHaveBeenCalled();
-  });
-
-  it('el rol del tenant activo no cuenta: consolidator_admin en su red, admin en el destino', async () => {
-    const { controller } = banco({ roleOver: 'admin' });
-
-    await expect(
-      requestContextStorage.run({ userId: ACTOR, role: 'consolidator_admin' }, () =>
-        controller.createUser(ACTOR, { ...alta, role: 'tenant_admin' }),
-      ),
-    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
-  });
-
   it('changeRole: hay que superar el rol actual y el nuevo, sobre el destino', async () => {
     const vendedor = { id: 'm-1', role: 'vendedor' as Role };
 
@@ -418,7 +374,6 @@ describe('Zod en los bordes', () => {
           ...base,
           defaultLanguage: 'es',
           adminEmail: '',
-          adminName: '  ',
           adminPassword: '',
           parentTenantId: '',
           tenantType: '',
@@ -433,16 +388,12 @@ describe('Zod en los bordes', () => {
           ...base,
           parentTenantId: PADRE.toUpperCase(),
           adminEmail: '  Ana@Example.com ',
-          adminName: ' Ana ',
-          adminPassword: 'una-clave-larga',
           isBranch: true,
         }),
       ).toEqual({
         ...base,
         parentTenantId: PADRE,
         adminEmail: 'ana@example.com',
-        adminName: 'Ana',
-        adminPassword: 'una-clave-larga',
         isBranch: true,
       });
     });
@@ -450,9 +401,11 @@ describe('Zod en los bordes', () => {
     it.each([
       ['la plataforma no se crea por API', { tenantType: 'platform' }],
       ['un tipo desconocido', { tenantType: 'sucursal' }],
-      ['nombre o contraseña del admin sin su email', { adminName: 'Ana' }],
+      [
+        'contraseña del admin (se invita)',
+        { adminEmail: 'a@example.com', adminPassword: 'x'.repeat(16) },
+      ],
       ['contraseña sin email', { adminPassword: 'una-clave-larga' }],
-      ['contraseña corta', { adminEmail: 'a@example.com', adminPassword: 'corta' }],
       ['email inválido', { adminEmail: 'no-es-email' }],
       ['padre que no es uuid', { parentTenantId: 'platform' }],
       ['isBranch no booleano', { isBranch: 'si' }],
@@ -599,15 +552,6 @@ describe('Zod en los bordes', () => {
       expect(() => new ZodValidationPipe(ChangeRoleSchema).transform({ ...ids, role })).toThrow(
         BadRequestException,
       );
-      expect(() =>
-        new ZodValidationPipe(CreateUserSchema).transform({
-          email: 'a@example.com',
-          name: 'A',
-          password: 'una-clave-larga',
-          tenantId: NODO,
-          role,
-        }),
-      ).toThrow(BadRequestException);
       expect(() =>
         new ZodValidationPipe(InviteUserSchema).transform({
           email: 'a@example.com',

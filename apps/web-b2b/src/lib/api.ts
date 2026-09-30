@@ -15,6 +15,8 @@ export const INTERNAL_PROXY_HEADER = 'x-internal-proxy';
 export const CLIENT_IP_HEADER = 'x-client-ip';
 export const CLIENT_USER_AGENT_HEADER = 'x-client-user-agent';
 export const TRUSTED_DEVICE_HEADER = 'x-trusted-device';
+/** Donde Caddy deja la IP del usuario que resolvió (el nombre es histórico: ya no es el peer TCP). */
+export const EDGE_CLIENT_IP_HEADER = 'x-edge-peer-ip';
 
 /** El API trata un secreto más corto como no configurado: mandarlo no serviría de nada. */
 const MIN_PROXY_SECRET_LENGTH = 32;
@@ -36,11 +38,12 @@ function ipFrom(value: string | null): string | undefined {
 /**
  * `x-client-ip`, `x-client-user-agent` y `x-internal-proxy` a partir del request del navegador.
  *
- * La IP va como la arma `IpThrottlerGuard`: `X-Edge-Peer-IP` (Caddy la borra del request entrante
- * y la reescribe con el peer TCP real, así que no se puede falsificar) y, si vino,
- * `CF-Connecting-IP` detrás: `peer|cf`. El API toma la última como IP del usuario y el par entero
- * como clave del throttler, así que forjar `CF-Connecting-IP` no despega la clave del peer. Sin el
- * peer (desarrollo, sin Caddy) no se manda IP: una `CF-Connecting-IP` suelta no la respalda nadie.
+ * La IP es UNA: la `X-Edge-Peer-IP` que Caddy le puso al request, su `{client_ip}`. Caddy cree
+ * `CF-Connecting-IP` sólo si la conexión viene de Cloudflare (si no, usa el peer TCP) y escribe
+ * `X-Edge-Peer-IP` pisando la que mande el navegador (`infrastructure/hostinger/Caddyfile`). El API
+ * la usa como IP del usuario y como clave del throttler, igual que cuando el usuario llama directo
+ * al api. `CF-Connecting-IP` no se lee: la escribe cualquiera que llegue al origen sin Cloudflare.
+ * Sin `X-Edge-Peer-IP` (desarrollo, sin Caddy) no se manda IP.
  *
  * Sin secreto configurado no se manda NADA: el API las ignoraría igual.
  */
@@ -51,9 +54,8 @@ export function clientOriginHeaders(
   if (!incoming || !secret || secret.length < MIN_PROXY_SECRET_LENGTH) return {};
   const out: Record<string, string> = { [INTERNAL_PROXY_HEADER]: secret };
 
-  const peer = ipFrom(incoming.get('x-edge-peer-ip'));
-  const claimed = ipFrom(incoming.get('cf-connecting-ip'));
-  if (peer) out[CLIENT_IP_HEADER] = claimed && claimed !== peer ? `${peer}|${claimed}` : peer;
+  const clientIp = ipFrom(incoming.get(EDGE_CLIENT_IP_HEADER));
+  if (clientIp) out[CLIENT_IP_HEADER] = clientIp;
 
   // Sólo ASCII imprimible: `Headers.set` rechaza caracteres de control y los que no son Latin-1.
   const userAgent = (incoming.get('user-agent') ?? '')
