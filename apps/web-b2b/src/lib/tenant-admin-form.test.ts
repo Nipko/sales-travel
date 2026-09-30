@@ -110,7 +110,7 @@ describe('createdMessage', () => {
       'Planetour S.A.S',
     );
     expect(msg.warn).toBe(true);
-    expect(msg.detail).toMatch(/invitalo desde Equipo/);
+    expect(msg.detail).toMatch(/invítalo desde Equipo/);
   });
 
   it('invitado: a quién, cuándo vence y dónde reenviarla', () => {
@@ -126,7 +126,7 @@ describe('createdMessage', () => {
     );
     expect(msg.warn).toBe(false);
     expect(msg.detail).toBe(
-      'Invitamos a ana@andes.co (la invitación vence en 7 días): elige su contraseña al aceptar. Si no le llega, reenviala desde Equipo.',
+      'Invitamos a ana@andes.co (la invitación vence en 7 días): elige su contraseña al aceptar. Si no le llega, reenvíala desde Equipo.',
     );
   });
 });

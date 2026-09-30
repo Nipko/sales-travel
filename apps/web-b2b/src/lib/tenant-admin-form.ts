@@ -181,14 +181,14 @@ export function createdMessage(
       const when = expiry === undefined ? '' : ` (la invitación ${expiry.label})`;
       return {
         title,
-        detail: `Invitamos a ${created.admin.email}${when}: elige su contraseña al aceptar. Si no le llega, reenviala desde Equipo.`,
+        detail: `Invitamos a ${created.admin.email}${when}: elige su contraseña al aceptar. Si no le llega, reenvíala desde Equipo.`,
         warn: false,
       };
     }
     case 'invite_failed':
       return {
         title,
-        detail: `La invitación a ${created.admin.email} no salió: invitalo desde Equipo.`,
+        detail: `La invitación a ${created.admin.email} no salió: invítalo desde Equipo.`,
         warn: true,
       };
     default:

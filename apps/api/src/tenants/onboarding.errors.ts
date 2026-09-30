@@ -10,7 +10,7 @@ export class UserCreationRetiredError extends GoneException {
   readonly reason = 'USER_CREATION_RETIRED';
 
   constructor() {
-    super('Los usuarios se suman por invitación: usá POST /invitations.');
+    super('Los usuarios se suman por invitación: usa POST /invitations.');
     this.name = 'UserCreationRetiredError';
   }
 }

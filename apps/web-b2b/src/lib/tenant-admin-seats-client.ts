@@ -194,7 +194,7 @@ export function resendInvitation(
     parseResent,
     (status, message) =>
       status === 401
-        ? 'Tu sesión venció. Volvé a iniciar sesión.'
-        : message?.trim() || 'No pudimos reenviar la invitación. Probá de nuevo.',
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
 }

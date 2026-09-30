@@ -207,7 +207,7 @@ export class InvitationsService {
         if (!pending) throw new InvitationNotPendingError();
         if (!canGrantRole(actorRole, pending.role)) {
           throw new RoleNotGrantableError(
-            'No podés reenviar una invitación con un rol igual o superior al tuyo.',
+            'No puedes reenviar una invitación con un rol igual o superior al tuyo.',
           );
         }
 
