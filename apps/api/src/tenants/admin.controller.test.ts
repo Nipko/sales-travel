@@ -21,6 +21,7 @@ import {
   CreateTenantSchema,
   CreateUserSchema,
   InviteUserSchema,
+  MembershipImpactQuerySchema,
   MoveTenantSchema,
   TenantIdParamSchema,
   UpdateSeatsSchema,
@@ -62,6 +63,10 @@ function banco({
   const seats = {
     updatePolicy: vi.fn(() => Promise.resolve({ poolTenantId: NODO })),
   };
+  const invitations = {
+    orphanedInvitations: vi.fn(() => Promise.resolve([])),
+    revokeOrphaned: vi.fn(() => Promise.resolve([])),
+  };
   const controller = new AdminController(
     db as unknown as DatabaseService,
     {} as PasswordService,
@@ -70,8 +75,9 @@ function banco({
     {} as SessionService,
     tenants as unknown as TenantsService,
     seats as unknown as SeatsService,
+    invitations as unknown as InvitationsService,
   );
-  return { controller, network, tenants, db, seats };
+  return { controller, network, tenants, db, seats, invitations };
 }
 
 describe('AdminController: corrección de la red, sólo superadmin', () => {
@@ -220,6 +226,53 @@ describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () =>
     await expect(
       controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'suspended' }),
     ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
+  });
+
+  it('impacto: mismas barreras que el cambio, y no simula nada si no pasan', async () => {
+    const pedir = (c: AdminController, u: string | undefined, extra: object) =>
+      c.membershipImpact(u, { userId: OTRO, tenantId: NODO, ...extra });
+
+    const fuera = banco({ roleOver: undefined });
+    await expect(
+      pedir(fuera.controller, undefined, { status: 'suspended' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      fuera.controller.membershipImpact(ACTOR, {
+        userId: ACTOR,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(pedir(fuera.controller, ACTOR, { status: 'suspended' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(fuera.db.withRequestContext).not.toHaveBeenCalled();
+
+    const superior = banco({ roleOver: 'admin', membresia: { id: 'm-4', role: 'tenant_admin' } });
+    await expect(pedir(superior.controller, ACTOR, { status: 'suspended' })).rejects.toMatchObject({
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    const subir = banco({ roleOver: 'admin', membresia: { id: 'm-5', role: 'vendedor' } });
+    await expect(pedir(subir.controller, ACTOR, { role: 'tenant_admin' })).rejects.toMatchObject({
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    for (const b of [superior, subir]) {
+      expect(b.invitations.orphanedInvitations).not.toHaveBeenCalled();
+    }
+  });
+
+  it('impacto: reactivar no revoca nada y no abre la simulación', async () => {
+    const { controller, db, invitations } = banco({
+      roleOver: 'tenant_admin',
+      membresia: { id: 'm-6', role: 'admin' },
+    });
+
+    await expect(
+      controller.membershipImpact(ACTOR, { userId: OTRO, tenantId: NODO, status: 'active' }),
+    ).resolves.toEqual({ invitationsToRevoke: 0 });
+    // Sólo la lectura de la membership destino.
+    expect(db.withRequestContext).toHaveBeenCalledTimes(1);
+    expect(invitations.orphanedInvitations).not.toHaveBeenCalled();
   });
 
   it('changeRole y setMembershipStatus: fuera de la red es 403 antes de leer nada', async () => {
@@ -513,6 +566,30 @@ describe('Zod en los bordes', () => {
       const id = new ZodValidationPipe(TenantIdParamSchema);
       expect(id.transform(NODO.toUpperCase())).toBe(NODO);
       expect(() => id.transform('platform')).toThrow(BadRequestException);
+    });
+  });
+
+  describe('impacto de un cambio sobre una membership', () => {
+    const impacto = new ZodValidationPipe(MembershipImpactQuerySchema);
+    const ids = { userId: OTRO, tenantId: NODO };
+
+    it('suspender o un rol asignable', () => {
+      expect(impacto.transform({ ...ids, status: 'suspended' })).toEqual({
+        ...ids,
+        status: 'suspended',
+      });
+      expect(impacto.transform({ ...ids, role: 'vendedor' })).toEqual({ ...ids, role: 'vendedor' });
+    });
+
+    it.each([
+      ['ni estado ni rol', ids],
+      ['los dos', { ...ids, status: 'suspended', role: 'vendedor' }],
+      ['un rol de plataforma', { ...ids, role: 'superadmin' }],
+      ['un estado desconocido', { ...ids, status: 'archived' }],
+      ['sin el nodo', { userId: OTRO, status: 'suspended' }],
+      ['campos de más', { ...ids, status: 'suspended', dryRun: 'false' }],
+    ])('rechaza: %s', (_q, query) => {
+      expect(() => impacto.transform(query)).toThrow(BadRequestException);
     });
   });
 
