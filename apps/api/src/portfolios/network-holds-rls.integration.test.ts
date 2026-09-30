@@ -514,13 +514,14 @@ d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
     });
   });
 
-  // ON DELETE RESTRICT: la base responde restrict_violation (23001), de la familia de 23503.
+  // ON DELETE RESTRICT: Postgres 16 (producción y CI) responde foreign_key_violation (23503) y
+  // versiones posteriores, como la de PGlite, restrict_violation (23001). La regla es la misma.
   it('borrar una orden o un tenant con su retención registrada falla', async () => {
-    expect(await rule(admin.query('DELETE FROM orders WHERE id = $1', [orderS1]))).toBe(
-      '23001/wallet_hold_groups_order_fk',
+    expect(await rule(admin.query('DELETE FROM orders WHERE id = $1', [orderS1]))).toMatch(
+      /^(23001|23503)\/wallet_hold_groups_order_fk$/,
     );
     expect(await rule(admin.query('DELETE FROM tenants WHERE id = $1', [net.ids.S1]))).toMatch(
-      /^230(01|03)\//,
+      /^(23001|23503)\//,
     );
   });
 });
