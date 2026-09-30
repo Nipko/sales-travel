@@ -572,6 +572,7 @@ Sobre auth premium (#12: puestos simultáneos, una sesión por usuario, `SEATS_F
   - El drawer móvil se dibuja en un portal a `<body>`: el `backdrop-filter` del header lo encerraba en sus 56 px.
 - **Tests:** criterio y vista de memberships (unit), `AuthService` con dobles, y [`tenant-switch.integration.test.ts`](../../apps/api/src/auth/tenant-switch.integration.test.ts) contra Postgres como `app_user` (en CI). En la web, la lógica pura (`agencies`, `tenant-switch`, `command-menu`, middleware) y el render del selector.
 - **Pendiente:** elegir con qué agencia entrar cuando el cupo de la por defecto está lleno en el login (hoy se muestra `SEATS_FULL` de esa agencia), y llevar a la pantalla de inicio si la página abierta no existe en la agencia nueva (hoy se refresca la misma ruta).
+
 ## §12 — Suspender corta el nodo, no a la persona; invitaciones con respaldo (2026-09-29)
 
 Cierra dos brechas de la auditoría del 2026-09-29. Va sobre auth premium (#12, 0055).
