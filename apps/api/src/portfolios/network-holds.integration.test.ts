@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   NETWORK,
   NETWORK_HOLD_CASES,
+  expectedOwner,
   cascadeProvider,
   cascadeVertical,
   expectedHolds,
@@ -177,6 +178,8 @@ d('retención en cascada por la red (0060, como app_user)', () => {
       selectedOffer?: Record<string, unknown>;
       /** `null` = la orden no dice su vertical (vuelos: la base asume 'flights'). */
       vertical?: string | null;
+      /** Otro proveedor que el de la corrida (p. ej. uno sin cuentas en la bóveda). */
+      provider?: string;
       status?: 'pending' | 'confirmed' | 'failed';
       tenantId?: string;
       userId?: string;
@@ -187,7 +190,7 @@ d('retención en cascada por la red (0060, como app_user)', () => {
     return seedOrder(admin, {
       tenantId: opts.tenantId ?? id(seller),
       userId: opts.userId ?? net.sellers[seller],
-      provider: net.provider,
+      provider: opts.provider ?? net.provider,
       totalMinor: saleOf(seller),
       currency,
       accountId: accountOf(owner),
@@ -305,7 +308,12 @@ d('retención en cascada por la red (0060, como app_user)', () => {
   describe('quién retiene y cuánto (spec §1.4)', () => {
     it.each(NETWORK_HOLD_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
       const expected = expectedHolds(c);
-      const orderId = await openOrder(c.seller, c.account);
+      const credential = expectedOwner(c);
+      const orderId = await openOrder(
+        c.seller,
+        c.account,
+        c.envOnly === true ? { provider: `${net.provider}-env` } : {},
+      );
       const before = await balances('USD');
 
       const out = await retain(id(c.seller), orderId, net.sellers[c.seller]);
@@ -329,8 +337,8 @@ d('retención en cascada por la red (0060, como app_user)', () => {
         origin_tenant_id: id(c.seller),
         currency: 'USD',
         sale_amount_minor: String(saleOf(c.seller)),
-        credential_owner_tenant_id: id(c.account ?? 'P'),
-        credential_source: c.account === null ? 'root' : 'account',
+        credential_owner_tenant_id: id(credential.owner),
+        credential_source: credential.source,
         mode: 'enforce',
         status: 'held',
       });

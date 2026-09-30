@@ -26,8 +26,9 @@ import { ORDER_EVENTS } from '../orders/order-events.js';
 import {
   BookingHoldRejectedError,
   bookingHoldMessage,
-  decideBookingHold,
   type BookingHoldPreview,
+  type BookingHoldQuote,
+  type BookingHoldRejection,
 } from '../portfolios/booking-hold.js';
 import type { BookingHoldRelease, PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
@@ -442,65 +443,73 @@ interface CarteraFake {
    * para la reserva es como no tener cartera: la retención no convierte.
    */
   moneda?: string;
+  /**
+   * Un nivel de la red que la financia (0060) no cubre la reserva aunque la cartera propia sí. La
+   * cascada la decide la base; acá sólo su motivo.
+   */
+  red?: Extract<BookingHoldRejection, `PORTFOLIO_NETWORK_${string}`>;
 }
 
 interface Fondos {
   service: PortfoliosService;
   estado: { saldoMinor: number; retenciones: Map<string, number> };
-  assertBookingHoldAffordable: Mock<(tenantId: string, amount: Money) => Promise<void>>;
+  assertBookingHoldAffordable: Mock<
+    (
+      tenantId: string,
+      quote: BookingHoldQuote,
+      opts?: { readonly reportOrderId?: string },
+    ) => Promise<void>
+  >;
   holdBookingIntent: Mock<
     (tenantId: string, orderId: string, createdBy: string, expected: Money) => Promise<unknown>
   >;
   releaseFailedBookingHold: Mock<
     (tenantId: string, orderId: string, createdBy: string) => Promise<BookingHoldRelease>
   >;
-  previewBookingHold: Mock<(tenantId: string, amount: Money) => Promise<BookingHoldPreview>>;
+  previewBookingHold: Mock<
+    (tenantId: string, quote: BookingHoldQuote) => Promise<BookingHoldPreview | undefined>
+  >;
 }
 
 /**
- * Doble de la cartera con las reglas REALES de `decideBookingHold` sobre un saldo en memoria. La
- * transacción, el bloqueo y la SQL los prueban los tests de `portfolios/`.
+ * Doble de la cartera sobre un saldo en memoria, con las reglas de `wallet_hold_decide` (0060) para
+ * la cartera propia y la red como una perilla. La transacción, el bloqueo, la cascada y la SQL los
+ * prueban los tests de `portfolios/`.
  */
 function carteraDe(c: CarteraFake = { saldoMinor: 10_000_000 }): Fondos {
   const estado = { saldoMinor: c.saldoMinor, retenciones: new Map<string, number>() };
-  const decision = (amount: Money) => {
-    const moneda = c.moneda ?? amount.currency;
-    return decideBookingHold({
-      amount,
-      // Como PortfoliosService: la cartera de la moneda de la reserva, o ninguna.
-      portfolio:
-        moneda === amount.currency
-          ? {
-              balanceMinor: estado.saldoMinor,
-              creditLimitMinor: c.cupoMinor ?? 0,
-              currency: moneda,
-              status: 'active',
-            }
-          : null,
-    });
+  const decision = (amount: Money): BookingHoldRejection | undefined => {
+    // Como la base: la cartera de la moneda de la reserva, o ninguna; después, la red.
+    if ((c.moneda ?? amount.currency) !== amount.currency) return 'PORTFOLIO_CURRENCY_NOT_ENABLED';
+    if (estado.saldoMinor + Math.max(c.cupoMinor ?? 0, 0) < amount.amountMinor) {
+      return 'PORTFOLIO_FUNDS_INSUFFICIENT';
+    }
+    return c.red;
   };
   const decidir = (amount: Money): void => {
-    const d = decision(amount);
-    if (!d.ok) throw new BookingHoldRejectedError(d.reason, { amountCurrency: amount.currency });
+    const reason = decision(amount);
+    if (reason !== undefined) {
+      throw new BookingHoldRejectedError(reason, { amountCurrency: amount.currency });
+    }
   };
   const fondos = {
-    previewBookingHold: vi.fn((_tenantId: string, amount: Money) => {
-      const d = decision(amount);
+    previewBookingHold: vi.fn((_tenantId: string, quote: BookingHoldQuote) => {
+      const reason = decision(quote.amount);
       return Promise.resolve<BookingHoldPreview>(
-        d.ok
-          ? { status: 'ok', currency: amount.currency }
+        reason === undefined
+          ? { status: 'ok', currency: quote.amount.currency }
           : {
               status: 'blocked',
-              currency: amount.currency,
-              reason: d.reason,
-              message: bookingHoldMessage(d.reason, amount.currency),
+              currency: quote.amount.currency,
+              reason,
+              message: bookingHoldMessage(reason, quote.amount.currency),
             },
       );
     }),
     assertBookingHoldAffordable: vi.fn(
-      (_tenantId: string, amount: Money) =>
+      (_tenantId: string, quote: BookingHoldQuote, _opts?: { readonly reportOrderId?: string }) =>
         new Promise<void>((resolve) => {
-          decidir(amount);
+          decidir(quote.amount);
           resolve();
         }),
     ),
@@ -1947,6 +1956,17 @@ const SUBAGENCIA_HEREDADA = {
   ownerTenantId: CONSOLIDADOR,
 } as const satisfies OpcionesBanco;
 
+/** Lo que el aviso de cartera recibe antes de C2: la venta mostrada, el neto y la cuenta. */
+function cotizacion(ventaMinor: number, netoMinor = NETO): BookingHoldQuote {
+  return {
+    amount: USD(ventaMinor),
+    netMinor: netoMinor,
+    vertical: 'hotels',
+    providerCode: STUB,
+    providerAccountId: CUENTA.accountId,
+  };
+}
+
 function rechazoDeCuenta(issue: HotelProviderAccountIssue, code: string): RechazoError {
   return new RechazoError(
     { outcome: 'FAILED', reason: issue, dispatched: true, providerStatus: code },
@@ -1967,7 +1987,9 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
     expect((err as BookingHoldRejectedError).getStatus()).toBe(HttpStatus.CONFLICT);
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
+      reportOrderId: fila(b)['id'],
+    });
     // La clave queda libre: con saldo cargado, el mismo formulario se puede reenviar.
     expect(fila(b)).toMatchObject({
       status: 'failed',
@@ -1992,7 +2014,9 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect((err as BookingHoldRejectedError).message).toBe(
       'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
     );
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
+      reportOrderId: fila(b)['id'],
+    });
     expect(fila(b)).toMatchObject({ status: 'failed', create_request_key: null });
     expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
     expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
@@ -2036,7 +2060,9 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
 
     expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
-    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, USD(PISO));
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
+      reportOrderId: fila(b)['id'],
+    });
     expect(fila(b)['status']).toBe('failed');
     expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
   });
@@ -2081,7 +2107,7 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
 
     await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
 
-    expect(b.fondos.assertBookingHoldAffordable.mock.calls[0]?.[1]).toEqual(USD(PISO));
+    expect(b.fondos.assertBookingHoldAffordable.mock.calls[0]?.[1]).toEqual(cotizacion(PISO));
     expect(b.fondos.holdBookingIntent.mock.calls[0]?.[3]).toEqual(USD(31_500));
     expect(b.fondos.estado.saldoMinor).toBe(1_000_000 - 31_500);
   });
@@ -2104,6 +2130,53 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect(tipos(b)).not.toContain(ORDER_EVENTS.createRequested);
     // Cerrada la orden, se libera cualquier retención que haya quedado: aquí, ninguna.
     await expect(b.fondos.releaseFailedBookingHold.mock.results[0]?.value).resolves.toBe('no-hold');
+  });
+
+  it('0060: un nivel de la red que no cubre la reserva la frena antes de C2, aunque la cartera propia alcance', async () => {
+    const b = await banco({
+      ...SUBAGENCIA_HEREDADA,
+      cartera: { saldoMinor: 1_000_000, red: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE' },
+    });
+
+    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect(err).toBeInstanceOf(BookingHoldRejectedError);
+    expect(err).toMatchObject({
+      reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
+      message:
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+    });
+    // Con la orden ya abierta: la base puede avisarle al nivel que bloqueó.
+    expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
+      reportOrderId: fila(b)['id'],
+    });
+    expect(fila(b)).toMatchObject({
+      status: 'failed',
+      create_request_key: null,
+      error_message: CREATE_NOT_SENT_MARKER,
+    });
+    expect(b.puerto.prebookWithContext).not.toHaveBeenCalled();
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+    expect(b.fondos.holdBookingIntent).not.toHaveBeenCalled();
+    expect(b.fondos.estado.saldoMinor).toBe(1_000_000);
+  });
+
+  it('0060: si la red deja de cubrir entre el aviso y la retención (después de C2), no hay Book y la orden se cierra', async () => {
+    const b = await banco({ ...SUBAGENCIA_HEREDADA, cartera: { saldoMinor: 1_000_000 } });
+    b.fondos.holdBookingIntent.mockRejectedValueOnce(
+      new BookingHoldRejectedError('PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED', {
+        amountCurrency: 'USD',
+      }),
+    );
+
+    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED' });
+    expect(b.puerto.prebookWithContext).toHaveBeenCalledTimes(1);
+    expect(b.puerto.bookWithContext).not.toHaveBeenCalled();
+    expect(fila(b)).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(tipos(b)).not.toContain(ORDER_EVENTS.createRequested);
+    expect(b.fondos.releaseFailedBookingHold).toHaveBeenCalledWith(AGENCIA, fila(b)['id'], USUARIO);
   });
 
   it('una retención cuyo COMMIT se perdió no queda colgada de la orden cerrada', async () => {

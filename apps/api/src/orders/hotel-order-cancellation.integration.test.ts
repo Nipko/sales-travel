@@ -11,6 +11,10 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
+import {
+  clearWalletHoldsOfTenants,
+  retainAsSuperuser,
+} from '../portfolios/__fixtures__/wallet-hold-seed.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { encryptCredentials } from '../provider-credentials/credentials-cipher.js';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
@@ -147,16 +151,9 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
     } finally {
       c.release();
     }
-    // La retención que la saga toma antes del Book (RF-23).
-    await pool.query(
-      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, notes, created_by)
-       VALUES ($1, $2, 'BOOKING_HOLD', $3, 'retención', $4)`,
-      [cartera, -RETENIDO, id, usuario],
-    );
-    await pool.query(
-      'UPDATE agency_portfolios SET balance_minor = balance_minor - $2 WHERE id = $1',
-      [cartera, RETENIDO],
-    );
+    // La retención de la reserva, como la deja 0060 (desde ahí `app_user` no escribe asientos de
+    // retención ni mueve el saldo): la cuenta es del consolidador, así que retiene sólo la agencia.
+    await retainAsSuperuser(pool, agenciaA, id, usuario);
     return id;
   }
 
@@ -260,6 +257,11 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
       [`cx-${sfx}@test.local`],
     );
     usuario = u.rows[0]!.id;
+    // Quien firma la retención tiene que ser de la red de la reserva (0060).
+    await pool.query(
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+      [agenciaA, usuario],
+    );
     const acc = await pool.query<{ id: string }>(
       `INSERT INTO provider_accounts (tenant_id, provider_code, label, credentials_enc, config, is_inheritable, status)
        VALUES ($1, $2, 'default', $3, '{"environment":"test"}'::jsonb, true, 'active') RETURNING id`,
@@ -279,6 +281,11 @@ d('cancelación de hoteles contra Postgres (0046)', () => {
   });
 
   afterAll(async () => {
+    // Las retenciones son ON DELETE RESTRICT: se borran antes que las órdenes y los tenants.
+    await clearWalletHoldsOfTenants(
+      pool,
+      [agenciaA, agenciaB, consolidador].filter((id) => id !== undefined),
+    );
     for (const id of [agenciaA, agenciaB, consolidador]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }

@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpStatus, Logger, NotFoundException } from '@nestjs/common';
-import type { HotelOffer, HotelRoompack, Money } from '@sales-travel/canonical';
+import type { HotelOffer, HotelRoompack } from '@sales-travel/canonical';
 import type { CachePort } from '@sales-travel/core';
 import type { SearchContext } from '@sales-travel/domain';
 import { TboApiError, type TboFetch } from '@sales-travel/tbo-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
 import type { TenantType } from '../database/database.types.js';
-import type { BookingHoldPreview } from '../portfolios/booking-hold.js';
+import type { BookingHoldPreview, BookingHoldQuote } from '../portfolios/booking-hold.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
 import type { ApplicableRule, PricingService } from '../pricing/pricing.service.js';
 import type {
@@ -268,12 +268,18 @@ interface Banco {
   cartera: Cartera;
 }
 
-type Cartera = Mock<(tenantId: string, amount: Money) => Promise<BookingHoldPreview>>;
+type Cartera = Mock<
+  (
+    tenantId: string,
+    quote: BookingHoldQuote,
+    opts?: { readonly reportNetworkBlock?: boolean },
+  ) => Promise<BookingHoldPreview | undefined>
+>;
 
-/** La cartera de la agencia vista desde el PreBook: por defecto cubre la tarifa. */
+/** La cartera de la agencia (y la de su red) vista desde el PreBook: por defecto cubre la tarifa. */
 function carteraQueCubre(): Cartera {
-  return vi.fn((_tenantId: string, amount: Money) =>
-    Promise.resolve<BookingHoldPreview>({ status: 'ok', currency: amount.currency }),
+  return vi.fn((_tenantId: string, quote: BookingHoldQuote) =>
+    Promise.resolve<BookingHoldPreview>({ status: 'ok', currency: quote.amount.currency }),
   );
 }
 
@@ -514,9 +520,44 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
 
     const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
 
-    // El piso, no el neto: es lo que el Book retiene.
-    expect(b.cartera).toHaveBeenCalledWith(AGENCIA, { amountMinor: PISO, currency: 'USD' });
+    // El piso, no el neto: es lo que el Book retiene. El neto va para el costo de la red (0060), y
+    // una cuenta que no es de la bóveda va como credenciales de entorno: su dueño es la raíz. Si la
+    // red bloquea, el nivel que bloquea recibe el aviso: la web frena acá y el Book no corre.
+    expect(b.cartera).toHaveBeenCalledWith(
+      AGENCIA,
+      {
+        amount: { amountMinor: PISO, currency: 'USD' },
+        netMinor: NETO,
+        vertical: 'hotels',
+        providerCode: STUB,
+        providerAccountId: null,
+      },
+      { reportNetworkBlock: true },
+    );
     expect(res.funding).toEqual({ status: 'ok', currency: 'USD' });
+  });
+
+  it('0060: si un nivel de la red no la cubre, el aviso lo dice sin decir cuál ni cuánto', async () => {
+    const aviso: BookingHoldPreview = {
+      status: 'blocked',
+      currency: 'USD',
+      reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
+      message:
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+    };
+    const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.funding).toEqual(aviso);
+  });
+
+  it('si la base no puede evaluar la red (una cuenta que ya no se resuelve), sale sin aviso', async () => {
+    const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(undefined)) });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('funding');
   });
 
   it('sin cartera en la moneda de la tarifa: el PreBook sale igual, con el aviso y el motivo', async () => {

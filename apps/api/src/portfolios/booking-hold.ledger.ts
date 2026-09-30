@@ -1,29 +1,41 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { sql, type Transaction } from 'kysely';
+import { z } from '@sales-travel/validation';
+import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { DB } from '../database/database.types.js';
+import { WalletHoldStateConflictError } from './booking-hold.js';
+import { walletHoldStateRule } from './portfolio-errors.js';
+import {
+  WalletHoldStore,
+  translateWalletHoldError,
+  type WalletHoldExpectedStatus,
+  type WalletHoldSettleOutcome,
+} from './wallet-hold.store.js';
 
 /**
- * La retención de saldo de una reserva (`BOOKING_HOLD`) y su liberación (`BOOKING_RELEASED`), sin
- * nada más de la cartera.
+ * La retención de saldo de una reserva vista desde su orden, y su cierre, sin nada más de la
+ * cartera.
  *
  * Vive fuera de `PortfoliosService` porque la liberación la dispara también la post-venta de una
  * orden: la cancelación de un hotel se cierra en `OrdersModule`, a veces horas después del pedido
  * (docs/tbo/09 PR-5.3; D-TBO-25 A), y `PortfoliosModule` ya importa `OrdersModule` para cancelar
  * desde la cartera. Sólo depende de la base, así que los dos módulos la usan sin ciclo.
  *
- * Las reglas son las de siempre: un asiento de liberación por orden (índice único), idempotente,
- * con el mismo monto y la misma cartera que la retención, y el saldo acotado al rango seguro.
+ * Desde 0060 no escribe asientos: la retención es un grupo con un nivel por cartera retenida (la del
+ * nodo que vende y la de cada nivel de su red) y la cierra `wallet_hold_settle` sobre lo registrado,
+ * de una vez en todos los niveles. Lo de siempre sigue igual: idempotente, la liberación en la misma
+ * cartera y por el mismo monto que la retención, y el saldo acotado al rango seguro.
  */
 
 export interface BookingHoldRow {
+  /** El asiento `BOOKING_HOLD` del nodo que vende. */
   readonly id: string;
   readonly portfolioId: string;
+  /** Negativo, como el asiento. */
   readonly amountMinor: number;
   readonly createdBy: string;
 }
 
-/** Una reserva del tenant y su retención, si tiene una. */
+/** Una reserva del tenant y su retención abierta, si tiene una. */
 export interface HeldBooking {
   readonly orderId: string;
   readonly provider: string;
@@ -39,22 +51,26 @@ export type BookingWithHold = HeldBooking & { readonly hold: BookingHoldRow };
 /** Qué pasó al pedir que se libere la retención de una reserva. */
 export type BookingHoldRelease = 'released' | 'already-released' | 'no-hold';
 
-export const RELEASE_AFTER_CANCEL_NOTES =
-  'Cancelación confirmada por el proveedor; saldo retenido liberado';
-export const RELEASE_AFTER_FAILURE_NOTES =
-  'El proveedor no hizo la reserva; saldo retenido liberado';
+/** El nivel 0 de una retención abierta, como lo guarda 0060. */
+const OwnLevelSchema = z.object({
+  hold_transaction_id: z.string().uuid(),
+  portfolio_id: z.string().uuid(),
+  amount_minor: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  created_by: z.string().uuid(),
+});
 
-interface ReleaseRow {
-  readonly portfolio_id: string;
-  readonly amount_minor: number | string;
-}
+/** Lo que una liberación con precondición no puede devolver sin contradecirla. */
+const STILL_OPEN: ReadonlySet<WalletHoldSettleOutcome> = new Set([
+  'open',
+  'captured',
+  'already-captured',
+]);
 
-export function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
+function stillOpenError(expected: WalletHoldExpectedStatus): ConflictException {
+  return new ConflictException(
+    expected === 'failed'
+      ? 'La reserva no está cerrada como no realizada: su retención de saldo se mantiene.'
+      : 'La reserva no figura cancelada: su retención de saldo se mantiene.',
   );
 }
 
@@ -65,13 +81,18 @@ function verticalOf(value: unknown): string {
 
 @Injectable()
 export class BookingHoldLedger {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly store: WalletHoldStore;
+
+  constructor(private readonly db: DatabaseService) {
+    // Se construye acá y no se inyecta: sólo depende de la base, como el ledger.
+    this.store = new WalletHoldStore(db);
+  }
 
   /**
-   * La reserva del tenant y su retención, si tiene una.
+   * La reserva del tenant y su retención, si la tiene abierta (retenida o cobrada). Una retención
+   * liberada o en conflicto no cuenta: no hay nada que cobrar ni que liberar desde la cartera.
    *
-   * @throws BadRequestException si la reserva no es del tenant o la retención tiene un monto
-   *   inválido.
+   * @throws BadRequestException si la reserva no es del tenant, o su retención no cumple 0060.
    */
   async load(tenantId: string, orderId: string): Promise<HeldBooking> {
     return this.db.withTenant(tenantId, async (trx) => {
@@ -100,177 +121,114 @@ export class BookingHoldLedger {
         orderStatus: order.status,
       };
 
-      const hold = await trx
-        .selectFrom('portfolio_transactions')
-        .select(['id', 'portfolio_id', 'amount_minor', 'created_by'])
-        .where('transaction_type', '=', 'BOOKING_HOLD')
-        .where(sql<boolean>`lower(reference_id) = lower(${order.id})`)
+      // El nivel 0 lo ve el nodo que vende (RLS de 0060); los de su red, no.
+      const level = await trx
+        .selectFrom('wallet_hold_groups as g')
+        .innerJoin('wallet_hold_levels as l', (join) =>
+          join.onRef('l.group_id', '=', 'g.id').on('l.depth', '=', 0),
+        )
+        .select(['l.hold_transaction_id', 'l.portfolio_id', 'l.amount_minor', 'g.created_by'])
+        .where('g.order_id', '=', order.id)
+        .where('g.origin_tenant_id', '=', tenantId)
+        .where('g.status', 'in', ['held', 'captured'])
         .executeTakeFirst();
-      if (!hold) return base;
+      if (!level) return base;
 
-      const heldMinor = Number(hold.amount_minor);
-      if (!Number.isSafeInteger(heldMinor) || heldMinor >= 0) {
+      const parsed = OwnLevelSchema.safeParse(level);
+      if (!parsed.success) {
         throw new BadRequestException(
           'La retención tiene un monto inválido y requiere conciliación manual. No se modificó ' +
             'el saldo.',
         );
       }
-
       return {
         ...base,
         hold: {
-          id: hold.id,
-          portfolioId: hold.portfolio_id,
-          amountMinor: heldMinor,
-          createdBy: hold.created_by,
+          id: parsed.data.hold_transaction_id,
+          portfolioId: parsed.data.portfolio_id,
+          amountMinor: -parsed.data.amount_minor,
+          createdBy: parsed.data.created_by,
         },
       };
     });
   }
 
   /**
-   * Libera la retención de una reserva que el proveedor NO hizo (RF-23 CA-2). `failed` es la única
-   * prueba de eso: una orden `pending` puede tener reserva del otro lado (D-TBO-24 A).
+   * Libera la retención de una reserva que el proveedor NO hizo (RF-23 CA-2), en todos sus niveles.
+   * `failed` es la única prueba de eso: una orden `pending` puede tener reserva del otro lado
+   * (D-TBO-24 A).
    *
-   * @throws ConflictException si la orden tiene retención y no está `failed`.
+   * @throws ConflictException si la orden tiene la retención abierta y no está `failed`.
+   * @throws WalletHoldStateConflictError si la reserva figuró confirmada antes (la retención ya
+   *   era un cargo) o el libro no casa: queda para conciliación manual.
    */
   async releaseFailed(
     tenantId: string,
     orderId: string,
     createdBy: string,
   ): Promise<BookingHoldRelease> {
-    return this.releaseIf(tenantId, orderId, createdBy, 'failed', RELEASE_AFTER_FAILURE_NOTES);
+    return this.settleExpected(tenantId, orderId, createdBy, 'failed');
   }
 
   /**
-   * Libera la retención de una reserva que el proveedor ya muestra cancelada. `cancelled` es la
-   * prueba: una cancelación aceptada pero en curso deja la orden `pending` y la habitación sigue
-   * cobrable hasta que el hotel la libera (D-TBO-25 A).
+   * Libera la retención de una reserva que el proveedor ya muestra cancelada, en todos sus niveles.
+   * `cancelled` es la prueba: una cancelación aceptada pero en curso deja la orden `pending` y la
+   * habitación sigue cobrable hasta que el hotel la libera (D-TBO-25 A).
    *
-   * @throws ConflictException si la orden tiene retención y no está `cancelled`.
+   * @throws ConflictException si la orden tiene la retención abierta y no está `cancelled`.
    */
   async releaseCancelled(
     tenantId: string,
     orderId: string,
     createdBy: string,
   ): Promise<BookingHoldRelease> {
-    return this.releaseIf(tenantId, orderId, createdBy, 'cancelled', RELEASE_AFTER_CANCEL_NOTES);
+    return this.settleExpected(tenantId, orderId, createdBy, 'cancelled');
   }
 
   /**
-   * El asiento de liberación y el saldo, en una transacción. Idempotente: una segunda llamada
-   * encuentra la liberación y no vuelve a acreditar.
+   * La liberación con la precondición de quien llama. Idempotente: una segunda llamada encuentra la
+   * retención liberada y no vuelve a acreditar en ningún nivel.
+   *
+   * @throws PortfolioReleaseBusyError si la red siguió contenida después de los reintentos: la
+   *   retención sigue abierta y repetir el pedido la cierra.
    */
-  async release(
-    tenantId: string,
-    booking: BookingWithHold,
-    createdBy: string,
-    notes: string,
-  ): Promise<'released' | 'already-released'> {
-    const releaseAmount = -booking.hold.amountMinor;
-    // `load` ya lo valida; se repite en el borde del write por defensa.
-    if (!Number.isSafeInteger(releaseAmount) || releaseAmount <= 0) {
-      throw new BadRequestException(
-        'La retención tiene un monto inválido y no puede liberarse automáticamente.',
-      );
-    }
-
-    try {
-      return await this.db.withTenant(tenantId, async (trx) => {
-        const existing = await this.findRelease(trx, booking);
-        if (existing) {
-          this.assertReleaseMatches(existing, booking);
-          return 'already-released';
-        }
-
-        // Asiento positivo append-only: el BOOKING_HOLD original conserva monto y actor.
-        const release = await trx
-          .insertInto('portfolio_transactions')
-          .values({
-            portfolio_id: booking.hold.portfolioId,
-            amount_minor: releaseAmount,
-            transaction_type: 'BOOKING_RELEASED',
-            reference_id: booking.orderId,
-            notes,
-            created_by: createdBy,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-
-        this.assertReleaseMatches(release, booking);
-        const nextBalance = sql<number>`balance_minor + ${releaseAmount}`;
-        const portfolio = await trx
-          .updateTable('agency_portfolios')
-          .set({ balance_minor: nextBalance })
-          .where('id', '=', booking.hold.portfolioId)
-          .where(
-            sql<boolean>`balance_minor::numeric + ${releaseAmount} BETWEEN ${Number.MIN_SAFE_INTEGER} AND ${Number.MAX_SAFE_INTEGER}`,
-          )
-          .returning('id')
-          .executeTakeFirst();
-        if (!portfolio) {
-          throw new BadRequestException(
-            'No se encontró la cartera o el saldo liberado excede el rango seguro.',
-          );
-        }
-        return 'released';
-      });
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      // Reintento/concurrencia después del COMMIT: verificar el asiento ganador basta; no se
-      // vuelve a incrementar el balance.
-      const replay = await this.db.withTenant(tenantId, (trx) => this.findRelease(trx, booking));
-      if (!replay) throw error;
-      this.assertReleaseMatches(replay, booking);
-      return 'already-released';
-    }
-  }
-
-  private async releaseIf(
+  async settleExpected(
     tenantId: string,
     orderId: string,
     createdBy: string,
-    required: 'failed' | 'cancelled',
-    notes: string,
+    expected: WalletHoldExpectedStatus,
   ): Promise<BookingHoldRelease> {
-    const booking = await this.load(tenantId, orderId);
-    if (booking.hold === undefined) return 'no-hold';
-    if (booking.orderStatus !== required) {
-      throw new ConflictException(
-        required === 'failed'
-          ? 'La reserva no está cerrada como no realizada: su retención de saldo se mantiene.'
-          : 'La reserva no figura cancelada: su retención de saldo se mantiene.',
+    let outcome: WalletHoldSettleOutcome;
+    try {
+      outcome = await this.store.runRelease(tenantId, (trx) =>
+        this.store.settle(trx, orderId, createdBy, expected),
       );
+    } catch (error) {
+      if (walletHoldStateRule(error) === 'hold_release_order_open') {
+        throw stillOpenError(expected);
+      }
+      throw translateWalletHoldError(error) ?? error;
     }
-    return this.release(tenantId, { ...booking, hold: booking.hold }, createdBy, notes);
+
+    if (outcome === 'conflict') throw new WalletHoldStateConflictError();
+    if (STILL_OPEN.has(outcome)) throw stillOpenError(expected);
+    return outcome === 'released'
+      ? 'released'
+      : outcome === 'no-hold'
+        ? 'no-hold'
+        : 'already-released';
   }
 
-  private assertReleaseMatches(release: ReleaseRow, booking: BookingWithHold): void {
-    const amount = Number(release.amount_minor);
-    const expected = -booking.hold.amountMinor;
-    if (
-      release.portfolio_id !== booking.hold.portfolioId ||
-      !Number.isSafeInteger(amount) ||
-      amount <= 0 ||
-      amount !== expected
-    ) {
-      throw new ConflictException(
-        'La reserva tiene una liberación contable inconsistente y requiere conciliación manual.',
-      );
+  /**
+   * Cierra la retención de la orden según el estado en que está, sin precondición: la conciliación
+   * de una red y la cancelación de un vuelo. Captura, libera o la deja en conflicto; nunca
+   * recalcula la red.
+   */
+  async settle(tenantId: string, orderId: string, actor: string): Promise<WalletHoldSettleOutcome> {
+    try {
+      return await this.store.runRelease(tenantId, (trx) => this.store.settle(trx, orderId, actor));
+    } catch (error) {
+      throw translateWalletHoldError(error) ?? error;
     }
-  }
-
-  private async findRelease(
-    trx: Transaction<DB>,
-    booking: BookingWithHold,
-  ): Promise<ReleaseRow | null> {
-    const release = await trx
-      .selectFrom('portfolio_transactions')
-      .select(['portfolio_id', 'amount_minor'])
-      .where('portfolio_id', '=', booking.hold.portfolioId)
-      .where('transaction_type', '=', 'BOOKING_RELEASED')
-      .where(sql<boolean>`lower(reference_id) = lower(${booking.orderId})`)
-      .executeTakeFirst();
-    return release ?? null;
   }
 }

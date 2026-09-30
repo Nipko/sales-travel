@@ -18,8 +18,10 @@
 --     O le paga al proveedor con su propio contrato, así que quien lo financia no queda expuesto por
 --     esa venta. La raíz tampoco retiene: siempre es O o está por encima de O.
 --   - O sale de la orden, nunca de un parámetro: el dueño de la cuenta de la bóveda con que se
---     reservó (orders.provider_account_id, con el criterio de 0045), o la raíz del árbol de T si la
---     orden no tiene cuenta (credenciales de entorno: vuelos LATAM, autos).
+--     reservó (orders.provider_account_id, con el criterio de 0045). Si la orden no guarda cuenta
+--     (vuelos y autos no la guardan), el dueño de la cuenta que la bóveda le resuelve al nodo para
+--     ese proveedor (resolve_provider_account, la misma resolución con que el factory reservó), o la
+--     raíz del árbol de T si no resuelve ninguna (credenciales de entorno).
 --   - Todo o nada: se decide cada nivel antes de escribir, y si uno no alcanza no se retiene en
 --     ninguno y no se llama al proveedor.
 --
@@ -51,13 +53,15 @@
 -- CONTRATO CON LA API.
 --
 --   - wallet_hold_retain(orden, actor), wallet_hold_settle(orden, actor, estado esperado),
---     wallet_hold_preview(...) y wallet_hold_report_block(orden) corren con `app.current_tenant_id`
+--     wallet_hold_preview(...), wallet_hold_report_block(orden) y
+--     wallet_hold_report_preview_block(...) corren con `app.current_tenant_id`
 --     del nodo que VENDE (DatabaseService.withTenant). El actor es el usuario que firma: tiene que
 --     tener una membership, de cualquier estado, en ese nodo o en un ancestro (el vendedor, el admin
 --     del dueño que corre la conciliación, el superadmin).
 --   - Los montos, la moneda, la cadena y el dueño de la credencial los decide la base desde la orden.
---     La API no los pasa y no los puede fijar. Sólo wallet_hold_preview, que corre antes de que
---     exista la orden, recibe el neto: el mismo que la base leerá después (wallet_hold_net):
+--     La API no los pasa y no los puede fijar. Sólo wallet_hold_preview y el aviso del PreBook
+--     (wallet_hold_report_preview_block), que corren antes de que exista la orden y no escriben
+--     asientos, reciben el neto: el mismo que la base leerá después (wallet_hold_net):
 --     pricing.netMinor en hoteles y autos, offer.total en vuelos.
 --   - Desde acá `app_user` no inserta asientos BOOKING_* ni NETWORK_* y no mueve `balance_minor`,
 --     salvo como quien financia (WalletFinancingService, withRequestContext). El código anterior a
@@ -351,7 +355,7 @@ CREATE TABLE wallet_hold_groups (
   CONSTRAINT wallet_hold_groups_sale_amount_positive
     CHECK (sale_amount_minor > 0),
   CONSTRAINT wallet_hold_groups_credential_source_check
-    CHECK (credential_source IN ('account', 'root', 'legacy', 'unresolved')),
+    CHECK (credential_source IN ('account', 'resolved', 'root', 'legacy', 'unresolved')),
   CONSTRAINT wallet_hold_groups_unresolved_only_off
     CHECK (credential_source <> 'unresolved' OR (mode = 'off' AND credential_owner_tenant_id IS NULL)),
   CONSTRAINT wallet_hold_groups_mode_check
@@ -377,9 +381,9 @@ COMMENT ON COLUMN wallet_hold_groups.origin_tenant_id IS
 COMMENT ON COLUMN wallet_hold_groups.sale_amount_minor IS
   'Precio de venta retenido en la cartera del nodo que vende (orders.total_amount), en unidades menores de currency.';
 COMMENT ON COLUMN wallet_hold_groups.credential_owner_tenant_id IS
-  'Dueño de la credencial (O) al retener: el de la cuenta de la orden, o la raíz si la orden no tiene cuenta. Los niveles por debajo de O retienen; O no. NULL en una retención legacy sin cuenta o en una unresolved.';
+  'Dueño de la credencial (O) al retener: el de la cuenta de la orden; si la orden no tiene cuenta, el de la cuenta que la bóveda le resolvía al nodo para ese proveedor, o la raíz si no había. Los niveles por debajo de O retienen; O no. NULL en una retención legacy sin cuenta o en una unresolved.';
 COMMENT ON COLUMN wallet_hold_groups.credential_source IS
-  'account: O es el dueño de orders.provider_account_id. root: la orden no tiene cuenta (credenciales de entorno) y O es la raíz. legacy: retención anterior a 0060. unresolved: con el modo off, la cuenta de la orden ya no se resolvía y sólo retuvo el nodo que vende.';
+  'account: O es el dueño de orders.provider_account_id. resolved: la orden no guarda cuenta (vuelos, autos) y O es el dueño de la que resolve_provider_account le resolvía al nodo para ese proveedor. root: la orden no tiene cuenta y la bóveda no resuelve ninguna (credenciales de entorno); O es la raíz. legacy: retención anterior a 0060. unresolved: con el modo off, la cuenta de la orden ya no se resolvía y sólo retuvo el nodo que vende.';
 COMMENT ON COLUMN wallet_hold_groups.mode IS
   'El modo de wallet_hold_policy con que se retuvo, o legacy si es anterior a 0060.';
 COMMENT ON COLUMN wallet_hold_groups.status IS
@@ -665,8 +669,17 @@ COMMENT ON FUNCTION wallet_hold_mode(uuid) IS
 --   - con cuenta: su dueño, si la cuenta cumple el criterio de 0045 (mismo proveedor que la orden,
 --     activa, y propia del nodo o de un ancestro que la deja heredar). Si no lo cumple, ninguna fila
 --     (y quien llama falla cerrado);
---   - sin cuenta (credenciales de entorno): la raíz del árbol del nodo. Con la matriz D4 es
---     Planetour; un nodo legado suelto es su propia raíz, así que su cadena queda vacía.
+--   - sin cuenta en la orden (vuelos y autos no la guardan): el dueño de la cuenta que la bóveda le
+--     resuelve al nodo para el proveedor (resolve_provider_account: la propia, o la del ancestro
+--     heredable más cercano), que es la misma resolución con que el factory reservó. Sin esto una
+--     sub-agencia que vuela con su propia cuenta retendría en toda su red hasta la raíz, y a sus
+--     ancestros les quedaría un cargo por una venta que no les debe nada;
+--   - sin cuenta en la orden ni en la bóveda (credenciales de entorno): la raíz del árbol del nodo.
+--     Con la matriz D4 es Planetour; un nodo legado suelto es su propia raíz, así que su cadena
+--     queda vacía.
+--
+-- La resolución de la bóveda es la de ahora, no la del momento de reservar: si el nodo cambió de
+-- cuenta en el medio, retiene con la nueva. Liberar nunca la recalcula (recorre lo registrado).
 CREATE FUNCTION wallet_hold_owner(p_tenant UUID, p_provider TEXT, p_account UUID)
 RETURNS TABLE (owner_id UUID, owner_level INTEGER, source TEXT)
 LANGUAGE sql STABLE
@@ -685,15 +698,26 @@ AS $$
        OR (pa.is_inheritable AND owner_t.path OPERATOR(public.@>) me.path)
      )
   UNION ALL
+  SELECT rp.tenant_id, nlevel(owner_t.path), 'resolved'::text
+    FROM public.resolve_provider_account(p_tenant, p_provider) rp
+    JOIN public.tenants owner_t ON owner_t.id = rp.tenant_id
+   WHERE p_account IS NULL
+     AND rp.id IS NOT NULL
+  UNION ALL
   SELECT r.id, nlevel(r.path), 'root'::text
     FROM public.tenants me
     JOIN public.tenants r ON r.path = subpath(me.path, 0, 1)
    WHERE p_account IS NULL
-     AND me.id = p_tenant;
+     AND me.id = p_tenant
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.resolve_provider_account(p_tenant, p_provider) rp
+        WHERE rp.id IS NOT NULL
+     );
 $$;
 
 COMMENT ON FUNCTION wallet_hold_owner(uuid, text, uuid) IS
-  'Dueño de la credencial de una venta de p_tenant: el de la cuenta p_account si cumple el criterio de 0045 (mismo proveedor, activa, propia o de un ancestro heredable), o la raíz del árbol si p_account es NULL. Sin fila si la cuenta no se resuelve. Helper de 0060, sin GRANT.';
+  'Dueño de la credencial de una venta de p_tenant: el de la cuenta p_account si cumple el criterio de 0045 (mismo proveedor, activa, propia o de un ancestro heredable); con p_account NULL, el de la cuenta que resolve_provider_account le resuelve a p_tenant para p_provider (resolved), o la raíz del árbol si no resuelve ninguna (root). Sin fila si p_account no se resuelve. Helper de 0060, sin GRANT.';
 
 -- La cadena de la red: los ancestros de p_tenant que financian (platform, consolidator, agency) con
 -- nivel mayor que el del dueño, del más cercano al más lejano. depth 1 es quien financia a p_tenant;
@@ -1724,7 +1748,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) IS
-  'Anticipa wallet_hold_retain para una venta del nodo app.current_tenant_id sin bloquear ni escribir: ok | blocked (reason = regla STW02 del primer nivel que falla) | unknown (parámetros inválidos, o cuenta no resoluble fuera del modo off). p_provider_account_id NULL = credenciales de entorno (la raíz). Nunca montos, saldos ni qué nivel falló. Ver db/migrations/0060.';
+  'Anticipa wallet_hold_retain para una venta del nodo app.current_tenant_id sin bloquear ni escribir: ok | blocked (reason = regla STW02 del primer nivel que falla) | unknown (parámetros inválidos, o cuenta no resoluble fuera del modo off). p_provider_account_id NULL = la cuenta que la bóveda resuelve para el nodo, o la raíz si no hay (credenciales de entorno). Nunca montos, saldos ni qué nivel falló. Ver db/migrations/0060.';
 
 REVOKE ALL ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION wallet_hold_preview(text, uuid, text, text, bigint, bigint) TO app_user;
@@ -1835,6 +1859,117 @@ COMMENT ON FUNCTION wallet_hold_report_block(uuid) IS
 
 REVOKE ALL ON FUNCTION wallet_hold_report_block(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION wallet_hold_report_block(uuid) TO app_user;
+
+-- El mismo aviso cuando la red bloquea en el PreBook, antes de que exista la orden. Sin esto el
+-- ancestro que bloquea no se entera nunca: la web frena al vendedor en el PreBook, el Book no llega
+-- a correr y wallet_hold_report_block no tiene orden de la que partir. El vendedor sólo lee "pedile
+-- a quien te financia"; el nivel que lo puede arreglar puede no ser ése.
+--
+-- Deriva el dueño, la cadena y los costos como wallet_hold_preview, con lo que la API tiene antes de
+-- la orden, sin bloquear. Deja 'portfolio.network_hold.blocked' en el tenant del primer nivel que
+-- bloquea, con aggregate = el nodo que vende (no hay orden), actor NULL y sin nombres. Uno por
+-- (ancestro, nodo que vende, moneda) cada 24 h: un PreBook repetido no llena su rastro.
+CREATE FUNCTION wallet_hold_report_preview_block(
+  p_provider_code        TEXT,
+  p_provider_account_id  UUID,
+  p_vertical             TEXT,
+  p_currency             TEXT,
+  p_sale_minor           BIGINT,
+  p_net_minor            BIGINT
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  me          UUID;
+  v_owner     RECORD;
+  v_cost      NUMERIC;
+  v_reason    TEXT;
+  anc         public.agency_portfolios;
+  v_decision  TEXT;
+  r           RECORD;
+BEGIN
+  me := public.wallet_hold_current_tenant();
+
+  IF p_sale_minor IS NULL OR p_sale_minor < 1 OR p_sale_minor > 9007199254740991
+     OR (p_net_minor IS NOT NULL AND (p_net_minor < 1 OR p_net_minor > 9007199254740991))
+     OR p_currency IS NULL OR p_currency !~ '^[A-Z]{3}$'
+     OR p_vertical IS NULL OR p_vertical !~ '^[a-z_]{1,32}$'
+     OR p_provider_code IS NULL OR btrim(p_provider_code) = ''
+     OR public.wallet_hold_mode(me) <> 'enforce' THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_owner FROM public.wallet_hold_owner(me, p_provider_code, p_provider_account_id);
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  FOR r IN SELECT * FROM public.wallet_hold_chain(me, v_owner.owner_level) LOOP
+    v_reason := NULL;
+    v_cost := NULL;
+    IF p_net_minor IS NOT NULL THEN
+      v_cost := public.wallet_hold_level_cost(me, p_vertical, p_net_minor, r.lvl);
+      IF v_cost < 1 OR v_cost > 9007199254740991 OR v_cost <> trunc(v_cost) THEN
+        v_cost := NULL;
+      END IF;
+    END IF;
+
+    IF v_cost IS NULL THEN
+      v_reason := 'network_cost_unavailable';
+    ELSE
+      SELECT ap.* INTO anc
+        FROM public.agency_portfolios ap
+       WHERE ap.tenant_id = r.tenant_id AND ap.currency = p_currency;
+      v_decision := public.wallet_hold_decide(anc, v_cost::bigint);
+      IF v_decision = 'currency_not_enabled' THEN
+        v_reason := 'network_currency_not_enabled';
+      ELSIF v_decision <> 'ok' THEN
+        v_reason := 'network_funds_unavailable';
+      END IF;
+    END IF;
+
+    IF v_reason IS NOT NULL THEN
+      -- Dos PreBooks a la vez del mismo nodo no duplican el aviso.
+      PERFORM pg_advisory_xact_lock(hashtextextended(
+        'wallet_hold_report_preview_block:' || r.tenant_id::text || ':' || me::text || ':' || p_currency,
+        0));
+      IF NOT EXISTS (
+        SELECT 1
+          FROM public.domain_events e
+         WHERE e.aggregate_type = 'tenant'
+           AND e.aggregate_id = me::text
+           AND e.tenant_id = r.tenant_id
+           AND e.event_type = 'portfolio.network_hold.blocked'
+           AND e.payload ->> 'currency' = p_currency
+           AND e.occurred_at > now() - interval '24 hours'
+      ) THEN
+        INSERT INTO public.domain_events
+          (tenant_id, actor_user_id, event_type, aggregate_type, aggregate_id, payload)
+        VALUES
+          (r.tenant_id, NULL, 'portfolio.network_hold.blocked', 'tenant', me::text,
+           jsonb_build_object(
+             'originTenantId', me,
+             'depth', r.depth,
+             'currency', p_currency,
+             'reason', v_reason,
+             'amountMinor', v_cost,
+             'stage', 'prebook',
+             'source', 'db:wallet_hold_report_preview_block'
+           ));
+      END IF;
+      RETURN;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+COMMENT ON FUNCTION wallet_hold_report_preview_block(text, uuid, text, text, bigint, bigint) IS
+  'Deja portfolio.network_hold.blocked (aggregate = el nodo app.current_tenant_id, actor NULL, sin nombres, stage prebook) en el tenant del primer nivel de la red que bloquearía la venta, derivado como wallet_hold_preview y sin bloquear. Uno por (ancestro, nodo, moneda) cada 24 h; fuera de enforce, con parámetros inválidos, una cuenta que no se resuelve o sin bloqueo, no hace nada. Ver db/migrations/0060.';
+
+REVOKE ALL ON FUNCTION wallet_hold_report_preview_block(text, uuid, text, text, bigint, bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION wallet_hold_report_preview_block(text, uuid, text, text, bigint, bigint) TO app_user;
 
 -- ============================================================================
 -- 10. move_tenant_subtree: carteras en orden y STH02 sobre retenciones abiertas

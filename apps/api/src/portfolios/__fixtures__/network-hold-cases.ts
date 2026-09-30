@@ -53,10 +53,28 @@ export interface NetworkHoldCase {
   readonly name: string;
   /** El nodo que vende (app.current_tenant_id). */
   readonly seller: NodeKey;
-  /** La cuenta con que se reserva; `null` = credenciales de entorno (el dueño es la raíz). */
+  /**
+   * La cuenta que la orden guarda. `null` = no guarda ninguna (vuelos, autos): el dueño es el de la
+   * cuenta que la bóveda le resuelve al nodo para el proveedor o, con `envOnly`, la raíz.
+   */
   readonly account: AccountOwner | null;
+  /** El proveedor de la orden no tiene cuentas en la bóveda: credenciales de entorno. */
+  readonly envOnly?: boolean;
   /** Quiénes retienen, en orden de depth (0 = el que vende). */
   readonly retains: readonly NodeKey[];
+}
+
+/** El dueño de la credencial que la base debe registrar para el caso, y de dónde sale. */
+export function expectedOwner(c: NetworkHoldCase): {
+  readonly owner: NodeKey;
+  readonly source: 'account' | 'resolved' | 'root';
+} {
+  if (c.account !== null) return { owner: c.account, source: 'account' };
+  if (c.envOnly === true) return { owner: 'P', source: 'root' };
+  // resolve_provider_account: la cuenta propia o la del ancestro heredable más cercano.
+  const owner = lineage(c.seller).find((k) => (ACCOUNT_OWNERS as readonly string[]).includes(k));
+  if (owner === undefined) throw new Error(`nadie le resuelve una cuenta a ${c.seller}`);
+  return { owner, source: 'resolved' };
 }
 
 /** Los casos de la spec §1.4, con el resultado esperado. */
@@ -75,7 +93,21 @@ export const NETWORK_HOLD_CASES: readonly NetworkHoldCase[] = [
     name: 'S1 con credenciales de entorno',
     seller: 'S1',
     account: null,
+    envOnly: true,
     retains: ['S1', 'A', 'C'],
+  },
+  // Vuelos y autos no guardan la cuenta en la orden: vale la que la bóveda le resuelve al nodo.
+  {
+    name: 'S1 sin cuenta en la orden: la de A, que la bóveda le resuelve',
+    seller: 'S1',
+    account: null,
+    retains: ['S1'],
+  },
+  {
+    name: 'S3 sin cuenta en la orden: la de P, que la bóveda le resuelve',
+    seller: 'S3',
+    account: null,
+    retains: ['S3', 'A2'],
   },
 ];
 

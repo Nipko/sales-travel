@@ -1,4 +1,5 @@
 import type { HotelRoompack, Money } from '@sales-travel/canonical';
+import type { BookingHoldQuote } from '../portfolios/booking-hold.js';
 import {
   applyCascade,
   applyProviderFloor,
@@ -44,5 +45,29 @@ export function saleTotalOf(pack: HotelRoompack): Money {
   return {
     amountMinor: pack.pricing?.finalMinor ?? pack.price.total.amountMinor,
     currency: pack.price.total.currency,
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Lo que el aviso de cartera necesita de una tarifa de hotel antes de que exista la orden (RF-23;
+ * 0060): el precio de venta, el neto que la orden guardará en `selected_offer.pricing.netMinor` (con
+ * él la base calcula el costo de cada nivel de la red) y la cuenta con que se reservaría. Una
+ * cuenta que no es de la bóveda (credenciales de entorno) va como `null`: la base toma la que la
+ * bóveda resuelve para el nodo, o la raíz si no hay ninguna.
+ */
+export function hotelHoldQuoteOf(
+  pack: HotelRoompack,
+  providerCode: string,
+  accountId: string,
+): BookingHoldQuote {
+  // La venta sale en la moneda del neto (`saleTotalOf`): el neto siempre sirve para la red.
+  return {
+    amount: saleTotalOf(pack),
+    netMinor: pack.price.total.amountMinor,
+    vertical: 'hotels',
+    providerCode,
+    providerAccountId: UUID_RE.test(accountId) ? accountId : null,
   };
 }

@@ -617,6 +617,61 @@ export interface PortfolioTransactionsTable {
   created_at: Generated<Timestamp>;
 }
 
+/**
+ * Estado de una retención de cartera (0060), en el grupo y en cada nivel: `held` retenida,
+ * `captured` la reserva se confirmó y quedó como cargo, `released` liberada, `conflict` figuró
+ * confirmada y después no realizada (conciliación manual).
+ */
+export type WalletHoldStatus = 'held' | 'captured' | 'released' | 'conflict';
+
+/**
+ * Una retención de cartera por orden (0060): la instantánea de quién vende, con qué credencial y en
+ * qué modo. La ve sólo el nodo que vende (RLS por `origin_tenant_id`) y `app_user` no la escribe:
+ * la escriben `wallet_hold_retain`, `wallet_hold_settle` y la captura al confirmar la orden.
+ */
+export interface WalletHoldGroupsTable {
+  id: Generated<string>;
+  order_id: string;
+  origin_tenant_id: string;
+  order_number: number | null;
+  currency: string;
+  sale_amount_minor: number;
+  provider_code: string;
+  provider_account_id: string | null;
+  credential_owner_tenant_id: string | null;
+  credential_source: 'account' | 'resolved' | 'root' | 'legacy' | 'unresolved';
+  mode: 'off' | 'observe' | 'enforce' | 'legacy';
+  status: WalletHoldStatus;
+  created_by: string;
+  created_at: Generated<Timestamp>;
+  captured_at: Timestamp | null;
+  closed_at: Timestamp | null;
+}
+
+/**
+ * Un nivel de una retención (0060): una cartera retenida. `depth` 0 es el nodo que vende (precio de
+ * venta, `BOOKING_HOLD`); 1 en adelante, cada ancestro que financia por debajo del dueño de la
+ * credencial (su costo, `NETWORK_HOLD`). Lo ve sólo el dueño de la cartera (RLS por `tenant_id`).
+ */
+export interface WalletHoldLevelsTable {
+  id: Generated<string>;
+  group_id: string;
+  order_id: string;
+  depth: number;
+  tenant_id: string;
+  portfolio_id: string;
+  origin_tenant_id: string;
+  order_number: number | null;
+  currency: string;
+  amount_minor: number;
+  basis: 'sale' | 'cost';
+  hold_transaction_id: string;
+  release_transaction_id: string | null;
+  status: WalletHoldStatus;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export type DepositReportStatus = 'pending' | 'approved' | 'rejected';
 
 /**
@@ -898,6 +953,8 @@ export interface DB {
   agency_portfolios: AgencyPortfoliosTable;
   portfolio_transactions: PortfolioTransactionsTable;
   portfolio_deposit_reports: PortfolioDepositReportsTable;
+  wallet_hold_groups: WalletHoldGroupsTable;
+  wallet_hold_levels: WalletHoldLevelsTable;
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;
   package_items: PackageItemsTable;

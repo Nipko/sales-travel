@@ -20,7 +20,7 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { providerAccountIssueEvent } from './hotel-account-issues.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
-import { priceRoompack, saleTotalOf } from './hotel-pricing.js';
+import { hotelHoldQuoteOf, priceRoompack } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
 import {
   HotelSearchContextStore,
@@ -224,7 +224,7 @@ export class HotelPrebookService {
       });
     }
 
-    const funding = await this.fundingOf(tenantId, code, roompack);
+    const funding = await this.fundingOf(tenantId, code, offer.account.accountId, roompack);
     return {
       prebookRef,
       providerCode: code,
@@ -240,16 +240,23 @@ export class HotelPrebookService {
   }
 
   /**
-   * El aviso de cartera sobre el precio de VENTA revalidado, que es lo que el Book retiene. Si la
-   * cartera no se puede leer, el PreBook sale igual sin el aviso: el Book decide de todos modos.
+   * El aviso de cartera sobre el precio de VENTA revalidado, que es lo que el Book retiene, en la
+   * cartera de la agencia y en las de su red hasta el dueño de la cuenta (0060). Si no se puede
+   * leer, o la base no lo puede evaluar, el PreBook sale igual sin el aviso: el Book decide de todos
+   * modos. Si bloquea un nivel de la red, ese nivel recibe el aviso (la web frena acá al vendedor).
    */
   private async fundingOf(
     tenantId: string,
     providerCode: string,
+    accountId: string,
     roompack: HotelRoompack,
   ): Promise<BookingHoldPreview | undefined> {
     try {
-      return await this.portfolios.previewBookingHold(tenantId, saleTotalOf(roompack));
+      return await this.portfolios.previewBookingHold(
+        tenantId,
+        hotelHoldQuoteOf(roompack, providerCode, accountId),
+        { reportNetworkBlock: true },
+      );
     } catch (err) {
       // Sin el mensaje: el de la base puede citar ids del tenant.
       const errorName = err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';

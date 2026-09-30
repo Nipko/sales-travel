@@ -12,6 +12,7 @@ import {
 } from '@sales-travel/domain';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
+import type { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
 import type {
@@ -414,6 +415,7 @@ function banco(
   semilla?: Record<string, unknown>,
   dbOptions: FakeDbOptions = {},
   flags: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) },
+  holds?: BookingHoldLedger,
 ): Banco {
   const adapter = new SagaAdapter(opts);
   const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], flags);
@@ -429,6 +431,9 @@ function banco(
       {} as unknown as AgentCarsProviderFactory,
       audit.asService(),
       PRICING_SIN_REGLAS,
+      undefined,
+      undefined,
+      holds,
     ),
     adapter,
     audit,
@@ -1429,6 +1434,99 @@ describe('cancelación auditada — `UNVERIFIED` es PROHIBIDO-REINTENTAR', () =>
     const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE);
     await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
     expect(b.adapter.cancelScopes).toEqual([undefined]);
+  });
+});
+
+describe('cancelar un vuelo libera su retención de cartera (0060)', () => {
+  const ORDEN_EN_BASE = {
+    provider: PROVEEDOR,
+    provider_order_id: PNR,
+    status: 'confirmed',
+    user_id: USER,
+  };
+  const verificada = {
+    cancelAudit: {
+      audit: { audited: true, outcome: 'CANCELLED' },
+      idempotencyKey: 'sha256-de-la-peticion',
+      verified: true,
+    },
+  };
+
+  function retenciones(settle: ReturnType<typeof vi.fn>): BookingHoldLedger {
+    return { settle } as unknown as BookingHoldLedger;
+  }
+
+  it('confirmada la cancelación, cierra la retención con quien canceló (en todos los niveles)', async () => {
+    const settle = vi.fn(() => Promise.resolve('released'));
+    const b = banco(verificada, {}, ORDEN_EN_BASE, {}, undefined, retenciones(settle));
+
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(settle).toHaveBeenCalledWith(TENANT, 'order-1', USER);
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toEqual([]);
+  });
+
+  it('sin persona que cancele, firma quien reservó', async () => {
+    const settle = vi.fn(() => Promise.resolve('released'));
+    const b = banco(verificada, {}, ORDEN_EN_BASE, {}, undefined, retenciones(settle));
+
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR);
+
+    expect(settle).toHaveBeenCalledWith(TENANT, 'order-1', USER);
+  });
+
+  it('si la liberación falla, la cancelación sigue confirmada y se escala sin datos de nadie', async () => {
+    const settle = vi.fn(() => Promise.reject(new Error('base caída')));
+    const b = banco(verificada, {}, ORDEN_EN_BASE, {}, undefined, retenciones(settle));
+
+    const out = await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(out.result.success).toBe(true);
+    expect(b.audit.first(ORDER_EVENTS.escalated)?.payload).toEqual({
+      provider: PROVEEDOR,
+      reason: 'portfolio-hold-release-failed',
+      queued: false,
+      errorName: 'Error',
+    });
+  });
+
+  it('una retención en conflicto se escala como conflicto', async () => {
+    const settle = vi.fn(() => Promise.resolve('conflict'));
+    const b = banco(verificada, {}, ORDEN_EN_BASE, {}, undefined, retenciones(settle));
+
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(b.audit.first(ORDER_EVENTS.escalated)?.payload).toMatchObject({
+      reason: 'portfolio-hold-state-conflict',
+    });
+  });
+
+  it('una cancelación rechazada o sin verificar no toca la retención', async () => {
+    const settle = vi.fn(() => Promise.resolve('released'));
+    const rechazada = banco(
+      { cancelResult: { success: false, warnings: [], error: 'no se puede' } },
+      {},
+      ORDEN_EN_BASE,
+      {},
+      undefined,
+      retenciones(settle),
+    );
+    await rechazada.orders.cancelOrder(TENANT, 'order-1', PNR, USER).catch(() => undefined);
+
+    const sinVerificar = banco(
+      {
+        cancelResult: { success: false, warnings: [], error: 'sin confirmación del proveedor' },
+        cancelAudit: { audit: { audited: true, outcome: 'UNVERIFIED' }, verified: false },
+      },
+      {},
+      ORDEN_EN_BASE,
+      {},
+      undefined,
+      retenciones(settle),
+    );
+    await sinVerificar.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(settle).not.toHaveBeenCalled();
   });
 });
 

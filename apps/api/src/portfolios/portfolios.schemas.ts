@@ -180,6 +180,16 @@ export type SubmitDepositReportDto = z.infer<typeof SubmitDepositReportSchema>;
 export const TransactionsQuerySchema = z.object({ currency: IsoCurrencySchema.optional() });
 export type TransactionsQuery = z.infer<typeof TransactionsQuerySchema>;
 
+/**
+ * Las reservas de la red retenidas en las carteras del nodo (0060): por moneda y por estado. Sin
+ * `.strict()`, como los demás filtros de listado.
+ */
+export const NetworkHoldsQuerySchema = z.object({
+  currency: IsoCurrencySchema.optional(),
+  status: z.enum(['held', 'captured', 'released', 'conflict']).optional(),
+});
+export type NetworkHoldsQuery = z.infer<typeof NetworkHoldsQuerySchema>;
+
 export const DepositReportsQuerySchema = z.object({
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });

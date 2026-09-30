@@ -236,6 +236,7 @@ const ENTRADAS: [string, Clase][] = [
     'GET /portfolios',
     'GET /portfolios/transactions',
     'GET /portfolios/deposit-reports',
+    'GET /portfolios/network-holds',
   ),
   ...noVenta(
     'post-venta: reenvía la confirmación de una reserva ya hecha',
@@ -265,6 +266,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:tenantId/portfolios/:portfolioId/adjustments',
     'GET /tenants/:tenantId/portfolios/transactions',
     'GET /tenants/:tenantId/portfolios/deposit-reports',
+    'GET /tenants/:tenantId/portfolios/network-holds',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
   ),

@@ -1,230 +1,65 @@
 import { ConflictException, HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
-import type { DatabaseService } from '../database/database.service.js';
 import type { OrdersService } from '../orders/orders.service.js';
 import type { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
+import {
+  MemoryWalletHolds,
+  type MemoryOrder,
+  type MemoryWallet,
+} from './__fixtures__/memory-wallet-holds.js';
 import { BookingHoldRejectedError } from './booking-hold.js';
 import { PortfoliosService } from './portfolios.service.js';
+
+/**
+ * La retención de una reserva ya confirmada (vuelos y autos, `POST /portfolios/hold-booking`), con
+ * un doble de las funciones de 0060: lo que decide el servicio antes de llamar a
+ * `wallet_hold_retain` (la orden, sus expectativas) y cómo traduce lo que la base rechaza.
+ */
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER_TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ORDER = '22222222-2222-4222-8222-2222222222aa';
 const USER = '33333333-3333-4333-8333-333333333333';
-const NOW = new Date('2026-08-28T12:00:00.000Z');
 
-interface FakeState {
-  order: {
-    id: string;
-    tenant_id: string;
-    status: string;
-    total_amount: number;
-    currency: string;
-  } | null;
-  portfolio: {
-    id: string;
-    tenant_id: string;
-    credit_limit_minor: number;
-    balance_minor: number;
-    currency: string;
-    status: string;
-    created_at: Date;
-    updated_at: Date;
-  } | null;
-  transactions: Array<{
-    id: string;
-    portfolio_id: string;
-    amount_minor: number;
-    transaction_type: string;
-    reference_id: string | null;
-    idempotency_key: string | null;
-    notes: string | null;
-    created_by: string;
-    created_at: Date;
-  }>;
-}
-
-function copyState(state: FakeState): FakeState {
+function order(extra: Partial<MemoryOrder> = {}): MemoryOrder {
   return {
-    order: state.order ? { ...state.order } : null,
-    portfolio: state.portfolio ? { ...state.portfolio } : null,
-    transactions: state.transactions.map((transaction) => ({ ...transaction })),
+    id: ORDER,
+    tenant_id: TENANT,
+    status: 'confirmed',
+    total_amount: 125_000,
+    currency: 'COP',
+    provider: 'sabre',
+    provider_order_id: 'PNR123',
+    provider_raw: { phase: 'create' },
+    create_request_key: null,
+    ...extra,
   };
 }
 
-/**
- * Banco transaccional mínimo para estas pruebas. Serializa commits como Postgres sobre el índice
- * único y sólo publica el estado local cuando el callback termina: un error revierte claim y saldo.
- */
-function fakeDatabase(initial: Partial<FakeState> = {}): {
-  db: DatabaseService;
-  state: FakeState;
-} {
-  const state: FakeState = {
-    order: {
-      id: ORDER,
-      tenant_id: TENANT,
-      status: 'confirmed',
-      total_amount: 125_000,
-      currency: 'COP',
-    },
-    portfolio: {
-      id: '44444444-4444-4444-8444-444444444444',
-      tenant_id: TENANT,
-      credit_limit_minor: 0,
-      balance_minor: 500_000,
-      currency: 'COP',
-      status: 'active',
-      created_at: NOW,
-      updated_at: NOW,
-    },
-    transactions: [],
-    ...initial,
-  };
-
-  let mutex = Promise.resolve();
-  const db = {
-    withTenant: async <T>(tenantId: string, callback: (trx: unknown) => Promise<T>): Promise<T> => {
-      let release!: () => void;
-      const unlocked = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const previous = mutex;
-      mutex = previous.then(() => unlocked);
-      await previous;
-
-      const local = copyState(state);
-      let insertedHoldAmount: number | null = null;
-
-      const selectFrom = (table: string) => {
-        const filters: Array<[string, unknown]> = [];
-        const query = {
-          select: () => query,
-          selectAll: () => query,
-          forUpdate: () => query,
-          where: (column: unknown, _operator?: unknown, value?: unknown) => {
-            if (typeof column === 'string') filters.push([column, value]);
-            return query;
-          },
-          executeTakeFirst: () => {
-            const row = table === 'orders' ? local.order : local.portfolio;
-            if (!row) return Promise.resolve(undefined);
-            const matchesTenantContext = row.tenant_id === tenantId;
-            const matchesFilters = filters.every(([column, value]) =>
-              column in row
-                ? column === 'id'
-                  ? String((row as unknown as Record<string, unknown>)[column]).toLowerCase() ===
-                    String(value).toLowerCase()
-                  : (row as unknown as Record<string, unknown>)[column] === value
-                : true,
-            );
-            return Promise.resolve(matchesTenantContext && matchesFilters ? row : undefined);
-          },
-        };
-        return query;
-      };
-
-      const insertInto = (table: string) => {
-        let values: Record<string, unknown> | null = null;
-        const query = {
-          values: (next: Record<string, unknown>) => {
-            values = next;
-            return query;
-          },
-          returningAll: () => query,
-          executeTakeFirstOrThrow: () => {
-            if (table !== 'portfolio_transactions' || !values) {
-              throw new Error(`Unexpected insert into ${table}`);
-            }
-            if (
-              values['transaction_type'] === 'BOOKING_HOLD' &&
-              local.transactions.some(
-                (transaction) =>
-                  transaction.transaction_type === 'BOOKING_HOLD' &&
-                  transaction.reference_id?.toLowerCase() ===
-                    String(values?.['reference_id']).toLowerCase(),
-              )
-            ) {
-              throw Object.assign(new Error('duplicate active BOOKING_HOLD'), { code: '23505' });
-            }
-            insertedHoldAmount = Math.abs(Number(values['amount_minor']));
-            const referenceId = values['reference_id'];
-            const notes = values['notes'];
-            if (referenceId !== null && typeof referenceId !== 'string') {
-              throw new Error('reference_id must be a string or null');
-            }
-            if (notes !== null && typeof notes !== 'string') {
-              throw new Error('notes must be a string or null');
-            }
-            const row = {
-              id: `hold-${local.transactions.length + 1}`,
-              portfolio_id: String(values['portfolio_id']),
-              amount_minor: Number(values['amount_minor']),
-              transaction_type: String(values['transaction_type']),
-              reference_id: referenceId,
-              idempotency_key: null,
-              notes,
-              created_by: String(values['created_by']),
-              created_at: NOW,
-            };
-            local.transactions.push(row);
-            return Promise.resolve(row);
-          },
-        };
-        return query;
-      };
-
-      const updateTable = (table: string) => {
-        const filters: Array<[string, unknown]> = [];
-        const query = {
-          set: () => query,
-          where: (column: unknown, _operator?: unknown, value?: unknown) => {
-            if (typeof column === 'string') filters.push([column, value]);
-            return query;
-          },
-          returningAll: () => query,
-          executeTakeFirst: () => {
-            if (table !== 'agency_portfolios' || !local.portfolio) {
-              return Promise.resolve(undefined);
-            }
-            const matchesFilters = filters.every(
-              ([column, value]) =>
-                (local.portfolio as unknown as Record<string, unknown>)[column] === value,
-            );
-            const amount = insertedHoldAmount ?? 0;
-            const available = local.portfolio.balance_minor + local.portfolio.credit_limit_minor;
-            if (!matchesFilters || available < amount) return Promise.resolve(undefined);
-            local.portfolio.balance_minor -= amount;
-            return Promise.resolve(local.portfolio);
-          },
-        };
-        return query;
-      };
-
-      try {
-        const result = await callback({ selectFrom, insertInto, updateTable });
-        state.order = local.order;
-        state.portfolio = local.portfolio;
-        state.transactions = local.transactions;
-        return result;
-      } finally {
-        release();
-      }
-    },
-  } as unknown as DatabaseService;
-
-  return { db, state };
-}
-
-function harness(initial: Partial<FakeState> = {}) {
-  const bank = fakeDatabase(initial);
+function harness(
+  opts: { order?: Partial<MemoryOrder>; wallet?: Partial<MemoryWallet> | null } = {},
+) {
+  const bank = new MemoryWalletHolds({
+    orders: [order(opts.order)],
+    wallets:
+      opts.wallet === null
+        ? []
+        : [
+            MemoryWalletHolds.wallet(TENANT, {
+              balance_minor: 500_000,
+              currency: 'COP',
+              ...opts.wallet,
+            }),
+          ],
+  });
   const service = new PortfoliosService(
-    bank.db,
+    bank.asDatabase(),
     {} as FlightProviderRegistry,
     {} as OrdersService,
     {} as HotelProviderRegistry,
   );
-  return { service, state: bank.state };
+  return { service, bank, balance: () => bank.wallet(TENANT, 'COP')?.balance_minor };
 }
 
 describe('PortfoliosService.holdBooking', () => {
@@ -237,16 +72,29 @@ describe('PortfoliosService.holdBooking', () => {
     });
 
     expect(result.transaction.amount_minor).toBe(-125_000);
+    expect(result.transaction.notes).toBe(
+      'Retención preventiva de saldo por reserva pendiente de emisión',
+    );
     expect(result.portfolio.balance_minor).toBe(375_000);
-    expect(h.state.transactions).toHaveLength(1);
+    expect(h.bank.state.entries).toHaveLength(1);
+    // Nace cobrada: la reserva ya existe.
+    expect(h.bank.groupOf(ORDER)?.status).toBe('captured');
+    expect(h.bank.log).toEqual([
+      "SET LOCAL lock_timeout = '2s'",
+      'orders FOR UPDATE',
+      'wallet_hold_retain',
+      'agency_portfolios',
+      'portfolio_transactions',
+    ]);
   });
 
-  it('persiste el UUID canónico devuelto por orders, no el casing recibido', async () => {
+  it('retiene con el UUID canónico de la orden, no con el casing recibido', async () => {
     const h = harness();
 
     await h.service.holdBooking(TENANT, ORDER.toUpperCase(), USER);
 
-    expect(h.state.transactions[0]?.reference_id).toBe(ORDER);
+    expect(h.bank.calls[0]?.params).toEqual([ORDER, USER]);
+    expect(h.bank.state.entries[0]?.reference_id).toBe(ORDER);
   });
 
   it('rechaza un monto esperado manipulado sin crear el hold ni tocar el balance', async () => {
@@ -255,9 +103,13 @@ describe('PortfoliosService.holdBooking', () => {
     await expect(h.service.holdBooking(TENANT, ORDER, USER, { amountMinor: 1 })).rejects.toThrow(
       /total de la reserva cambió/i,
     );
+    await expect(h.service.holdBooking(TENANT, ORDER, USER, { currency: 'USD' })).rejects.toThrow(
+      /moneda de la reserva cambió/i,
+    );
 
-    expect(h.state.portfolio?.balance_minor).toBe(500_000);
-    expect(h.state.transactions).toHaveLength(0);
+    expect(h.balance()).toBe(500_000);
+    expect(h.bank.state.entries).toHaveLength(0);
+    expect(h.bank.log).not.toContain('wallet_hold_retain');
   });
 
   it('exige que la orden pertenezca al tenant y esté confirmada, no pendiente o emitida', async () => {
@@ -267,32 +119,16 @@ describe('PortfoliosService.holdBooking', () => {
     );
 
     for (const status of ['pending', 'ticketed', 'cancelled', 'failed']) {
-      const h = harness({
-        order: {
-          id: ORDER,
-          tenant_id: TENANT,
-          status,
-          total_amount: 125_000,
-          currency: 'COP',
-        },
-      });
+      const h = harness({ order: { status } });
       await expect(h.service.holdBooking(TENANT, ORDER, USER)).rejects.toThrow(
         /sólo una reserva confirmada/i,
       );
-      expect(h.state.transactions).toHaveLength(0);
+      expect(h.bank.state.entries).toHaveLength(0);
     }
   });
 
   it('retiene en la cartera de la moneda de la orden: sin cartera en USD no usa la de COP', async () => {
-    const h = harness({
-      order: {
-        id: ORDER,
-        tenant_id: TENANT,
-        status: 'confirmed',
-        total_amount: 125_000,
-        currency: 'USD',
-      },
-    });
+    const h = harness({ order: { currency: 'USD' } });
 
     const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
 
@@ -301,33 +137,22 @@ describe('PortfoliosService.holdBooking', () => {
     expect((err as BookingHoldRejectedError).message).toBe(
       'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
     );
-    expect(h.state.portfolio?.balance_minor).toBe(500_000);
-    expect(h.state.transactions).toHaveLength(0);
+    expect(h.balance()).toBe(500_000);
+    expect(h.bank.state.entries).toHaveLength(0);
   });
 
   it('sin ninguna cartera no abre una implícita en COP: rechaza sin escribir', async () => {
-    const h = harness({ portfolio: null });
+    const h = harness({ wallet: null });
 
     await expect(h.service.holdBooking(TENANT, ORDER, USER)).rejects.toMatchObject({
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
     });
-    expect(h.state.portfolio).toBeNull();
-    expect(h.state.transactions).toHaveLength(0);
+    expect(h.bank.state.wallets).toEqual([]);
+    expect(h.bank.state.entries).toHaveLength(0);
   });
 
   it('sin saldo más cupo que cubra el total: 409 con motivo, sin asiento ni débito', async () => {
-    const h = harness({
-      portfolio: {
-        id: '44444444-4444-4444-8444-444444444444',
-        tenant_id: TENANT,
-        credit_limit_minor: 10_000,
-        balance_minor: 100_000,
-        currency: 'COP',
-        status: 'active',
-        created_at: NOW,
-        updated_at: NOW,
-      },
-    });
+    const h = harness({ wallet: { credit_limit_minor: 10_000, balance_minor: 100_000 } });
 
     const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
 
@@ -335,50 +160,39 @@ describe('PortfoliosService.holdBooking', () => {
     expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
     expect((err as BookingHoldRejectedError).getStatus()).toBe(HttpStatus.CONFLICT);
     expect((err as BookingHoldRejectedError).message).toMatch(/Informá un depósito en Cartera B2B/);
-    expect(h.state.portfolio?.balance_minor).toBe(100_000);
-    expect(h.state.transactions).toHaveLength(0);
+    expect(h.balance()).toBe(100_000);
+    expect(h.bank.state.entries).toHaveLength(0);
   });
 
   it('el cupo que fija quien financia completa lo que falta de saldo', async () => {
-    const h = harness({
-      portfolio: {
-        id: '44444444-4444-4444-8444-444444444444',
-        tenant_id: TENANT,
-        credit_limit_minor: 25_000,
-        balance_minor: 100_000,
-        currency: 'COP',
-        status: 'active',
-        created_at: NOW,
-        updated_at: NOW,
-      },
-    });
+    const h = harness({ wallet: { credit_limit_minor: 25_000, balance_minor: 100_000 } });
 
     const result = await h.service.holdBooking(TENANT, ORDER, USER);
 
     expect(result.portfolio.balance_minor).toBe(-25_000);
-    expect(h.state.transactions).toHaveLength(1);
+    expect(h.bank.state.entries).toHaveLength(1);
   });
 
   it('con la cartera de esa moneda suspendida: 409 PORTFOLIO_INACTIVE, sin asiento', async () => {
-    const h = harness({
-      portfolio: {
-        id: '44444444-4444-4444-8444-444444444444',
-        tenant_id: TENANT,
-        credit_limit_minor: 0,
-        balance_minor: 500_000,
-        currency: 'COP',
-        status: 'suspended',
-        created_at: NOW,
-        updated_at: NOW,
-      },
-    });
+    const h = harness({ wallet: { status: 'suspended' } });
 
     const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({ reason: 'PORTFOLIO_INACTIVE' });
-    expect(h.state.portfolio?.balance_minor).toBe(500_000);
-    expect(h.state.transactions).toHaveLength(0);
+    expect(h.balance()).toBe(500_000);
+    expect(h.bank.state.entries).toHaveLength(0);
+  });
+
+  it('un vuelo sin neto con red por encima: 409 PORTFOLIO_NETWORK_COST_UNAVAILABLE y aviso', async () => {
+    const h = harness();
+    h.bank.network.rejectWith = 'network_cost_unavailable';
+
+    const err = await h.service.holdBooking(TENANT, ORDER, USER).catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ reason: 'PORTFOLIO_NETWORK_COST_UNAVAILABLE' });
+    expect(h.balance()).toBe(500_000);
+    expect(h.bank.reports).toEqual([{ tenantId: TENANT, orderId: ORDER }]);
   });
 
   it('ante dos requests concurrentes crea un solo hold y debita exactamente una vez', async () => {
@@ -394,7 +208,7 @@ describe('PortfoliosService.holdBooking', () => {
     expect(rejected?.status).toBe('rejected');
     if (rejected?.status !== 'rejected') throw new Error('Expected one rejected hold');
     expect(rejected.reason).toBeInstanceOf(ConflictException);
-    expect(h.state.transactions).toHaveLength(1);
-    expect(h.state.portfolio?.balance_minor).toBe(375_000);
+    expect(h.bank.state.entries).toHaveLength(1);
+    expect(h.balance()).toBe(375_000);
   });
 });

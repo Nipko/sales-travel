@@ -1,10 +1,15 @@
-import { HttpStatus } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
+import { BookingHoldRejectedError, PortfolioHoldAccountChangedError } from './booking-hold.js';
 import {
   PORTFOLIO_RULE_SQLSTATE,
   PortfolioConflictError,
   PortfolioForbiddenError,
+  WALLET_HOLD_REJECTED_SQLSTATE,
+  holdRejectionOfRule,
   portfolioHttpError,
+  walletHoldHttpError,
+  walletHoldStateRule,
   walletNotEnabled,
 } from './portfolio-errors.js';
 
@@ -76,5 +81,123 @@ describe('walletNotEnabled', () => {
     expect(err.message).toBe(
       'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
     );
+  });
+});
+
+describe('walletHoldHttpError: las retenciones de 0060', () => {
+  it.each([
+    ['hold_currency_not_enabled', 'PORTFOLIO_CURRENCY_NOT_ENABLED'],
+    ['hold_inactive', 'PORTFOLIO_INACTIVE'],
+    ['hold_funds_insufficient', 'PORTFOLIO_FUNDS_INSUFFICIENT'],
+    ['network_currency_not_enabled', 'PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED'],
+    ['network_funds_unavailable', 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE'],
+    ['network_cost_unavailable', 'PORTFOLIO_NETWORK_COST_UNAVAILABLE'],
+  ])('STW02 con la regla %s → 409 %s en la moneda de la reserva', (constraint, reason) => {
+    const mapped = walletHoldHttpError(pgError(WALLET_HOLD_REJECTED_SQLSTATE, constraint), {
+      currency: 'USD',
+    });
+
+    expect(mapped).toBeInstanceOf(BookingHoldRejectedError);
+    expect(mapped?.getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((mapped as BookingHoldRejectedError).reason).toBe(reason);
+    expect(mapped?.message).not.toContain('7970ade5');
+    expect(holdRejectionOfRule(constraint)).toBe(reason);
+  });
+
+  it('una regla STW02 que la API no conoce sale con el motivo genérico', () => {
+    const mapped = walletHoldHttpError(pgError('STW02', 'network_algo_nuevo'));
+
+    expect(mapped).toBeInstanceOf(PortfolioConflictError);
+    expect((mapped as PortfolioConflictError).reason).toBe('PORTFOLIO_RULE_VIOLATION');
+  });
+
+  it('sin la moneda (el filtro global) el texto sigue siendo de negocio', () => {
+    expect(walletHoldHttpError(pgError('STW02', 'network_funds_unavailable'))?.message).toBe(
+      'Tu red no tiene cupo disponible en la moneda de la tarifa para esta reserva. Pedile a quien te financia que lo revise.',
+    );
+  });
+
+  it.each([
+    [
+      'hold_order_not_found',
+      BadRequestException,
+      'No se encontró la reserva. No se modificó el saldo de la cartera.',
+    ],
+    [
+      'hold_order_not_holdable',
+      BadRequestException,
+      'La reserva no está en un estado que pueda retener saldo de cartera.',
+    ],
+    [
+      'hold_already_exists',
+      ConflictException,
+      'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.',
+    ],
+    [
+      'hold_amount_invalid',
+      BadRequestException,
+      'La reserva no tiene un total y una moneda válidos para crear la retención.',
+    ],
+    [
+      'hold_release_order_open',
+      ConflictException,
+      'La reserva no está en el estado que la liberación exige: su retención de saldo se mantiene.',
+    ],
+  ])('STW01 %s → la excepción de siempre', (constraint, type, message) => {
+    const mapped = walletHoldHttpError(pgError(PORTFOLIO_RULE_SQLSTATE, constraint));
+
+    expect(mapped).toBeInstanceOf(type);
+    expect(mapped?.message).toBe(message);
+    expect(walletHoldStateRule(pgError(PORTFOLIO_RULE_SQLSTATE, constraint))).toBe(constraint);
+    // `portfolioHttpError` las deja pasar: no son un PORTFOLIO_RULE_VIOLATION.
+    expect(portfolioHttpError(pgError(PORTFOLIO_RULE_SQLSTATE, constraint))).toBeUndefined();
+  });
+
+  it('cada vía dice por qué su orden no retiene', () => {
+    expect(
+      walletHoldHttpError(pgError('STW01', 'hold_order_not_holdable'), {
+        notHoldableMessage:
+          'Sólo una reserva confirmada y no emitida puede retener saldo de cartera.',
+      })?.message,
+    ).toBe('Sólo una reserva confirmada y no emitida puede retener saldo de cartera.');
+  });
+
+  it('la cuenta del proveedor que ya no se resuelve es 409 PORTFOLIO_HOLD_ACCOUNT_CHANGED', () => {
+    const mapped = walletHoldHttpError(pgError('STW01', 'hold_owner_unresolvable'));
+
+    expect(mapped).toBeInstanceOf(PortfolioHoldAccountChangedError);
+    expect((mapped as PortfolioHoldAccountChangedError).reason).toBe(
+      'PORTFOLIO_HOLD_ACCOUNT_CHANGED',
+    );
+  });
+
+  it('la liberación fuera de rango es PORTFOLIO_BALANCE_OUT_OF_RANGE', () => {
+    expect(
+      (walletHoldHttpError(pgError('STW01', 'hold_release_out_of_range')) as PortfolioConflictError)
+        .reason,
+    ).toBe('PORTFOLIO_BALANCE_OUT_OF_RANGE');
+  });
+
+  it('los 42501 de 0060 son errores de programación: no se traducen (500 y log)', () => {
+    for (const rule of [
+      'wallet_hold_no_tenant',
+      'wallet_hold_actor_invalid',
+      'hold_entry_reserved',
+      'portfolio_balance_reserved',
+    ]) {
+      expect(walletHoldHttpError(pgError('42501', rule))).toBeUndefined();
+      expect(portfolioHttpError(pgError('42501', rule))).toBeUndefined();
+    }
+  });
+
+  it('lo que no es de las retenciones sigue su camino', () => {
+    for (const err of [
+      pgError('STW01', 'portfolio_identity_immutable'),
+      pgError('23505', 'uq_portfolio_transactions_booking_hold'),
+      new Error('cualquier cosa'),
+      null,
+    ]) {
+      expect(walletHoldHttpError(err)).toBeUndefined();
+    }
   });
 });

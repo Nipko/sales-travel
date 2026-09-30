@@ -70,7 +70,7 @@ import {
   HotelPrebookSnapshotStore,
   type HotelPrebookSnapshot,
 } from './hotel-prebook-snapshot.store.js';
-import { priceRoompack, saleTotalOf } from './hotel-pricing.js';
+import { hotelHoldQuoteOf, priceRoompack, saleTotalOf } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
 import {
   HotelSearchAccountChangedError,
@@ -534,11 +534,17 @@ export class HotelBookingService {
     const ctx: SearchContext = { tenantId, requestId: intent.id };
 
     // RF-23 CA-1: sin cartera en la moneda de la tarifa, o sin saldo ni cupo en ella para lo que se
-    // mostró, no se le pregunta nada al proveedor.
+    // mostró —la propia o la de un nivel de la red que la financia hasta el dueño de la cuenta
+    // (0060)—, no se le pregunta nada al proveedor.
     // Va después de abrir la orden y no antes para que un reintento con la misma clave siga siendo
     // un 409 de duplicado aunque la primera retención ya haya gastado el saldo. Es una lectura: la
-    // retención que vale se toma con la cartera bloqueada, después de C2.
-    await this.portfolios.assertBookingHoldAffordable(tenantId, saleTotalOf(snapshot.roompack));
+    // retención que vale se toma con las carteras bloqueadas, después de C2. Con la orden abierta,
+    // un rechazo de la red le avisa al nivel que bloqueó.
+    await this.portfolios.assertBookingHoldAffordable(
+      tenantId,
+      hotelHoldQuoteOf(snapshot.roompack, provider.code, snapshot.account.accountId),
+      { reportOrderId: intent.id },
+    );
 
     let found: HotelPrebookWithContext;
     try {

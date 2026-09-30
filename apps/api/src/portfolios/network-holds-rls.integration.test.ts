@@ -73,6 +73,7 @@ const ENTRY_POINTS = [
   'wallet_hold_settle(uuid,uuid,text)',
   'wallet_hold_preview(text,uuid,text,text,bigint,bigint)',
   'wallet_hold_report_block(uuid)',
+  'wallet_hold_report_preview_block(text,uuid,text,text,bigint,bigint)',
 ];
 
 d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
@@ -471,6 +472,11 @@ d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
           as({ tenantId: 'no-es-un-uuid' }, (c) =>
             c.query('SELECT wallet_hold_report_block($1::uuid)', [orderS1]),
           ),
+        ),
+      ).toBe('42501/wallet_hold_no_tenant');
+      expect(
+        await rule(
+          call(`SELECT wallet_hold_report_preview_block('x', NULL, 'hotels', 'USD', 1, NULL)`, []),
         ),
       ).toBe('42501/wallet_hold_no_tenant');
     });

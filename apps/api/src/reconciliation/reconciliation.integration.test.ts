@@ -33,6 +33,11 @@ import {
   RECONCILIATION_DISCREPANCY_KINDS,
 } from '../orders/order-events.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
+import {
+  clearWalletHoldsOfTenants,
+  retainAsSuperuser,
+  seedWallet,
+} from '../portfolios/__fixtures__/wallet-hold-seed.js';
 import { encryptCredentials } from '../provider-credentials/credentials-cipher.js';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
 import {
@@ -291,11 +296,25 @@ d('conciliación contra Postgres (0047)', () => {
       [`rc-${sfx}@test.local`],
     );
     usuario = u.rows[0]!.id;
+    // Quien pide la corrida es un admin del dueño de la cuenta: firma los cierres de las
+    // retenciones de su red (0060 exige que el actor sea de la red de la reserva).
+    await pool.query(
+      `INSERT INTO memberships (tenant_id, user_id, role, status)
+       VALUES ($1, $2, 'consolidator_admin', 'active')`,
+      [consolidador, usuario],
+    );
     cuenta = await crearCuenta(consolidador);
     cuentaAjena = await crearCuenta(otroConsolidador);
   });
 
   afterAll(async () => {
+    // Las retenciones son ON DELETE RESTRICT: se borran antes que las órdenes y los tenants.
+    await clearWalletHoldsOfTenants(
+      pool,
+      [agenciaAjena, agenciaA, agenciaB, consolidador, otroConsolidador].filter(
+        (id) => id !== undefined,
+      ),
+    );
     for (const id of [agenciaAjena, agenciaA, agenciaB, consolidador, otroConsolidador]) {
       if (id) await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
     }
@@ -947,6 +966,93 @@ d('conciliación contra Postgres (0047)', () => {
       errorClass: 'ReconciliationWindowMismatchError',
     });
     void cuentaAjena;
+  });
+
+  it('R-W (0060): una retención abierta de una orden ya cerrada se libera al terminar la corrida, sólo en su red', async () => {
+    const { service } = servicio();
+    await seedWallet(pool, agenciaA, { currency: 'USD', creditLimitMinor: 10_000_000 });
+    await seedWallet(pool, agenciaAjena, { currency: 'USD', creditLimitMinor: 10_000_000 });
+    const cerrada = await orden({ tenantId: agenciaA, checkout: fecha(-30) });
+    const confirmada = await orden({ tenantId: agenciaA, checkout: fecha(-30) });
+    const ajena = await orden({
+      tenantId: agenciaAjena,
+      cuenta: cuentaAjena,
+      checkout: fecha(-30),
+    });
+    // La cuenta es del consolidador: por encima de la agencia no retiene nadie.
+    for (const o of [cerrada, confirmada]) await retainAsSuperuser(pool, agenciaA, o.id, usuario);
+    const vendedorAjeno = await pool.query<{ id: string }>(
+      `INSERT INTO users (email) VALUES ($1) RETURNING id`,
+      [`rc-y-${sfx}@test.local`],
+    );
+    await pool.query(
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+      [agenciaAjena, vendedorAjeno.rows[0]!.id],
+    );
+    await retainAsSuperuser(pool, agenciaAjena, ajena.id, vendedorAjeno.rows[0]!.id);
+    // La saga cerró las órdenes pero no llegó a liberar: la retención quedó abierta.
+    await pool.query(`UPDATE orders SET status = 'cancelled' WHERE id = ANY($1::uuid[])`, [
+      [cerrada.id, ajena.id],
+    ]);
+    const saldo = async (tenantId: string) =>
+      Number(
+        (
+          await pool.query<{ b: string }>(
+            `SELECT balance_minor::text AS b FROM agency_portfolios
+              WHERE tenant_id = $1 AND currency = 'USD'`,
+            [tenantId],
+          )
+        ).rows[0]!.b,
+      );
+    const antes = await saldo(agenciaA);
+
+    const report = await correr(service);
+
+    expect(report.holds).toEqual({ released: 1 });
+    const grupos = await pool.query<{ order_id: string; status: string }>(
+      `SELECT order_id, status FROM wallet_hold_groups WHERE order_id = ANY($1::uuid[])`,
+      [[cerrada.id, confirmada.id, ajena.id]],
+    );
+    expect(Object.fromEntries(grupos.rows.map((g) => [g.order_id, g.status]))).toEqual({
+      [cerrada.id]: 'released',
+      [confirmada.id]: 'captured',
+      // Otra cuenta, otra red: no es de esta corrida.
+      [ajena.id]: 'captured',
+    });
+    expect(await saldo(agenciaA)).toBe(antes + 34_012);
+    await pool.query('DELETE FROM memberships WHERE user_id = $1', [vendedorAjeno.rows[0]!.id]);
+    await clearWalletHoldsOfTenants(pool, [agenciaAjena]);
+    await pool.query('DELETE FROM orders WHERE id = $1', [ajena.id]);
+    await pool.query('DELETE FROM users WHERE id = $1', [vendedorAjeno.rows[0]!.id]);
+  });
+
+  it('R-W (0060): la corrida de la cuenta vigente cierra también las retenciones de una cuenta del dueño ya desactivada', async () => {
+    const { service } = servicio();
+    await seedWallet(pool, agenciaB, { currency: 'USD', creditLimitMinor: 10_000_000 });
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO provider_accounts (tenant_id, provider_code, label, credentials_enc, config, is_inheritable, status)
+       VALUES ($1, $2, 'reemplazada', $3, '{"environment":"test"}'::jsonb, true, 'active') RETURNING id`,
+      [
+        consolidador,
+        PROVEEDOR,
+        encryptCredentials(JSON.stringify({ username: 'v', password: 'p' })),
+      ],
+    );
+    const vieja = rows[0]!.id;
+    const conVieja = await orden({ tenantId: agenciaB, cuenta: vieja, checkout: fecha(-30) });
+    await retainAsSuperuser(pool, agenciaB, conVieja.id, usuario);
+    // El operador la reemplaza por la vigente; la reserva se canceló y nadie liberó su retención.
+    await pool.query(`UPDATE provider_accounts SET status = 'disabled' WHERE id = $1`, [vieja]);
+    await pool.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [conVieja.id]);
+
+    const report = await correr(service);
+
+    expect(report.holds).toEqual({ released: 1 });
+    const grupo = await pool.query<{ status: string }>(
+      'SELECT status FROM wallet_hold_groups WHERE order_id = $1',
+      [conVieja.id],
+    );
+    expect(grupo.rows[0]?.status).toBe('released');
   });
 });
 

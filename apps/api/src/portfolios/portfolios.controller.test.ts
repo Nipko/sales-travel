@@ -1,5 +1,7 @@
 import { BadRequestException, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
+import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { PortfolioForbiddenError } from './portfolio-errors.js';
@@ -15,7 +17,8 @@ const WALLET = '44444444-4444-4444-8444-444444444444';
 const KEY = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
 const NOW = new Date('2026-09-29T12:00:00.000Z');
 
-function harness(role = 'tenant_admin') {
+/** `null`: sin membership activa en la agencia (p. ej. un rol de plataforma operándola). */
+function harness(role: string | null = 'tenant_admin') {
   const portfolio = {
     id: WALLET,
     tenant_id: TENANT,
@@ -43,6 +46,8 @@ function harness(role = 'tenant_admin') {
     overview: vi.fn(() => Promise.resolve({ portfolios: [], financier: null })),
     approveBooking: vi.fn(() => Promise.resolve({ success: false, message: 'blocked' })),
     rejectBooking: vi.fn(() => Promise.resolve({ success: true, message: 'released' })),
+    listTransactions: vi.fn(() => Promise.resolve([])),
+    listNetworkHolds: vi.fn(() => Promise.resolve({ items: [], totals: [] })),
   };
   const activeTenant = {
     resolve: vi.fn(() => Promise.resolve(TENANT)),
@@ -50,7 +55,9 @@ function harness(role = 'tenant_admin') {
   const membershipQuery: Record<string, ReturnType<typeof vi.fn>> = {};
   membershipQuery.select = vi.fn(() => membershipQuery);
   membershipQuery.where = vi.fn(() => membershipQuery);
-  membershipQuery.executeTakeFirst = vi.fn(() => Promise.resolve({ role }));
+  membershipQuery.executeTakeFirst = vi.fn(() =>
+    Promise.resolve(role === null ? undefined : { role }),
+  );
   const db = {
     withRequestContext: <T>(
       _context: unknown,
@@ -135,6 +142,41 @@ describe('PortfoliosController.submitDepositReport', () => {
     await expect(h.controller.submitDepositReport(USER, body, KEY)).rejects.toThrow(/admin/);
     expect(h.service.submitDepositReport).not.toHaveBeenCalled();
   });
+});
+
+describe('PortfoliosController: las ventas de la red, sólo para quien administra el nodo', () => {
+  it('GET /portfolios/network-holds exige un rol de admin, también en la membership', async () => {
+    const handler: unknown = Object.getOwnPropertyDescriptor(
+      PortfoliosController.prototype,
+      'listNetworkHolds',
+    )?.value;
+    expect(Reflect.getMetadata(ROLES_KEY, handler as object)).toEqual([...AGENCY_ADMIN_ROLES]);
+    const admin = harness();
+    await admin.controller.listNetworkHolds(USER, {});
+    expect(admin.service.listNetworkHolds).toHaveBeenCalledWith(TENANT, {});
+
+    for (const role of ['vendedor', null]) {
+      const h = harness(role);
+      await expect(h.controller.listNetworkHolds(USER, {})).rejects.toThrow(/admin|member/);
+      expect(h.service.listNetworkHolds).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    ['tenant_admin', true],
+    ['consolidator_admin', true],
+    ['vendedor', false],
+    [null, false],
+  ] as const)(
+    'GET /portfolios/transactions como %s: datos de la reserva de la red = %s',
+    async (role, includeNetwork) => {
+      const h = harness(role);
+
+      await h.controller.listTransactions(USER, { currency: 'USD' });
+
+      expect(h.service.listTransactions).toHaveBeenCalledWith(TENANT, 'USD', { includeNetwork });
+    },
+  );
 });
 
 describe('PortfoliosController.hold', () => {

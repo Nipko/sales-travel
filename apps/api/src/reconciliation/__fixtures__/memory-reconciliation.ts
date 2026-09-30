@@ -1,5 +1,10 @@
 import type { Money } from '@sales-travel/canonical';
-import type { HcnState, HotelOrderSubStatus, OrderStatus } from '../../database/database.types.js';
+import type {
+  HcnState,
+  HotelOrderSubStatus,
+  OrderStatus,
+  WalletHoldStatus,
+} from '../../database/database.types.js';
 import type { HcnTrackingService } from '../../hotels/hcn-tracking.service.js';
 import type {
   ExternalCreateOutcome,
@@ -15,6 +20,7 @@ import type {
   HotelOrderTrackingStore,
 } from '../../orders/hotel-order-tracking.store.js';
 import type { BookingHoldLedger } from '../../portfolios/booking-hold.ledger.js';
+import type { WalletHoldSettleOutcome } from '../../portfolios/wallet-hold.store.js';
 import type { ProviderCredentialsService } from '../../provider-credentials/provider-credentials.service.js';
 import type { ReconciliationOrder } from '../reconciliation.plan.js';
 import type {
@@ -103,11 +109,30 @@ export interface MemoryAccount {
   readonly active: boolean;
 }
 
+/**
+ * Una retención de cartera de 0060, como la ve el nodo que vende: el grupo, con la cuenta de la
+ * orden. `holds.settle` la cierra con la tabla de `wallet_hold_settle`.
+ */
+export interface MemoryHoldGroup {
+  readonly orderId: string;
+  status: WalletHoldStatus;
+  readonly createdBy: string;
+}
+
 export class MemoryReconciliationBank {
   readonly runs: MemoryRun[] = [];
   readonly items: MemoryItem[] = [];
   readonly tracking = new Map<string, MemoryTracking>();
   readonly holdsReleased: { tenantId: string; orderId: string; as: 'cancelled' | 'failed' }[] = [];
+  /** Las retenciones registradas (0060), por orden. Vacío salvo que el test las siembre. */
+  readonly holdGroups: MemoryHoldGroup[] = [];
+  /** Cada `holds.settle` sin precondición, con el tenant, el actor y lo que devolvió. */
+  readonly holdSettles: {
+    tenantId: string;
+    orderId: string;
+    actor: string;
+    outcome: WalletHoldSettleOutcome;
+  }[] = [];
   readonly hcnScheduled: { tenantId: string; orderId: string }[] = [];
   readonly settles: { tenantId: string; orderId: string; outcome: ExternalCreateOutcome }[] = [];
   /** Cada consulta de órdenes, con el tenant con el que corrió. */
@@ -115,8 +140,12 @@ export class MemoryReconciliationBank {
   private sequence = 0;
   /** Si se define, `startRun` devuelve `undefined`: otra corrida en curso. */
   busy = false;
-  /** Si se define, `holds.release*` lanza. */
+  /** Si se define, `holds.release*` y `holds.settle` lanzan. */
   holdFailure: Error | undefined;
+  /** Si se define, `listMisalignedHolds` lanza (la base no respondió). */
+  holdListFailure: Error | undefined;
+  /** Si se define, `inactiveOwnAccountIds` lanza (la base no respondió). */
+  inactiveAccountsFailure: Error | undefined;
   /** Si se define, `recordItem` lanza (la base no respondió). */
   itemFailure: Error | undefined;
 
@@ -365,6 +394,45 @@ export class MemoryReconciliationBank {
         Promise.resolve(
           this.items.filter((i) => i.tenantId === tenantId && runIds.includes(i.runId)),
         ),
+      inactiveOwnAccountIds: (owner: string, provider: string) =>
+        this.inactiveAccountsFailure !== undefined
+          ? Promise.reject(this.inactiveAccountsFailure)
+          : Promise.resolve(
+              this.accounts
+                .filter((a) => a.tenantId === owner && a.providerCode === provider && !a.active)
+                .map((a) => a.id)
+                .sort(),
+            ),
+      listMisalignedHolds: (
+        tenantId: string,
+        q: { provider: string; accountIds: readonly string[]; limit: number },
+      ) =>
+        this.holdListFailure !== undefined
+          ? Promise.reject(this.holdListFailure)
+          : Promise.resolve(
+              this.holdGroups
+                .map((g) => ({ g, o: this.order(g.orderId) }))
+                .filter(
+                  ({ o }) =>
+                    o.tenantId === tenantId &&
+                    o.provider === q.provider &&
+                    o.accountId !== null &&
+                    q.accountIds.includes(o.accountId),
+                )
+                .filter(
+                  ({ g, o }) =>
+                    (['held', 'captured'].includes(g.status) &&
+                      ['failed', 'cancelled'].includes(o.status)) ||
+                    (g.status === 'held' && ['confirmed', 'ticketed'].includes(o.status)),
+                )
+                .slice(0, q.limit)
+                .map(({ g, o }) => ({
+                  orderId: g.orderId,
+                  holdStatus: g.status,
+                  orderStatus: o.status,
+                  createdBy: g.createdBy,
+                })),
+            ),
     };
     return store as unknown as ReconciliationStore;
   }
@@ -447,11 +515,48 @@ export class MemoryReconciliationBank {
         return Promise.reject(new Error('la retención sólo se libera con la orden cerrada'));
       }
       this.holdsReleased.push({ tenantId, orderId, as });
+      const group = this.holdGroups.find((g) => g.orderId === orderId);
+      if (group !== undefined && (group.status === 'held' || group.status === 'captured')) {
+        group.status = 'released';
+      }
       return Promise.resolve('released');
+    };
+    // La tabla de `wallet_hold_settle` sin precondición (db/migrations/0060).
+    const settle = (tenantId: string, orderId: string, actor: string) => {
+      if (this.holdFailure !== undefined) return Promise.reject(this.holdFailure);
+      const o = this.orders.find((x) => x.id === orderId && x.tenantId === tenantId);
+      if (o === undefined) return Promise.reject(new Error('la reserva no existe en este nodo'));
+      const group = this.holdGroups.find((g) => g.orderId === orderId);
+      let outcome: WalletHoldSettleOutcome;
+      if (group === undefined) outcome = 'no-hold';
+      else if (o.status === 'confirmed' || o.status === 'ticketed') {
+        outcome =
+          group.status === 'held'
+            ? 'captured'
+            : group.status === 'captured'
+              ? 'already-captured'
+              : group.status === 'released'
+                ? 'already-released'
+                : 'conflict';
+        if (group.status === 'held') group.status = 'captured';
+      } else if (o.status === 'failed' || o.status === 'cancelled') {
+        if (group.status === 'released') outcome = 'already-released';
+        else if (group.status === 'conflict') outcome = 'conflict';
+        else if (o.status === 'failed' && group.status === 'captured') {
+          group.status = 'conflict';
+          outcome = 'conflict';
+        } else {
+          group.status = 'released';
+          outcome = 'released';
+        }
+      } else outcome = 'open';
+      this.holdSettles.push({ tenantId, orderId, actor, outcome });
+      return Promise.resolve(outcome);
     };
     return {
       releaseCancelled: release('cancelled'),
       releaseFailed: release('failed'),
+      settle,
     } as unknown as BookingHoldLedger;
   }
 
