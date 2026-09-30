@@ -3,7 +3,9 @@ import {
   ANONYMOUS_ACTOR,
   MFA_REQUIRED_ROLES,
   canActOn,
+  demotes,
   grantableRoles,
+  invitationOrigin,
   memberAccess,
   memberActionCopy,
   memberActionDoneMessage,
@@ -13,7 +15,10 @@ import {
   parseInvitations,
   parseMemberActionResult,
   parseMembers,
+  parseMembershipImpact,
+  revokedInvitationsNotice,
   roleChangeCopy,
+  statusChangeCopy,
   teamActorOf,
   teamLoadError,
   type NetworkMember,
@@ -78,6 +83,82 @@ describe('parseInvitations', () => {
     };
     expect(parseInvitations({ invitations: [inv, { id: 'x' }] })).toEqual([inv]);
     expect(parseInvitations({ error: 'x' })).toBeUndefined();
+  });
+});
+
+describe('invitationOrigin: quién la mandó y cuándo', () => {
+  const NOW = Date.parse('2026-09-30T12:00:00.000Z');
+
+  it('"Invitado por X · hace N días"', () => {
+    expect(
+      invitationOrigin(
+        { invitedByEmail: 'ana@agencia.co', createdAt: '2026-09-28T09:00:00.000Z' },
+        NOW,
+      ),
+    ).toBe('Invitado por ana@agencia.co · hace 2 días');
+    expect(
+      invitationOrigin(
+        { invitedByEmail: 'ana@agencia.co', createdAt: '2026-09-30T09:00:00.000Z' },
+        NOW,
+      ),
+    ).toBe('Invitado por ana@agencia.co · hace 3 h');
+  });
+
+  it('sin invitador (se borró la cuenta) o sin fecha legible, lo dice igual', () => {
+    expect(
+      invitationOrigin({ invitedByEmail: null, createdAt: '2026-09-29T12:00:00.000Z' }, NOW),
+    ).toBe('Invitado por un usuario eliminado · hace 1 día');
+    expect(invitationOrigin({ invitedByEmail: 'ana@agencia.co', createdAt: '' }, NOW)).toBe(
+      'Invitado por ana@agencia.co',
+    );
+  });
+});
+
+describe('invitaciones que revoca un cambio', () => {
+  it('parseMembershipImpact: un entero no negativo, o nada', () => {
+    expect(parseMembershipImpact({ invitationsToRevoke: 2 })).toEqual({ invitationsToRevoke: 2 });
+    expect(parseMembershipImpact({ invitationsToRevoke: 0 })).toEqual({ invitationsToRevoke: 0 });
+    for (const bad of [{}, { invitationsToRevoke: -1 }, { invitationsToRevoke: 1.5 }, null, []]) {
+      expect(parseMembershipImpact(bad)).toBeUndefined();
+    }
+    expect(parseMembershipImpact({ invitationsToRevoke: '2' })).toBeUndefined();
+  });
+
+  it('la frase: ninguna, una, varias o no sabemos cuántas', () => {
+    expect(revokedInvitationsNotice(0)).toBe('');
+    expect(revokedInvitationsNotice(1)).toBe(' Se revocará 1 invitación que envió.');
+    expect(revokedInvitationsNotice(3)).toBe(' Se revocarán 3 invitaciones que envió.');
+    expect(revokedInvitationsNotice(null)).toMatch(
+      /invitaciones que ya no podría enviar, se revocan/,
+    );
+  });
+
+  it('suspender aclara que corta sólo este nodo y cuenta las invitaciones', () => {
+    const copy = statusChangeCopy(member(), 'suspended', 2);
+    expect(copy.title).toBe('Suspender a Ana Pérez');
+    expect(copy.confirmLabel).toBe('Suspender');
+    expect(copy.description).toMatch(/este nodo/);
+    expect(copy.description).toMatch(/en otros nodos, ahí sigue operando/);
+    expect(copy.description).toMatch(/Se revocarán 2 invitaciones que envió\.$/);
+    expect(statusChangeCopy(member(), 'suspended', 0).description).not.toMatch(/invitaci/);
+  });
+
+  it('reactivar no habla de invitaciones', () => {
+    const copy = statusChangeCopy(member({ name: null }), 'active', 5);
+    expect(copy.title).toBe('Reactivar a ana@agencia.co');
+    expect(copy.description).not.toMatch(/invitaci/);
+  });
+
+  it('degradar cuenta las invitaciones; promover no', () => {
+    expect(demotes('tenant_admin', 'admin')).toBe(true);
+    expect(demotes('admin', 'tenant_admin')).toBe(false);
+    const down = roleChangeCopy(member({ role: 'tenant_admin' }), 'admin', (r) => r, 1);
+    expect(down.description).toMatch(/Se revocará 1 invitación que envió\.$/);
+    const up = roleChangeCopy(member({ role: 'vendedor' }), 'admin', (r) => r, 4);
+    expect(up.description).not.toMatch(/invitaci/);
+    expect(roleChangeCopy(member({ role: 'admin' }), 'vendedor', (r) => r).description).not.toMatch(
+      /invitaci/,
+    );
   });
 });
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { api } from '../../lib/api';
+import { acceptInvitationError } from './errors';
 
 export interface InvitationState {
   error?: string;
@@ -35,14 +36,7 @@ export async function acceptInvitationAction(
     body: JSON.stringify({ token, name, password }),
   });
 
-  if (!res.ok) {
-    if (res.error.status === 400) {
-      return {
-        error: 'La invitación ya se usó o venció. Pedile a tu administrador que la reenvíe.',
-      };
-    }
-    return { error: res.error.message };
-  }
+  if (!res.ok) return { error: acceptInvitationError(res.error) };
 
   // No se inicia sesión automáticamente: que entre por /login deja el flujo de MFA y de
   // lockout en un solo lugar, en vez de duplicarlo acá.

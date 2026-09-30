@@ -3,10 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { parseSeatsView, type SeatsView } from '../../../../../lib/tenant-admin-seats';
 import {
+  parseInvitations,
   parseMembers,
   teamActorOf,
   type NetworkMember,
 } from '../../../../../lib/tenant-admin-team';
+import { InvitationList } from './invitation-list';
 import { MemberList, type MemberRowError } from './member-list';
 import { SeatsCard, type SeatsState } from './seats-ui';
 
@@ -251,5 +253,38 @@ describe('MemberList', () => {
     const html = members(list);
     expect(html).not.toContain('Acciones sobre Yo');
     expect(html).toContain('Vos');
+  });
+});
+
+describe('InvitationList', () => {
+  it('cada invitación dice quién la mandó y hace cuánto', () => {
+    const DAY = 24 * 60 * 60_000;
+    const items =
+      parseInvitations({
+        invitations: [
+          {
+            id: 'i1',
+            email: 'nuevo@gmail.com',
+            role: 'admin',
+            invitedByEmail: 'ana@agencia.co',
+            expiresAt: new Date(Date.now() + 5 * DAY).toISOString(),
+            createdAt: new Date(Date.now() - 2 * DAY).toISOString(),
+          },
+          {
+            id: 'i2',
+            email: 'otro@gmail.com',
+            role: 'vendedor',
+            invitedByEmail: null,
+            expiresAt: new Date(Date.now() + 6 * DAY).toISOString(),
+            createdAt: new Date(Date.now() - DAY).toISOString(),
+          },
+        ],
+      }) ?? [];
+    const html = renderToStaticMarkup(createElement(InvitationList, { items, onRevoke: () => {} }));
+
+    expect(html).toContain('Invitaciones pendientes (2)');
+    expect(html).toContain('Invitado por ana@agencia.co · hace 2 días');
+    expect(html).toContain('Invitado por un usuario eliminado · hace 1 día');
+    expect(html).toContain('aria-label="Revocar la invitación a nuevo@gmail.com"');
   });
 });

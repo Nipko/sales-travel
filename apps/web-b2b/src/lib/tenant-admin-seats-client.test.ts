@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   loadInvitations,
   loadMembers,
+  loadMembershipImpact,
   loadSeats,
   releaseSeat,
   runMemberAction,
@@ -158,5 +159,39 @@ describe('runMemberAction', () => {
     const res = await runMemberAction(TENANT, 'u1', 'reset-mfa');
     expect(res.ok).toBe(false);
     expect(res.ok ? '' : res.message).not.toMatch(/JSON/);
+  });
+});
+
+describe('loadMembershipImpact', () => {
+  const USER = '22222222-2222-4222-8222-222222222222';
+
+  it('pregunta por el cambio que se va a confirmar', async () => {
+    const fetchMock = respond(200, { invitationsToRevoke: 2 });
+    expect(await loadMembershipImpact(TENANT, USER, { status: 'suspended' })).toEqual({
+      ok: true,
+      data: { invitationsToRevoke: 2 },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/admin/memberships/impact?tenantId=${TENANT}&userId=${USER}&status=suspended`,
+      expect.anything(),
+    );
+
+    respond(200, { invitationsToRevoke: 0 });
+    await loadMembershipImpact(TENANT, USER, { role: 'admin' });
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      `/api/admin/memberships/impact?tenantId=${TENANT}&userId=${USER}&role=admin`,
+      expect.anything(),
+    );
+  });
+
+  it('un error o una respuesta rara vuelve como error, no como cero', async () => {
+    respond(403, { error: 'no administrás este nodo' });
+    expect(await loadMembershipImpact(TENANT, USER, { status: 'suspended' })).toMatchObject({
+      ok: false,
+    });
+    respond(200, { invitationsToRevoke: 'dos' });
+    expect(await loadMembershipImpact(TENANT, USER, { status: 'suspended' })).toMatchObject({
+      ok: false,
+    });
   });
 });
