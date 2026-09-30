@@ -1,4 +1,5 @@
 import type { CreatedNode, NewNodeInput } from './tenant-admin-client';
+import { idleError, parseIdle, parseSeats, seatsError } from './tenant-admin-seats';
 import { CREATABLE_KIND_LABEL, createFields, type CreatableKind } from './tenant-network';
 
 /**
@@ -19,6 +20,10 @@ export interface NodeDraft {
   readonly adminEmail: string;
   readonly adminName: string;
   readonly adminPassword: string;
+  /** Puestos simultáneos propios; `''` = comparte el cupo de su padre. Sólo lo fija el superadmin. */
+  readonly concurrentSeats: string;
+  /** Minutos de inactividad; `''` = hereda. Sólo lo fija el superadmin. */
+  readonly idleTimeoutMinutes: string;
 }
 
 /** Países de operación, con la moneda que se propone al elegirlos. */
@@ -69,6 +74,8 @@ export function emptyDraft(kind: CreatableKind | undefined, parentTenantId: stri
     adminEmail: '',
     adminName: '',
     adminPassword: '',
+    concurrentSeats: '',
+    idleTimeoutMinutes: '',
   };
 }
 
@@ -78,14 +85,37 @@ export type DraftField =
   | 'name'
   | 'slug'
   | 'adminEmail'
-  | 'adminPassword';
+  | 'adminPassword'
+  | 'concurrentSeats'
+  | 'idleTimeoutMinutes';
+
+/**
+ * Qué pide el alta sobre puestos e inactividad. Sólo el superadmin los ve (`undefined` = no se
+ * piden). Bajo la plataforma el cupo es obligatorio: un consolidador o una agencia directa sin
+ * cupo no tendría de quién heredarlo y quedaría sin límite.
+ */
+export interface SeatFieldsPolicy {
+  readonly seatsRequired: boolean;
+}
+
+/** La política de puestos del alta según el padre elegido; `undefined` si no la fija quien crea. */
+export function seatFieldsPolicy(
+  superadmin: boolean,
+  parentType: string | undefined,
+): SeatFieldsPolicy | undefined {
+  if (!superadmin) return undefined;
+  return { seatsRequired: parentType === 'platform' };
+}
 
 const SLUG = /^[a-z0-9-]+$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PASSWORD_MIN = 12;
 
 /** Los errores por campo; vacío si se puede enviar. */
-export function validateNodeDraft(draft: NodeDraft): Partial<Record<DraftField, string>> {
+export function validateNodeDraft(
+  draft: NodeDraft,
+  seats?: SeatFieldsPolicy,
+): Partial<Record<DraftField, string>> {
   const errors: Partial<Record<DraftField, string>> = {};
   if (draft.kind === undefined) errors.kind = 'Elegí qué tipo de nodo crear.';
   if (draft.parentTenantId === '') errors.parentTenantId = 'Elegí de qué nodo cuelga.';
@@ -108,6 +138,12 @@ export function validateNodeDraft(draft: NodeDraft): Partial<Record<DraftField, 
   if (draft.adminPassword !== '' && draft.adminPassword.length < PASSWORD_MIN) {
     errors.adminPassword = `La contraseña necesita al menos ${PASSWORD_MIN} caracteres.`;
   }
+  if (seats !== undefined) {
+    const seatsMessage = seatsError(draft.concurrentSeats, seats.seatsRequired);
+    if (seatsMessage !== undefined) errors.concurrentSeats = seatsMessage;
+    const idleMessage = idleError(draft.idleTimeoutMinutes);
+    if (idleMessage !== undefined) errors.idleTimeoutMinutes = idleMessage;
+  }
   return errors;
 }
 
@@ -119,6 +155,9 @@ export function nodeDraftPayload(draft: NodeDraft): NewNodeInput | undefined {
   if (draft.kind === undefined || draft.parentTenantId === '') return undefined;
   const email = draft.adminEmail.trim().toLowerCase();
   const adminName = draft.adminName.trim();
+  // Vacío es heredar: no viaja (y así quien no es superadmin nunca los manda, que sería un 403).
+  const concurrentSeats = parseSeats(draft.concurrentSeats);
+  const idleTimeoutMinutes = parseIdle(draft.idleTimeoutMinutes);
   return {
     name: draft.name.trim(),
     slug: draft.slug.trim(),
@@ -130,6 +169,8 @@ export function nodeDraftPayload(draft: NodeDraft): NewNodeInput | undefined {
     ...(email === '' ? {} : { adminEmail: email }),
     ...(email === '' || adminName === '' ? {} : { adminName }),
     ...(email === '' || draft.adminPassword === '' ? {} : { adminPassword: draft.adminPassword }),
+    ...(concurrentSeats === undefined ? {} : { concurrentSeats }),
+    ...(idleTimeoutMinutes === undefined ? {} : { idleTimeoutMinutes }),
   };
 }
 

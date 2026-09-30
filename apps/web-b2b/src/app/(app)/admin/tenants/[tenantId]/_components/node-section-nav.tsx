@@ -1,8 +1,8 @@
-import { Plug, Wallet } from 'lucide-react';
+import { Armchair, Plug, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '../../../../../../lib/cn';
 
-export type NodeSection = 'providers' | 'wallets';
+export type NodeSection = 'providers' | 'wallets' | 'seats';
 
 const SECTIONS: readonly {
   readonly id: NodeSection;
@@ -12,13 +12,19 @@ const SECTIONS: readonly {
 }[] = [
   { id: 'providers', label: 'Proveedores', icon: Plug, href: (id) => `/admin/tenants/${id}` },
   { id: 'wallets', label: 'Carteras', icon: Wallet, href: (id) => `/admin/tenants/${id}/carteras` },
+  {
+    id: 'seats',
+    label: 'Puestos y sesión',
+    icon: Armchair,
+    href: (id) => `/admin/tenants/${id}/puestos`,
+  },
 ];
 
-/** Las secciones de un nodo en Gestión de Agencias: sus proveedores y sus carteras. */
+/** Las secciones de un nodo en Gestión de Agencias: proveedores, carteras y puestos y sesión. */
 export function NodeSectionNav({ tenantId, current }: { tenantId: string; current: NodeSection }) {
   return (
     <nav aria-label="Secciones del nodo" className="mb-6 border-b border-[var(--color-border)]">
-      <ul className="-mb-px flex gap-4">
+      <ul className="-mb-px flex gap-4 overflow-x-auto">
         {SECTIONS.map(({ id, label, icon: Icon, href }) => {
           const active = id === current;
           return (
@@ -27,7 +33,7 @@ export function NodeSectionNav({ tenantId, current }: { tenantId: string; curren
                 href={href(tenantId)}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'inline-flex items-center gap-1.5 border-b-2 px-0.5 pb-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]',
+                  'inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 pb-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]',
                   active
                     ? 'border-[var(--color-primary)] text-[var(--color-fg)]'
                     : 'border-transparent text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
