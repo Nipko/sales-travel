@@ -63,7 +63,10 @@ describe('diálogos de quien financia', () => {
       }),
     );
     expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-label="Habilitar una moneda"');
+    // El nombre del diálogo es su título visible: aria-labelledby apunta al <h2>.
+    const titleId = /role="dialog"[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    expect(titleId).toBeTruthy();
+    expect(html).toMatch(new RegExp(`<h2 id="${titleId}"[^>]*>Habilitar una moneda</h2>`));
     expect(labelsOf(html)).toEqual(['Moneda', 'Cupo inicial (USD)', 'Motivo']);
     expect(html).toContain('Habilitar USD');
     expect(html).toContain('Queda en la auditoría');

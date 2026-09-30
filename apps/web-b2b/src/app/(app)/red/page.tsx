@@ -4,9 +4,7 @@ import {
   AlertTriangle,
   Building2,
   Calculator,
-  CheckCircle2,
   ChevronRight,
-  Info,
   KeyRound,
   Mail,
   Network,
@@ -18,50 +16,48 @@ import {
   Trash2,
   Users,
   Wallet,
-  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useViewer } from '../../../components/layout/viewer-context';
 import { NodeKindBadge, NodeKindPicker } from '../../../components/network/node-kind';
 import { Button } from '../../../components/ui/button';
+import { Dialog } from '../../../components/ui/dialog';
 import { Label } from '../../../components/ui/label';
 import { cn } from '../../../lib/cn';
 import {
   DEFAULT_ACCOUNT_LABEL,
   PROVIDERS,
-  PROVIDER_ACCOUNT_STATUSES,
   STATUS_LABELS,
   accountCertainty,
   accountCertaintyNotice,
   accountConfigSummary,
+  accountDraftChanged,
   draftWarnings,
-  fieldKey,
   inheritableHelp,
   isProviderAccountStatus,
   ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
-  providerFields,
   providerFormFor,
   providerFormsForNode,
   statusEnablesProvider,
-  statusNotice,
   validateProviderDraft,
+  type AccountEditorDraft,
   type Notice,
   type NoticeTone,
   type ProviderAccountStatus,
-  type ProviderField,
   type ProviderForm,
-  type ProviderSection,
 } from '../../../lib/provider-forms';
+import { providerMetaFor } from '../../../lib/provider-display';
 import { providerAccountSaveError } from '../../../lib/provider-account-errors';
 import { canManageWalletsFromNetwork } from '../../../lib/wallet-access';
 import { parseCreatedNode } from '../../../lib/tenant-admin-client';
 import { createdMessage, seatFieldsPolicy } from '../../../lib/tenant-admin-form';
 import { idleError, parseIdle, parseSeats, seatsError } from '../../../lib/tenant-admin-seats';
 import { SeatPolicyFields } from '../admin/tenants/_components/seat-policy-fields';
+import { ProviderAccountSheet } from '../admin/proveedores/_components/provider-account-sheet';
 import {
   buildForest,
   createActionLabel,
@@ -160,9 +156,10 @@ function isResolvedOrigin(lookup: OriginLookup | undefined): lookup is ResolvedO
  * las dos cosas se necesitan DESPUÉS, al redactar el aviso: qué fila se va a reescribir (la
  * etiqueta se puede editar, así que no se puede deducir del input) y qué se va a perder.
  */
-type EditorState =
+type EditorState = { initial: AccountEditorDraft } & (
   | { kind: 'create' }
-  | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] };
+  | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] }
+);
 
 interface SalesRow {
   tenantId: string;
@@ -350,7 +347,9 @@ export default function RedPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-8">
-      <div className="mb-6 flex items-center justify-between">
+      {/* `flex-wrap`: en el teléfono el título y los dos botones no entran en una fila, y la fila
+          ensanchaba la página entera —el navegador del teléfono la achicaba para que entrara—. */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
             <Network className="size-5 text-[var(--color-primary)]" />
@@ -402,11 +401,14 @@ export default function RedPage() {
             Aún no hay agencias en tu red
           </p>
           <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-            Creá una agencia para empezar a construir tu consolidador.
+            Crea una agencia para empezar a construir tu consolidador.
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+        // `relative`: los `sr-only` de los enlaces son `position: absolute` y, sin un ancestro
+        // posicionado, escapaban del scroll horizontal de la tabla y ensanchaban la página a 586 px
+        // en un teléfono de 375 (y con ella, los diálogos abiertos encima).
+        <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)]">
@@ -509,7 +511,7 @@ function CreateAgencyModal({
       return;
     }
     if (form.kind === undefined) {
-      setError('Elegí qué tipo de nodo crear.');
+      setError('Elige qué tipo de nodo crear.');
       return;
     }
     if (seatPolicy !== undefined) {
@@ -563,7 +565,23 @@ function CreateAgencyModal({
   }
 
   return (
-    <Modal title={newNodeLabel(kinds)} onClose={onClose}>
+    <Dialog
+      open
+      onClose={onClose}
+      title={newNodeLabel(kinds)}
+      className="max-w-lg"
+      footer={
+        <ModalFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button className="gap-1.5" disabled={saving} onClick={() => void submit()}>
+            <Plus className="size-3.5" />
+            {saving ? 'Creando…' : 'Crear agencia'}
+          </Button>
+        </ModalFooter>
+      }
+    >
       <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
         Colgará de <span className="font-medium text-[var(--color-fg)]">{parent.name}</span>.
       </p>
@@ -664,16 +682,7 @@ function CreateAgencyModal({
         </Field>
       </div>
       {error && <ErrorBox>{error}</ErrorBox>}
-      <ModalFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Cancelar
-        </Button>
-        <Button size="sm" className="gap-1.5" disabled={saving} onClick={() => void submit()}>
-          <Plus className="size-3.5" />
-          {saving ? 'Creando…' : 'Crear agencia'}
-        </Button>
-      </ModalFooter>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -717,6 +726,8 @@ function CredentialsModal({
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  /** Sube en cada guardado rechazado por validación: el editor lleva el foco al primer error. */
+  const [focusRequest, setFocusRequest] = useState(0);
 
   const provider = providerFormFor(providerCode);
   const ownerNameOf = useCallback(
@@ -767,17 +778,15 @@ function CredentialsModal({
   );
   // Sólo aparece al editar una cuenta que este nodo no puede tener: el alta ya no se la ofrece.
   const ownershipCallout = provider ? ownershipNotice(provider, tenant.tenantType) : null;
-
-  /**
-   * Foco al abrir el formulario. Se pinta DEBAJO de la lista de cuentas: sin mover el foco, quien
-   * navega con teclado o lector de pantalla pulsa "Editar" y no se entera de que apareció nada.
-   */
-  const editorHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const editorKey =
-    editor === null ? '' : editor.kind === 'edit' ? `edit:${editor.account.id}` : 'create';
-  useEffect(() => {
-    if (editorKey !== '') editorHeadingRef.current?.focus();
-  }, [editorKey]);
+  const dirty =
+    editor !== null && provider !== undefined
+      ? accountDraftChanged(provider, editor.initial, {
+          label,
+          status,
+          isInheritable,
+          sections: { credentials, config },
+        })
+      : false;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -850,7 +859,15 @@ function CredentialsModal({
     setFieldErrors({});
     setError('');
     setInUse(null);
-    setEditor({ kind: 'create' });
+    setEditor({
+      kind: 'create',
+      initial: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        status: 'sandbox',
+        isInheritable: true,
+        sections: { credentials: {}, config: {} },
+      },
+    });
   }
 
   /**
@@ -877,7 +894,26 @@ function CredentialsModal({
     setFieldErrors({});
     setError('');
     setInUse(null);
-    setEditor({ kind: 'edit', account, droppedConfigKeys: prefill.droppedConfigKeys });
+    setEditor({
+      kind: 'edit',
+      account,
+      droppedConfigKeys: prefill.droppedConfigKeys,
+      initial: {
+        label: prefill.label,
+        status: prefill.status,
+        isInheritable: prefill.isInheritable,
+        sections: { credentials: {}, config: { ...prefill.config } },
+      },
+    });
+  }
+
+  function closeEditor() {
+    setEditor(null);
+    // Lo tecleado no sobrevive al cierre: las credenciales no se quedan en memoria de la pantalla.
+    setCredentials({});
+    setFieldErrors({});
+    setError('');
+    setInUse(null);
   }
 
   async function save() {
@@ -886,7 +922,7 @@ function CredentialsModal({
     setFieldErrors({});
     if (!provider || !submission) {
       setError(
-        `El proveedor "${providerCode}" no está soportado por este panel. Actualizá la plataforma antes de cargarle credenciales.`,
+        `El proveedor "${providerCode}" no está soportado por este panel. Actualiza la plataforma antes de cargarle credenciales.`,
       );
       return;
     }
@@ -894,7 +930,8 @@ function CredentialsModal({
     const validation = validateProviderDraft(provider, { credentials, config });
     if (!validation.ok) {
       setFieldErrors(validation.fieldErrors);
-      setError(validation.summary ?? 'Revisá los campos marcados.');
+      setError(validation.summary ?? 'Revisa los campos marcados.');
+      setFocusRequest((n) => n + 1);
       return;
     }
 
@@ -948,7 +985,23 @@ function CredentialsModal({
   );
 
   return (
-    <Modal title={`Credenciales · ${tenant.name}`} onClose={onClose} wide>
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Credenciales · ${tenant.name}`}
+      className="max-w-2xl"
+      footer={
+        <ModalFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cerrar
+          </Button>
+          <Button className="gap-1.5" onClick={startCreate}>
+            <Plus className="size-3.5" />
+            Conectar credenciales
+          </Button>
+        </ModalFooter>
+      }
+    >
       <div className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--color-primary)]" />
         <span>
@@ -993,7 +1046,10 @@ function CredentialsModal({
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
         Cuentas propias de {tenant.name}
       </h3>
-      {loading ? (
+      {/* Esqueleto sólo en la primera carga: al recargar tras guardar, la lista queda en su lugar y
+          el foco vuelve al "Editar" que abrió el editor en vez de perderse con un botón que ya no
+          está. */}
+      {loading && accounts.length === 0 ? (
         <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
       ) : accounts.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center text-xs text-[var(--color-fg-muted)]">
@@ -1074,8 +1130,8 @@ function CredentialsModal({
                     <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
                     <span>
                       Guardada pero <strong>sin efecto</strong>: sólo las cuentas en estado Activo
-                      habilitan el proveedor. Para promoverla, abrí <strong>Editar</strong> y
-                      guardala con estado <strong>Activo</strong> — vas a tener que cargar las
+                      habilitan el proveedor. Para promoverla, abre <strong>Editar</strong> y
+                      guárdala con estado <strong>Activo</strong>; tendrás que cargar las
                       credenciales otra vez, porque el API no las devuelve.
                     </span>
                   </p>
@@ -1086,216 +1142,55 @@ function CredentialsModal({
         </div>
       )}
 
-      {editor === null ? (
-        <div className="mt-4">
-          <Button variant="secondary" size="sm" className="gap-1.5" onClick={startCreate}>
-            <Plus className="size-3.5" />
-            Conectar credenciales
-          </Button>
-        </div>
-      ) : (
-        <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
-          <h4
-            ref={editorHeadingRef}
-            tabIndex={-1}
-            className="mb-3 text-sm font-medium text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
-          >
-            {editor.kind === 'edit'
-              ? `Editar «${editor.account.label}» · ${provider?.label ?? editor.account.providerCode}`
-              : 'Conectar credenciales'}
-          </h4>
-
-          {/* Antes de teclear nada: qué le pasa a la cuenta que se abrió, y por qué las
-              credenciales están vacías. Sale de la misma puerta que arma el POST. */}
-          {submission?.edit && <NoticeBox notice={submission.edit.notice} />}
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Proveedor">
-              <>
-                <select
-                  value={providerCode}
-                  disabled={editor.kind === 'edit'}
-                  onChange={(e) => selectProvider(e.target.value)}
-                  className={cn(selectClass, editor.kind === 'edit' && 'opacity-70')}
-                  aria-describedby={editor.kind === 'edit' ? 'creds-provider-locked' : undefined}
-                >
-                  {/* Al editar el select está bloqueado y tiene que poder mostrar la cuenta abierta,
-                      aunque sea de un proveedor que este nodo ya no puede dar de alta. */}
-                  {(editor.kind === 'edit'
-                    ? Object.entries(PROVIDERS)
-                    : providerFormsForNode(tenant.tenantType)
-                  ).map(([code, p]) => (
-                    <option key={code} value={code}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                {editor.kind === 'edit' && (
-                  <p
-                    id="creds-provider-locked"
-                    className="text-[11px] leading-snug text-[var(--color-fg-subtle)]"
-                  >
-                    El proveedor no se cambia al editar: la cuenta se guarda por agencia + proveedor
-                    + etiqueta, así que cambiarlo no modificaría ésta — daría de alta otra distinta.
-                  </p>
-                )}
-              </>
-            </Field>
-            <Field label="Etiqueta">
-              <input
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder={DEFAULT_ACCOUNT_LABEL}
-                className={inputClass}
-              />
-            </Field>
-          </div>
-
-          {provider?.note && (
-            <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
-              <Info className="mt-px size-3 shrink-0 text-[var(--color-primary)]" aria-hidden />
-              <span>{provider.note}</span>
-            </p>
-          )}
-          {ownershipCallout && <NoticeBox notice={ownershipCallout} />}
-
-          {/* Las dos mitades, separadas y rotuladas: cuál se cifra y cuál se guarda en claro no
-              es un detalle interno —decide dónde puede acabar una contraseña. */}
-          {provider &&
-            (['credentials', 'config'] as const).map((section) => {
-              const fields = providerFields(provider, section);
-              if (fields.length === 0) return null;
-              return (
-                <fieldset key={section} className="mt-4">
-                  <legend className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                    {section === 'credentials'
-                      ? editor.kind === 'edit'
-                        ? 'Credenciales (cargalas de nuevo: no se pueden recuperar)'
-                        : 'Credenciales (se guardan cifradas)'
-                      : 'Configuración (se guarda en claro)'}
-                  </legend>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {fields.map((field) => (
-                      <ProviderFieldControl
-                        key={fieldKey(section, field.key)}
-                        section={section}
-                        field={field}
-                        value={(section === 'credentials' ? credentials : config)[field.key] ?? ''}
-                        error={fieldErrors[fieldKey(section, field.key)]}
-                        onChange={(value) => {
-                          const setter = section === 'credentials' ? setCredentials : setConfig;
-                          setter((prev) => ({ ...prev, [field.key]: value }));
-                        }}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-              );
-            })}
-
-          {warnings.map((notice) => (
-            <NoticeBox key={notice.title} notice={notice} />
-          ))}
-
-          {provider &&
-            [...provider.credentials, ...provider.config].some((f) => f.required === true) && (
-              <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
-                Los campos marcados con{' '}
-                <span className="text-[var(--color-danger)]" aria-hidden>
-                  *
-                </span>{' '}
-                son obligatorios.
-              </p>
-            )}
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Estado">
-              <select
-                value={status}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (isProviderAccountStatus(next)) setStatus(next);
-                }}
-                className={selectClass}
-              >
-                {PROVIDER_ACCOUNT_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="space-y-1">
-              {/* Rótulo del grupo, no una segunda `label` del checkbox: dos labels apuntando al
-                  mismo control le dan un nombre accesible pegado ("Herencia Heredable por…"). */}
-              <span className="block text-xs font-medium text-[var(--color-fg)]">Herencia</span>
-              <label
-                htmlFor="creds-inheritable"
-                className="flex items-center gap-2 text-xs text-[var(--color-fg-muted)]"
-              >
-                <input
-                  id="creds-inheritable"
-                  type="checkbox"
-                  checked={isInheritable}
-                  onChange={(e) => setIsInheritable(e.target.checked)}
-                  aria-describedby="creds-inheritable-help"
-                  className="size-4 rounded border-[var(--color-border)]"
-                />
-                Heredable por sub-agencias
-              </label>
-            </div>
-          </div>
-          <p
-            id="creds-inheritable-help"
-            className="mt-1.5 text-[11px] text-[var(--color-fg-subtle)]"
-          >
-            {inheritableHelp(childCount)}
-          </p>
-
-          {/* Qué significa el estado elegido, junto al select donde se elige. */}
-          <NoticeBox notice={statusNotice(status)} />
-          {/* Y qué le pasa a la herencia al guardar con ese estado. Sólo cuando SABEMOS de dónde
-              salen hoy las credenciales: con la consulta a medias o fallida diríamos "no resuelve
-              ninguna cuenta" sobre un tenant que quizá hereda, que es lo contrario de la verdad. */}
-          {submission && draftLookup !== undefined && draftLookup !== 'unknown' && (
-            <NoticeBox notice={submission.notice} />
-          )}
-
-          {!provider && (
-            <ErrorBox>
-              El proveedor &quot;{providerCode}&quot; no está soportado por este panel: no sabemos
-              qué credenciales pide. Guardarlas con la forma de otro proveedor las dejaría
-              inservibles. Actualizá la plataforma o elegí otro proveedor.
-            </ErrorBox>
-          )}
-          {error && <ErrorBox>{error}</ErrorBox>}
-          {/* La cuenta quedó como estaba y el motivo dice qué sí se puede cambiar: aviso, no error. */}
-          {inUse && (
-            <div role="alert">
-              <NoticeBox notice={inUse} />
-            </div>
-          )}
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setEditor(null)}>
-              Cancelar
-            </Button>
-            <Button size="sm" disabled={saving || !provider} onClick={() => void save()}>
-              {saving
-                ? 'Guardando…'
-                : editor.kind === 'edit'
-                  ? 'Guardar cambios'
-                  : 'Guardar credenciales'}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <ModalFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-      </ModalFooter>
-    </Modal>
+      {/* El editor es el mismo panel de /admin/proveedores: cabecera y pie fijos, un solo scroll. */}
+      {editor !== null && provider ? (
+        <ProviderAccountSheet
+          mode={editor.kind}
+          provider={provider}
+          icon={providerMetaFor(providerCode, provider.label).icon}
+          tenantName={tenant.name}
+          accountLabel={editor.kind === 'edit' ? editor.account.label : undefined}
+          editNotice={submission?.edit?.notice ?? null}
+          editNoticeExpanded={
+            submission?.edit?.outcome === 'forks' ||
+            (editor.kind === 'edit' && editor.droppedConfigKeys.length > 0)
+          }
+          ownershipNotice={ownershipCallout}
+          warnings={warnings}
+          providerPicker={{
+            value: providerCode,
+            options: providerFormsForNode(tenant.tenantType),
+            onChange: selectProvider,
+          }}
+          labelField={{ value: label, onChange: setLabel }}
+          inheritableHelp={inheritableHelp(childCount)}
+          // Qué le pasa a la herencia al guardar con ese estado. Sólo cuando SABEMOS de dónde salen
+          // hoy las credenciales: con la consulta a medias o fallida diríamos "no resuelve ninguna
+          // cuenta" sobre un tenant que quizá hereda, que es lo contrario de la verdad.
+          consequenceNotice={
+            submission && draftLookup !== undefined && draftLookup !== 'unknown'
+              ? submission.notice
+              : null
+          }
+          saveNotice={inUse}
+          credentials={credentials}
+          config={config}
+          fieldErrors={fieldErrors}
+          status={status}
+          isInheritable={isInheritable}
+          error={error}
+          saving={saving}
+          dirty={dirty}
+          focusRequest={focusRequest}
+          onCredentialChange={(key, value) => setCredentials((prev) => ({ ...prev, [key]: value }))}
+          onConfigChange={(key, value) => setConfig((prev) => ({ ...prev, [key]: value }))}
+          onStatusChange={setStatus}
+          onInheritableChange={setIsInheritable}
+          onSave={() => void save()}
+          onClose={closeEditor}
+        />
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -1328,7 +1223,7 @@ function ProviderOrigin({
   if (origin === 'unknown') {
     return (
       <span className="text-xs text-[var(--color-fg-muted)] sm:text-right">
-        No pudimos consultar el origen · reintentá abriendo de nuevo esta pantalla
+        No pudimos consultar el origen · reintenta abriendo de nuevo esta pantalla
       </span>
     );
   }
@@ -1371,106 +1266,6 @@ function ProviderOrigin({
           {certainty.text}
         </p>
       )}
-    </div>
-  );
-}
-
-/**
- * Un campo del formulario BYOC con su ayuda y su error asociados por `aria-describedby`: sin eso,
- * un lector de pantalla anuncia "PCC de la oficina, editable" y nada más — ni que es obligatorio
- * ni por qué se rechazó.
- */
-function ProviderFieldControl({
-  section,
-  field,
-  value,
-  error,
-  onChange,
-}: {
-  section: ProviderSection;
-  field: ProviderField;
-  value: string;
-  error: string | undefined;
-  onChange: (value: string) => void;
-}) {
-  const id = `byoc-${section}-${field.key}`;
-  const helpId = field.help ? `${id}-help` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined;
-  const effectiveValue = value || field.defaultValue || '';
-
-  const shared = {
-    id,
-    value: effectiveValue,
-    'aria-describedby': describedBy,
-    'aria-invalid': error ? (true as const) : undefined,
-    'aria-required': field.required === true ? (true as const) : undefined,
-    className: cn(
-      field.options ? selectClass : inputClass,
-      error && 'border-[var(--color-danger)] focus-visible:border-[var(--color-danger)]',
-    ),
-  };
-
-  return (
-    <div className="space-y-1">
-      <Label htmlFor={id}>
-        {field.label}
-        {field.required === true && (
-          <span className="ml-0.5 text-[var(--color-danger)]" aria-hidden>
-            *
-          </span>
-        )}
-      </Label>
-      {field.options ? (
-        <select {...shared} onChange={(e) => onChange(e.target.value)}>
-          {field.options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          {...shared}
-          type={field.secret === true ? 'password' : 'text'}
-          placeholder={field.placeholder}
-          autoComplete="off"
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-      {field.help && (
-        <p id={helpId} className="text-[11px] leading-snug text-[var(--color-fg-subtle)]">
-          {field.help}
-        </p>
-      )}
-      {error && (
-        <p id={errorId} className="text-[11px] leading-snug font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-const NOTICE_STYLES: Record<Notice['tone'], { box: string; icon: typeof Info }> = {
-  warn: { box: 'border-amber-200 bg-amber-50 text-amber-900', icon: AlertTriangle },
-  ok: { box: 'border-emerald-200 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
-  muted: {
-    box: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)]',
-    icon: Info,
-  },
-};
-
-function NoticeBox({ notice }: { notice: Notice }) {
-  const style = NOTICE_STYLES[notice.tone];
-  const Icon = style.icon;
-  return (
-    <div className={cn('mt-3 flex items-start gap-2 rounded-lg border px-3 py-2', style.box)}>
-      <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-      <div className="text-[11px] leading-snug">
-        <p className="font-medium">{notice.title}</p>
-        <p className="mt-0.5 opacity-90">{notice.body}</p>
-      </div>
     </div>
   );
 }
@@ -1529,7 +1324,7 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
     setError('');
     const value = Number(form.value);
     if (!Number.isFinite(value) || value <= 0) {
-      setError('Ingresá un valor válido.');
+      setError('Ingresa un valor válido.');
       return;
     }
     // percentage: el usuario ingresa % (ej 5) → value_minor = %×100. fixed: monto en unidad mayor → minor.
@@ -1601,7 +1396,21 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
     (minor / 100).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
   return (
-    <Modal title={`Reglas de pricing · ${tenant.name}`} onClose={onClose} wide>
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Reglas de pricing · ${tenant.name}`}
+      className="max-w-2xl"
+      // Al abrir, el alta de una regla y no el primer botón de la lista, que borra una regla.
+      initialFocus="[data-dialog-body] select"
+      footer={
+        <ModalFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cerrar
+          </Button>
+        </ModalFooter>
+      }
+    >
       <p className="mb-3 text-xs text-[var(--color-fg-muted)]">
         Las reglas de este nodo se aplican <strong>en cascada</strong> junto con las de sus
         ancestros (consolidador → agencia → sub-agencia) sobre el neto del proveedor.
@@ -1754,13 +1563,7 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
           </div>
         )}
       </div>
-
-      <ModalFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-      </ModalFooter>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -1802,7 +1605,19 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
   }, [rootId]);
 
   return (
-    <Modal title="Actividad de la red" onClose={onClose} wide>
+    <Dialog
+      open
+      onClose={onClose}
+      title="Actividad de la red"
+      className="max-w-2xl"
+      footer={
+        <ModalFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cerrar
+          </Button>
+        </ModalFooter>
+      }
+    >
       <p className="mb-3 text-xs text-[var(--color-fg-muted)]">
         Registro inmutable de acciones sensibles en tu red (credenciales, roles, reglas de pricing,
         altas de agencias).
@@ -1841,12 +1656,7 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
           ))}
         </div>
       )}
-      <ModalFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-      </ModalFooter>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -1999,13 +1809,28 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
   }
 
   return (
-    <Modal title={`Email · ${tenant.name}`} onClose={onClose} wide>
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Email · ${tenant.name}`}
+      className="max-w-2xl"
+      footer={
+        <ModalFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cerrar
+          </Button>
+          <Button disabled={saving || loading} onClick={() => void save()}>
+            {saving ? 'Guardando…' : 'Guardar email'}
+          </Button>
+        </ModalFooter>
+      }
+    >
       <div className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--color-primary)]" />
         <span>
           Correo desde el que esta agencia envía sus notificaciones. La clave se cifra y nunca se
-          muestra de vuelta. <strong className="text-[var(--color-fg)]">Si lo dejás vacío</strong>,
-          se usa el correo del sistema (o el del consolidador, si lo heredás).
+          muestra de vuelta. <strong className="text-[var(--color-fg)]">Si lo dejas vacío</strong>,
+          se usa el correo del sistema (o el del consolidador, si lo heredas).
         </span>
       </div>
 
@@ -2021,7 +1846,7 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
                 {asStr(existing.config['fromEmail'])
                   ? ` (${asStr(existing.config['fromEmail'])})`
                   : ''}
-                . Para reemplazarlo, completá de nuevo el correo y la clave.
+                . Para reemplazarlo, completa de nuevo el correo y la clave.
               </span>
             </div>
           )}
@@ -2082,7 +1907,7 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
             </Field>
           </div>
           <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">
-            En Gmail/Workspace usá una{' '}
+            En Gmail/Workspace usa una{' '}
             <span className="font-medium text-[var(--color-fg-muted)]">clave de aplicación</span>{' '}
             (no tu contraseña normal). Puerto 587 (TLS) o 465 (SSL).
           </p>
@@ -2112,7 +1937,7 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
               {testing ? 'Enviando…' : 'Enviar correo de prueba'}
             </Button>
             <span className="text-[11px] text-[var(--color-fg-subtle)]">
-              Prueba el correo guardado/efectivo (guardá primero si cambiaste algo).
+              Prueba el correo guardado/efectivo (guarda primero si cambiaste algo).
             </span>
             {testMsg && (
               <span
@@ -2124,57 +1949,11 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
           </div>
         </>
       )}
-
-      <ModalFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-        <Button size="sm" disabled={saving || loading} onClick={() => void save()}>
-          {saving ? 'Guardando…' : 'Guardar email'}
-        </Button>
-      </ModalFooter>
-    </Modal>
+    </Dialog>
   );
 }
 
 /* ---------- primitivos de UI locales ---------- */
-
-function Modal({
-  title,
-  children,
-  onClose,
-  wide,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div
-        className={cn(
-          'w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl',
-          wide ? 'max-w-2xl' : 'max-w-lg',
-          'max-h-[90vh] overflow-y-auto',
-        )}
-      >
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-[var(--color-fg)]">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
-            aria-label="Cerrar"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function Field({
   label,
@@ -2205,6 +1984,7 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Las acciones del pie fijo del diálogo: apiladas en el teléfono, en fila desde `sm`. */
 function ModalFooter({ children }: { children: React.ReactNode }) {
-  return <div className="mt-5 flex items-center justify-end gap-2">{children}</div>;
+  return <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">{children}</div>;
 }

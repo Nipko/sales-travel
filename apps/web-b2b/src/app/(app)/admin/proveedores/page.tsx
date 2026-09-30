@@ -3,9 +3,7 @@
 import {
   AlertTriangle,
   Building2,
-  CheckCircle2,
   Eye,
-  Info,
   Pencil,
   Plus,
   RefreshCw,
@@ -15,7 +13,6 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
-import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
 import { providerMetaFor } from '../../../../lib/provider-display';
 import {
@@ -30,26 +27,23 @@ import {
 import {
   DEFAULT_ACCOUNT_LABEL,
   PROVIDERS,
-  PROVIDER_ACCOUNT_STATUSES,
   STATUS_LABELS,
   accountConfigSummary,
+  accountDraftChanged,
   canOwnAccount,
   draftWarnings,
-  fieldKey,
   isProviderAccountStatus,
   ownershipNotice,
   prefillFromAccount,
   prepareAccountSubmission,
   providerFormFor,
-  statusEnablesProvider,
-  statusNotice,
+  type AccountEditorDraft,
   type Notice,
   type ProviderAccountStatus,
-  type ProviderField,
-  type ProviderSection,
   validateProviderDraft,
 } from '../../../../lib/provider-forms';
 import { networkRoot, nodeKindLabel, treeOrder } from '../../../../lib/tenant-network';
+import { ProviderAccountSheet } from './_components/provider-account-sheet';
 
 interface NetworkTenant {
   id: string;
@@ -88,14 +82,11 @@ function isResolvedOrigin(lookup: OriginLookup | undefined): lookup is ResolvedO
   return typeof lookup === 'object' && lookup !== null;
 }
 
-type EditorState =
+/** `initial`: el borrador tal como abrió, para saber si cerrar pierde algo. */
+type EditorState = { initial: AccountEditorDraft } & (
   | { kind: 'create'; initialProviderCode?: string }
-  | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] };
-
-const inputClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-const selectClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
+  | { kind: 'edit'; account: ProviderAccount; droppedConfigKeys: readonly string[] }
+);
 
 export default function ProveedoresPage() {
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
@@ -121,6 +112,7 @@ export default function ProveedoresPage() {
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [config, setConfig] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const [focusRequest, setFocusRequest] = useState(0);
 
   // Cargar lista de agencias de la red
   useEffect(() => {
@@ -285,6 +277,15 @@ export default function ProveedoresPage() {
   );
   const ownershipCallout: Notice | null =
     provider && selectedTenant ? ownershipNotice(provider, selectedTenant.tenantType) : null;
+  const dirty =
+    editor !== null && provider !== undefined
+      ? accountDraftChanged(provider, editor.initial, {
+          label,
+          status,
+          isInheritable,
+          sections: { credentials, config },
+        })
+      : false;
 
   async function saveDisclosure(choice: DisclosureChoice) {
     if (!selectedTenant) return;
@@ -315,10 +316,11 @@ export default function ProveedoresPage() {
   }
 
   function startCreate(initialCode = 'sabre') {
+    // Un proveedor que pide verificar la credencial antes de habilitarlo arranca en Sandbox.
+    const initialStatus = providerFormFor(initialCode)?.initialStatus ?? 'active';
     setProviderCode(initialCode);
     setLabel(DEFAULT_ACCOUNT_LABEL);
-    // Un proveedor que pide verificar la credencial antes de habilitarlo arranca en Sandbox.
-    setStatus(providerFormFor(initialCode)?.initialStatus ?? 'active');
+    setStatus(initialStatus);
     setIsInheritable(true);
     setCredentials({});
     // Vacía y no con los defaults de Sabre: cada select cae al `defaultValue` de SU proveedor, y un
@@ -326,23 +328,56 @@ export default function ProveedoresPage() {
     setConfig({});
     setFieldErrors({});
     setError('');
-    setEditor({ kind: 'create', initialProviderCode: initialCode });
+    setEditor({
+      kind: 'create',
+      initialProviderCode: initialCode,
+      initial: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        status: initialStatus,
+        isInheritable: true,
+        sections: { credentials: {}, config: {} },
+      },
+    });
   }
 
-  function startEdit(account: ProviderAccount) {
+  /**
+   * `activate`: el botón "Editar y activar" de una cuenta en Sandbox o Deshabilitada abre el editor
+   * ya en Activo. Va en el borrador inicial y no como un cambio: cerrar sin tocar nada no tiene que
+   * pedir confirmación por algo que el operador no hizo.
+   */
+  function startEdit(account: ProviderAccount, { activate = false } = {}) {
     const form = providerFormFor(account.providerCode);
     if (!form) return;
 
     const prefill = prefillFromAccount(form, account);
+    const initialStatus: ProviderAccountStatus = activate ? 'active' : prefill.status;
     setProviderCode(account.providerCode);
     setLabel(prefill.label);
-    setStatus(prefill.status);
+    setStatus(initialStatus);
     setIsInheritable(prefill.isInheritable);
     setConfig({ ...prefill.config });
     setCredentials({});
     setFieldErrors({});
     setError('');
-    setEditor({ kind: 'edit', account, droppedConfigKeys: prefill.droppedConfigKeys });
+    setEditor({
+      kind: 'edit',
+      account,
+      droppedConfigKeys: prefill.droppedConfigKeys,
+      initial: {
+        label: prefill.label,
+        status: initialStatus,
+        isInheritable: prefill.isInheritable,
+        sections: { credentials: {}, config: { ...prefill.config } },
+      },
+    });
+  }
+
+  function closeEditor() {
+    setEditor(null);
+    // Lo tecleado no sobrevive al cierre: las credenciales no se quedan en memoria de la pantalla.
+    setCredentials({});
+    setFieldErrors({});
+    setError('');
   }
 
   async function save() {
@@ -353,7 +388,8 @@ export default function ProveedoresPage() {
     const validation = validateProviderDraft(provider, { credentials, config });
     if (!validation.ok) {
       setFieldErrors(validation.fieldErrors);
-      setError(validation.summary ?? 'Revisá los campos marcados.');
+      setError(validation.summary ?? 'Revisa los campos marcados.');
+      setFocusRequest((n) => n + 1);
       return;
     }
 
@@ -594,12 +630,9 @@ export default function ProveedoresPage() {
                       variant="secondary"
                       size="sm"
                       className="gap-1.5 text-xs font-semibold cursor-pointer"
-                      onClick={() => {
-                        startEdit(idleOwn);
-                        // El botón promete activar: sin esto el editor abre en Sandbox y el guardado
-                        // la deja igual. Sigue siendo un select que el operador puede cambiar.
-                        if (ownable) setStatus('active');
-                      }}
+                      // El botón promete activar: sin esto el editor abre en Sandbox y el guardado la
+                      // deja igual. Sigue siendo un select que el operador puede cambiar.
+                      onClick={() => startEdit(idleOwn, { activate: ownable })}
                     >
                       <Pencil className="size-3.5" />
                       {ownable ? 'Editar y activar' : 'Editar'}
@@ -625,172 +658,38 @@ export default function ProveedoresPage() {
         })}
       </div>
 
-      {/* Modal de Conexión / Edición de Variables */}
-      {editor !== null && provider && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
-              <div>
-                <h2 className="text-base font-bold text-[var(--color-fg)]">
-                  {editor.kind === 'edit'
-                    ? `Editar Variables · ${provider.label}`
-                    : `Conectar ${provider.label}`}
-                </h2>
-                <p className="text-xs text-[var(--color-fg-subtle)] mt-0.5">
-                  Agencia:{' '}
-                  <strong className="text-[var(--color-fg)]">{selectedTenant?.name}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditor(null)}
-                className="rounded-lg p-1.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-muted)] cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Warning Edit Notice */}
-            {submission?.edit && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 leading-relaxed shadow-xs flex items-start gap-2.5">
-                <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
-                <div>
-                  <p className="font-bold">{submission.edit.notice.title}</p>
-                  <p className="mt-1 opacity-90">{submission.edit.notice.body}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Note */}
-            {provider.note && (
-              <p className="flex items-start gap-2 text-xs text-[var(--color-fg-muted)] rounded-lg bg-[var(--color-surface-muted)] p-3">
-                <Info className="size-4 shrink-0 text-[var(--color-primary)] mt-0.5" />
-                <span>{provider.note}</span>
-              </p>
-            )}
-
-            {/* Sólo al editar una cuenta cargada por API: el alta ya no se le ofrece a este nodo. */}
-            {ownershipCallout && <NoticeCallout notice={ownershipCallout} />}
-
-            {/* Form Fields: Credentials & Config */}
-            <div className="space-y-5">
-              {/* Sección Credenciales */}
-              <div className="space-y-3">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                  Credenciales (Se almacenan con cifrado AES-GCM)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {provider.credentials.map((field) => (
-                    <ProviderFieldControl
-                      key={fieldKey('credentials', field.key)}
-                      section="credentials"
-                      field={field}
-                      value={credentials[field.key] ?? ''}
-                      error={fieldErrors[fieldKey('credentials', field.key)]}
-                      onChange={(value) =>
-                        setCredentials((prev) => ({ ...prev, [field.key]: value }))
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Sección Configuración */}
-              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                  Parámetros de Operación & Variables
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {provider.config.map((field) => (
-                    <ProviderFieldControl
-                      key={fieldKey('config', field.key)}
-                      section="config"
-                      field={field}
-                      value={config[field.key] ?? ''}
-                      error={fieldErrors[fieldKey('config', field.key)]}
-                      onChange={(value) => setConfig((prev) => ({ ...prev, [field.key]: value }))}
-                    />
-                  ))}
-                </div>
-                {warnings.map((notice) => (
-                  <NoticeCallout key={notice.title} notice={notice} />
-                ))}
-              </div>
-
-              {/* Estado y Herencia */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-[var(--color-border)] pt-4">
-                <div className="space-y-1">
-                  <Label>Estado de la Cuenta</Label>
-                  <select
-                    value={status}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      if (isProviderAccountStatus(next)) setStatus(next);
-                    }}
-                    className={selectClass}
-                  >
-                    {PROVIDER_ACCOUNT_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1 flex flex-col justify-end">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-[var(--color-fg)] cursor-pointer pb-2">
-                    <input
-                      type="checkbox"
-                      checked={isInheritable}
-                      onChange={(e) => setIsInheritable(e.target.checked)}
-                      className="size-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                    />
-                    Heredable por toda la red de sub-agencias
-                  </label>
-                </div>
-              </div>
-
-              {/* Qué significa el estado elegido: guardar en Sandbox no habilita nada. */}
-              <NoticeCallout notice={statusNotice(status)} />
-            </div>
-
-            {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
-                {error}
-              </div>
-            )}
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 border-t border-[var(--color-border)] pt-4">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setEditor(null)}
-                className="cursor-pointer"
-              >
-                Cancelar
-              </Button>
-              <Button
-                size="sm"
-                disabled={saving}
-                onClick={() => void save()}
-                className="gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-semibold shadow-xs cursor-pointer"
-              >
-                {saving ? (
-                  <RefreshCw className="size-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="size-3.5" />
-                )}
-                {saving
-                  ? 'Guardando...'
-                  : statusEnablesProvider(status)
-                    ? 'Guardar y activar'
-                    : `Guardar en ${STATUS_LABELS[status]}`}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Editor de la cuenta: panel lateral con cabecera y pie fijos (components/ui/form-sheet). */}
+      {editor !== null && provider && selectedTenant ? (
+        <ProviderAccountSheet
+          mode={editor.kind}
+          provider={provider}
+          icon={providerMetaFor(providerCode, provider.label).icon}
+          tenantName={selectedTenant.name}
+          accountLabel={editor.kind === 'edit' ? editor.account.label : undefined}
+          editNotice={submission?.edit?.notice ?? null}
+          editNoticeExpanded={
+            submission?.edit?.outcome === 'forks' ||
+            (editor.kind === 'edit' && editor.droppedConfigKeys.length > 0)
+          }
+          ownershipNotice={ownershipCallout}
+          warnings={warnings}
+          credentials={credentials}
+          config={config}
+          fieldErrors={fieldErrors}
+          status={status}
+          isInheritable={isInheritable}
+          error={error}
+          saving={saving}
+          dirty={dirty}
+          focusRequest={focusRequest}
+          onCredentialChange={(key, value) => setCredentials((prev) => ({ ...prev, [key]: value }))}
+          onConfigChange={(key, value) => setConfig((prev) => ({ ...prev, [key]: value }))}
+          onStatusChange={setStatus}
+          onInheritableChange={setIsInheritable}
+          onSave={() => void save()}
+          onClose={closeEditor}
+        />
+      ) : null}
     </div>
   );
 }
@@ -936,89 +835,5 @@ function ProviderDisclosureCard({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-const NOTICE_STYLES: Record<Notice['tone'], { box: string; icon: typeof Info }> = {
-  warn: { box: 'border-amber-200 bg-amber-50 text-amber-900', icon: AlertTriangle },
-  ok: { box: 'border-emerald-200 bg-emerald-50 text-emerald-900', icon: CheckCircle2 },
-  muted: {
-    box: 'border-[var(--color-border)] bg-[var(--color-surface-muted)]/50 text-[var(--color-fg-muted)]',
-    icon: Info,
-  },
-};
-
-function NoticeCallout({ notice }: { notice: Notice }) {
-  const style = NOTICE_STYLES[notice.tone];
-  const Icon = style.icon;
-  return (
-    <div
-      className={cn(
-        'flex items-start gap-2.5 rounded-xl border p-3.5 text-xs leading-relaxed',
-        style.box,
-      )}
-    >
-      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <div>
-        <p className="font-bold">{notice.title}</p>
-        <p className="mt-1 opacity-90">{notice.body}</p>
-      </div>
-    </div>
-  );
-}
-
-function ProviderFieldControl({
-  section,
-  field,
-  value,
-  error,
-  onChange,
-}: {
-  section: ProviderSection;
-  field: ProviderField;
-  value: string;
-  error: string | undefined;
-  onChange: (value: string) => void;
-}) {
-  const id = `byoc-${section}-${field.key}`;
-  const effectiveValue = value || field.defaultValue || '';
-
-  const shared = {
-    id,
-    value: effectiveValue,
-    className: cn(
-      field.options ? selectClass : inputClass,
-      error && 'border-[var(--color-danger)] focus-visible:border-[var(--color-danger)]',
-    ),
-  };
-
-  return (
-    <div className="space-y-1">
-      <Label htmlFor={id} className="text-xs font-semibold text-[var(--color-fg)]">
-        {field.label}
-        {field.required === true && <span className="ml-0.5 text-rose-500">*</span>}
-      </Label>
-      {field.options ? (
-        <select {...shared} onChange={(e) => onChange(e.target.value)}>
-          {field.options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          {...shared}
-          type={field.secret === true ? 'password' : 'text'}
-          placeholder={field.placeholder}
-          autoComplete="off"
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-      {field.help && (
-        <p className="text-[10px] text-[var(--color-fg-subtle)] leading-relaxed">{field.help}</p>
-      )}
-      {error && <p className="text-[10px] font-semibold text-rose-600">{error}</p>}
-    </div>
   );
 }
