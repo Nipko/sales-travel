@@ -233,17 +233,41 @@ describe('TBOHotelCodeList: 500 "No Hotels Found" es la ciudad sin hoteles (01 �
 
   it.each([
     'cityList',
-    'hotelDetails',
     'countryList',
+    'hotelCodeList',
     'search',
     'prebook',
     'book',
     'cancel',
+    'bookingDetail',
+    'bookingDetailsByDate',
   ] as const)('en %s, sin evidencia, es UPSTREAM', (name) => {
     expect(classify(noHotels('No Hotels Found'), 200, TBO_OPERATIONS[name])).toMatchObject({
       ok: false,
       kind: 'UPSTREAM',
     });
+  });
+
+  it('en HotelDetails, el lote sin contenido (producción, 2026-09-30): vacío rápido, lento UPSTREAM', () => {
+    const body = noHotels('No Hotels Found');
+    const details = TBO_OPERATIONS.hotelDetails;
+    // 95 y 320 ms: los extremos del log del 2026-09-30.
+    for (const durationMs of [95, 320, TBO_SLOW_NO_HOTELS_FOUND_MS - 1]) {
+      expect(classify(body, 200, details, durationMs)).toMatchObject({
+        ok: true,
+        outcome: 'NO_AVAILABILITY',
+        tboCode: 500,
+      });
+    }
+    expect(classify(body, 200, details, TBO_SLOW_NO_HOTELS_FOUND_MS)).toMatchObject({
+      ok: false,
+      kind: 'UPSTREAM',
+      reason: 'slow_no_hotels_found',
+    });
+    // Otro 500 de HotelDetails sigue siendo UPSTREAM, sin `reason`.
+    expect(
+      classify({ Status: { Code: 500, Description: 'Unexpected Error' } }, 200, details, 95),
+    ).toEqual(expect.objectContaining({ ok: false, kind: 'UPSTREAM' }));
   });
 
   it('a 1 ms del umbral es la ciudad vacía; desde el umbral, el plazo de TBO vencido', () => {

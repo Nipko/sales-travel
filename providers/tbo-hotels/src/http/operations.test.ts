@@ -89,11 +89,13 @@ describe('TBO_OPERATIONS: la tabla de 01 §3.1 y 08 RNF-01', () => {
     expect(NAMES.filter((name) => TBO_OPERATIONS[name].emptyOnNoAvailability)).toEqual(['search']);
   });
 
-  it('sólo TBOHotelCodeList trata el 500 "No Hotels Found" como resultado vacío (01 §8.5)', () => {
-    // Es la única operación donde se observó (producción, 2026-09-29). CityList y HotelDetails no:
-    // sin evidencia, un 500 suyo sigue siendo UPSTREAM.
+  it('sólo TBOHotelCodeList y HotelDetails tratan el 500 "No Hotels Found" como vacío (01 §8.5)', () => {
+    // Son las operaciones donde se observó en producción: la ciudad sin hoteles (2026-09-29) y el
+    // lote sin contenido en ese idioma (2026-09-30, 05 CE-23). CityList no: sin evidencia, un 500
+    // suyo sigue siendo UPSTREAM.
     expect(NAMES.filter((name) => TBO_OPERATIONS[name].emptyOnNoHotelsFound)).toEqual([
       'tboHotelCodeList',
+      'hotelDetails',
     ]);
   });
 

@@ -218,6 +218,7 @@ describe('catálogo: lee `hotel_content` con respaldo en inglés', () => {
       hotelId: HOTEL,
       requestedLang: 'es',
       lang: 'es',
+      langFallback: false,
       origin: 'catalog',
       name: 'Hotel Catarata',
       stars: null,
@@ -272,6 +273,7 @@ describe('catálogo: lee `hotel_content` con respaldo en inglés', () => {
     expect(ficha).toMatchObject({
       requestedLang: 'es',
       lang: 'en',
+      langFallback: true,
       origin: 'catalog',
       name: 'Cataract Hotel',
       sections: [{ label: 'HeadLine', text: 'Near the museum' }],
@@ -374,6 +376,7 @@ describe('sin contenido: la ficha sale sin imágenes, no es un error', () => {
       hotelId: HOTEL,
       requestedLang: 'es',
       lang: null,
+      langFallback: false,
       origin: 'none',
       name: null,
       stars: null,
@@ -643,12 +646,102 @@ describe('bajo demanda: UN hotel al proveedor, con plazo corto, por su circuito 
     await pedir(b, 'es');
     await pedir(b, 'es');
 
-    expect(b.fetchContent).toHaveBeenCalledTimes(1);
+    // El español y, como no vino, el respaldo en inglés: una vez cada uno.
+    expect(b.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es', 'en']);
     expect(guardar).toHaveBeenCalledWith(
       `hotels:content:${CONTENIDO}:${HOTEL}:es`,
       { kind: 'empty' },
       HOTEL_CONTENT_CACHE_TTL_S.empty,
     );
+    expect(guardar).toHaveBeenCalledWith(
+      `hotels:content:${CONTENIDO}:${HOTEL}:en`,
+      { kind: 'empty' },
+      HOTEL_CONTENT_CACHE_TTL_S.empty,
+    );
+  });
+
+  it('sin el idioma pedido en el proveedor, el respaldo en inglés en el MISMO plazo, y lo dice', async () => {
+    const b = banco({
+      fetchContent: vi.fn((_hotelId, lang) =>
+        Promise.resolve(lang === 'en' ? { ...delProveedor('en'), name: 'Cataract (EN)' } : null),
+      ),
+    });
+
+    const ficha = await pedir(b, 'es');
+
+    expect(b.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es', 'en']);
+    const [primera, segunda] = b.fetchContent.mock.calls.map((c) => c[3].timeoutMs);
+    expect(primera).toBe(HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS);
+    expect(segunda).toBeLessThanOrEqual(HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS);
+    expect(ficha).toMatchObject({
+      requestedLang: 'es',
+      lang: 'en',
+      langFallback: true,
+      origin: 'provider',
+      images: ['https://img.example/hotel/od.jpg'],
+    });
+  });
+
+  it('el respaldo no se pide si el español falló, si ya está el inglés de detalle o en inglés', async () => {
+    const fallo = banco({ fetchContent: vi.fn(() => Promise.reject(new Error('timeout'))) });
+    await pedir(fallo, 'es');
+    expect(fallo.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es']);
+
+    const conIngles = banco({
+      db: { contenidos: contenidos(DETALLE_EN) },
+      fetchContent: vi.fn(() => Promise.resolve(null)),
+    });
+    await expect(pedir(conIngles, 'es')).resolves.toMatchObject({ lang: 'en', origin: 'catalog' });
+    expect(conIngles.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es']);
+
+    const ingles = banco({ fetchContent: vi.fn(() => Promise.resolve(null)) });
+    await pedir(ingles, 'en');
+    expect(ingles.fetchContent.mock.calls.map((c) => c[1])).toEqual(['en']);
+  });
+
+  it('sin tiempo para el respaldo (menos de 1 s del plazo), no sale', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const b = banco({
+      fetchContent: vi.fn(() => {
+        vi.setSystemTime(Date.now() + HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS - 500);
+        return Promise.resolve(null);
+      }),
+    });
+    try {
+      await pedir(b, 'es');
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(b.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es']);
+  });
+
+  it('un hotel que la cuenta ya confirmó sin contenido (por lote) no se vuelve a pedir', async () => {
+    const b = banco({
+      db: { contenidos: contenidos(LISTADO_EN) },
+      factory: { circuit: { accountRef: 'cuenta-a' } },
+    });
+    await b.cache.set(`hotels:content-none:${CONTENIDO}@cuenta-a:${HOTEL}:es`, 'none', 60);
+    await b.cache.set(`hotels:content-none:${CONTENIDO}@cuenta-a:${HOTEL}:en`, 'none', 60);
+
+    const ficha = await pedir(b, 'es');
+
+    expect(b.fetchContent).not.toHaveBeenCalled();
+    expect(ficha).toMatchObject({ origin: 'catalog', lang: 'en', langFallback: true });
+  });
+
+  it('lo que confirmó OTRA cuenta, o en otro idioma, no frena la ficha', async () => {
+    const b = banco({
+      db: { contenidos: contenidos(LISTADO_EN) },
+      factory: { circuit: { accountRef: 'cuenta-b' } },
+    });
+    // La cuenta A (otro consolidador, u otro entorno) confirmó el español; la B sólo el inglés.
+    await b.cache.set(`hotels:content-none:${CONTENIDO}@cuenta-a:${HOTEL}:es`, 'none', 60);
+    await b.cache.set(`hotels:content-none:${CONTENIDO}@cuenta-b:${HOTEL}:en`, 'none', 60);
+
+    const ficha = await pedir(b, 'es');
+
+    expect(b.fetchContent.mock.calls.map((c) => c[1])).toEqual(['es']);
+    expect(ficha).toMatchObject({ origin: 'provider', lang: 'es', langFallback: false });
   });
 
   it('un fallo del proveedor no es un error de la ficha, se recuerda poco y se loguea sin el mensaje', async () => {
@@ -940,6 +1033,51 @@ describe('TBO de punta a punta: HotelDetails con la cuenta del consolidador y el
     expect(ficha.images.some((u) => u.includes('inseguro'))).toBe(false);
     // RF-32: un servicio negado no se muestra como disponible.
     expect(ficha.facilities.some((f) => /wheelchair accessible/i.test(f))).toBe(false);
+  });
+
+  it('ES "No Hotels Found" (2026-09-30), EN con contenido: la ficha en inglés, y lo dice', async () => {
+    const fetch = vi.fn<TboFetch>((_url, init) => {
+      const body = JSON.parse(init.body as string) as { Language: string };
+      return Promise.resolve(
+        body.Language === 'ES'
+          ? new Response(
+              JSON.stringify({ Status: { Code: 500, Description: 'No Hotels Found' } }),
+              {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              },
+            )
+          : respuestaHotelDetails(),
+      );
+    });
+    const breaker = new CircuitBreakerService();
+    const service = new HotelContentService(
+      hotelRegistry([new TboHotelsProviderFactory(bovedaTbo(), fetch)], hotelFlags(true)),
+      catalogoTbo().service,
+      breaker,
+      new MemoryCacheAdapter(),
+    );
+
+    const ficha = await service.getContent(TENANT, {
+      providerCode: 'tbo-hotels',
+      hotelId: HOTEL,
+      lang: 'es',
+    });
+
+    // Un intento por idioma: el "No Hotels Found" rápido no se reintenta.
+    expect(fetch.mock.calls.map(([, init]) => JSON.parse(init.body as string) as unknown)).toEqual([
+      { Hotelcodes: HOTEL, Language: 'ES' },
+      { Hotelcodes: HOTEL, Language: 'EN' },
+    ]);
+    expect(ficha).toMatchObject({
+      requestedLang: 'es',
+      lang: 'en',
+      langFallback: true,
+      origin: 'provider',
+      name: 'Sofitel Legend Old Cataract Aswan',
+    });
+    expect(ficha.images.length).toBeGreaterThan(0);
+    expect(breaker.snapshot()['tbo-hotels']).toEqual({ state: 'closed', failures: 0 });
   });
 
   it('con el flag de `opt-in` apagado no sale a TBO: la ficha sale sin contenido', async () => {

@@ -181,12 +181,29 @@ export interface TboCityHotelsMapping {
   readonly diagnostics: TboStaticDiagnostics;
 }
 
+/**
+ * Cómo contestó HotelDetails a UN lote en UN idioma:
+ *
+ * - `DETAILS`: `Status.Code` 200. Lo que volvió está en `contents`; lo pedido que no volvió, en
+ *   `missingHotelCodes`: TBO no tiene contenido de ese hotel en ese idioma.
+ * - `NO_HOTELS_FOUND`: `Status.Code` 500 "No Hotels Found" rápido, con HTTP 200 (producción,
+ *   2026-09-30; 05 CE-23). TBO no dio NADA del lote en ese idioma, y no se sabe si ningún código
+ *   tiene contenido en ese idioma (H1) o si uno sin contenido tumba el lote entero (H2, Q-62): por
+ *   eso `missingHotelCodes` son todos y no confirma nada de cada código por separado. Quien llama
+ *   decide si pide el respaldo o parte el lote (`resolveTboHotelDetails`).
+ */
+export type TboHotelDetailsOutcome = 'DETAILS' | 'NO_HOTELS_FOUND';
+
 export interface TboHotelDetailsMapping {
   readonly lang: TboContentLanguage;
+  readonly outcome: TboHotelDetailsOutcome;
   readonly contents: readonly TboHotelContent[];
   /** Lo que HotelDetails trae del catálogo (nombre, estrellas, `Map`, `CityId`). */
   readonly hotels: readonly TboCatalogHotel[];
-  /** Pedidos que no volvieron: TBO no dice si un código inexistente tumba el lote (Q-62). */
+  /**
+   * Pedidos que no volvieron. Con `DETAILS`, TBO no tiene contenido de esos en ese idioma; con
+   * `NO_HOTELS_FOUND`, son todos los pedidos y no dicen nada de cada uno (Q-62).
+   */
   readonly missingHotelCodes: readonly string[];
   readonly diagnostics: TboStaticDiagnostics;
 }

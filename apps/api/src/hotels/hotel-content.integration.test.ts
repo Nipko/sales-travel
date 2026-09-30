@@ -113,6 +113,7 @@ d('contenido de hotel contra Postgres, leído como app_user', () => {
       hotelId: CON_TODO,
       requestedLang: 'es',
       lang: 'es',
+      langFallback: false,
       origin: 'catalog',
       name: 'Sofitel Legend',
       stars: 4.5,
@@ -142,6 +143,7 @@ d('contenido de hotel contra Postgres, leído como app_user', () => {
     expect(ficha).toMatchObject({
       requestedLang: 'pt',
       lang: 'en',
+      langFallback: true,
       origin: 'catalog',
       name: 'Hotel en',
       images: [],

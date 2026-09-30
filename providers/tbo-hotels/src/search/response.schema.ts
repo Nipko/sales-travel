@@ -118,6 +118,13 @@ export const TboSearchRoomSchema = z.object({
   RoomID: RoomIdListSchema,
   /** El casing de HotelDetails (p. 56-57): se aceptan los dos (02 §9.9). */
   RoomId: RoomIdListSchema,
+  /**
+   * Sin documentar: ni la tabla ni los ejemplos lo traen (pp. 13-18), pero llega en cada búsqueda de
+   * producción (2026-09-30; el log sólo registra su NOMBRE, así que su tipo no se conoce). Se acepta
+   * con cualquier forma, para que nunca invalide un pack, y sólo un texto se lleva a las camas de la
+   * habitación (`bedOptions`, 02 §9.9). INFERIDO → Q-28.
+   */
+  BeddingGroup: z.unknown(),
 });
 export type TboSearchRoom = z.infer<typeof TboSearchRoomSchema>;
 

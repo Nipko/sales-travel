@@ -708,6 +708,56 @@ describe('claves desconocidas: se registran sus nombres, nunca sus valores (RNF-
   });
 });
 
+describe('BeddingGroup: sin documentar, llega en cada búsqueda de producción (2026-09-30)', () => {
+  it('es una clave conocida: ya no dispara tbo.search.unknown_keys', () => {
+    const recorded = recorder();
+    const mapping = map(oneHotel({ BeddingGroup: '1 King Bed' }), ONE_ADULT, recorded.deps);
+    expect(mapping.diagnostics.unknownKeys).toEqual([]);
+    expect(recorded.logs.map((log) => log.message)).not.toContain('tbo.search.unknown_keys');
+  });
+
+  it('un texto con una habitación, o una lista alineada con Name, va a las camas', () => {
+    expect(
+      onlyPack(map(oneHotel({ BeddingGroup: '  1 King  Bed ' }))).rooms[0]?.bedOptions,
+    ).toEqual(['1 King Bed']);
+    const two = onlyPack(
+      map(oneHotel({ Name: ['A', 'B'], BeddingGroup: ['1 King Bed', '2 Twin Beds'] }), TWO_ROOMS),
+    );
+    expect(two.rooms.map((room) => room.bedOptions)).toEqual([['1 King Bed'], ['2 Twin Beds']]);
+  });
+
+  it.each([
+    ['un número', 1, 1],
+    ['un id en texto', '12', 1],
+    ['un objeto', { Beds: '1 King' }, 1],
+    ['null', null, 1],
+    ['un texto con dos habitaciones: no se sabe de cuál es', 'King', 2],
+    ['una lista que no se alinea con Name', ['King'], 2],
+    ['un texto de más de 200 caracteres', 'x'.repeat(201), 1],
+  ])('%s: se acepta sin romper el pack y no inventa camas', (_, value, roomCount) => {
+    const recorded = recorder();
+    const rooms = roomCount === 2 ? TWO_ROOMS : ONE_ADULT;
+    const names = roomCount === 2 ? ['A', 'B'] : ['Luxury Room, 1 King Bed'];
+    const mapping = map(oneHotel({ Name: names, BeddingGroup: value }), rooms, recorded.deps);
+    const pack = onlyPack(mapping);
+    expect(pack.rooms.every((room) => room.bedOptions.length === 0)).toBe(true);
+    expect(mapping.diagnostics.unknownKeys).toEqual([]);
+    // Se cuenta por su FORMA, nunca su valor.
+    expect(JSON.stringify(recorded.counters)).not.toContain('King');
+  });
+
+  it('su forma se cuenta en una métrica, sin el valor', () => {
+    const recorded = recorder();
+    map(oneHotel({ BeddingGroup: 'Queen secreta' }), ONE_ADULT, recorded.deps);
+    map(oneHotel({ BeddingGroup: { x: 1 } }), ONE_ADULT, recorded.deps);
+    expect(countersNamed(recorded, 'tbo.search.bedding_group')).toEqual([
+      { op: 'search', shape: 'text' },
+      { op: 'search', shape: 'other' },
+    ]);
+    expect(JSON.stringify(recorded)).not.toContain('secreta');
+  });
+});
+
 describe('vencimiento (RF-09)', () => {
   it('expiresAt = searchSentAt + 27 min en todos los packs', () => {
     const mapping = map(fixture('search-multi-room.p16.json'), TWO_ROOMS);

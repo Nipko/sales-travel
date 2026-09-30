@@ -1,10 +1,24 @@
 import { randomBytes } from 'node:crypto';
-import { tboHotelContentHash, type TboHotelContent } from '@sales-travel/tbo-hotels';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  TBO_IMAGE_HOST_SUFFIXES,
+  TboStaticContentClient,
+  parseTboConfig,
+  tboHotelContentHash,
+  type TboFetch,
+  type TboHotelContent,
+  type TboRateLimiter,
+} from '@sales-travel/tbo-hotels';
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import {
+  TboHotelProviderAdapter,
+  type TboHotelsAcl,
+} from '../providers-tbo/tbo-hotel-provider.adapter.js';
 import { StubHotelProviderFactory } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import type {
   HotelContentBatch,
@@ -331,5 +345,132 @@ d('catálogo bajo demanda contra Postgres, como app_user (0054)', () => {
       hotels: [{ providerCode: PROVEEDOR, hotelId: H(1) }],
     });
     expect(fetchHotelContents).toHaveBeenCalledTimes(1);
+  });
+
+  it('TBO en ES "No Hotels Found" (2026-09-30): el inglés se guarda como `en` y da la foto', async () => {
+    // El ejemplo de HotelDetails de p. 59 del ACL, con el código pedido.
+    const p59 = JSON.parse(
+      readFileSync(
+        join(
+          __dirname,
+          '..',
+          '..',
+          '..',
+          '..',
+          'providers',
+          'tbo-hotels',
+          'src',
+          '__fixtures__',
+          'pdf',
+          'hotel-details.p59.json',
+        ),
+        'utf8',
+      ),
+    ) as { Status: unknown; HotelDetails: Record<string, unknown>[] };
+    const plantilla = p59.HotelDetails[0] ?? {};
+    const CON_INGLES = H(30);
+    const SIN_NADA = H(31);
+    await admin.query(
+      `INSERT INTO hotel_inventory (provider_code, hotel_id, name, active, provider_city_code)
+       VALUES ($1, $2, 'Solo inglés', true, NULL), ($1, $3, 'Sin contenido', true, NULL)`,
+      [PROVEEDOR, CON_INGLES, SIN_NADA],
+    );
+    const noHotelsFound = (): Response =>
+      new Response(JSON.stringify({ Status: { Code: 500, Description: 'No Hotels Found' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    // TBO según lo observado: nada en español; en inglés, sólo el hotel que tiene contenido.
+    const fetch = vi.fn<TboFetch>((_url, init) => {
+      const body = JSON.parse(init.body as string) as { Hotelcodes: string; Language: string };
+      const codes = body.Hotelcodes.split(',').filter((code) => code === CON_INGLES);
+      if (body.Language !== 'EN' || codes.length === 0) return Promise.resolve(noHotelsFound());
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            Status: p59.Status,
+            HotelDetails: codes.map((code) => ({ ...plantilla, HotelCode: code })),
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    });
+    const inmediato: TboRateLimiter = {
+      acquire: () => Promise.resolve({ granted: true, permit: { release: () => undefined } }),
+      reportThrottled: () => undefined,
+    };
+    const tbo = new TboHotelProviderAdapter(
+      {} as TboHotelsAcl,
+      { accountId: 'acc-it', updatedAt: '2026-09-01T00:00:00.000Z' },
+      'test',
+      new TboStaticContentClient(
+        parseTboConfig({ environment: 'test', username: 'it-demo', password: 'it-no-es-clave' }),
+        { fetch, limiter: inmediato },
+      ),
+    );
+    // El proveedor sintético de la corrida, con el lote real del adapter de TBO detrás.
+    const factory = new StubHotelProviderFactory({
+      code: PROVEEDOR,
+      callPolicy: 'opt-in',
+      searchProfile: {
+        idSpace: 'provider',
+        contentFromCatalog: true,
+        imageHosts: [...TBO_IMAGE_HOST_SUFFIXES],
+      },
+    });
+    const adapter = factory.adapterFor(TENANT);
+    Object.assign(adapter, {
+      fetchHotelContents: tbo.fetchHotelContents.bind(tbo),
+      contentBatchSize: tbo.contentBatchSize,
+    });
+    vi.spyOn(factory, 'adapterFor').mockReturnValue(adapter);
+    const service = new HotelContentService(
+      hotelRegistry([factory], hotelFlags(true)),
+      database,
+      new CircuitBreakerService(),
+      new MemoryCacheAdapter(),
+    );
+    const pedido = {
+      lang: 'es' as const,
+      hotels: [
+        { providerCode: PROVEEDOR, hotelId: CON_INGLES },
+        { providerCode: PROVEEDOR, hotelId: SIN_NADA },
+      ],
+    };
+
+    const res = await service.getContentBatch(TENANT, pedido);
+
+    expect(res.items.map((i) => [i.hotelId, i.status])).toEqual([
+      [CON_INGLES, 'ready'],
+      [SIN_NADA, 'none'],
+    ]);
+    expect(res.items[0]?.mainImage?.url.startsWith(HOTEL_IMAGE_PROXY_PATH)).toBe(true);
+    // Guardado por la función de 0054 COMO app_user, en inglés y de detalle; del otro, nada.
+    const { rows } = await admin.query<{ hotel_id: string; lang: string; source: string }>(
+      `SELECT hotel_id, lang, source FROM hotel_content
+        WHERE provider_code = $1 AND hotel_id = ANY($2::text[]) ORDER BY hotel_id, lang`,
+      [PROVEEDOR, [CON_INGLES, SIN_NADA]],
+    );
+    expect(rows).toEqual([{ hotel_id: CON_INGLES, lang: 'en', source: 'details' }]);
+    const llamadas = fetch.mock.calls.length;
+
+    // La próxima pantalla no vuelve a TBO: uno tiene detalle, el otro está confirmado sin contenido.
+    const otra = await service.getContentBatch(TENANT, pedido);
+    expect(otra.items.map((i) => i.status)).toEqual(['ready', 'none']);
+    expect(fetch.mock.calls.length).toBe(llamadas);
+
+    // La ficha en español sirve el inglés guardado y lo marca.
+    const ficha = await service.getContent(TENANT, {
+      providerCode: PROVEEDOR,
+      hotelId: CON_INGLES,
+      lang: 'es',
+    });
+    expect(ficha).toMatchObject({
+      requestedLang: 'es',
+      lang: 'en',
+      langFallback: true,
+      origin: 'catalog',
+    });
+    expect(ficha.images.length).toBeGreaterThan(0);
   });
 });

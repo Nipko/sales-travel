@@ -525,7 +525,7 @@ Hoy el buscador sólo sugiere las ciudades de los países que el sync recorre (`
 
 ### Paso 12 — Verificar las fotos
 
-Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el catálogo ya tiene; para las que faltan, la pantalla pide el contenido en segundo plano, el api lo trae de `HotelDetails` (lotes de 10, con la cuenta de la agencia), lo guarda en `hotel_content` y la foto aparece. El navegador nunca le pide nada al host de TBO: todo pasa por el proxy del panel.
+Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el catálogo ya tiene; para las que faltan, la pantalla pide el contenido en segundo plano, el api lo trae de `HotelDetails` (lotes de 10, con la cuenta de la agencia), lo guarda en `hotel_content` y la foto aparece. Lo que TBO no tiene en el idioma de la búsqueda lo trae en inglés y lo guarda como `en`: la foto sale igual y la ficha avisa que la descripción está en inglés ([docs/tbo/05 §2.6.4](../tbo/05-contenido-estatico-e-inventario.md#264-lote-sin-contenido-no-hotels-found-producción-2026-09-30-ce-23)). El navegador nunca le pide nada al host de TBO: todo pasa por el proxy del panel.
 
 1. **En la pantalla.** Con el vendedor de la sucursal, busca en Bogotá (moneda USD). Los resultados salen enseguida. Las tarjetas sin foto muestran un marcador y, en unos segundos, las fotos aparecen. Si TBO no tiene fotos de un hotel, la tarjeta dice "Sin foto". Abre un hotel: la ficha muestra la galería o, mientras la trae, "Buscando las fotos del hotel…"; las tarifas no esperan.
 2. **En el navegador (opcional).** En las herramientas de desarrollo, pestaña _Red_:
@@ -539,7 +539,7 @@ Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el
      "SELECT source, lang, count(*) AS hoteles, count(*) FILTER (WHERE images->>0 IS NOT NULL) AS con_fotos, max(fetched_at) AS ultima FROM hotel_content WHERE provider_code = 'tbo-hotels' GROUP BY source, lang ORDER BY source, lang"
    ```
 
-   Esperado: filas `details` en el idioma de la búsqueda (`es`), con `ultima` de hace minutos y `con_fotos` creciendo con cada búsqueda. Las `listing` en `en` son el texto de `TBOHotelCodeList`, del sync o de una ciudad cargada al buscar, y no traen fotos.
+   Esperado: filas `details` con `ultima` de hace minutos y `con_fotos` creciendo con cada búsqueda, en el idioma de la búsqueda (`es`) o, si TBO no lo tiene, en `en` (el 2026-09-30 TBO no dio nada en español para Colombia). Las `listing` en `en` son el texto de `TBOHotelCodeList`, del sync o de una ciudad cargada al buscar, y no traen fotos.
 
 4. **El proxy, desde el VPS.** Toma una foto guardada y pídela por el proxy y por el optimizador de imágenes:
 
@@ -560,7 +560,7 @@ Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el
      "SELECT c.name, count(*) AS activos, count(hc.hotel_id) AS con_ficha_es FROM hotel_inventory i JOIN hotel_provider_city c ON c.provider_code = i.provider_code AND c.provider_city_code = i.provider_city_code LEFT JOIN hotel_content hc ON hc.provider_code = i.provider_code AND hc.hotel_id = i.hotel_id AND hc.lang = 'es' AND hc.source = 'details' WHERE i.provider_code = 'tbo-hotels' AND i.active AND c.country_code = 'CO' GROUP BY c.name ORDER BY activos DESC LIMIT 10"
    ```
 
-   Esperado: `con_ficha_es` subiendo en las ciudades que se buscan.
+   Esperado: `con_ficha_es` subiendo en las ciudades que se buscan. Si se queda en 0 y las fotos igual aparecen, TBO no tiene español para esos hoteles y la ficha está en inglés: cambia `hc.lang = 'es'` por `hc.lang = 'en'` en la consulta para verla.
 
 **Si algo no sale:**
 
@@ -573,6 +573,8 @@ Las fotos de los resultados no esperan al sync. La búsqueda trae la foto que el
 | Una ciudad nueva dice "No pudimos traer los hoteles de esa ciudad"          | En el log del api, `hotels.catalog.ciudad_no_cargada` con `error=`: TBO no contestó en 15 s o el circuito está abierto; reintenta en unos minutos. `hotels.catalog.ciudad_no_guardada` es la base: revisa que 0054 esté aplicada (paso 10).                                                                                                                                                                       |
 | Una ciudad nueva dice "Esa ciudad no tiene hoteles disponibles por ahora"   | TBO la contestó vacía: queda con `hotel_count = 0` y deja de sugerirse.                                                                                                                                                                                                                                                                                                                                           |
 | Una ciudad del mundo no aparece en el autocompletado                        | La agencia sugiere desde Despegar, porque tiene un proveedor activo del espacio de ids de la plataforma, y entonces el catálogo local no sugiere ([docs/tbo/05 §8.5](../tbo/05-contenido-estatico-e-inventario.md#85-sugerencias-desde-el-catálogo-local-aplicado-2026-09-27)). Si no es eso, falta el paso 11 o la ciudad tiene `hotel_count = 0`.                                                               |
+
+**La línea de cada lote.** `docker compose logs --since 15m api | grep hotels.content_batch.lote` deja una línea por lote, sólo con conteos: `requested`, `found_es`, `found_en`, `none`, `unconfirmed`, `unresolved`, `fallback`, las llamadas, `breakers` y `untrusted`. `found_en` alto con `fallback=yes` y `breakers=0` es TBO sin español: se guarda el inglés. `breakers` mayor que 0 es un código que, solo, deja vacío el lote entero. `none` son hoteles que la cuenta TBO confirmó sin contenido en el idioma de la búsqueda y en inglés: se recuerdan una semana por cuenta e idioma, hasta el próximo deploy; al rotar la credencial de TBO se vuelven a pedir, pero si cambias de entorno (test a live) con el mismo usuario, reinicia el api para olvidarlos. `unconfirmed` respondió sin contenido sin confirmarlo en los dos idiomas: se vuelve a pedir en 6 h. `unresolved` quedó sin respuesta por el tope de llamadas extra (12 por minuto y por cuenta): se vuelve a pedir en 2 min. `untrusted` mayor que 0 es un cambio del contrato de `HotelDetails`: avisa al equipo ([docs/tbo/05 §2.6.4](../tbo/05-contenido-estatico-e-inventario.md#264-lote-sin-contenido-no-hotels-found-producción-2026-09-30-ce-23)).
 
 ### Paso 13 — Tarifas no reembolsables y su permiso
 

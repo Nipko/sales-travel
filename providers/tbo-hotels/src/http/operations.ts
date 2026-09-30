@@ -61,9 +61,10 @@ export interface TboOperationSpec {
   readonly emptyOnNoAvailability: boolean;
   /**
    * `Status.Code` 500 con `Description` "No Hotels Found" (sin distinguir mayúsculas ni espacios),
-   * con HTTP 2xx y antes de `TBO_SLOW_NO_HOTELS_FOUND_MS`, es una ciudad sin hoteles: resultado
-   * vacío, no error. Más lento es el plazo interno de TBO vencido y sigue siendo `UPSTREAM`. Sólo
-   * TBOHotelCodeList, que es donde se observó en producción el 2026-09-29 (01 §8.5); cualquier otro
+   * con HTTP 2xx y antes de `TBO_SLOW_NO_HOTELS_FOUND_MS`, es un resultado vacío, no un error: en
+   * TBOHotelCodeList, la ciudad sin hoteles (producción, 2026-09-29); en HotelDetails, el lote sin
+   * contenido en ese idioma (producción, 2026-09-30). Más lento es el plazo interno de TBO vencido y
+   * sigue siendo `UPSTREAM` (01 §8.5). Sólo esas dos filas, que es donde se observó; cualquier otro
    * 500 sigue siendo `UPSTREAM`. En Book y Cancel el cliente la ignora aunque alguien la encienda:
    * allí un 500 es un desenlace incierto, nunca un vacío.
    */
@@ -271,7 +272,9 @@ export const TBO_OPERATIONS = Object.freeze({
   }),
   /**
    * p. 56, casing del PDF (Postman: `Hoteldetails`). 60 s de techo; el sync configura 45 s porque
-   * la configuración sólo acorta (08 §9 C-14).
+   * la configuración sólo acorta (08 §9 C-14). Un lote sin contenido en el idioma pedido llega como
+   * HTTP 200 con `Status.Code` 500 "No Hotels Found" en 95-320 ms (producción, 2026-09-30; 05
+   * CE-23): con la misma regla de tiempo que TBOHotelCodeList es un vacío, no un error.
    */
   hotelDetails: spec({
     path: '/HotelDetails',
@@ -284,7 +287,7 @@ export const TBO_OPERATIONS = Object.freeze({
     lanes: ['background'],
     envelope: 'required',
     emptyOnNoAvailability: false,
-    emptyOnNoHotelsFound: false,
+    emptyOnNoHotelsFound: true,
     logDescription: true,
   }),
 });

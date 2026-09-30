@@ -30,6 +30,8 @@ import {
  *   NOMBRE de su clave como desconocida. No hay fixture real que diga dónde viene.
  * - Un código que no se pidió se descarta; uno pedido que no vuelve se informa en
  *   `missingHotelCodes`, porque no se sabe si un código inexistente tumba el lote (Q-62).
+ * - El lote que TBO contesta con "No Hotels Found" (05 CE-23) no llega aquí: el cliente lo arma con
+ *   {@link emptyTboHotelDetailsMapping}, sin nada que mapear.
  */
 export interface TboHotelDetailsMapContext {
   readonly lang: TboContentLanguage;
@@ -110,9 +112,31 @@ export function mapTboHotelDetailsResponse(
 
   return {
     lang: context.lang,
+    outcome: 'DETAILS',
     contents,
     hotels,
     missingHotelCodes: requested.filter((code) => pending.has(code)),
+    diagnostics: observer.finish(),
+  };
+}
+
+/**
+ * El lote que TBO contestó con un "No Hotels Found" rápido (05 CE-23): nada que mapear, todos los
+ * códigos pedidos sin contenido en ese idioma y diagnósticos en cero. Valida el contexto igual que
+ * el mapper: un código ilegible es un bug del llamador, no un lote vacío.
+ */
+export function emptyTboHotelDetailsMapping(
+  context: TboHotelDetailsMapContext,
+  deps: TboStaticMapDeps = {},
+): TboHotelDetailsMapping {
+  const requested = readContext(context);
+  const observer = new TboStaticObserver('hotelDetails', deps);
+  return {
+    lang: context.lang,
+    outcome: 'NO_HOTELS_FOUND',
+    contents: [],
+    hotels: [],
+    missingHotelCodes: requested,
     diagnostics: observer.finish(),
   };
 }

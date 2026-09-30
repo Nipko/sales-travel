@@ -8,6 +8,7 @@ import {
   supportsHotelContentBatch,
   type HotelContentBatch,
   type HotelContentLanguage,
+  type HotelContentRecord,
   type HotelContentSection,
   type HotelProviderContent,
   type HotelProviderRegistration,
@@ -15,6 +16,7 @@ import {
 import { ProviderNotAvailableError } from '../providers/provider.types.js';
 import { BreakerRejectionError, CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { HotelCatalogStore, hotelRefKey, type HotelRef } from './hotel-catalog.store.js';
+import { SlidingWindowBudget } from './hotel-content-budget.js';
 import { pickMainImages, type HotelMainImage } from './hotel-image-proxy.js';
 import { UnknownHotelProviderError } from './hotel-provider-errors.js';
 import { catalogFactsOf } from './hotel-search.aggregate.js';
@@ -28,12 +30,15 @@ import { catalogFactsOf } from './hotel-search.aggregate.js';
  *   resultados ({@link HotelContentService.getContentBatch}), por la función de 0054 y con la huella
  *   del ACL, la misma del sync: dos escritores, una sola regla.
  * - **Respaldo en inglés.** Sin contenido en el idioma pedido sale el inglés, y la respuesta dice en
- *   qué idioma vino (`lang` contra `requestedLang`). Es el idioma en que llega el texto del listado
- *   de ciudad, así que es el que más hoteles tienen (05 §6.3).
+ *   qué idioma vino (`lang` contra `requestedLang`, y `langFallback`). Es el idioma en que llega el
+ *   texto del listado de ciudad y el único que TBO tuvo para los hoteles de Colombia el 2026-09-30
+ *   (05 §6.3 y CE-23). Las fotos no dependen del idioma: salen de la fila que las tenga.
  * - **Bajo demanda.** Sin contenido de detalle en el idioma pedido, a un proveedor que lo sabe dar
  *   (TBO `HotelDetails`) se le pide ese solo hotel con un plazo corto, por su circuito y con la
  *   cuenta que la agencia tiene habilitada, y lo que responde se guarda un rato en un `CachePort`
- *   propio. Si falla, la ficha sale con lo que haya en el catálogo: nunca con un error.
+ *   propio. Si responde sin contenido y el catálogo no tiene el detalle en inglés, se le pide el
+ *   inglés dentro del MISMO plazo. Si falla, la ficha sale con lo que haya en el catálogo: nunca con
+ *   un error.
  * - **Sin contenido no es un error.** La ficha sale con lo que diga `hotel_inventory` (nombre,
  *   dirección, estrellas), sin imágenes ni descripción, y `origin: 'none'`.
  * - **Sólo HTML de la lista blanca e imágenes `https`**, vengan del catálogo o del proveedor. El
@@ -43,11 +48,21 @@ import { catalogFactsOf } from './hotel-search.aggregate.js';
  *
  * El contenido es catálogo de PLATAFORMA (05 §11), igual que `hotel_content`: la caché no es por
  * tenant. Lo que sí es por tenant es salir al proveedor, que respeta el flag de `opt-in` y la cuenta
- * del registry como cualquier venta. Leer el contenido no es un cambio de negocio: no emite eventos.
+ * del registry como cualquier venta. Lo único que es de la CUENTA del proveedor es lo que ella
+ * confirmó sin contenido (una semana, por idioma): se consulta con la cuenta ya resuelta, así lo que
+ * contestó una cuenta no deja sin fotos a otra. Leer el contenido no es un cambio de negocio: no
+ * emite eventos.
  */
 
 /** Token DI del `CachePort` del contenido: una instancia propia, que no desaloja contextos. */
 export const HOTEL_CONTENT_CACHE = 'HOTEL_CONTENT_CACHE';
+
+/**
+ * Token DI del `CachePort` de los hoteles confirmados sin contenido (una semana): otra instancia,
+ * para que el ir y venir de las fichas (6 h) y de los negativos cortos no los desaloje primero —la
+ * caché en memoria descarta por orden de llegada cuando se llena—. Sin él, la del contenido.
+ */
+export const HOTEL_CONTENT_NONE_CACHE = 'HOTEL_CONTENT_NONE_CACHE';
 
 /** El idioma del texto del listado de ciudad (05 §6.3) y el del respaldo. */
 export const HOTEL_CONTENT_FALLBACK_LANG: HotelContentLanguage = 'en';
@@ -71,6 +86,7 @@ export const HOTEL_CONTENT_CACHE_TTL_S = Object.freeze({
 
 const KEY_PREFIX = 'hotels:content';
 const BATCH_KEY_PREFIX = 'hotels:content-batch';
+const NO_CONTENT_KEY_PREFIX = 'hotels:content-none';
 
 /** Hoteles por petición del contenido por lote: una pantalla de resultados, de a tandas. */
 export const HOTEL_CONTENT_BATCH_MAX_HOTELS = 24;
@@ -96,13 +112,37 @@ export const HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS = 25_000;
 export const HOTEL_CONTENT_BATCH_RETRY_AFTER_MS = 3_000;
 
 /**
- * Cuánto se recuerda que un hotel no tiene contenido (el proveedor respondió sin él) o que su lote
- * falló: sin esto, cada pantalla de resultados volvería a pedir los mismos hoteles.
+ * Cuánto se recuerda lo que un lote no pudo dar: sin esto, cada pantalla de resultados volvería a
+ * pedir los mismos hoteles.
+ *
+ * - `none`: el proveedor CONFIRMÓ que no tiene contenido del hotel en el idioma pedido y en el de
+ *   respaldo. Se recuerda una semana POR CUENTA del proveedor y POR IDIOMA confirmado (el pedido y
+ *   `en`): lo que contestó una cuenta no frena a otra, y un pedido en inglés o en portugués no dice
+ *   nada del español. Un hotel se deja de pedir en un idioma cuando están confirmados ése y `en`.
+ * - `empty`: el proveedor lo devolvió pero la base rechazó su fila, o respondió sin él sin
+ *   confirmar que no lo tiene (p. ej. el idioma pedido sólo llegó en un lote vacío entero).
+ * - `deferred`: quedó sin respuesta (tope o cupo de llamadas extra, una llamada extra que falló).
+ * - `failed`: el lote entero falló.
+ *
+ * En la caché en memoria del proceso: un deploy la vacía y esos hoteles se vuelven a pedir una vez.
+ * La de `none` es una instancia aparte ({@link HOTEL_CONTENT_NONE_CACHE}), pero también descarta lo
+ * más viejo si llega a su techo de entradas.
  */
 export const HOTEL_CONTENT_BATCH_CACHE_TTL_S = Object.freeze({
+  none: 7 * 24 * 60 * 60,
   empty: 6 * 60 * 60,
+  deferred: 2 * 60,
   failed: 2 * 60,
 });
+
+/**
+ * Llamadas EXTRA por cuenta del proveedor y por minuto, en todo el proceso: las que parten un lote
+ * que el proveedor contestó vacío entero (05 CE-23). Cada lote tiene además su propio tope en el
+ * ACL. Van por el cupo de fondo de la cuenta (TBO: 1 por segundo), el mismo de la ficha bajo demanda
+ * y de las lecturas de post-venta: 12 por minuto es a lo sumo un 20 % de ese cupo. El respaldo en
+ * inglés (una llamada por lote) no cuenta aquí: es parte de pedir el lote, y sin él no hay fotos.
+ */
+export const HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE = 12;
 
 /**
  * Qué pasa con las fotos de un hotel:
@@ -136,8 +176,17 @@ export interface HotelContentBatchView {
   readonly retryAfterMs?: number;
 }
 
-const BatchNegativeSchema = z.enum(['empty', 'failed']);
+const BatchNegativeSchema = z.enum(['empty', 'deferred', 'failed']);
 type BatchNegative = z.infer<typeof BatchNegativeSchema>;
+
+/** El valor de la clave de un hotel confirmado sin contenido en un idioma, con una cuenta. */
+const NO_CONTENT = 'none';
+
+/** La cuenta de un proveedor que no declara `accountRef`: todas sus llamadas son de la misma. */
+const NO_ACCOUNT_REF = '-';
+
+/** Por debajo de esto no se sale a pedir el respaldo bajo demanda: no llegaría. */
+const ON_DEMAND_MIN_REMAINING_MS = 1_000;
 
 /** Techos de lo que sale: una ficha no necesita más, y una fila rota no infla la respuesta. */
 const MAX_IMAGES = 100;
@@ -165,6 +214,11 @@ export interface HotelContentView {
   readonly requestedLang: HotelContentLanguage;
   /** El del contenido que sale; `null` sin contenido. Distinto de `requestedLang` = respaldo. */
   readonly lang: HotelContentLanguage | null;
+  /**
+   * El texto vino en otro idioma que el pedido (hoy, el respaldo en inglés): la UI decide si lo
+   * dice. `false` sin contenido.
+   */
+  readonly langFallback: boolean;
   readonly origin: HotelContentOrigin;
   readonly name: string | null;
   readonly stars: number | null;
@@ -470,7 +524,16 @@ export class HotelContentService {
    */
   private readonly batchInFlight = new Map<string, Promise<void>>();
 
+  /** Tope por minuto de las llamadas extra de los lotes, por cuenta del proveedor. */
+  private readonly extraCalls = new SlidingWindowBudget(
+    HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE,
+    60_000,
+  );
+
   private readonly catalog: HotelCatalogStore;
+
+  /** Los hoteles confirmados sin contenido: {@link HOTEL_CONTENT_NONE_CACHE}. */
+  private readonly noneCache: CachePort;
 
   constructor(
     private readonly registry: HotelProviderRegistry,
@@ -478,8 +541,10 @@ export class HotelContentService {
     private readonly breaker: CircuitBreakerService,
     @Inject(HOTEL_CONTENT_CACHE) private readonly cache: CachePort,
     @Optional() catalog?: HotelCatalogStore,
+    @Optional() @Inject(HOTEL_CONTENT_NONE_CACHE) noneCache?: CachePort,
   ) {
     this.catalog = catalog ?? new HotelCatalogStore(db);
+    this.noneCache = noneCache ?? cache;
   }
 
   async getContent(tenantId: string, request: HotelContentRequest): Promise<HotelContentView> {
@@ -501,25 +566,49 @@ export class HotelContentService {
         : { origin: 'catalog', body: bodyOf(rawOfRow(row), wanted, dropped) };
     };
 
-    const requested = rows.find((r) => r.lang === lang);
-    let chosen: Chosen | undefined = requested?.source === 'details' ? stored(lang) : undefined;
+    const hasDetails = (wanted: HotelContentLanguage): boolean =>
+      rows.some((r) => r.lang === wanted && r.source === 'details');
+    let chosen: Chosen | undefined = hasDetails(lang) ? stored(lang) : undefined;
     // Sólo el proveedor que no trae contenido en su disponibilidad tiene `hotel_content`, y sólo a
     // él se le pide en el momento: a los demás ni se les resuelve la cuenta. Y sólo por un hotel
     // de su catálogo: la ficha se abre desde una búsqueda, que sólo trae hoteles del catálogo, y
-    // un código inventado en la URL no puede gastar el cupo de la cuenta del consolidador.
+    // un código inventado en la URL no puede gastar el cupo de la cuenta del consolidador. Un hotel
+    // que la cuenta de la agencia ya confirmó sin contenido en ese idioma tampoco se vuelve a pedir
+    // (`callProvider`, con la cuenta ya resuelta).
     if (
       chosen === undefined &&
       inventory !== undefined &&
       registration.searchProfile.contentFromCatalog === true
     ) {
-      const fetched = onDemandOf(
-        await this.fromProvider(tenantId, providerCode, hotelId, lang),
-        hotelId,
-        lang,
-        dropped,
-      );
+      // Un solo plazo para el idioma pedido y el respaldo: la ficha no espera dos veces.
+      const deadline = Date.now() + HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS;
+      const answer = await this.fromProvider(tenantId, providerCode, hotelId, lang);
+      const fetched = onDemandOf(answer, hotelId, lang, dropped);
       // Una respuesta sin nada que mostrar no le gana al texto en inglés del catálogo.
-      if (fetched !== undefined && hasContent(fetched.body)) chosen = fetched;
+      if (fetched !== undefined && hasContent(fetched.body)) {
+        chosen = fetched;
+      } else if (
+        (answer?.kind === 'empty' || answer?.kind === 'found') &&
+        lang !== HOTEL_CONTENT_FALLBACK_LANG &&
+        !hasDetails(HOTEL_CONTENT_FALLBACK_LANG)
+      ) {
+        // El proveedor respondió sin contenido en el idioma pedido (TBO: "No Hotels Found", 05
+        // CE-23) y el catálogo no tiene el detalle en inglés: se le pide el respaldo. Si falló o
+        // no se le pudo preguntar, no: nada indica que el inglés vaya a llegar.
+        const fallback = onDemandOf(
+          await this.fromProvider(
+            tenantId,
+            providerCode,
+            hotelId,
+            HOTEL_CONTENT_FALLBACK_LANG,
+            deadline,
+          ),
+          hotelId,
+          HOTEL_CONTENT_FALLBACK_LANG,
+          dropped,
+        );
+        if (fallback !== undefined && hasContent(fallback.body)) chosen = fallback;
+      }
     }
     // En inglés, `stored(lang)` ya es el respaldo: si falta, el segundo intento también falta.
     chosen ??= stored(lang) ?? stored(HOTEL_CONTENT_FALLBACK_LANG);
@@ -621,8 +710,10 @@ export class HotelContentService {
   /**
    * De los hoteles sin foto, los que vale la pena pedir: de un proveedor cuyo contenido sale del
    * catálogo, en SU catálogo (un código inventado no gasta el cupo de la cuenta del consolidador),
-   * sin contenido de detalle todavía (si ya lo tiene y no trae fotos, el proveedor no las tiene) y
-   * sin un "no tiene" o un fallo reciente en la caché.
+   * sin contenido de detalle todavía en NINGÚN idioma (si ya lo tiene y no trae fotos, el proveedor
+   * no las tiene: las fotos no dependen del idioma) y sin un "no tiene" o un fallo reciente en la
+   * caché. Lo confirmado sin contenido se filtra después, con la cuenta de la agencia resuelta
+   * ({@link fetchProvider}): es de la cuenta, no de la plataforma.
    */
   private async fetchableRefs(
     refs: readonly HotelRef[],
@@ -697,10 +788,16 @@ export class HotelContentService {
       markDone(hotelIds);
       return;
     }
+    const account = accountScopeOf(providerCode, circuit?.accountRef);
 
     const waits: Promise<void>[] = [];
     const fresh: string[] = [];
     for (const id of hotelIds) {
+      // La cuenta ya confirmó que no lo tiene, en este idioma y en inglés: no se vuelve a pedir.
+      if (await this.knownWithoutContent(account, id, lang)) {
+        markDone([id]);
+        continue;
+      }
       const running = this.batchInFlight.get(batchFlightKey(providerCode, id, lang));
       if (running === undefined) fresh.push(id);
       else waits.push(running.finally(() => markDone([id])));
@@ -708,7 +805,7 @@ export class HotelContentService {
     const size = Math.max(1, adapter.contentBatchSize);
     for (let i = 0; i < fresh.length; i += size) {
       const chunk = fresh.slice(i, i + size);
-      const run = this.fetchChunk(providerCode, chunk, lang, () =>
+      const run = this.fetchChunk(account, chunk, lang, () =>
         this.breaker.execute(
           providerCode,
           () =>
@@ -719,6 +816,7 @@ export class HotelContentService {
               {
                 timeoutMs: HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS,
                 signal: AbortSignal.timeout(HOTEL_CONTENT_BATCH_FETCH_TIMEOUT_MS),
+                allowExtraCall: () => this.extraCalls.tryTake(account.key),
               },
             ),
           { ...circuit, scope: 'sales', passive: true },
@@ -733,13 +831,17 @@ export class HotelContentService {
     await Promise.all(waits);
   }
 
-  /** UN lote: lo pide, guarda lo que vuelve y recuerda lo que no. Nunca lanza. */
+  /**
+   * UN lote: lo pide, guarda lo que vuelve y recuerda lo que no. Nunca lanza. Escribe UNA línea
+   * `info` con lo que resolvió, sólo con conteos (sin códigos de hotel ni contenido).
+   */
   private async fetchChunk(
-    providerCode: string,
+    account: AccountScope,
     hotelIds: readonly string[],
     lang: HotelContentLanguage,
     call: () => Promise<HotelContentBatch>,
   ): Promise<void> {
+    const { providerCode } = account;
     let batch: HotelContentBatch;
     try {
       batch = await call();
@@ -753,8 +855,30 @@ export class HotelContentService {
       return;
     }
     const requested = new Set(hotelIds);
-    // Sólo lo pedido y en el idioma pedido: un código que no se pidió no escribe su contenido.
-    const contents = batch.contents.filter((c) => requested.has(c.hotelId) && c.lang === lang);
+    // Sólo lo pedido, en el idioma pedido o en el de respaldo: un código que no se pidió no escribe
+    // su contenido, y un idioma que nadie pidió tampoco.
+    const accepted = new Set<HotelContentLanguage>([lang, HOTEL_CONTENT_FALLBACK_LANG]);
+    const contents = batch.contents.filter((c) => requested.has(c.hotelId) && accepted.has(c.lang));
+    const returned = new Set(contents.map((c) => c.hotelId));
+    const confirmedNone = new Set(
+      batch.missingHotelIds.filter((id) => requested.has(id) && !returned.has(id)),
+    );
+    const unresolved = new Set(
+      (batch.unresolvedHotelIds ?? []).filter(
+        (id) => requested.has(id) && !returned.has(id) && !confirmedNone.has(id),
+      ),
+    );
+    // Lo que el proveedor no devolvió ni nombró en ninguna lista: respondió sin él, pero sin
+    // confirmar que no lo tiene. "No volvió", como siempre.
+    const unnamed = hotelIds.filter(
+      (id) => !returned.has(id) && !confirmedNone.has(id) && !unresolved.has(id),
+    );
+    this.logBatch(providerCode, lang, hotelIds.length, contents, {
+      confirmedNone: confirmedNone.size,
+      unconfirmed: unnamed.length,
+      unresolved: unresolved.size,
+      batch,
+    });
     let rejected = 0;
     try {
       ({ rejected } = await this.catalog.storeContents(providerCode, contents));
@@ -770,16 +894,101 @@ export class HotelContentService {
       await this.rememberBatch(providerCode, hotelIds, lang, 'failed');
       return;
     }
-    const returned = [...new Set(contents.map((c) => c.hotelId))];
-    const missing = hotelIds.filter((id) => !returned.includes(id));
     // Una fila que la base rechazó deja al hotel sin `details`: sin recordarlo, cada pantalla de
     // resultados volvería a pedirlo al proveedor y a gastar su cupo en un contenido que no entra.
     const unstorable =
-      rejected > 0 ? await this.stillWithoutDetails(providerCode, returned, lang) : [];
-    const nothingToShow = [...missing, ...unstorable];
+      rejected > 0 ? await this.stillWithoutDetails(providerCode, [...returned], lang) : [];
+    const nothingToShow = [...unnamed, ...unstorable];
     if (nothingToShow.length > 0) {
       await this.rememberBatch(providerCode, nothingToShow, lang, 'empty');
     }
+    if (unresolved.size > 0) {
+      await this.rememberBatch(providerCode, [...unresolved], lang, 'deferred');
+    }
+    if (confirmedNone.size > 0) await this.rememberNoContent(account, [...confirmedNone], lang);
+  }
+
+  /**
+   * La línea de diagnóstico de un lote: pedidos, encontrados por idioma, sin contenido confirmado,
+   * sin confirmar, sin resolver, llamadas (las de respaldo y las extra) y lo que se vio del
+   * proveedor (`breakers`: los que solos dejan vacío el lote, H2; `untrusted`: respuestas con
+   * elementos descartados). Sólo conteos: ni códigos ni contenido.
+   */
+  private logBatch(
+    providerCode: string,
+    lang: HotelContentLanguage,
+    requested: number,
+    contents: readonly HotelContentRecord[],
+    counts: {
+      readonly confirmedNone: number;
+      readonly unconfirmed: number;
+      readonly unresolved: number;
+      readonly batch: HotelContentBatch;
+    },
+  ): void {
+    const { batch } = counts;
+    const langs =
+      lang === HOTEL_CONTENT_FALLBACK_LANG ? [lang] : [lang, HOTEL_CONTENT_FALLBACK_LANG];
+    const found = langs
+      .map((l) => {
+        const hotels = new Set(contents.filter((c) => c.lang === l).map((c) => c.hotelId));
+        return `found_${l}=${hotels.size}`;
+      })
+      .join(' ');
+    const fallback = batch.calls !== undefined && batch.calls.fallback > 0 ? 'yes' : 'no';
+    const calls =
+      batch.calls === undefined
+        ? ''
+        : ` calls=${batch.calls.total} fallback_calls=${batch.calls.fallback} extra_calls=${batch.calls.isolation}`;
+    const seen =
+      batch.diagnostics === undefined
+        ? ''
+        : ` breakers=${batch.diagnostics.batchBreakers} untrusted=${batch.diagnostics.untrustedResponses}`;
+    this.logger.log(
+      `hotels.content_batch.lote provider=${providerCode} lang=${lang} requested=${requested} ${found} none=${counts.confirmedNone} unconfirmed=${counts.unconfirmed} unresolved=${counts.unresolved} fallback=${fallback}${calls}${seen}`,
+    );
+  }
+
+  /**
+   * ¿La cuenta ya confirmó que no tiene contenido del hotel en este idioma? Para un lote o una ficha
+   * en `es` o `pt` hace falta además el inglés: sin él, el respaldo todavía puede dar las fotos.
+   */
+  private async knownWithoutContent(
+    account: AccountScope,
+    hotelId: string,
+    lang: HotelContentLanguage,
+    alsoFallback = true,
+  ): Promise<boolean> {
+    const langs =
+      alsoFallback && lang !== HOTEL_CONTENT_FALLBACK_LANG
+        ? [lang, HOTEL_CONTENT_FALLBACK_LANG]
+        : [lang];
+    for (const l of langs) {
+      if ((await this.noneCache.get<unknown>(noContentKey(account, hotelId, l))) !== NO_CONTENT) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Confirmados en el idioma pedido y en inglés: se recuerdan los dos, con la cuenta. */
+  private async rememberNoContent(
+    account: AccountScope,
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+  ): Promise<void> {
+    const langs = new Set<HotelContentLanguage>([lang, HOTEL_CONTENT_FALLBACK_LANG]);
+    await Promise.all(
+      hotelIds.flatMap((hotelId) =>
+        [...langs].map((l) =>
+          this.noneCache.set(
+            noContentKey(account, hotelId, l),
+            NO_CONTENT,
+            HOTEL_CONTENT_BATCH_CACHE_TTL_S.none,
+          ),
+        ),
+      ),
+    );
   }
 
   /**
@@ -889,6 +1098,7 @@ export class HotelContentService {
     providerCode: string,
     hotelId: string,
     lang: HotelContentLanguage,
+    deadline?: number,
   ): Promise<Cached | undefined> {
     const key = `${KEY_PREFIX}:${providerCode}:${hotelId}:${lang}`;
     const hit = CachedSchema.safeParse(await this.cache.get<unknown>(key));
@@ -896,8 +1106,14 @@ export class HotelContentService {
 
     let pending = this.inFlight.get(key);
     if (pending === undefined) {
-      pending = this.callProvider(tenantId, providerCode, hotelId, lang, key).finally(() =>
-        this.inFlight.delete(key),
+      // Sin plazo es la primera llamada: el plazo entero. El respaldo usa lo que quedó.
+      const timeoutMs =
+        deadline === undefined
+          ? HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS
+          : Math.min(HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS, deadline - Date.now());
+      if (timeoutMs < ON_DEMAND_MIN_REMAINING_MS) return undefined;
+      pending = this.callProvider(tenantId, providerCode, hotelId, lang, key, timeoutMs).finally(
+        () => this.inFlight.delete(key),
       );
       this.inFlight.set(key, pending);
     }
@@ -921,6 +1137,7 @@ export class HotelContentService {
     hotelId: string,
     lang: HotelContentLanguage,
     key: string,
+    timeoutMs: number,
   ): Promise<Cached | undefined> {
     let resolved;
     try {
@@ -935,6 +1152,10 @@ export class HotelContentService {
     }
     const { adapter, circuit } = resolved;
     if (!supportsHotelContent(adapter)) return undefined;
+    // Lo que ESTA cuenta ya confirmó sin contenido en este idioma no se vuelve a pedir: sale como
+    // una respuesta vacía, sin llamada y sin caché (la marca ya dura lo suyo).
+    const account = accountScopeOf(providerCode, circuit?.accountRef);
+    if (await this.knownWithoutContent(account, hotelId, lang, false)) return { kind: 'empty' };
 
     let content: HotelProviderContent | null;
     try {
@@ -945,10 +1166,7 @@ export class HotelContentService {
             hotelId,
             lang,
             { tenantId },
-            {
-              timeoutMs: HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS,
-              signal: AbortSignal.timeout(HOTEL_CONTENT_ON_DEMAND_TIMEOUT_MS),
-            },
+            { timeoutMs, signal: AbortSignal.timeout(timeoutMs) },
           ),
         { ...circuit, scope: 'sales', passive: true },
       );
@@ -988,6 +1206,7 @@ export class HotelContentService {
       hotelId: request.hotelId,
       requestedLang: request.lang,
       lang: body?.lang ?? null,
+      langFallback: body !== undefined && body.lang !== request.lang,
       origin: chosen?.origin ?? 'none',
       ...facts,
       name: facts.name ?? body?.name ?? null,
@@ -1006,6 +1225,25 @@ export class HotelContentService {
 
 function batchKey(ref: HotelRef, lang: HotelContentLanguage): string {
   return `${BATCH_KEY_PREFIX}:${ref.providerCode}:${ref.hotelId}:${lang}`;
+}
+
+/**
+ * Con qué cuenta del proveedor sale una llamada: la huella que declara el proveedor (`accountRef`,
+ * que cambia al rotar la credencial), nunca el tenant. Los hoteles confirmados sin contenido y el
+ * cupo de llamadas extra son de la cuenta: lo que contestó una no frena a otra.
+ */
+interface AccountScope {
+  readonly providerCode: string;
+  readonly key: string;
+}
+
+function accountScopeOf(providerCode: string, accountRef: string | undefined): AccountScope {
+  return { providerCode, key: `${providerCode}@${accountRef ?? NO_ACCOUNT_REF}` };
+}
+
+/** Por cuenta e idioma: la cuenta confirmó que el hotel no tiene contenido en ese idioma. */
+function noContentKey(account: AccountScope, hotelId: string, lang: HotelContentLanguage): string {
+  return `${NO_CONTENT_KEY_PREFIX}:${account.key}:${hotelId}:${lang}`;
 }
 
 function batchFlightKey(providerCode: string, hotelId: string, lang: HotelContentLanguage): string {

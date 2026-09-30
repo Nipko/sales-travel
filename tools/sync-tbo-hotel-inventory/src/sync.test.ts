@@ -1243,9 +1243,223 @@ describe('PR-3.3: contenido de hotel (E4)', () => {
       await h.run({ stages: E4_ONLY, countries: ['AR'], content: onlySpanish() }),
     );
 
-    expect(report.calls).toBe(1);
-    expect(report.e4).toMatchObject({ hotelsMissing: 1, splits: 0, contentsWritten: 2 });
+    // El que faltó en español se pide en inglés (05 CE-23); tampoco está: confirmado sin contenido.
+    expect(detailsCalls(h.tbo)).toEqual([
+      { lang: 'ES', codes: ids },
+      { lang: 'EN', codes: [ids[1]] },
+    ]);
+    expect(report.calls).toBe(2);
+    expect(report.e4).toMatchObject({
+      hotelsMissing: 1,
+      hotelsWithoutContent: 1,
+      hotelsFromFallback: 0,
+      fallbackCalls: 1,
+      splits: 0,
+      contentsWritten: 2,
+    });
     expect(h.store.content(ids[1] ?? '', 'es')).toBeUndefined();
+    expect(h.store.content(ids[1] ?? '', 'en')).toBeUndefined();
+  });
+
+  describe('"No Hotels Found" de HotelDetails (producción, 2026-09-30; 05 CE-23)', () => {
+    it('H1 — sin español: el inglés se guarda como `en`, sin error ni racha, y no se repite', async () => {
+      const ids = hotelIds(3);
+      const h = harness({ ...WORLD, details: { languages: ['EN'] } });
+      seedContentCatalog(h.store, { demandHotels: 3 });
+
+      const report = synced(
+        await h.run({ stages: E4_ONLY, countries: ['AR'], maxConsecutiveErrors: 1 }),
+      );
+
+      // ES vacío → EN de respaldo; PT vacío → el inglés ya está; el lote EN ya no hace falta.
+      expect(detailsCalls(h.tbo)).toEqual([
+        { lang: 'ES', codes: ids },
+        { lang: 'EN', codes: ids },
+        { lang: 'PT', codes: ids },
+      ]);
+      expect(report).toMatchObject({ outcome: 'complete', stopReason: null, calls: 3 });
+      expect(report.errorsByCode).toEqual({});
+      expect(report.e4).toMatchObject({
+        hotelsMissing: 6,
+        hotelsFromFallback: 6,
+        hotelsWithoutContent: 0,
+        fallbackCalls: 1,
+        isolationCalls: 0,
+        contentsWritten: 3,
+      });
+      for (const id of ids) {
+        expect(h.store.content(id, 'en')).toMatchObject({
+          source: 'details',
+          name: `Hotel ${id} EN`,
+        });
+        expect(h.store.content(id, 'es')).toBeUndefined();
+      }
+      const lines = logLines(h.lines, 'tbo.sync.content_batch');
+      expect(lines.map((line) => [line['level'], line['lang'], line['fallbackUsed']])).toEqual([
+        ['info', 'es', true],
+        ['info', 'pt', false],
+      ]);
+      expect(lines[0]).toMatchObject({ requested: 3, found: { en: 3 }, withoutContent: 0 });
+      // En el log no hay códigos de hotel fuera de `debug`.
+      expect(JSON.stringify(lines)).not.toContain(ids[0]);
+    });
+
+    it('H2 — un código sin contenido tumba el lote: se aísla y los demás reciben inglés y español', async () => {
+      const ids = hotelIds(10);
+      const poison = ids[6] ?? '';
+      const h = harness({ ...WORLD, details: { poison: [poison] } });
+      seedContentCatalog(h.store, { demandHotels: 10 });
+
+      const report = synced(
+        await h.run({
+          stages: E4_ONLY,
+          countries: ['AR'],
+          maxConsecutiveErrors: 1,
+          content: onlySpanish(),
+        }),
+      );
+
+      const good = ids.filter((id) => id !== poison);
+      expect(detailsCalls(h.tbo)).toEqual([
+        { lang: 'ES', codes: ids },
+        { lang: 'EN', codes: ids },
+        { lang: 'EN', codes: ids.slice(0, 5) },
+        { lang: 'EN', codes: ids.slice(5, 10) },
+        { lang: 'EN', codes: ids.slice(5, 8) },
+        { lang: 'EN', codes: ids.slice(8, 10) },
+        { lang: 'EN', codes: ids.slice(5, 7) },
+        { lang: 'EN', codes: [ids[7]] },
+        { lang: 'EN', codes: [ids[5]] },
+        { lang: 'EN', codes: [poison] },
+        { lang: 'ES', codes: good },
+      ]);
+      expect(report).toMatchObject({ outcome: 'complete', stopReason: null, calls: 11 });
+      expect(report.errorsByCode).toEqual({});
+      expect(report.e4).toMatchObject({
+        hotelsWithoutContent: 1,
+        hotelsUnresolved: 0,
+        fallbackCalls: 1,
+        isolationCalls: 9,
+        splits: 0,
+        hotelsFailed: 0,
+      });
+      for (const id of good) {
+        expect(h.store.content(id, 'es')?.source).toBe('details');
+        expect(h.store.content(id, 'en')?.source).toBe('details');
+      }
+      expect(h.store.content(poison, 'es')).toBeUndefined();
+      expect(h.store.content(poison, 'en')).toBeUndefined();
+    });
+
+    it('H1 — la corrida siguiente no vuelve a pedir en inglés lo que ya está guardado y vigente', async () => {
+      let now = T0;
+      const ids = hotelIds(10);
+      const h = harness({ ...WORLD, details: { languages: ['EN'] } }, () => now);
+      seedContentCatalog(h.store, { demandHotels: 10 });
+      const run = (): Promise<SyncReport> => h.run({ stages: E4_ONLY, countries: ['AR'] });
+
+      synced(await run());
+      expect(detailsCalls(h.tbo).map((c) => [c.lang, c.codes.length])).toEqual([
+        ['ES', 10],
+        ['EN', 10],
+        ['PT', 10],
+      ]);
+
+      // Un día después el inglés sigue vigente: el español y el portugués se vuelven a pedir (nada
+      // guarda "sin contenido" entre corridas), pero ya sin respaldo.
+      now = T0 + DAY;
+      const second = synced(await run());
+      expect(
+        detailsCalls(h.tbo)
+          .slice(3)
+          .map((c) => [c.lang, c.codes.length]),
+      ).toEqual([
+        ['ES', 10],
+        ['PT', 10],
+      ]);
+      expect(second.e4).toMatchObject({ fallbackCalls: 0, hotelsFromFallback: 20 });
+      for (const id of ids) expect(h.store.content(id, 'en')?.fetchedAt).toEqual(new Date(T0));
+    });
+
+    it('H2 con ES, PT y EN: el que tumba el lote no va en el lote en portugués', async () => {
+      const ids = hotelIds(10);
+      const poison = ids[6] ?? '';
+      const good = ids.filter((id) => id !== poison);
+      const h = harness({ ...WORLD, details: { poison: [poison] } });
+      seedContentCatalog(h.store, { demandHotels: 10 });
+
+      const report = synced(await h.run({ stages: E4_ONLY, countries: ['AR'] }));
+
+      const calls = detailsCalls(h.tbo);
+      // ES entero, EN entero, 8 de aislamiento, la vuelta en español sin el malo, y el portugués
+      // en UNA llamada sin él. El lote en inglés ya no hace falta.
+      expect(calls).toHaveLength(12);
+      expect(calls.at(-2)).toEqual({ lang: 'ES', codes: good });
+      expect(calls.at(-1)).toEqual({ lang: 'PT', codes: good });
+      expect(report.errorsByCode).toEqual({});
+      expect(report.e4).toMatchObject({
+        batchBreakers: 1,
+        hotelsWithoutContent: 1,
+        hotelsUnconfirmed: 0,
+        hotelsUnresolved: 0,
+      });
+      for (const id of good) {
+        for (const lang of ['es', 'pt', 'en'] as const) {
+          expect(h.store.content(id, lang)?.source).toBe('details');
+        }
+      }
+      expect(h.store.content(poison, 'pt')).toBeUndefined();
+      const [first] = logLines(h.lines, 'tbo.sync.content_batch');
+      expect(first).toMatchObject({ lang: 'es', batchBreakers: 1, withoutContent: 1 });
+    });
+
+    it('el aislamiento tiene techo por corrida: lo que no alcanza queda para la próxima', async () => {
+      const ids = hotelIds(10);
+      const poison = ids[6] ?? '';
+      const h = harness({ ...WORLD, details: { poison: [poison] } });
+      seedContentCatalog(h.store, { demandHotels: 10 });
+
+      // Con 20 llamadas de presupuesto, el aislamiento tiene 4 (el 20 %).
+      const report = synced(
+        await h.run({ stages: E4_ONLY, countries: ['AR'], maxCalls: 20, content: onlySpanish() }),
+      );
+
+      expect(report).toMatchObject({ outcome: 'complete', calls: 6 });
+      expect(report.e4).toMatchObject({
+        isolationCalls: 4,
+        hotelsFromFallback: 7,
+        hotelsWithoutContent: 0,
+        hotelsUnresolved: 3,
+      });
+      const [line] = logLines(h.lines, 'tbo.sync.content_batch');
+      expect(line).toMatchObject({ level: 'info', isolationLimited: true, unresolved: 3 });
+    });
+
+    it('lo lento (≥ 4.500 ms) sigue siendo un error: se reintenta y, agotado, cuenta como antes', async () => {
+      let clock = T0;
+      const h = harness(
+        {
+          ...WORLD,
+          override: (op) => {
+            if (op !== 'hotelDetails') return undefined;
+            clock += 5_090;
+            return tboNoHotelsFound();
+          },
+        },
+        () => clock,
+        { now: () => clock },
+      );
+      seedContentCatalog(h.store, { demandHotels: 1 });
+
+      const report = synced(
+        await h.run({ stages: E4_ONLY, countries: ['AR'], content: onlySpanish() }),
+      );
+
+      // Un código solo: 3 intentos, todos lentos → UPSTREAM, marcado y la corrida sigue.
+      expect(h.tbo.callsTo('hotelDetails')).toHaveLength(3);
+      expect(report.errorsByCode).toEqual({ UPSTREAM: 1 });
+      expect(report.e4).toMatchObject({ hotelsFailed: 1, fallbackCalls: 0 });
+    });
   });
 
   it('criterio de PR-3.3: el hash evita reescribir; sólo lo que cambió se reescribe', async () => {

@@ -1072,6 +1072,7 @@ describe('PR-3.6: contenido de un hotel bajo demanda (HotelDetails)', () => {
   function detalle(overrides: Partial<TboHotelDetailsResult> = {}): TboHotelDetailsResult {
     return {
       lang: 'es',
+      outcome: 'DETAILS',
       contents: [
         {
           hotelId: '1000000',
@@ -1173,6 +1174,26 @@ describe('PR-3.6: contenido de un hotel bajo demanda (HotelDetails)', () => {
       timeoutMs: 6_000,
       maxAttempts: 1,
     });
+  });
+
+  it('"No Hotels Found" (05 CE-23) → `null` en UNA llamada: la ficha usa lo que tenga', async () => {
+    const c = contenido(
+      detalle({
+        outcome: 'NO_HOTELS_FOUND',
+        contents: [],
+        hotels: [],
+        missingHotelCodes: ['1000000'],
+      }),
+    );
+    await expect(
+      new TboHotelProviderAdapter(acl(), CUENTA, 'test', c).fetchHotelContent(
+        '1000000',
+        'es',
+        CTX,
+        { timeoutMs: 6_000 },
+      ),
+    ).resolves.toBeNull();
+    expect(c.getHotelDetails).toHaveBeenCalledTimes(1);
   });
 
   it('el hotel no volvió en la respuesta → `null`, no un contenido vacío inventado', async () => {

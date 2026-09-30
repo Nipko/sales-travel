@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import type { LoggerPort } from '@sales-travel/core';
 import { describe, expect, it } from 'vitest';
 import { TboResponseMappingError } from '../errors';
-import { mapTboHotelDetailsResponse } from './hotel-details.response.mapper';
+import {
+  emptyTboHotelDetailsMapping,
+  mapTboHotelDetailsResponse,
+} from './hotel-details.response.mapper';
 import { TboHotelDetailsEnvelopeSchema, type TboHotelDetailsEnvelope } from './response.schema';
 
 /**
@@ -231,5 +234,30 @@ describe('mapTboHotelDetailsResponse: RNF-16 y tolerancia', () => {
         hotelCodes: ['1000000'],
       }),
     ).toThrow(TboResponseMappingError);
+  });
+});
+
+describe('el lote sin contenido ("No Hotels Found", 05 CE-23)', () => {
+  it('un 200 es `DETAILS`; el lote vacío, `NO_HOTELS_FOUND` con todos los códigos y nada más', () => {
+    expect(mapDetails([hotelP59()]).outcome).toBe('DETAILS');
+    expect(emptyTboHotelDetailsMapping({ lang: 'es', hotelCodes: ['1000000', '1000001'] })).toEqual(
+      {
+        lang: 'es',
+        outcome: 'NO_HOTELS_FOUND',
+        contents: [],
+        hotels: [],
+        missingHotelCodes: ['1000000', '1000001'],
+        diagnostics: { received: 0, mapped: 0, rejected: {}, notes: {}, unknownKeys: [] },
+      },
+    );
+  });
+
+  it('valida el contexto igual que el mapper: un código ilegible es un bug, no un lote vacío', () => {
+    expect(() => emptyTboHotelDetailsMapping({ lang: 'es', hotelCodes: [] })).toThrow(
+      TboResponseMappingError,
+    );
+    expect(() => emptyTboHotelDetailsMapping({ lang: 'es', hotelCodes: ['<script>'] })).toThrow(
+      TboResponseMappingError,
+    );
   });
 });

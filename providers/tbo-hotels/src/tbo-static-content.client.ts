@@ -26,7 +26,10 @@ import type {
 import { mapTboCountryListResponse } from './static/country-list.response.mapper';
 import { mapTboHotelCodeListResponse } from './static/hotel-code-list.response.mapper';
 import { buildTboHotelDetailsRequest } from './static/hotel-details.request.builder';
-import { mapTboHotelDetailsResponse } from './static/hotel-details.response.mapper';
+import {
+  emptyTboHotelDetailsMapping,
+  mapTboHotelDetailsResponse,
+} from './static/hotel-details.response.mapper';
 import type { TboStaticOperation } from './static/observer';
 import {
   TboCityHotelsEnvelopeSchema,
@@ -57,12 +60,17 @@ export type { TboStaticOperation } from './static/observer';
  *   así que una corrida del sync nunca le quita capacidad a una búsqueda o a un Book (01 §7.2).
  * - **Reintentos**: los del cliente HTTP, que en lecturas sólo repite ante 429, 500, cuerpo roto o
  *   fallos de transporte y con backoff (06 §4.3 regla 7). Partir un lote de HotelDetails que falla
- *   es del sync.
+ *   es del sync; pedir el respaldo en inglés o partir un lote sin contenido, de
+ *   `resolveTboHotelDetails`.
  * - **Ciudad sin hoteles**: TBOHotelCodeList la contesta con `Status.Code` 500 "No Hotels Found"
  *   (producción, 2026-09-29). Si llega antes de `slowNoHotelsFoundMs` es una lista vacía en UNA
  *   llamada, sin reintento ni `warn`; si tarda eso o más es el plazo interno de TBO vencido y se
  *   reintenta como el `UPSTREAM` que es: agotados los intentos, la ciudad falla, no queda vacía
  *   (01 §8.5).
+ * - **Lote sin contenido**: HotelDetails contesta igual un lote del que no tiene nada en ese idioma
+ *   (producción, 2026-09-30; 05 CE-23). Con la misma regla de tiempo sale como resultado tipado
+ *   `NO_HOTELS_FOUND`, sin reintento, sin error y sin sumar al breaker ni a la racha del sync; lento
+ *   sigue siendo `UPSTREAM`.
  */
 
 /**
@@ -258,20 +266,34 @@ export class TboStaticContentClient {
     };
   }
 
-  /** `POST HotelDetails` de hasta 13 códigos en un idioma (p. 56). */
+  /**
+   * `POST HotelDetails` de hasta 13 códigos en un idioma (p. 56). Un "No Hotels Found" rápido vuelve
+   * con `outcome: 'NO_HOTELS_FOUND'` y todos los códigos en `missingHotelCodes`, no como error
+   * (05 CE-23): qué hacer con ellos (respaldo en inglés, partir el lote) es de quien llama.
+   */
   async getHotelDetails(
     hotelCodes: readonly string[],
     lang: TboContentLanguage,
     call: TboStaticCallOptions = {},
   ): Promise<TboHotelDetailsResult> {
     const body = buildTboHotelDetailsRequest(hotelCodes, lang);
-    const result = await this.#send('hotelDetails', body, TboHotelDetailsEnvelopeSchema, call);
+    const context = { lang, hotelCodes: body.Hotelcodes.split(',') };
+    const result = await this.#call('hotelDetails', body, TboHotelDetailsEnvelopeSchema, call);
+    if (result.outcome === 'NO_AVAILABILITY') {
+      // `debug` y no `info`: quien llama escribe UNA línea por lote con lo que resolvió al final.
+      this.#log('debug', 'tbo.static.details_without_content', {
+        op: 'hotelDetails',
+        lang,
+        hotelCodeCount: context.hotelCodes.length,
+        requestId: result.requestId,
+        tboCode: result.tboCode,
+        durationMs: result.durationMs,
+        attempt: result.attempts,
+      });
+      return { ...emptyTboHotelDetailsMapping(context, this.#mapDeps()), ...callMeta(result) };
+    }
     return {
-      ...mapTboHotelDetailsResponse(
-        result.data,
-        { lang, hotelCodes: body.Hotelcodes.split(',') },
-        this.#mapDeps(),
-      ),
+      ...mapTboHotelDetailsResponse(result.data, context, this.#mapDeps()),
       ...callMeta(result),
     };
   }
@@ -288,12 +310,12 @@ export class TboStaticContentClient {
   }
 
   /**
-   * La salida al cable de las operaciones sin resultado vacío. De las cinco, sólo TBOHotelCodeList
-   * admite uno (el "No Hotels Found" de una ciudad sin hoteles, 01 §8.5) y lo trata
-   * `listCityHotels`; en las demás un vacío es inalcanzable con la tabla actual.
+   * La salida al cable de las operaciones sin resultado vacío. De las cinco, TBOHotelCodeList y
+   * HotelDetails admiten uno (el "No Hotels Found" rápido, 01 §8.5) y lo tratan `listCityHotels` y
+   * `getHotelDetails`; en las demás un vacío es inalcanzable con la tabla actual.
    */
   async #send<T>(
-    operation: Exclude<TboStaticOperation, 'tboHotelCodeList'>,
+    operation: Exclude<TboStaticOperation, 'tboHotelCodeList' | 'hotelDetails'>,
     body: unknown,
     responseSchema: ZodType<T, ZodTypeDef, unknown>,
     call: TboStaticCallOptions,
@@ -338,10 +360,14 @@ export class TboStaticContentClient {
 
   /** Por la lista blanca del log (01 §11.1). La observabilidad nunca cambia el resultado. */
   #info(message: string, meta: Record<string, unknown>): void {
+    this.#log('info', message, meta);
+  }
+
+  #log(level: 'debug' | 'info', message: string, meta: Record<string, unknown>): void {
     const logger = this.#logger;
     if (logger === undefined) return;
     try {
-      logger.info(message, pickTboLogMeta({ provider: TBO_HOTELS_PROVIDER_CODE, ...meta }));
+      logger[level](message, pickTboLogMeta({ provider: TBO_HOTELS_PROVIDER_CODE, ...meta }));
     } catch {
       // Se descarta a propósito: no hay a dónde reportar un fallo del propio canal de reporte.
     }

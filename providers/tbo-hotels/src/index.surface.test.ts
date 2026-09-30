@@ -47,6 +47,7 @@ import * as contentTypes from './static/content.types';
 import * as countryListMapper from './static/country-list.response.mapper';
 import * as hotelCodeListMapper from './static/hotel-code-list.response.mapper';
 import * as hotelDetailsBuilder from './static/hotel-details.request.builder';
+import * as hotelDetailsResolver from './static/hotel-details.resolver';
 import * as hotelDetailsMapper from './static/hotel-details.response.mapper';
 import * as hotelRecord from './static/hotel-record';
 import * as htmlSanitizer from './static/html-sanitizer';
@@ -397,10 +398,14 @@ const PROBED: readonly ProbedModule[] = [
       emptyTboCityHotelsMapping: 'la usa el cliente de contenido ante un "No Hotels Found"',
     },
   },
+  { name: 'static/hotel-details.resolver', module: hotelDetailsResolver },
   {
     name: 'static/hotel-details.response.mapper',
     module: hotelDetailsMapper,
-    notPublished: { mapTboHotelDetailsResponse: 'recibe el sobre crudo de TBO' },
+    notPublished: {
+      mapTboHotelDetailsResponse: 'recibe el sobre crudo de TBO',
+      emptyTboHotelDetailsMapping: 'la usa el cliente de contenido ante un "No Hotels Found"',
+    },
   },
   {
     name: 'static/hotel-code-list.response.mapper',

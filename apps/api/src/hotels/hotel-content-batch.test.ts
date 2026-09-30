@@ -23,6 +23,7 @@ import {
   HOTEL_CONTENT_BATCH_MAX_FETCH,
   HOTEL_CONTENT_BATCH_RETRY_AFTER_MS,
   HOTEL_CONTENT_BATCH_WAIT_MS,
+  HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE,
   HotelContentService,
 } from './hotel-content.service.js';
 import { HOTEL_IMAGE_PROXY_PATH } from './hotel-image-proxy.js';
@@ -109,6 +110,8 @@ interface BancoOpts {
   fotos?: FilaFoto[];
   flag?: boolean;
   bajo?: Partial<CatalogoBajoDemanda>;
+  /** La huella de la cuenta que resuelve el proveedor; el objeto se puede cambiar entre pedidos. */
+  cuenta?: { accountRef: string };
 }
 
 function banco(ids: readonly string[], opts: BancoOpts = {}): Banco {
@@ -117,6 +120,7 @@ function banco(ids: readonly string[], opts: BancoOpts = {}): Banco {
     code: PROVEEDOR,
     callPolicy: 'opt-in',
     searchProfile: { idSpace: 'provider', contentFromCatalog: true, imageHosts: [HOST] },
+    ...(opts.cuenta === undefined ? {} : { circuit: opts.cuenta }),
   });
   const adapter = factory.adapterFor(TENANT);
   Object.assign(adapter, { fetchHotelContents: fetchContents, contentBatchSize: 10 });
@@ -161,9 +165,14 @@ function banco(ids: readonly string[], opts: BancoOpts = {}): Banco {
   return { service, registry, db, breaker, cache, fetchContents, guardadas };
 }
 
-function pedir(b: Banco, ids: readonly string[], providerCode = PROVEEDOR) {
+function pedir(
+  b: Banco,
+  ids: readonly string[],
+  providerCode = PROVEEDOR,
+  lang: HotelContentLanguage = 'es',
+) {
   return b.service.getContentBatch(TENANT, {
-    lang: 'es',
+    lang,
     hotels: ids.map((hotelId) => ({ providerCode, hotelId })),
   });
 }
@@ -172,8 +181,10 @@ const ids = (n: number, desde = 1): string[] =>
   Array.from({ length: n }, (_, i) => String(1_000_000 + desde + i));
 
 let warn: ReturnType<typeof vi.spyOn>;
+let info: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  info = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -339,31 +350,194 @@ describe('lo que falta se pide en lotes, se guarda y se devuelve', () => {
     expect(res.retryAfterMs).toBe(HOTEL_CONTENT_BATCH_RETRY_AFTER_MS);
   });
 
-  it('lo que el proveedor no devuelve queda `none` y no se vuelve a pedir por un rato', async () => {
-    const b = banco(['H1', 'H2'], { fetchContents: proveedorQueResponde(['H2']) });
+  it('lo confirmado sin contenido queda `none` una semana, por cuenta y en los idiomas confirmados', async () => {
+    const cuenta = { accountRef: 'cuenta-a' };
+    const b = banco(['H1', 'H2'], { fetchContents: proveedorQueResponde(['H2']), cuenta });
+    const guardar = vi.spyOn(b.cache, 'set');
 
     expect((await pedir(b, ['H1', 'H2'])).items.map((i) => i.status)).toEqual(['ready', 'none']);
-    expect(await b.cache.get('hotels:content-batch:stub-hotels:H2:es')).toBe('empty');
+    // El español (pedido) y el inglés (respaldo): los dos que el proveedor confirmó.
+    for (const lang of ['es', 'en']) {
+      expect(guardar).toHaveBeenCalledWith(
+        `hotels:content-none:stub-hotels@cuenta-a:H2:${lang}`,
+        'none',
+        HOTEL_CONTENT_BATCH_CACHE_TTL_S.none,
+      );
+    }
+    expect(guardar).not.toHaveBeenCalledWith(
+      expect.stringMatching(/content-none.*:pt$/),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(HOTEL_CONTENT_BATCH_CACHE_TTL_S.none).toBe(7 * 24 * 60 * 60);
 
     await pedir(b, ['H2']);
     expect(b.fetchContents).toHaveBeenCalledTimes(1);
+
+    // El portugués no se confirmó: se pide una vez, y desde ahí tampoco.
+    await pedir(b, ['H2'], PROVEEDOR, 'pt');
+    await pedir(b, ['H2'], PROVEEDOR, 'pt');
+    expect(b.fetchContents.mock.calls.map((c) => c[1])).toEqual(['es', 'pt']);
+
+    // Otra cuenta (una credencial rotada, otro consolidador, otro entorno) vuelve a preguntar.
+    cuenta.accountRef = 'cuenta-b';
+    await pedir(b, ['H2']);
+    expect(b.fetchContents).toHaveBeenCalledTimes(3);
   });
 
-  it('sólo guarda lo pedido y en el idioma pedido', async () => {
+  it('pedido en inglés: confirma sólo el inglés y no frena el español', async () => {
+    const b = banco(['H2'], { fetchContents: proveedorQueResponde(['H2']) });
+    const guardar = vi.spyOn(b.cache, 'set');
+
+    await pedir(b, ['H2'], PROVEEDOR, 'en');
+    expect(guardar).toHaveBeenCalledWith(
+      'hotels:content-none:stub-hotels@-:H2:en',
+      'none',
+      HOTEL_CONTENT_BATCH_CACHE_TTL_S.none,
+    );
+    expect(await b.cache.get('hotels:content-none:stub-hotels@-:H2:es')).toBeNull();
+
+    await pedir(b, ['H2'], PROVEEDOR, 'en');
+    await pedir(b, ['H2']);
+    expect(b.fetchContents.mock.calls.map((c) => c[1])).toEqual(['en', 'es']);
+  });
+
+  it('las marcas de una semana van a su propia caché: las fichas no las desalojan', async () => {
+    const b = banco(['H2'], { fetchContents: proveedorQueResponde(['H2']) });
+    const marcas = new MemoryCacheAdapter();
+    const service = new HotelContentService(
+      b.registry,
+      b.db.service,
+      b.breaker,
+      b.cache,
+      undefined,
+      marcas,
+    );
+
+    await service.getContentBatch(TENANT, {
+      lang: 'es',
+      hotels: [{ providerCode: PROVEEDOR, hotelId: 'H2' }],
+    });
+
+    expect(await marcas.get('hotels:content-none:stub-hotels@-:H2:es')).toBe('none');
+    expect(await b.cache.get('hotels:content-none:stub-hotels@-:H2:es')).toBeNull();
+  });
+
+  it('un hotel que el proveedor no nombra en ninguna lista queda `empty` por un rato, como antes', async () => {
+    const fetchContents: FetchContents = vi.fn(() =>
+      Promise.resolve({ contents: [registro('H1')], missingHotelIds: [] }),
+    );
+    const b = banco(['H1', 'H2'], { fetchContents });
+
+    expect((await pedir(b, ['H1', 'H2'])).items.map((i) => i.status)).toEqual(['ready', 'none']);
+    expect(await b.cache.get('hotels:content-batch:stub-hotels:H2:es')).toBe('empty');
+    expect(await b.cache.get('hotels:content-none:stub-hotels@-:H2:es')).toBeNull();
+  });
+
+  it('guarda lo pedido en el idioma pedido y en el respaldo en inglés; otro idioma, no', async () => {
     const fetchContents: FetchContents = vi.fn(() =>
       Promise.resolve({
-        contents: [registro('H1'), registro('INTRUSO'), registro('H1', 'en')],
+        contents: [registro('H1'), registro('INTRUSO'), registro('H2', 'en'), registro('H1', 'pt')],
         missingHotelIds: [],
       }),
     );
-    const b = banco(['H1'], { fetchContents });
+    const b = banco(['H1', 'H2'], { fetchContents });
 
-    await pedir(b, ['H1']);
+    const res = await pedir(b, ['H1', 'H2']);
 
     const filas = JSON.parse(
       String(b.db.consultasMarcadas('store-contents')[0]?.parameters[1]),
     ) as HotelContentRecord[];
-    expect(filas.map((f) => [f.hotelId, f.lang])).toEqual([['H1', 'es']]);
+    expect(filas.map((f) => [f.hotelId, f.lang])).toEqual([
+      ['H1', 'es'],
+      ['H2', 'en'],
+    ]);
+    // La foto no depende del idioma: el hotel que sólo trajo inglés sale `ready` igual.
+    expect(res.items.map((i) => [i.hotelId, i.status])).toEqual([
+      ['H1', 'ready'],
+      ['H2', 'ready'],
+    ]);
+  });
+
+  it('lo que quedó sin resolver (tope de llamadas extra) se vuelve a pedir en poco tiempo', async () => {
+    const fetchContents: FetchContents = vi.fn((hotelIds) =>
+      Promise.resolve({
+        contents: [registro('H1', 'en')],
+        missingHotelIds: [],
+        unresolvedHotelIds: hotelIds.filter((id) => id !== 'H1'),
+        calls: { total: 4, fallback: 1, isolation: 2 },
+      }),
+    );
+    const b = banco(['H1', 'H2', 'H3'], { fetchContents });
+    const guardar = vi.spyOn(b.cache, 'set');
+
+    const res = await pedir(b, ['H1', 'H2', 'H3']);
+
+    expect(res.items.map((i) => i.status)).toEqual(['ready', 'none', 'none']);
+    expect(guardar).toHaveBeenCalledWith(
+      'hotels:content-batch:stub-hotels:H2:es',
+      'deferred',
+      HOTEL_CONTENT_BATCH_CACHE_TTL_S.deferred,
+    );
+    expect(HOTEL_CONTENT_BATCH_CACHE_TTL_S.deferred).toBeLessThan(
+      HOTEL_CONTENT_BATCH_CACHE_TTL_S.empty,
+    );
+    expect(await b.cache.get('hotels:content-none:stub-hotels@-:H2:es')).toBeNull();
+  });
+
+  it('UNA línea info por lote: pedidos, por idioma, sin contenido, sin confirmar, respaldo, llamadas y lo que se vio', async () => {
+    const fetchContents: FetchContents = vi.fn(() =>
+      Promise.resolve({
+        contents: [registro('1000001'), registro('1000002', 'en'), registro('1000003', 'en')],
+        missingHotelIds: ['1000004'],
+        unresolvedHotelIds: ['1000005'],
+        calls: { total: 6, fallback: 1, isolation: 4 },
+        diagnostics: { batchBreakers: 1, untrustedResponses: 0 },
+      }),
+    );
+    const pedidos = ids(6);
+    const b = banco(pedidos, { fetchContents });
+
+    await pedir(b, pedidos);
+
+    const lineas = info.mock.calls.map((c) => String(c[0]));
+    expect(lineas).toEqual([
+      // El sexto no volvió ni está en ninguna lista: respondió sin él, sin confirmar (`unconfirmed`).
+      'hotels.content_batch.lote provider=stub-hotels lang=es requested=6 found_es=1 found_en=2 none=1 unconfirmed=1 unresolved=1 fallback=yes calls=6 fallback_calls=1 extra_calls=4 breakers=1 untrusted=0',
+    ]);
+    // Sin códigos de hotel ni contenido.
+    expect(lineas.join('\n')).not.toMatch(/100000\d|Hotel |img\.example/);
+  });
+
+  it('las llamadas extra tienen un cupo por cuenta y por minuto, compartido entre lotes', async () => {
+    let permitidas = 0;
+    let negadas = 0;
+    const fetchContents: FetchContents = vi.fn((hotelIds, _lang, _ctx, options) => {
+      for (let i = 0; i < 20; i++) {
+        if (options.allowExtraCall?.() === true) permitidas += 1;
+        else negadas += 1;
+      }
+      return Promise.resolve({
+        contents: hotelIds.map((id) => registro(id)),
+        missingHotelIds: [],
+      });
+    });
+    const pedidos = ids(20);
+    const otros = ids(10, 100);
+    const cuenta = { accountRef: 'cuenta-a' };
+    const b = banco([...pedidos, ...otros], { fetchContents, cuenta });
+
+    await pedir(b, pedidos);
+
+    expect(b.fetchContents).toHaveBeenCalledTimes(2);
+    expect(permitidas).toBe(HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE);
+    expect(negadas).toBe(40 - HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE);
+    expect(HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE).toBeLessThanOrEqual(12);
+
+    // Otra cuenta tiene su propio cupo: una agencia con credencial propia no agota el de otra.
+    cuenta.accountRef = 'cuenta-b';
+    await pedir(b, otros);
+    expect(permitidas).toBe(2 * HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE);
   });
 });
 

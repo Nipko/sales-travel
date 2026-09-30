@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   TBO_BASE_URLS,
   TBO_OPERATIONS,
+  TboApiError,
   TboRequestBuildError,
   TboStaticContentClient,
   parseTboConfig,
@@ -12,6 +13,7 @@ import {
   type TboRateLimiter,
 } from '@sales-travel/tbo-hotels';
 import { describe, expect, it, vi, type Mock } from 'vitest';
+import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import {
   supportsHotelCityCatalog,
   supportsHotelContentBatch,
@@ -78,8 +80,20 @@ interface Harness {
   readonly lanes: string[];
 }
 
-/** HotelDetails devuelve los códigos pedidos menos `omitir`; TBOHotelCodeList, `hoteles`. */
-function harness(options: { omitir?: string[]; hoteles?: unknown[] | 'no-hotels' } = {}): Harness {
+/**
+ * HotelDetails devuelve los códigos pedidos menos `omitir`, sólo en los idiomas de `idiomas` (por
+ * defecto todos) y con "No Hotels Found" si no queda ninguno o si el lote trae uno de `malos` (H2
+ * del 2026-09-30, 05 CE-23); `caido` lo contesta con un 500 cualquiera. TBOHotelCodeList, `hoteles`.
+ */
+function harness(
+  options: {
+    omitir?: string[];
+    hoteles?: unknown[] | 'no-hotels';
+    idiomas?: string[];
+    malos?: string[];
+    caido?: boolean;
+  } = {},
+): Harness {
   const detalle = fixture('hotel-details.p59.json');
   const plantilla = (detalle['HotelDetails'] as Record<string, unknown>[])[0] ?? {};
   const lista = fixture('tbo-hotel-code-list.p67.json');
@@ -89,12 +103,25 @@ function harness(options: { omitir?: string[]; hoteles?: unknown[] | 'no-hotels'
     const body = cuerpoDe(init);
     if (path === TBO_OPERATIONS.hotelDetails.path) {
       const codes = String(body['Hotelcodes']).split(',');
+      if (options.caido === true) {
+        return Promise.resolve(json({ Status: { Code: 500, Description: 'Unexpected Error' } }));
+      }
+      const idioma = String(body['Language']);
+      const devueltos = codes.filter(
+        (code) =>
+          !(options.omitir ?? []).includes(code) && (options.idiomas ?? [idioma]).includes(idioma),
+      );
+      if (devueltos.length === 0 || codes.some((code) => (options.malos ?? []).includes(code))) {
+        return Promise.resolve(json({ Status: { Code: 500, Description: 'No Hotels Found' } }));
+      }
       return Promise.resolve(
         json({
           Status: detalle['Status'],
-          HotelDetails: codes
-            .filter((code) => !(options.omitir ?? []).includes(code))
-            .map((code) => ({ ...plantilla, HotelCode: code, HotelName: `Hotel ${code}` })),
+          HotelDetails: devueltos.map((code) => ({
+            ...plantilla,
+            HotelCode: code,
+            HotelName: `Hotel ${code}`,
+          })),
         }),
       );
     }
@@ -136,10 +163,14 @@ describe('fotos de los resultados: HotelDetails por lotes, para guardar', () => 
       timeoutMs: 8_000,
     });
 
-    expect(h.fetch).toHaveBeenCalledTimes(1);
+    // El que no vino en español se pide en inglés; tampoco está: confirmado sin contenido.
+    expect(h.fetch).toHaveBeenCalledTimes(2);
     expect(body(h.fetch)).toEqual({ Hotelcodes: '1000000,1000001,1000002', Language: 'ES' });
-    expect(h.lanes).toEqual(['background']);
+    expect(body(h.fetch, 1)).toEqual({ Hotelcodes: '1000002', Language: 'EN' });
+    expect(h.lanes).toEqual(['background', 'background']);
     expect(lote.missingHotelIds).toEqual(['1000002']);
+    expect(lote.unresolvedHotelIds).toEqual([]);
+    expect(lote.calls).toEqual({ total: 2, fallback: 1, isolation: 0 });
     expect(lote.contents.map((c) => [c.hotelId, c.lang, c.source])).toEqual([
       ['1000000', 'es', 'details'],
       ['1000001', 'es', 'details'],
@@ -170,6 +201,81 @@ describe('fotos de los resultados: HotelDetails por lotes, para guardar', () => 
       'source',
       'websiteUrl',
     ]);
+  });
+
+  it('H1 — "No Hotels Found" en español y contenido en inglés: filas `en` para guardar', async () => {
+    const h = harness({ idiomas: ['EN'] });
+    const codes = ['1000000', '1000001', '1000002'];
+
+    const lote = await h.adapter.fetchHotelContents(codes, 'es', CTX, { timeoutMs: 8_000 });
+
+    expect(h.fetch.mock.calls.map((_, i) => body(h.fetch, i))).toEqual([
+      { Hotelcodes: codes.join(','), Language: 'ES' },
+      { Hotelcodes: codes.join(','), Language: 'EN' },
+    ]);
+    expect(lote.contents.map((c) => [c.hotelId, c.lang, c.source])).toEqual(
+      codes.map((code) => [code, 'en', 'details']),
+    );
+    expect(lote.contents.every((c) => c.images.length > 0)).toBe(true);
+    expect(lote).toMatchObject({ missingHotelIds: [], unresolvedHotelIds: [] });
+  });
+
+  it('H2 — un código malo tumba el lote: se aísla y los demás reciben su contenido', async () => {
+    const h = harness({ malos: ['1000002'] });
+    const codes = ['1000000', '1000001', '1000002', '1000003'];
+
+    const lote = await h.adapter.fetchHotelContents(codes, 'es', CTX, { timeoutMs: 8_000 });
+
+    expect(lote.missingHotelIds).toEqual(['1000002']);
+    expect(lote.unresolvedHotelIds).toEqual([]);
+    // Los tres buenos, en inglés (aislados) y en español (reintentados sin el malo).
+    expect(
+      [...new Set(lote.contents.filter((c) => c.lang === 'es').map((c) => c.hotelId))].sort(),
+    ).toEqual(['1000000', '1000001', '1000003']);
+    expect(lote.calls?.isolation).toBeGreaterThan(0);
+    expect(h.lanes.every((lane) => lane === 'background')).toBe(true);
+  });
+
+  it('sin cupo para llamadas extra, lo que había que aislar queda sin resolver', async () => {
+    const h = harness({ malos: ['1000002'] });
+    const permiso = vi.fn(() => false);
+
+    const lote = await h.adapter.fetchHotelContents(['1000000', '1000002'], 'es', CTX, {
+      timeoutMs: 8_000,
+      allowExtraCall: permiso,
+    });
+
+    expect(permiso).toHaveBeenCalled();
+    expect(h.fetch).toHaveBeenCalledTimes(2);
+    expect(lote).toMatchObject({
+      contents: [],
+      missingHotelIds: [],
+      unresolvedHotelIds: ['1000000', '1000002'],
+      calls: { total: 2, fallback: 1, isolation: 0 },
+    });
+  });
+
+  it('"No Hotels Found" no cuenta para el breaker aunque la llamada no sea pasiva', async () => {
+    const breaker = new CircuitBreakerService();
+    const h = harness({ idiomas: [] });
+
+    for (let i = 0; i < 8; i++) {
+      const lote = await breaker.execute('tbo-hotels', () =>
+        h.adapter.fetchHotelContents(['1000000'], 'es', CTX, { timeoutMs: 8_000 }),
+      );
+      expect(lote.missingHotelIds).toEqual(['1000000']);
+    }
+
+    expect(breaker.snapshot()['tbo-hotels']).toEqual({ state: 'closed', failures: 0 });
+    // Un intento por llamada: sin reintentos del cliente.
+    expect(h.fetch).toHaveBeenCalledTimes(16);
+  });
+
+  it('si la PRIMERA llamada falla, se lanza como antes (el servicio lo recuerda como fallo)', async () => {
+    const h = harness({ caido: true });
+    await expect(
+      h.adapter.fetchHotelContents(['1000000'], 'es', CTX, { timeoutMs: 8_000 }),
+    ).rejects.toBeInstanceOf(TboApiError);
   });
 
   it('el lote es de 10 y uno de más de 13 no sale al cable', async () => {
