@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.5](https://github.com/Nipko/sales-travel/compare/v0.1.4...v0.1.5) (2026-09-30)
+
+
+### Features
+
+* **web-b2b:** un solo calendario de rango en todas las búsquedas y animación al buscar ([74894f2](https://github.com/Nipko/sales-travel/commit/74894f2cf40d2b64644259c7901a53a731b16acc))
+* **web-b2b:** un solo calendario de rango en todas las búsquedas y animación al buscar ([ae9d33c](https://github.com/Nipko/sales-travel/commit/ae9d33c49ff6e0806289c6a632c290b340d8bde3))
+
+
+### Bug Fixes
+
+* **cars:** AgentCars según la guía v2.0 (token en la URL, obligatorios NA y errores con HTTP 200) ([32970d0](https://github.com/Nipko/sales-travel/commit/32970d060785f0a7fccab9581b7608e834c5742c))
+* **cars:** AgentCars según la guía v2.0: token en la URL, obligatorios NA y errores con HTTP 200 ([85610f6](https://github.com/Nipko/sales-travel/commit/85610f60653fb9b1339d47c38cad4908ed2b2d39))
+* **hotels:** las fotos de TBO llegan (HotelDetails con idioma de respaldo, sin tumbar el breaker) ([c373262](https://github.com/Nipko/sales-travel/commit/c373262240cc0da9a8a598d34449164fc19045ad))
+* **hotels:** las fotos de TBO llegan (HotelDetails con idioma de respaldo, sin tumbar el breaker) ([3914be5](https://github.com/Nipko/sales-travel/commit/3914be5911c97b5a85e3df90bcfd269e5f2836b2))
+* **web-b2b:** el servidor acepta la fecha de hoy del vendedor en hoteles y autos ([98f4cfd](https://github.com/Nipko/sales-travel/commit/98f4cfde71cc0d33634681409bef0b4c256addce))
+
+
+### Documentation
+
+* **cars:** revisión de la guía v2.0 de AgentCars: auth IP + token, URLs y cambios del 13/10 ([cd07a7a](https://github.com/Nipko/sales-travel/commit/cd07a7a7feac51497ff7d152a7da5603dd3942f1))
+
 ## [0.1.4](https://github.com/Nipko/sales-travel/compare/v0.1.3...v0.1.4) (2026-09-30)
 
 
