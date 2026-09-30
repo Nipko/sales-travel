@@ -1,4 +1,4 @@
-import { BedDouble, Gift, Receipt, ShieldAlert, ShieldCheck, Wallet } from 'lucide-react';
+import { Ban, BedDouble, Gift, Receipt, ShieldAlert, ShieldCheck, Wallet } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import { formatMoney } from './hotel-format';
@@ -69,6 +69,23 @@ export function RefundTag({ badge, className }: { badge: RefundBadge; className?
         )}
       />
       {badge.label}
+    </span>
+  );
+}
+
+/** El texto de una tarifa no reembolsable cuando quien financia a la agencia las bloqueó. */
+export const UNAVAILABLE_FOR_AGENCY_NOTE =
+  'Quien financia a tu agencia bloqueó las tarifas no reembolsables: ésta no se puede reservar.';
+
+/**
+ * Una no reembolsable que la agencia no puede reservar (lo fija quien la financia, pedido del
+ * 2026-09-29, punto e). Se muestra igual —el cliente puede preguntar por ella—, marcada.
+ */
+export function UnavailableForAgencyTag() {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/5 px-1.5 py-px text-xs font-medium text-[var(--color-fg)]">
+      <Ban aria-hidden="true" className="size-3.5 shrink-0 text-[var(--color-danger)]" />
+      No disponible para tu agencia
     </span>
   );
 }
@@ -150,10 +167,13 @@ export function RateItem({
   row,
   expired,
   refund,
+  unavailableForAgency = false,
   children,
 }: {
   row: HotelRateRow;
   expired: boolean;
+  /** No reembolsable con el permiso de la agencia bloqueado: se marca como no disponible. */
+  unavailableForAgency?: boolean;
   /**
    * La cancelación leída con la hora de la búsqueda (rate-refundability): una reembolsable cuyo
    * 100 % ya rige sale como no reembolsable. Sin ella, sólo lo que declaró el proveedor.
@@ -198,8 +218,12 @@ export function RateItem({
         </p>
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-[var(--color-fg-muted)]">
           <RefundTag badge={line} />
+          {unavailableForAgency ? <UnavailableForAgencyTag /> : null}
           {line.note ? <span>{line.note}</span> : null}
         </p>
+        {unavailableForAgency ? (
+          <p className="text-[11px] text-[var(--color-fg-muted)]">{UNAVAILABLE_FOR_AGENCY_NOTE}</p>
+        ) : null}
         <RateExtras row={row} />
         <AtHotelCharges row={row} />
         {row.extraGuest ? (

@@ -7,6 +7,12 @@ import {
   fieldErrorsFromGuestIssues,
   fieldErrorsFromValidation,
 } from './guest-form-view';
+import {
+  NON_REFUNDABLE_FIELD,
+  NON_REFUNDABLE_REQUIRED,
+  parseNonRefundable,
+  type PrebookNonRefundable,
+} from './non-refundable-view';
 import type { PriceChangeView } from './prebook-view';
 
 /*
@@ -159,6 +165,11 @@ export type BookOutcome =
       readonly kind: 'fix';
       readonly message: string;
       readonly fieldErrors: Readonly<Record<string, string>>;
+      /**
+       * El servidor la tiene por no reembolsable (el 100 % pasó a regir después del PreBook): la
+       * casilla aparece aunque la pantalla no la hubiera pedido.
+       */
+      readonly nonRefundable?: PrebookNonRefundable;
     }
   /** Subió el precio al revalidar antes del Book y hay con qué reservar el nuevo (D-TBO-20 A). */
   | {
@@ -299,6 +310,15 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
       fieldErrors: { [AT_PROPERTY_FIELD]: AT_PROPERTY_REQUIRED },
     };
   }
+  if (reason === 'NON_REFUNDABLE_NOT_ACKNOWLEDGED') {
+    const nonRefundable = parseNonRefundable(details);
+    return {
+      kind: 'fix',
+      message: message ?? NON_REFUNDABLE_REQUIRED,
+      fieldErrors: { [NON_REFUNDABLE_FIELD]: NON_REFUNDABLE_REQUIRED },
+      ...(nonRefundable === undefined ? {} : { nonRefundable }),
+    };
+  }
   if (reason === 'PRICE_INCREASED') {
     const acceptedTotal = moneyOf(details['acceptedTotal']);
     const currentTotal = moneyOf(details['currentTotal']);
@@ -349,6 +369,17 @@ export function classifyBookResponse(status: number, body: unknown): BookOutcome
       message: message ?? 'Revisá la cartera de la agencia en Cartera B2B.',
       retry: true,
       action: 'portfolios',
+    };
+  }
+  // Quien financia a la agencia le bloqueó las no reembolsables: reintentar no cambia nada.
+  if (reason === 'NON_REFUNDABLE_BLOCKED') {
+    return {
+      kind: 'rejected',
+      title: 'Tu agencia no puede reservar tarifas no reembolsables.',
+      message:
+        message ??
+        'Quien financia a tu agencia las tiene bloqueadas. Elegí una tarifa reembolsable del hotel.',
+      retry: false,
     };
   }
   if (reason === 'AGENCY_CONTACT_MISSING') {

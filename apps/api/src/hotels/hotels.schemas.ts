@@ -338,9 +338,11 @@ const HotelBookContactSchema = z
 
 /**
  * Book neutral de una tarifa revalidada (RF-20): la referencia del snapshot del PreBook, el precio
- * de venta que el vendedor aceptó, la confirmación de los cargos en el hotel, los huéspedes por
- * habitación en el orden de la búsqueda y el contacto del huésped. La tarifa, la ocupación y el
- * importe que llegan al proveedor salen del servidor; el navegador no los aporta.
+ * de venta que el vendedor aceptó, la confirmación de los cargos en el hotel, la de que entiende que
+ * la tarifa no es reembolsable (obligatoria si lo es: se cobra el 100 % si se cancela, se modifica o
+ * el pasajero no se presenta), los huéspedes por habitación en el orden de la búsqueda y el contacto
+ * del huésped. La tarifa, la ocupación y el importe que llegan al proveedor salen del servidor; el
+ * navegador no los aporta, y si la tarifa es no reembolsable también lo decide el servidor.
  */
 export const HotelBookInputSchema = z
   .object({
@@ -348,6 +350,7 @@ export const HotelBookInputSchema = z
     prebookRef: z.string().uuid(),
     acceptedTotal: MoneySchema.strict(),
     atPropertyAcknowledged: z.boolean().optional(),
+    nonRefundableAcknowledged: z.boolean().optional(),
     rooms: z
       .array(z.object({ guests: z.array(HotelBookGuestSchema).min(1).max(16) }).strict())
       .min(1)

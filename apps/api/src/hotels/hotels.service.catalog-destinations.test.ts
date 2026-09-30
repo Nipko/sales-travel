@@ -37,6 +37,7 @@ import {
 import { fakeHotelsDb, type FakeHotelsDb, type FilaCiudad } from './__fixtures__/fake-hotels-db.js';
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import type { HotelBookingService } from './hotel-booking.service.js';
+import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
 import {
   CATALOG_SUGGESTION_LIMIT,
@@ -221,6 +222,7 @@ function banco(
     {} as HotelPrebookService,
     {} as HotelBookingService,
     {} as HotelContentService,
+    {} as BookingPermissionsService,
   );
   return { service, controller, despegar, fetch, db, instrument, breaker };
 }

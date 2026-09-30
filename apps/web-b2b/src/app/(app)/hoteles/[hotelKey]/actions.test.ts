@@ -72,16 +72,39 @@ describe('hotelContentAction — la ficha de cada proveedor del hotel', () => {
   });
 });
 
+const PERMISOS = '/hotels/booking-permissions';
+
+/** El API del detalle: el permiso de la agencia aparte, y cada `POST /hotels/detail` con `detalle`. */
+function conPermiso(
+  detalle: (path: string, init: { body: string }) => Promise<unknown>,
+  effective: 'allowed' | 'blocked' = 'allowed',
+) {
+  return (path: string, init: { body: string }) =>
+    path === PERMISOS
+      ? Promise.resolve({ ok: true, data: { nonRefundableRates: { effective } } })
+      : detalle(path, init);
+}
+
+/** Las llamadas al detalle, sin la del permiso. */
+function llamadasDetalle(): [string, { method: string; body: string }][] {
+  return (apiMock.mock.calls as [string, { method: string; body: string }][]).filter(
+    ([path]) => path !== PERMISOS,
+  );
+}
+
 describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
   it('una búsqueda de ESE hotel por proveedor, con la nacionalidad en el cuerpo', async () => {
-    apiMock.mockImplementation((_path: string, init: { body: string }) => {
-      const body = JSON.parse(init.body) as { hotelId: string };
-      return Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
-    });
+    apiMock.mockImplementation(
+      conPermiso((_path: string, init: { body: string }) => {
+        const body = JSON.parse(init.body) as { hotelId: string };
+        return Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
+      }),
+    );
     const res = await hotelRatesAction(KEY, STAY);
     expect(res.ok).toBe(true);
     expect(typeof res.receivedAt).toBe('number');
-    const calls = apiMock.mock.calls as [string, { method: string; body: string }][];
+    expect(res.nonRefundableBlocked).toBeUndefined();
+    const calls = llamadasDetalle();
     expect(calls.map(([path, init]) => [path, init.method])).toEqual([
       ['/hotels/detail', 'POST'],
       ['/hotels/detail', 'POST'],
@@ -98,12 +121,14 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
   });
 
   it('D-TBO-15: con la moneda de la búsqueda, el detalle la pide igual', async () => {
-    apiMock.mockImplementation((_path: string, init: { body: string }) => {
-      const body = JSON.parse(init.body) as { hotelId: string };
-      return Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
-    });
+    apiMock.mockImplementation(
+      conPermiso((_path: string, init: { body: string }) => {
+        const body = JSON.parse(init.body) as { hotelId: string };
+        return Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
+      }),
+    );
     await hotelRatesAction(KEY, { ...STAY, currency: 'USD' });
-    const calls = apiMock.mock.calls as [string, { body: string }][];
+    const calls = llamadasDetalle();
     for (const [, init] of calls) {
       expect(JSON.parse(init.body)).toMatchObject({ currency: 'USD' });
     }
@@ -112,7 +137,7 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
   it('sin moneda en la estadía no se manda: el API busca en la de la agencia', async () => {
     apiMock.mockResolvedValue({ ok: true, data: { hotelId: '555', roompacks: [] } });
     await hotelRatesAction(KEY, STAY);
-    const calls = apiMock.mock.calls as [string, { body: string }][];
+    const calls = llamadasDetalle();
     expect(JSON.parse(calls[0]![1].body)).not.toHaveProperty('currency');
   });
 
@@ -130,15 +155,35 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
   });
 
   it('un proveedor que falla queda con su motivo y el otro sigue', async () => {
-    apiMock.mockImplementation((_path: string, init: { body: string }) => {
-      const body = JSON.parse(init.body) as { provider: string; hotelId: string };
-      return body.provider === 'tbo-hotels'
-        ? Promise.resolve({ ok: false, error: { status: 503, message: 'TBO no está disponible.' } })
-        : Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
-    });
+    apiMock.mockImplementation(
+      conPermiso((_path: string, init: { body: string }) => {
+        const body = JSON.parse(init.body) as { provider: string; hotelId: string };
+        return body.provider === 'tbo-hotels'
+          ? Promise.resolve({
+              ok: false,
+              error: { status: 503, message: 'TBO no está disponible.' },
+            })
+          : Promise.resolve({ ok: true, data: { hotelId: body.hotelId, roompacks: [] } });
+      }),
+    );
     const res = await hotelRatesAction(KEY, STAY);
     expect(res.ok).toBe(true);
     expect(res.outcomes[1]).toEqual({ ref: TBO, error: 'TBO no está disponible.' });
+  });
+
+  it('no reembolsables (e): un `blocked` de la agencia marca las tarifas; un fallo al leerlo, no', async () => {
+    const detalle = () => Promise.resolve({ ok: true, data: { hotelId: '555', roompacks: [] } });
+    apiMock.mockImplementation(conPermiso(detalle, 'blocked'));
+    expect((await hotelRatesAction(KEY, STAY)).nonRefundableBlocked).toBe(true);
+
+    apiMock.mockImplementation((path: string) =>
+      path === PERMISOS
+        ? Promise.resolve({ ok: false, error: { status: 503, message: 'caído' } })
+        : detalle(),
+    );
+    const res = await hotelRatesAction(KEY, STAY);
+    expect(res.ok).toBe(true);
+    expect(res.nonRefundableBlocked).toBeUndefined();
   });
 
   it('una respuesta sin tarifas legibles no se pinta como oferta', async () => {

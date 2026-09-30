@@ -451,6 +451,7 @@ export default function HotelesPage() {
           <HotelResults
             hotels={state.hotels}
             showProvider={state.showProviderInResults}
+            nonRefundableBlocked={state.nonRefundableBlocked === true}
             criteria={state.criteria}
             receivedAt={state.receivedAt}
             clockOffsetMs={clockOffsetMs}

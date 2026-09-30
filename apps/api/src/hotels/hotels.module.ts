@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
+import { BookingPermissionsModule } from '../booking-permissions/booking-permissions.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PortfoliosModule } from '../portfolios/portfolios.module.js';
 import { DespegarHotelsProviderModule } from '../providers-despegar/despegar-hotels.module.js';
@@ -50,6 +51,9 @@ import { HotelsService } from './hotels.service.js';
  * horas de contenido de catálogo no pueden desalojar los contextos de minutos que el PreBook
  * necesita, ni al revés. Las fotos de los resultados y las ciudades que se cargan al buscarlas
  * escriben el catálogo por `HotelCatalogStore`, sólo por las funciones de 0054.
+ *
+ * Si la agencia puede reservar tarifas no reembolsables lo fija quien la financia (0055): el PreBook
+ * y el Book lo leen de `BookingPermissionsModule`.
  */
 @Module({
   imports: [
@@ -60,6 +64,7 @@ import { HotelsService } from './hotels.service.js';
     ProviderDisclosureModule,
     OrdersModule,
     PortfoliosModule,
+    BookingPermissionsModule,
     AuditModule,
   ],
   controllers: [HotelsController],

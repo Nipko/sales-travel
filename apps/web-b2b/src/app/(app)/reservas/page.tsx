@@ -34,7 +34,9 @@ import {
   directCancellationBlock,
   type OrderOperationView,
 } from './cancel-retry-policy';
+import { RefundTag } from '../hoteles/_components/hotel-rate-item';
 import {
+  hotelNonRefundableOf,
   hotelOrderRowOf,
   hotelOrderStateOf,
   hotelVoucherAvailable,
@@ -659,6 +661,7 @@ export default function ReservasPage() {
             const isHotel = isHotelOrder(order);
             const hotelRow = isHotel ? hotelOrderRowOf(order) : undefined;
             const hotelState = isHotel ? hotelOrderStateOf(order) : undefined;
+            const hotelNonRefundable = isHotel && hotelNonRefundableOf(order) !== undefined;
             const paxNames = isHotel
               ? undefined
               : order.passengers
@@ -698,6 +701,12 @@ export default function ReservasPage() {
                           {order.pnr}
                         </span>
                       )}
+                      {hotelNonRefundable ? (
+                        <RefundTag
+                          badge={{ tone: 'warning', label: 'No reembolsable' }}
+                          className="text-[10px]"
+                        />
+                      ) : null}
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-fg-muted)]">
                       {dateLabel && <span>{dateLabel}</span>}

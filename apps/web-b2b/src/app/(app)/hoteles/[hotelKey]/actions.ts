@@ -44,6 +44,11 @@ export interface HotelDetailRatesResult {
   readonly outcomes: readonly HotelRatesOutcome[];
   /** Cuándo llegó la respuesta (epoch en ms): cambia en cada consulta. */
   readonly receivedAt?: number;
+  /**
+   * Quien financia a la agencia le bloqueó las tarifas no reembolsables (0055): se marcan como no
+   * disponibles y no se ofrece reservarlas. Ausente si no se pudo leer: el PreBook decide igual.
+   */
+  readonly nonRefundableBlocked?: boolean;
   readonly error?: string;
 }
 
@@ -96,6 +101,7 @@ export async function hotelRatesAction(
     };
   }
 
+  const permission = api<unknown>('/hotels/booking-permissions');
   const outcomes = await Promise.all(
     refs.map(async (ref): Promise<HotelRatesOutcome> => {
       const body: Record<string, unknown> = {
@@ -119,9 +125,22 @@ export async function hotelRatesAction(
         : { ref, error: 'La respuesta del proveedor llegó incompleta.' };
     }),
   );
+  const blocked = nonRefundableBlockedOf(await permission);
   return {
     ok: outcomes.some((o) => o.offer !== undefined),
     outcomes,
     receivedAt: Date.now(),
+    ...(blocked ? { nonRefundableBlocked: true } : {}),
   };
+}
+
+/** `GET /hotels/booking-permissions`: sólo un `blocked` explícito marca las tarifas. */
+function nonRefundableBlockedOf(res: Awaited<ReturnType<typeof api<unknown>>>): boolean {
+  if (!res.ok || typeof res.data !== 'object' || res.data === null) return false;
+  const rates = (res.data as { nonRefundableRates?: unknown }).nonRefundableRates;
+  return (
+    typeof rates === 'object' &&
+    rates !== null &&
+    (rates as { effective?: unknown }).effective === 'blocked'
+  );
 }

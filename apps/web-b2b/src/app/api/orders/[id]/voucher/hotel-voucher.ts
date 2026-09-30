@@ -15,6 +15,7 @@ import {
 import {
   hcnViewOf,
   hotelConditionsOf,
+  hotelNonRefundableOf,
   hotelOrderStateOf,
   hotelPackOf,
   hotelRoomsOf,
@@ -36,6 +37,10 @@ import { isHotelOrder } from '../../../../../lib/order-vertical';
  * No lleva ningún importe de la reserva: lo recibe el cliente final, y ni el neto del proveedor ni
  * el margen de la agencia son asunto suyo. Los únicos importes son los que paga en el hotel, cada
  * uno en su moneda. Los suplementos ya incluidos van sin importe: el suyo es parte del neto.
+ *
+ * Una tarifa no reembolsable lo dice arriba, a la vista (pedido del 2026-09-29, punto d): sin el
+ * monto, por lo mismo, pero sin dejar dudas de que cancelar, cambiar o no presentarse no tiene
+ * reembolso.
  */
 
 export interface VoucherPolicyTier {
@@ -71,6 +76,8 @@ export interface HotelVoucher {
   readonly stay?: HotelStayView;
   readonly board?: string;
   readonly rooms: readonly HotelRoomView[];
+  /** La tarifa es no reembolsable: el voucher lo dice arriba. */
+  readonly nonRefundable: boolean;
   readonly policy?: VoucherPolicy;
   readonly conditions: readonly ConditionGroup[];
   readonly atHotel: readonly AtHotelCharge[];
@@ -149,7 +156,8 @@ export function hotelVoucherOf(order: unknown, content?: HotelContent): HotelVou
   const pack = hotelPackOf(o);
   const stay = hotelStayOf(o);
   const hcn = hcnViewOf(o) ?? { label: 'Pendiente' };
-  const policy = pack === undefined ? undefined : cancelPolicyView(pack);
+  const nonRefundable = hotelNonRefundableOf(o) !== undefined;
+  const policy = pack === undefined ? undefined : cancelPolicyView(pack, nonRefundable);
   const included = [
     ...new Set(
       (pack?.includedSupplements ?? [])
@@ -169,6 +177,7 @@ export function hotelVoucherOf(order: unknown, content?: HotelContent): HotelVou
       ...(stay === undefined ? {} : { stay }),
       ...(pack === undefined ? {} : { board: rateBoardLabel(pack) }),
       rooms: hotelRoomsOf(o),
+      nonRefundable,
       ...(policy === undefined
         ? {}
         : {
@@ -192,6 +201,13 @@ export function hotelVoucherOf(order: unknown, content?: HotelContent): HotelVou
  * Las fuentes estándar del PDF sólo tienen el juego de caracteres de Windows-1252: lo que la
  * pantalla escribe con símbolos que ahí no existen se reescribe con letras.
  */
+/** El aviso del voucher de una tarifa no reembolsable: para el huésped, sin importes. */
+export const VOUCHER_NON_REFUNDABLE = {
+  title: 'Tarifa no reembolsable',
+  detail:
+    'Si la reserva se cancela, se modifica o el huésped no se presenta, se cobra el total y no hay reembolso.',
+} as const;
+
 export function pdfText(value: string): string {
   return value.replace(/≈\s?/g, 'aprox. ').replace(/→/g, '-');
 }

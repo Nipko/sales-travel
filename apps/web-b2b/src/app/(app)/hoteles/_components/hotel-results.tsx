@@ -1,6 +1,6 @@
 'use client';
 
-import { List, MapPinned, SearchX, SlidersHorizontal, X } from 'lucide-react';
+import { Ban, List, MapPinned, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Select } from '../../../../components/ui/field';
 import { cn } from '../../../../lib/cn';
@@ -94,6 +94,8 @@ interface HotelResultsProps {
   onSearchAgain: () => void;
   /** El id del título de los resultados: la página le pasa el foco al llegar una búsqueda. */
   headingId?: string;
+  /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
+  nonRefundableBlocked?: boolean;
 }
 
 export function HotelResults({
@@ -106,6 +108,7 @@ export function HotelResults({
   searching,
   onSearchAgain,
   headingId: headingIdProp,
+  nonRefundableBlocked = false,
 }: HotelResultsProps) {
   const [state, update] = useResultsState();
   const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
@@ -231,6 +234,21 @@ export function HotelResults({
             </h2>
           </OfferExpiry>
 
+          {nonRefundableBlocked ? (
+            <p className="flex items-start gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg)]">
+              <Ban
+                aria-hidden="true"
+                className="mt-px size-3.5 shrink-0 text-[var(--color-danger)]"
+              />
+              <span>
+                Tu agencia no puede reservar tarifas no reembolsables: quien la financia las
+                bloqueó. Se muestran marcadas como no disponibles; filtrá por{' '}
+                <span className="font-medium">Solo reembolsables</span> para ver sólo las que podés
+                vender.
+              </span>
+            </p>
+          ) : null}
+
           {/* Al tocar un filtro el título cambia, pero un título no se anuncia: esta región sí.
               Montada desde el principio y con el mismo texto, no dice nada hasta que cambia. */}
           <p aria-live="polite" aria-atomic="true" className="sr-only">
@@ -284,6 +302,7 @@ export function HotelResults({
                       ? undefined
                       : detailLinkForOffer(item.hotel.offer, searchToken)
                   }
+                  nonRefundableBlocked={nonRefundableBlocked}
                 />
               ))}
             </div>

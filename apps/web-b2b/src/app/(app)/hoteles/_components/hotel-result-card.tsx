@@ -43,6 +43,8 @@ interface HotelResultCardProps {
   expiredCutoffMs?: number;
   /** El detalle del hotel, o nada si no se puede abrir (una tarifa que no dice de dónde es). */
   detailHref?: HotelDetailLink;
+  /** La agencia no puede reservar no reembolsables: esas tarifas se marcan no disponibles. */
+  nonRefundableBlocked?: boolean;
 }
 
 export function HotelResultCard({
@@ -52,6 +54,7 @@ export function HotelResultCard({
   rooms,
   expiredCutoffMs,
   detailHref,
+  nonRefundableBlocked = false,
 }: HotelResultCardProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -251,6 +254,7 @@ export function HotelResultCard({
                   row={rate.row}
                   refund={rate.refund}
                   expired={expired(rate)}
+                  unavailableForAgency={nonRefundableBlocked && !rate.refund.refundable}
                 />
               ))}
             </ul>

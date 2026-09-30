@@ -258,6 +258,11 @@ export interface HotelSearchResult {
    * es el lado seguro.
    */
   showProviderInResults: boolean;
+  /**
+   * Quien financia a la agencia le bloqueó las tarifas no reembolsables (0055): se muestran
+   * marcadas como no disponibles. Es presentación: el PreBook y el Book lo vuelven a decidir.
+   */
+  nonRefundableBlocked?: boolean;
   criteria?: HotelSearchCriteriaView;
   /** Cuándo llegó la respuesta (epoch en ms): cambia en cada búsqueda aunque el resultado sea igual. */
   receivedAt?: number;
@@ -269,6 +274,7 @@ interface HotelSearchEnvelope {
   hotels: HotelOffer[];
   providers?: HotelProviderOutcome[];
   showProviderInResults?: boolean;
+  nonRefundableRates?: 'allowed' | 'blocked';
 }
 
 /** Salida de error del formulario, con el sobre completo para no olvidar ningún campo. */
@@ -469,6 +475,7 @@ export async function searchHotelsAction(
     providers: res.data.providers ?? [],
     // `=== true`, como vuelos: cualquier otra cosa (ausente, null, texto) es oculto.
     showProviderInResults: res.data.showProviderInResults === true,
+    ...(res.data.nonRefundableRates === 'blocked' ? { nonRefundableBlocked: true } : {}),
     criteria: {
       checkinDate,
       checkoutDate,

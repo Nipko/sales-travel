@@ -23,7 +23,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { MailerService } from '../mail/mailer.service.js';
-import { orderConfirmationEmailHtml } from '../mail/templates.js';
+import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../mail/templates.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
@@ -186,21 +186,42 @@ export class OrdersController {
   private async sendConfirmationEmail(tenantId: string, order: OrderRow): Promise<boolean> {
     const to = this.contactEmail(order);
     if (!to) return false;
-    const mail = orderConfirmationEmailHtml({
+    const brand = await this.branding.resolve(tenantId);
+    // Una reserva de hotel lleva su plantilla: la estadía, el localizador y, si la tarifa no es
+    // reembolsable, el aviso con el 100 %. La de vuelos hablaría de una ruta vacía.
+    const mail = this.hotelReads.handles(order.provider)
+      ? hotelOrderConfirmationEmailHtml({
+          orderNumber: order.order_number,
+          locator: order.provider_order_id,
+          searchCriteria: order.search_criteria,
+          selectedOffer: order.selected_offer,
+          passengers: order.passengers,
+          totalAmount: order.total_amount,
+          currency: order.currency,
+          brand,
+        })
+      : this.flightConfirmationEmail(order, brand);
+    return this.mailer.sendToTenant(tenantId, {
+      to,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    });
+  }
+
+  private flightConfirmationEmail(
+    order: OrderRow,
+    brand: Awaited<ReturnType<BrandingService['resolve']>>,
+  ): { subject: string; html: string; text: string } {
+    return orderConfirmationEmailHtml({
       orderNumber: order.order_number,
       pnr: order.provider_order_id,
       searchCriteria: order.search_criteria,
       passengers: order.passengers,
       totalAmount: order.total_amount,
       currency: order.currency,
-      brand: await this.branding.resolve(tenantId),
+      brand,
       ticketed: order.status === 'ticketed',
-    });
-    return this.mailer.sendToTenant(tenantId, {
-      to,
-      subject: mail.subject,
-      html: mail.html,
-      text: mail.text,
     });
   }
 

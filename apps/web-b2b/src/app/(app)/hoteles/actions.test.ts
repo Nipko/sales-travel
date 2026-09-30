@@ -111,6 +111,20 @@ describe('searchHotelsAction — el sobre de la respuesta', () => {
     expect((await searchHotelsAction(INITIAL, form({}))).showProviderInResults).toBe(true);
   });
 
+  it('no reembolsables: sólo `blocked` las marca no disponibles; ausente o permitido, nada', async () => {
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBeUndefined();
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { hotels: [], providers: [], nonRefundableRates: 'allowed' },
+    });
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBeUndefined();
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { hotels: [], providers: [], nonRefundableRates: 'blocked' },
+    });
+    expect((await searchHotelsAction(INITIAL, form({}))).nonRefundableBlocked).toBe(true);
+  });
+
   it('devuelve lo que se buscó: noches, habitaciones, huéspedes y nacionalidad', async () => {
     const res = await searchHotelsAction(INITIAL, form({}));
     expect(res.criteria).toMatchObject({ nights: 3, rooms: 1, guests: 3, guestNationality: 'CO' });

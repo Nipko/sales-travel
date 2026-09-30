@@ -95,6 +95,14 @@ export interface PenaltyView {
   readonly blocked?: string;
   /** Hay o puede haber cargo: se pide aceptarlo de forma explícita antes de cancelar. */
   readonly requiresAcknowledgement: boolean;
+  /**
+   * Cancelar cuesta el 100 %: la tarifa es no reembolsable (lo guardó la orden o lo dice la
+   * política) o el cargo vigente ya es el total. Se pide una segunda confirmación (pedido del
+   * 2026-09-29, punto d).
+   */
+  readonly fullCharge: boolean;
+  /** El texto de la casilla. */
+  readonly ackLabel: string;
 }
 
 /** D-TBO-26 A, en una frase: de dónde sale la cifra y quién decide el reembolso. */
@@ -113,15 +121,58 @@ const UNAVAILABLE_NOTES: Readonly<Record<string, string>> = {
 
 const PERCENT = new Intl.NumberFormat('es', { maximumFractionDigits: 1 });
 
+const NON_REFUNDABLE_NOTE = 'La tarifa no es reembolsable: se cobra el total de la reserva.';
+
+const FULL_CHARGE_NOTE =
+  'Es una tarifa no reembolsable: cancelar cuesta el 100 % de la reserva y no se recupera. Se descuenta de la cartera o del crédito de la agencia.';
+
+/** La casilla cuando cancelar cuesta el total: el monto, dicho con todas las letras. */
+export function fullChargeAckLabel(sale: Money): string {
+  return `Entiendo que cancelar esta reserva cuesta el 100 % (${formatMoney(sale)}) y que no se recupera.`;
+}
+
+function ackLabelOf(tone: PenaltyView['tone']): string {
+  return `Entiendo que la cancelación no se puede deshacer y que el proveedor puede cobrar ${tone === 'unknown' ? 'un cargo que no podemos estimar' : 'esta penalidad'}.`;
+}
+
 /**
  * La penalidad en el precio de venta de la orden (`sale`, `totalAmount`/`currency`).
  *
- * - No reembolsable: el total de la venta.
+ * - No reembolsable: el total de la venta, y se pide una segunda confirmación.
  * - Sin cargo: sin cargo, aunque la estimación sea conservadora (el peor tramo posible es gratis).
  * - Con cargo: la misma proporción del total, con "≈" porque es una estimación; si no se puede
- *   expresar en el precio de venta, se dice que hay cargo sin inventar un importe.
+ *   expresar en el precio de venta, se dice que hay cargo sin inventar un importe. Si el cargo ya
+ *   es el total, es lo mismo que una no reembolsable.
+ *
+ * `nonRefundable`: la orden dice que la tarifa es no reembolsable (`hotelNonRefundableOf`). Manda
+ * sobre la estimación: una estimación que no se pudo hacer o que diera menos no le quita el 100 %.
  */
-export function penaltyViewOf(estimate: HotelCancellationEstimate, sale: Money): PenaltyView {
+export function penaltyViewOf(
+  estimate: HotelCancellationEstimate,
+  sale: Money,
+  nonRefundable = false,
+): PenaltyView {
+  const view = estimatedPenaltyViewOf(estimate, sale);
+  const fullCharge =
+    nonRefundable ||
+    (estimate.kind === 'estimated' &&
+      (estimate.basis === 'non-refundable' ||
+        (estimate.penalty.currency === estimate.base.currency &&
+          estimate.base.amountMinor > 0 &&
+          estimate.penalty.amountMinor >= estimate.base.amountMinor)));
+  if (!fullCharge) return view;
+  return {
+    ...view,
+    headline: `100 % · ${formatMoney(sale)}`,
+    tone: 'charged',
+    notes: [FULL_CHARGE_NOTE, ...view.notes.filter((n) => n !== NON_REFUNDABLE_NOTE)],
+    requiresAcknowledgement: true,
+    fullCharge: true,
+    ackLabel: fullChargeAckLabel(sale),
+  };
+}
+
+function estimatedPenaltyViewOf(estimate: HotelCancellationEstimate, sale: Money): PenaltyView {
   if (estimate.kind === 'unavailable') {
     return {
       headline: 'No podemos estimar la penalidad',
@@ -131,6 +182,8 @@ export function penaltyViewOf(estimate: HotelCancellationEstimate, sale: Money):
           'No hay con qué estimar el cargo. Lo define el proveedor al cancelar.',
       ],
       requiresAcknowledgement: true,
+      fullCharge: false,
+      ackLabel: ackLabelOf('unknown'),
     };
   }
 
@@ -141,7 +194,7 @@ export function penaltyViewOf(estimate: HotelCancellationEstimate, sale: Money):
   if (estimate.basis === 'non-refundable') {
     headline = `${formatMoney(sale)} (el total)`;
     tone = 'charged';
-    notes.push('La tarifa no es reembolsable: se cobra el total de la reserva.');
+    notes.push(NON_REFUNDABLE_NOTE);
   } else if (estimate.basis === 'free' || estimate.penalty.amountMinor === 0) {
     headline = 'Sin cargo';
     tone = 'free';
@@ -181,6 +234,8 @@ export function penaltyViewOf(estimate: HotelCancellationEstimate, sale: Money):
     notes,
     ...(estimate.checkInReached ? { blocked: CHECK_IN_BLOCK } : {}),
     requiresAcknowledgement: tone !== 'free',
+    fullCharge: false,
+    ackLabel: ackLabelOf(tone),
   };
 }
 

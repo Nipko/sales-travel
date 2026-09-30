@@ -82,6 +82,10 @@ function renderStep(): string {
         acknowledged: false,
         onAcknowledgedChange: () => undefined,
         acknowledgeError: undefined,
+        nonRefundable: { reason: 'declared', penalty: row.sale },
+        nonRefundableAcknowledged: false,
+        onNonRefundableAcknowledgedChange: () => undefined,
+        nonRefundableError: undefined,
         gate: { ok: true },
         onConfirm: () => undefined,
         onBack: () => undefined,
@@ -138,6 +142,19 @@ describe('U-12 — los huéspedes por habitación', () => {
     expect(html).not.toMatch(/type="radio"[^>]*checked/);
     expect(html).toContain('Sr. (Mr)');
     expect(html).not.toMatch(/value="Dr"/);
+  });
+
+  it('una no reembolsable lleva su casilla obligatoria con el 100 % exacto y el recordatorio', () => {
+    const html = renderStep();
+    expect(html).toContain('Tarifa no reembolsable');
+    expect(html).toContain(
+      'Entiendo que esta tarifa no es reembolsable: si se cancela, modifica o el pasajero no se presenta, se cobra el 100 %',
+    );
+    expect(html).toMatch(/se cobra el 100 % \(321,34\s(US\$|USD)\)/);
+    expect(html).toContain('revisá los nombres de los huéspedes y las fechas');
+    expect(html).toMatch(
+      /<input(?=[^>]*name="nonRefundableAcknowledged")(?=[^>]*aria-required="true")[^>]*>/,
+    );
   });
 
   it('los cargos en el hotel están en el paso de reserva, con su casilla (U-13; RF-10)', () => {
