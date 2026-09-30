@@ -75,6 +75,15 @@ async function jsonl(path) {
     .map((line) => JSON.parse(line));
 }
 
+/** Todos los nombres de campo de un JSON, a cualquier profundidad. */
+function keysOf(value) {
+  if (Array.isArray(value)) return value.flatMap(keysOf);
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, inner]) => [key, ...keysOf(inner)]);
+  }
+  return [];
+}
+
 describe('check', () => {
   it('imprime Status.Code, la moneda del perfil, la latencia y las opciones; sale con 0', async () => {
     const result = await run(['check']);
@@ -252,7 +261,9 @@ describe('probe', () => {
       if (request.body === undefined) continue;
       const body = JSON.parse(request.body);
       if ('PaymentMode' in body) assert.equal(body.PaymentMode, 'Limit');
-      assert.doesNotMatch(request.body, /Card|Cvv|PaymentInfo/i);
+      // Los nombres de campo, no el cuerpo entero: un BookingReferenceId aleatorio puede traer
+      // "CVV" entre sus letras (falló así en el CI del #20 con STT3R8W1NH0BKP3C8CVV).
+      for (const key of keysOf(body)) assert.doesNotMatch(key, /Card|Cvv|PaymentInfo/i);
     }
     const pr06 = result.fake.requests.filter(
       (r) => r.authorization !== `Basic ${TEST_TOKEN}` && r.url.startsWith('http:'),
