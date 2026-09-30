@@ -1,6 +1,8 @@
 # AgentCars API v2 — Referencia de integración
 
-> Fuente: docs/cars/ (páginas oficiales + colección Postman)
+> Fuente: docs/cars/ (páginas oficiales + colección Postman) y la guía v2.0 del portal de
+> desarrolladores (`https://api.dev.agentcars.com/site/login` → Spanish Api Doc), revisada el
+> 2026-09-30 (§9).
 > Entorno inicial: **desarrollo**
 
 ---
@@ -12,14 +14,17 @@
 | Base URL **dev**    | `https://api.dev.agentcars.com/v2/sites`             |
 | Base URL **prod**   | `https://api.agentcars.com/v2/sites`                 |
 | Suggest URL         | `https://suggest.agentcars.com/suggest/`             |
-| Autenticación       | Cabecera `access-token` en cada request (ver abajo)  |
+| Autenticación       | IP registrada + `?access-token=` en cada request     |
 | Formato default     | JSON                                                 |
 | Formato alternativo | Agregar `_format=xml` al query                       |
 | Idiomas             | `en`, `es`, `ja`, `ko`, `pt`, `de`, `fr`, `it`, `ar` |
 
-**Todas las peticiones necesitan:** el token y `source=<ISO2>`. AgentCars acepta el token en query
-(`?access-token=`, como la colección Postman) o en cabecera; el ACL lo manda en **cabecera** desde
-`66b3437` para que no quede en los access logs de ningún proxy.
+**Todas las peticiones necesitan:** el token y `source=<ISO2>`, y salir de la IP que AgentCars tiene
+registrada para ese token ("Authentication IP + token", guía v2.0). Desde otra IP, cualquier token
+responde `401 invalid credentials`, igual que uno inventado. El token va en el query
+(`?access-token=`), la única forma que documenta la guía: `66b3437` lo había pasado a una cabecera
+sin verificar que AgentCars la leyera, y se volvió al query el 2026-09-30. Nuestros logs y errores
+llevan la URL sin query, y el suggest (público) no recibe el token.
 
 **La URL base es la raíz de la API, `https://<host>/v2/sites`**: a esa base se le concatena cada
 operación (`/get-matrix`, `/rates`…). La colección Postman publica sólo el host
@@ -550,3 +555,40 @@ Rediseñada el 2026-09-30 con el esquema de hoteles:
 | MyReservation          | POST     | `/v2/sites/my-reservation`                  |
 | Release                | POST     | `/v2/sites/release-reservation` (verificar) |
 | GetDailyReport         | GET/POST | `/v2/sites/get-daily-report` (verificar)    |
+
+---
+
+## 9. Revisión de la guía v2.0 (2026-09-30)
+
+Con la cuenta de desarrollo de Regional Yopal (usuario del portal y token de pruebas los tiene el
+founder). Lo que cambió o no estaba en esta referencia:
+
+- **Autenticación IP + token.** Cada token vale sólo desde la IP registrada. El token de pruebas dio
+  `401` en dev, prod y `api2`, en query, cabecera, Bearer y Basic, desde la IP de desarrollo y desde
+  el servidor: hay que pedirle a AgentCars que registre la IP pública del servidor.
+- **URLs contradictorias.** La introducción publica `https://api.agentcars.com/api2/v2/sites` y, para
+  desarrollo, `https://api.dev.agencars.com/api2/v2/sites` (sin la "t"). Cada servicio publica
+  `https://api.dev.agentcars.com/v2/sites/…` y `https://api.agentcars.com/v2/sites/…`. Probado el
+  2026-09-30: `agencars.com` no resuelve y `/api2/v2/sites` da el 404 HTML en los dos hosts; sólo
+  `/v2/sites` existe. Detalle de get-rate-information publica además `www.agentcars.com/api2/…`.
+- **Obligatorios nuevos.** `pickUpAddress` y `dropOffAddress` (por defecto `NA`) en getMatrix y
+  getSelection, y `ccrc` en getSelection. Sin un obligatorio, AgentCars contesta "The requested page
+  does not exist2.". El ACL manda `NA`.
+- **Errores de búsqueda desde el 2026-10-13 (breaking).** getMatrix, getSelection y rateInformation
+  pasan a `{ success: false, error, message, code, data }`: "sin tarifas" es HTTP 200 con code 13000
+  (antes 412) y parámetros inválidos es 422 con code 13001 (antes 412, o 200 con `{"error": {campo:
+[...]}}` en getMatrix). El cliente HTTP trata como error cualquier 2xx con esa forma o con
+  `{"error": "..."}` (antes la matriz inventaba un auto vacío y una cancelación rechazada se daba por
+  hecha), getMatrix devuelve la búsqueda vacía para "sin tarifas" en los dos formatos, y los mensajes
+  leen el detalle por campo de `data`.
+- **Confirmación.** La página de errores dice que sin `rateIdentifier` responde `INCOMPLETE_REQUEST`,
+  aunque la tabla de parámetros no lo lista y el changelog dice que no es contractual: se lleva el de
+  la oferta de getMatrix tal cual. `age`: la tabla pide un código (1: más de 25, 2: 21-24, 3: menos de 21) y el ejemplo manda la edad (`30`); se sigue mandando la edad, como en junio. Pregunta abierta
+  para AgentCars.
+- **Imágenes.** Sin foto de la rentadora, `img` trae `default-noimage.png`: el mapper lo trata como sin
+  foto.
+- **Certificación.** Pruebas MIA-MIA (Hertz), FLL-FLL (Budget), MIA-LAX (Alamo), MCO-MCO (Sixt),
+  CDG-CDG (Avis), MAD-MAD (Europcar) y Miami Beach por ciudad, con logs de request/response,
+  capturas y el voucher en PDF. Las reservas de prueba van con `lastName = Test` (AgentCars las
+  cancela solas) y hay que cancelarlas. El voucher prepago debe mostrar `voucherAmount` y todo
+  `voucherInformation`: el voucher en PDF y `voucherAmount` todavía no están.
