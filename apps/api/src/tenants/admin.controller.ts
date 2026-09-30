@@ -26,6 +26,7 @@ import {
   SetMembershipStatusSchema,
   SetUserStatusSchema,
   TenantIdParamSchema,
+  UpdateSeatsSchema,
   UpdateTenantSchema,
   type ChangeRoleDto,
   type CreateTenantDto,
@@ -33,10 +34,13 @@ import {
   type MoveTenantDto,
   type SetMembershipStatusDto,
   type SetUserStatusDto,
+  type UpdateSeatsDto,
   type UpdateTenantDto,
 } from './dto.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
+import { TenantSeatsSuperadminOnlyError, type SeatsView } from './seats.policy.js';
+import { SeatsService } from './seats.service.js';
 import { assertCanGrant } from './tenant-admin.policy.js';
 import {
   TenantsService,
@@ -56,6 +60,7 @@ export class AdminController {
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
     private readonly tenants: TenantsService,
+    private readonly seats: SeatsService,
   ) {}
 
   /** Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant. */
@@ -144,6 +149,7 @@ export class AdminController {
           'memberships.role',
           'tenants.name as tenantName',
           'users.created_at',
+          'users.last_login_at',
         ])
         .orderBy('users.created_at', 'desc')
         .execute();
@@ -158,7 +164,8 @@ export class AdminController {
         role: r.role,
         tenantName: r.tenantName,
         createdAt: r.created_at,
-        lastLoginAt: null,
+        // Antes iba `null` fijo aunque la columna existe.
+        lastLoginAt: r.last_login_at,
       })),
     };
   }
@@ -186,6 +193,24 @@ export class AdminController {
   ): Promise<{ tenant: TenantState }> {
     const actor = await this.assertSuperadmin(userId);
     return { tenant: await this.tenants.update(actor, tenantId, body) };
+  }
+
+  /**
+   * Puestos simultáneos e inactividad de un nodo (`null` = heredar). Sólo superadmin (decisión del
+   * founder: los fija al crear el nodo y los amplía después; nadie más los toca). Auditado con el
+   * antes y el después; devuelve la vista de puestos actualizada. Qué pasa con las sesiones
+   * abiertas: ver SeatsService.updatePolicy.
+   */
+  @Patch('tenants/:id/seats')
+  async updateSeats(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Body(new ZodValidationPipe(UpdateSeatsSchema)) body: UpdateSeatsDto,
+  ): Promise<SeatsView> {
+    // El mismo 403 con motivo que el alta con puestos (TenantsService.create): el panel distingue
+    // "no es superadmin" de cualquier otro 403 sin leer el mensaje.
+    const actor = await this.assertSuperadmin(userId, () => new TenantSeatsSuperadminOnlyError());
+    return this.seats.updatePolicy(actor, tenantId, body);
   }
 
   /** Mueve un nodo con su subárbol bajo otro padre (D6 A). Sólo superadmin, auditado. */
@@ -425,12 +450,16 @@ export class AdminController {
     }
   }
 
-  /** El id del actor si es superadmin. 401 sin sesión, 403 si no lo es. */
-  private async assertSuperadmin(userId: string | undefined): Promise<string> {
+  /**
+   * El id del actor si es superadmin. 401 sin sesión; si no lo es, 403: el de `denied` o, si no se
+   * indica, el genérico de siempre.
+   */
+  private async assertSuperadmin(
+    userId: string | undefined,
+    denied: () => ForbiddenException = () => new ForbiddenException('superadmin access required'),
+  ): Promise<string> {
     if (!userId) throw new UnauthorizedException();
-    if (!(await this.network.isSuperadmin(userId))) {
-      throw new ForbiddenException('superadmin access required');
-    }
+    if (!(await this.network.isSuperadmin(userId))) throw denied();
     return userId;
   }
 }

@@ -4,10 +4,14 @@ import { ASSIGNABLE_ROLES, highestRole, isAssignableRole, ROLE_RANK } from '../a
 import type { Role, TenantType } from '../database/database.types.js';
 import {
   assertCanGrant,
+  assertCanSupportMember,
   childTenantType,
   CREATABLE_TENANT_TYPES,
   derivedChildType,
   initialAdminRole,
+  MemberNotFoundError,
+  MemberOutsideNetworkError,
+  MemberSelfActionError,
   RoleNotGrantableError,
   TenantParentRequiredError,
   TenantPlatformLockedError,
@@ -194,6 +198,9 @@ describe('errores con motivo máquina', () => {
     [new TenantSlugTakenError(), HttpStatus.CONFLICT, 'TENANT_SLUG_TAKEN'],
     [new TenantTypeOpenBookingsError(), HttpStatus.CONFLICT, 'TENANT_TYPE_OPEN_BOOKINGS'],
     [new RoleNotGrantableError(), HttpStatus.FORBIDDEN, 'ROLE_NOT_GRANTABLE'],
+    [new MemberSelfActionError(), HttpStatus.FORBIDDEN, 'MEMBER_SELF_ACTION'],
+    [new MemberNotFoundError(), HttpStatus.NOT_FOUND, 'MEMBER_NOT_FOUND'],
+    [new MemberOutsideNetworkError(), HttpStatus.FORBIDDEN, 'MEMBER_OUTSIDE_NETWORK'],
   ])('%s', (err, status, reason) => {
     expect(err.getStatus()).toBe(status);
     expect(err.reason).toBe(reason);
@@ -212,5 +219,140 @@ describe('roles (D7 B)', () => {
     expect(highestRole([])).toBeUndefined();
     expect(highestRole(['admin', 'consolidator_admin', 'tenant_admin'])).toBe('consolidator_admin');
     expect(highestRole(['vendedor', 'superadmin', 'admin'])).toBe('superadmin');
+  });
+});
+
+describe('assertCanSupportMember: restablecer el 2FA o cerrar las sesiones de un miembro', () => {
+  const ACTOR = 'actor';
+  const TARGET = 'objetivo';
+  const AGENCIA = 'agencia';
+  const SUB = 'sub-agencia';
+  const OTRA_RED = 'otra-red';
+
+  function pedido(
+    memberships: Array<[string, Role]>,
+    actorRoles: Array<[string, Role]>,
+    extra: { superadmin?: boolean; target?: string } = {},
+  ): () => void {
+    return () =>
+      assertCanSupportMember({
+        actorUserId: ACTOR,
+        targetUserId: extra.target ?? TARGET,
+        actorIsSuperadmin: extra.superadmin ?? false,
+        targetMemberships: memberships.map(([tenantId, role]) => ({ tenantId, role })),
+        actorRoles: new Map(actorRoles),
+      });
+  }
+
+  it('administra el único nodo del objetivo y lo supera en rango: pasa', () => {
+    expect(outcome(pedido([[AGENCIA, 'vendedor']], [[AGENCIA, 'tenant_admin']]))).toBe(
+      'ok:undefined',
+    );
+    expect(outcome(pedido([[AGENCIA, 'admin']], [[AGENCIA, 'agency_admin']]))).toBe('ok:undefined');
+  });
+
+  it('varios nodos, todos administrados y superado en cada uno: pasa', () => {
+    expect(
+      outcome(
+        pedido(
+          [
+            [AGENCIA, 'vendedor'],
+            [SUB, 'agency_admin'],
+          ],
+          [
+            [AGENCIA, 'tenant_admin'],
+            [SUB, 'tenant_admin'],
+          ],
+        ),
+      ),
+    ).toBe('ok:undefined');
+  });
+
+  it('nunca sobre uno mismo, ni siendo superadmin', () => {
+    expect(
+      outcome(pedido([[AGENCIA, 'vendedor']], [[AGENCIA, 'tenant_admin']], { target: ACTOR })),
+    ).toBe('403/MEMBER_SELF_ACTION');
+    expect(
+      outcome(
+        pedido([[AGENCIA, 'vendedor']], [[AGENCIA, 'superadmin']], {
+          target: ACTOR,
+          superadmin: true,
+        }),
+      ),
+    ).toBe('403/MEMBER_SELF_ACTION');
+  });
+
+  it('si el objetivo también trabaja en otra red que el actor no administra: 403', () => {
+    expect(
+      outcome(
+        pedido(
+          [
+            [AGENCIA, 'vendedor'],
+            [OTRA_RED, 'vendedor'],
+          ],
+          [[AGENCIA, 'consolidator_admin']],
+        ),
+      ),
+    ).toBe('403/MEMBER_OUTSIDE_NETWORK');
+  });
+
+  it('fuera de la red pesa más que el rango: el motivo dice qué falta', () => {
+    expect(
+      outcome(
+        pedido(
+          [
+            [AGENCIA, 'tenant_admin'],
+            [OTRA_RED, 'vendedor'],
+          ],
+          [[AGENCIA, 'tenant_admin']],
+        ),
+      ),
+    ).toBe('403/MEMBER_OUTSIDE_NETWORK');
+  });
+
+  it.each<[Role, Role]>([
+    ['tenant_admin', 'tenant_admin'],
+    ['admin', 'tenant_admin'],
+    ['agency_admin', 'consolidator_admin'],
+    ['consolidator_admin', 'superadmin'],
+  ])('un %s no puede sobre un %s (rango igual o superior): 403', (actor, target) => {
+    expect(outcome(pedido([[AGENCIA, target]], [[AGENCIA, actor]]))).toBe('403/ROLE_NOT_GRANTABLE');
+  });
+
+  it('basta con que en UNO de sus nodos no lo supere', () => {
+    expect(
+      outcome(
+        pedido(
+          [
+            [AGENCIA, 'vendedor'],
+            [SUB, 'tenant_admin'],
+          ],
+          [
+            [AGENCIA, 'tenant_admin'],
+            [SUB, 'tenant_admin'],
+          ],
+        ),
+      ),
+    ).toBe('403/ROLE_NOT_GRANTABLE');
+  });
+
+  it('el superadmin puede sobre cualquiera, en cualquier red y de cualquier rango', () => {
+    expect(
+      outcome(
+        pedido(
+          [
+            [AGENCIA, 'consolidator_admin'],
+            [OTRA_RED, 'superadmin'],
+          ],
+          [],
+          { superadmin: true },
+        ),
+      ),
+    ).toBe('ok:undefined');
+  });
+
+  it('sin memberships que lo aten al actor, se falla cerrado', () => {
+    expect(outcome(pedido([], [[AGENCIA, 'tenant_admin']]))).toBe('404/MEMBER_NOT_FOUND');
+    expect(outcome(pedido([], [], { superadmin: true }))).toBe('404/MEMBER_NOT_FOUND');
   });
 });

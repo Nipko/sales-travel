@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { canGrantRole, ROLE_RANK } from '../auth/roles.js';
 import type { Role, TenantType } from '../database/database.types.js';
 import { TenantHierarchyError } from '../database/tenant-hierarchy-errors.js';
@@ -187,4 +192,106 @@ export function initialAdminRole(
 /** Lanza {@link RoleNotGrantableError} si `actorRole` no está estrictamente por encima de `target`. */
 export function assertCanGrant(actorRole: Role, target: Role): void {
   if (!canGrantRole(actorRole, target)) throw new RoleNotGrantableError();
+}
+
+/**
+ * El actor no administra el nodo de la ruta (ni un ancestro suyo): Puestos y el soporte a un
+ * miembro. 403. En castellano porque la pantalla de Equipo muestra el mensaje de un 403 tal cual;
+ * el motivo es para que la web no tenga que interpretar el texto.
+ */
+export class TenantNotManagedError extends ForbiddenException {
+  readonly reason = 'TENANT_NOT_MANAGED';
+
+  constructor() {
+    super('No administrás este nodo.');
+    this.name = 'TenantNotManagedError';
+  }
+}
+
+// ============================================================================
+// Soporte a un miembro: restablecer su 2FA y cerrar sus sesiones
+// ============================================================================
+
+/** Restablecer el 2FA o cerrar las sesiones propias no pasa por acá: lo hace otro admin. 403. */
+export class MemberSelfActionError extends ForbiddenException {
+  readonly reason = 'MEMBER_SELF_ACTION';
+
+  constructor() {
+    super('No podés hacer esto sobre tu propio usuario: pedíselo a otro administrador.');
+    this.name = 'MemberSelfActionError';
+  }
+}
+
+/** El usuario no tiene membership en el nodo de la ruta. 404. */
+export class MemberNotFoundError extends NotFoundException {
+  readonly reason = 'MEMBER_NOT_FOUND';
+
+  constructor() {
+    super('Ese usuario no es miembro de este nodo.');
+    this.name = 'MemberNotFoundError';
+  }
+}
+
+/** El usuario también trabaja en nodos que el actor no administra. 403. */
+export class MemberOutsideNetworkError extends ForbiddenException {
+  readonly reason = 'MEMBER_OUTSIDE_NETWORK';
+
+  constructor() {
+    super(
+      'Este usuario también trabaja en nodos que no administrás: sólo puede hacerlo quien ' +
+        'administre todos sus nodos, o el superadmin.',
+    );
+    this.name = 'MemberOutsideNetworkError';
+  }
+}
+
+/** Una membership del objetivo que cuenta para decidir. */
+export interface TargetMembership {
+  readonly tenantId: string;
+  readonly role: Role;
+}
+
+export interface MemberSupportRequest {
+  readonly actorUserId: string;
+  readonly targetUserId: string;
+  /** El actor es superadmin (roleOver devolvió `superadmin` sobre el nodo de la ruta). */
+  readonly actorIsSuperadmin: boolean;
+  /**
+   * Las memberships del objetivo que cuentan: TODAS sus activas, en cualquier red, más la del nodo
+   * de la ruta aunque esté suspendida.
+   */
+  readonly targetMemberships: readonly TargetMembership[];
+  /** El rol con que el actor administra cada nodo (roleOver). Sin entrada = no lo administra. */
+  readonly actorRoles: ReadonlyMap<string, Role>;
+}
+
+/**
+ * ¿Puede el actor restablecer el 2FA o cerrar las sesiones de otro usuario? (decisión del founder del
+ * 2026-09-29).
+ *
+ * El 2FA y las sesiones son de la identidad global (`users`), no de un nodo: restablecerlo le abre
+ * la puerta a esa persona en TODAS sus redes. Por eso no alcanza con administrar el nodo desde donde
+ * se pide: el actor tiene que administrar cada nodo donde el usuario tiene membership activa y
+ * superarlo en rango en cada uno (la misma regla que para cambiarle el rol, G-06). Si el usuario
+ * también trabaja en otra red, sólo el superadmin. Nunca sobre uno mismo: un admin que perdió el
+ * teléfono lo pide a otro, así un robo de sesión no alcanza para sacarle el segundo factor a la
+ * cuenta.
+ */
+export function assertCanSupportMember(req: MemberSupportRequest): void {
+  if (req.actorUserId === req.targetUserId) throw new MemberSelfActionError();
+  // Sin memberships no hay nada que lo ate a la red del actor: se falla cerrado.
+  if (req.targetMemberships.length === 0) throw new MemberNotFoundError();
+  if (req.actorIsSuperadmin) return;
+
+  if (req.targetMemberships.some((m) => !req.actorRoles.has(m.tenantId))) {
+    throw new MemberOutsideNetworkError();
+  }
+  for (const m of req.targetMemberships) {
+    const actorRole = req.actorRoles.get(m.tenantId);
+    if (actorRole === undefined || !canGrantRole(actorRole, m.role)) {
+      throw new RoleNotGrantableError(
+        'No podés hacerlo sobre alguien de rango igual o superior al tuyo en alguno de sus nodos.',
+      );
+    }
+  }
 }

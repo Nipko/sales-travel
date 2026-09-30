@@ -123,6 +123,9 @@ services:
       PGPASSWORD: ${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}
       PGDATABASE: sales_travel_cert
       JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET}
+      # Secreto que comparte con cert-web-b2b: con él cree la IP y el navegador del usuario que el
+      # panel reenvía (x-client-ip, x-client-user-agent). Lo deriva render-cert-env.mjs del JWT_SECRET.
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:?falta INTERNAL_PROXY_SECRET}
       # Claves PROPIAS del stack: con las de producción, una sesión o un volcado de una base se
       # podrían usar en la otra.
       PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:?falta PROVIDER_CREDENTIALS_KEY}
@@ -166,6 +169,9 @@ services:
       # api por la red interna. Sin esta variable caería a `http://api:3000`, que en estas redes
       # no resuelve: falla cerrado, nunca contra producción.
       INTERNAL_API_URL: http://cert-api:3000
+      # El mismo que cert-api: el panel lo manda en x-internal-proxy junto con la IP y el navegador
+      # del usuario. Sin él, el api ve a todos con la IP de este contenedor.
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:?falta INTERNAL_PROXY_SECRET}
     # Sin `egress`: el panel no sale a internet, sólo lo alcanza el Caddy por `ingress`.
     networks: [internal, ingress]
     depends_on:
