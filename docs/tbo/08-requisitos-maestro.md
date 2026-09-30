@@ -42,6 +42,15 @@ estado: borrador
 > esa cartera. Sin cartera en esa moneda, el Book se rechaza sin llamar a TBO
 > ([ficha](#d-tbo-21--cómo-se-cobra-y-cómo-se-controla-el-crédito-limit)). Las rutas que cita esta revisión son de la
 > rama `feat/wallets-per-currency` al 2026-09-29, sin número de línea.
+>
+> **Revisión del 2026-09-29 (rediseño de hoteles).** El founder aprobó el rediseño de la búsqueda de hoteles (mockup
+> del 2026-09-29) y pidió máxima claridad con las tarifas no reembolsables. Lo segundo queda como D-TBO-39, cerrada
+> ([ficha](#d-tbo-39--cómo-se-venden-las-tarifas-no-reembolsables)), con el requisito RF-41: aviso con el 100 %
+> exacto, casilla obligatoria que el servidor exige, registro en la orden y en la auditoría, "No reembolsable" después
+> de reservar y un permiso por agencia que fija quien la financia. La estrategia de fotos y cobertura amplía D-TBO-12
+> sin cerrarla ([05](./05-contenido-estatico-e-inventario.md) §8.6), y con la foto en la tarjeta de resultados U-05
+> deja de ser una desviación. Las rutas que cita esta revisión son de la rama `feat/hotels-redesign` al 2026-09-29,
+> sin número de línea.
 
 ---
 
@@ -702,6 +711,43 @@ al viajero con checkout alojado sigue sin construir, porque no hay pasarela de p
 
 **Depende de.** D-TBO-21, D-TBO-03. → [Q-90](./10-preguntas-para-tbo.md#q-90) (si todas las cuentas, incluidas las BYOC, operan con `Limit`).
 
+#### RF-41 — Tarifas no reembolsables: aviso, confirmación obligatoria y permiso por agencia
+
+**Enunciado.** Requisito del founder del 2026-09-29 (D-TBO-39). El servidor decide si una tarifa es no reembolsable
+en los hechos con la política final del PreBook y la hora de ahora: declarada así, contradictoria (`IsRefundable`
+en `false` con tramos a 0) o reembolsable con el cargo del 100 % ya vigente, comparado contra UTC+14 porque los
+tramos están en hora local sin zona. El 100 % es el precio de venta. La web lo muestra con color de advertencia en
+resultados, detalle y PreBook, con el monto exacto y su moneda, y exige una casilla en el checkout. El Book sin
+`nonRefundableAcknowledged: true` se rechaza antes de abrir la orden y otra vez después de C2. La orden guarda quién
+aceptó, cuándo, el monto y la política, y el evento `HotelNonRefundableAcknowledged` lo audita. La orden, el voucher y
+el correo dicen "No reembolsable", y la cancelación pide doble confirmación con el 100 %. Quien financia a cada nodo
+fija si puede reservarlas (`allowed` por defecto; `blocked` rige también hacia abajo): bloqueadas, la web las muestra
+como no disponibles y el PreBook y el Book responden 403.
+
+**Fuente.** Pedido del founder del 2026-09-29 (§7, [Registro de decisiones](#registro-de-decisiones)). `IsRefundable`
+y `CancelPolicies` (p. 14, 24, 50), VERIFICADO-PDF; la zona horaria de `FromDate` sigue abierta. Implementación,
+VERIFICADO-CODIGO: `apps/api/src/hotels/hotel-non-refundable.ts`, `hotel-prebook.service.ts`,
+`hotel-booking.service.ts`, `apps/api/src/booking-permissions/` y
+`db/migrations/0055_non_refundable_rates_permission.sql`.
+[03](./03-prebook-y-book.md) §2.13; [platform/12](../platform/12-modelo-consolidador-y-plan.md) §11.
+
+**CA.**
+
+1. `IsRefundable: false` con todos los tramos a 0 → no reembolsable. Reembolsable con un tramo del 100 % cuya fecha
+   local ya pasó en UTC+14 → no reembolsable con motivo `full-penalty-in-force`.
+2. Book de una no reembolsable sin `nonRefundableAcknowledged` → 400 `NON_REFUNDABLE_NOT_ACKNOWLEDGED` con el monto,
+   sin abrir la orden ni llamar a TBO. Si pasa a cobrar el 100 % entre la petición y C2, el mismo rechazo después de
+   C2, sin Book.
+3. Con la confirmación, `selected_offer.nonRefundable` trae `acknowledgedBy`, `acknowledgedAt`, `acknowledgedAmount`
+   y la política, y hay un `HotelNonRefundableAcknowledged` sin PII antes de `OrderCreateRequested`.
+4. Permiso `blocked` en el nodo o en un ancestro → PreBook y Book 403 `NON_REFUNDABLE_BLOCKED`, sin snapshot, y sin
+   llamar a TBO si la búsqueda ya la mostró no reembolsable. La web la muestra "No disponible para tu agencia".
+5. Sólo quien financia al nodo cambia el permiso: cualquier otro recibe 403
+   `BOOKING_PERMISSIONS_FINANCIER_REQUIRED`, y la RLS lo vuelve a exigir como `app_user`.
+6. La casilla del checkout nombra el monto exacto y vuelve a quedar sin marcar si el monto cambia.
+
+**Depende de.** D-TBO-39, D-TBO-21 (quién financia), RF-11, RF-15, RF-20, RF-25. → [Q-24](./10-preguntas-para-tbo.md#q-24), [Q-26](./10-preguntas-para-tbo.md#q-26) (zona horaria de `FromDate`; relación de `IsRefundable` con los tramos).
+
 ### D. Post-venta
 
 #### RF-24 — Lecturas con `BookingDetail`
@@ -998,8 +1044,9 @@ negocio, y guía en inglés.
 (U-01) cumple; la web de hoteles hace dos llamadas a la API, sugerencias y disponibilidad
 (`apps/web-b2b/src/app/(app)/hoteles/actions.ts:101`, `:174`, VERIFICADO-CODIGO según [07](./07-certificacion.md) §1).
 
-**CA.** Cada punto U-xx es un test E2E de Playwright contra el entorno de certificación. U-04 y U-05 se prueban en la
-forma que el founder aceptó el 2026-09-27 ([desviaciones aceptadas](#desviaciones-aceptadas-del-checklist-de-ui)).
+**CA.** Cada punto U-xx es un test E2E de Playwright contra el entorno de certificación. U-04 se prueba en la forma
+que el founder aceptó el 2026-09-27 ([desviaciones aceptadas](#desviaciones-aceptadas-del-checklist-de-ui)); U-05, tal
+cual, desde que la tarjeta de resultados lleva la foto (2026-09-29).
 
 **Depende de.** RF-06 a RF-27, D-TBO-35, D-TBO-37.
 
@@ -1295,7 +1342,7 @@ fijan como requisitos.
 | **RC-03** | Las guardas G-1 a G-13 pasan antes de escribir el zip                                                                                                                     | [07](./07-certificacion.md) §6.7                                                                                                           | `verify` y `zip` abortan ante credenciales, claves de tarjeta, `PaymentMode` distinto de `Limit` o nombres fuera de la lista sintética |
 | **RC-04** | Las sondas PR-01 a PR-11 corren antes de la primera corrida de casos y nunca entran al zip                                                                                | [07](./07-certificacion.md) §6.8                                                                                                           | Cada sonda que responde una pregunta la marca como cerrada en [10](./10-preguntas-para-tbo.md)                                         |
 | **RC-05** | Cada checkpoint reconstruido (CK-01 a CK-18) está cubierto por un requisito de este documento                                                                             | [07](./07-certificacion.md) §3 (INFERIDO: TBO no publica su lista)                                                                         | Tabla de abajo                                                                                                                         |
-| **RC-06** | El portal cumple el checklist U-01 a U-20; U-04 y U-05, en la forma que el founder aceptó el 2026-09-27 (§7)                                                              | [07](./07-certificacion.md) §8                                                                                                             | RF-39                                                                                                                                  |
+| **RC-06** | El portal cumple el checklist U-01 a U-20; U-04, en la forma que el founder aceptó el 2026-09-27 (§7), y U-05 tal cual desde el 2026-09-29                                | [07](./07-certificacion.md) §8                                                                                                             | RF-39                                                                                                                                  |
 | **RC-07** | El portal de pruebas no expone ninguna credencial real de ningún proveedor                                                                                                | [07](./07-certificacion.md) §7; D-TBO-35                                                                                                   | Con la opción recomendada, el entorno de certificación no tiene variables de otros proveedores                                         |
 | **RC-08** | `.env.tbo` y `.tbo-cert/` están en `.gitignore` **antes** de crear el primero                                                                                             | `.gitignore:32` ignora solo `.env` y `:105` solo `.env.sabre`; `git check-ignore .env.tbo` no devuelve nada (VERIFICADO-CODIGO)            | `git check-ignore .env.tbo .tbo-cert/x` devuelve las dos rutas                                                                         |
 | **RC-09** | El workflow enviado a TBO (Anexo A de [07](./07-certificacion.md)) refleja las decisiones tomadas                                                                         | [07](./07-certificacion.md) Anexo A; §9 C-07, C-20                                                                                         | El paso 7 y la línea de `402` del Anexo A coinciden con D-TBO-24 y D-TBO-32                                                            |
@@ -1391,6 +1438,7 @@ fichas de las decisiones firmadas conservan todas sus opciones como registro y m
 | D-TBO-15 | **CERRADA, 2026-09-29** | **(A)** con selector de moneda en la búsqueda de hoteles: la de la agencia, elegida por defecto, o USD, sin conversión. Las tarifas en otra moneda no se muestran y el aviso ofrece repetir la búsqueda en la moneda del proveedor si la agencia la puede usar | RF-07, RF-13. `GET /hotels/currencies`; `/hotels/availability` y `/hotels/detail` responden 400 a otra moneda y 409 a un markup fijo en otra moneda (`markup_rules` no tiene moneda); el detalle busca en la misma moneda y con la misma puerta; PreBook, Book y orden heredan la de la tarifa; la retención usa la cartera de la agencia en la moneda de la tarifa y, sin ella, rechaza antes del proveedor con `PORTFOLIO_CURRENCY_NOT_ENABLED` (D-TBO-21; carteras por moneda desde 0052) |
 | D-TBO-18 | **CERRADA, 2026-09-28** | **(A)** Opt-in por tenant, encendido y apagado por el superadmin desde el panel de la plataforma (para todos los tenants o para un tenant y su red, con excepciones por tenant), no por variable de entorno                                                    | RF-36 CA 5 y 6; RNF-11. Tabla `provider_enablement` (0048), para todo proveedor de vuelos y hoteles; `*_PROVIDERS_OPT_IN` quedan de legado y `PROVIDERS_DISABLED` de emergencia. [09](./09-plan-implementacion.md) PR-8.2 enciende el piloto desde el panel                                                                                                                                                                                                                                  |
 | D-TBO-21 | **CERRADA, 2026-09-29** | **(A)** con carteras por moneda que establece quien financia a la agencia (opción A del founder para las carteras): la retención antes del Book usa la cartera de la moneda de la tarifa, y el límite interno es su cupo                                       | RF-23. `agency_portfolios` única por tenant y moneda (0052); cupo, estado, depósitos y ajustes sólo los escribe quien financia al nodo (`can_finance_tenant`) y la agencia informa depósitos que quedan pendientes; sin cartera en la moneda de la tarifa, 409 `PORTFOLIO_CURRENCY_NOT_ENABLED` antes de llamar a TBO; `tenants.credit_limit` pasó al cupo en 0053. El cobro al viajero con checkout alojado, la otra mitad de (A), no se decidió aparte y espera la pasarela de pagos       |
+| D-TBO-39 | **CERRADA, 2026-09-29** | **Pedido explícito del founder**, sin opciones: máxima claridad con las tarifas no reembolsables, confirmación obligatoria que exige el servidor y un permiso por agencia que fija quien la financia                                                           | RF-41. "No reembolsable" lo decide el servidor de forma conservadora (declarada, contradictoria o con el 100 % vigente contra UTC+14); Book sin `nonRefundableAcknowledged` → 400 `NON_REFUNDABLE_NOT_ACKNOWLEDGED`; la confirmación queda en `selected_offer.nonRefundable` y en `HotelNonRefundableAcknowledged`; `tenant_booking_permissions` (0055), permitido por defecto y con bloqueo heredado → 403 `NON_REFUNDABLE_BLOCKED`                                                         |
 
 **Las otras 30 decisiones no están firmadas y se implementan con su opción recomendada (A) hasta que el founder diga
 otra cosa.** Son D-TBO-01, D-TBO-05, D-TBO-08 a D-TBO-14, D-TBO-16, D-TBO-17, D-TBO-19, D-TBO-20 y D-TBO-22 a D-TBO-38; así lo
@@ -1409,12 +1457,13 @@ No son decisiones D-TBO: son dos puntos del checklist de [07](./07-certificacion
 forma. Salieron del cierre de la Fase 6 ([09](./09-plan-implementacion.md) §13) y el founder los aceptó el 2026-09-27
 ("acepto U-04 y U-05"). La razón es la que dejaron ese cierre y los comentarios de PR-6.1 en
 `apps/web-b2b/src/app/(app)/hoteles/_components/rooms-picker.tsx` y `apps/api/src/hotels/hotels.schemas.ts`. RF-39 y
-RC-06 los dan por cumplidos así.
+RC-06 los dan por cumplidos así. U-05 dejó de ser una desviación el 2026-09-29: la tarjeta de resultados ya lleva la
+foto del hotel.
 
 | Punto | Qué pide 07 §8                                                                                    | Qué hace la web                                                                                                                                                                                                                                                      | Razón                                                                                                                                                                                                                                                                                                   |
 | ----- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | U-04  | Habitaciones dentro de los límites de TBO: hasta 4 niños por habitación, edades de 0 a 18 (CK-03) | Topes de la plataforma: 8 habitaciones, 8 adultos y 6 niños por habitación, edades de 0 a 17. Con 5 o 6 niños en una habitación, TBO queda fuera de esa búsqueda con el motivo visible ("Admite hasta 4 niños por habitación.") y los demás proveedores buscan igual | Achicar los topes al proveedor más estrecho le quitaría a todos lo que solo uno no admite; RF-05 CA 2 ya pide dejar a TBO fuera con motivo en vez de truncar la ocupación. Ninguno de los 8 casos de certificación cae fuera. Queda afuera un niño de 18 años → [Q-14](./10-preguntas-para-tbo.md#q-14) |
-| U-05  | Imagen del hotel en los resultados, entre otros datos del contenido estático                      | La imagen está en el detalle del hotel (`/hoteles/[hotelKey]`), no en la tarjeta de resultados                                                                                                                                                                       | La oferta neutral de disponibilidad no trae imagen: llevarla a la tarjeta exige sumar una miniatura del catálogo a `POST /hotels/availability`. U-05 no tiene CK asociado                                                                                                                               |
+| U-05  | Imagen del hotel en los resultados, entre otros datos del contenido estático                      | **Resuelta el 2026-09-29: ya no es desviación.** La tarjeta lleva la foto del catálogo (`mainImage` en `POST /hotels/availability`) o la trae en segundo plano ([05](./05-contenido-estatico-e-inventario.md) §8.6)                                                  | Era que la oferta neutral de disponibilidad no traía imagen. El cambio fue el que preveía esta fila: sumar la miniatura del catálogo a `POST /hotels/availability`. U-05 no tiene CK asociado                                                                                                           |
 
 Si TBO objeta alguna en la verificación de portal, el cambio es el que describe [07](./07-certificacion.md) §8.
 
@@ -1433,7 +1482,7 @@ Si TBO objeta alguna en la verificación de portal, el cambio es el que describe
 | D-TBO-09 | ¿El Book espera en la petición del navegador?                   | Híbrido 201/202                                                    | RF-22                        | Abierta; se aplica (A)                                 |
 | D-TBO-10 | ¿Cómo se traduce el destino a ciudades TBO?                     | Tabla de mapeo calculada                                           | RF-33                        | Abierta; se aplica (A)                                 |
 | D-TBO-11 | ¿El catálogo es uno o uno por cuenta?                           | Uno global, verificado con una sonda                               | RF-30, RF-31                 | Abierta; se aplica (A)                                 |
-| D-TBO-12 | ¿Qué y cómo se sincroniza?                                      | Herramienta aparte, lista cerrada de países, contenido por demanda | RF-30, RF-32                 | Abierta; se aplica (A)                                 |
+| D-TBO-12 | ¿Qué y cómo se sincroniza?                                      | Herramienta aparte, lista cerrada de países, contenido por demanda | RF-30, RF-32                 | Abierta; se aplica (A), ampliada el 2026-09-29         |
 | D-TBO-13 | ¿Qué pasa con un hotel que está en los dos proveedores?         | Una tarjeta, heurística conservadora                               | RF-34, RF-40                 | Abierta; se aplica (A)                                 |
 | D-TBO-14 | ¿De dónde sale la nacionalidad del pasajero?                    | Campo obligatorio y visible                                        | RF-06                        | Abierta; se aplica (A)                                 |
 | D-TBO-15 | ¿Qué pasa si TBO cotiza en otra moneda?                         | Puerta de moneda, sin conversión                                   | RF-07, RF-13                 | **CERRADA 2026-09-29: (A)**, con selector de moneda    |
@@ -1460,6 +1509,7 @@ Si TBO objeta alguna en la verificación de portal, el cambio es el que describe
 | D-TBO-36 | ¿Qué plataformas se declaran a TBO?                             | Solo el portal B2B                                                 | RC-01                        | Abierta; se aplica (A)                                 |
 | D-TBO-37 | ¿En qué idioma recorre TBO el portal?                           | Guía en inglés                                                     | RF-39                        | Abierta; se aplica (A)                                 |
 | D-TBO-38 | ¿Qué entidad, cuenta y contacto figuran en la certificación?    | La entidad titular de la cuenta que se hereda                      | D-TBO-05                     | Abierta; se aplica (A)                                 |
+| D-TBO-39 | ¿Cómo se venden las tarifas no reembolsables? (§7.4)            | Aviso, confirmación obligatoria y permiso por agencia              | RF-41                        | **CERRADA 2026-09-29:** pedido del founder             |
 
 ### 7.1 Estrategia y comercial
 
@@ -1699,6 +1749,14 @@ cuenta fija al menos la moneda (p. 13). INFERIDO en los dos sentidos ([05](./05-
 [06](./06-seams-integracion-repo.md) §9 H8.
 
 #### D-TBO-12 — ¿Qué se sincroniza y cómo?
+
+**Estado: abierta; se aplica (A), ampliada el 2026-09-29.** Con el rediseño de hoteles el founder aprobó una estrategia
+de fotos y cobertura que cambia dos cosas de (A) y suma una ([05](./05-contenido-estatico-e-inventario.md) §8.6). Las
+fotos que faltan en los resultados se traen de `HotelDetails` bajo demanda y se guardan desde el API (0054), sin
+esperar a que el sync vea la demanda. Las imágenes pasan por un proxy propio con caché, no por el enlace directo. Y una
+etapa opt-in del sync (E2A) baja las ciudades de todos los países, cuyos hoteles se cargan la primera vez que alguien
+las busca. Los hoteles se siguen sincronizando por la lista cerrada de países, y la demanda del sync cuenta también las
+búsquedas del catálogo local.
 
 `CityList` devuelve "the complete city code and name for the requested country" y su ejemplo incluye aldeas
 (p. 53-54, VERIFICADO-PDF; que la lista sea exhaustiva es INFERIDO), y cada ciudad cuesta una llamada de
@@ -1994,6 +2052,37 @@ muestra problemas de encoding (p. 51).
 
 **Bloquea:** RF-18. → [Q-41](./10-preguntas-para-tbo.md#q-41), [Q-43](./10-preguntas-para-tbo.md#q-43), [Q-44](./10-preguntas-para-tbo.md#q-44). **Consolida:** [03](./03-prebook-y-book.md) D-03-E y D-03-H.
 
+#### D-TBO-39 — ¿Cómo se venden las tarifas no reembolsables?
+
+**Estado: CERRADA el 2026-09-29 por pedido explícito del founder.** No llegó como una elección entre opciones sino
+como requisito: máxima claridad, para las agencias y para todos, sobre las tarifas de hotel que no se reembolsan. Una
+no reembolsable cancelada, modificada o no presentada cuesta el 100 %, sale de la cartera o del crédito de la agencia
+(D-TBO-21) y la agencia responde ante su cliente. Queda así:
+
+- **(a) Resultados.** La etiqueta "No reembolsable" va con color de advertencia en la tarjeta y en cada tarifa; hay un
+  filtro "Solo reembolsables"; y la tarjeta avisa si el hotel no tiene ninguna reembolsable.
+- **(b) Detalle y PreBook.** Un aviso grande explica que si se cancela, se modifica o el pasajero no se presenta se
+  cobra el 100 %, con el monto exacto y su moneda; que no se recupera; que se descuenta de la cartera o del crédito de
+  la agencia; y que la agencia responde ante su cliente. La política completa va en hora local del hotel, tal como la
+  confirma el PreBook. Una reembolsable cuyo 100 % ya rige se trata igual, y ante la contradicción de TBO
+  (`IsRefundable` en `false` con tramos a 0) se trata como no reembolsable.
+- **(c) Checkout.** Una casilla OBLIGATORIA con el monto: "Entiendo que esta tarifa no es reembolsable: si se cancela,
+  modifica o el pasajero no se presenta, se cobra el 100 %". La API rechaza el Book sin ese reconocimiento, y la orden
+  guarda quién aceptó, cuándo, el monto y la política, con su evento de auditoría. Al lado, el recordatorio de revisar
+  nombres y fechas.
+- **(d) Después.** La orden, el voucher y el correo dicen "No reembolsable" de forma visible, y cancelar una dice que
+  cuesta el 100 % con el monto y pide doble confirmación. La cotización de hotel para el cliente todavía no existe en
+  la web: cuando exista, lo dice igual.
+- **(e) Control por agencia.** Lo fija quien la financia (el superadmin, el consolidador o la agencia, con el modelo de
+  las carteras): "Puede reservar tarifas no reembolsables" permitido, por defecto y con la confirmación obligatoria, o
+  bloqueado. Bloqueado, las tarifas se ven como no disponibles para esa agencia y la API rechaza el PreBook y el Book
+  con motivo. El bloqueo de un nodo rige también para todo lo que cuelga de él.
+
+Implementación: RF-41, [03](./03-prebook-y-book.md) §2.13 y
+[platform/12](../platform/12-modelo-consolidador-y-plan.md) §11.
+
+**Bloquea:** RF-41. → [Q-24](./10-preguntas-para-tbo.md#q-24), [Q-26](./10-preguntas-para-tbo.md#q-26). **Consolida:** [03](./03-prebook-y-book.md) D-03-I.
+
 ### 7.5 Post-venta
 
 #### D-TBO-24 — ¿Qué pasa con un Book incierto que la verificación no encuentra?
@@ -2282,6 +2371,7 @@ las dependencias.
 | RF-38 | [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md) §10; [06](./06-seams-integracion-repo.md) TP-38, TP-39                   | F4                                      |
 | RF-39 | [07](./07-certificacion.md) §8; [06](./06-seams-integracion-repo.md) TP-57 a TP-62                                                   | F3-F5 (construcción), F6 (verificación) |
 | RF-40 | [05](./05-contenido-estatico-e-inventario.md) §9.2; [06](./06-seams-integracion-repo.md) TP-56, TP-59, TP-66; firma de D-TBO-06 (§7) | F3                                      |
+| RF-41 | [03](./03-prebook-y-book.md) §2.13; [platform/12](../platform/12-modelo-consolidador-y-plan.md) §11; firma de D-TBO-39 (§7)          | F4 (reserva), F5 (post-venta)           |
 
 **Requisitos no funcionales y de certificación.**
 
@@ -2501,7 +2591,7 @@ caracteres) antes de que TBO conteste.
 - [01-autenticacion-conectividad-y-errores.md](./01-autenticacion-conectividad-y-errores.md): RF-01 a RF-04,
   RNF-01 a RNF-03, RNF-05, RNF-11.
 - [02-search-y-oferta-canonica.md](./02-search-y-oferta-canonica.md): RF-05 a RF-14, RF-35.
-- [03-prebook-y-book.md](./03-prebook-y-book.md): RF-15 a RF-23, RNF-04.
+- [03-prebook-y-book.md](./03-prebook-y-book.md): RF-15 a RF-23, RF-41, RNF-04.
 - [04-post-venta-detalle-cancelacion-y-conciliacion.md](./04-post-venta-detalle-cancelacion-y-conciliacion.md):
   RF-24 a RF-29, RF-38, RNF-08, RNF-10.
 - [05-contenido-estatico-e-inventario.md](./05-contenido-estatico-e-inventario.md): RF-30 a RF-34, RF-40, RNF-16.

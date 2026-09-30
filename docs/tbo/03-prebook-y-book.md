@@ -37,6 +37,7 @@ Las fuentes y su procedencia están en [00-fuentes.md](./00-fuentes.md). Lo que 
 8. `OrdersService.recordExternalOrder` (`apps/api/src/orders/orders.service.ts:278-322`) no sirve para TBO: persiste después de que el proveedor confirma, sin intent previo. TBO necesita el patrón de intent de vuelos (`insertCreateIntent`, `orders.service.ts:694-799`) VERIFICADO-CODIGO.
 9. El timeout de 120 s del `Book` (p. 8) no cabe en una petición HTTP síncrona detrás de Cloudflare. La postura es un `Book` híbrido que responde `202` y sigue en segundo plano (§4.5).
 10. La regla ESLint D1 (`eslint.config.mjs:50-75`) cubre archivos `*.request.builder.ts`, pero su lista de claves es camelCase y **no reconocería** los campos PascalCase de TBO (`CardNumber`, `CvvNumber`, `PaymentInfo`) aunque el archivo esté bien nombrado VERIFICADO-CODIGO. Hay que extenderla (§7.3).
+11. **Tarifas no reembolsables (decisión del founder del 2026-09-29, APLICADO).** El servidor decide de forma conservadora qué tarifa es no reembolsable (declarada, contradictoria o con el 100 % ya vigente), el checkout la avisa con el monto exacto y el Book exige `nonRefundableAcknowledged`, que queda en la orden y en la auditoría. Quien financia a cada agencia puede bloquearlas (0055) (§2.13).
 
 ---
 
@@ -237,7 +238,7 @@ Presentación por canal:
 - Search solo trae las políticas detalladas ("detailed cancel policies") con `IsDetailedResponse: true` (p. 11), y TBO recomienda enviarlo en `False` (p. 71) VERIFICADO-PDF. En el flujo recomendado, PreBook es el primer momento en que se conocen las políticas INFERIDO.
 - Cada tramo trae `FromDate` (formato `DD-MM-YYYY HH:mm:ss` sin zona horaria: la tabla solo dice "Cancel policy start date" y el formato sale de los ejemplos, donde `15-10-2021` en p. 50 descarta `MM-DD`), `ChargeType` (`Fixed` o `Percentage` en los ejemplos) y `CancellationCharge`. `Index` identifica la habitación y, si falta, la política aplica a toda la reserva (p. 21, 24, 28, 50) VERIFICADO-PDF.
 
-**Postura.** Las políticas del PreBook que precede inmediatamente al `Book` se guardan en `orders.selected_offer` como parte del snapshot. Se muestran antes de confirmar con el aviso de que las fechas corresponden a la hora del hotel. La conversión al modelo canónico (inicio de tramo a fin de tramo, porcentaje a importe, zona horaria, margen de seguridad) está en [02](./02-search-y-oferta-canonica.md). El cálculo del cargo al cancelar está en [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md).
+**Postura.** Las políticas del PreBook que precede inmediatamente al `Book` se guardan en `orders.selected_offer` como parte del snapshot. Se muestran antes de confirmar con el aviso de que las fechas corresponden a la hora del hotel. La conversión al modelo canónico (inicio de tramo a fin de tramo, porcentaje a importe, zona horaria, margen de seguridad) está en [02](./02-search-y-oferta-canonica.md). El cálculo del cargo al cancelar está en [04](./04-post-venta-detalle-cancelacion-y-conciliacion.md). Desde el 2026-09-29, con esas mismas políticas el servidor decide si la tarifa es no reembolsable en los hechos, y una reembolsable cuyo 100 % ya rige se trata como no reembolsable (§2.13).
 
 ### 2.6 Suplementos y cargos en destino
 
@@ -333,6 +334,106 @@ El capítulo 7 no incluye ningún ejemplo de error (p. 18–32) VERIFICADO-PDF. 
 | Timeout o error de red a mitad de la respuesta | Sin reintento: dos intentos de 23 s serían demasiada espera. Error al vendedor, que puede volver a pedir el PreBook.                                                                             |
 
 La relación entre `Status.Code` y el código HTTP, y la forma del cuerpo de error, están en [01](./01-autenticacion-conectividad-y-errores.md).
+
+### 2.13 Tarifas no reembolsables (APLICADO, 2026-09-29)
+
+**Decisión del founder del 2026-09-29.** Pedido explícito: máxima claridad, para las agencias y para todos, sobre las
+tarifas de hotel que no se reembolsan. Quedó registrado como
+[D-TBO-39](./08-requisitos-maestro.md#d-tbo-39--cómo-se-venden-las-tarifas-no-reembolsables), con el requisito
+[RF-41](./08-requisitos-maestro.md#rf-41--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-permiso-por-agencia).
+Commits `5956426` (resultados) y `415ef53` (API, checkout, post-venta y permiso), en la rama `feat/hotels-redesign`.
+El modelo del permiso, visto desde la red, está en
+[platform/12 §11](../platform/12-modelo-consolidador-y-plan.md#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29).
+
+**Qué es "no reembolsable".** Lo decide el servidor (`apps/api/src/hotels/hotel-non-refundable.ts`, sin I/O) con la
+política FINAL del PreBook y la hora de ahora, siempre del lado que cuesta menos equivocarse. La web usa la misma
+lectura (`rate-refundability.ts`) con la hora del servidor, para que la pantalla y el servidor no discrepen sobre si
+una tarifa exige la confirmación.
+
+- **Declarada no reembolsable** (`refundable: false` o `status: 'non_refundable'`), digan lo que digan los tramos.
+  Ante la contradicción de TBO, `IsRefundable=false` con tramos a 0 (p. 50) VERIFICADO-PDF, gana lo conservador: no
+  reembolsable (→ [Q-26](./10-preguntas-para-tbo.md#q-26)). El ACL guarda los dos datos sin derivar uno del otro
+  (RF-11).
+- **Reembolsable con el cargo del 100 % ya vigente**: cancelar cuesta lo mismo, así que se trata igual. Los tramos
+  están en hora local del hotel sin zona (§2.5; → [Q-24](./10-preguntas-para-tbo.md#q-24)) y se comparan contra la
+  hora local más adelantada del planeta (UTC+14): si el 100 % puede estar rigiendo, rige. Con tramos por habitación,
+  cuenta cuando todas cobran el 100 %. Un importe fijo es el total sólo si es de toda la reserva, en la moneda del
+  neto y no menor que él. Un tramo sin fecha local no se puede ubicar y no cuenta.
+- **El 100 % es el precio de VENTA**, no el neto de TBO: es lo que se retiene de la cartera de la agencia (RF-23) y lo
+  que la agencia le responde a su cliente.
+
+**Resultados y detalle.** La etiqueta "No reembolsable" va con el color de advertencia en la tarjeta y en cada
+tarifa. Hay un filtro "Solo reembolsables", que también deja afuera las que ya cobran el 100 %, y la tarjeta avisa
+"Este hotel no tiene tarifas reembolsables para estas fechas" cuando no hay ninguna. En el detalle, cada no
+reembolsable dice el 100 % con su monto y su moneda. Si la agencia las tiene bloqueadas, la tarifa se ve como "No
+disponible para tu agencia" y no se ofrece reservarla.
+
+**PreBook.**
+
+- Con el permiso de la agencia bloqueado (abajo), el PreBook responde 403 `NON_REFUNDABLE_BLOCKED`. Si la búsqueda ya
+  mostró la tarifa como no reembolsable, lo hace sin llamar a TBO. Si recién lo es con la política final (o con el
+  100 % ya vigente), lo hace sin guardar el snapshot, así que no queda con qué reservarla.
+- Si no está bloqueado, la respuesta lleva `nonRefundable`: `reason` (`declared` o `full-penalty-in-force`), `penalty`
+  en el precio de venta y, si aplica, `fullPenaltySinceLocal`.
+- El paso 1 del checkout muestra el aviso grande "Tarifa no reembolsable", con el monto como protagonista: si se
+  cancela, se modifica o el pasajero no se presenta, se cobra el 100 %; no se recupera; se descuenta de la cartera o
+  del crédito de la agencia en esa moneda; y la agencia responde ante su cliente. Debajo va la política completa en
+  hora local del hotel, tal como la confirma el PreBook (§2.5).
+
+**Book.**
+
+- El cuerpo neutral de `POST /hotels/book` suma `nonRefundableAcknowledged` (Zod, opcional). El paso 2 del checkout lo
+  manda sólo con la casilla OBLIGATORIA marcada: "Entiendo que esta tarifa no es reembolsable: si se cancela,
+  modifica o el pasajero no se presenta, se cobra el 100 % (321,34 US$)", con el monto exacto de la tarifa. Al lado va
+  el recordatorio de revisar nombres y fechas, porque un error sólo se corrige cancelando. Si el monto cambia (un
+  precio nuevo aceptado en ese paso), la casilla vuelve a quedar sin marcar.
+- El servidor lo decide otra vez con el snapshot y la hora de ahora, antes de abrir la orden. Con el permiso bloqueado
+  responde 403 `NON_REFUNDABLE_BLOCKED`. Sin el reconocimiento, 400 `NON_REFUNDABLE_NOT_ACKNOWLEDGED`, con `penalty`,
+  `nonRefundableReason` y `fullPenaltySinceLocal` en `details` para que la web pinte el aviso.
+- Después del PreBook de revalidación (C2, §2.9) lo comprueba de nuevo con la tarifa revalidada: si pasó a cobrar el
+  100 % en el medio, exige lo mismo. En ninguno de esos casos sale nada a TBO.
+- La orden guarda en `selected_offer.nonRefundable` el motivo, el 100 %, la política aceptada (tramos en hora local
+  del hotel y su origen) y la confirmación: quién (`acknowledgedBy`), cuándo (`acknowledgedAt`) y sobre qué monto
+  (`acknowledgedAmount`).
+- El evento `HotelNonRefundableAcknowledged` va sobre la orden, antes de `OrderCreateRequested` y del Book: actor,
+  proveedor, hotel, referencia de reserva, motivo, el 100 % en unidades menores con su moneda, momento, huella de las
+  condiciones y la política como tramos. No lleva PII ni texto del proveedor. `OrderCreateRequested` suma
+  `nonRefundable` con el motivo.
+
+**Después de reservar.** _Mis Reservas_ dice "No reembolsable" en la lista y en el detalle, con el momento en que el
+vendedor lo confirmó. El voucher lo dice sin importes. El correo de confirmación de hotel tiene su propia plantilla,
+con el recuadro "Tarifa no reembolsable" y el monto exacto con centavos, y lo repite en el asunto. Cancelar una no
+reembolsable (o una cuyo cargo vigente ya es el total) dice que cuesta el 100 % con el monto y pide doble
+confirmación: la casilla que nombra el monto y, después, un último paso que lo repite antes de enviar.
+
+**Permiso por agencia ([0055](../../db/migrations/0055_non_refundable_rates_permission.sql)).** "Puede reservar
+tarifas no reembolsables" lo fija quien financia al nodo, con el mismo modelo que las carteras (`can_finance_tenant`,
+0052): el superadmin desde _Gestión de Agencias_ → nodo → _Carteras_, y el consolidador o la agencia desde _Mi Red_ →
+nodo → _Carteras_. Nunca el propio nodo.
+
+- `allowed` es lo de siempre, con la confirmación obligatoria, y rige sin fila. `blocked` rige para el nodo y para
+  todo lo que cuelga de él (`non_refundable_rates_block` dice si es propio o heredado).
+- Cada cambio pide motivo (Zod) y deja `booking.permissions.non_refundable_rates.changed` en la misma transacción.
+  `tenant_booking_permissions` tiene RLS forzada: la escribe sólo quien financia, firmada por el usuario que actúa, y
+  `app_user` no borra filas.
+- API: `GET` y `PUT /tenants/:tenantId/booking-permissions` para quien financia (403
+  `BOOKING_PERMISSIONS_FINANCIER_REQUIRED` a cualquier otro). `GET /hotels/booking-permissions` y `nonRefundableRates`
+  en el sobre de `POST /hotels/availability` son para la pantalla: marcan, no filtran.
+- Si el permiso no se puede leer, el PreBook y el Book de una no reembolsable fallan: no se reserva sin saberlo. La
+  búsqueda, en cambio, sale igual, sin `nonRefundableRates`.
+
+**Flujo directo de Despegar** (`choiceId` / `prebookId`, sólo por API). No informa la política antes de reservar.
+Con el permiso bloqueado se rechaza entero con 403 `NON_REFUNDABLE_BLOCKED`; con el permiso permitido no puede exigir
+la casilla porque no sabe qué tarifa lo es. Se cierra cuando Despegar pase al contrato neutral con órdenes (D-TBO-08).
+
+**Pendientes.** No hay cotización de hotel para el cliente en la web (sólo la de vuelos): cuando exista, tiene que
+decir "No reembolsable" como el voucher. Cuando WhatsApp venda hoteles, el bot tiene que enunciar el 100 % con su
+monto y pedir la confirmación antes del Book: el servidor ya la exige a cualquier canal.
+
+**Tests.** API: `hotel-non-refundable.test.ts`, `hotel-prebook.service.test.ts`, `hotel-booking.service.test.ts`,
+`hotels.controller.test.ts`, `templates.hotel.test.ts` y `booking-permissions.integration.test.ts`, que corre como
+`app_user`. Web: `rate-refundability.test.ts`, `non-refundable-view.test.ts`, `hotel-cancellation-view.test.ts`,
+`hotel-order-view.test.ts`, `hotel-voucher.test.ts` y `booking-permissions.test.ts`.
 
 ---
 
@@ -831,6 +932,7 @@ Cuerpo propuesto de `POST /hotels/book` para TBO (PROPUESTA; el contrato neutral
   "prebookRef": "<id del snapshot aceptado>",
   "acceptedTotal": { "amountMinor": 34012, "currency": "USD" },
   "atPropertyAcknowledged": true,
+  "nonRefundableAcknowledged": true,
   "rooms": [
     {
       "guests": [
@@ -842,6 +944,8 @@ Cuerpo propuesto de `POST /hotels/book` para TBO (PROPUESTA; el contrato neutral
   "contact": { "email": "cliente@example.com", "phone": "+573001234567" }
 }
 ```
+
+`nonRefundableAcknowledged` existe desde el 2026-09-29 y es obligatorio sólo si la tarifa es no reembolsable (§2.13).
 
 ### 8.2 `HotelsService`: qué cambia
 
@@ -882,6 +986,7 @@ Cuerpo propuesto de `POST /hotels/book` para TBO (PROPUESTA; el contrato neutral
 - `orders.selected_offer` guarda el snapshot del PreBook de C2: `HotelCode`, `BookingCode`, `Name[]`, `MealType`, `IsRefundable`, `CancelPolicies` originales y normalizadas, `Supplements`, `RateConditions` original y saneada, señales críticas, `searchSentAt`, y `pricing` (`finalMinor`, `netMinor`, `totalMarkupMinor`, `currency`, como en autos).
 - `orders.passengers` guarda los nombres originales (con acentos) y los enviados. `orders.contact_info` guarda el contacto del huésped. Ambos son JSONB bajo RLS, como hoy.
 - Eventos: se reutiliza el vocabulario `ORDER_EVENTS` (`apps/api/src/orders/order-events.ts:15-30`) VERIFICADO-CODIGO con `vertical: 'hotels'` en el payload. Se agregan `HotelOfferRepriced` (§2.9) y `ProviderAccountIssueDetected` (§6). Ningún evento lleva nombres, email, teléfono ni texto de `RateConditions`.
+- **Tarifa no reembolsable (desde el 2026-09-29).** `orders.selected_offer.nonRefundable` guarda el motivo, el 100 % en el precio de venta, la política aceptada y quién la aceptó, cuándo y sobre qué monto. El evento `HotelNonRefundableAcknowledged` lo audita sobre la orden antes del Book, sin PII ni texto del proveedor (§2.13).
 
 ### 8.5 Dónde cambiaría si se elige la alternativa
 
@@ -937,6 +1042,7 @@ Cuerpo propuesto de `POST /hotels/book` para TBO (PROPUESTA; el contrato neutral
 | PB-06  | Comparación de precio y condiciones en C1 y C2, con el evento `HotelOfferRepriced`.                                                                                                    | §2.9                                         |
 | PB-07  | Vencimiento `searchSentAt + 27 min` ([08](./08-requisitos-maestro.md) RF-09): pasado ese instante no se llama a PreBook ni se encola el `Book`.                                        | §2.10                                        |
 | PB-08  | Detección de tarifa solo paquete y bloqueo de venta suelta.                                                                                                                            | §2.11                                        |
+| PB-09  | El servidor decide si la tarifa es no reembolsable con la política final y la hora de ahora. Bloqueada para la agencia: 403 `NON_REFUNDABLE_BLOCKED`.                                  | §2.13                                        |
 | BK-01  | Validación de huéspedes contra `PaxRooms` (cantidad, tipo, orden, adulto primero) antes del intent.                                                                                    | §3.2                                         |
 | BK-02  | `Title` en `Mr`, `Mrs` o `Ms`, capturado explícitamente. Nombres normalizados según D-03-H.                                                                                            | §3.2                                         |
 | BK-03  | `BookingReferenceId` de 20 caracteres, aleatorio, único entre tenants, persistido en el intent antes del `Book`, uno por request.                                                      | §3.3                                         |
@@ -944,6 +1050,7 @@ Cuerpo propuesto de `POST /hotels/book` para TBO (PROPUESTA; el contrato neutral
 | BK-05  | `BookingType` y `PaymentMode` constantes. `PaymentInfo?: never`.                                                                                                                       | §3.6, §7.2                                   |
 | BK-06  | Clasificación del resultado en confirmado, fallido definitivo o incierto, según §3.9.                                                                                                  | §3.9                                         |
 | BK-07  | Timeout de cliente de 120 s y cero reintentos del `Book`. Nunca se ejecuta el `Book` como job de `post-sale-retry`.                                                                    | §4.2, §4.4                                   |
+| BK-08  | El Book de una no reembolsable exige `nonRefundableAcknowledged` (400 si falta), también tras C2, y guarda la confirmación en la orden con su evento.                                  | §2.13                                        |
 | RC-01  | Verificación con `BookingDetail` por `BookingReferenceId` a los 120 s del fallo, con el calendario de §4.2.                                                                            | §4.2                                         |
 | RC-02  | Job `verify-hotel-booking` con `delay`, barrido durable de intents `pending` y conciliación diaria.                                                                                    | §4.6                                         |
 | RC-03  | `Book` híbrido con respuesta `201` o `202` y consulta posterior de la orden.                                                                                                           | §4.5                                         |
@@ -989,7 +1096,8 @@ Cada decisión trae la postura base con la que está escrito este documento.
 
 **Estado al 2026-09-25:** el founder firmó D-TBO-02 (B), D-TBO-03 (A), D-TBO-06 (A) y D-TBO-07 (A) y pidió aplicar
 la opción recomendada en todas las demás hasta nuevo aviso; lo que manda es el
-[Registro de decisiones](./08-requisitos-maestro.md#registro-de-decisiones) de 08.
+[Registro de decisiones](./08-requisitos-maestro.md#registro-de-decisiones) de 08. El 2026-09-29 sumó D-03-I, sobre
+las tarifas no reembolsables.
 
 - **D-03-A: `Book` síncrono o híbrido.** El `Book` puede tardar 120 s (p. 8) y Cloudflare corta a los 100 s por defecto (INFERIDO). (A) Híbrido: responde `201` si termina en menos de 25 s y `202` si no, y la web consulta la orden. (B) Síncrono: más simple, pero una parte de las reservas lentas termina en `524` y pasa al protocolo de recuperación. **Base: A.**
 - **D-03-B: PreBook de revalidación antes de cada `Book`.** (A) Siempre, dentro de la saga, como hace vuelos con `revalidateForCreate`: suma hasta 23 s pero garantiza el precio y las políticas finales en el momento del `Book`. (B) Confiar en el snapshot de la pantalla si tiene menos de N minutos: más rápido, con más riesgo de que el `Book` se haga con un precio desactualizado, cuyo efecto TBO no documenta. **Base: A.**
@@ -999,3 +1107,4 @@ la opción recomendada en todas las demás hasta nuevo aviso; lo que manda es el
 - **D-03-F: Qué puede hacer el vendedor cuando la verificación no encuentra la reserva.** (A) Volver a reservar con un intent nuevo, con aviso explícito; la conciliación diaria detecta un duplicado tardío y lo escala. (B) Bloquear esa reserva hasta la conciliación diaria o una revisión manual. **Base: B**, que es la recomendada de D-TBO-24 en [08](./08-requisitos-maestro.md) §7.5, donde esta decisión quedó consolidada (§9 C-07); (A) corresponde a su opción (B).
 - **D-03-G: Orden entre cobro y `Book`, y control de crédito sobre `Limit`.** `Limit` consume el crédito de la cuenta TBO del titular de la credencial. Hay que decidir si el checkout alojado del cliente final se autoriza antes del `Book` o se cobra después, y si las subagencias que heredan la cuenta del consolidador tienen un límite interno. Se decide en [08](./08-requisitos-maestro.md).
 - **D-03-H: Nombres con tildes y ñ.** (A) Transliterar a ASCII lo que se envía a TBO y conservar el original para el voucher: más compatible, y el PDF muestra problemas de encoding. (B) Enviar UTF-8 tal cual: más fiel, con riesgo de caracteres rotos en el hotel. **Base: A.**
+- **D-03-I: Tarifas no reembolsables. CERRADA el 2026-09-29 por pedido explícito del founder.** Aviso visible en resultados, detalle y PreBook con el 100 % exacto; casilla obligatoria en el checkout, que el servidor exige; la confirmación queda en la orden y en la auditoría; "No reembolsable" en la orden, el voucher y los correos; cancelación con doble confirmación; y un permiso por agencia que fija quien la financia (permitido por defecto). Detalle en §2.13; registro en [08](./08-requisitos-maestro.md#d-tbo-39--cómo-se-venden-las-tarifas-no-reembolsables) (D-TBO-39).
