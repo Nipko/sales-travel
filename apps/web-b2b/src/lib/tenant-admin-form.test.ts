@@ -33,14 +33,16 @@ describe('validateNodeDraft', () => {
     expect(errors.slug).toMatch(/minúsculas/);
   });
 
-  it('datos del admin sin email: o todos o ninguno', () => {
-    expect(validateNodeDraft(draft({ adminName: 'Ana' })).adminEmail).toMatch(/dejá vacíos/);
+  it('el email del admin, si viene, con el formato del API', () => {
+    expect(validateNodeDraft(draft({ adminEmail: 'no-es-email' })).adminEmail).toBe(
+      'Ese email no parece válido.',
+    );
+    expect(validateNodeDraft(draft({ adminEmail: 'ana@andes.co' }))).toEqual({});
   });
 
-  it('email y contraseña del admin con el formato del API', () => {
-    const errors = validateNodeDraft(draft({ adminEmail: 'no-es-email', adminPassword: 'corta' }));
-    expect(errors.adminEmail).toBe('Ese email no parece válido.');
-    expect(errors.adminPassword).toMatch(/12 caracteres/);
+  it('el borrador no tiene contraseña ni nombre del admin: se lo invita (docs/platform/14)', () => {
+    expect(emptyDraft('agency', PLATFORM_ID)).not.toHaveProperty('adminPassword');
+    expect(emptyDraft('agency', PLATFORM_ID)).not.toHaveProperty('adminName');
   });
 });
 
@@ -58,16 +60,11 @@ describe('nodeDraftPayload: lo que se manda al API', () => {
     });
   });
 
-  it('con admin: email en minúsculas; sin contraseña, se lo invita', () => {
-    const payload = nodeDraftPayload(
-      draft({ kind: 'consolidator', adminEmail: ' Ana@Andes.CO ', adminName: ' Ana ' }),
-    );
-    expect(payload).toMatchObject({
-      tenantType: 'consolidator',
-      adminEmail: 'ana@andes.co',
-      adminName: 'Ana',
-    });
+  it('con admin: sólo su email, en minúsculas; nunca una contraseña', () => {
+    const payload = nodeDraftPayload(draft({ kind: 'consolidator', adminEmail: ' Ana@Andes.CO ' }));
+    expect(payload).toMatchObject({ tenantType: 'consolidator', adminEmail: 'ana@andes.co' });
     expect(payload).not.toHaveProperty('adminPassword');
+    expect(payload).not.toHaveProperty('adminName');
     expect(payload).not.toHaveProperty('isBranch');
   });
 
@@ -113,7 +110,24 @@ describe('createdMessage', () => {
       'Planetour S.A.S',
     );
     expect(msg.warn).toBe(true);
-    expect(msg.detail).toMatch(/reenviala desde Usuarios/);
+    expect(msg.detail).toMatch(/invitalo desde Equipo/);
+  });
+
+  it('invitado: a quién, cuándo vence y dónde reenviarla', () => {
+    const msg = createdMessage(
+      {
+        tenant,
+        admin: { email: 'ana@andes.co', status: 'invited', expiresAt: '2026-10-06T15:00:00.000Z' },
+      },
+      'agency',
+      'Andes',
+      'Planetour S.A.S',
+      new Date('2026-09-29T15:00:00.000Z'),
+    );
+    expect(msg.warn).toBe(false);
+    expect(msg.detail).toBe(
+      'Invitamos a ana@andes.co (la invitación vence en 7 días): elige su contraseña al aceptar. Si no le llega, reenviala desde Equipo.',
+    );
   });
 });
 

@@ -173,3 +173,28 @@ export function revokeInvitation(tenantId: string, invitationId: string): Promis
         : message?.trim() || 'No pudimos revocar la invitación. Probá de nuevo.',
   );
 }
+
+/** `{ id, expiresAt }` del reenvío. `undefined` si la forma no es la esperada. */
+function parseResent(value: unknown): { expiresAt: string } | undefined {
+  const expiresAt = asRecord(value)?.['expiresAt'];
+  return typeof expiresAt === 'string' ? { expiresAt } : undefined;
+}
+
+/**
+ * Reenviar una invitación: enlace nuevo (el anterior deja de valer) y 7 días más. Devuelve el nuevo
+ * vencimiento; el error, el mensaje del API tal cual.
+ */
+export function resendInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<Loaded<{ expiresAt: string }>> {
+  return call(
+    `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
+    { method: 'POST' },
+    parseResent,
+    (status, message) =>
+      status === 401
+        ? 'Tu sesión venció. Volvé a iniciar sesión.'
+        : message?.trim() || 'No pudimos reenviar la invitación. Probá de nuevo.',
+  );
+}

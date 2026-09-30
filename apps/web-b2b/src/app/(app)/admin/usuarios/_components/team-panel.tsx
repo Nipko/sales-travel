@@ -7,11 +7,13 @@ import { Button } from '../../../../../components/ui/button';
 import { Dialog, useConfirm } from '../../../../../components/ui/dialog';
 import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/cn';
+import { invitationExpiry } from '../../../../../lib/invitation-expiry';
 import { readJson } from '../../../../../lib/read-json';
 import {
   loadInvitations,
   loadMembers,
   loadMembershipImpact,
+  resendInvitation,
   revokeInvitation,
   runMemberAction,
   type MembershipChange,
@@ -110,7 +112,17 @@ function Alert({
   );
 }
 
-export function TeamPanel({ actor }: { actor: TeamActor }) {
+/**
+ * `initialTenantId`: el nodo con que abre (el "Usuarios" de /red). Sólo si está en la red del actor;
+ * si no, abre en la raíz como siempre.
+ */
+export function TeamPanel({
+  actor,
+  initialTenantId,
+}: {
+  actor: TeamActor;
+  initialTenantId?: string;
+}) {
   const [confirm, confirmDialog] = useConfirm();
   const [network, setNetwork] = useState<NetworkState>({ status: 'loading' });
   const [tenantId, setTenantId] = useState('');
@@ -125,6 +137,7 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
   const [memberError, setMemberError] = useState<MemberRowError | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState('');
   const seats = useSeatsView(tenantId === '' ? null : tenantId);
   const reloadSeats = seats.reload;
@@ -154,8 +167,9 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
     const list = read.data.tenants as NetworkNode[];
     setNetwork({ status: 'ready', tenants: treeOrder(list) });
     const root = networkRoot(list);
-    setTenantId((current) => current || root?.id || '');
-  }, []);
+    const initial = list.some((t) => t.id === initialTenantId) ? initialTenantId : undefined;
+    setTenantId((current) => current || initial || root?.id || '');
+  }, [initialTenantId]);
 
   useEffect(() => {
     void loadNetwork();
@@ -328,6 +342,26 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
     await load(true);
   }
 
+  async function resend(invitation: PendingInvitation) {
+    setActionError('');
+    setMemberError(null);
+    setResendingId(invitation.id);
+    try {
+      const res = await resendInvitation(tenantId, invitation.id);
+      if (!res.ok) {
+        setActionError(res.message);
+        return;
+      }
+      const expiry = invitationExpiry(res.data.expiresAt, new Date());
+      toast.success(`Reenviamos la invitación a ${invitation.email}.`, {
+        description: `El enlace anterior ya no sirve. El nuevo ${expiry?.label ?? 'vence en 7 días'}.`,
+      });
+      await load(true);
+    } finally {
+      setResendingId(null);
+    }
+  }
+
   const tenants = network.status === 'ready' ? network.tenants : [];
   const selectedName = tenants.find((t) => t.id === tenantId)?.name;
 
@@ -448,7 +482,12 @@ export function TeamPanel({ actor }: { actor: TeamActor }) {
       {invitations.status === 'error' ? (
         <Alert tone="error">{invitations.message}</Alert>
       ) : invitations.status === 'ready' && invitations.items.length > 0 ? (
-        <InvitationList items={invitations.items} onRevoke={(i) => void revoke(i)} />
+        <InvitationList
+          items={invitations.items}
+          onRevoke={(i) => void revoke(i)}
+          onResend={(i) => void resend(i)}
+          resendingId={resendingId}
+        />
       ) : null}
 
       {tenantId !== '' ? (
