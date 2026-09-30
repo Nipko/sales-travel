@@ -263,6 +263,6 @@ describe('búsqueda de agencias', () => {
 
 describe('switchedMessage', () => {
   it('el aviso después de cambiar', () => {
-    expect(switchedMessage('Viajes Andinos')).toBe('Ahora operás como Viajes Andinos');
+    expect(switchedMessage('Viajes Andinos')).toBe('Ahora operas como Viajes Andinos');
   });
 });

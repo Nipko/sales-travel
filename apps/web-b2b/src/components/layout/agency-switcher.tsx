@@ -58,7 +58,7 @@ import { useViewer } from './viewer-context';
  * Elegir llama a POST /auth/switch-tenant: la API reemplaza la sesión y controla el cupo de puestos
  * del destino. Con el cupo lleno se muestra el mismo panel del login (SeatsFullStep) y la sesión
  * actual sigue. Con éxito: cookies nuevas (la server action), `router.refresh()`, aviso a las otras
- * pestañas y "Ahora operás como <Agencia>".
+ * pestañas y "Ahora operas como <Agencia>". Los textos van en "tú" neutro (decisión del founder).
  */
 
 type Page = 'commands' | 'agencies';
@@ -544,7 +544,7 @@ function AgenciesPage({
         subtitle={
           current ? (
             <>
-              Operás como <span className="font-medium text-[var(--color-fg)]">{current.name}</span>
+              Operas como <span className="font-medium text-[var(--color-fg)]">{current.name}</span>
               {' · '}
               {roleLabel(current.role)}
             </>
@@ -695,7 +695,7 @@ function CommandsPage({
           value: query,
           onChange: setQuery,
           label: 'Buscar una pantalla o acción',
-          placeholder: 'Buscá una pantalla o acción…',
+          placeholder: 'Busca una pantalla o acción…',
         }}
         emptyText={`No encontramos nada con «${query.trim()}».`}
         onSelect={(id) => {
